@@ -1116,6 +1116,51 @@ portal (roster, School results tab, Report a concern).
   follow-up always re-applies.
 - Tests: run.php +16; `tests/ids-ask.test.js` 32.
 
+## 2026-10-16 — Mentor Portal functional pass: what was fixed, what was left
+
+From the functional review of the mentor engine, with v14 withdrawn (10-13).
+
+**Live paths (the restored MentorPortal and admin pairing):**
+- `mentoring_open` refuses unscreened mentors (`not_screened`); stars/V3 are
+  unchanged. `mentor_attention` shows concern text only to leads/staff, the
+  author and the child's own mentor.
+- One concern path: `mp_concern_file()` (mentor-portal.php) is called by Report
+  a concern and by a meeting marked as a concern (once per note).
+  `member_mp_concern` now needs `mentor_gate` + the child in scope.
+- `admin_assign_mentor` ends active pairings in every session and keeps
+  `mentor_matches` in step (`admin_assign_mentor_sync_match`). Migration 146
+  (+ the `mentor_assignments.one_active` MySQL row fixup) ends existing
+  duplicates.
+- McGoals used open/done/dropped; goals are draft/active/achieved/paused, so
+  Done/Drop never appeared. Fixed, with an explicit agreement step; the
+  `open` bypass of the agreement rule is gone. Stalled clock runs from creation.
+- MentorPortal's reload no longer unmounts an open record (tab reset).
+
+**Jobs:** quiet-hour pushes are held (`mentor_automation.held`) and released
+at 8am; child pushes go once per nudge (`mpa_is_new`); scorecardLock follows
+`scorecardLockDay`; noGoalAfterWeek3 / relLowTwice / goalReviewDate keys fixed;
+lead nudges with no lead are logged + `ops_record`, not filed to nobody;
+concernEscalate runs first in a tick. `MPA_NEEDS_PORTAL` pauses (locked or not)
+the jobs whose output only v14 showed; `mentor_automation.portalLive` restores
+them.
+
+**Family:** `mp_family_channels()` — there was no `updates` preference, so
+guardian accounts were never mailed and opt-outs were bypassed via parentEmail.
+A guardian with every notification off now gets nothing; a failed send returns
+`not_delivered` and logs no contact. Double-escaped intros fixed.
+
+**API-only (v14 ops):** reply-thread ownership, register/review dates within
+14 days, the three-rating review merges answers and keeps `concern`, the
+Academy answer key no longer sent, last-Saturday week (Wed–Fri bug), session
+check-in progress validated first, admin-mentors get `coord`.
+
+**Left, deliberately:** a mentor's record access is still centre/department
+(the legacy model), not caseload — a product decision. The roster's UTC
+"today" agrees with the live star path; only the withdrawn portal used Lagos.
+The family reply inbox: replies still go to the shared reply-to (the footer
+now says so); nothing creates a `Family reply`. `missedSaturdays` Monday edge
+and the week fallback in `member_mp_week` (both in paused/v14 code).
+
 ## 2026-10-16 — The sign-in pop-up, on the Control Room v2 design system
 
 - **One job per screen** (`SignInModal`, auth.jsx): one field or the code, one

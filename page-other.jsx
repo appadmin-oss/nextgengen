@@ -5672,7 +5672,7 @@ function MentorChildSheet({ student, onClose, onChanged }) {
 
           <div role="tablist" style={{ display: "flex", gap: 4, margin: "22px 0 14px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
             {[["record", "Conversations (" + d.meetings.length + ")"],
-              ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"],
+              ["goals", "Goals (" + d.goals.filter(g => g.status === "active" || g.status === "draft").length + ")"],
               ["courage", "Courage (" + ((d.courage && d.courage.inWindow) || 0) + ")"],
               ["review", "This week" + (((d.reviews || [])[0] || {}).reviewed ? " ✓" : "")]].map(([k, label]) => (
               <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -6276,17 +6276,34 @@ function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
     setSaving(true); setErr("");
     NGGApi.member.mentorGoal(subjectId, { goal, dueOn })
       .then(() => { setGoal(""); setDueOn(""); onDone(); })
-      .catch(er => setErr((er && er.message) || "Could not save that."))
+      .catch(er => setErr(mtrGateErr(er, "Could not save that.")))
       .then(() => setSaving(false));
   };
+  /* Goals are draft | active | achieved | paused. This panel was written for
+     the older open | done | dropped and compared against "open", which no
+     goal has carried since: every goal read as closed, Done and Drop never
+     appeared, and the only way to make a goal live was a Reopen that skipped
+     the mentee's agreement. A draft now goes live when the mentor records
+     that the mentee agreed it, which is the rule the server keeps. */
+  const GOAL_ERR = { not_agreed: "They need to agree the goal before it goes live.", no_wish: "Write the goal first.",
+                     goals_locked_connect: "Goals open after the first three weeks — this is still getting-to-know-you time." };
+  const fail = (er, fb) => setErr(GOAL_ERR[er && er.message] || mtrGateErr(er, fb));
   const setStatus = (id, status) => {
     setBusy(true);
     NGGApi.member.mentorGoalStatus(subjectId, id, status)
-      .then(() => onDone()).catch(er => setErr((er && er.message) || "Could not update that."))
+      .then(() => onDone()).catch(er => fail(er, "Could not update that."))
       .then(() => setBusy(false));
   };
-  const open = d.goals.filter(g => g.status === "open");
-  const closed = d.goals.filter(g => g.status !== "open");
+  const agreeAndStart = (g) => {
+    setBusy(true);
+    // The goal route rewrites the wish and the date with whatever is sent, so both go back as they are.
+    NGGApi.member.mentorGoal(subjectId, { id: g.id, goal: g.goal, dueOn: g.dueOn || "", agreed: true })
+      .then(() => NGGApi.member.mentorGoalStatus(subjectId, g.id, "active"))
+      .then(() => onDone()).catch(er => fail(er, "Could not start that goal."))
+      .then(() => setBusy(false));
+  };
+  const open = d.goals.filter(g => g.status === "active" || g.status === "draft");
+  const closed = d.goals.filter(g => g.status !== "active" && g.status !== "draft");
   return (
     <>
       <form onSubmit={add} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -6309,31 +6326,35 @@ function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
           <li key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
                 background: MC_CARD, borderRadius: 13, padding: "11px 14px",
                 border: "1px solid " + (g.overdue ? "rgba(255,150,90,.5)" : "rgba(255,255,255,.12)"),
-                opacity: g.status === "open" ? 1 : .6 }}>
+                opacity: g.status === "active" || g.status === "draft" ? 1 : .6 }}>
             <div style={{ flex: "1 1 160px", minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600,
-                            textDecoration: g.status === "done" ? "line-through" : "none" }}>{g.goal}</div>
+                            textDecoration: g.status === "achieved" ? "line-through" : "none" }}>{g.goal}</div>
               <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", fontVariantNumeric: "tabular-nums" }}>
                 {g.dueOn ? "due " + g.dueOn : "no date"}
                 {/* The word as well as the colour. */}
                 {g.overdue ? " · OVERDUE" : ""}
-                {g.status !== "open" ? " · " + g.status : ""}
+                {g.status !== "active" ? " · " + (g.status === "draft" ? "draft, not agreed yet" : g.status) : ""}
                 {g.setByName ? " · " + g.setByName : ""}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-              {g.status === "open" ? <>
-                <button onClick={() => setStatus(g.id, "done")} disabled={busy}
+              {g.status === "draft" ? (
+                <button onClick={() => agreeAndStart(g)} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid #7fd1a6",
+                           background: "transparent", color: "#a7e8c6", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>They agreed · start it</button>
+              ) : g.status === "active" ? <>
+                <button onClick={() => setStatus(g.id, "achieved")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid #7fd1a6",
                            background: "transparent", color: "#a7e8c6", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✓ Done</button>
                 {/* 'Drop' exists so a goal that stopped being the right goal is
                     not cleared by pretending it was achieved. A record where
                     everything is always achieved is a record nobody believes. */}
-                <button onClick={() => setStatus(g.id, "dropped")} disabled={busy}
+                <button onClick={() => setStatus(g.id, "paused")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
                            background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Drop</button>
               </> : (
-                <button onClick={() => setStatus(g.id, "open")} disabled={busy}
+                <button onClick={() => setStatus(g.id, "active")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
                            background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Reopen</button>
               )}
@@ -6823,9 +6844,13 @@ function MentorPortal() {
   const [concernOn, setConcernOn] = React.useState(false);
   const [remarkOn, setRemarkOn] = React.useState(null); // child whose thread is open
   const navy = "#16223e", gold = "#ffce54";
+  /* A reload after a save refreshes in place. It used to set "loading", which
+     swapped the whole portal for a spinner — unmounting an open child record,
+     so every saved meeting or goal threw the mentor back to its first tab. */
+  const ready = React.useRef(false);
   const load = React.useCallback((c, sc) => {
-    setState("loading");
-    NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); })
+    if (!ready.current) setState("loading");
+    NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); ready.current = true; })
       .catch(e => {
         const c2 = e.code || e.message;
         setState(c2 === "unauthorized" ? "need-auth"

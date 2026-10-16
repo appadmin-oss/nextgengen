@@ -403,7 +403,10 @@ function mentor_goal_checks_for(array $goalIds): array {
 function mentor_goal_stalled(array $goal, string $today): bool {
     if ((string)($goal['status'] ?? '') !== 'active') return false;
     $c = $goal['checks'] ?? [];
-    $last = $c ? (string)end($c)['at'] : substr((string)($goal['updatedAt'] ?: $goal['createdAt'] ?: $today), 0, 10);
+    /* With no check-in yet, the clock runs from when the goal was made — not
+     * from its last edit, which restarted the 21 days every time somebody
+     * fixed a typo in the title. */
+    $last = $c ? (string)end($c)['at'] : substr((string)(($goal['createdAt'] ?? '') ?: ($goal['updatedAt'] ?? '') ?: $today), 0, 10);
     if ((strtotime($today . 'T00:00:00Z') - strtotime(substr($last, 0, 10) . 'T00:00:00Z')) / 86400 > MENTOR_GOAL_STALLED_DAYS) return true;
     $n = count($c);
     return $n >= 3 && $c[$n - 1]['progress'] <= $c[$n - 3]['progress'];
@@ -430,10 +433,11 @@ function mentor_goal_status(array $p): array {
     $paused = null;
     if ($status === 'active') {
         if (trim((string)$row['goal']) === '') return ['ok' => false, 'error' => 'no_wish'];
-        if ((int)$row['agreed'] !== 1 && empty($p['legacy'])) {
-            // An older screen (open = active) never asked; a goal it set was agreed in the room.
-            if (!in_array((string)($p['status'] ?? ''), ['open'], true)) return ['ok' => false, 'error' => 'not_agreed'];
-        }
+        /* The mentee's agreement is the rule, not a screen's convention. The
+         * older panel sent "open" and was waved through on the assumption the
+         * goal "was agreed in the room"; that let any client skip it by sending
+         * the old word. The panel now records the agreement first. */
+        if ((int)$row['agreed'] !== 1) return ['ok' => false, 'error' => 'not_agreed'];
         $prev = db_row("SELECT id, goal FROM mentor_goals WHERE subjectId = ? AND status = 'active' AND id <> ? LIMIT 1", [(string)$s['id'], $id]);
         if ($prev) { db_update('mentor_goals', ['status' => 'paused', 'updatedAt' => now_iso()], ['id' => (int)$prev['id']]); $paused = ['id' => (int)$prev['id'], 'goal' => (string)$prev['goal']]; }
     }
