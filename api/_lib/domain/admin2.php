@@ -688,16 +688,75 @@ function admin_assign_mentor(array $p): array {
     $sessionId = (string)($p['sessionId'] ?? ($sc['current']['sessionId'] ?? ''));
     if (!$memberId) return ['ok' => false, 'error' => 'no_member'];
     $sg = admin_member_scope_gate($g['requester'], $memberId); if (!$sg['ok']) return $sg;
-    // End any current active links for this member+session.
-    db_exec("UPDATE mentor_assignments SET status='ended', endedAt=? WHERE memberId=? AND sessionId=? AND status='active'", [now_iso(), $memberId, $sessionId]);
+    $mentor = null;
     if ($mentorId) {
-        $mentor = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]);
-        $track = $mentor && $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
-        db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => now_iso(), 'endedAt' => '']);
+        $mentor = db_row("SELECT * FROM mentors WHERE mentorId = ? AND status = 'active' LIMIT 1", [$mentorId]);
+        if (!$mentor) return ['ok' => false, 'error' => 'mentor_not_found'];
+    }
+    $now = now_iso();
+    /* A child has one mentor at a time. Every active link ends, whichever
+     * session it was made in — ending only this session's left a pairing
+     * from an earlier term active beside the new one, so the child sat in two
+     * mentors' caseloads and counted toward both mentors' commitments. */
+    db_exec("UPDATE mentor_assignments SET status='ended', endedAt=? WHERE memberId=? AND status='active'", [$now, $memberId]);
+    if ($mentor) {
+        $track = $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
+        db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => $now, 'endedAt' => '']);
         push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => ($mentor['fullName'] ?? 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
     }
-    audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    $match = admin_assign_mentor_sync_match($memberId, $mentor, (string)$g['requester']['memberId']);
+    audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId, 'match' => $match], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'match' => $match];
+}
+
+/**
+ * Keep the match — the record the cadence tasks, the week-3 goal lock, pod
+ * loads and the relationship phase are all read from — in step with a pairing
+ * made by hand. admin_assign_mentor wrote only mentor_assignments, so a child
+ * paired here had no tasks, unlocked goals and week 0; and after a
+ * reassignment the old mentor kept the match, its tasks and the pod place.
+ *
+ *   no mentor (unpair)      → the live match closes
+ *   an offer is open        → it is resolved in favour of this mentor
+ *   a different mentor      → the old match closes (its tasks are cancelled)
+ *                             and a new one starts: a new relationship has its
+ *                             own Connect phase
+ *   no match yet            → one is started, with its cadence
+ *   the same mentor         → nothing changes
+ *
+ * NGG members only: pods are an NGG programme (ms_mentor_is_ngg); a Summer
+ * School child keeps the plain assignment. Returns what it did.
+ */
+function admin_assign_mentor_sync_match(string $memberId, ?array $mentor, string $by): string {
+    if (!function_exists('ms_live_match')) return 'none';
+    $mem = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$mem || !member_is_ngg($mem)) return 'not_ngg';
+    $live = ms_live_match($memberId);
+    $mentorId = $mentor ? (string)$mentor['mentorId'] : '';
+    if ($live && (string)$live['status'] !== 'offered' && (string)$live['mentorId'] === $mentorId) return 'unchanged';
+    if ($live) {
+        if ((string)$live['status'] === 'offered') {
+            db_exec("UPDATE mentor_match_offers SET status = 'declined' WHERE matchId = ? AND status = 'open'", [$live['matchId']]);
+            if ($mentorId === '') { db_update('mentor_matches', ['status' => 'closed', 'closedAt' => now_iso(), 'closeReason' => 'Withdrawn by staff', 'updatedAt' => now_iso()], ['matchId' => $live['matchId']]); return 'offer_withdrawn'; }
+            $start = gmdate('Y-m-d');
+            db_update('mentor_matches', ['mentorId' => $mentorId, 'status' => 'active', 'phase' => 'connect', 'startedAt' => $start,
+                'chosenBy' => 'staff', 'updatedAt' => now_iso()], ['matchId' => $live['matchId']]);
+            $live['mentorId'] = $mentorId;
+            ms_cadence_create($live, $start);
+            return 'offer_resolved';
+        }
+        ms_set_status($live, 'closed', $mentorId === '' ? 'Unpaired by staff' : 'Reassigned by staff', $by);
+        if ($mentorId === '') return 'closed';
+    } elseif ($mentorId === '') {
+        return 'none';
+    }
+    $start = gmdate('Y-m-d');
+    $new = ['matchId' => ms_new_match_id(), 'memberId' => $memberId, 'mentorId' => $mentorId, 'centre' => (string)($mem['centre'] ?? ''),
+        'track' => (string)($mem['track'] ?? ''), 'phase' => 'connect', 'status' => 'active', 'offeredAt' => '', 'startedAt' => $start,
+        'chosenBy' => 'staff', 'agreementJson' => '', 'closingAt' => '', 'closedAt' => '', 'closeReason' => '', 'createdBy' => $by, 'updatedAt' => now_iso()];
+    db_insert('mentor_matches', $new);
+    ms_cadence_create($new, $start);
+    return $live ? 'reassigned' : 'started';
 }
 
 // ── Applications review ─────────────────────────────────────────────────────

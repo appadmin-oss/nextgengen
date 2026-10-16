@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 145;
+const NGG_SCHEMA_TARGET = 146;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -87,6 +87,14 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 146 — one active mentor per child: end duplicate active pairings,
+     * keeping each child's newest. Matches nothing once they are gone. */
+    'mentor_assignments.one_active' => "
+        UPDATE mentor_assignments a
+          JOIN (SELECT memberId, MAX(id) keepId FROM mentor_assignments WHERE status = 'active' GROUP BY memberId) k ON k.memberId = a.memberId
+           SET a.status = 'ended', a.endedAt = '2026-10-16T00:00:00Z'
+         WHERE a.status = 'active' AND a.id <> k.keepId
+    ",
     /* 138 — goal statuses become draft | active | achieved | paused. */
     'mentor_goals.status' => "
         UPDATE mentor_goals SET status = CASE status WHEN 'open' THEN 'active' WHEN 'done' THEN 'achieved' WHEN 'dropped' THEN 'paused' ELSE status END
@@ -4597,6 +4605,16 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_ccs_slot ON club_class_sessions(course, centre, date);
             CREATE INDEX IF NOT EXISTS idx_ccs_instr ON club_class_sessions(instructorId, date);",
+
+        /* One mentor per child. admin_assign_mentor ended only the current
+         * session's link, so a pairing from an earlier term could stay active
+         * beside the new one — the child in two caseloads. Both write paths
+         * now end every active link first; this ends the duplicates already
+         * there, keeping each child's newest. Data only, no DDL. */
+        146 => "
+            UPDATE mentor_assignments SET status = 'ended', endedAt = '2026-10-16T00:00:00Z'
+             WHERE status = 'active'
+               AND id NOT IN (SELECT keep FROM (SELECT MAX(id) keep FROM mentor_assignments WHERE status = 'active' GROUP BY memberId) k);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

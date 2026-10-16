@@ -53,7 +53,27 @@ function mentoring_open(array $p): array {
     // sensitive as a star, so it is not gated more loosely.
     if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     if (!mentor_covers($g, $s['kind'] === 'member' ? 'ngg' : 'summer')) return ['ok' => false, 'error' => 'not_your_cohort'];
+    /* No child's record reaches a mentor whose safeguarding screening is not
+     * recorded. The v14 portal enforced this (mp_screened); when it was
+     * withdrawn, these legacy ops became the only mentor path and they did
+     * not. Stars and V3 do not come through here — a star is not a record. */
+    if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
     return ['ok' => true, 'g' => $g, 'subject' => $s];
+}
+
+/** Staff and instructors are screened by their role; a mentor by their record. */
+function mentoring_screened(array $g): bool {
+    if (($g['role'] ?? '') !== 'mentor') return true;
+    $row = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [(string)($g['mentorId'] ?? '')]);
+    if (!$row) return false;
+    return function_exists('ms_clearance') ? (bool)ms_clearance($row)['screened'] : trim((string)($row['checkedAt'] ?? '')) !== '';
+}
+
+/** The children actively paired with this mentor (any session). */
+function mentoring_caseload(array $g): array {
+    $mid = (string)($g['mentorId'] ?? '');
+    if ($mid === '') return [];
+    return array_map('strval', array_column(db_all("SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'", [$mid]), 'memberId'));
 }
 
 /** ISO week periods, newest last — the x-axis of the V3 trend. */
@@ -201,6 +221,19 @@ function mentor_meeting_save(array $p): array {
     $concern = !empty($p['concern']) ? 1 : 0;
     $now = now_iso();
     $id = (int)($p['id'] ?? 0);
+    /* A concern marked on a meeting opens a safeguarding case, the same as
+     * the portal's Report-a-concern sheet (mp_concern_file): the officer is
+     * told today, concernEscalate watches it, and a centre with no lead mentor
+     * no longer means nobody hears. Once per note — editing a note that is
+     * already a concern does not open a second case. */
+    $fileCase = function () use ($g, $s, $kind, $metOn, $discussed, $agreed, $p) {
+        if (!function_exists('mp_concern_file')) return null;
+        $body = 'Raised from a mentor\'s meeting note (' . $kind . ', ' . $metOn . ").\n\n"
+              . ($discussed !== '' ? "Discussed:\n" . $discussed . "\n\n" : '')
+              . ($agreed !== '' ? "Agreed:\n" . $agreed : '');
+        $r = mp_concern_file($g['member'], $s, 'Something they told me', trim($body), (string)($p['ip'] ?? ''), 'mentor.meeting');
+        return !empty($r['ok']) ? (string)$r['ref'] : null;
+    };
 
     if ($id > 0) {
         $row = db_row('SELECT * FROM mentor_meetings WHERE id = ? LIMIT 1', [$id]);
@@ -214,7 +247,9 @@ function mentor_meeting_save(array $p): array {
         db_update('mentor_meetings', ['metOn' => $metOn, 'kind' => $kind, 'discussed' => $discussed,
             'agreed' => $agreed, 'concern' => $concern, 'updatedAt' => $now], ['id' => $id]);
         audit('mentor.meeting.update', $me, (string)$s['id'], ['id' => $id, 'concern' => $concern], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'id' => $id];
+        $case = ($concern && !(int)$row['concern']) ? $fileCase() : null;
+        if ($concern && !(int)$row['concern']) mentoring_tell_leads($s, $g, $me);
+        return ['ok' => true, 'id' => $id, 'caseRef' => $case];
     }
 
     $newId = db_insert('mentor_meetings', [
@@ -229,15 +264,21 @@ function mentor_meeting_save(array $p): array {
     /* A concern is raised, not merely stored. The point of the flag is that
      * somebody senior finds out without the mentor having to know who that is
      * today. */
+    $case = null;
     if ($concern) {
-        foreach (mentoring_leads((string)($s['centre'] ?? ''), $me) as $leadId) {
-            push_notification($leadId, ['kind' => 'mentor',
-                'title' => 'A mentor has raised a concern',
-                'body' => (string)$s['fullName'] . ' — logged by ' . (string)($g['mentor']['fullName'] ?? 'a mentor') . '.',
-                'linkPage' => 'mentor']);
-        }
+        $case = $fileCase();
+        mentoring_tell_leads($s, $g, $me);
     }
-    return ['ok' => true, 'id' => $newId];
+    return ['ok' => true, 'id' => $newId, 'caseRef' => $case];
+}
+
+function mentoring_tell_leads(array $s, array $g, string $me): void {
+    foreach (mentoring_leads((string)($s['centre'] ?? ''), $me) as $leadId) {
+        push_notification($leadId, ['kind' => 'mentor',
+            'title' => 'A mentor has raised a concern',
+            'body' => (string)$s['fullName'] . ' — logged by ' . (string)($g['mentor']['fullName'] ?? 'a mentor') . '.',
+            'linkPage' => 'mentor']);
+    }
 }
 
 /** Lead mentors at a centre, minus the person who just wrote — nobody needs a
@@ -460,11 +501,24 @@ function mentor_attention(array $p): array {
     $use = $want !== '' ? [$want] : $centres;
     if (!$use) return ['ok' => true, 'concerns' => [], 'overdue' => [], 'centres' => $centres, 'centre' => $want];
 
+    // Unscreened: nothing about a child, as on the record itself.
+    if (!mentoring_screened($g)) return ['ok' => true, 'concerns' => [], 'overdue' => [], 'centres' => $centres, 'centre' => $want, 'screened' => false];
+
     $in = '(' . implode(',', array_fill(0, count($use), '?')) . ')';
     $since = gmdate('Y-m-d', time() - 60 * 86400);
+    /* What a concern says is for the people responsible for that child: leads
+     * and staff for the centre, the mentor who wrote it, and the child's own
+     * mentor. It was every mentor at the centre — peers included — reading
+     * what another mentor wrote about somebody else's mentee. */
+    $who = ''; $whoArgs = [];
+    if (!in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true) && ($g['role'] ?? '') === 'mentor') {
+        $mine = mentoring_caseload($g);
+        $who = ' AND (mentorId = ?' . ($mine ? ' OR subjectId IN (' . implode(',', array_fill(0, count($mine), '?')) . ')' : '') . ')';
+        $whoArgs = array_merge([(string)$g['member']['memberId']], $mine);
+    }
     $concerns = db_all("SELECT id, subjectId, subjectType, metOn, kind, discussed, agreed, mentorName, centre
-                        FROM mentor_meetings WHERE concern = 1 AND centre IN $in AND metOn >= ?
-                        ORDER BY metOn DESC, id DESC LIMIT 60", array_merge($use, [$since]));
+                        FROM mentor_meetings WHERE concern = 1 AND centre IN $in AND metOn >= ?$who
+                        ORDER BY metOn DESC, id DESC LIMIT 60", array_merge($use, [$since], $whoArgs));
     $today = gmdate('Y-m-d');
     $overdue = db_all("SELECT id, subjectId, goal, dueOn, setByName, centre FROM mentor_goals
                        WHERE status = 'active' AND dueOn <> '' AND dueOn < ? AND centre IN $in

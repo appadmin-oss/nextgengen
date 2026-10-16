@@ -5629,7 +5629,7 @@ function MentorChildSheet({ student, onClose, onChanged }) {
   const load = React.useCallback(() => {
     NGGApi.member.mentorChild(student.studentId)
       .then(r => { setD(r); setErr(""); })
-      .catch(e => setErr((e && e.message) || "Could not open that record."));
+      .catch(e => setErr(mtrGateErr(e, "Could not open that record.")));
   }, [student.studentId]);
   React.useEffect(() => { load(); }, [load]);
   // Escape closes, and focus starts on the close control rather than wherever
@@ -5902,7 +5902,7 @@ function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
     NGGApi.member.mentorMeeting(subjectId, { id: (entry && entry.id) || 0, metOn, kind, discussed, agreed, concern })
       .then(() => onSaved())
       .catch(er => { setErr((er && er.message) === "too_long" ? "That is longer than the record will hold — keep it to the essentials."
-                                                             : ((er && er.message) || "Could not save that.")); setSaving(false); });
+                                                             : mtrGateErr(er, "Could not save that.")); setSaving(false); });
   };
   return (
     <form onSubmit={save} style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.16)",
@@ -5939,9 +5939,9 @@ function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
         <input type="checkbox" checked={concern} onChange={e => setConcern(e.target.checked)}
           style={{ width: 20, height: 20, marginTop: 2, accentColor: "#ff9d5c", flex: "none" }}/>
         <span style={{ fontSize: 13.5, lineHeight: 1.45 }}>
-          <b>This needs a lead's attention.</b>
+          <b>This is a concern about the child.</b>
           <span style={{ display: "block", color: "rgba(230,238,255,.6)", fontSize: 12.5 }}>
-            The lead mentors at this centre are told straight away. Use it whenever you are unsure — that is what it is for.
+            It opens a case for the centre's safeguarding officer today, and the lead mentors are told. Use it whenever you are unsure — that is what it is for.
           </span>
         </span>
       </label>
@@ -6726,9 +6726,17 @@ function MentorPlan({ subjectId, term, onBack }) {
  * Control Room reads (member.mentor.concern.create → safeguarding_cases). Not
  * on the child's record, not shown to the family, not editable once sent. The
  * button is in the portal's header for every mentor, cleared or not. */
+/* What the record gate's refusals mean, in a mentor's words. */
+const MTR_GATE_ERR = {
+  not_screened: "Your safeguarding check isn't recorded yet, so children's records stay closed to you. Ask your lead mentor — you can still report a concern.",
+  not_your_centre: "That child isn't in your centre or class.",
+  not_your_cohort: "That child is in a programme you don't mentor.",
+};
+const mtrGateErr = (e, fallback) => MTR_GATE_ERR[e && e.message] || (e && e.message) || fallback;
 const MTR_CONCERN_KINDS = ["Something they told me", "Injury or harm", "Neglect", "Online safety", "An adult’s behaviour", "Something else"];
 const MTR_CONCERN_ERR = { choose_the_child: "Choose the child first.", choose_the_kind: "Choose what kind of concern it is.",
-  say_what_happened: "Say what happened, in your own words.", not_found: "That child could not be found." };
+  say_what_happened: "Say what happened, in your own words.", not_found: "That child could not be found.",
+  not_a_mentor: "Only mentors and staff can report from here — tell a mentor or the centre lead." };
 function MentorConcernSheet({ students, onClose }) {
   const [who, setWho] = React.useState("");
   const [cat, setCat] = React.useState("");

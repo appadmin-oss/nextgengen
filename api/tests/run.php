@@ -8902,7 +8902,8 @@ chk('scoped dashboard volunteer counts are scoped too', (function () use ($SCOPE
 
 // ── Mentor Portal + stars ───────────────────────────────────────────────────
 db_insert('members', ['memberId' => 'NGG-2025-0500', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+// Screened: these mentors write children's records, which an unscreened mentor may not (mentoring_open).
+db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
 chk('mentor roster lists their centre class only', (function () {
     $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
     if (empty($r['ok'])) return false;
@@ -9401,7 +9402,7 @@ chk('a member can read their own courage record', (function () {
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-COURAGE', 'fullName' => 'Nia NGG-Mentor', 'email' => 'couragementor@example.com',
-        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     $mk = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0511',
         'subjectId' => 'NGG-2025-0510', 'score' => 4,
         'evidence' => 'Apologised to the group without being prompted.']);
@@ -20001,21 +20002,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-NGG-1', 'fullName' => 'Nkechi Mentor', 'email' => 'nkechi@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
-        'memberId' => 'NGG-MENT-1', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-MENT-1', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     // A second mentor at the same centre, so "mine" is provably not "everyone".
     db_insert('members', ['memberId' => 'NGG-MENT-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-NGG-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
-        'memberId' => 'NGG-MENT-2', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-MENT-2', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     // A lead at the centre — the person a raised concern must reach.
     db_insert('members', ['memberId' => 'NGG-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'lead',
-        'memberId' => 'NGG-LEAD-1', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-LEAD-1', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
 
     // Four children at Egbeda, one at Ayobo.
     foreach ([['NGG-KID-1', 'Ada Child', 'Egbeda'], ['NGG-KID-2', 'Bola Child', 'Egbeda'],
@@ -20207,6 +20208,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     $G = static fn(array $x) => backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1'] + $x);
     $GS = static fn(int $id, string $st) => backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'id' => $id, 'status' => $st]);
+    /* Admin pairing now starts a match (admin_assign_mentor_sync_match), and
+       a new relationship is in its Connect phase: goals are locked for three
+       weeks (R5). The pairing above is fresh, so that is what it gets. */
+    chk('a fresh admin pairing starts a match, with its cadence tasks, in Connect',
+        ($mx = ms_live_match('NGG-KID-1')) && $mx['status'] === 'active' && $mx['mentorId'] === 'MEN-NGG-1' && $mx['phase'] === 'connect'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$mx['matchId']])['c'] > 0);
+    chk('…so goals are locked for its first weeks, as for a chosen match',
+        ($G(['goal' => 'Anything at all.'])['error'] ?? '') === 'goals_locked_connect');
+    // The goal rules below are about an established relationship: two months in.
+    db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-KID-1' AND status = 'active'", [gmdate('Y-m-d', time() - 60 * 86400)]);
     // A goal starts as a Draft, written with the mentee (WOOP). It may be empty to begin with.
     $g0 = $G([]);
     chk('a new goal is a Draft, and a goal with no words cannot go live', ($g0['status'] ?? '') === 'draft'
@@ -20277,6 +20288,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // Leave the fixtures behind for the suites that follow.
     db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'NGG-KID%'");
+    // Admin pairing now opens matches and their cadence; they leave with the children.
+    db_exec("DELETE FROM mentor_tasks WHERE memberId LIKE 'NGG-KID%'");
+    db_exec("DELETE FROM mentor_matches WHERE memberId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM mentor_assignments WHERE mentorId LIKE 'MEN-NGG%'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-MENT-1','NGG-MENT-2','NGG-LEAD-1')");
@@ -26839,6 +26853,99 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     $GLOBALS['__crm_push_transport'] = null;
     $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+})();
+
+// ── Mentor Portal functional pass (2026-10-16): the live findings ─────────
+(function () {
+    $C = 'Fixville'; $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_matches' => 'memberId', 'mentor_tasks' => 'memberId',
+                  'mentor_meetings' => 'subjectId', 'safeguarding_cases' => 'subjectId'] as $t => $c) {
+            db_exec("DELETE FROM $t WHERE $c LIKE 'FIX-%'");
+        }
+        db_exec("DELETE FROM members WHERE memberId LIKE 'FIXM-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'FIXT-%'");
+    };
+    $wipe();
+    $mem = function ($id, $name, $role = 'member') use ($C, $now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => $role, 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $ment = function ($tid, $mid, $name, $screened, $rank = 'mentor') use ($C, $now, $mem) {
+        $mem($mid, $name);
+        db_insert('mentors', ['mentorId' => $tid, 'fullName' => $name, 'email' => strtolower($mid) . '@example.com', 'status' => 'active',
+            'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => $screened ? '2026-01-01' : '', 'createdAt' => $now]);
+    };
+    $mem('FIX-KID-1', 'Kemi Child'); $mem('FIX-KID-2', 'Tobi Child'); $mem('FIXM-ADM', 'Fix Admin', 'super_admin'); $mem('FIXM-PLAIN', 'Plain Member');
+    $ment('FIXT-A', 'FIXM-A', 'Ada Screened', true);
+    $ment('FIXT-B', 'FIXM-B', 'Bola Screened', true);
+    $ment('FIXT-U', 'FIXM-U', 'Uche Unscreened', false);
+
+    // 1. Screening on the record.
+    chk('fix · an unscreened mentor cannot open a child\'s record',
+        (backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1'])['error'] ?? '') === 'not_screened');
+    chk('fix · …nor write a meeting about them',
+        (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1', 'discussed' => 'Anything'])['error'] ?? '') === 'not_screened');
+    chk('fix · a screened mentor at the centre still can',
+        !empty(backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-1'])['ok']));
+
+    // 5. Admin pairing keeps the match in step, and one mentor per child.
+    db_insert('mentor_assignments', ['memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B', 'track' => '', 'sessionId' => 'OLD-TERM', 'status' => 'active', 'startedAt' => '2025-01-01', 'endedAt' => '']);
+    $as = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-A', 'sessionId' => 'THIS-TERM']);
+    $act = db_all("SELECT mentorId FROM mentor_assignments WHERE memberId = 'FIX-KID-1' AND status = 'active'");
+    chk('fix · pairing ends a pairing from another session — one active mentor', count($act) === 1 && $act[0]['mentorId'] === 'FIXT-A');
+    $m1 = ms_live_match('FIX-KID-1');
+    chk('fix · pairing starts a match with its cadence', ($as['match'] ?? '') === 'started' && $m1 && $m1['mentorId'] === 'FIXT-A'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$m1['matchId']])['c'] > 0);
+    $as2 = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B']);
+    $old = db_row('SELECT * FROM mentor_matches WHERE matchId = ?', [$m1['matchId']]);
+    $m2 = ms_live_match('FIX-KID-1');
+    chk('fix · reassigning closes the old match and cancels its tasks; the new mentor gets a new one',
+        ($as2['match'] ?? '') === 'reassigned' && $old['status'] === 'closed'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$m1['matchId']])['c'] === 0
+        && $m2 && $m2['mentorId'] === 'FIXT-B' && $m2['matchId'] !== $m1['matchId']);
+    chk('fix · the old mentor no longer counts the child in their pod', !isset(ms_pod_loads()['FIXT-A']));
+    chk('fix · pairing the same mentor again changes nothing',
+        (backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B'])['match'] ?? '') === 'unchanged');
+    $un = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => '']);
+    chk('fix · unpairing closes the live match', ($un['match'] ?? '') === 'closed' && !ms_live_match('FIX-KID-1')
+        && !db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'FIX-KID-1' AND status = 'active'"));
+    chk('fix · an unknown mentor is refused rather than paired',
+        (backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-2', 'mentorId' => 'FIXT-NOBODY'])['error'] ?? '') === 'mentor_not_found');
+
+    // 3. A concern marked on a meeting opens a case — with or without a lead.
+    backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-2', 'mentorId' => 'FIXT-A']);
+    $mt = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'discussed' => 'Said someone at home hits her.', 'concern' => true]);
+    $cases = db_all("SELECT * FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'");
+    chk('fix · a meeting marked as a concern opens a safeguarding case (this centre has no lead mentor)',
+        !empty($mt['ok']) && count($cases) === 1 && $cases[0]['caseNo'] === $mt['caseRef'] && $cases[0]['reporterId'] === 'FIXM-A'
+        && str_contains($cases[0]['body'], 'Said someone at home hits her.'));
+    backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'id' => (int)$mt['id'], 'discussed' => 'Said someone at home hits her. Spoke to her again.', 'concern' => true]);
+    chk('fix · editing a note that is already a concern does not open a second case',
+        (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'")['c'] === 1);
+    $plain = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'discussed' => 'Talked about football.']);
+    $flip = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'id' => (int)$plain['id'], 'discussed' => 'Talked about football. Then said she is scared to go home.', 'concern' => true]);
+    chk('fix · marking an existing note as a concern opens its case then', !empty($flip['caseRef'])
+        && (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'")['c'] === 2);
+
+    // 2. Who reads concern text in the attention queue.
+    $att = fn($who) => array_column(backend_dispatch('member.mentor.attention', ['requesterId' => $who])['concerns'] ?? [], 'subjectId');
+    chk('fix · the child\'s own mentor (and author) sees the concern', in_array('FIX-KID-2', $att('FIXM-A'), true));
+    chk('fix · another mentor at the centre does not', !in_array('FIX-KID-2', $att('FIXM-B'), true));
+    chk('fix · an unscreened mentor sees no concerns at all', $att('FIXM-U') === []);
+    $ment('FIXT-L', 'FIXM-L', 'Lola Lead', true, 'lead');
+    chk('fix · a lead mentor at the centre does', in_array('FIX-KID-2', $att('FIXM-L'), true));
+
+    // 4. Report a concern: mentors and staff, about children in their scope.
+    $rep = fn($who, $kid) => backend_dispatch('member.mentor.concern.create', ['requesterId' => $who, 'subjectId' => $kid,
+        'category' => 'Something they told me', 'body' => 'She told me something worrying today.']);
+    chk('fix · a plain member cannot file a case through the mentor sheet', ($rep('FIXM-PLAIN', 'FIX-KID-1')['error'] ?? '') === 'not_a_mentor');
+    chk('fix · an unscreened mentor still can — the duty to report does not wait', !empty($rep('FIXM-U', 'FIX-KID-1')['ok']));
+    $mem('FIX-FAR-1', 'Far Child'); db_exec("UPDATE members SET centre = 'Elsewhere' WHERE memberId = 'FIX-FAR-1'");
+    chk('fix · a child outside their scope reads as not found, same as an id that does not exist',
+        ($rep('FIXM-A', 'FIX-FAR-1')['error'] ?? '') === 'not_found' && ($rep('FIXM-A', 'FIX-NOBODY')['error'] ?? '') === 'not_found');
+
+    $wipe();
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
