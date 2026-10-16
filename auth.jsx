@@ -288,6 +288,10 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [newPw, setNewPw] = React.useState("");
   const [masked, setMasked] = React.useState("");
   const [deliveryOk, setDeliveryOk] = React.useState(true); // false ⇒ mail relay hiccup
+  // A code was asked for this identifier. The server answers a real and an
+  // unknown account alike (auth_find_member()), so this means "asked", never
+  // "an account exists" — the copy below says "if there's an account".
+  const [sent, setSent] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [remember, setRemember] = React.useState(true); // "stay signed in for 30 days"
   const [cooldown, setCooldown] = React.useState(0); // seconds until a code can be resent
@@ -372,6 +376,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     const r = await NGGApi.auth.request(identifier.trim(), hp);
     setMasked(r.masked || "");
     setDeliveryOk(r.delivery !== false);
+    setSent(true);
     setStage("enter-otp");
     setCooldown(30); // let the user resend after 30s
   };
@@ -401,6 +406,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     try {
       const r = await NGGApi.auth.resetRequest(identifier.trim(), hp);
       setMasked(r.masked || "");
+      setSent(true);
       setDeliveryOk(r.delivery !== false);
       setResetToken("");
       setStage("reset-new");
@@ -477,7 +483,20 @@ function SignInModal({ seed, onClose, onVerified }) {
       {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
     </button>
   );
-  const knownId = identifier.trim().length >= 3 && (masked || stage === "password");
+  const knownId = identifier.trim().length >= 3 && (sent || masked || stage === "password");
+  // Honest without being an oracle: true for a real account and an unknown one.
+  // An unknown EMAIL is told by email that it has no account; a browser that
+  // has signed in here before is told on screen (no_account) instead.
+  const ifAccount = identifier.includes("@")
+    ? "If there’s an NGG account for this email, we’ve emailed it a 6-digit code."
+    : "If this is your Member ID, we’ve emailed a 6-digit code to the email on file.";
+  const nothingYet = (
+    <p className="signin-help signin-help--wait">
+      {identifier.includes("@")
+        ? "Nothing after a couple of minutes? Check spam and the spelling. If no account uses that email, we’ve emailed it to say so."
+        : "Nothing after a couple of minutes? Check spam, or try the email you joined with."}
+    </p>
+  );
 
   const title = stage === "enter-otp" ? "Check your email"
     : stage === "password" ? "Welcome back"
@@ -485,8 +504,8 @@ function SignInModal({ seed, onClose, onVerified }) {
   const sub = stage === "id" ? "Use your Member ID or email."
     : stage === "password" ? null
     : stage === "reset-request" ? "We’ll email you a code to set a new password."
-    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : masked ? <>Enter the code we sent to <b>{masked}</b>, then choose a password.</> : "Enter the code from your email, then choose a password.")
-    : masked ? <>Enter the 6-digit code we sent to <b>{masked}</b>.</> : "Enter your Member ID and the 6-digit code from your email.";
+    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
+    : (sent && knownId) ? ifAccount : "Enter your Member ID and the 6-digit code from your email.";
 
   return (
     <div
@@ -554,7 +573,7 @@ function SignInModal({ seed, onClose, onVerified }) {
             <span className="signin-label" id="signin-otp-l">6-digit code</span>
             <SignInCode id="signin-otp" labelledBy="signin-otp-l" value={otp} bad={!!err} autoFocus={!!(seed || knownId)} inputRef={seed || knownId ? inputRef : null}
               onChange={(v) => { setErr(""); setOtp(v); }} onComplete={(v) => { if (identifier.trim().length >= 3 || seed) verifyOtp(null, v); }}/>
-            {fieldErr}
+            {fieldErr || (sent && knownId && !seed ? nothingYet : null)}
             {submit("Sign in", otp.replace(/\s/g, "").length !== 6)}
             <div className="signin-alts">{resend(sendCode)}</div>
           </form>
@@ -586,6 +605,7 @@ function SignInModal({ seed, onClose, onVerified }) {
             <label className="signin-label" htmlFor="signin-newpw">New password</label>
             {pwField("signin-newpw", newPw, (e) => setNewPw(e.target.value), "new-password", resetToken ? inputRef : null, 8)}
             {fieldErr || <p className="signin-help">At least 8 characters.</p>}
+            {!resetToken && sent && !fieldErr && nothingYet}
             {submit("Set password and sign in", newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6))}
             {!resetToken && <div className="signin-alts">{resend(sendReset)}</div>}
           </form>
@@ -643,6 +663,9 @@ function SignInCode({ id, labelledBy, value, onChange, onComplete, bad, autoFocu
 function humanizeAuthError(code) {
   const map = {
     rate_limited: "Too many tries. Wait a minute and try again.",
+    // Only ever sent to a browser that has signed in here before (see
+    // auth_find_member()); a stranger's browser gets the neutral screen.
+    no_account: "We couldn’t find an account with that Member ID or email. Check it for typos, or apply below.",
     too_many_misses: "Too many sign-in attempts from this network. Try again in 30 minutes.",
     request_failed: "Something went wrong. Try again.",
     invalid: "That code isn’t right. Check it, or resend a new one.",

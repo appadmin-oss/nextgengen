@@ -1384,11 +1384,17 @@ chk('misses: the eighth unknown identifier from one address pauses it', (functio
     $ip = '203.0.113.77';
     attempt_reset('auth.miss', $ip);
     for ($i = 0; $i < AUTH_MISS_MAX - 1; $i++) {
-        if (empty(backend_dispatch('auth.gateway', ['identifier' => "bot$i@example.com", 'ip' => $ip])['ok'])) return false;
+        if (empty(backend_dispatch('auth.request', ['identifier' => "bot$i@example.com", 'ip' => $ip])['ok'])) return false;
     }
     $real = backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com', 'ip' => $ip]);
-    $last = backend_dispatch('auth.gateway', ['identifier' => 'bot-last@example.com', 'ip' => $ip]);
+    $last = backend_dispatch('auth.request', ['identifier' => 'bot-last@example.com', 'ip' => $ip]);
     return !empty($real['ok']) && !empty($last['ok']) && attempt_locked('auth.miss', $ip);
+})());
+chk('misses: the gateway, which sends nothing and answers alike, does not spend a miss', (function () {
+    $ip = '203.0.113.79';
+    attempt_reset('auth.miss', $ip);
+    for ($i = 0; $i < AUTH_MISS_MAX + 2; $i++) backend_dispatch('auth.gateway', ['identifier' => "typo$i@example.com", 'ip' => $ip]);
+    return !attempt_locked('auth.miss', $ip);
 })());
 chk('misses: while paused, a real account is refused the same way as an unknown one', (function () {
     $ip = '203.0.113.77';
@@ -1416,6 +1422,61 @@ chk('a suspended account answers like any other and is sent nothing', (function 
     $r = backend_dispatch('auth.request', ['identifier' => 'suspended771@example.com']);
     $n = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = 'NGG-2025-0771'")['n'];
     return ($g['methods'] ?? null) === ['code'] && !empty($r['ok']) && $n === 0;
+})());
+// ── A browser that has signed in here before is told plainly ──
+chk('known device: an unknown identifier is told no_account at the gateway and at request', (function () {
+    $dev = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+    attempt_reset('auth.honest', $dev);
+    $g = backend_dispatch('auth.gateway', ['identifier' => 'nobody-here@example.com', 'device' => $dev, 'ip' => '198.51.100.1']);
+    $r = backend_dispatch('auth.request', ['identifier' => 'nobody-here@example.com', 'device' => $dev, 'ip' => '198.51.100.1']);
+    $real = backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com', 'device' => $dev]);
+    attempt_reset('auth.honest', $dev); attempt_reset('auth.miss', '198.51.100.1');
+    return ($g['error'] ?? '') === 'no_account' && ($r['error'] ?? '') === 'no_account'
+        && ($real['methods'] ?? null) === ['code', 'password']
+        && !attempt_locked('auth.nobody', 'nobody-here@example.com');   // told on screen, so no email
+})());
+chk('known device: plain answers are rationed to AUTH_HONEST_PER_DAY, then it gets the neutral screen', (function () {
+    $dev = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+    attempt_reset('auth.honest', $dev);
+    for ($i = 0; $i < AUTH_HONEST_PER_DAY; $i++) {
+        if ((backend_dispatch('auth.gateway', ['identifier' => "probe$i@example.com", 'device' => $dev])['error'] ?? '') !== 'no_account') return false;
+    }
+    $after = backend_dispatch('auth.gateway', ['identifier' => 'probe-next@example.com', 'device' => $dev]);
+    attempt_reset('auth.honest', $dev);
+    return ($after['methods'] ?? null) === ['code'];
+})());
+chk('unknown email, unknown browser: neutral screen, and ONE "no account" email a day to that address', (function () {
+    $e = 'lastyear-parent@example.com';
+    attempt_reset('auth.nobody', $e);
+    $n0 = (int)db_row("SELECT COUNT(*) AS n FROM audit_log WHERE event LIKE 'login.nobody.%' AND subject = ?", [$e])['n'];
+    $a = backend_dispatch('auth.request', ['identifier' => $e]);
+    $b = backend_dispatch('auth.request', ['identifier' => $e]);
+    $c = backend_dispatch('auth.resetRequest', ['identifier' => $e]);
+    $n1 = (int)db_row("SELECT COUNT(*) AS n FROM audit_log WHERE event LIKE 'login.nobody.%' AND subject = ?", [$e])['n'];
+    attempt_reset('auth.nobody', $e);
+    return !empty($a['ok']) && !empty($b['ok']) && !empty($c['ok']) && $n1 - $n0 === 1;
+})());
+chk('"where it went" is the address typed, never the account\'s — so real and unknown read alike', (function () {
+    $realId  = backend_dispatch('auth.request', ['identifier' => 'NGG-2025-0770']);
+    $ghostId = backend_dispatch('auth.request', ['identifier' => 'NGG-2025-9999']);
+    $realEm  = backend_dispatch('auth.resetRequest', ['identifier' => 'tunde@example.com']);
+    db_exec("DELETE FROM auth_sessions WHERE memberId = 'NGG-2025-0770' AND purpose = 'login'");
+    return ($realId['masked'] ?? 'x') === '' && ($ghostId['masked'] ?? 'x') === ''
+        && ($realEm['masked'] ?? '') === mask_email('tunde@example.com');
+})());
+// The device cookie: signed, expiring, names no member, and not a session.
+require_once $ROOT . '/_lib/session.php';
+chk('device trust: a minted token reads back; a forged, re-signed-as-session or expired one does not', (function () {
+    $tok = device_trust_issue();
+    $id = device_trust_id($tok);
+    [$body, $sig] = explode('.', $tok, 2);
+    $p = json_decode(b64url_decode($body), true);
+    $forged = b64url(json_encode(['d' => str_repeat('c', 24), 'iat' => time(), 'exp' => time() + 99])) . '.' . $sig;
+    $asSession = $body . '.' . b64url(hash_hmac('sha256', $body, (string)$GLOBALS['CONFIG']['cookie_secret'], true));
+    $oldBody = b64url(json_encode(['d' => str_repeat('d', 24), 'iat' => 1, 'exp' => time() - 1]));
+    $expired = $oldBody . '.' . device_trust_sign($oldBody);
+    return preg_match('/^[0-9a-f]{24}$/', $id) && !isset($p['mid']) && device_trust_id($forged) === ''
+        && device_trust_id($asSession) === '' && device_trust_id($expired) === '' && device_trust_id('') === '';
 })());
 chk('the honeypot: an empty hp is a person, a filled one is a script', !bot_trap_tripped(['identifier' => 'x', 'hp' => ''])
     && !bot_trap_tripped(['identifier' => 'x']) && bot_trap_tripped(['identifier' => 'x', 'hp' => 'http://spam.example']));

@@ -1206,3 +1206,30 @@ suspended and real accounts identically, and what changed is the cost of asking:
 The on-screen wording for "we sent a code" (neutral "if there's an account…")
 and an inbox notice to an address with no account are proposed, not built,
 pending the owner's decision.
+
+## 2026-10-16 — Sign-in: honest to people, worthless to bots
+
+Follows the entry above. The owner's call: a browser that has signed in here
+before is safer, so it gets the plain answer; anyone else gets a neutral
+screen and the truth goes to the inbox.
+
+- **Known device.** `session_issue()` (a real sign-in, not impersonation) sets
+  a second cookie, `<cookie_name>_dev`: a random device id, HMAC-signed under
+  its own label (`device_trust_sign()`), 180 days, kept on sign-out on
+  purpose. It names no member and grants nothing but a franker error.
+  `device_trust_id()` reads it. The gateway, the code request and the reset request
+  answer such a browser with `no_account`, up to `AUTH_HONEST_PER_DAY` (5) a
+  day per device, after which it gets the neutral screen like anyone else.
+- **Everyone else.** Real and unknown accounts look the same: "If there’s an
+  NGG account for this email, we’ve emailed it a 6-digit code" (or "If this is
+  your Member ID…"). An unknown EMAIL gets one short "there’s no NGG account
+  for this email" note, at most one a day per address
+  (`auth_notify_no_account()`, attempt_guard `auth.nobody`). A Member ID has
+  no inbox and gets nothing.
+- `masked` is now the address the person TYPED (empty for a Member ID), never
+  the account's own: the old fake `a•@b.co` for an unknown ID was a tell.
+- The gateway no longer spends a network miss when it answers neutrally (it
+  sends nothing); `auth.request` / reset count every miss.
+- Tests: `api/tests/run.php`, under "A browser that has signed in here before".
+  Two `ui-smoke` failures about mentoring goals fail with this change stashed
+  too, so they predate it.

@@ -43,6 +43,10 @@ function session_issue(array $member, bool $adminOk = false, string $impBy = '',
         'samesite' => $CONFIG['cookie_samesite'],
     ]);
 
+    // A real sign-in (not a super-admin acting as somebody) marks this browser
+    // as one that has signed in before — see device_trust_issue().
+    if ($impBy === '') device_trust_issue();
+
     // Device register + new-device alert. Best-effort: sign-in must never
     // fail because bookkeeping did.
     try {
@@ -62,6 +66,60 @@ function session_issue(array $member, bool $adminOk = false, string $impBy = '',
         }
     } catch (Throwable $e) { /* bookkeeping only */ }
 
+    return $token;
+}
+
+/**
+ * "This browser has signed in here before" — a second, long-lived cookie that
+ * outlives sign-out on purpose: it is what lets the sign-in door give a known
+ * device a plain "no account with that email" while a stranger's browser gets
+ * the neutral answer (auth_find_member()).
+ *
+ * It names no member — only a random device id, an issue time and an expiry,
+ * HMAC-signed with cookie_secret under its own label so it can never be
+ * passed off as a session (and a session can never be passed off as it). It
+ * grants nothing: no session, no data, only a slightly franker error message
+ * on a small daily allowance. A valid id is kept across sign-ins; the expiry
+ * slides.
+ */
+const DEVICE_TRUST_TTL = 180 * 86400;
+
+function device_trust_cookie_name(): string {
+    global $CONFIG;
+    return (string)($CONFIG['cookie_name'] ?? 'ngg_sess') . '_dev';
+}
+
+function device_trust_sign(string $body): string {
+    global $CONFIG;
+    return b64url(hash_hmac('sha256', 'device-trust|' . $body, (string)$CONFIG['cookie_secret'], true));
+}
+
+/** The device id from a valid, unexpired cookie, or '' — never trusts an unsigned value. */
+function device_trust_id(?string $token = null): string {
+    $token = $token ?? (string)($_COOKIE[device_trust_cookie_name()] ?? '');
+    if ($token === '' || strlen($token) > 400 || substr_count($token, '.') !== 1) return '';
+    [$body, $sig] = explode('.', $token, 2);
+    if (!hash_equals(device_trust_sign($body), $sig)) return '';
+    $p = json_decode((string)b64url_decode($body), true);
+    if (!is_array($p) || (int)($p['exp'] ?? 0) < time()) return '';
+    $d = (string)($p['d'] ?? '');
+    return preg_match('/^[0-9a-f]{24}$/', $d) ? $d : '';
+}
+
+/** Mint (or refresh) the device cookie; returns the token. */
+function device_trust_issue(): string {
+    global $CONFIG;
+    $d = device_trust_id();
+    if ($d === '') $d = rand_hex(12);
+    $exp = time() + DEVICE_TRUST_TTL;
+    $body = b64url(json_encode(['d' => $d, 'iat' => time(), 'exp' => $exp], JSON_UNESCAPED_SLASHES));
+    $token = $body . '.' . device_trust_sign($body);
+    if (!headers_sent()) {
+        setcookie(device_trust_cookie_name(), $token, [
+            'expires'  => $exp, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+            'secure'   => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+        ]);
+    }
     return $token;
 }
 
