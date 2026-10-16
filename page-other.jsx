@@ -5619,17 +5619,47 @@ const PORTAL_ROLES = {
 
 const MC_NAVY = "#16223e", MC_GOLD = "#ffce54", MC_CARD = "rgba(255,255,255,.06)";
 
+/* Not my mentee: the record opens for a week once I say why. No approval to
+   wait for — the reason goes to the child's own mentor and the centre lead at
+   once, which is what keeps this both quick and safe. */
+const MTR_COVER_ERR = { say_why: "Say why in a sentence — it goes to their mentor and the lead.",
+  cover_limit: "You already have five records open on cover. They close after a week." };   // not_screened: mtrGateErr, at call time
+function MentorCoverAsk({ student, onOpened }) {
+  const [why, setWhy] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const first = (student.fullName || "This child").split(" ")[0];
+  const go = (e) => {
+    e.preventDefault(); setBusy(true); setErr("");
+    NGGApi.member.mentorCover(student.studentId, why)
+      .then(() => onOpened())
+      .catch(x => { setErr(MTR_COVER_ERR[x && x.message] || mtrGateErr(x, "That didn’t work. Try again.")); setBusy(false); });
+  };
+  return (
+    <form className="mtr-cover" onSubmit={go}>
+      <h3 className="mtr-cover-h">{first} isn’t one of your mentees</h3>
+      <p className="mtr-cover-p">If you’re covering for their mentor, or {first} came to you, you can open the record for a week. Say why: their mentor and the centre lead will see it straight away.</p>
+      <label className="mtr-cover-l" htmlFor="mtr-cover-why">Why you need it</label>
+      <textarea id="mtr-cover-why" className="mtr-cover-in" rows={2} value={why} onChange={e => setWhy(e.target.value)}
+                placeholder="e.g. Covering Ngozi’s pod this Saturday" maxLength={400}/>
+      {err && <p className="mtr-err" role="alert">{err}</p>}
+      <button type="submit" className="mtr-cover-go" disabled={busy || why.trim().length < 10}>{busy ? "Opening…" : "Open for a week"}</button>
+    </form>
+  );
+}
+
 function MentorChildSheet({ student, onClose, onChanged }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [needCover, setNeedCover] = React.useState(false);   // not my mentee: offer cover
   const [busy, setBusy] = React.useState(false);
   const [tab, setTab] = React.useState("record");
   const closeRef = React.useRef(null);
 
   const load = React.useCallback(() => {
     NGGApi.member.mentorChild(student.studentId)
-      .then(r => { setD(r); setErr(""); })
-      .catch(e => setErr(mtrGateErr(e, "Could not open that record.")));
+      .then(r => { setD(r); setErr(""); setNeedCover(false); })
+      .catch(e => { if (e && e.message === "not_your_mentee") { setNeedCover(true); setErr(""); } else setErr(mtrGateErr(e, "Could not open that record.")); });
   }, [student.studentId]);
   React.useEffect(() => { load(); }, [load]);
   // Escape closes, and focus starts on the close control rather than wherever
@@ -5666,7 +5696,11 @@ function MentorChildSheet({ student, onClose, onChanged }) {
         {err && <div role="alert" style={{ background: "rgba(255,90,110,.16)", border: "1px solid rgba(255,90,110,.5)",
                      borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 14 }}>{err}</div>}
 
-        {!d ? <div style={{ textAlign: "center", padding: "60px 0" }}><div className="dash-spinner"/></div> : <>
+        {needCover && <MentorCoverAsk student={student} onOpened={load}/>}
+        {d && d.access && d.access.via === "cover" && (
+          <p className="mtr-cover-note" role="status">You’re covering for this child’s mentor until {fmtDate(d.access.expiresAt)}. Their mentor and the centre lead have been told.</p>
+        )}
+        {needCover ? null : !d ? <div style={{ textAlign: "center", padding: "60px 0" }}><div className="dash-spinner"/></div> : <>
           <McStats d={d}/>
           <McV3 weeks={d.v3}/>
 
@@ -5862,6 +5896,7 @@ function McMeetings({ d, subjectId, busy, setBusy, onDone, setErr }) {
               <span style={{ flex: 1 }}/>
               <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{m.mentorName || "—"}</span>
             </div>
+            {m.withheld && <p className="mtr-cover-withheld">A concern was raised here. What it says is for the child’s own mentor and the centre lead — ask the lead if you need to know.</p>}
             {m.discussed ? <p style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{m.discussed}</p> : null}
             {m.agreed ? <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: "#a7e8c6", whiteSpace: "pre-wrap" }}>
               <b style={{ fontSize: 11, letterSpacing: ".08em" }}>AGREED </b>{m.agreed}</p> : null}
@@ -6390,7 +6425,8 @@ function MentorAttention({ centre, onOpenChild }) {
                        borderRadius: 12, padding: "10px 14px", fontSize: 14 }}>{err}</div>;
   if (!d) return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
 
-  const nothing = !d.concerns.length && !d.overdue.length;
+  const covers = d.covers || [];
+  const nothing = !d.concerns.length && !d.overdue.length && !covers.length;
   const card = { background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 14px" };
   const open = (id, name) => onOpenChild && onOpenChild({ studentId: id, fullName: name });
 
@@ -6427,6 +6463,21 @@ function MentorAttention({ centre, onOpenChild }) {
               {c.discussed ? <p style={{ margin: "0 0 4px", fontSize: 14, lineHeight: 1.5 }}>{c.discussed}</p> : null}
               {c.agreed ? <p style={{ margin: 0, fontSize: 13, color: "#a7e8c6" }}>
                 <b style={{ fontSize: 10.5, letterSpacing: ".08em" }}>AGREED </b>{c.agreed}</p> : null}
+            </li>
+          ))}
+        </ul>
+      </>}
+
+      {/* Who opened a record that is not their mentee's, and why — what makes
+          opening one without asking safe. Leads and staff only. */}
+      {covers.length > 0 && <>
+        <h3 className="mtr-att-h">Records opened on cover, last two weeks ({covers.length})</h3>
+        <ul className="mtr-cover-list">
+          {covers.map((c, i) => (
+            <li key={c.subjectId + c.grantedAt + i} className="mtr-cover-row">
+              <button type="button" className="mtr-cover-who" onClick={() => open(c.subjectId, c.fullName)}>{c.fullName || c.subjectId}</button>
+              <span className="mtr-cover-meta">opened by {c.mentorName || "a mentor"} · {fmtDate(c.grantedAt)}{c.expiresAt > new Date().toISOString() ? " · open until " + fmtDate(c.expiresAt) : " · closed"}</span>
+              <span className="mtr-cover-why">“{c.reason}”</span>
             </li>
           ))}
         </ul>

@@ -110,6 +110,10 @@ function gs_cache_topics(): array {
            page, so changing them has to reach it. Groups too: the page lists
            the courses actually running at each centre, which comes from them. */
         'summer'   => ['public.summer'],
+        /* The current and next programme session headline the public site, so
+           opening or closing a term must reach it on the next request, not
+           five minutes later. */
+        'sessions' => ['public.session'],
     ];
 }
 

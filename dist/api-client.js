@@ -668,6 +668,8 @@
       mentorRoster:  (centre, scope) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '' })),
       // The mentoring record for one child: history, meetings, goals.
       mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
+      // Open a record that is not my mentee's, for a week, saying why.
+      mentorCover:   (subjectId, reason) => request('/member/mentor.php', { body: { action: 'cover', subjectId, reason } }),
       mentorAttention: (centre) => request('/member/mentor.php' + qs({ view: 'attention', centre: centre || '' })),
       mentorMeeting: (subjectId, m) => request('/member/mentor.php', { body: Object.assign({ action: 'meeting', subjectId }, m || {}) }),
       mentorMeetingDelete: (subjectId, id) => request('/member/mentor.php', { body: { action: 'meetingDelete', subjectId, id } }),
@@ -1069,6 +1071,12 @@
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
     },
     admin: {
+      /* The accounts desk: who cannot sign in, and the members behind each
+         number. Nothing here ends an account — that is the MoU's question. */
+      accounts: {
+        overview: () => request('/admin/accounts.php'),
+        unlock:   (memberId) => request('/admin/accounts.php', { body: { action: 'unlock', memberId } }),
+      },
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
         upsert: (data) => request('/admin/members.php', { body: data }),

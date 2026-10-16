@@ -46,6 +46,7 @@ const CR_PAGES = {
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
     { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
+    { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },
   ] },
   mentors: { label: "Mentors & volunteers", icon: "handshake", tabs: [
     { id: "mentors", label: "Mentors", desc: "The mentor develops the person.", cap: "people" },

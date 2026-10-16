@@ -27,6 +27,119 @@ function adminJump(sectionId, tab) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+/* ── Member accounts ─────────────────────────────────────────────────────────
+ *
+ * Five signals about SIGNING IN, which is the one thing the members roster
+ * assumes and never checks. Each is a count, a sentence saying why it matters,
+ * and the members it counts — because a count nobody can act on is an
+ * accusation rather than a tool, and "14 locked out" with no names is exactly
+ * that.
+ *
+ * Nothing here ends an account. Whether a membership continues is settled by
+ * the MoU between NGG and the family; the screen says so rather than leaving
+ * an operator to look for a button that is deliberately absent.
+ */
+function AdminAccounts() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [openId, setOpenId] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.accounts.overview().then(setD)
+      .catch(e => setErr(e.code || e.message || "load_failed"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const unlock = async (m) => {
+    setBusy(m.memberId);
+    try {
+      await NGGApi.admin.accounts.unlock(m.memberId);
+      toast.success(m.fullName + " can sign in again.", "Lock lifted");
+      await load();
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Lock not lifted"); }
+    finally { setBusy(""); }
+  };
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+
+  const clean = (d.signals || []).every(s => s.count === 0);
+
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Member accounts</h2>
+        <div className="admin-section-actions">
+          <span className="mono acct-totals">
+            {fmtNum(d.totals.active)} active{d.totals.closed ? " · " + fmtNum(d.totals.closed) + " erased" : ""}
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+        </div>
+      </div>
+      <p className="admin-hint" style={{ marginTop: 0 }}>
+        Whether somebody can get in, which the roster assumes and never checks.
+        <b> Ending a membership is not done here</b> — that is settled by the agreement
+        between NGG and the family, and no button on this screen or a member&rsquo;s own
+        dashboard closes an account.
+      </p>
+
+      {clean ? (
+        <div className="admin-empty">
+          Nobody is locked out, everybody has an email to sign in with, and every staff
+          account has a second factor. Nothing to do.
+        </div>
+      ) : (
+        <div className="acct-signals">
+          {(d.signals || []).filter(s => s.count > 0).map(sig => {
+            const isOpen = openId === sig.id;
+            return (
+              <div key={sig.id} className="admin-panel acct-signal">
+                <button type="button" className="acct-signal-head"
+                  aria-expanded={isOpen} aria-controls={"acct-" + sig.id}
+                  onClick={() => setOpenId(isOpen ? "" : sig.id)}>
+                  <span className="mono acct-signal-n">{fmtNum(sig.count)}</span>
+                  <span className="acct-signal-text">
+                    <b>{sig.label}</b>
+                    <span className="acct-signal-why">{sig.why}</span>
+                  </span>
+                  <span className="acct-signal-caret" aria-hidden="true">{isOpen ? "–" : "+"}</span>
+                </button>
+                {isOpen && (
+                  <div id={"acct-" + sig.id} className="acct-list">
+                    {sig.members.map(m => (
+                      <div key={m.memberId} className="acct-row">
+                        <span className="acct-row-name">
+                          {m.fullName || "—"}
+                          <span className="mono acct-row-meta">
+                            {[m.displayId, m.centre].filter(Boolean).join(" · ") || m.memberId}
+                          </span>
+                        </span>
+                        {sig.id === "locked"
+                          ? <button type="button" className="btn btn-ghost btn-sm"
+                              disabled={busy === m.memberId} onClick={() => unlock(m)}>
+                              {busy === m.memberId ? "…" : "Lift the lock"}
+                            </button>
+                          : <span className="mono acct-row-meta">{m.email || "no email"}</span>}
+                      </div>
+                    ))}
+                    {sig.count > sig.members.length && (
+                      <div className="acct-more">
+                        …and {fmtNum(sig.count - sig.members.length)} more. The roster holds them all.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminAttendanceDuty() {
   const [date, setDate] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [data, setData] = React.useState(null);

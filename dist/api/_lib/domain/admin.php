@@ -990,12 +990,14 @@ function admin_sessions_upsert(array $p): array {
     $patch['updatedAt'] = now_iso();
     if ($existing) {
         db_update('sessions', $patch, ['id' => $existing['id']]);
+        cache_invalidate('sessions');
         audit('admin.session.update', $g['requester']['memberId'], $sessionId, [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'sessionId' => $sessionId];
     }
     $patch['sessionId'] = $sessionId ?: (strtoupper((string)($data['code'] ?? 'SESS')) . '-' . (int)($data['year'] ?? gmdate('Y')));
     $patch['createdAt'] = now_iso();
     db_insert('sessions', $patch);
+    cache_invalidate('sessions');
     audit('admin.session.create', $g['requester']['memberId'], $patch['sessionId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'sessionId' => $patch['sessionId']];
 }

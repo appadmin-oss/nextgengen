@@ -2582,7 +2582,7 @@ CREATE TABLE IF NOT EXISTS courage_marks (
   subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
   score INT NOT NULL,
   prompt VARCHAR(160) DEFAULT '',
-  evidence TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
   markedById VARCHAR(64) NOT NULL,
   markedByName VARCHAR(190) DEFAULT '',
   centre VARCHAR(80) DEFAULT '',
@@ -2677,7 +2677,7 @@ CREATE TABLE IF NOT EXISTS member_promotions (
   memberId VARCHAR(64) NOT NULL,
   fromStage VARCHAR(24) NOT NULL DEFAULT 'NGG',
   toStage VARCHAR(24) NOT NULL DEFAULT 'NGV',
-  evidence TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
   readiness TEXT,
   volunteerId VARCHAR(40) DEFAULT '',
   byId VARCHAR(64) NOT NULL,
@@ -2777,7 +2777,7 @@ CREATE TABLE IF NOT EXISTS admin_approvals (
   id INT AUTO_INCREMENT PRIMARY KEY,
   approvalId VARCHAR(40) NOT NULL UNIQUE,
   op VARCHAR(80) NOT NULL,
-  args MEDIUMTEXT NOT NULL,
+  args MEDIUMTEXT NOT NULL DEFAULT '',
   summary VARCHAR(500) NOT NULL DEFAULT '',
   requesterId VARCHAR(64) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'pending',
@@ -3031,7 +3031,7 @@ INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE versio
 CREATE TABLE IF NOT EXISTS contact_replies (
   id INT AUTO_INCREMENT PRIMARY KEY,
   messageId INT NOT NULL,
-  body TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
   sentBy VARCHAR(64) NOT NULL DEFAULT '',
   sentByName VARCHAR(255) NOT NULL DEFAULT '',
   sentAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3049,7 +3049,7 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   memberId VARCHAR(64) NOT NULL,
   applicationId INT NOT NULL DEFAULT 0,
   payToken VARCHAR(64) NOT NULL UNIQUE,
-  items TEXT NOT NULL,
+  items TEXT NOT NULL DEFAULT '[]',
   total INT NOT NULL DEFAULT 0,
   currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
   startDate VARCHAR(16) NOT NULL DEFAULT '',
@@ -3107,8 +3107,8 @@ CREATE TABLE IF NOT EXISTS photo_framing (
   urlKey CHAR(40) NOT NULL UNIQUE,
   url VARCHAR(500) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'none',
-  geomJson TEXT NOT NULL,
-  adjustJson TEXT NOT NULL,
+  geomJson TEXT NOT NULL DEFAULT '',
+  adjustJson TEXT NOT NULL DEFAULT '',
   model VARCHAR(80) NOT NULL DEFAULT '',
   error VARCHAR(80) NOT NULL DEFAULT '',
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3645,3 +3645,13 @@ INSERT INTO schema_version (version) VALUES (145) ON DUPLICATE KEY UPDATE versio
 -- 146 · one active mentor per child. Data only: the UPDATE is in
 -- NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
 INSERT INTO schema_version (version) VALUES (146) ON DUPLICATE KEY UPDATE version = version;
+
+-- 147 · cover: a mentor opening another mentor's mentee's record, with a reason
+CREATE TABLE IF NOT EXISTS mentor_record_cover (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mentorMemberId VARCHAR(64) NOT NULL, mentorName VARCHAR(190) DEFAULT '',
+  subjectId VARCHAR(64) NOT NULL, centre VARCHAR(120) DEFAULT '', reason TEXT NOT NULL,
+  grantedAt VARCHAR(40) NOT NULL, expiresAt VARCHAR(40) NOT NULL, endedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mrc_mentor (mentorMemberId, subjectId, expiresAt), INDEX idx_mrc_centre (centre, grantedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (147) ON DUPLICATE KEY UPDATE version = version;

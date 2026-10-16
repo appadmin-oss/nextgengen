@@ -348,6 +348,122 @@ function member_request_withdraw(array $p): array
 
 // ── The desk's side ──────────────────────────────────────────────────────────
 
+/** How many rows any one signal returns. The point is a working list, not an
+ *  export — the roster is where a long list belongs. */
+const ACCOUNTS_SIGNAL_MAX = 25;
+
+/**
+ * Who cannot get in, and who is already gone.
+ *
+ * Gated on `people`, like the rest of the member desk, and it ENDS accounts
+ * for nobody. Whether a membership continues is settled by the MoU between
+ * NGG and the family — a document, not a button — so nothing here closes an
+ * account and members are not offered a way to ask. What this screen is for
+ * is the opposite problem: people who are supposed to be in and cannot get
+ * there.
+ */
+function admin_accounts_overview(array $p): array
+{
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $now = now_iso();
+
+    /* Centre scope applies here exactly as it does to the roster. A scoped
+       admin seeing every locked-out account in the organisation would be a
+       scope leak through a dashboard, which is the direction these usually
+       arrive from. */
+    $scope = admin_centre_names_in_scope($g['requester']);
+    $scopeSql = ''; $scopeArgs = [];
+    if ($scope !== null) {
+        if (!$scope) $scopeSql = ' AND 1 = 0';
+        else {
+            $scopeSql = ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
+            $scopeArgs = $scope;
+        }
+    }
+
+    $pick = 'memberId, fullName, displayId, email, centre, status, type, role, lastLoginAt, lockedUntil, createdAt';
+    $rows = function (string $where, array $args = []) use ($pick, $scopeSql, $scopeArgs) {
+        return db_all("SELECT $pick FROM members WHERE $where$scopeSql ORDER BY fullName LIMIT "
+                      . ACCOUNTS_SIGNAL_MAX, array_merge($args, $scopeArgs));
+    };
+    $count = function (string $where, array $args = []) use ($scopeSql, $scopeArgs) {
+        return (int)(db_row("SELECT COUNT(*) c FROM members WHERE $where$scopeSql",
+                            array_merge($args, $scopeArgs))['c'] ?? 0);
+    };
+
+    /* Locked by the failed-login guard, and still inside the window. Reading
+       the clock rather than the flag: a lock that expired an hour ago is not a
+       person who needs help. */
+    $lockedW = "COALESCE(lockedUntil,'') > ? AND status != 'deleted'";
+    /* No address at all on an ACTIVE account. Sign-in is a code by email, so
+       this is not a missing detail — it is somebody who cannot get in, and who
+       no dues reminder or notification has ever reached either. */
+    $noWayInW = "status = 'active' AND TRIM(COALESCE(email,'')) = ''";
+    /* Provisioned and never used. Distinguished from "quiet": these have never
+       signed in once, which usually means the welcome mail did not arrive. */
+    $neverW = "status = 'active' AND TRIM(COALESCE(lastLoginAt,'')) = ''";
+    /* Staff without a second factor. The account tier that can change other
+       people's records, protected by a password alone. */
+    $staffNo2faW = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')
+                    AND status = 'active' AND TRIM(COALESCE(totpSecret,'')) = ''";
+    $suspendedW = "status IN ('suspended','inactive')";
+
+    $signals = [
+        ['id' => 'locked', 'label' => 'Locked out right now',
+         'why' => 'Too many failed sign-ins. The lock lifts by itself; clearing it is the fast way back.',
+         'count' => $count($lockedW, [$now]), 'members' => $rows($lockedW, [$now])],
+        ['id' => 'noWayIn', 'label' => 'No email on file',
+         'why' => 'Sign-in is a code by email, so these members cannot get in at all — and no reminder has ever reached them.',
+         'count' => $count($noWayInW), 'members' => $rows($noWayInW)],
+        ['id' => 'neverSignedIn', 'label' => 'Never signed in',
+         'why' => 'Provisioned but never used once. Usually a welcome email that did not arrive.',
+         'count' => $count($neverW), 'members' => $rows($neverW)],
+        ['id' => 'staffNo2fa', 'label' => 'Staff without 2FA',
+         'why' => 'These accounts can change other people\'s records and are protected by a password alone.',
+         'count' => $count($staffNo2faW), 'members' => $rows($staffNo2faW)],
+        ['id' => 'suspended', 'label' => 'Suspended or inactive',
+         'why' => 'Blocked from signing in by a decision somebody made, not by the system.',
+         'count' => $count($suspendedW), 'members' => $rows($suspendedW)],
+    ];
+
+    return [
+        'ok' => true,
+        'signals' => $signals,
+        'totals' => [
+            'active' => $count("status = 'active'"),
+            /* Erased records, kept as anonymised rows for referential
+               integrity. Counted so the number is visible rather than a thing
+               you discover; nothing on this screen creates one. Whether a
+               membership ends at all is the MoU's question, not the app's. */
+            'closed' => $count("status = 'deleted'"),
+        ],
+        'signalMax' => ACCOUNTS_SIGNAL_MAX,
+        'at' => $now,
+    ];
+}
+
+/**
+ * Lift a login lock.
+ *
+ * The lock is the failed-login guard doing its job, and it expires by itself —
+ * but "by itself" is fifteen minutes to a member on the phone to a centre lead,
+ * and there was no way to end it. Clearing the counter with it, or the next
+ * wrong guess re-locks them immediately.
+ */
+function admin_account_unlock(array $p): array
+{
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $mid = trim((string)($p['memberId'] ?? ''));
+    $m = db_row('SELECT id, memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // Scope, on the way in and per row, like every other member write.
+    if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) {
+        return ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    db_update('members', ['lockedUntil' => '', 'failedLogins' => 0, 'updatedAt' => now_iso()], ['id' => (int)$m['id']]);
+    audit('account.unlock', (string)$g['requester']['memberId'], $mid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'memberId' => $mid, 'fullName' => (string)$m['fullName']];
+}
 /** The queue. Open first, because that is the working list. */
 function admin_requests_list(array $p): array
 {

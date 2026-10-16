@@ -90,6 +90,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.family.send'    => 'member_mp_family_send',
             'member.mentor.family.drafts'  => 'member_mp_family_drafts',
             'member.mentor.concern.create' => 'member_mp_concern',
+            'member.mentor.record.cover'   => 'mentoring_cover',
             'member.mentor.commitments'    => 'member_mp_role',
             'member.mentor.supervision.prep' => 'member_mp_supervision_prep',
             'member.mentor.supervision.book' => 'member_mp_supervision_book',
@@ -176,6 +177,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.list'            => 'session_list',
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
+            /* The accounts desk: who cannot sign in, and the members behind each
+               number. Nothing here ends an account — that is the MoU's question. */
+            'admin.accounts.overview' => 'admin_accounts_overview',
+            'admin.accounts.unlock'   => 'admin_account_unlock',
             'admin.members.list'      => 'admin_members_list',
             'admin.members.suggest'   => 'admin_members_suggest',
             'admin.members.paperConsents' => 'admin_members_paper_consents',

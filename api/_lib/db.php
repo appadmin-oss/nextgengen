@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 146;
+const NGG_SCHEMA_TARGET = 147;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4615,6 +4615,18 @@ function db_migrate(PDO $db): void {
             UPDATE mentor_assignments SET status = 'ended', endedAt = '2026-10-16T00:00:00Z'
              WHERE status = 'active'
                AND id NOT IN (SELECT keep FROM (SELECT MAX(id) keep FROM mentor_assignments WHERE status = 'active' GROUP BY memberId) k);",
+
+        /* A mentor opening the record of a child who is not their mentee:
+         * who, which child, why, and until when (mentoring_cover). */
+        147 => "
+            CREATE TABLE IF NOT EXISTS mentor_record_cover (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorMemberId TEXT NOT NULL, mentorName TEXT DEFAULT '',
+              subjectId TEXT NOT NULL, centre TEXT DEFAULT '', reason TEXT NOT NULL,
+              grantedAt TEXT NOT NULL, expiresAt TEXT NOT NULL, endedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mrc_mentor ON mentor_record_cover(mentorMemberId, subjectId, expiresAt);
+            CREATE INDEX IF NOT EXISTS idx_mrc_centre ON mentor_record_cover(centre, grantedAt);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
