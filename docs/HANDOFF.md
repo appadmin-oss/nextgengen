@@ -1233,3 +1233,59 @@ screen and the truth goes to the inbox.
 - Tests: `api/tests/run.php`, under "A browser that has signed in here before".
   Two `ui-smoke` failures about mentoring goals fail with this change stashed
   too, so they predate it.
+
+## 2026-10-16 — ID Card Studio v4 (the Claude Design handoff)
+
+The v4 handoff (`design_handoff_id_card_studio`, "ID Card Studio v4") applied to
+the studio we already had, which held most of its behaviour:
+
+- **Header**: back link, tabs, a Settings / Assistant switch, and **Print N**,
+  the one solid button, stating the count. "Design: …" left the header; the
+  Designs section's summary and the confirm name it.
+- **Assistant** is a chat pane (`IdsAssistant`, ids-ask.jsx) replacing the
+  prompt bar: a transcript where earlier plans stay, marked superseded, and one
+  is live. Ask mode suggests and waits for Apply; Act mode applies.
+  - "Ran …" lines say what a plan did.
+  - `@` tags a person by printed ID; `?` lists shortcuts; `/`, ↑ and Escape
+    (clear, then close) work as before. The site's command palette no longer
+    takes "/" inside the studio.
+  - Questions about the sheet ("why can't I print yet?") are answered from the
+    studio's own checks (`idsAskAnswer`), not by a model.
+  - The reply's Print opens the same confirm as the header's: the assistant
+    never prints.
+- **Source**:
+  - search + funnel (kind, centre and range behind it; a dot when set; it opens
+    itself when something narrows the list);
+  - a proportional status bar over New / Reprints / Blocked, where pressing the
+    one that is on shows everyone;
+  - "Add all N".
+  - Range is Name / ID / Joined / List: alphabetical and inclusive, partial ends
+    work, and swapped ends are swapped back (`idsRangeEnds`, `idsInAlphaRange`).
+    Digits on both ends still mean the serial. The list sorts by the range key.
+  - Asked people show "Photo requested … · waiting for approval" and a grey
+    **✓ Asked** chip, which still asks again. The phone queue shows it too.
+- **Sheet**:
+  - the job is a select in the toolbar; changing it toasts what changed, with
+    Undo;
+  - **new sheet per centre/kind pads only a group that fills a sheet**
+    (`idsLayout`), so 7 cards from 3 centres take 1 sheet, not 3;
+  - the gap banner follows from that.
+- **Settings**: checks first ("Ready to print" leads), then Layout (open),
+  Printing (backs, cut marks, quality, alignment test, export) and Designs,
+  each a card with a summary line.
+- **Narrow screens**: 760–1023px is two columns, with the side panel as a
+  drawer that Escape closes. The grids follow v4: 320/1fr/300 (assistant 380);
+  264/1fr/272 (340); 300 (260 below 860) + drawer.
+- The confirm reads "1 sheet", not "All 1 sheets".
+
+Not taken from the handoff, on purpose:
+- **The "Classic v4" card drawing.** Cards keep their real renderers (one
+  renderer per card, CLAUDE.md §7) and their own sizes and ID formats
+  (`026-014` members, `EG-26-001` Summer). The handoff's single `EG-26-0412`
+  card for everyone would fork the card and the ID scheme.
+- **The assistant amber `#b07a00`.** It is 3.7:1 on white, so `--ids-ai` is
+  `#8a5f00` (5.7:1).
+
+Tests: `ids-ask.test.js` rewritten for the pane (44); `ids-studio` (59) and
+`ids-print` (16) were moved to the v4 controls; `ids-core` gained the packing
+and range rules (51).

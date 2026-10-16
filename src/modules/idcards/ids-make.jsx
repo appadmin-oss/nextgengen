@@ -36,37 +36,63 @@ function IdsSource({ M }) {
 
 function IdsRecords({ M }) {
   const R = M.records;
+  /* Kind, centre and the range sit behind the funnel (v4); it opens itself
+     when something narrows the list, so a narrowed list is never a mystery. */
+  const [more, setMore] = React.useState(R.narrowed);
+  React.useEffect(() => { if (R.narrowed) setMore(true); }, [R.narrowed]);
+  const total = R.filters.reduce((n, f) => n + f.n, 0);
   return (
-    <div className="ids-col ids-col--12">
-      <form role="search" className="ids-search" onSubmit={e => e.preventDefault()}>
-        <IdsIcon name="magnifying-glass"/>
-        <input ref={M.searchRef} className="ids-input" type="search" placeholder="Anyone, by name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
-      </form>
-      <div className="ids-chips" role="radiogroup" aria-label="Show">
-        {R.filters.map(f => (
-          <button key={f.k} type="button" role="radio" aria-checked={f.on} className={"ids-fchip" + (f.on ? " is-on" : "")} onClick={() => R.setFilter(f.k)}>
-            {f.dot && <span className={"ids-dot is-" + f.dot}/>}{f.label}<span className="ids-fchip-n">{f.n}</span>
-          </button>
-        ))}
+    <div className="ids-col ids-col--10">
+      <div className="ids-searchrow">
+        <form role="search" className="ids-search" onSubmit={e => e.preventDefault()}>
+          <IdsIcon name="magnifying-glass"/>
+          <input ref={M.searchRef} className="ids-input" type="search" placeholder="Name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
+        </form>
+        <button type="button" className={"ids-funnel" + (more ? " is-on" : "")} aria-pressed={more} aria-expanded={more} aria-controls="ids-filters"
+                aria-label={"More filters" + (R.narrowed ? " (some are set)" : "")} title="More filters" onClick={() => setMore(m => !m)}>
+          <IdsIcon name="funnel-simple"/>{R.narrowed && <span className="ids-funnel-dot" aria-hidden="true"/>}
+        </button>
       </div>
-      <span className="ids-sr" role="status">{R.shown.length} records shown</span>
-      <div className="ids-row">
-        <select className="ids-select ids-select--30" aria-label="Kind" value={R.kind} onChange={e => R.setKind(e.target.value)}>
-          <option value="">Every kind</option>{IDS_KIND_IDS.map(k => <option key={k} value={k}>{IDS_KIND_PLURAL[k]}</option>)}
-        </select>
-        <select className="ids-select ids-select--30" aria-label="Centre" value={R.centre} onChange={e => R.setCentre(e.target.value)}>
-          <option value="">Every centre</option>{M.centres.map(c => <option key={c} value={c}>{c}</option>)}
-          {R.noCentreCount > 0 && <option value={IDS_NO_CENTRE}>No centre on file · {R.noCentreCount}</option>}
-        </select>
+      <div className="ids-status">
+        <div className="ids-status-bar" aria-hidden="true">
+          {/* Inline on purpose: each segment's share IS the count — data, not chrome. */}
+          {total > 0 && R.filters.map(f => f.n > 0 && <span key={f.k} className={"is-" + f.dot + (R.filter === "all" || f.on ? "" : " is-dim")} style={{ flexGrow: f.n }}/>)}
+        </div>
+        <div className="ids-status-grid" role="group" aria-label="Show">
+          {R.filters.map(f => (
+            <button key={f.k} type="button" aria-pressed={f.on} title={f.help + (f.on ? ". Press again to show everyone" : "")}
+                    className={"ids-statbtn" + (f.on ? " is-on" : "")} onClick={() => M.setFilterToggle(f.k)}>
+              <span className={"ids-dot is-" + f.dot}/><span className="ids-statbtn-l">{f.label}</span><span className="ids-statbtn-n">{f.n}</span>
+            </button>
+          ))}
+        </div>
       </div>
+      <span className="ids-sr" role="status">{R.shown.length} records shown{R.filter === "all" ? ", everyone" : ""}</span>
+      {more && (
+        <div id="ids-filters" className="ids-col ids-col--8">
+          <div className="ids-row ids-row--8">
+            <select className="ids-select ids-select--30" aria-label="Kind" value={R.kind} onChange={e => R.setKind(e.target.value)}>
+              <option value="">Every kind</option>{IDS_KIND_IDS.map(k => <option key={k} value={k}>{IDS_KIND_PLURAL[k]}</option>)}
+            </select>
+            <select className="ids-select ids-select--30" aria-label="Centre" value={R.centre} onChange={e => R.setCentre(e.target.value)}>
+              <option value="">Every centre</option>{M.centres.map(c => <option key={c} value={c}>{c}</option>)}
+              {R.noCentreCount > 0 && <option value={IDS_NO_CENTRE}>No centre on file · {R.noCentreCount}</option>}
+            </select>
+          </div>
+          <IdsRange R={R}/>
+        </div>
+      )}
       {/* Shown whatever the filter is: a warning you only see once you went looking is not a warning. */}
       {R.noCentreCount > 0 && R.centre !== IDS_NO_CENTRE && (
-        <IdsCheck tone="warn" text={idsN(R.noCentreCount, "card") + " would print with no centre: no colour, no code, nothing saying which site."} action="Show them" onAction={() => R.setCentre(IDS_NO_CENTRE)}/>
+        <IdsCheck tone="warn" text={idsN(R.noCentreCount, "card") + " would print with no centre: no colour, no code, nothing saying which site."} action="Show them" onAction={() => { setMore(true); R.setCentre(IDS_NO_CENTRE); }}/>
       )}
       {R.centre === IDS_NO_CENTRE && <p className="ids-note"><span>No centre on the record means no coloured band and no code on the card. Set the centre on their record (Control Room, or the Summer School portal for a participant), then print. Printing them as they are is fine if you mean to.</span></p>}
-      <IdsRange R={R}/>
-      {R.canAddAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.addAll}><IdsIcon name="plus"/>Add {R.addable} to the sheet</button>}
-      {R.canAskAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.askAll}><IdsIcon name="envelope-simple"/>Ask everyone blocked for a photo ({R.askable})</button>}
+      {(R.canAddAll || R.canAskAll) && (
+        <div className="ids-row ids-row--8">
+          {R.canAddAll && <button type="button" className="ids-btn ids-btn--28 ids-btn--ink" onClick={R.addAll}><IdsIcon name="plus"/>Add all {R.addable}</button>}
+          {R.canAskAll && <button type="button" className="ids-btn ids-btn--28" onClick={R.askAll}><IdsIcon name="envelope-simple"/>Ask all {R.askable} for a photo</button>}
+        </div>
+      )}
       {M.dataState !== "ready" ? <IdsLoadState state={M.dataState} onRetry={M.reload} what="the records"/> : (
         <ul className="ids-recs">
           {R.rows.map(r => (
@@ -83,7 +109,9 @@ function IdsRecords({ M }) {
                 <span className={"ids-rec-tag is-" + r.tagTone}>{r.tag}</span>
               </span>
               {r.blocked && r.canEditPhoto && <button type="button" className="ids-iconbtn" onClick={r.editPhoto} aria-label={"Add a photo for " + r.name} title="Add a photo"><IdsIcon name="camera"/></button>}
-              {r.blocked && <button type="button" className="ids-btn ids-btn--28" onClick={r.ask} aria-label={r.askLabel + ": " + r.name}>{r.askLabel}</button>}
+              {r.blocked && (r.asked
+                ? <button type="button" className="ids-asked" onClick={r.ask} title={"Asked " + r.askedOn + ". Press to ask again"} aria-label={"Asked " + r.askedOn + ". Ask " + r.name + " again"}><IdsIcon name="check"/>Asked</button>
+                : <button type="button" className="ids-btn ids-btn--28" onClick={r.ask} aria-label={"Ask for a photo: " + r.name}>Ask for photo</button>)}
             </li>
           ))}
         </ul>
@@ -153,35 +181,40 @@ function IdsRange({ R }) {
     setPasteMsg({ tone: short ? "warn" : "ok", text: bits.join(" · "), carded: res.carded });
     if (!short) setPaste("");
   };
+  const m = R.rmode || "name";
+  const alpha = m === "name" || m === "id";
+  const ph = m === "name" ? ["Adaeze", "Funke"] : ["026-001", "026-050"];
+  const order = m === "name" ? "name" : R.rangeDigits ? "number" : "ID";
   return (
-    <div className="ids-col ids-col--12">
-      <select className="ids-select ids-select--30" aria-label="Range" value={R.rmode} onChange={e => { R.setRmode(e.target.value); setPasteMsg(null); }}>
-        <option value="">Everyone in the list</option>
-        <option value="date">By date registered</option>
-        <option value="number">By ID number</option>
-        <option value="paste">Paste a list of IDs</option>
-      </select>
-      {R.rmode === "date" && <>
-        <div className="ids-row">
-          <label className="ids-num"><span className="ids-num-l">From</span><span className="ids-num-box"><input type="date" aria-label="Registered from" value={R.rng.dFrom} onChange={e => R.setRng({ dFrom: e.target.value })}/></span></label>
-          <label className="ids-num"><span className="ids-num-l">To</span><span className="ids-num-box"><input type="date" aria-label="Registered to" value={R.rng.dTo} onChange={e => R.setRng({ dTo: e.target.value })}/></span></label>
+    <div className="ids-rangebox" role="group" aria-labelledby="ids-range-l">
+      <div className="ids-rangebox-top">
+        <span className="ids-rangebox-l" id="ids-range-l">Range</span>
+        <IdsSeg label="Range by" size="xs" value={m} onChange={v => { R.setRmode(v); setPasteMsg(null); }}
+                options={[["name", "Name"], ["id", "ID"], ["date", "Joined"], ["paste", "List"]]}/>
+      </div>
+      {alpha && (
+        <div className="ids-rangebox-row">
+          <input className="ids-input ids-input--30" aria-label={m === "name" ? "Names from" : "IDs from"} placeholder={ph[0]} value={R.rng.nFrom} onChange={e => R.setRng({ nFrom: e.target.value })}/>
+          <span className="ids-muted">to</span>
+          <input className="ids-input ids-input--30" aria-label={m === "name" ? "Names to" : "IDs to"} placeholder={ph[1]} value={R.rng.nTo} onChange={e => R.setRng({ nTo: e.target.value })}/>
+        </div>
+      )}
+      {m === "id" && !R.rangeSet && <span className="ids-help">Printed IDs, or just the numbers at the end (40 to 80).</span>}
+      {m === "date" && <>
+        <div className="ids-rangebox-row">
+          <input type="date" className="ids-input ids-input--30" aria-label="Joined from" value={R.rng.dFrom} onChange={e => R.setRng({ dFrom: e.target.value })}/>
+          <span className="ids-muted">to</span>
+          <input type="date" className="ids-input ids-input--30" aria-label="Joined to" value={R.rng.dTo} onChange={e => R.setRng({ dTo: e.target.value })}/>
         </div>
         <div className="ids-row ids-row--8">
           <button type="button" className="ids-btn ids-btn--28" onClick={() => lastDays(7)}>Last 7 days</button>
           <button type="button" className="ids-btn ids-btn--28" onClick={() => lastDays(30)}>Last 30 days</button>
         </div>
       </>}
-      {R.rmode === "number" && <>
-        <div className="ids-row">
-          <label className="ids-num"><span className="ids-num-l">ID number from</span><span className="ids-num-box"><input type="number" min={0} inputMode="numeric" value={R.rng.nFrom} onChange={e => R.setRng({ nFrom: e.target.value })}/></span></label>
-          <label className="ids-num"><span className="ids-num-l">To</span><span className="ids-num-box"><input type="number" min={0} inputMode="numeric" value={R.rng.nTo} onChange={e => R.setRng({ nTo: e.target.value })}/></span></label>
-        </div>
-        <span className="ids-help">The number printed at the end of the ID (EG-26-0<b>42</b>), not the place in this list, which moves whenever somebody registers.</span>
-      </>}
-      {R.rmode === "paste" && <>
+      {m === "paste" && <>
         <label className="ids-sr" htmlFor="ids-paste">IDs to put on the sheet</label>
-        <textarea id="ids-paste" className="ids-input ids-input--area" rows={3} placeholder="EG-26-041, EG-26-043 or just 41, 43" value={paste} onChange={e => setPaste(e.target.value)}/>
-        <button type="button" className="ids-btn ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
+        <textarea id="ids-paste" className="ids-input ids-input--area" rows={3} placeholder="026-041, EG-26-043 or just 41, 43" value={paste} onChange={e => setPaste(e.target.value)}/>
+        <button type="button" className="ids-btn ids-btn--28 ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
         {pasteMsg && <span className={"ids-rec-tag is-" + pasteMsg.tone} role="status">{pasteMsg.text}</span>}
         {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
           <label className="ids-field"><span className="ids-muted">Why they need a new card</span>
@@ -195,9 +228,15 @@ function IdsRange({ R }) {
           </button>
         )}
       </>}
-      {(R.rmode === "date" || R.rmode === "number") && R.ranged && (
-        <IdsCheck tone={R.inRangeN ? "info" : "warn"} text={(R.inRangeN ? R.inRangeN + " of " + R.preRangeN + " in this range." : "Nothing matches this range.")
-          + (R.undated ? " " + idsN(R.undated, "record") + " with no registration date " + (R.undated === 1 ? "is" : "are") + " left out of any date range." : "")}/>
+      {R.rangeSet && (
+        <p className="ids-rangebox-note" role="status">
+          <span className="ids-grow">
+            {m === "date"
+              ? (R.inRangeN ? R.inRangeN + " of " + R.preRangeN + " joined in this range." : "Nobody joined in this range.") + (R.undated ? " " + idsN(R.undated, "record") + " with no date " + (R.undated === 1 ? "is" : "are") + " left out." : "")
+              : (R.inRangeN ? idsN(R.inRangeN, "person", "people") : "Nobody") + " from “" + (R.rangeLo || "the start") + "” to “" + (R.rangeHi || "the end") + "”" + (R.inRangeN ? ", listed in " + order + " order" : "") + "."}
+          </span>
+          <button type="button" className="ids-linkbtn" onClick={R.clearRange}>Clear</button>
+        </p>
       )}
     </div>
   );
@@ -276,17 +315,6 @@ function IdsSheetCol({ M }) {
   const onSheet = S.sec ? idsCardsOnSheets(M.sections, S.idx + 1, S.idx + 1).length : 0;
   return (
     <main className="ids-sheetcol" aria-label="Sheet preview">
-      <div className="ids-scen">
-        <div className="ids-scen-btns" role="radiogroup" aria-label="What are you printing?">
-          {IDS_SCENARIOS.map(sc => (
-            <button key={sc.key} type="button" role="radio" aria-checked={M.scen === sc.key} className={"ids-scen-btn" + (M.scen === sc.key ? " is-on" : "")} onClick={() => M.applyScenario(sc.key)}>
-              <IdsIcon name={sc.icon}/>{sc.label}
-            </button>
-          ))}
-        </div>
-        <p className="ids-scen-hint">{(IDS_SCENARIOS.find(s => s.key === M.scen) || IDS_SCENARIOS[0]).hint}</p>
-      </div>
-
       {M.job && (
         <div className="ids-job" role="status">
           <IdsIcon name="printer"/>
@@ -305,6 +333,15 @@ function IdsSheetCol({ M }) {
       )}
 
       <div className="ids-toolbar">
+        {/* The job sets several things at once; the toast says which, with Undo. */}
+        <label className="ids-jobsel" title={(IDS_SCENARIOS.find(x => x.key === M.scen) || IDS_SCENARIOS[0]).hint}>
+          <span className="ids-jobsel-l">Job</span>
+          <select className="ids-select ids-select--30 ids-select--bare" value={M.scen} onChange={e => M.pickJob(e.target.value)}
+                  aria-describedby="ids-job-hint">
+            {IDS_SCENARIOS.map(sc => <option key={sc.key} value={sc.key}>{sc.label}</option>)}
+          </select>
+          <span id="ids-job-hint" className="ids-sr">{(IDS_SCENARIOS.find(x => x.key === M.scen) || IDS_SCENARIOS[0]).hint}</span>
+        </label>
         <div className="ids-pager">
           <button type="button" className="ids-iconbtn" aria-label="Previous sheet" disabled={S.idx <= 0} onClick={() => S.go(S.idx - 1)}><IdsIcon name="caret-left"/></button>
           <span aria-live="polite">Sheet {S.count ? S.idx + 1 : 0} of {S.count}{S.sec && M.sections.length > 1 ? <span className="ids-pager-size"> · {idsMmLabel(S.sec.mm)}</span> : null}</span>
@@ -346,7 +383,7 @@ function IdsSheetCol({ M }) {
         </IdsDialog>
       )}
 
-      {M.gap > 0 && !M.breakActive && (
+      {M.gap > 0 && !(M.breakActive && M.pads) && (
         <div className="ids-gapbar">
           <span className="ids-grow">{idsN(M.gap, "empty slot")} on the last sheet. Card stock is wasted unless you fill them.</span>
           {M.fillable > 0 && <button type="button" className="ids-linkbtn" onClick={M.fillGap}>Fill with {Math.min(M.gap, M.fillable)} more ready cards</button>}
@@ -530,74 +567,42 @@ function IdsLanyardSize({ L }) {
 /* A section that is set up once and rarely changed: closed by default, with
    what it holds summed up on its own line, and remembered open or closed in
    this browser. The settings every print touches stay above it, open. */
-function IdsMore({ id, title, summary, children }) {
+function IdsMore({ id, title, summary, icon, open: dflt, children }) {
   const key = "ngg.ids.more." + id;
-  const [open, setOpen] = React.useState(() => { try { return localStorage.getItem(key) === "1"; } catch (_) { return false; } });
+  const [open, setOpen] = React.useState(() => { try { const v = localStorage.getItem(key); return v == null ? !!dflt : v === "1"; } catch (_) { return !!dflt; } });
   return (
     <details className="ids-more" open={open} onToggle={e => { const o = e.currentTarget.open; setOpen(o); try { localStorage.setItem(key, o ? "1" : "0"); } catch (_) {} }}>
-      <summary className="ids-more-sum"><span className="ids-more-t">{title}</span><span className="ids-more-s">{summary}</span><IdsIcon name="caret-down" className="ids-more-caret"/></summary>
+      <summary className="ids-more-sum">
+        {icon && <IdsIcon name={icon} className="ids-more-ico"/>}
+        <span className="ids-more-t">{title}</span><span className="ids-more-s">{summary}</span><IdsIcon name="caret-down" className="ids-more-caret"/>
+      </summary>
       <div className="ids-more-body">{children}</div>
     </details>
   );
 }
 
+/* Settings (v4): the checks first, because they say whether you can print;
+   then Layout, open; then Printing and Designs, which are set once and rarely
+   touched, closed with a summary line. Print itself is in the header. */
 function IdsSettings({ M }) {
   const set = M.set, st = M.settings, G = M.G;
   const assigned = M.designsUI.filter(d => d.value);
   const designSum = assigned.length ? assigned.map(d => d.label + ": " + ((d.options.find(o => o.templateId === d.value) || {}).name || "a design")).join(" · ") : "Standard cards";
-  const layoutSum = "Margin " + st.margin + " mm · gap " + st.gap + " mm · uploads " + (st.size === "custom" ? st.cw + " × " + st.ch + " mm" : IDS_SIZES[st.size][0]) + (st.skip ? " · skip " + st.skip : "");
+  const sec0 = (M.sections[0] || {}).G || G;
+  const layoutSum = [IDS_PAPERS[st.paper][0], idsN(sec0.per, "card") + " per sheet", "by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase()].join(" · ");
+  const printSum = [(IDS_BACKS.find(b => b[0] === st.backs) || IDS_BACKS[0])[1], st.marks ? "cut marks" : "no cut marks", st.dpi + " dpi"].join(" · ");
   return (
-    <aside className="ids-set" aria-label="Layout and print">
+    <aside className="ids-set" aria-label="Settings">
       <div className="ids-set-scroll">
-        <section className="ids-sec">
-          <h2 className="ids-h2">Backs</h2>
-          <div className="ids-radios" role="radiogroup" aria-label="Backs">
-            {IDS_BACKS.map(([k, l, sub]) => (
-              <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
-                <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b>{st.backs === k && <span>{sub}</span>}</span>
-              </button>
-            ))}
-          </div>
+        <section className="ids-sec ids-checks" aria-label="Checks" aria-live="polite">
+          {M.checks.length ? M.checks.map((c, i) => <IdsCheck key={i} tone={c.tone} text={c.text} action={c.action} onAction={c.onAction}/>)
+            : <IdsCheck tone="info" text="Put cards on the sheet and the checks appear here."/>}
         </section>
 
-        <section className="ids-sec">
-          <h2 className="ids-h2">Paper</h2>
-          <IdsSeg label="Paper" value={st.paper} onChange={v => set({ paper: v })} options={IDS_PAPER_IDS.map(k => [k, IDS_PAPERS[k][0]])}/>
-          {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
-            <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
-          ))}
-          {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Order on the sheet</h2>
-          <IdsSeg label="Order" value={st.order} onChange={M.setOrder} options={IDS_ORDERS}/>
-          {(st.order === "centre" || st.order === "kind") && <>
-            <IdsSwitch id="ids-break" on={st.breakBy} onChange={v => set({ breakBy: v })} label={"New sheet for each " + st.order} help="Cut piles stay separate"/>
-            {st.breakBy && M.pads > 0 && <p className="ids-note">{idsN(M.pads, "slot")} left blank so the piles never mix</p>}
-          </>}
-          <p className="ids-stock"><IdsIcon name="stack"/>{idsN(M.stock.sheets, "sheet")} of card stock · {M.stock.sides} printed sides · {M.stock.used}% used</p>
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Finish</h2>
-          <IdsSwitch id="ids-marks" on={st.marks} onChange={v => set({ marks: v })} label="Cut marks"/>
-          <label className="ids-field">
-            <span className="ids-field-l">Image quality</span>
-            <select className="ids-select" value={st.dpi} onChange={e => set({ dpi: +e.target.value })}>{IDS_DPI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          </label>
-        </section>
-
-        <section className="ids-sec" aria-live="polite">
-          <h2 className="ids-h2">Checks</h2>
-          {M.checks.map((c, i) => <IdsCheck key={i} tone={c.tone} text={c.text} action={c.action} onAction={c.onAction}/>)}
-        </section>
-
-        <IdsMore id="layout" title="Layout" summary={layoutSum}>
+        <IdsMore id="layout" title="Layout" icon="layout" summary={layoutSum} open>
           <section className="ids-sec">
             <h2 className="ids-h2">Card size for uploads</h2>
-            <p className="ids-note"><span>Cards from records print at their own design’s size. When a run holds more than one size, each size gets its own sheets.</span></p>
-            <div className="ids-sizes" role="radiogroup" aria-label="Card size">
+            <div className="ids-sizes" role="radiogroup" aria-label="Card size for uploads">
               {IDS_SIZE_IDS.map(k => (
                 <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
                   <b>{IDS_SIZES[k][0]}</b><span>{IDS_SIZES[k][1]}</span>
@@ -610,18 +615,62 @@ function IdsSettings({ M }) {
                 <IdsNum id="ids-ch" label="Height (mm)" value={st.ch} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxH} step={0.1} onChange={v => set({ ch: v })}/>
               </div>
             )}
+            <span className="ids-help">Cards from records print at their own card’s size. When a run holds more than one size, each size gets its own sheets.</span>
           </section>
           <section className="ids-sec">
-            <h2 className="ids-h2">Margins</h2>
+            <h2 className="ids-h2">Paper</h2>
+            <IdsSeg label="Paper" value={st.paper} onChange={v => set({ paper: v })} options={IDS_PAPER_IDS.map(k => [k, IDS_PAPERS[k][0]])}/>
             <div className="ids-row">
               <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
               <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
             </div>
-            <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, ((M.sections[0] || {}).G || G).per - 1)} onChange={v => set({ skip: v })}/>
+            {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
+              <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
+            ))}
+            {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
+            <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, sec0.per - 1)} onChange={v => set({ skip: v })}/>
+          </section>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Order on the sheet</h2>
+            <IdsSeg label="Order" value={st.order} onChange={M.setOrder} options={IDS_ORDERS}/>
+            {(st.order === "centre" || st.order === "kind") && <>
+              <IdsSwitch id="ids-break" on={st.breakBy} onChange={v => set({ breakBy: v })} label={"New sheet for each " + st.order}
+                         help="Only for groups that fill a sheet. Smaller groups share one, so no stock is wasted."/>
+              {st.breakBy && M.pads > 0 && <p className="ids-note">{idsN(M.pads, "slot")} left blank so the piles never mix</p>}
+            </>}
+            <p className="ids-stock"><IdsIcon name="stack"/>{idsN(M.stock.sheets, "sheet")} of card stock · {M.stock.sides} printed sides · {M.stock.used}% used</p>
           </section>
         </IdsMore>
 
-        <IdsMore id="designs" title="Designs" summary={designSum}>
+        <IdsMore id="printing" title="Printing" icon="printer" summary={printSum}>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Backs</h2>
+            <div className="ids-radios" role="radiogroup" aria-label="Backs">
+              {IDS_BACKS.map(([k, l, sub]) => (
+                <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
+                  <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b>{st.backs === k && <span>{sub}</span>}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="ids-sec">
+            <IdsSwitch id="ids-marks" on={st.marks} onChange={v => set({ marks: v })} label="Cut marks"/>
+            <label className="ids-field">
+              <span className="ids-field-l">Image quality</span>
+              <select className="ids-select" value={st.dpi} onChange={e => set({ dpi: +e.target.value })}>{IDS_DPI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            </label>
+            {M.nCards > 0 && !M.printBlock && (
+              <p className="ids-ready" role="status" aria-live="polite">
+                {M.warm.busy ? "Preparing in the background · " + M.warm.ready + " of " + M.warm.total + " faces"
+                  : M.warm.total && M.warm.ready >= M.warm.total ? "Print-ready · makes a PDF at " + M.dpi + " dpi" : "Makes a PDF at " + M.dpi + " dpi"}
+              </p>
+            )}
+            <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!M.sheetG.per || !!M.xjob}><IdsIcon name="crosshair"/>Print an alignment test</button>
+            <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
+          </section>
+        </IdsMore>
+
+        <IdsMore id="designs" title="Designs" icon="paint-brush" summary={designSum}>
           <section className="ids-sec" aria-labelledby="ids-designs-h">
             <h2 className="ids-h2 ids-sr" id="ids-designs-h">Designs</h2>
             {M.designsUI.map(d => (
@@ -640,19 +689,6 @@ function IdsSettings({ M }) {
           </section>
           {M.hasVolunteers && <IdsTiers onChanged={M.reload}/>}
         </IdsMore>
-      </div>
-      <div className="ids-set-foot">
-        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "") + (M.askActive ? " is-quiet" : "")} aria-disabled={!!M.printBlock || undefined} disabled={!!M.xjob} onClick={M.startPrint}>
-          <IdsIcon name="printer"/>Print {idsN(M.nCards, "card")} · {idsN(M.sheet.count, "sheet")}
-        </button>
-        {M.nCards > 0 && !M.printBlock && (
-          <p className="ids-ready" role="status" aria-live="polite">
-            {M.warm.busy ? "Preparing in the background · " + M.warm.ready + " of " + M.warm.total + " faces"
-              : M.warm.total && M.warm.ready >= M.warm.total ? "Print-ready · makes a PDF at " + M.dpi + " dpi" : "Makes a PDF at " + M.dpi + " dpi"}
-          </p>
-        )}
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!M.sheetG.per || !!M.xjob}>Print an alignment test</button>
       </div>
     </aside>
   );

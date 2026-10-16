@@ -1,5 +1,5 @@
 /* ============================================================================
-   ID Card Studio — print from a prompt.
+   ID Card Studio — the assistant (v4): a chat pane beside the sheet.
 
    "New cards for Egbeda members, front and back" → the server reads it into a
    PLAN (admin.ids.plan: an AI provider when a key is set, the studio's rules
@@ -10,9 +10,13 @@
    before the press (CLAUDE.md §6). Undo puts the sheet back as it was before
    the first plan.
 
-   A plan on screen is a conversation: the next request ("fronts only", "only
-   Ijaiye", "add 026-010", "not Ada") is sent with it and adjusts it, and each
-   thing the studio understood is a chip whose × takes it out on the spot.
+   A plan on screen is a conversation, and the pane keeps the transcript: the
+   next request ("fronts only", "only Ijaiye", "add 026-010", "not Ada") is sent
+   with the plan and adjusts it; the earlier replies stay, marked superseded,
+   and only the newest is live. Each thing the studio understood is a chip
+   whose × takes it out on the spot. In Ask mode a reply suggests and waits for
+   Apply; in Act mode it applies straight away. It can never print, and never
+   mark anybody printed: Print stays a press, with the count on it.
 
    idsPlanSelect is pure: the plan and the studio's lists in, the selection
    and everything left out (no photo, not found, already carded, left out as
@@ -151,131 +155,222 @@ function idsPlanWhat(p) {
   return out;
 }
 
-/** The prompt bar and, once read, what it will print. */
-function IdsAsk({ A }) {
+/* Questions about the sheet ("why can't I print yet?") are answered here,
+   from the checks the studio already runs, not by a model: the answer has to
+   be true of THIS sheet. Returns null when the text is not such a question. */
+function idsAskAnswer(text, c) {
+  const t = String(text || "").toLowerCase();
+  const q = /\?$/.test(t.trim()) || /^(why|what|how|can|is|are|do|does|which|who)\b/.test(t.trim());
+  if (!q) return null;
+  const n = c.n, sheets = c.sheets;
+  if (/print|ready|blocked|stop/.test(t)) {
+    if (!n) return "Nothing is on the sheet yet, so there is nothing to print. Tick people on the left, or ask me: “new cards for every member at Egbeda”.";
+    if (c.block) return "Not yet. " + c.bad.map(x => x.replace(/\s+$/, "")).join(" ") + (c.bad.length ? "" : c.block + ".") + " Fix the red item" + (c.bad.length > 1 ? "s" : "") + " in Settings → Checks, then press **Print " + n + "**.";
+    return "You **can** print. The sheet has **" + n + " " + (n === 1 ? "card" : "cards") + "** on " + sheets + " " + (sheets === 1 ? "sheet" : "sheets") + " and every check passes. Press **Print " + n + "** when you’re ready."
+      + (c.blocked ? "\n\nNote: " + c.blocked + " " + (c.blocked === 1 ? "person is" : "people are") + " left out because they have no photo yet. Ask for their photos from the Blocked list." : "")
+      + (c.warn.length ? "\n\nWorth a look first: " + c.warn.join(" ") : "");
+  }
+  if (/how many|count|left|waiting/.test(t)) {
+    return "**" + n + "** on the sheet (" + sheets + " " + (sheets === 1 ? "sheet" : "sheets") + "). " + c.ready + " more " + (c.ready === 1 ? "is" : "are") + " ready to add, and " + c.blocked + " " + (c.blocked === 1 ? "is" : "are") + " waiting for a photo.";
+  }
+  return null;
+}
+
+/** **bold** in a sentence. Nothing else is interpreted. */
+function IdsAskMini({ text }) {
+  return String(text).split("\n\n").map((para, i) => (
+    <p key={i} className="ids-ai-p">{para.split(/(\*\*[^*]+\*\*)/).map((bit, j) => /^\*\*[^*]+\*\*$/.test(bit) ? <b key={j}>{bit.slice(2, -2)}</b> : bit)}</p>
+  ));
+}
+
+const IDS_ASK_MODE_KEY = "ngg.ids.ask.mode";
+function idsAskModeGet() { try { return localStorage.getItem(IDS_ASK_MODE_KEY) === "act" ? "act" : "ask"; } catch (_) { return "ask"; } }
+
+/** The pane: transcript, composer, and the one live plan. */
+function IdsAssistant({ A, onClose }) {
   const [text, setText] = React.useState("");
   const [recent, setRecent] = React.useState(idsAskRecent);
   const [hist, setHist] = React.useState(-1);
+  const [pop, setPop] = React.useState(null);     // { kind: "people" | "keys", q, at }
+  const [pick, setPick] = React.useState(0);
   const inputRef = React.useRef(null);
-  const r = A.result;
-  const refining = !!(r && r.plan && !r.empty);
-  // "/" anywhere in the studio goes to the bar, as it does in most tools.
-  React.useEffect(() => {
-    const onKey = e => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
-      const t = e.target, tag = t && t.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (t && t.isContentEditable) || document.querySelector(".ids-dialog")) return;
-      e.preventDefault();
-      inputRef.current && inputRef.current.focus();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-  const submit = e => {
-    e.preventDefault();
-    const t = text.trim();
-    if (!t || A.busy) return;
-    setRecent(idsAskRemember(t)); setHist(-1);
-    A.ask(t);
+  const logRef = React.useRef(null);
+  React.useEffect(() => { A.bindInput(inputRef); }, []); // eslint-disable-line
+  React.useEffect(() => { const el = logRef.current; if (el) el.scrollTop = el.scrollHeight; }, [A.chat.length, A.busy, A.liveId]);
+  const send = t => {
+    const v = (t == null ? text : t).trim();
+    if (!v || A.busy) return;
+    setRecent(idsAskRemember(v)); setHist(-1); setPop(null);
+    A.ask(v);
     setText("");
   };
+  const people = pop && pop.kind === "people" ? A.people(pop.q) : [];
+  const keysList = IDS_ASK_EXAMPLES.concat(recent.filter(x => !IDS_ASK_EXAMPLES.includes(x))).slice(0, 6);
+  const choose = i => {
+    if (pop.kind === "people") {
+      const r = people[i];
+      if (!r) return;
+      const tag = r.displayId || r.name;
+      setText(x => x.slice(0, pop.at) + tag + " " + x.slice(pop.at + 1 + pop.q.length));
+    } else setText(keysList[i] || "");
+    setPop(null);
+    setTimeout(() => inputRef.current && inputRef.current.focus(), 0);
+  };
+  const onChange = e => {
+    const v = e.target.value, caret = e.target.selectionStart || v.length;
+    setText(v); setHist(-1);
+    const m = /(^|\s)@([^\s@]{0,24})$/.exec(v.slice(0, caret));
+    if (m) { setPop({ kind: "people", q: m[2], at: caret - m[2].length - 1 }); setPick(0); }
+    else if (v === "?") { setPop({ kind: "keys" }); setPick(0); }
+    else setPop(null);
+  };
   const onKey = e => {
-    if (e.key === "Escape") { if (text) setText(""); else if (r || A.err) A.close(); return; }
-    // ↑ / ↓ walk back through recent requests while the bar is empty or showing one.
+    const list = pop ? (pop.kind === "people" ? people : keysList) : null;
+    if (list && list.length) {
+      if (e.key === "ArrowDown") { e.preventDefault(); return setPick(i => (i + 1) % list.length); }
+      if (e.key === "ArrowUp") { e.preventDefault(); return setPick(i => (i - 1 + list.length) % list.length); }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); return choose(pick); }
+    }
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      if (pop) return setPop(null);
+      if (text) return setText("");
+      return onClose && onClose();
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); return send(); }
+    // ↑ recalls the last request while the composer is empty, as a shell does.
     if ((e.key === "ArrowUp" || e.key === "ArrowDown") && recent.length && (!text || hist >= 0)) {
       e.preventDefault();
       const i = e.key === "ArrowUp" ? Math.min(recent.length - 1, hist + 1) : hist - 1;
       setHist(i); setText(i >= 0 ? recent[i] : "");
     }
   };
-  const chips = recent.slice(0, 3).map(x => ({ x, recent: true })).concat(IDS_ASK_EXAMPLES.filter(x => !recent.includes(x)).map(x => ({ x }))).slice(0, 4);
+  const starters = recent.slice(0, 2).map(x => ({ x, recent: true })).concat(IDS_ASK_EXAMPLES.filter(x => !recent.includes(x)).map(x => ({ x }))).slice(0, 4);
   return (
-    <section className="ids-ask" aria-label="Print from a prompt">
-      <form className="ids-ask-bar" role="search" onSubmit={submit}>
-        <IdsIcon name="sparkle" className="ids-ask-ic"/>
-        <label htmlFor="ids-ask-in" className="ids-sr">{refining ? "Change the plan" : "Say what to print"}</label>
-        <input id="ids-ask-in" ref={inputRef} className="ids-ask-in" value={text} maxLength={400} autoComplete="off"
-          placeholder={refining ? IDS_ASK_REFINE_HINT : "Say what to print — “new cards for Egbeda members, front and back”"}
-          onChange={e => { setText(e.target.value); setHist(-1); }} onKeyDown={onKey}/>
-        {!text && !refining && <kbd className="ids-ask-kbd" aria-hidden="true">/</kbd>}
-        <button type="submit" className="ids-btn ids-btn--outline ids-btn--34" disabled={!text.trim() || A.busy}>
-          {A.busy ? "Reading…" : refining ? "Update" : "Plan the print"}
-        </button>
+    <section className="ids-ai" aria-label="Assistant">
+      <div className="ids-ai-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation">
+        {!A.chat.length && (
+          <div className="ids-ai-hello">
+            <p className="ids-ai-hello-h"><IdsIcon name="sparkle"/>Say what to print</p>
+            <p className="ids-ai-p">I read a request into a plan and set up the sheet: who goes on it, and how it prints. I can’t print, and I can’t mark anyone as printed. That stays your press.</p>
+            <ul className="ids-ai-starters" aria-label={recent.length ? "Recent and examples" : "Examples"}>
+              {starters.map(({ x, recent: rc }) => (
+                <li key={x}><button type="button" className={"ids-ai-starter" + (rc ? " is-recent" : "")} onClick={() => { setText(x); inputRef.current && inputRef.current.focus(); }}>
+                  {rc ? <IdsIcon name="clock-counter-clockwise"/> : <IdsIcon name="arrow-up-right"/>}<span>{x}</span>
+                </button></li>
+              ))}
+              <li><button type="button" className="ids-ai-starter" onClick={() => { setText("Why can’t I print yet?"); inputRef.current && inputRef.current.focus(); }}><IdsIcon name="question"/><span>Why can’t I print yet?</span></button></li>
+            </ul>
+          </div>
+        )}
+        {A.chat.map(m => m.who === "me"
+          ? <div key={m.id} className="ids-ai-me"><span>{m.text}</span></div>
+          : <IdsAskReply key={m.id} m={m} A={A}/>)}
+        {A.busy && <div className="ids-ai-reading" role="status"><span className="ids-ai-dots" aria-hidden="true"><i/><i/><i/></span>Reading…</div>}
+      </div>
+      <form className="ids-ai-compose" onSubmit={e => { e.preventDefault(); send(); }}>
+        {pop && (pop.kind === "people" ? people.length > 0 : true) && (
+          <ul className="ids-ai-pop" role="listbox" aria-label={pop.kind === "people" ? "People" : "Shortcuts"}>
+            {pop.kind === "people" ? people.map((r, i) => (
+              <li key={r.key} role="option" aria-selected={i === pick} className={i === pick ? "is-on" : ""} onMouseDown={e => { e.preventDefault(); choose(i); }}>
+                <b>{r.name}</b><span className="ids-mono">{r.displayId || "no ID yet"}</span><span>{r.centre || "No centre"}</span>
+              </li>
+            )) : <>
+              {keysList.map((x, i) => <li key={x} role="option" aria-selected={i === pick} className={i === pick ? "is-on" : ""} onMouseDown={e => { e.preventDefault(); choose(i); }}>{x}</li>)}
+              <li className="ids-ai-keys" aria-hidden="true"><kbd>/</kbd> focus · <kbd>↑</kbd> last request · <kbd>@</kbd> a person · <kbd>Esc</kbd> clear, then close</li>
+            </>}
+          </ul>
+        )}
+        <label htmlFor="ids-ai-in" className="ids-sr">Message the assistant</label>
+        <textarea id="ids-ai-in" ref={inputRef} className="ids-ai-in" rows={2} value={text} maxLength={400}
+          placeholder={A.live ? IDS_ASK_REFINE_HINT : "Type @ to tag a person or ? for shortcuts"}
+          aria-autocomplete="list" aria-expanded={!!pop} onChange={onChange} onKeyDown={onKey} onBlur={() => setTimeout(() => setPop(null), 120)}/>
+        <div className="ids-ai-bar">
+          <span className="ids-ai-mode" role="group" aria-label="Mode">
+            <button type="button" aria-pressed={A.mode === "ask"} className={A.mode === "ask" ? "is-on" : ""} onClick={() => A.setMode("ask")} title="Suggests a plan; you press Apply"><IdsIcon name="chat-circle"/>Ask</button>
+            <button type="button" aria-pressed={A.mode === "act"} className={A.mode === "act" ? "is-on" : ""} onClick={() => A.setMode("act")} title="Sets up the sheet straight away"><IdsIcon name="lightning"/>Act</button>
+          </span>
+          <span className="ids-grow"/>
+          {A.chat.length > 0 && <button type="button" className="ids-iconbtn" aria-label="New conversation" title="New conversation" onClick={A.reset}><IdsIcon name="note-pencil"/></button>}
+          <button type="submit" className="ids-ai-send" aria-label="Send" disabled={!text.trim() || A.busy}><IdsIcon name="arrow-up"/></button>
+        </div>
       </form>
-      {!r && !A.err && !A.busy && (
-        <div className="ids-ask-ex" aria-label={recent.length ? "Recent and examples" : "Examples"}>
-          {chips.map(({ x, recent: rc }) => (
-            <button key={x} type="button" className={"ids-ask-chip" + (rc ? " is-recent" : "")} title={rc ? "Recent" : "Example"}
-              onClick={() => { setText(x); inputRef.current && inputRef.current.focus(); }}>
-              {rc && <IdsIcon name="clock-counter-clockwise"/>}{x}
-            </button>
-          ))}
-        </div>
-      )}
-      {A.err && (
-        <div className="ids-ask-card is-bad" role="alert">
-          <IdsIcon name="warning-octagon"/>
-          <span className="ids-grow">{A.err}</span>
-          <button type="button" className="ids-btn ids-btn--sm" onClick={A.retry}>Try again</button>
-        </div>
-      )}
-      {r && <IdsAskResult r={r} A={A}/>}
+      <p className="ids-ai-foot">Can’t print or mark anyone as printed · Enter to send</p>
     </section>
   );
 }
 
-function IdsAskResult({ r, A }) {
-  const by = r.by === "ai" ? "Read by " + (IDS_ASK_PROVIDER[r.provider] || "AI") : "Read by the studio’s rules" + (r.aiError ? " (the AI didn’t answer)" : "");
-  const live = A.live;   // { sheets, settings[], block, fill }
+function IdsAskReply({ m, A }) {
+  const by = m.by === "ai" ? "Read by " + (IDS_ASK_PROVIDER[m.provider] || "AI") : m.by === "rules" ? "Read by the studio’s rules" + (m.aiError ? " (the AI didn’t answer)" : "") : "";
+  const live = m.id === A.liveId;
+  if (m.kind === "error") return (
+    <div className="ids-ai-card is-bad" role="alert">
+      <p className="ids-ai-p"><IdsIcon name="warning-octagon"/> {m.text}</p>
+      {m.retry && <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm" onClick={A.retry}>Try again</button></div>}
+    </div>
+  );
+  if (m.kind === "answer") return <div className="ids-ai-card"><span className="ids-ai-who">Assistant</span><IdsAskMini text={m.text}/></div>;
+  if (m.kind === "empty") return (
+    <div className="ids-ai-card is-warn">
+      <span className="ids-ai-who">Assistant</span>
+      <p className="ids-ai-p">I couldn’t tell what to print from that. Name who (members, Summer School, volunteers), where, or the ID numbers. Or ask me a question about the sheet.</p>
+      {by && <p className="ids-ai-by">{by}</p>}
+    </div>
+  );
+  // A plan. The live one shows the sheet as it is now; an earlier one, what it said then.
+  const r = live ? A.result : m.snap;
+  if (!live) return (
+    <div className={"ids-ai-card is-past"}>
+      <span className="ids-ai-who">Assistant{m.undone ? " · undone" : m.pending ? "" : " · superseded"}</span>
+      <p className="ids-ai-p"><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"}{r.what.length ? " · " + r.what.map(w => w.label).join(" · ") : ""}</p>
+      {m.pending && !m.undone && (
+        <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm ids-btn--outline" onClick={() => A.apply(m)}>Apply</button></div>
+      )}
+      {by && <p className="ids-ai-by">{by}</p>}
+    </div>
+  );
+  const L = A.live;
   return (
-    <div className={"ids-ask-card" + (r.empty ? " is-warn" : "")} role="status" aria-live="polite">
-      <div className="ids-ask-main">
-        {r.empty ? (
-          <p className="ids-ask-h">I couldn’t tell what to print from that. Name who (members, Summer School, volunteers), where, or the ID numbers.</p>
-        ) : (
-          <>
-            <p className="ids-ask-h">
-              {r.n ? <><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"} on the sheet</> : "Nothing to put on the sheet"}
-              {r.n > 0 && live && <span className="ids-muted"> · {live.sheets} {live.sheets === 1 ? "sheet" : "sheets"}</span>}
-              {r.refined && <span className="ids-ask-tag">Updated</span>}
-            </p>
-            <ul className="ids-ask-what" aria-label="What it understood">
-              {r.what.map((w, i) => (
-                <li key={i} className={w.tone ? "is-" + w.tone : ""}>
-                  {w.label}
-                  {w.drop && <button type="button" className="ids-ask-x" aria-label={"Take out " + w.label} onClick={() => A.drop(w.drop)}><IdsIcon name="x"/></button>}
-                </li>
-              ))}
-            </ul>
-            {r.n > 0 && live && <ul className="ids-ask-how" aria-label="Sheet settings">{live.settings.map((s, i) => <li key={i} className={s.changed ? "is-changed" : ""}>{s.label}</li>)}</ul>}
-            {r.issues.map((x, i) => (
-              <p key={i} className={"ids-ask-issue is-" + x.tone}>
-                <IdsIcon name={x.tone === "bad" ? "warning-octagon" : x.tone === "warn" ? "warning" : "info"}/>
-                <span className="ids-grow">{x.text}</span>
-                {x.action && <button type="button" className="ids-linkbtn" onClick={x.onAction}>{x.action}</button>}
-              </p>
-            ))}
-            {live && live.fill > 0 && (
-              <p className="ids-ask-issue is-info">
-                <IdsIcon name="squares-four"/>
-                <span className="ids-grow">The last sheet has {live.gap} empty {live.gap === 1 ? "slot" : "slots"}.</span>
-                <button type="button" className="ids-linkbtn" onClick={A.fill}>Fill {live.fill === 1 ? "it" : "them"} with {live.fill} more waiting {live.fill === 1 ? "card" : "cards"}</button>
-              </p>
-            )}
-          </>
-        )}
-        <p className="ids-ask-by">{by}</p>
-      </div>
-      <div className="ids-ask-acts">
-        {!r.empty && r.n > 0 && (
-          <button type="button" className="ids-btn ids-btn--primary ids-btn--lg" onClick={A.print} disabled={!!(live && live.block)} title={live && live.block ? live.block : undefined}>
+    <div className="ids-ai-card is-live">
+      <span className="ids-ai-who">Assistant{r.refined ? " · updated" : ""}</span>
+      {m.ran && m.ran.length > 0 && <ul className="ids-ai-ran" aria-label="What it did">{m.ran.map((x, i) => <li key={i}><IdsIcon name="check"/>Ran {x}</li>)}</ul>}
+      <p className="ids-ai-h">
+        {r.n ? <><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"} on the sheet</> : "Nothing to put on the sheet"}
+        {r.n > 0 && L && <span className="ids-muted"> · {L.sheets} {L.sheets === 1 ? "sheet" : "sheets"}</span>}
+      </p>
+      <ul className="ids-ask-what" aria-label="What it understood">
+        {r.what.map((w, i) => (
+          <li key={i} className={w.tone ? "is-" + w.tone : ""}>
+            {w.label}
+            {w.drop && <button type="button" className="ids-ask-x" aria-label={"Take out " + w.label} onClick={() => A.drop(w.drop)}><IdsIcon name="x"/></button>}
+          </li>
+        ))}
+      </ul>
+      {r.n > 0 && L && <ul className="ids-ask-how" aria-label="Sheet settings">{L.settings.map((s, i) => <li key={i} className={s.changed ? "is-changed" : ""}>{s.changed ? "Changed: " : ""}{s.label}</li>)}</ul>}
+      {r.issues.map((x, i) => (
+        <p key={i} className={"ids-ask-issue is-" + x.tone}>
+          <IdsIcon name={x.tone === "bad" ? "warning-octagon" : x.tone === "warn" ? "warning" : "info"}/>
+          <span className="ids-grow">{x.text}</span>
+          {x.action && <button type="button" className="ids-linkbtn" onClick={x.onAction}>{x.action}</button>}
+        </p>
+      ))}
+      {L && L.fill > 0 && (
+        <p className="ids-ask-issue is-info">
+          <IdsIcon name="squares-four"/>
+          <span className="ids-grow">The last sheet has {L.gap} empty {L.gap === 1 ? "slot" : "slots"}.</span>
+          <button type="button" className="ids-linkbtn" onClick={A.fill}>Fill {L.fill === 1 ? "it" : "them"} with {L.fill} more waiting {L.fill === 1 ? "card" : "cards"}</button>
+        </p>
+      )}
+      <div className="ids-ai-acts">
+        {r.n > 0 && (
+          <button type="button" className="ids-btn ids-btn--sm ids-btn--outline" onClick={A.print} aria-disabled={!!(L && L.block) || undefined} title={L && L.block ? L.block : undefined}>
             <IdsIcon name="printer"/>Print {r.n} {r.n === 1 ? "card" : "cards"}
           </button>
         )}
-        {live && live.block && <span className="ids-help">{live.block}</span>}
-        {A.canUndo && <button type="button" className="ids-btn ids-btn--34" onClick={A.undo}>Undo</button>}
-        <button type="button" className="ids-btn ids-btn--34 ids-btn--outline-soft" onClick={A.close} aria-label="Close the plan">Close</button>
+        {A.canUndo && <button type="button" className="ids-btn ids-btn--sm" onClick={A.undo}>Undo</button>}
       </div>
+      {L && L.block && <p className="ids-help">{L.block}</p>}
+      {by && <p className="ids-ai-by">{by}</p>}
     </div>
   );
 }

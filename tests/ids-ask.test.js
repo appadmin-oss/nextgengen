@@ -115,109 +115,149 @@ function cleanup() {
     P.on('pageerror', e => errs.push(String(e).slice(0, 240)));
     await P.goto(BASE + '/club/id-cards', { waitUntil: 'domcontentloaded' });
     await waitForBoot(P);
-    await P.waitForSelector('.ids-ask-in', { timeout: 30000 });
+    await P.waitForSelector('.ids-panes', { timeout: 30000 });
     const nOnSheet = () => P.$$eval('.ids-sheet .ids-slot.is-card', s => s.length).catch(() => -1);
+    const live = () => P.innerText('.ids-ai-card.is-live').catch(() => '');
+    // Send a message and wait for the studio's reply to land in the transcript.
     const ask = async text => {
-      await P.fill('.ids-ask-in', text);
-      await P.click('.ids-ask-bar button[type=submit]');
-      await P.waitForSelector('.ids-ask-card', { timeout: 30000 });
+      const n = (await P.$$('.ids-ai-card')).length;
+      await P.fill('#ids-ai-in', text);
+      await P.press('#ids-ai-in', 'Enter');
+      await P.waitForFunction(k => document.querySelectorAll('.ids-ai-card').length > k && !document.querySelector('.ids-ai-reading'), n, { timeout: 30000 });
       await P.waitForTimeout(400);
-      return P.innerText('.ids-ask-card');
+      const cards = await P.$$('.ids-ai-card');
+      return cards[cards.length - 1].innerText();
     };
 
-    console.log('a calmer studio');
-    chk('layout and designs are closed sections, each summed up on one line', (await P.$$('details.ids-more:not([open])')).length === 2
-      && /Margin 10 mm · gap 4 mm · uploads CR80 portrait/.test(await P.innerText('.ids-set')) && /Designs\s*Standard cards/.test(await P.innerText('.ids-set')));
-    chk('the settings every print uses come first: backs, paper, order, finish', await P.$$eval('.ids-set-scroll > .ids-sec .ids-h2', hs => hs.slice(0, 4).map(h => h.textContent).join('|')) === 'Backs|Paper|Order on the sheet|Finish');
-    chk('the header says “Standard cards” once, not per type', /Design:\s*Standard cards/.test(await P.innerText('.ids-head')) && !/Summer School: Standard card/.test(await P.innerText('.ids-head')));
+    console.log('a calmer studio (v4)');
+    chk('the checks come first, then Layout open; Printing and Designs closed, each summed up on one line',
+      await P.$eval('.ids-set-scroll > :first-child', e => e.classList.contains('ids-checks'))
+      && (await P.$$('details.ids-more[open]')).length === 1 && (await P.$$('details.ids-more:not([open])')).length === 2
+      && /Fronts only · cut marks · 300 dpi/.test(await P.innerText('.ids-set')) && /Designs\s*Standard cards/.test(await P.innerText('.ids-set')));
+    chk('the header carries the tabs, the Settings / Assistant switch and Print with its count — nothing else',
+      /Print 0/.test(await P.innerText('.ids-btn--headprint')) && !/Design:/.test(await P.innerText('.ids-head')) && (await P.$$('.ids-panes [aria-pressed]')).length === 2);
     chk('a deployment with no Afrovanguard link is not told so on every visit', !/Afrovanguard/.test(await P.evaluate(() => (document.querySelector('.ids-toast') || {}).innerText || '')));
 
-    console.log('the prompt bar');
+    console.log('the assistant pane');
+    await P.click('.ids-panes button:has-text("Assistant")');
+    await P.waitForSelector('#ids-ai-in');
     if (process.env.SHOTS) await P.screenshot({ path: path.join(process.env.SHOTS, 'ids-ask-empty.png') });
-    chk('the bar sits above the workspace, with examples to start from', (await P.$$('.ids-ask-chip')).length === 4 && !!(await P.$('.ids-make-wrap > .ids-ask + .ids-make')));
-    await P.click('.ids-ask-chip >> nth=0');
-    chk('an example fills the bar, it does not run on its own', /Egbeda/.test(await P.inputValue('.ids-ask-in')) && !(await P.$('.ids-ask-card')));
+    chk('it replaces Settings beside the sheet, which stays in view, and starts with examples', !(await P.$('.ids-set')) && !!(await P.$('.ids-sheetcol')) && (await P.$$('.ids-ai-starter')).length >= 4);
+    chk('it says plainly that it cannot print or mark anyone printed', /Can’t print or mark anyone as printed/.test(await P.innerText('.ids-ai')));
+    let card = await ask('Why can’t I print yet?');
+    chk('a question about the sheet is answered from the sheet’s own checks', /Nothing is on the sheet yet/.test(card) && (await nOnSheet()) <= 0);
 
-    console.log('a selection with settings');
-    let card = await ask('New cards for Egbeda members, front and back, with crop marks');
-    chk('it says how many cards and what it understood', /6\s*cards on the sheet/.test(card) && /New cards/.test(card) && /NGG members/.test(card) && /Egbeda/.test(card));
-    chk('…names who was left out and why, with the way to fix it', /1 person left out: no photo yet \(Gbenga Nophoto\)/.test(card) && /Ask for photos/.test(card));
-    chk('…shows the sheet it will print, the settings it changed marked', /Double-sided · long edge/.test(await P.innerText('.ids-ask-how li.is-changed')) && /Crop marks/.test(card) && /A4/.test(card));
+    console.log('Ask mode suggests; Act mode applies');
+    chk('Ask is the mode it starts in', (await P.getAttribute('.ids-ai-mode button:has-text("Ask")', 'aria-pressed')) === 'true');
+    card = await ask('New cards for Egbeda members, front and back, with crop marks');
+    chk('in Ask mode a plan says what it would do and waits for Apply; the sheet is untouched', /6\s*cards/.test(card) && /Apply/.test(card) && (await nOnSheet()) <= 0);
+    await P.click('.ids-ai-card:last-child button:has-text("Apply")');
+    await P.waitForSelector('.ids-ai-card.is-live');
+    card = await live();
+    chk('Apply puts it on the sheet and says what it ran', /6\s*cards on the sheet/.test(card) && /Ran put 6 cards on the sheet/.test(card) && (await nOnSheet()) === 6);
+    chk('…what it understood', /New cards/.test(card) && /NGG members/.test(card) && /Egbeda/.test(card));
+    chk('…who was left out and why, with the way to fix it', /1 person left out: no photo yet \(Gbenga Nophoto\)/.test(card) && /Ask for photos/.test(card));
+    chk('…the settings it changed, marked', /Double-sided · long edge/.test(await P.innerText('.ids-ask-how li.is-changed')) && /Crop marks/.test(card) && /A4/.test(card));
     chk('…and says what read it', /Read by the studio’s rules/.test(card));
     if (process.env.SHOTS) await P.screenshot({ path: path.join(process.env.SHOTS, 'ids-ask.png') });
-    chk('while the plan is on screen its Print is the one solid button; the panel’s steps back', await P.$eval('.ids-btn--print', b => b.classList.contains('is-quiet'))
-      && /Most printers/.test(await P.innerText('.ids-radio.is-on')) && !/Single-sided/.test(await P.innerText('.ids-radios')));
-    chk('the six cards are on the sheet, and the settings panel agrees', (await nOnSheet()) === 6 && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double'));
-    chk('the list on the left shows the same centre', (await P.$eval('.ids-src select >> nth=1', s => s.options[s.selectedIndex].text).catch(() => '')).includes('Egbeda') || /Egbeda/.test(await P.innerText('.ids-src')));
-    chk('with each centre on its own sheets, no empty slot is offered to another centre', !/empty slot/.test(card));
+    chk('the header’s Print stays the one solid button, with the count; the reply’s Print is outlined',
+      /Print 6/.test(await P.innerText('.ids-btn--headprint')) && await P.$eval('.ids-ai-card.is-live button:has-text("Print 6 cards")', b => b.classList.contains('ids-btn--outline')));
+    // v4: one centre is one group; small groups share a sheet, so its empty slots are offered.
+    chk('6 Egbeda cards are one group: the 3 empty slots are offered to cards still waiting', /The last sheet has 3 empty slots/.test(card));
+    await P.click('.ids-ai-mode button:has-text("Act")');
 
-    console.log('follow-ups refine the plan on screen');
-    chk('with a plan on screen the bar asks for a change', /Change it/.test(await P.getAttribute('.ids-ask-in', 'placeholder')) && /Update/.test(await P.innerText('.ids-ask-bar button')));
+    console.log('follow-ups refine the plan, and the transcript keeps the earlier replies');
+    chk('with a plan live the composer asks for a change', /Change it/.test(await P.getAttribute('#ids-ai-in', 'placeholder')));
     card = await ask('fronts only');
-    chk('"fronts only" keeps the six and changes the sides, marked Updated', /6\s*cards on the sheet/.test(card) && /Updated/.test(card) && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Fronts'));
+    if (!/Changed: Fronts only/.test(await P.innerText('.ids-ai-card.is-live .ids-ask-how').catch(() => ''))) console.error('       fronts card: ' + card.replace(/\s+/g, ' ').slice(0, 300));
+    chk('"fronts only" keeps the six and changes the sides, marked updated', /6\s*cards on the sheet/.test(card) && /updated/.test(card) && /Fronts only/.test(await P.innerText('.ids-ai-card.is-live .ids-ask-how')) && !/Double-sided/.test(card));
+    chk('…and the earlier reply stays in the transcript, marked superseded', /superseded/.test(await P.innerText('.ids-ai-log')) && (await P.$$('.ids-ai-card.is-live')).length === 1);
     card = await ask('not Ada Obbi');
     chk('"not <name>", misspelt, leaves that person out and says so', /5\s*cards on the sheet/.test(card) && /Left out as asked: Ada Obi/.test(card) && (await nOnSheet()) === 5);
-    await P.click('.ids-ask-what li:has-text("not Ada Obbi") .ids-ask-x');
-    await P.waitForFunction(() => /6\s*cards on the sheet/.test((document.querySelector('.ids-ask-card') || {}).innerText || ''), null, { timeout: 5000 });
-    chk('a chip’s × takes that part out on the spot', (await nOnSheet()) === 6 && !(await P.$('.ids-ask-what li:has-text("not Ada")')));
+    await P.click('.ids-ai-card.is-live .ids-ask-what li:has-text("not Ada Obbi") .ids-ask-x');
+    await P.waitForFunction(() => /6\s*cards on the sheet/.test((document.querySelector('.ids-ai-card.is-live') || {}).innerText || ''), null, { timeout: 5000 });
+    chk('a chip’s × takes that part out on the spot', (await nOnSheet()) === 6 && !(await P.$('.ids-ai-card.is-live .ids-ask-what li:has-text("not Ada")')));
     card = await ask('add 025-101');
-    chk('"add <ID>" puts a card from another centre on top of the selection, on a sheet of its own', /7\s*cards on the sheet · 2 sheets/.test(card) && /\+ 025-101/.test(card));
+    chk('"add <ID>" puts a card from another centre on the selection; two small groups share one sheet (v4)', /7\s*cards on the sheet · 1 sheet/.test(card) && /\+ 025-101/.test(card));
     card = await ask('sort them by name');
-    chk('"by name" puts everyone on one sheet and offers its empty slots to the cards still waiting', /7\s*cards on the sheet · 1 sheet/.test(card) && /The last sheet has 2 empty slots/.test(card) && /Fill it with 1 more waiting card/.test(card));
-    if (process.env.SHOTS) await P.locator('.ids-ask').screenshot({ path: path.join(process.env.SHOTS, 'ids-ask-refined.png') });
-    await P.click('.ids-ask-issue button:has-text("Fill")');
-    await P.waitForFunction(() => /8\s*cards on the sheet/.test((document.querySelector('.ids-ask-card') || {}).innerText || ''), null, { timeout: 5000 });
+    chk('"by name" keeps one sheet and offers its empty slots to the cards still waiting', /7\s*cards on the sheet · 1 sheet/.test(card) && /The last sheet has 2 empty slots/.test(card) && /Fill it with 1 more waiting card/.test(card));
+    if (process.env.SHOTS) await P.locator('.ids-ai').screenshot({ path: path.join(process.env.SHOTS, 'ids-ask-refined.png') });
+    await P.click('.ids-ai-card.is-live .ids-ask-issue button:has-text("Fill")');
+    await P.waitForFunction(() => /8\s*cards on the sheet/.test((document.querySelector('.ids-ai-card.is-live') || {}).innerText || ''), null, { timeout: 5000 });
     chk('filling the last sheet adds the waiting card and the count follows', (await nOnSheet()) === 8);
-    await P.click('.ids-ask-acts button:has-text("Undo")');
-    await P.waitForFunction(() => !document.querySelector('.ids-ask-card'), null, { timeout: 5000 });
-    chk('Undo puts the sheet back as it was', (await nOnSheet()) <= 0 && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Fronts'));
+    await P.click('.ids-ai-card.is-live button:has-text("Undo")');
+    await P.waitForFunction(() => !document.querySelector('.ids-ai-card.is-live'), null, { timeout: 5000 });
+    chk('Undo puts the sheet back as it was, and the reply says it was undone', (await nOnSheet()) <= 0 && /undone/.test(await P.innerText('.ids-ai-log')));
 
     console.log('named cards, and one who already has a card');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
     card = await ask('Reprint 025-103 and 025-101, fronts only');
     chk('an ID still waiting goes on the sheet; one already carded is offered as a reprint', /1\s*card on the sheet/.test(card) && /1 person already has a card \(Jumoke Carded\)/.test(card));
-    await P.click('.ids-ask-issue button:has-text("Reprint it")');
-    await P.waitForFunction(() => /2\s*cards on the sheet/.test((document.querySelector('.ids-ask-card') || {}).innerText || ''), null, { timeout: 15000 });
+    await P.click('.ids-ai-card.is-live .ids-ask-issue button:has-text("Reprint it")');
+    await P.waitForFunction(() => /2\s*cards on the sheet/.test((document.querySelector('.ids-ai-card.is-live') || {}).innerText || ''), null, { timeout: 15000 });
     chk('…pressing it queues the reprint on the server and puts the card on the sheet', php(`echo db_row("SELECT COUNT(*) c FROM id_reprints WHERE subjectId = 'NGG-B-3' AND doneAt = ''")['c'];`, ['bootstrap']) === '1'
       && (await nOnSheet()) === 2);
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
     card = await ask('reprint 999-999');
     chk('an ID nobody holds is named as not found, and the sheet is left alone', /Not found: 999-999/.test(card) && /Nothing to put on the sheet/.test(card) && (await nOnSheet()) === 2);
-    await P.click('.ids-ask-acts button:has-text("Close")');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
     card = await ask('new cards for Egbda members');
     chk('a misspelt centre is still the centre', /6\s*cards on the sheet/.test(card) && /Egbeda/.test(card));
-    await P.click('.ids-ask-acts button:has-text("Close")');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
 
     console.log('dates, then Print');
     card = await ask('members who joined this week at Egbeda');
     chk('"this week" is read as dates, and only those who joined in it are selected', /3\s*cards on the sheet/.test(card) && /joined/.test(card) && (await nOnSheet()) === 3);
     const runsBefore = +php(`echo db_row("SELECT COUNT(*) c FROM card_runs")['c'];`, ['bootstrap']);
-    const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 180000 }), P.click('.ids-ask-acts .ids-btn--primary')]);
+    await P.click('.ids-ai-card.is-live button:has-text("Print 3 cards")');
+    await P.waitForSelector('[role=alertdialog]');
+    chk('the reply’s Print opens the same confirm as the header’s, with the count on it — the assistant never prints', /Print 3 cards\?/.test(await P.innerText('[role=alertdialog]')));
+    const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 180000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
     const pdf = pdfFacts(fs.readFileSync(await dl.path()));
-    chk('Print on the result makes the PDF straight away, with the 3 cards', pdf.ok && pdf.images >= 3);
+    chk('…which makes the PDF with the 3 cards', pdf.ok && pdf.images >= 3);
     await P.waitForFunction(() => /logged as CRUN-/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 20000 }).catch(() => {});
     chk('…and logs the run with those three people', +php(`echo db_row("SELECT COUNT(*) c FROM card_runs")['c'];`, ['bootstrap']) === runsBefore + 1
       && php(`echo db_row("SELECT COUNT(*) c FROM card_issues WHERE subjectId IN ('NGG-A-1','NGG-A-2','NGG-A-3')")['c'];`, ['bootstrap']) === '3');
-
     await P.waitForSelector('.ids-dialog:has-text("Did all 3 print properly?")', { timeout: 20000 });
     chk('…then asks, as every print does, whether all three printed properly', true);
     await P.click('.ids-dialog button:has-text("Check later")');
 
-    console.log('a request it cannot read');
+    console.log('a request it cannot read, and the keys');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
     const before = await nOnSheet();
     card = await ask('hello there');
+    if (!/couldn’t tell/.test(card)) console.error('       hello card: ' + card.replace(/\s+/g, ' ').slice(0, 300));
     chk('it says it could not tell, and changes nothing', /couldn’t tell what to print/.test(card) && (await nOnSheet()) === before);
-    await P.fill('.ids-ask-in', 'x');
+    await P.type('#ids-ai-in', '@Bay');
+    await P.waitForSelector('.ids-ai-pop li');
+    await P.keyboard.press('Enter');
+    chk('"@" tags a person by their printed ID', /025-?00|026-002/.test(await P.inputValue('#ids-ai-in')));
     await P.keyboard.press('Escape');
-    chk('Escape with text in the bar clears the text first', (await P.inputValue('.ids-ask-in')) === '' && !!(await P.$('.ids-ask-card')));
+    chk('Escape with text in the composer clears the text first', (await P.inputValue('#ids-ai-in')) === '' && !!(await P.$('.ids-ai')));
     await P.keyboard.press('Escape');
-    chk('Escape clears the bar, then closes the result', !(await P.$('.ids-ask-card')));
-    chk('recent requests come back as chips', (await P.$$('.ids-ask-chip.is-recent')).length >= 1 && /members who joined this week|hello there|new cards for Egbda/.test(await P.innerText('.ids-ask-ex')));
+    await P.waitForTimeout(150);
+    chk('…then closes the pane, back to Settings', !(await P.$('.ids-ai')) && !!(await P.$('.ids-set')));
     await P.evaluate(() => document.activeElement && document.activeElement.blur());
     await P.keyboard.press('/');
-    chk('"/" goes to the bar', await P.evaluate(() => document.activeElement && document.activeElement.id === 'ids-ask-in'));
+    await P.waitForTimeout(200);
+    chk('"/" opens the assistant and goes to the composer, the transcript kept', await P.evaluate(() => document.activeElement && document.activeElement.id === 'ids-ai-in') && /hello there/.test(await P.innerText('.ids-ai-log')));
     await P.keyboard.press('ArrowUp');
-    const upVal = await P.inputValue('.ids-ask-in');
-    chk('↑ in the empty bar brings back the last request', upVal === 'hello there');
-    if (upVal !== 'hello there') console.error('       bar holds: ' + JSON.stringify(upVal) + ' · focus: ' + await P.evaluate(() => document.activeElement && document.activeElement.id));
+    const upVal = await P.inputValue('#ids-ai-in');
+    chk('↑ in the empty composer brings back the last request', upVal === 'hello there');
+    if (upVal !== 'hello there') console.error('       composer holds: ' + JSON.stringify(upVal));
+    await P.fill('#ids-ai-in', '');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+    chk('recent requests come back as starters', (await P.$$('.ids-ai-starter.is-recent')).length >= 1);
+
+    console.log('tablet (900): the side panel is a drawer');
+    await P.setViewportSize({ width: 900, height: 800 });
+    await P.waitForTimeout(400);
+    chk('two columns: no settings column until asked', !(await P.$('.ids-set')) && !(await P.$('.ids-ai')) && !!(await P.$('.ids-sheetcol')));
+    await P.click('.ids-panes button:has-text("Settings")');
+    chk('Settings opens as a drawer over the sheet', !!(await P.$('.ids-pane-drawer .ids-set')));
+    await P.keyboard.press('Escape');
+    await P.waitForTimeout(150);
+    chk('Escape closes the drawer and returns focus to its trigger', !(await P.$('.ids-pane-drawer')) && /Settings/.test(await P.evaluate(() => document.activeElement && document.activeElement.textContent)));
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

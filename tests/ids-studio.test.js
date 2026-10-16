@@ -61,7 +61,7 @@ function pdfFacts(buf) {
 
 let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
-// Layout and Designs are closed sections in the settings column: open one (and leave it open).
+// Layout (open), Printing and Designs (closed) are sections in the settings column: open one (and leave it open).
 const openMore = (pg, title) => pg.evaluate(t => { const d = [...document.querySelectorAll('details.ids-more')].find(x => x.querySelector('.ids-more-t').textContent === t); if (d && !d.open) d.open = true; }, title).then(() => pg.waitForTimeout(150));
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
@@ -128,28 +128,31 @@ function cleanup() {
     const P = await open(1440, 900);
     await P.waitForSelector('.ids-rec', { timeout: 20000 });
     chk('it opens at /club/id-cards, with three columns', new URL(P.url()).pathname === '/club/id-cards' && !!(await P.$('.ids-src')) && !!(await P.$('.ids-sheetcol')) && !!(await P.$('.ids-set')));
-    const chip = async k => P.$eval('.ids-fchip:has-text("' + k + '") .ids-fchip-n', e => +e.textContent);
+    const chip = async k => P.$eval('.ids-statbtn:has-text("' + k + '") .ids-statbtn-n', e => +e.textContent);
     chk('the queue is New 10, Reprints 1, Blocked 2 — the member printed with no request is done', (await chip('New')) === 10 && (await chip('Reprints')) === 1 && (await chip('Blocked')) === 2);
     chk('a blank division says so on the row', /New · division is blank/.test(await P.innerText('.ids-recs')));
-    await P.click('.ids-fchip:has-text("Blocked")');
+    await P.click('.ids-statbtn:has-text("Blocked")');
     chk('blocked rows say why and offer to ask for a photo', /No photo yet · can’t print/.test(await P.innerText('.ids-recs')) && (await P.$$('.ids-rec .ids-btn--28')).length === 2);
     // A person can press it (aria-disabled, not disabled) and is told why; Playwright needs force for that.
     await P.click('.ids-rec .ids-cb', { force: true });
     chk('ticking a blocked row is refused in words', await toastHas(P, /Needs a photo first/));
     const asks = () => php(`echo db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE subjectType = 'member'")['c'];`);
-    await P.click('.ids-btn--outline:has-text("Ask everyone blocked for a photo (2)")');
+    await P.click('.ids-btn:has-text("Ask all 2 for a photo")');
     await P.waitForSelector('[role=alertdialog]:has-text("Ask 2 people for a photo?")');
     await P.click('[role=alertdialog] .ids-btn--primary:has-text("Ask 2")');
     chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Asked 2 people\./) && asks() === '2'
       && /"member"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
     await P.waitForTimeout(200);
-    chk('…each row then says when they were asked, and offers to ask again', /No photo yet · asked \d+ \w+/.test(await P.innerText('.ids-recs'))
-      && (await P.$$eval('.ids-rec .ids-btn--28', bs => bs.every(b => b.textContent === 'Ask again'))) && !(await P.$('.ids-btn--outline:has-text("Ask everyone blocked")')));
-    await P.click('.ids-rec .ids-btn--28');
+    chk('…each row then says the photo was requested and is waiting, with an "Asked" chip that can ask again (v4)', /Photo requested \d+ \w+ · waiting for approval/.test(await P.innerText('.ids-recs'))
+      && (await P.$$('.ids-rec .ids-asked')).length === 2 && !(await P.$('.ids-btn:has-text("Ask all")')));
+    await P.click('.ids-rec .ids-asked');
     chk('"Ask again" inside the quiet period goes through, and says where it went', await toastHas(P, /Asked them by email\./) && asks() === '3');
-    await P.click('.ids-fchip:has-text("New")');
-    await P.click('.ids-btn--outline:has-text("Add 10 to the sheet")');
-    chk('"Add 10 to the sheet" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
+    await P.click('.ids-statbtn:has-text("New")');
+    await P.click('.ids-statbtn:has-text("New")');
+    chk('pressing the status that is on again shows everyone (v4)', (await P.getAttribute('.ids-statbtn:has-text("New")', 'aria-pressed')) === 'false');
+    await P.click('.ids-statbtn:has-text("New")');
+    await P.click('.ids-btn--ink:has-text("Add all 10")');
+    chk('"Add all 10" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
     // Improve photos: one Cloudinary edit for the whole sheet, the count asked before anything runs.
     const imp = await P.$('button:has-text("Improve photos")');
     chk('the sheet offers to improve its photos in one go', !!imp);
@@ -164,7 +167,9 @@ function cleanup() {
     chk('…each slot draws the real member card', (await P.$$('.ids-slot.is-card')).length === 9 && (await P.$$('.ids-slot.is-card .ids-face-rec')).length === 9);
     chk('the member with no ID number is told they get one at print', /1 member gets their ID number when you print/.test(await P.innerText('.ids-set')));
     chk('the blank division is flagged on its slot', (await P.$$('.ids-slot-warn.is-warn')).length === 1);
-    chk('while piles are kept apart by centre, there is no gap bar (§3.2)', !(await P.$('.ids-gapbar')));
+    // v4: a group that cannot fill a sheet is not padded, so one centre's 10 cards leave a gap to fill.
+    chk('one centre is one group: no slots padded, and the gap bar counts the empty slots on the last sheet',
+      !/left blank so the piles never mix/.test(await P.innerText('.ids-set')) && /8 empty slots on the last sheet/.test(await P.innerText('.ids-gapbar')));
     await P.click('.ids-slot.is-card >> nth=0');
     const first = await P.getAttribute('.ids-slot.is-card >> nth=0', 'aria-label');
     await P.keyboard.press('ArrowRight');
@@ -184,7 +189,7 @@ function cleanup() {
     await P.waitForTimeout(200);
     chk('the card-size setting is for uploads: record cards keep their own size, and nothing blocks the print',
       /Sheet 1 of 2/.test(await P.innerText('.ids-pager')) && (await P.$$('.ids-slot.is-card')).length === 9
-      && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') !== 'true'));
+      && await P.$eval('.ids-btn--headprint', b => b.getAttribute('aria-disabled') !== 'true'));
     await P.click('.ids-size:has-text("CR80 portrait")');
     await P.click('.ids-size:has-text("Custom")');
     await P.fill('#ids-cw', '200'); await P.press('#ids-cw', 'Enter');
@@ -199,6 +204,7 @@ function cleanup() {
     await P.click('.ids-ov >> nth=1');
     chk('…and opens the one clicked', /Sheet 2 of 2/.test(await P.innerText('.ids-pager')));
 
+    await openMore(P, 'Printing');
     await P.click('.ids-radio:has-text("Double-sided · long edge")');
     await P.click('.ids-seg-opt:has-text("Backs")');
     await P.waitForFunction(() => { const i = document.querySelector('.ids-slot.is-card .nggc-back img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 }).catch(() => {});
@@ -212,12 +218,14 @@ function cleanup() {
     await P.click('.ids-seg-opt:has-text("Fronts")');
     await P.click('.ids-radio:has-text("Fronts only")');
 
-    await P.click('.ids-scen-btn:has-text("Proof")');
-    chk('the Proof scenario sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
-    await P.click('.ids-scen-btn:has-text("New intake")');
+    await P.selectOption('.ids-jobsel select', 'proof');
+    chk('the Proof job sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
+    chk('…and the toast says what the job changed, with Undo (v4)', await toastHas(P, /Job: Proof · .*150 dpi\s*Undo/));
+    await P.selectOption('.ids-jobsel select', 'batch');
 
     // Print: confirm, the PDF, the log, the queue. Print never opens the browser's print dialog.
-    await P.click('.ids-btn--print');
+    chk('the header’s Print states the count before anyone presses it (v4)', /Print 10/.test(await P.innerText('.ids-btn--headprint')));
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm asks, and sums up the run', /Print 10 cards\?/.test(await P.innerText('[role=alertdialog]')) && /2 × A4/.test(await P.innerText('.ids-sum')));
     const double = (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double');
@@ -264,11 +272,11 @@ function cleanup() {
     await P.waitForSelector(pick);
     chk('only published designs are offered — the draft is not', await P.$eval(pick, s => [...s.options].map(o => o.value).join(',')) === ',TPL-IDS-1');
     await P.selectOption(pick, 'TPL-IDS-1');
-    chk('assigning one says so, the header names it, and it is stored', await toastHas(P, /NGG members now print with Club card v2/)
-      && /Member: Club card v2/.test(await P.innerText('.ids-head')) && php(`echo db_row("SELECT templateId FROM id_designs WHERE kind = 'member'")['templateId'];`) === 'TPL-IDS-1');
+    chk('assigning one says so, the Designs summary names it, and it is stored', await toastHas(P, /NGG members now print with Club card v2/)
+      && /Club card/.test(await P.$eval('details.ids-more:has(.ids-more-t:text-is("Designs")) .ids-more-s', e => e.textContent)) && php(`echo db_row("SELECT templateId FROM id_designs WHERE kind = 'member'")['templateId'];`) === 'TPL-IDS-1');
     await P.waitForSelector('.ids-slot.is-card .ids-face-tpl', { timeout: 30000 });
     chk('the sheet draws it with the Design Studio’s own renderer', (await P.$$('.ids-slot.is-card .ids-face-tpl')).length >= 1);
-    await P.click('.ids-btn--print');
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm names the design', /Club card v2/.test(await P.innerText('.ids-sum')));
     const [dl2] = await Promise.all([P.waitForEvent('download', { timeout: 120000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
