@@ -94,7 +94,7 @@ const ORDER = [
   'page-blog.jsx',
   'page-dashboard.jsx',
   'src/modules/portal/member-results.jsx',
-  'src/modules/mentor15/dc-runtime.jsx',
+  'src/modules/dc/dc-runtime.jsx',
   'src/modules/mentor15/mp15-view.jsx',
   'src/modules/mentor15/mp15-formation.jsx',
   'src/modules/mentor15/mp15-app.jsx',

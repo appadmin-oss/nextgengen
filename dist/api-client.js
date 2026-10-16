@@ -1863,6 +1863,9 @@
        register, weekly reviews and session notes. Each is an upsert or a
        single row on the server, so a replay after a dropped reply is safe. */
     'mentor.act':     (p) => request('/member/mentor.php', { body: p }),
+    /* The instructor's Saturday: roll, plan, hinge tally, exit ticket, log and
+       skill marks. Each is an upsert on the server, so a replay is safe. */
+    'teaching.act':   (p) => request('/member/teaching.php', { body: p }),
   };
 
   global.NGGApi = API;

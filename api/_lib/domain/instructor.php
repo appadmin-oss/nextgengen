@@ -534,12 +534,14 @@ function instructor_skills_board(array $p): array {
     $ids = array_column($roster, 'studentId');
     // One read for the whole grid, not one per child — the same mistake the
     // roster made before it was batched.
-    $marks = []; $evid = [];
+    $marks = []; $evid = []; $prev = [];
     if ($ids) {
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT subjectId, skill, level, evidence FROM skill_marks WHERE course = ? AND subjectId IN $in",
+        foreach (db_all("SELECT subjectId, skill, level, prevLevel, evidence FROM skill_marks WHERE course = ? AND subjectId IN $in",
                         array_merge([$course], $ids)) as $r) {
             $marks[(string)$r['subjectId']][(string)$r['skill']] = (int)$r['level'];
+            // The level before the latest move, so the board can say who moved up this term.
+            if ($r['prevLevel'] !== null) $prev[(string)$r['subjectId']][(string)$r['skill']] = (int)$r['prevLevel'];
             if ((string)($r['evidence'] ?? '') !== '') $evid[(string)$r['subjectId']][(string)$r['skill']] = (string)$r['evidence'];
         }
     }
@@ -548,7 +550,7 @@ function instructor_skills_board(array $p): array {
         $id = (string)$r['studentId'];
         $mine = $marks[$id] ?? [];
         $students[] = ['studentId' => $id, 'fullName' => (string)$r['fullName'],
-            'marks' => $mine, 'evidence' => $evid[$id] ?? (object)[], 'marked' => count($mine), 'of' => count($skills)];
+            'marks' => $mine, 'prev' => $prev[$id] ?? (object)[], 'evidence' => $evid[$id] ?? (object)[], 'marked' => count($mine), 'of' => count($skills)];
     }
     return ['ok' => true, 'course' => $course, 'centre' => $centre,
             'skills' => $skills, 'levels' => SKILL_LEVELS, 'students' => $students];
