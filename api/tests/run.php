@@ -25267,6 +25267,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id plan: "clear the sheet" is the clear act', ((array)$plan($CARDADM, 'clear the sheet')['plan'])['do'] === 'clear');
     $pl = (array)$plan($CARDADM, 'ask the Planford members with no photo for photos')['plan'];
     chk('id plan: "ask … for photos" is the ask act, narrowed to who was named', $pl['do'] === 'askPhotos' && $pl['kind'] === 'member' && $pl['centre'] === 'Planford');
+    $pl = (array)$plan($CARDADM, 'new cards for Planford members, then fill the gaps')['plan'];
+    chk('id plan: a selection with "then fill the gaps" keeps both: who, and the act after it', $pl['do'] === 'fill' && $pl['kind'] === 'member' && $pl['centre'] === 'Planford' && $pl['which'] === 'new');
     chk('id plan: "fill the gaps" is the fill act', ((array)$plan($CARDADM, 'fill the gaps on the last sheet')['plan'])['do'] === 'fill');
     $r = $f('clear the sheet', $cur);
     chk('id plan: an act after a plan stands on its own rather than refining it', $r['refined'] === false && ((array)$r['plan'])['do'] === 'clear');

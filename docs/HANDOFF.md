@@ -1333,3 +1333,23 @@ Tests: `run.php` +11 (the new plan fields, clamping, acts, refusal of unknown
 acts); `ids-ask.test.js` 44 → 58 (answers, settings-only commands with Undo,
 fill, ask-for-photos through the confirm, clear with Undo, and a request to
 print that does not print).
+
+## 2026-10-16 — The assistant acts on what it finds
+
+Follows the entry above.
+- **A person's answer comes with what can be done for them**
+  (`askPerson`, computed when drawn, so it follows them): Put on / Take off
+  the sheet, Ask (again) for a photo, Add a photo, Queue a reprint.
+- **Near spellings find people** ("Jumoke Cardd"), matched like the planner
+  (`idsNameMatch`) and said as "Closest match".
+- **It explains the studio's terms** (`IDS_ASK_FAQ`), but only for a question
+  that asks what something is or means, so "make it a proof" stays a
+  request. Covered: reprint vs new, blocked, proof, packing list, long/short
+  edge, cut marks, dpi, used slots, new sheet per centre, blank division,
+  lost cards and QR, uploads, ID numbers, designs.
+- **"… then fill the gaps"**: a selection with `do: fill` puts the cards on,
+  then fills the last sheet on the sheet it made (`actAfter`).
+- **The transcript survives a refresh** (sessionStorage, this tab, last 40).
+  It comes back as a record: no live plan and no Undo.
+
+Tests: `run.php` +1; `ids-ask.test.js` 58 → 68.

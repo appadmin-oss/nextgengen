@@ -232,6 +232,24 @@ function cleanup() {
     if (!/Jumoke/.test(card)) console.error('       person card: ' + card.replace(/\s+/g, ' ').slice(0, 200));
     card = await ask('where is 025-005?');
     chk('a person, by printed ID: it says where they are in the queue', /Efe Okon/.test(card) && /waiting for their first card/.test(card));
+    // The answer carries what can be done for the person, and the buttons follow them.
+    const sheetBefore = await nOnSheet();
+    await P.click('.ids-ai-card >> nth=-1 >> .ids-ai-person button:has-text("Put on the sheet")');
+    await P.waitForTimeout(250);
+    chk('a person’s answer offers what can be done: "Put on the sheet" puts them on it', (await nOnSheet()) === Math.max(0, sheetBefore) + 1);
+    chk('…and the button follows them: it now offers to take them off', !!(await P.$('.ids-ai-card >> nth=-1 >> .ids-ai-person button:has-text("Take off the sheet")')));
+    await P.click('.ids-ai-card >> nth=-1 >> .ids-ai-person button:has-text("Take off the sheet")');
+    await P.waitForTimeout(200);
+    card = await ask('Has Jumoke Cardd got a card?');
+    chk('a misspelt name still finds the person, and says it is the closest match', /Closest match/.test(card) && /Jumoke Carded/.test(card));
+    card = await ask('Is Gbenga Nophoto ready?');
+    chk('someone with no photo is offered "Ask for a photo"', /waiting for a photo/.test(card) && !!(await P.$('.ids-ai-card >> nth=-1 >> .ids-ai-person button:has-text("Ask for a photo")')));
+    card = await ask('What is a proof?');
+    chk('it explains the studio’s own terms: a proof', /test print/.test(card) && /150 dpi/.test(card));
+    card = await ask('What does long edge mean?');
+    chk('…long edge, for double-sided printing', /flips left to right/.test(card));
+    card = await ask('What does blocked mean?');
+    chk('…and blocked', /no approved photo/.test(card));
     card = await ask('Who is waiting for a photo?');
     chk('"who is waiting for a photo?" names them, and offers the request', /Gbenga Nophoto/.test(card) && /ask them for photos/.test(card));
     chk('…answered without asking the planner (no "Read by" line)', !/Read by/.test(card));
@@ -249,6 +267,13 @@ function cleanup() {
     await P.click('.ids-panes button:has-text("Settings")');
     chk('…and its Undo puts the settings back', (await P.getAttribute('.ids-seg-opt:has-text("A4")', 'aria-checked')) === 'true' && (await P.inputValue('#ids-margin')) === '10');
     await P.click('.ids-panes button:has-text("Assistant")');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+    card = await ask('New cards for Egbeda members, then fill the gaps');
+    await P.waitForTimeout(400);
+    card = await live();
+    chk('a request with a "then": the cards go on, then the gaps are filled from the cards waiting', /cards on the sheet/.test(card) && /Filled \d+ empty slots?|already used|No card that is ready/.test(card));
+    await P.click('.ids-ai-card.is-live button:has-text("Undo")');
+    await P.waitForTimeout(200);
     card = await ask('fill the gaps');
     chk('"fill the gaps" fills the last sheet from the cards waiting, or says why not', /Filled \d+ empty slots?/.test(card) || /already used|No card that is ready/.test(card));
     card = await ask('ask the ones with no photo for photos');
@@ -264,6 +289,16 @@ function cleanup() {
     chk('…with Undo', (await nOnSheet()) === beforeClear);
     card = await ask('print them and mark them printed');
     chk('asked to print, it does not: Print stays a press', (await nOnSheet()) === beforeClear && !(await P.$('[role=alertdialog]')) && !/Took/.test(card));
+
+    console.log('the conversation survives a refresh');
+    const said = await P.innerText('.ids-ai-log');
+    await P.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    await P.waitForSelector('.ids-panes', { timeout: 30000 });
+    if (!(await P.$('.ids-ai'))) await P.click('.ids-panes button:has-text("Assistant")');
+    await P.waitForSelector('.ids-ai-log');
+    chk('after a reload the transcript is still there', /clear the sheet/.test(await P.innerText('.ids-ai-log')) && /clear the sheet/.test(said));
+    chk('…as a record: nothing in it is live, and no Undo comes back', !(await P.$('.ids-ai-card.is-live')) && !(await P.$('.ids-ai-card button:has-text("Undo")')));
 
     console.log('a request it cannot read, and the keys');
     await P.click('.ids-ai-bar button[aria-label="New conversation"]');

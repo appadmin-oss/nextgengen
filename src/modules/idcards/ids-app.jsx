@@ -1271,11 +1271,23 @@ function IdCardStudioPage({ setPage }) {
      it here. In Ask mode a reply waits for Apply; in Act mode it applies. */
   const [askBusy, setAskBusy] = React.useState(false);
   const [askRes, setAskRes] = React.useState(null);
-  const [chat, setChat] = React.useState([]);
+  /* The conversation survives a refresh, in this tab only. What comes back is
+     the record of what was said; nothing in it is live (the sheet itself is
+     not restored), so no Undo or live plan returns with it. */
+  const IDS_CHAT_KEY = "ngg.ids.ask.chat";
+  const [chat, setChat] = React.useState(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(IDS_CHAT_KEY) || "[]");
+      return Array.isArray(v) ? v.map(m => Object.assign({}, m, { undo: null, restored: true })) : [];
+    } catch (_) { return []; }
+  });
+  React.useEffect(() => {
+    try { sessionStorage.setItem(IDS_CHAT_KEY, JSON.stringify(chat.slice(-40).map(m => { const x = Object.assign({}, m); delete x.undo; return x; }))); } catch (_) {}
+  }, [chat]);
   const [liveId, setLiveId] = React.useState(0);
   const [askMode, setAskModeS] = React.useState(idsAskModeGet);
   const setAskMode = m => { setAskModeS(m); try { localStorage.setItem(IDS_ASK_MODE_KEY, m); } catch (_) {} };
-  const chatSeq = React.useRef(0);
+  const chatSeq = React.useRef(chat.reduce((n, m) => Math.max(n, m.id || 0), 0));
   const aiInput = React.useRef(null);
   const say2 = (who, m) => { const id = ++chatSeq.current; setChat(c => c.concat([Object.assign({ id, who }, m)])); return id; };
   const askUndo = React.useRef(null);     // the studio as it was before the first plan
@@ -1346,9 +1358,12 @@ function IdCardStudioPage({ setPage }) {
     (out.changed || []).forEach(k => ran.push("Set " + ({ backs: "backs", marks: "cut marks", paper: "paper", dpi: "image quality", order: "the order", reason: "the reason for the log", margin: "the margin", gap: "the gap", skip: "skipped slots", packing: "the packing list" })[k]));
     return ran;
   };
+  const actAfter = React.useRef(null);   // { id, do } — an act waiting for the sheet a plan just made
   const commit = (id, res, prompt) => {
     const out = applyPlan(res, prompt);
     if (!out) return;
+    const m0 = chat.find(m => m.id === id);
+    if ((m0 && m0.then) || (res.plan && res.plan.do === "fill")) actAfter.current = { id, do: "fill" };
     setLiveId(id);
     setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: ranOf(out, out.n) }) : m));
   };
@@ -1418,12 +1433,21 @@ function IdCardStudioPage({ setPage }) {
     const lookup = text => {
       const t = " " + String(text || "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ") + " ";
       const ids = (String(text).match(/\b(?:[a-z]{2,4}-\d{2}-\d{3,4}|\d{3}-\d{3,4})\b/gi) || []).map(norm);
-      const hits = data.records.filter(r => {
+      let hits = data.records.filter(r => {
         if (ids.length) return ids.includes(norm(r.displayId)) || ids.includes(norm(r.id));
         const words = String(r.name || "").toLowerCase().split(/\s+/).filter(w => w.length > 1);
         return words.length >= 2 && t.includes(" " + words[0] + " ") && t.includes(" " + words[words.length - 1] + " ");
       });
-      return hits.map(r => ({ name: r.name, displayId: r.displayId, centre: r.centre, status: statusOf(r) }));
+      let near = false;
+      /* None exactly: a near spelling of two capitalised words in a row
+         ("Jumoke Cardd"), matched the way the planner matches names. */
+      if (!hits.length && !ids.length) {
+        const caps = String(text).match(/\b\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+)+/gu) || [];
+        const pairs = caps.flatMap(run => { const w = run.split(/\s+/); return w.slice(0, -1).map((x, i) => x + " " + w[i + 1]); });
+        hits = data.records.filter(r => pairs.some(pr => idsNameMatch(pr, r.name)));
+        near = hits.length > 0;
+      }
+      return hits.map(r => ({ key: r.key, near, name: r.name, displayId: r.displayId, centre: r.centre, status: statusOf(r) }));
     };
     const byC = {};
     recs.filter(r => !isBlocked(r)).forEach(r => { const k = r.centre || "No centre"; byC[k] = (byC[k] || 0) + 1; });
@@ -1435,12 +1459,29 @@ function IdCardStudioPage({ setPage }) {
       onSheet: sorted.map(c => c.label), byCentre: Object.entries(byC).sort((a, b) => b[1] - a[1]).map(([centre, n]) => ({ centre, n })), lookup,
     };
   };
+  /* What can be done for one person, from where they are now. Computed when
+     the answer is drawn, so the buttons follow the person: once they are on
+     the sheet, "Put on the sheet" becomes "Take off the sheet". */
+  const askPerson = key => {
+    const r = data.records.find(x => x.key === key);
+    if (!r) return null;
+    const q = recs.find(x => x.key === key);
+    const acts = [];
+    if (q && inQ.has(key)) acts.push({ label: "Take off the sheet", run: () => toggleRec(q) });
+    else if (q && !isBlocked(q)) acts.push({ label: "Put on the sheet", run: () => toggleRec(q) });
+    if (q && isBlocked(q)) {
+      acts.push({ label: idsAskedRecently(askedOf(q)) ? "Ask again for a photo" : "Ask for a photo", run: () => askOne(q) });
+      if (IDS_PHOTO_EDIT[q.kind]) acts.push({ label: "Add a photo", run: () => setEditPhoto(q) });
+    }
+    if (!q && r.printedBefore) acts.push({ label: "Queue a reprint", run: () => reprintOne(r, "asked") });
+    return { name: r.name, acts };
+  };
   const askPlan = prompt => {
     askLast.current = prompt;
     say2("me", { text: prompt });
     // A question about the sheet or a person is answered here, from the studio's own data; nothing is sent.
     const local = idsAskAnswer(prompt, askCtx());
-    if (local) { say2("studio", { kind: "answer", text: local }); return; }
+    if (local) { say2("studio", typeof local === "string" ? { kind: "answer", text: local } : { kind: "answer", text: local.text, people: local.people }); return; }
     setAskBusy(true);
     const current = askRes && askRes.plan ? askRes.plan : (chat.slice().reverse().find(m => m.kind === "plan" && m.res) || {}).res ? (chat.slice().reverse().find(m => m.kind === "plan" && m.res)).res.plan : null;
     NGGApi.admin.idStudio.plan(prompt, current).then(res => {
@@ -1453,6 +1494,16 @@ function IdCardStudioPage({ setPage }) {
       }
       const plan = res.plan;
       const live0 = !!(askRes && askRes.plan && liveId);
+      /* "New cards for Egbeda, then fill the gaps": the selection goes on the
+         sheet first, and the act runs on the sheet it made (actAfter). Asking
+         for photos with a "who" is one act over those people; clearing has
+         nothing to follow. */
+      if (plan.do === "fill" && idsPlanHasSel(plan)) {
+        const snap = planSnap(res);
+        const id = say2("studio", Object.assign({ kind: "plan", res, prompt, snap, pending: askMode === "ask", then: "fill" }, meta));
+        if (askMode === "act") commit(id, res, prompt);
+        return;
+      }
       if (plan.do || (!idsPlanHasSel(plan) && !live0)) {
         const id = say2("studio", Object.assign({ kind: "cmd", plan, preview: idsCmdPreview(plan, st), pending: askMode === "ask" }, meta));
         if (askMode === "act") commitCmd(id, plan);
@@ -1473,6 +1524,14 @@ function IdCardStudioPage({ setPage }) {
     // With every part taken out, what is left is "every new card".
     applyPlan({ plan: Object.keys(next).length ? next : { which: "new" }, by: askRes.by, provider: askRes.provider, refined: true, notes: [] }, askRes.prompt);
   };
+  React.useEffect(() => {
+    const a = actAfter.current;
+    if (!a) return;
+    actAfter.current = null;
+    const r = runCmd({ do: a.do });
+    setChat(c => c.map(m => m.id === a.id ? Object.assign({}, m, { ran: (m.ran || []).concat(r.ran), notes: (m.notes || []).concat(r.notes) }) : m));
+    // eslint-disable-next-line
+  }, [liveId, cards.length, sections.length]);
   const askReset = () => { setChat([]); setLiveId(0); setAskRes(null); askUndo.current = null; };
   const askUndoIt = () => {
     const u = askUndo.current;
@@ -1530,7 +1589,7 @@ function IdCardStudioPage({ setPage }) {
   } : null;
   const A = { ask: askPlan, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
     chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => m.kind === "cmd" ? commitCmd(m.id, m.plan) : commit(m.id, m.res, m.prompt),
-    lastCmdId, undoCmd, starters: askStarters, next: askNext,
+    lastCmdId, undoCmd, starters: askStarters, next: askNext, person: askPerson,
     bindInput: ref => { aiInput.current = ref.current; },
     people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
     print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill };

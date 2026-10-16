@@ -167,6 +167,30 @@ function idsAskIsQuestion(text) {
   if (/^(can|could|would|will) you\b/.test(t) && !/\b(help|do|tell|explain|show)\b/.test(t)) return false;   // a request, politely put
   return /\?$/.test(t) || /^(why|what|what's|whats|how|who|who's|whos|which|where|when|is|are|do|does|did|has|have|can|any|tell me|show me|explain)\b/.test(t);
 }
+/* The studio's own vocabulary, explained in its own terms. Matched only on a
+   question that asks what something is or means, so "make it a proof" is
+   still a request and "what is a proof?" is answered. */
+const IDS_ASK_FAQ = [
+  [/\breprints?\b.*\b(new|first)\b|\b(new|first)\b.*\breprints?\b|\bwhat('s| is) a reprint\b/, "A **new** card is somebody’s first. A **reprint** replaces a card they already have: lost, damaged, never received, or details that changed. A reprint uses the current design; a lost or never-received card also gets a new QR, so the old card stops opening the gate."],
+  [/\bblocked\b/, "**Blocked** means there is no approved photo yet, so the card can’t print. Ask for a photo from their row (or say “ask them for photos”), or add one yourself with the camera button. They print once a photo is approved."],
+  [/\bproofs?\b/, "A **proof** is a test print: 150 dpi, “PROOF” across every card, and it doesn’t count as anyone having a card. Use it to check a design or a batch before the real run."],
+  [/\bpacking list\b/, "The **packing list** is an extra first page listing every sheet and slot with the person on it, to tick off as you cut, so a card never goes to the wrong person."],
+  [/\b(long|short)[- ]edge\b|\bduplex\b|\bdouble[- ]sided\b/, "**Long edge** is the usual double-sided setting: the sheet flips left to right, so the backs are mirrored across each row. **Short edge** flips top to bottom; the backs are drawn upside down to match. Use whichever your printer’s duplex setting says."],
+  [/\b(cut|crop|trim) marks?\b/, "**Cut marks** are short lines just outside the grid at every card edge, to line the cutter up. Leave them on unless your print shop asks for a clean sheet."],
+  [/\bdpi\b|\bimage quality\b|\bresolution\b/, "**DPI** is how finely each card is drawn in the PDF: 150 for proofs, 300 for normal printing, 600 for the sharpest text and QR codes (a bigger, slower file)."],
+  [/\b(skip|used) slots?\b|\bpart[- ]used\b/, "**Skip used slots** is for a sheet of card stock you have already printed part of: the first sheet starts after that many slots, so nothing prints on cards already cut."],
+  [/\bnew sheet for each\b|\bsplit by cent(re|er)\b|\bpiles?\b/, "**New sheet for each centre** starts a fresh sheet for every centre that has at least a sheet’s worth of cards, so each centre’s cards come out as their own pile. Smaller groups share a sheet, so no card stock is wasted."],
+  [/\bdivision\b/, "A **blank division** means the member’s record has no track or division, so that line on the card prints empty. Fix it on their record in the Control Room, or print as it is."],
+  [/\blost\b|\bqr\b|\bold card\b/, "When a card is **lost or never received**, its reprint gets a new QR code and the old card stops opening the gate. Other reprints keep the QR they had, so the old card works until it is handed back."],
+  [/\bupload(ed|s)?\b|\bmade elsewhere\b/, "**Uploaded** cards are finished images made somewhere else (a printer’s proof, a partner’s badge). Name them “…-front” and “…-back” and they pair up; choose copies, and check the dpi and fit chips before printing."],
+  [/\bid numbers?\b|\bmember ids?\b|\bprinted ids?\b/, "A member’s printed ID is year-prefixed (026-014) and is theirs for good; a member with no ID is given one when you print, and it is never reissued. Summer School participants’ IDs are centre-prefixed (EG-26-001) and last for the season."],
+  [/\bdesigns?\b|\btemplates?\b/, "Each card type prints with the design assigned to it in **Settings → Designs**: a published design from the Design Studio, or the standard card. Drafts never print, and every run logs the design version it used."],
+];
+function idsAskFaq(t) {
+  if (!/\b(what|what's|whats|explain|mean|means|meaning|difference|how does|why does|what does)\b/.test(t)) return null;
+  const hit = IDS_ASK_FAQ.find(([re]) => re.test(t));
+  return hit ? hit[1] : null;
+}
 const idsList = (names, max) => names.slice(0, max || 8).join(", ") + (names.length > (max || 8) ? " and " + (names.length - (max || 8)) + " more" : "");
 function idsAskAnswer(text, c) {
   if (!idsAskIsQuestion(text)) return null;
@@ -180,12 +204,15 @@ function idsAskAnswer(text, c) {
       + "**Ask**: “why can’t I print yet?”, “who’s blocked?”, “who’s on the sheet?”, “has Ada Obi got a card?”, “how much card stock?”.\n\n"
       + "I can’t print and I can’t mark anyone as printed: Print stays your press, with the count on it.";
   }
-  // A person, by printed ID or name.
+  // A person, by printed ID or name (a near spelling counts). Each comes back with what can be done for them.
   const people = c.lookup(text);
   if (people.length) {
-    return people.slice(0, 5).map(p => "**" + p.name + "**" + (p.displayId ? " (" + p.displayId + (p.centre ? ", " + p.centre : "") + ")" : p.centre ? " (" + p.centre + ")" : "") + " " + p.status + ".").join("\n\n")
-      + (people.length > 5 ? "\n\n" + (people.length - 5) + " more match. Add a surname or the ID." : "");
+    return { people: people.slice(0, 5).map(p => p.key), text: (people.some(p => p.near) ? "Closest match" + (people.length > 1 ? "es" : "") + " for that name:\n\n" : "")
+      + people.slice(0, 5).map(p => "**" + p.name + "**" + (p.displayId ? " (" + p.displayId + (p.centre ? ", " + p.centre : "") + ")" : p.centre ? " (" + p.centre + ")" : "") + " " + p.status + ".").join("\n\n")
+      + (people.length > 5 ? "\n\n" + (people.length - 5) + " more match. Add a surname or the ID." : "") };
   }
+  const faq = idsAskFaq(t);
+  if (faq) return faq;
   if (/\b(blocked|no photo|without (a )?photo|missing photos?|need(s)? (a )?photos?|waiting (for|on) (a )?photos?)\b/.test(t)) {
     if (!c.blockedList.length) return "Nobody is blocked. Everyone waiting has a photo.";
     const asked = c.blockedList.filter(p => p.asked).length;
@@ -402,7 +429,21 @@ function IdsAskReply({ m, A }) {
       {m.retry && <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm" onClick={A.retry}>Try again</button></div>}
     </div>
   );
-  if (m.kind === "answer") return <div className="ids-ai-card"><span className="ids-ai-who">Assistant</span><IdsAskMini text={m.text}/></div>;
+  if (m.kind === "answer") return (
+    <div className="ids-ai-card">
+      <span className="ids-ai-who">Assistant</span>
+      <IdsAskMini text={m.text}/>
+      {(m.people || []).map(key => {
+        const P = A.person(key);
+        return P && P.acts.length > 0 && (
+          <div key={key} className="ids-ai-person" role="group" aria-label={"For " + P.name}>
+            <span className="ids-ai-person-n">{P.name}</span>
+            {P.acts.map(a => <button key={a.label} type="button" className="ids-btn ids-btn--sm" onClick={a.run}>{a.label}</button>)}
+          </div>
+        );
+      })}
+    </div>
+  );
   if (m.kind === "cmd") return (
     <div className={"ids-ai-card" + (m.pending ? "" : " is-done")}>
       <span className="ids-ai-who">Assistant{m.undone ? " · undone" : ""}</span>
