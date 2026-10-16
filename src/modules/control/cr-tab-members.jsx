@@ -1106,4 +1106,5 @@ Object.assign(CR_TAB_DEFS, {
      inline row reads as a filter bar, and people looked for it in Settings. */
   centres: crPanel(() => <AdminCentres/>, { actions: (d, ctx) => { crMbCentreCtx.current = ctx; return ctx.can("people") ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; } }),
   idcards: crPanel(() => <AdminIdCards/>),
+  accounts: crPanel(() => <AdminAccounts/>),
 });

@@ -1071,6 +1071,12 @@
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
     },
     admin: {
+      /* The accounts desk: who cannot sign in, and the members behind each
+         number. Nothing here ends an account — that is the MoU's question. */
+      accounts: {
+        overview: () => request('/admin/accounts.php'),
+        unlock:   (memberId) => request('/admin/accounts.php', { body: { action: 'unlock', memberId } }),
+      },
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
         upsert: (data) => request('/admin/members.php', { body: data }),

@@ -9605,3 +9605,59 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .mtr-cover-who { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-weight: 800; font-size: 15px; color: #fff; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .mtr-cover-meta { font-size: 12px; color: rgba(230,238,255,.72); font-variant-numeric: tabular-nums; }
 .mtr-cover-why { font-size: 14px; color: #eef2fb; }
+/* ── Member accounts ─────────────────────────────────────────────────────────
+   Five signals about signing in. Each opens to the members it counts, because
+   "14 locked out" with no names is an accusation rather than a working list. */
+.acct-totals { font-size: 11.5px; color: var(--ink-500); margin-right: 4px; }
+.acct-signals { display: flex; flex-direction: column; gap: 10px; }
+.acct-signal { padding: 0; overflow: hidden; }
+.acct-signal-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 14px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.acct-signal-head:hover { background: rgba(12, 20, 50, 0.03); }
+.acct-signal-head:focus-visible { outline: 2px solid var(--gold-500, #f5b026); outline-offset: -2px; }
+.acct-signal-n {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.2ch;
+  text-align: right;
+}
+.acct-signal-text { display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.acct-signal-why { font-size: 12.5px; color: var(--ink-500); line-height: 1.4; }
+.acct-signal-caret { font-size: 18px; color: var(--ink-500); line-height: 1; }
+
+.acct-list { border-top: 1px solid var(--line, #e8ebf2); }
+.acct-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 16px;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--line, #e8ebf2);
+}
+.acct-row:last-child { border-bottom: none; }
+/* .admin-panel centres its text; a list of people must not inherit that. */
+.acct-row-name { display: flex; flex-direction: column; gap: 1px; justify-self: start; text-align: left; }
+.acct-row-meta { font-size: 11px; color: var(--ink-500); }
+.acct-more { padding: 10px 16px; font-size: 12.5px; color: var(--ink-500); text-align: left; }
+
+/* The panel sits in a column beside the sidebar, so its own width is the
+   question — not the window's (CLAUDE.md §11). */
+.acct-signal { container: acctsig / inline-size; }
+@container acctsig (max-width: 420px) {
+  .acct-signal-why { display: none; }
+  .acct-row { grid-template-columns: 1fr; }
+  .acct-row > :last-child { justify-self: start; }
+}
