@@ -50,6 +50,11 @@ Read CLAUDE.md first. Schema target is **147**.
     vacuously). Change it to `behaviour.star.give` with `subjectId`/`stars`.
 
 ## Remaining, in priority order
+0. **FIRST: build Mentor Portal v15** from the design (the user's stated priority —
+   it should have come before the hardening). Build it on the existing ops
+   (`member.mentor.*`, `mp_*`) and the hardened gate above; add new ops where
+   needed, never rename or repurpose an existing op or route. Every screen
+   needs loading, empty and an honest error state. Then the items below.
 1. **High 2** `member_mp_message_reply`: build thread id server-side, require a
    non-empty in-caseload subject, require screening (partly done: ownership by kind).
 2. **High 3** `attention`: leads/coords only; route legacy concern flags to
@@ -68,8 +73,6 @@ Read CLAUDE.md first. Schema target is **147**.
    no officer email (notify leads/staff + ops_record); `retreat_book` swallows
    exceptions; misleading CSRF docblock; CSP unsafe-inline/eval; keep the 8 MB
    source map and `api/tests/run.php` out of `dist/`.
-6. Then build **Mentor Portal v15** from the design, on the EXISTING ops
-   (`member.mentor.*`, `mp_*`) — add ops, never rename or repurpose one.
 
 ## Conventions that bit this work
 - Test fixtures for mentors need `checkedAt`; volunteers need `safeguarding => 'cleared'`.
