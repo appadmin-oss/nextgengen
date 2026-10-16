@@ -468,6 +468,7 @@ return [
         'public.summer'    => 300,
         'public.programme' => 300,  // the join form's courses and centres per programme; purged by catalogue and centre writes
         'public.timetable' => 300,  // a centre's public timetable; purged on any timetable or centre write
+        'public.formation' => 300,  // the Saturday Formation Schedule; purged when an admin edits a block
         'community.showcase' => 180, // admin-featured posts; purged on feature/hide
         'post.get'         => 120,  // a single post by slug; purged with public.posts
         'default'          => 0,    // 0 = no cache

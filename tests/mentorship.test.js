@@ -102,7 +102,8 @@ async function as(memberId, admin, viewport) {
 
     // ── The Mentor Portal (/mentor), as Ngozi: her class, and School results ──
     const mt = await as('NGG-MS-M1', false);
-    await mt.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    // The class portal (stars, school results) is /mentor?tab=…; /mentor itself is the v15 portal (tests/mentor-v15.test.js).
+    await mt.goto(BASE + '/mentor?tab=class', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
     await mt.waitForFunction(() => /Daniel Okafor/.test(document.body.innerText), null, { timeout: 60000 });
     const roster = await mt.innerText('body');

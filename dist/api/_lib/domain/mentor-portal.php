@@ -1166,9 +1166,9 @@ function mp_job_wellbeing_alert(array $m, string $w): void {
 /* ── Saturday ───────────────────────────────────────────────────────────── */
 
 const MP_AGENDA_DEFAULT = [
-    ['title' => 'Pod huddle', 'sub' => 'The roll, one win from the week, today’s plan', 'minutes' => 10, 'fixed' => true],
-    ['title' => 'Activity', 'sub' => 'Choose one from the library', 'minutes' => 30, 'fixed' => false],
-    ['title' => 'One-to-ones', 'sub' => '15 minutes each', 'minutes' => 45, 'fixed' => true],
+    ['title' => 'Pod huddle', 'sub' => 'The register, a review of the previous week, assignments and dues/fines', 'minutes' => 10, 'fixed' => true],
+    ['title' => 'Musing', 'sub' => 'Anchor Journal, personal timetable, goals, courage, chess and leadership', 'minutes' => 30, 'fixed' => false],
+    ['title' => 'One-to-ones', 'sub' => 'Who are you becoming, and what evidence do we have?', 'minutes' => 45, 'fixed' => true],
     ['title' => 'Close', 'sub' => 'One thing each person will do this week', 'minutes' => 5, 'fixed' => true],
 ];
 const MP_ACTIVITIES = [
@@ -1451,7 +1451,7 @@ function mp_commitments(array $g, string $month, string $today): array {
     return [
         $row('cimc', 'CIMC training', 'Saturdays 7:00am', ($cimcDone || $cimcAtt >= $cimcHeld - 1) ? 'ok' : 'warn', $cimcDone ? 'Complete' : $cimcAtt . ' of ' . $cimcHeld . ' Saturdays', 'Centre register'),
         $row('prep', 'Mentor Preparation Session', 'Weekly, 7:00–8:00pm · come prepared', $att('prep') >= $weeks ? 'ok' : 'warn', $att('prep') . ' of ' . $weeks . ' so far', 'Session register'),
-        $row('saturdays', 'Mentor at 9:30am at least twice a month', $satsLeft . ' Saturday' . ($satsLeft === 1 ? '' : 's') . ' left', $satMentored >= $o['minSaturdays'] ? 'ok' : ($satsLeft + $satMentored < $o['minSaturdays'] ? 'bad' : 'warn'),
+        $row('saturdays', 'Mentor at the 8:30am breakout at least twice a month', $satsLeft . ' Saturday' . ($satsLeft === 1 ? '' : 's') . ' left', $satMentored >= $o['minSaturdays'] ? 'ok' : ($satsLeft + $satMentored < $o['minSaturdays'] ? 'bad' : 'warn'),
              $satMentored . ' of ' . $o['minSaturdays'], 'Saturday register', ['label' => 'Plan Saturday', 'route' => 'saturday:before']),
         $row('caseload', 'At least five children in your care', 'Assessment, scoring, follow-up and mentoring', ($peer || count($ids) >= $o['minCaseload']) ? 'ok' : 'bad', count($ids) . ' children', 'Your caseload'),
         $row('platform', 'Assess, score and monitor on the platform', 'Observations and weekly reviews by Monday', ($revDone >= count($here) && $scMissing === 0) ? 'ok' : 'warn',
@@ -1481,7 +1481,7 @@ function mp_commitments_week(array $g, string $today): array {
     $out = [['day' => 'Tuesday', 'time' => 'After school', 'label' => 'STS meeting', 'done' => $done('sts')],
             ['day' => 'Weekly', 'time' => '7:00–8:00pm', 'label' => 'Mentor Preparation Session', 'done' => $done('prep')]];
     if (!$cimcDone) $out[] = ['day' => 'Saturday', 'time' => '7:00am', 'label' => 'CIMC training', 'done' => $done('cimc')];
-    $out[] = ['day' => 'Saturday', 'time' => '9:30am', 'label' => 'Mentoring session', 'done' => $done('saturday')];
+    $out[] = ['day' => 'Saturday', 'time' => '8:30am', 'label' => 'Musing & mentor breakout', 'done' => $done('saturday')];
     return $out;
 }
 /** view=role — My role. */

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 147;
+const NGG_SCHEMA_TARGET = 148;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4627,6 +4627,22 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_mrc_mentor ON mentor_record_cover(mentorMemberId, subjectId, expiresAt);
             CREATE INDEX IF NOT EXISTS idx_mrc_centre ON mentor_record_cover(centre, grantedAt);",
+        /* 148 — the Saturday Formation Schedule (domain/saturday-formation.php):
+         * the day's blocks with each audience's part, and the ledger of what the
+         * day's reminders and family messages have already sent. */
+        148 => "
+            CREATE TABLE IF NOT EXISTS saturday_formation (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              blockKey TEXT UNIQUE NOT NULL, sort INTEGER DEFAULT 0, startTime TEXT NOT NULL, endTime TEXT NOT NULL,
+              title TEXT NOT NULL, flow TEXT DEFAULT '', purpose TEXT DEFAULT '', quote TEXT DEFAULT '', forJson TEXT DEFAULT '',
+              status TEXT DEFAULT 'active', updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS saturday_formation_sends (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL, slot TEXT NOT NULL, recipient TEXT NOT NULL, channel TEXT NOT NULL, sentAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_sfs ON saturday_formation_sends(onDate, slot, recipient, channel);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

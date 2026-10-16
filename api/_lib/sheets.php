@@ -100,6 +100,7 @@ function gs_cache_topics(): array {
         'catalogue' => ['public.programme', 'public.summer'],
         // A centre's published timetable — changed by the timetable desk.
         'timetable' => ['public.timetable'],
+        'formation' => ['public.formation'],
         // Featuring or hiding a post changes the public Showcase.
         'community' => ['community.showcase'],
         /* Enrolment counts feed the public stats block, and the /summer page's

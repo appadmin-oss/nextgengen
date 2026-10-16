@@ -1233,3 +1233,12 @@ screen and the truth goes to the inbox.
 - Tests: `api/tests/run.php`, under "A browser that has signed in here before".
   Two `ui-smoke` failures about mentoring goals fail with this change stashed
   too, so they predate it.
+
+## 2026-10-16 · Mentor Portal v15 and the Saturday Formation Schedule
+
+`/mentor` is the v15 design for NGG mentors (compiled by `tools/dc-compile.js`, driven by
+`src/modules/mentor15/mp15-app.jsx` on the existing mentor ops); the class portal stays for
+instructors, Summer mentors and its own tabs. The Saturday Formation Schedule is a table
+(migration 148, `domain/saturday-formation.php`), read per audience by `public.formation` and
+edited by `admin.formation.save`; the web-cron sends its block reminders and three family
+emails once each. Progress log: `docs/PORTALS-HANDOFF.md`.

@@ -1,0 +1,13 @@
+{
+  "// what": "The Mentor Portal v15 design's sample copy, and the value that replaces it. See tools/dc-compile.js.",
+  "Tuesday 14 October, after the STS meeting · 20 minutes": "{{ supWhen }}",
+  "Agreed last time · 30 September": "{{ supAgreedL }}",
+  "“Your Saturday observations are specific and kind. Next step: lead one family conversation yourself before the retreat, and bring what you learned.”": "{{ fbText }}",
+  "30 September · after supervision": "{{ fbWhen }}",
+  "You accepted the NGGC Mentorship Commitment and Conduct Policy on 12 January 2026. The 12 commitments you can act on each month are tracked here.": "{{ polText }}",
+  "A mentor observes, models, guides, challenges, encourages, documents, collaborates and follows through.": "{{ polStandard }}",
+  "Goes only to Mrs. Bisi Ogun.": "Goes only to {{ officer }}.",
+  "Sent to Mrs. Bisi Ogun": "Sent to {{ officer }}",
+  "commitments on track for October": "{{ cmMonthL }}",
+  "Agenda · 9:30am": "Agenda · 8:30am, musing & mentor breakout"
+}

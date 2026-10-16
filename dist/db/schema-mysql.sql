@@ -3655,3 +3655,17 @@ CREATE TABLE IF NOT EXISTS mentor_record_cover (
   INDEX idx_mrc_mentor (mentorMemberId, subjectId, expiresAt), INDEX idx_mrc_centre (centre, grantedAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (147) ON DUPLICATE KEY UPDATE version = version;
+
+-- 148: the Saturday Formation Schedule and its send ledger.
+CREATE TABLE IF NOT EXISTS saturday_formation (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  blockKey VARCHAR(40) NOT NULL UNIQUE, sort INT DEFAULT 0, startTime VARCHAR(5) NOT NULL, endTime VARCHAR(5) NOT NULL,
+  title VARCHAR(160) NOT NULL, flow VARCHAR(80) DEFAULT '', purpose TEXT, quote TEXT, forJson MEDIUMTEXT,
+  status VARCHAR(16) DEFAULT 'active', updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS saturday_formation_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onDate VARCHAR(10) NOT NULL, slot VARCHAR(40) NOT NULL, recipient VARCHAR(190) NOT NULL, channel VARCHAR(16) NOT NULL, sentAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY uq_sfs (onDate, slot, recipient, channel)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (148) ON DUPLICATE KEY UPDATE version = version;

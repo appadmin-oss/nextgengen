@@ -27453,5 +27453,27 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── The Saturday Formation Schedule: seeded once, read per audience, edited by content, sent once ──
+(function () {
+    db_exec('DELETE FROM saturday_formation'); db_exec('DELETE FROM saturday_formation_sends');
+    $m = public_formation(['audience' => 'mentor']);
+    $keys = array_column($m['blocks'], 'key');
+    chk('formation · seeded from the programme schedule: nine blocks, 8:00 to 2:00, in order',
+        $keys === ['checkin', 'musing', 'vanboja', 'anthem', 'special', 'division', 'break', 'chess', 'close'] && $m['blocks'][0]['start'] === '08:00' && end($m['blocks'])['end'] === '14:00');
+    chk('formation · each audience reads its own part (mentor: the key question; parent: one line)',
+        in_array('Take the register and note who is here.', $m['blocks'][1]['part'], true) && $m['blocks'][1]['quote'] === 'Who are you becoming, and what evidence do we have?'
+        && is_string(public_formation(['audience' => 'parent'])['blocks'][1]['part']) && !isset($m['blocks'][1]['for']));
+    chk('formation · an unknown audience falls back to member, never to everything', public_formation(['audience' => 'nobody'])['audience'] === 'member');
+    $n = (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c']; public_formation([]);
+    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c'] === 9);
+    chk('formation · editing a block needs the content capability', empty(admin_formation_save(['requesterId' => 'NOBODY', 'key' => 'chess', 'start' => '13:10'])['ok']));
+    chk('formation · ledger: a send happens once per day, slot, person and channel',
+        sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === true && sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === false && sf_once('2026-10-17', 'block:chess', 'M-1', 'email') === true);
+    chk('formation · the tick does nothing on a weekday', sf_tick(strtotime('2026-10-16T08:00:00Z'))['saturday'] === false);
+    $r = sf_tick(strtotime('2026-10-17T07:31:00Z'));   // 8:31 Lagos, a Saturday
+    chk('formation · on Saturday at 8:31 Lagos the breakout block is open', $r['saturday'] === true && $r['date'] === '2026-10-17');
+    db_exec('DELETE FROM saturday_formation_sends');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
