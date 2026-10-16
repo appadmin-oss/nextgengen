@@ -6273,7 +6273,7 @@ chk('geo: a device inside the fence matches its centre', (function () { $m = geo
 chk('geo: a device ~500m out is the nearest fence but out of range', (function () { $m = geo_match_centre(6.6045, 3.3000); return $m && $m['inFence'] === false && $m['distanceM'] > 400; })());
 
 // ── Centre management: operational detail (address, area, lead, contacts) ──
-db_insert('volunteers', ['volunteerId' => 'VOL-LEAD-1', 'fullName' => 'Lead Person', 'firstName' => 'Lead', 'lastName' => 'Person', 'email' => 'lead@e.org', 'role' => 'mentor', 'status' => 'active', 'centre' => 'Ayobo Hub', 'visibilityConsent' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('volunteers', ['volunteerId' => 'VOL-LEAD-1', 'fullName' => 'Lead Person', 'firstName' => 'Lead', 'lastName' => 'Person', 'email' => 'lead@e.org', 'role' => 'mentor', 'status' => 'active', 'centre' => 'Ayobo Hub', 'visibilityConsent' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'safeguarding' => 'cleared']);
 $cMgmt = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'address' => '5 Ayobo Rd', 'area' => 'Ayobo · Lagos', 'leadVolunteerId' => 'VOL-LEAD-1', 'phone' => '+234 800', 'email' => 'ayobo@ngg.org', 'meetDays' => 'Saturdays', 'meetTime' => '09:00 – 13:00', 'notes' => 'test note']]);
 chk('centre: operational detail (address/area/lead/contacts) saves', !empty($cMgmt['ok']));
 chk('centre: a malformed email is rejected', backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $cA['centreId'], 'name' => 'Ayobo Hub', 'code' => 'AYB', 'color' => '#123456', 'email' => 'not-an-email']])['error'] === 'bad_email');
@@ -9705,7 +9705,7 @@ chk('student delete removes the record and frees the QR', (function () use ($dmS
 })());
 
 // Volunteer — throwaway active record, edit, delete.
-db_insert('volunteers', ['volunteerId' => 'VOL-DM-1', 'fullName' => 'Vol Edit', 'firstName' => 'Vol', 'lastName' => 'Edit', 'email' => 'voledit@example.com', 'phone' => '08030000002', 'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'STEM', 'courses' => '[]', 'token' => 'VOLQR-DMDM', 'status' => 'active', 'visibilityConsent' => 0, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('volunteers', ['volunteerId' => 'VOL-DM-1', 'fullName' => 'Vol Edit', 'firstName' => 'Vol', 'lastName' => 'Edit', 'email' => 'voledit@example.com', 'phone' => '08030000002', 'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'STEM', 'courses' => '[]', 'token' => 'VOLQR-DMDM', 'status' => 'active', 'visibilityConsent' => 0, 'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'safeguarding' => 'cleared']);
 db_insert('qr_codes', ['token' => 'VOLQR-DMDM', 'batch' => 'VOL', 'status' => 'assigned', 'studentId' => 'VOL-DM-1', 'assignedName' => 'Vol Edit', 'createdAt' => now_iso()]);
 chk('volunteer update edits role + courses + consent', (function () {
     if (empty(backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['role' => 'instructor', 'courses' => ['Python', 'Web'], 'visibilityConsent' => 1, 'phone' => '08030000009']])['ok'])) return false;
@@ -10241,7 +10241,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // row-token fallback the next case covers.
     db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-900', 'fullName' => 'Ifeoma Instructor', 'email' => 'ifeoma@ex.co',
         'phone' => '+2348037654321', 'role' => 'instructor', 'token' => '', 'status' => 'active',
-        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'safeguarding' => 'cleared']);
     db_insert('qr_codes', ['token' => 'VOLQR-CM900TEST', 'studentId' => 'VOL-INS-26-900', 'status' => 'assigned', 'createdAt' => now_iso()]);
     $cmVol = db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-INS-26-900'");
     chk('community login: an instructor signs in with the ID on their card', (function () use ($cmVol) {
@@ -10262,7 +10262,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('community login: …or with the token held on the volunteer row alone', (function () {
         db_insert('volunteers', ['volunteerId' => 'VOL-MEN-26-901', 'fullName' => 'Tunde Tokenonly', 'email' => 'tt@ex.co',
             'phone' => '+2348039990001', 'role' => 'mentor', 'token' => 'VOLQR-ROWONLY', 'status' => 'active',
-            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+            'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'safeguarding' => 'cleared']);
         $r = backend_dispatch('community.login', ['token' => 'VOLQR-ROWONLY']);
         return !empty($r['ok']) && $r['kind'] === 'volunteer' && (string)$r['person']['volunteerId'] === 'VOL-MEN-26-901';
     })());
@@ -11169,7 +11169,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     db_insert('members', ['memberId' => 'NGG-2025-0600', 'fullName' => 'Nia NGGMentor', 'email' => 'nggmentor@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-NGG', 'fullName' => 'Nia NGGMentor', 'email' => 'nggmentor@example.com',
-        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'checkedAt' => now_iso(), 'createdAt' => now_iso()]);
     // A Club member for them to supervise, at the same centre.
     db_insert('members', ['memberId' => 'NGG-2025-0601', 'fullName' => 'Club Kid', 'email' => 'clubkid@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -11234,7 +11234,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // one centre. Piano is theirs; Guitar at the same centre is not.
     db_insert('volunteers', ['volunteerId' => 'VOL-INS-1', 'fullName' => 'Ife Instructor', 'email' => 'ins1@example.com',
         'role' => 'instructor', 'centre' => 'Egbeda', 'faculty' => 'Music',
-        'courses' => json_encode(['Piano', 'Talking Drums']), 'status' => 'active', 'createdAt' => now_iso()]);
+        'courses' => json_encode(['Piano', 'Talking Drums']), 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso()]);
     db_insert('summer_students', ['studentId' => 'SUM-PIANO', 'cohortId' => 'RC1', 'fullName' => 'Piano Kid',
         'centre' => 'Egbeda', 'track' => 'Piano', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('summer_students', ['studentId' => 'SUM-GUITAR', 'cohortId' => 'RC1', 'fullName' => 'Guitar Kid',
@@ -11331,7 +11331,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     // A volunteer mentor is narrowed by their faculty, the way a mentors-table
     // record is narrowed by its department.
     db_insert('volunteers', ['volunteerId' => 'VOL-MEN-1', 'fullName' => 'Vera VolMentor', 'email' => 'volmen1@example.com',
-        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'createdAt' => now_iso()]);
+        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso()]);
     $vm = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-MEN-1']);
     $vmIds = array_column($vm['students'] ?? [], 'studentId');
     chk('a volunteer mentor gets the mentor view', ($vm['role'] ?? '') === 'mentor');
@@ -12489,6 +12489,31 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         }
         return true;
     })());
+    chk('every op the shipped config caches is purged by some topic', (function () {
+        /* The converse of the check above. A cached public read that no topic
+           names is served stale for its whole TTL after every write — that is
+           how public.session sat five minutes behind a term being opened. */
+        $example = @include dirname(__DIR__) . '/config.example.php';
+        $named = array_merge(...array_values(gs_cache_topics()));
+        foreach (($example['cache_ttl'] ?? []) as $op => $ttl) {
+            if ((int)$ttl > 0 && !in_array($op, $named, true)) {
+                fwrite(STDERR, "\n  op '$op' is cached but no topic purges it\n");
+                return false;
+            }
+        }
+        return true;
+    })());
+    chk('opening or editing a session purges the cached public.session', (function () {
+        global $CONFIG;
+        $CONFIG['cache_ttl']['public.session'] = 300;
+        gs_cache_write('public.session', [], ['ok' => true, 'current' => null, 'next' => null]);
+        if (gs_cache_read('public.session', []) === null) return false;
+        $src = file_get_contents(dirname(__DIR__) . '/_lib/domain/admin.php');
+        $fn = substr($src, strpos($src, 'function admin_sessions_upsert'));
+        $fn = substr($fn, 0, strpos($fn, "\n}\n"));
+        cache_invalidate('sessions');
+        return substr_count($fn, "cache_invalidate('sessions')") === 2 && gs_cache_read('public.session', []) === null;
+    })());
     chk('an unknown topic is a no-op, not a crash', (function () {
         cache_invalidate('no_such_topic');
         cache_invalidate(['posts', 'no_such_topic']);
@@ -13017,7 +13042,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('volunteers', ['volunteerId' => 'VOL-SUM-9', 'fullName' => 'Femi Volunteer', 'email' => 'femi@example.com',
-        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'createdAt' => now_iso()]);
+        'role' => 'mentor', 'centre' => 'Egbeda', 'faculty' => 'Music', 'status' => 'active', 'createdAt' => now_iso(), 'safeguarding' => 'cleared']);
 
     chk('a member who is not a mentor gets no portal', mentor_portal_role('NGG-2025-0810') === '');
     $pr = backend_dispatch('admin.mentor.promote', ['requesterId' => 'NGG-2025-0099', 'personId' => 'NGG-2025-0810']);
@@ -13074,7 +13099,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
 
     /* Lead mentors. A mentor with a department sees that department; a lead
      * runs the centre, and a lead held to one department is a lead in name. */
-    db_update('mentors', ['department' => 'Piano', 'rank' => 'mentor'], ['memberId' => 'NGG-2025-0810']);
+    db_update('mentors', ['department' => 'Piano', 'rank' => 'mentor', 'checkedAt' => now_iso()], ['memberId' => 'NGG-2025-0810']);
     $asMentor = mentor_gate(['requesterId' => 'NGG-2025-0810']);
     db_update('mentors', ['rank' => 'lead'], ['memberId' => 'NGG-2025-0810']);
     $asLead = mentor_gate(['requesterId' => 'NGG-2025-0810']);
@@ -23823,8 +23848,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     unset($GLOBALS['__ai_mock']);
 
     // Staff: a Summer-only volunteer is refused; an NGG instructor marks it.
-    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-S', 'fullName' => 'Summer Inst', 'email' => 'vcs@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'summer', 'createdAt' => $now, 'updatedAt' => $now]);
-    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-N', 'fullName' => 'Club Inst', 'email' => 'vcn@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-S', 'fullName' => 'Summer Inst', 'email' => 'vcs@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'summer', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
+    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-N', 'fullName' => 'Club Inst', 'email' => 'vcn@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
     $mk('NGG-CUR-VS', 'member', ['email' => 'vcs@example.com']); $mk('NGG-CUR-VN', 'member', ['email' => 'vcn@example.com']);
     chk('staff: a Summer-only instructor has no Club curriculum', (backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VS'])['error'] ?? '') === 'not_ngg_staff');
     $st = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']);
@@ -24128,7 +24153,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-SUB-ADM', 'club_admin'); $mk('NGG-SUB-INS', 'member', ['email' => 'sub-ins@example.com']); $mk('NGG-SUB-M', 'member', ['track' => 'Cello']);
     db_insert('volunteers', ['volunteerId' => 'VOL-SUB-1', 'fullName' => 'Sub Instructor', 'email' => 'sub-ins@example.com', 'role' => 'instructor', 'courses' => '["Cello"]',
-        'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+        'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
     db_insert('curriculum_units', ['unitId' => 'CUR-SUB-1', 'course' => 'Cello', 'week' => 1, 'position' => 1, 'title' => 'Cello posture', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
     db_insert('curriculum_units', ['unitId' => 'CUR-SUB-2', 'course' => 'Drums', 'week' => 1, 'position' => 1, 'title' => 'Drum grip', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
     db_insert('curriculum_materials', ['materialId' => 'MAT-SUB-OK', 'unitId' => 'CUR-SUB-1', 'kind' => 'link', 'title' => 'Editor link', 'url' => 'https://example.org/a', 'position' => 1, 'createdAt' => $now]);
@@ -24166,7 +24191,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $byT = array_column($mine, null, 'title');
     chk('submissions: the instructor sees each verdict and the reason', ($byT['Blurry photo']['status'] ?? '') === 'rejected' && ($byT['Blurry photo']['reviewNote'] ?? '') === 'Too blurry to read the fingering' && ($byT['Bow hold video']['status'] ?? '') === 'approved');
     chk('submissions: an admin who submits is approved at once', (function () use ($now) {
-        db_insert('volunteers', ['volunteerId' => 'VOL-SUB-2', 'fullName' => 'Sub Admin', 'email' => 'ngg-sub-adm@example.com', 'role' => 'instructor', 'courses' => '["Cello"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('volunteers', ['volunteerId' => 'VOL-SUB-2', 'fullName' => 'Sub Admin', 'email' => 'ngg-sub-adm@example.com', 'role' => 'instructor', 'courses' => '["Cello"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
         $r = backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-ADM', 'unitId' => 'CUR-SUB-1', 'title' => 'Admin sheet', 'url' => 'https://example.org/sheet.pdf']);
         return !empty($r['ok']) && $r['approved'] === true;
     })());
@@ -24780,8 +24805,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk('NGG-AC-FEE', 'club_admin', ['capsExtra' => json_encode(['fees']), 'centreScope' => json_encode(['CEN-AC-A'])]);
     $mk('NGG-AC-MA', 'member', ['centre' => 'Ac Alpha']);
     $mk('NGG-AC-MB', 'member', ['centre' => 'Ac Beta']);
-    db_insert('volunteers', ['volunteerId' => 'VOL-AC-A', 'fullName' => 'Vol Alpha', 'email' => 'vola@example.com', 'role' => 'instructor', 'centre' => 'Ac Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
-    db_insert('volunteers', ['volunteerId' => 'VOL-AC-B', 'fullName' => 'Vol Beta', 'email' => 'volb@example.com', 'role' => 'instructor', 'centre' => 'Ac Beta', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-AC-A', 'fullName' => 'Vol Alpha', 'email' => 'vola@example.com', 'role' => 'instructor', 'centre' => 'Ac Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
+    db_insert('volunteers', ['volunteerId' => 'VOL-AC-B', 'fullName' => 'Vol Beta', 'email' => 'volb@example.com', 'role' => 'instructor', 'centre' => 'Ac Beta', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
 
     $roles = backend_dispatch('admin.roles', ['requesterId' => 'NGG-AC-ADM']);
     $ids = array_column($roles['roles'] ?? [], 'id');
@@ -24844,7 +24869,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk('NGG-SB-M3', 'member', ['centre' => 'Sb Beta']);
     db_insert('attendance', ['studentId' => 'NGG-SB-M1', 'date' => $today, 'status' => 'late', 'checkInAt' => $now]);
     db_insert('member_assessments', ['memberId' => 'NGG-SB-M2', 'period' => companion_period($today), 'rating' => 'at_risk', 'summary' => 'x', 'source' => 'rules', 'createdAt' => $now]);
-    db_insert('volunteers', ['volunteerId' => 'VOL-SB-I', 'fullName' => 'Sb Instructor', 'email' => 'sbi@example.com', 'role' => 'instructor', 'centre' => 'Sb Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-SB-I', 'fullName' => 'Sb Instructor', 'email' => 'sbi@example.com', 'role' => 'instructor', 'centre' => 'Sb Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
     db_insert('timetable_slots', ['slotId' => 'TT-SB1', 'centreId' => 'CEN-SB-A', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00', 'instructorId' => 'VOL-SB-I', 'status' => 'active', 'createdAt' => $now]);
 
     $b = backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-SUP']);
@@ -24965,7 +24990,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $now = now_iso();
     db_insert('centres', ['centreId' => 'CEN-TT-A', 'name' => 'Tt Alpha', 'code' => 'TA', 'status' => 'active', 'meetDays' => 'Saturdays', 'meetTime' => '9am - 2pm', 'slug' => 'tt-alpha', 'createdAt' => $now]);
     db_insert('centres', ['centreId' => 'CEN-TT-B', 'name' => 'Tt Beta', 'code' => 'TB', 'status' => 'active', 'meetDays' => 'Saturdays, Wednesdays', 'meetTime' => '', 'slug' => 'tt-beta', 'createdAt' => $now]);
-    db_insert('volunteers', ['volunteerId' => 'VOL-TT-1', 'fullName' => 'Ife Instructor', 'email' => 'tt1@example.com', 'role' => 'instructor', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-TT-1', 'fullName' => 'Ife Instructor', 'email' => 'tt1@example.com', 'role' => 'instructor', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now, 'safeguarding' => 'cleared']);
     $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Tt ' . $id, 'email' => strtolower($id) . '@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-TT-ADM', 'club_admin'); $mk('NGG-TT-SCOPED', 'club_admin', ['centreScope' => json_encode(['Tt Beta'])]);
@@ -26530,7 +26555,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('mentor_assignments', ['memberId' => 'NGG-RS-2', 'mentorId' => 'MEN-RSP', 'status' => 'active', 'startedAt' => '2026-01-01']);
     $mk('NGG-RSI', 'Ife Instructor', ['dob' => '1992-01-01', 'email' => 'ife.instructor@rs.example']);
     db_insert('volunteers', ['volunteerId' => 'VOL-RSI', 'fullName' => 'Ife Instructor', 'email' => 'ife.instructor@rs.example', 'role' => 'instructor', 'status' => 'active',
-        'centre' => 'Resultsville', 'courses' => json_encode(['tech']), 'programme' => 'ngg', 'createdAt' => $now]);
+        'centre' => 'Resultsville', 'courses' => json_encode(['tech']), 'programme' => 'ngg', 'safeguarding' => 'cleared', 'createdAt' => $now]);
 
     $today = results_today();
     $term = results_terms($today, 1)[0]['key'];
@@ -26940,7 +26965,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('donations', ['reference' => 'NGGD-1', 'email' => 'chi@example.org', 'name' => 'Chi', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'paid', 'paidAt' => $now, 'createdAt' => $now]);
     db_insert('donations', ['reference' => 'NGGD-2', 'email' => 'pending@example.org', 'name' => 'P', 'amount' => 1000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
     $adultDob = gmdate('Y-m-d', strtotime('-30 years')); $childDob = gmdate('Y-m-d', strtotime('-14 years'));
-    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now, 'safeguarding' => 'cleared']);
     db_insert('volunteers', ['volunteerId' => 'CRMV-C', 'fullName' => 'Young Volunteer', 'email' => 'young@example.org', 'dob' => $childDob, 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
     db_insert('volunteers', ['volunteerId' => 'CRMV-M', 'memberId' => 'NGG-X1', 'fullName' => 'Member Volunteer', 'email' => 'member@example.org', 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
     db_insert('guardians', ['guardianId' => 'G-1', 'email' => 'eko@example.org', 'fullName' => 'Eko Parent', 'phone' => '0803 222 0000', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -27384,6 +27409,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     db_exec("DELETE FROM members WHERE memberId LIKE 'ACCT-%'");
     db_exec("DELETE FROM audit_log WHERE event = 'account.unlock'");
+})();
+
+// ── Gate lanes fail closed (security list, High 1 / Medium identity) ──────────
+(function () {
+    $now = now_iso(); $C = 'Gateville';
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'GL-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'GLT-%'");
+        db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'GLV-%'");
+    };
+    $wipe();
+    $mem = fn($id, $email = '') => db_insert('members', ['memberId' => $id, 'fullName' => $id, 'email' => $email, 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    $mem('GL-KID'); $mem('GL-M1'); $mem('GL-TWIN', 'shared@gl.example');
+    db_insert('mentors', ['mentorId' => 'GLT-1', 'fullName' => 'Unscreened', 'email' => 'shared@gl.example', 'status' => 'active', 'centre' => $C,
+        'programme' => 'ngg', 'memberId' => 'GL-M1', 'checkedAt' => '', 'createdAt' => $now]);
+
+    $g = mentor_gate(['requesterId' => 'GL-M1']);
+    chk('gate · an unscreened mentor opens the portal onto nobody', !empty($g['ok']) && $g['screened'] === false && $g['centres'] === [] && $g['courses'] === []);
+    $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'GL-M1']);
+    chk('gate · …so the legacy roster lists no child', !in_array('GL-KID', array_column($r['students'] ?? [], 'studentId'), true));
+    chk('gate · …and no star can be given by posting an id',
+        empty(backend_dispatch('behaviour.star.give', ['requesterId' => 'GL-M1', 'subjectId' => 'GL-KID', 'stars' => 1])['ok']));
+    chk('gate · …but a concern can still be filed about a child at their centre',
+        !empty(backend_dispatch('member.mentor.concern.create', ['requesterId' => 'GL-M1', 'subjectId' => 'GL-KID',
+            'category' => MP_CONCERN_KINDS[0], 'body' => 'Something I saw today that worried me.'])['ok']));
+    chk('gate · a member whose email matches a mentor bound to someone else gets nothing',
+        (mentor_gate(['requesterId' => 'GL-TWIN'])['error'] ?? '') === 'mentor_record_ambiguous');
+
+    db_exec("UPDATE mentors SET status = 'inactive' WHERE mentorId = 'GLT-1'");
+    $mem('GL-V'); db_exec("UPDATE members SET email = 'vol@gl.example' WHERE memberId = 'GL-V'");
+    db_insert('volunteers', ['volunteerId' => 'GLV-1', 'fullName' => 'Vol One', 'email' => 'vol@gl.example', 'role' => 'instructor', 'status' => 'active',
+        'centre' => $C, 'safeguarding' => 'pending', 'createdAt' => $now]);
+    chk('gate · an instructor whose safeguarding is not cleared is refused', (mentor_gate(['requesterId' => 'GLV-1'])['error'] ?? '') === 'not_cleared'
+        && (mentor_gate(['requesterId' => 'GL-V'])['error'] ?? '') === 'not_cleared');
+    db_exec("UPDATE volunteers SET safeguarding = 'cleared' WHERE volunteerId = 'GLV-1'");
+    chk('gate · …and once cleared, opens', ($g2 = mentor_gate(['requesterId' => 'GLV-1'])) && !empty($g2['ok']) && $g2['screened'] === true);
+    db_insert('volunteers', ['volunteerId' => 'GLV-2', 'fullName' => 'Vol Two', 'email' => 'vol@gl.example', 'role' => 'mentor', 'status' => 'active',
+        'centre' => 'Elsewhere', 'safeguarding' => 'cleared', 'createdAt' => $now]);
+    chk('gate · two volunteers on one email: a member account matching both fails closed',
+        (mentor_gate(['requesterId' => 'GL-V'])['error'] ?? '') === 'mentor_record_ambiguous');
+    $wipe();
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

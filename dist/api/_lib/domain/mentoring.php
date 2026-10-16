@@ -49,15 +49,13 @@ function mentoring_open(array $p): array {
     if ($subjectId === '') return ['ok' => false, 'error' => 'no_subject'];
     $s = mentoring_subject($subjectId);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    // Screening first: an unscreened mentor's gate carries no reach, and the
+    // honest refusal is "not screened", not "not your centre".
+    if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
     // The same scope test that governs starring. A record is at least as
     // sensitive as a star, so it is not gated more loosely.
     if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     if (!mentor_covers($g, $s['kind'] === 'member' ? 'ngg' : 'summer')) return ['ok' => false, 'error' => 'not_your_cohort'];
-    /* No child's record reaches a mentor whose safeguarding screening is not
-     * recorded. The v14 portal enforced this (mp_screened); when it was
-     * withdrawn, these legacy ops became the only mentor path and they did
-     * not. Stars and V3 do not come through here — a star is not a record. */
-    if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
     /* Caseload first. A mentor opens the record of the NGG members paired
      * with them; leads, staff and instructors keep their centre reach. Anyone
      * else at the centre who needs a record — covering a Saturday, or a child
@@ -102,8 +100,8 @@ function mentoring_cover(array $p): array {
     if (empty($g['ok'])) return $g;
     $s = mentoring_subject(trim((string)($p['subjectId'] ?? '')));
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
-    if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     if (!mentoring_screened($g)) return ['ok' => false, 'error' => 'not_screened'];
+    if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     $reason = trim((string)($p['reason'] ?? ''));
     if (mb_strlen($reason) < MENTORING_COVER_REASON_MIN) return ['ok' => false, 'error' => 'say_why'];
     $me = (string)$g['member']['memberId'];
@@ -124,12 +122,9 @@ function mentoring_cover(array $p): array {
     return ['ok' => true, 'expiresAt' => $exp, 'told' => count($tell)];
 }
 
-/** Staff and instructors are screened by their role; a mentor by their record. */
+/** Decided once, in mentor_gate — see mp_screened. */
 function mentoring_screened(array $g): bool {
-    if (($g['role'] ?? '') !== 'mentor') return true;
-    $row = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [(string)($g['mentorId'] ?? '')]);
-    if (!$row) return false;
-    return function_exists('ms_clearance') ? (bool)ms_clearance($row)['screened'] : trim((string)($row['checkedAt'] ?? '')) !== '';
+    return ($g['screened'] ?? false) === true;
 }
 
 /** The children actively paired with this mentor (any session). */

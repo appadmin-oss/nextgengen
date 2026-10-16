@@ -192,12 +192,12 @@ function mp_caseload_ids_read(array $g): array {
     return array_slice(array_values(array_map(static fn($s) => (string)$s['studentId'], array_filter($r['students'] ?? [], static fn($s) => ($s['kind'] ?? '') === 'member'))), 0, 400);
 }
 /** Screened: staff, or a mentor whose check is recorded (here or on their volunteer record). */
+/** Screened is decided once, in mentor_gate, per lane: staff by their role, a
+ *  volunteer by a cleared safeguarding record (the gate refuses one that is
+ *  not), a mentor by their record. An instructor is no longer screened by
+ *  being an instructor. Absent means not screened. */
 function mp_screened(array $g): bool {
-    if (($g['role'] ?? '') === 'admin' && !$g['mentorRow']) return true;
-    if (($g['role'] ?? '') === 'admin' || ($g['role'] ?? '') === 'instructor') return true;
-    $m = $g['mentorRow'];
-    if (!$m) return false;
-    return function_exists('ms_clearance') ? (bool)ms_clearance($m)['screened'] : trim((string)($m['checkedAt'] ?? '')) !== '';
+    return ($g['screened'] ?? false) === true;
 }
 /** The centres a coordinator may switch between, and the one on screen. */
 function mp_centres(array $g): array {
@@ -1371,7 +1371,13 @@ function member_mp_concern(array $p): array {
     if (mb_strlen($body) <= 10) return ['ok' => false, 'error' => 'say_what_happened'];
     // A member or a Summer School participant: the duty to report covers both.
     $sub = mentoring_subject($sid);
-    if (!$sub || !mentor_scope_ok($g, $sub)) return ['ok' => false, 'error' => 'not_found'];
+    // Scope for REPORTING is the mentor's own centre even before screening:
+    // an unscreened gate reaches nobody, but the duty to report does not wait.
+    // null is "everywhere" here, so array_key_exists, never ??.
+    $reach = array_key_exists('reportCentres', $g) ? ['centres' => $g['reportCentres'], 'courses' => $g['reportCourses']] : $g;
+    if (!$sub || !mentor_scope_ok($reach, $sub)) {
+        return ['ok' => false, 'error' => 'not_found'];
+    }
     return mp_concern_file($g['member'], $sub, $cat, $body, (string)($p['ip'] ?? ''), 'mentor.concern');
 }
 
