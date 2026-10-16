@@ -167,7 +167,24 @@ async function as(memberId, admin, viewport) {
     await mt.waitForTimeout(1600);
     const reg = q(`db_row("SELECT here, checks FROM mentor_register WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`) || {};
     chk('During: Here and “Assignment in” are on the register', Number(reg.here) === 1 && /Assignment in/.test(reg.checks || ''));
+    // The detail line: written on the day, saved with the register, carried into the review and the timeline
+    await regRow.locator('button', { hasText: 'Add detail' }).first().click();
+    await mt.fill('main textarea[id^="m15-note-"]', 'Offered to present first when nobody else would.');
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/during-detail.png' : path.join(TMP, 'during-detail.png') });
+    await mt.click('main button:has-text("Save detail")');
+    await mt.waitForTimeout(1600);
+    const regN = q(`db_row("SELECT note FROM mentor_register WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`) || {};
+    chk('During: the detail line is saved with the register', /Offered to present first/.test(regN.note || ''));
+    chk('During: the row shows the detail under the name', /Offered to present first/.test(await mt.innerText('main')));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/during.png' : path.join(TMP, 'during.png') });
+    await mt.click('main button:has-text("Go to the weekly review")');
+    await mt.waitForTimeout(400);
+    chk('After: the weekly review starts from the detail', /Noted: “Offered to present first/.test(await mt.innerText('main')));
+    // The child's name opens their profile
+    await mt.click('main button:has-text("During")');
+    await mt.click('main button[aria-label="Open Mariam Yusuf’s profile"]');
+    await mt.waitForFunction(() => /Offered to present first/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('the register’s name opens the profile, whose timeline carries the detail', /Offered to present first/.test(await mt.innerText('main')));
     // Report a concern: one queue
     await mt.click('button:has-text("Report a concern")');
     await mt.waitForSelector('main textarea', { timeout: 15000 });
@@ -179,11 +196,17 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /SG-\d{6}/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     chk('Report a concern: a safeguarding case with the server’s SG reference', q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-MS-K1'")['c']`) === 1);
     chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
-    // Stars & results still reachable; the old email link lands on /mentor/class with its tab
+    // Stars & results is a screen of the portal, not a page outside it
+    await mt.getByRole('button', { name: 'Me', exact: true }).first().click();
+    await mt.locator('.m15-app button', { hasText: 'Stars & results' }).first().click();
+    await mt.waitForSelector('main .m15x-classic [role="tab"]', { timeout: 30000 });
+    chk('Stars & results opens inside the portal, its nav still on screen', await mt.isVisible('main .m15x-classic') && new URL(mt.url()).pathname === '/mentor/class' && /This week/.test(await mt.innerText('.m15-app')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
+    // The old email link lands on /mentor/class with its tab, inside the portal
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
-    await mt.waitForSelector('.m15x-back', { timeout: 60000 });
-    chk('/mentor?tab=results lands on /mentor/class', new URL(mt.url()).pathname === '/mentor/class');
-    chk('the class portal (stars, school results) is one press away, with a way back', await mt.isVisible('[role="tab"]:has-text("School results")'));
+    await mt.waitForSelector('main .m15x-classic [role="tab"]', { timeout: 60000 });
+    chk('/mentor?tab=results lands on /mentor/class, inside the portal', new URL(mt.url()).pathname === '/mentor/class' && await mt.isVisible('.m15-app'));
+    chk('the school results tab is open', await mt.isVisible('[role="tab"][aria-selected="true"]:has-text("School results")'));
     await mt.goto(BASE + '/mentor/summer', { waitUntil: 'domcontentloaded' });
     await mt.waitForFunction(() => /no class|isn’t/i.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     chk('an NGG-only mentor is refused the Summer School portal', !/Peace Summer/.test(await mt.innerText('body')) && q(`backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MS-M1', 'programme' => 'summer'])['error'] ?? ''`) === 'not_this_programme');
@@ -203,7 +226,6 @@ async function as(memberId, admin, viewport) {
     await ad.waitForFunction(() => /Pick a centre|Peace Summer|participant/.test(document.body.innerText), null, { timeout: 60000 });
     const pick = await ad.$('select');
     const opts = pick ? await pick.evaluate(el => Array.from(el.options).map(o => o.value).filter(Boolean)) : [];
-    console.log('DEBUG opts', JSON.stringify(opts));
     chk('Summer School offers an admin only Summer School centres (one here, so no picker)', opts.every(o => o === 'Egbeda (Summer School)'));
     if (pick) await pick.selectOption('Egbeda (Summer School)');
     await ad.waitForFunction(() => /Peace Summer/.test(document.body.innerText), null, { timeout: 60000 });

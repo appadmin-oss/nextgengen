@@ -98,6 +98,8 @@ const ORDER = [
   'src/modules/mentor15/mp15-view.jsx',
   'src/modules/mentor15/mp15-formation.jsx',
   'src/modules/mentor15/mp15-app.jsx',
+  'src/modules/instructor6/ip6-view.jsx',
+  'src/modules/instructor6/ip6-app.jsx',
   'page-family.jsx',
   'page-book.jsx',
   'page-analytics.jsx',

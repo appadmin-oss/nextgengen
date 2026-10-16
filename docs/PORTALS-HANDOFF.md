@@ -3,6 +3,25 @@
 The three portals in the design handoff (Mentor v15, Member v9, Instructor v6),
 built on the APIs that already exist. Newest entry first. Append; never rewrite.
 
+## 2026-10-16 (evening) · Register detail; class tools inside the portal; Instructor Portal v6
+
+- Register detail: **Add detail** per child on Saturday → During (migration 150,
+  `mentor_register.note`, ≤ `MP_NOTE_MAX` 500). Saved with the register (debounced, and on
+  Save detail); a row without `note` never wipes it. Shown under the name, in the weekly
+  review ("Noted: …") and on the child's timeline. The design file carries the change
+  (`docs/design/portals/mentor-portal-v15.dc.html`) and the view was recompiled from it.
+- Connected: the register's names open the profile (re-read after the register flushes);
+  **Go to the weekly review** goes to After.
+- Stars & results is a v15 screen (`scr: 'classic'`): `MentorPortal programme="ngg" embedded`
+  in the portal's slot, address `/mentor/class`. `/mentor/class` and `/mentor?tab=results`
+  open it inside the portal for a v15 mentor. `<main>` no longer has `container-type` (it
+  made main the containing block of the class tools' fixed sheets); `.m15x-slot` pads by
+  `clamp()` and `.sf-day` is its own container.
+- Instructor Portal v6 at `/instructor` (`/instructor/ngg`, `/instructor/summer`), compiled from
+  `instructor-portal-v6.dc.html`; controller `src/modules/instructor6/ip6-app.jsx` on
+  `member/teaching.php`, curriculum, community, concern and formation ops; writes go through the
+  `teaching.act` outbox. E2E `tests/instructor-v6.test.js` (`npm run test:instructor6`, in `test:all`).
+
 ## 2026-10-16 (later) · One address per programme; the Saturday duties; admin editor
 
 - `/mentor/ngg` (v15), `/mentor/summer` (Summer participants only), `/mentor/class` (instructors,

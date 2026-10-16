@@ -3673,3 +3673,7 @@ INSERT INTO schema_version (version) VALUES (148) ON DUPLICATE KEY UPDATE versio
 -- 149: the Saturday register's mentor duties.
 ALTER TABLE mentor_register ADD COLUMN checks TEXT;
 INSERT INTO schema_version (version) VALUES (149) ON DUPLICATE KEY UPDATE version = version;
+
+-- 150: the Saturday register's detail line (what the mentor saw).
+ALTER TABLE mentor_register ADD COLUMN note TEXT;
+INSERT INTO schema_version (version) VALUES (150) ON DUPLICATE KEY UPDATE version = version;

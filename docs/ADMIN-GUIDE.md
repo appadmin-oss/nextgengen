@@ -1109,9 +1109,11 @@ address per programme so NGG members and Summer School participants never share 
 
 | Address | Who | What |
 |---|---|---|
-| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), My role, Academy |
+| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), My role, Academy, and **Me → Stars & results** (stars, V3, school results, growth plans) inside the portal |
 | `/mentor/summer` | Summer School mentors; admins | This edition's participants only: stars, notes, reviews, concerns |
-| `/mentor/class` | Instructors; NGG mentors' "Stars & results" | Today's session, stars, skills, curriculum, school results |
+| `/mentor/class` | An NGG mentor: Stars & results, inside the portal. Anyone else with the class tools (an admin with no pod): the stand-alone class page | Stars, V3, notes, curriculum, school results |
+| `/instructor/ngg` | NGG instructors (Instructor Portal) | Today, Roll, Plan (hinge, exit, retrieval from earlier weeks), Teach, Exit ticket, Session log, Skills board (evidence to move a child up), Marking, Curriculum, Students, Community, School results, Report a concern |
+| `/instructor/summer` | Instructors who also teach Summer School | That edition's participants only |
 
 `/mentor` sends a person with one portal straight to it and shows a chooser to anyone who
 covers both programmes. A coordinator over several centres switches centre at the top of every screen.
@@ -1121,7 +1123,10 @@ the 8:00–2:00 day, block by block, with what members do, what mentors watch fo
 instructors deliver, what admin must have ready and what families are told. Every portal
 and the Saturday reminders read this one table; edit a block and they all change. On the
 Saturday register a mentor ticks, per child, the values seen and the duties: On time
-(the gate's arrival time is shown), Assignment in, Checked out.
+(the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
+(up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
+opens the weekly review ("Noted: …") and joins the child's timeline. A child's name on the register
+opens their profile; **Go to the weekly review** takes the mentor straight to After.
 
 **A pod** is one mentor and the members matched to them, at one centre: at
 least **five** (the Commitment Policy) and at most **eight**. Every match moves

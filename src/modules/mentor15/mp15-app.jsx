@@ -74,7 +74,7 @@ const mp15Api = {
 class Mp15Portal extends React.Component {
   rootRef = React.createRef();
   state = {
-    scr: 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, rel: {}, pTpl: 'saw', pBody: null,
+    scr: this.props.initial || 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, rel: {}, pTpl: 'saw', pBody: null,
     step: 'before', agenda: null, aim: 'All', here: {}, obs: {}, rv: {}, rvDone: {}, mf: 'all', msel: '', read: {}, reply: '', sup: null,
     cKid: '', cText: '', cCat: '', more: false, w: 1200, toast: '', undo: null,
     d: {}, ld: {}, er: {}, centre: '', gEdit: {}, hidden: {},
@@ -137,6 +137,8 @@ class Mp15Portal extends React.Component {
   go(scr, extra) {
     const S = this.state; const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0;
     this.setState({ scr, more: false, hist: scr === S.scr ? S.hist : S.hist.concat([S.scr]).slice(-12), ...(scr !== S.scr ? { mOpen: false } : {}), ...(scr === 'concern' ? { cSent: null } : {}), ...(extra || {}) });
+    /* Stars & results has an address of its own (/mentor/class), so a reload or a shared link reopens it. */
+    if ((scr === 'classic') !== (S.scr === 'classic')) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/' + (scr === 'classic' ? 'class' : 'ngg')); } catch (_) {} }
     const kid = (extra && extra.kid) || (scr === 'kid' ? S.kid : null);
     if (scr === 'kid' && kid && !S.d['kid:' + kid]) this.loadKid(kid);
     if (scr === 'module' && extra && extra.mod) this.setState({ mRes: null });
@@ -176,15 +178,19 @@ class Mp15Portal extends React.Component {
     this.timers.reg = setTimeout(() => this.flushRegister(), 700);
   }
   flushRegister() {
-    const ids = Object.keys(this.regDirty || {}); if (!ids.length) return;
+    const ids = Object.keys(this.regDirty || {}); if (!ids.length) return Promise.resolve();
     this.regDirty = {};
-    const rows = ids.map(id => ({ subjectId: id, here: this.hereOf(id), observed: this.obsOf(id), checks: this.chkOf(id) }));
-    mp15Api.act('register', { centre: this.state.centre || '', date: this.satLastDate(), rows })
+    const rows = ids.map(id => ({ subjectId: id, here: this.hereOf(id), observed: this.obsOf(id), checks: this.chkOf(id), note: this.noteOf(id) }));
+    clearTimeout((this.timers || {}).reg);
+    return mp15Api.act('register', { centre: this.state.centre || '', date: this.satLastDate(), rows })
+      .then(() => this.setState(st => { const sv = { ...(st.savedNotes || {}) }; rows.forEach(r => { sv[r.subjectId] = r.note; }); return { savedNotes: sv }; }))
       .catch(e => { ids.forEach(id => { this.regDirty[id] = true; }); this.say(mp15ErrText(e) + ' The register will retry.'); this.timers.reg = setTimeout(() => this.flushRegister(), 8000); });
   }
   satDuring() { return this.state.d.satLast || this.state.d.satNext || null; }
   hereOf(id) { const S = this.state; if (S.here[id] !== undefined) return S.here[id]; const r = (this.satDuring() || {}).register || {}; return !!(r[id] && r[id].here); }
   obsOf(id) { const S = this.state; if (S.obs[id]) return Object.keys(S.obs[id]).filter(v => S.obs[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].observed) || []; }
+  /* The detail line: what the mentor saw, written on the day. */
+  noteOf(id) { const S = this.state; if (S.notes && S.notes[id] !== undefined) return S.notes[id]; const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].note) || ''; }
   /* The formation duties (On time · Assignment in · Checked out): the mentor's tick, or the gate's arrival time for On time. */
   chkOf(id) { const S = this.state; if (S.chk && S.chk[id]) return Object.keys(S.chk[id]).filter(v => S.chk[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].checks) || []; }
   agendaNow() {
@@ -295,7 +301,7 @@ class Mp15Portal extends React.Component {
     const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
-    const goId = id => id === 'classic' ? this.props.onClassic() : id === 'hub' ? this.props.onHub() : this.go(id);
+    const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
     const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
     const areaNav = AREAS.map(a => { const on = a === area; return { l: a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)' : 'none', fw: on ? 600 : 500, b: a.b, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
@@ -357,7 +363,7 @@ class Mp15Portal extends React.Component {
     const mSel0 = mList.find(m => m.id === S.msel) || mList[0];
     const mView = m => m ? { ...m, who: m.from, when: mp15When(m.at, today), t: m.body } : {};
 
-    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern' };
+    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern', classic: 'Stars & results' };
     const nTeam = ((D.team || {}).mentors || []).length;
     const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
       week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
@@ -372,7 +378,11 @@ class Mp15Portal extends React.Component {
 
     return {
       rootRef: this.rootRef, wide, narrow, narrowSub: narrow && !!subs[S.scr], mainPad: narrow ? '16px 16px 28px' : '32px 40px 56px', toastB: narrow ? '96px' : '24px',
-      mainSlot: this.slot(), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+      mainSlot: this.slot(),
+      /* The class tools (stars, V3, notes, curriculum, school results and growth
+         plans) are this portal's own screen, under its title and tabs: the same
+         component /mentor/class has always run, as a panel, on the centre on screen. */
+      mainSlotEnd: S.scr === 'classic' ? <div className="m15x-slot"><MentorPortal key={'class:' + (S.centre || '')} programme="ngg" embedded={true}/></div> : null, roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
       areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
@@ -421,15 +431,24 @@ class Mp15Portal extends React.Component {
       lib: LIB.filter(x => S.aim === 'All' || x.aim === S.aim).map(x => { const added = agenda.some(a => a.t === x.title); return { t: x.title, d: x.sub, meta: x.aim + ' · ' + x.minutes + ' min', added, op: added ? 0.5 : 1, addL: added ? 'Added' : 'Add',
         add: () => { if (added) return; const n = agenda.slice(); n.splice(Math.max(1, n.length - 2), 0, { t: x.title, s: x.aim, m: Number(x.minutes) || 15, fixed: false }); this.setAgenda(n); } }; }),
       hereText: hereIds.length + ' of ' + satKidsAll.length + ' here',
+      toAfter: () => { this.flushRegister(); set({ step: 'after' }); },
       reg: satKidsAll.map(k => { const h = this.hereOf(k.id); const o = this.obsOf(k.id); const VALS = satL.values || ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
-        return { name: k.name, hereA: h ? 'true' : 'false', hereL: h ? 'Here' : 'Away', icon: h ? 'ph ph-check' : 'ph ph-minus', line: h ? '#1d6b30' : '#d6d4cc', bg: h ? '#f3faf4' : '#fff', fg: h ? '#1d6b30' : '#6b6b72', away: !h, op: h ? 1 : 0.4,
+        const note = this.noteOf(k.id); const nOpen = !!(S.noteOpen || {})[k.id] && h; const sv = (S.savedNotes || {})[k.id]; const saved = (sv !== undefined ? sv : ((((satL.register || {})[k.id]) || {}).note || '')) === note;
+        return { name: k.name, open: () => { const w = this.flushRegister(); this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }); w.then(() => this.loadKid(k.id)); },
+          sub: !h ? 'Away' : note ? '“' + (note.length > 70 ? note.slice(0, 68) + '…' : note) + '”' : o.length ? o.join(', ') + ' · no detail yet' : 'Nothing noted yet',
+          noteA: nOpen ? 'true' : 'false', noteOpen: nOpen, noteL: note ? 'Edit detail' : 'Add detail', noteId: 'm15-note-' + k.id, note,
+          noteGo: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); set({ noteOpen: { ...(this.state.noteOpen || {}), [k.id]: !nOpen } }); },
+          onNote: e => { set({ notes: { ...(this.state.notes || {}), [k.id]: e.target.value.slice(0, 500) } }); this.queueRegister(k.id); },
+          noteMeta: note.length + ' of 500' + (note && !saved ? ' · not saved yet' : ''),
+          noteSave: () => { this.queueRegister(k.id); this.flushRegister(); set({ noteOpen: { ...(this.state.noteOpen || {}), [k.id]: false } }); this.say(note.trim() ? 'Detail saved for ' + k.first : 'Detail cleared for ' + k.first); },
+          hereA: h ? 'true' : 'false', hereL: h ? 'Here' : 'Away', icon: h ? 'ph ph-check' : 'ph ph-minus', line: h ? '#1d6b30' : '#d6d4cc', bg: h ? '#f3faf4' : '#fff', fg: h ? '#1d6b30' : '#6b6b72', away: !h, op: h ? 1 : 0.4,
           toggle: () => { set({ here: { ...this.state.here, [k.id]: !h } }); this.queueRegister(k.id); },
           vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; })
             .concat((satL.checks || ['On time', 'Assignment in', 'Checked out']).map(v => { const cs = this.chkOf(k.id); const on = cs.includes(v); const arr = (((satL.register || {})[k.id]) || {}).arrivedAt;
               return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
       revText: revDoneN + ' of ' + revTotal + ' reviews done · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%',
       reviews: revKids.map(k => { const srv = (satL.reviews || {})[k.id]; const v = S.rv[k.id] || (srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {}); const done = reviewed(k.id); const ok = v.Effort && v.Character && v.Wellbeing; const obs = this.obsOf(k.id);
-        return { name: k.name, done, open: !done, seen: obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday', line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }),
+        return { name: k.name, done, open: !done, seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (this.noteOf(k.id) ? '. Noted: “' + this.noteOf(k.id) + '”' : ''), line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }),
           scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o, ...pill(v[l] === o), go: () => set({ rv: { ...S.rv, [k.id]: { ...v, [l]: o } } }) })) })),
           cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
           submit: () => { if (!ok) return this.say('Rate effort, character and wellbeing first');
@@ -516,6 +535,9 @@ class Mp15Portal extends React.Component {
        next two blocks on This week, the whole day on Saturday. */
     if (S.scr === 'week') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
     if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true}/></div>;
+    /* The class tools (stars, V3, notes, curriculum, school results and growth
+       plans) are this portal's own screen: the same component /mentor/class
+       has always run, in the portal's frame, on the centre on screen. */
     return null;
   }
 
@@ -805,15 +827,17 @@ function MentorHome() {
     const main = v15 && !out.includes('summer') ? 'ngg' : out.length === 1 ? out[0] : '';
     if (main) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/' + main + location.search); } catch (_) {} setSub(main); }
   }, [state, sub, v15, out.join()]);
-  if (state === 'loading' && sub !== 'summer' && sub !== 'class') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the mentor portal</span></div>;
+  if (state === 'loading' && sub !== 'summer') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the mentor portal</span></div>;
   /* Refused (not signed in, not cleared, no centre, not a mentor): the class
      portal owns those answers and its sign-in doors. */
   const hubBtn = out.includes('summer') && out.length > 1 && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Mentor portals</button>;
   if (sub === 'summer') return <>{hubBtn}<MentorPortal key="summer" programme="summer"/></>;
-  if (sub === 'class') return <>{v15 ? <button type="button" className="m15x-back" onClick={() => go('ngg')}><i className="ph ph-arrow-left" aria-hidden="true"/>NGG mentor portal</button> : hubBtn}<MentorPortal key="class" programme="ngg"/></>;
+  /* A v15 mentor's class tools open inside their portal; an instructor or an admin with no pod keeps the stand-alone class page. */
+  if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onHub={out.includes('summer') ? () => go('') : null}/>;
+  if (sub === 'class') return <>{hubBtn}<MentorPortal key="class" programme="ngg"/></>;
   if (state === 'refused') return <MentorPortal key="any"/>;
   if (sub === 'ngg') {
-    if (v15) return <Mp15Portal boot={boot} onClassic={() => go('class')} onHub={out.includes('summer') ? () => go('') : null}/>;
+    if (v15) return <Mp15Portal boot={boot} onHub={out.includes('summer') ? () => go('') : null}/>;
     return <div className="m15x-hub"><div className="m15x-hub-in"><h1>The NGG mentor portal isn’t yours</h1>
       <p>It opens for NGG pod, peer and lead mentors and for coordinators.{out.length ? ' These are open to you:' : ' Ask your coordinator if you think that’s wrong.'}</p>
       <Mp15HubCards out={out} go={go}/></div></div>;

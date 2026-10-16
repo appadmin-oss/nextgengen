@@ -1,0 +1,199 @@
+#!/usr/bin/env node
+/* ============================================================================
+   Instructor Portal v6, end to end (docs/design/portals/instructor-portal-v6.dc.html): the Mentor Portal opens on the
+   mentor's caseload with School results beside it, the server's caseload and
+   screening gates, a Summer volunteer brought into NGG, the automation board,
+   the member's weekly check-in, and the workspace's choice-of-two approval
+   with Undo.
+
+   Run:  node tests/mentorship.test.js
+   ========================================================================== */
+'use strict';
+
+const { execSync, spawn } = require('child_process');
+const { waitForServer, waitForBoot } = require('./_serve');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.resolve(__dirname, '..');
+const PORT = process.env.IP6_PORT || '8313';
+const BASE = 'http://127.0.0.1:' + PORT;
+const CFG = path.join(ROOT, 'api', 'config.php');
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-ip6-'));
+const DB = path.join(TMP, 'ngg.db');
+
+let seq = 0;
+function php(snippet) {
+  const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)}; require ${JSON.stringify(ROOT + '/api/_lib/bootstrap.php')}; db_conn();\n` + snippet;
+  const f = path.join(TMP, `s${++seq}.php`);
+  fs.writeFileSync(f, code);
+  try { return execSync('php -d display_errors=1 -d error_reporting=-1 ' + JSON.stringify(f), { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim(); }
+  catch (e) { throw new Error('php failed (' + e.status + '): ' + String(e.stdout || '') + String(e.stderr || '') + ' ' + fs.readFileSync(f, 'utf8').slice(0, 200)); }
+}
+function loadChromium() {
+  for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright-core', 'playwright'].filter(Boolean)) { try { return require(m).chromium; } catch (_) {} }
+  return null;
+}
+let server, browser, passed = 0, failed = 0;
+const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+function cleanup() {
+  try { if (server) process.kill(-server.pid); } catch (_) {}
+  try { fs.unlinkSync(CFG); } catch (_) {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}
+}
+async function as(memberId, admin, viewport) {
+  const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${memberId}'"), ${admin ? 'true' : 'false'});`);
+  const ctx = await browser.newContext({ viewport: viewport || { width: 1280, height: 1000 } });
+  await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
+                        { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+  const pg = await ctx.newPage();
+  pg.errs = [];
+  pg.on('pageerror', e => pg.errs.push(String(e).slice(0, 200)));
+  return pg;
+}
+
+(async () => {
+  const chromium = loadChromium();
+  if (!chromium) { console.log('⏭  instructor v6: skipped (playwright not installed)'); process.exit(0); }
+  if (fs.existsSync(CFG)) { console.error('api/config.php already exists — refusing to overwrite. Move it aside and re-run.'); process.exit(2); }
+  fs.writeFileSync(CFG, `<?php return [
+    'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
+    'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'next@afrovanguard.org.ng', 'smtp' => ['host' => '']],
+    'app_origin' => ${JSON.stringify(BASE)},
+    'cookie_secret' => 'ip6_e2e_secret_portal_x_0123456789abc',
+    'cookie_secure' => false, 'cookie_name' => 'ngg_sess', 'cookie_domain' => '', 'cookie_samesite' => 'Lax',
+    'cache_dir' => ${JSON.stringify(path.join(TMP, 'cache'))},
+    'maps' => ['offline' => true],
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]], 'cache_ttl' => ['default' => 0],
+    'session_ttl' => 604800, 'kiosk_ttl' => 43200, 'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    'webcron' => ['enabled' => false], 'ai' => ['enabled' => false], 'debug' => false,
+  ];\n`);
+  try {
+    php(`
+      $now = now_iso();
+      $mk = function ($id, $name, $role = 'member', $extra = []) use ($now) { db_insert('members', $extra + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '.', $name)) . '@class.example',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]); };
+      db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EGB', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
+      $mk('NGG-IN-ADM', 'Ade Admin', 'super_admin');
+      $mk('NGG-IN-INS', 'Tunde Teacher');
+      db_insert('volunteers', ['volunteerId' => 'VOL-IN-1', 'fullName' => 'Tunde Teacher', 'email' => 'tunde.teacher@class.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda',
+        'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'memberId' => 'NGG-IN-INS', 'createdAt' => $now]);
+      foreach ([1 => 'Zara Ibrahim', 2 => 'Kelechi Ike', 3 => 'Mariam Yusuf', 4 => 'Samuel Ade'] as $i => $n) $mk("NGG-IN-K$i", $n, 'member', ['track' => 'Coding', 'dob' => '2013-03-0' . $i]);
+      db_insert('mentors', ['mentorId' => 'MEN-IN-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi@class.example', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => '', 'createdAt' => $now]);
+      db_insert('mentor_assignments', ['mentorId' => 'MEN-IN-1', 'memberId' => 'NGG-IN-K1', 'status' => 'active', 'startedAt' => $now]);
+      setting_set('course_skills', ['Coding' => ['Reads an error message and acts on it', 'Writes a loop that does what they meant', 'Breaks a problem into steps']]);
+      // A term that began two weeks ago, and a published lesson with a choice question for every week, so this week's hinge comes from the lesson.
+      setting_set('curriculum', ['startDate' => gmdate('Y-m-d', time() - 14 * 86400)]);
+      for ($w = 1; $w <= 5; $w++) {
+        db_insert('curriculum_units', ['unitId' => "CU-IN-$w", 'course' => 'Coding', 'level' => '', 'week' => $w, 'position' => 1, 'title' => "Coding week $w", 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+        db_insert('curriculum_checks', ['checkId' => "CHK-IN000$w", 'unitId' => "CU-IN-$w", 'kind' => 'mcq', 'prompt' => "Week $w question: which tag is a heading?", 'options' => json_encode(['<p>', '<h1>', '<div>']), 'answer' => '1', 'points' => 1, 'position' => 1]);
+      }
+      db_insert('timetable_slots', ['slotId' => 'TT-IN-1', 'centreId' => 'C-EG', 'course' => 'Coding', 'weekday' => 6, 'startTime' => '11:00', 'endTime' => '12:30', 'room' => 'Lab 1', 'status' => 'active', 'createdAt' => $now]);
+      db_insert('skill_marks', ['subjectId' => 'NGG-IN-K1', 'course' => 'Coding', 'skill' => 'Reads an error message and acts on it', 'level' => 4, 'prevLevel' => 3, 'markedById' => 'x', 'markedByName' => 'x', 'centre' => 'Egbeda', 'updatedAt' => $now]);
+      db_insert('skill_marks', ['subjectId' => 'NGG-IN-K2', 'course' => 'Coding', 'skill' => 'Reads an error message and acts on it', 'level' => 1, 'markedById' => 'x', 'markedByName' => 'x', 'centre' => 'Egbeda', 'updatedAt' => $now]);
+      echo 'ok';`);
+    server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
+    await waitForServer(BASE);
+    const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
+    const shot = (pg, n) => pg.screenshot({ path: (process.env.IP6_SHOTS || TMP) + '/' + n + '.png' });
+    const sess = () => q(`db_row("SELECT * FROM club_class_sessions WHERE course = 'Coding' AND centre = 'Egbeda' ORDER BY id DESC LIMIT 1")`) || {};
+
+    // ── The instructor: /instructor sends them straight to /instructor/ngg ──
+    const ip = await as('NGG-IN-INS', false);
+    await ip.goto(BASE + '/instructor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ip);
+    await ip.waitForSelector('.i6-app', { timeout: 60000 }).catch(async e => { console.error('DEBUG', ip.errs.join('\n'), await ip.evaluate(() => { document.querySelectorAll('details').forEach(x => x.open = true); return document.body.innerText.slice(0, 1500); })); throw e; });
+    await ip.waitForFunction(() => !document.querySelector('.m15x-load'), null, { timeout: 60000 });
+    chk('/instructor sends an NGG instructor to /instructor/ngg', new URL(ip.url()).pathname === '/instructor/ngg');
+    const t = await ip.innerText('.i6-app');
+    chk('Today: the course, its room and time from the timetable, and the Saturday formation day', /Coding/.test(t) && /Lab 1/.test(t) && /11:00/.test(t) && /Musing/.test(t));
+    await shot(ip, 'today');
+    // Roll
+    await ip.click('nav >> text=Saturday');
+    await ip.waitForFunction(() => /Mark everyone here/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    await ip.click('main button[aria-pressed]:near(:text("Zara Ibrahim"))').catch(() => ip.click('main button[aria-pressed]'));
+    await ip.waitForTimeout(1800);
+    chk('Roll: a tap is saved on the class record', /here/.test((sess().rollJson || '')));
+    await shot(ip, 'roll');
+    await ip.click('main button:has-text("Close roll")');
+    await ip.waitForFunction(() => /Roll closed/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    await ip.waitForTimeout(800);
+    chk('Roll: closing it records the time and adds the children marked here to the centre’s attendance', !!sess().rollClosedAt && q(`(int)db_row("SELECT COUNT(*) c FROM attendance WHERE method = 'instructor'")['c']`) >= 1);
+    // Plan: the lesson's own questions
+    await ip.click('main >> text=Plan');
+    await ip.waitForSelector('main input[aria-label="Lesson goal"]', { timeout: 20000 });
+    const planTxt = await ip.innerText('main');
+    chk('Plan: the hinge question is this week’s lesson check, and retrieval comes from earlier weeks', /Week \d question: which tag is a heading\?/.test(planTxt) && /B <h1>/.test(planTxt));
+    await ip.fill('main input[aria-label="Lesson goal"]', 'Everyone can build a page with a heading and a paragraph');
+    await ip.waitForTimeout(2200);
+    chk('Plan: the goal and the six phases are saved to the class record', /build a page with a heading/.test(sess().planJson || '') && (JSON.parse(sess().planJson || '{}').steps || []).length === 6);
+    await shot(ip, 'plan');
+    // Exit ticket
+    await ip.click('main >> text=Exit ticket');
+    await ip.waitForFunction(() => /Mark the rest/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    await ip.click('main button:has-text("Mark the rest")');
+    await ip.click('main button:has-text("Save and add to next week")');
+    await ip.waitForTimeout(1500);
+    chk('Exit ticket: every child here marked, saved and done', !!sess().exitAt && /got/.test(sess().exitJson || ''));
+    // Session log
+    await ip.click('main >> text=Session log');
+    await ip.waitForSelector('main textarea', { timeout: 20000 });
+    await (await ip.$$('main textarea'))[0].fill('Headings and paragraphs; everyone built a page.');
+    await ip.waitForTimeout(400);
+    await ip.click('main button:has-text("File session log")');
+    await ip.waitForFunction(() => /Session log filed/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    await ip.waitForTimeout(800);
+    chk('Session log: filed with what was covered', !!sess().filedAt && /What we covered: Headings/.test(sess().logJson || ''));
+    // Skills board: a move up needs evidence, then saves
+    await ip.click('nav >> text=Progress');
+    await ip.click('main >> text=Skills board');
+    await ip.waitForFunction(() => /Save marks for this skill/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    const kRow = ip.locator('main div').filter({ hasText: 'Kelechi Ike' }).filter({ has: ip.locator('button:has-text("Can do it")') }).last();
+    await kRow.locator('button:has-text("Can do it")').first().click();
+    await ip.click('main button:has-text("Save marks for this skill")');
+    await ip.waitForTimeout(500);
+    chk('Skills: moving a child up asks what you saw first', /Add what you saw/.test(await ip.innerText('body')));
+    await ip.fill('main textarea[placeholder*="Kelechi"], main input[placeholder*="Kelechi"]', 'Read the error out loud and fixed the missing tag.');
+    await ip.click('main button:has-text("Save marks for this skill")');
+    await ip.waitForTimeout(2000);
+    const km = q(`db_row("SELECT level, evidence FROM skill_marks WHERE subjectId = 'NGG-IN-K2' AND skill = 'Reads an error message and acts on it'")`) || {};
+    chk('Skills: the new level and its evidence are on the record', Number(km.level) === 3 && /missing tag/.test(km.evidence || ''));
+    await shot(ip, 'skills');
+    // Students → one student
+    await ip.click('nav >> text=Students');
+    await ip.waitForFunction(() => /Zara Ibrahim/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    chk('Students: the class list, with each child’s mentor available', q(`instructor_class(['requesterId' => 'NGG-IN-INS'])['roster'][3]['mentor'] ?? ''`) === 'Ngozi Eke' || /Ngozi Eke/.test(JSON.stringify(q(`instructor_class(['requesterId' => 'NGG-IN-INS'])['roster']`))));
+    // Report a concern
+    await ip.click('button[aria-label="Report a concern"]').catch(() => ip.click('text=Report a concern'));
+    await ip.waitForSelector('select[aria-label="Which child"]', { timeout: 20000 });
+    await ip.selectOption('select[aria-label="Which child"]', 'NGG-IN-K3');
+    await ip.click('main button:has-text("Something they told me")');
+    await ip.fill('main textarea[aria-label="What happened"]', 'She said someone at the gate took her phone.');
+    await ip.click('main button:has-text("Send to safeguarding")');
+    await ip.waitForFunction(() => /Reference SG-\d{6}/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('Report a concern: one safeguarding case, with its reference on screen', q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-IN-K3'")['c']`) === 1 && /Reference SG-/.test(await ip.innerText('body')));
+    chk('a child outside the class is refused by the server', q(`instructor_class_roll(['requesterId' => 'NGG-IN-INS', 'marks' => ['NGG-IN-ADM' => 'here']])['ok'] ?? false`) === true && !/NGG-IN-ADM/.test(sess().rollJson || ''));
+    chk('no page errors (instructor)', ip.errs.length === 0);
+    if (ip.errs.length) console.error(ip.errs.join('\n'));
+
+    // ── An admin teaches both programmes: a chooser ──
+    const ad = await as('NGG-IN-ADM', true);
+    await ad.goto(BASE + '/instructor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
+    await ad.waitForSelector('.m15x-cards', { timeout: 60000 }).catch(() => {});
+    chk('/instructor offers an admin the NGG class and Summer School', /NGG Club class/.test(await ad.innerText('body')) && /Summer School/.test(await ad.innerText('body')));
+    chk('no page errors (admin)', ad.errs.length === 0);
+    if (ad.errs.length) console.error(ad.errs.join('\n'));
+  } catch (e) {
+    failed++;
+    console.error('  ✗ FAIL: ' + (e && e.stack || e));
+  } finally {
+    try { browser && await browser.close(); } catch (_) {}
+    cleanup();
+  }
+  console.log('\n' + (failed ? `❌ FAIL: ${passed} passed, ${failed} failed (instructor v6)` : `✅ PASS: ${passed} passed, 0 failed (instructor v6)`));
+  process.exit(failed ? 1 : 0);
+})();

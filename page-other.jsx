@@ -6877,7 +6877,7 @@ function MentorConcernSheet({ students, onClose }) {
 /* `programme` (ngg | summer) is which programme this portal is for: /mentor/summer
    shows Summer School participants only, /mentor/class the NGG class (instructors,
    stars and school results). The server narrows the roster; nothing here filters. */
-function MentorPortal({ programme } = {}) {
+function MentorPortal({ programme, embedded } = {}) {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
@@ -6925,7 +6925,8 @@ function MentorPortal({ programme } = {}) {
      by centre. */
   const pickCentre = (c) => { setPicked([]); setQuery(""); setScope("centre"); setCentre(c); };
 
-  const shell = (ch) => (
+  /* Embedded in the NGG mentor portal it is a panel in that page, not a page of its own. */
+  const shell = (ch) => embedded ? <div className="m15x-classic">{ch}</div> : (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
     </div>
@@ -7095,7 +7096,11 @@ function MentorPortal({ programme } = {}) {
     </div>
   );
 
-  const header = (
+  /* Embedded in the NGG mentor portal, the portal already names the mentor,
+     carries Report a concern and shows the Saturday day: only the class line stays. */
+  const header = embedded ? (
+    <p className="m15x-classic-sub">{m.centre || "All centres"} · {students.length} {students.length === 1 ? "student" : "students"}</p>
+  ) : (
     <div className="mtr-head">
       <div>
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{programme === "summer" ? "SUMMER SCHOOL · " : programme === "ngg" ? "NGG CLUB · " : ""}{roleMeta.eyebrow}</div>
@@ -7134,7 +7139,7 @@ function MentorPortal({ programme } = {}) {
         because a list of who has been missed is worth more than a list of
         everybody, and below the tabs because it belongs to this class. */}
     {/* NGG's Saturday, the instructor's or mentor's part of each block. Not for Summer School: its day is its own. */}
-    {programme === "ngg" && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
+    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
     <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} programme={programme} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 

@@ -1353,3 +1353,17 @@ Follows the entry above.
   It comes back as a record: no live plan and no Undo.
 
 Tests: `run.php` +1; `ids-ask.test.js` 58 → 68.
+
+
+## 2026-10-16 · Mentor register detail, class tools inside the portal, Instructor Portal v6
+
+- The Saturday register only had taps; the detail waited for Monday's review and was
+  usually lost by then. Each row now has **Add detail** (migration 150,
+  `mentor_register.note`), saved with the register and carried into the review and the
+  timeline. A register write without `note` leaves it alone, so a value tap cannot erase it.
+- "Stars & results" used to leave the NGG mentor portal for `/mentor/class`. It is now a
+  screen of the portal, the same `MentorPortal` component embedded (`embedded` prop); the
+  stand-alone page stays for people with class tools and no v15 portal.
+- `.m15-app main` lost `container-type: inline-size`: layout containment made `<main>` the
+  containing block of every `position: fixed` sheet inside it.
+- Instructor Portal v6 shipped at `/instructor`.

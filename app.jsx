@@ -86,6 +86,7 @@ const ROUTES = [
   { id: "summer-admin", title: "Summer School · Staff Portal · NGG",       desc: "", chrome: "own", index: false },
   { id: "club-admin",   title: "NGG Club · Staff Portal · NGG",            desc: "", chrome: "own", index: false },
   { id: "mentor",       title: "Mentor Portal · NGG",                      desc: "", chrome: "own", index: false },
+  { id: "instructor",   title: "Instructor Portal · NGG",                  desc: "", chrome: "own", index: false },
   /* A parent's own account: their own sign-in (not a member session), every
      child they look after on one screen. Noindexed — it is a signed-in page. */
   { id: "family",       title: "Family account · NGG",                     desc: "For parents and guardians: attendance, conduct, fees and lesson progress for each child, and a way to tell the centre.", chrome: "own", index: false },
@@ -336,7 +337,7 @@ function App() {
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
     /* The mentor portals own /mentor/ngg, /mentor/summer and /mentor/class (MentorHome). */
-    const inMentorSubtree = page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "");
+    const inMentorSubtree = (page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "")) || (page === "instructor" && /^\/instructor(\/|$)/.test(window.location.pathname || ""));
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
     if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
@@ -427,6 +428,7 @@ function App() {
     circle:     <CirclePortal   setPage={setPage}/>,
     family:     <FamilyPage     setPage={setPage}/>,
     mentor:     <MentorHome/>,
+    instructor: <InstructorHome/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,
     gate:       <GatePage/>,

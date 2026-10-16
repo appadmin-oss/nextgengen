@@ -230,8 +230,10 @@ function emitNode(n, scope, ind) {
   const ks = VOID.has(n.tag) ? [] : kids();
   /* <main> carries one slot, v.mainSlot, ahead of the design's own content: the
      controller puts a screen's loading bar or its error-with-retry there, so
-     every screen has its three states without the design being edited. */
-  if (n.tag === 'main' && !mainSlotted) { mainSlotted = true; ks.unshift('dcT(v.mainSlot)'); }
+     every screen has its three states without the design being edited.
+     v.mainSlotEnd, after the content, holds a screen the controller supplies
+     whole, so it sits under the design's own title and tabs. */
+  if (n.tag === 'main' && !mainSlotted) { mainSlotted = true; ks.unshift('dcT(v.mainSlot)'); ks.push('dcT(v.mainSlotEnd)'); }
   return 'h(' + JSON.stringify(n.tag) + ', ' + (props.length ? '{ ' + props.join(', ') + ' }' : 'null') + (ks.length ? ', ' + ks.join(', ') : '') + ')';
 }
 

@@ -46,6 +46,7 @@ const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
 /* The Saturday Formation Schedule's mentor duties, ticked per child: 8:00 punctuality
  * and assignment completion, and the 1:45 mentor check-out. */
 const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
+const MP_NOTE_MAX = 500;
 const MP_SESSION_KINDS = ['One-to-one' => 'one-to-one', 'Pod session' => 'pod', 'Family' => 'family', 'Phone or message' => 'phone', 'Note' => 'note'];
 const MP_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
 const MP_REL_Q = ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'];
@@ -455,8 +456,9 @@ function member_mp_mentee(array $p): array {
     $timeline = [];
     foreach (array_slice($sessions, 0, 20) as $s) $timeline[] = ['at' => (string)$s['metOn'], 'icon' => $s['kind'] === 'pod' ? 'users-three' : ($s['kind'] === 'one-to-one' ? 'chats-circle' : 'house-line'),
         'text' => ($s['kind'] === 'one-to-one' ? 'One-to-one' : ($s['kind'] === 'pod' ? 'Pod session' : 'Family contact')) . ': ' . mb_substr((string)$s['discussed'], 0, 140), 'source' => (string)($s['mentorName'] ?: 'Session')];
-    foreach (db_all("SELECT onDate, observed FROM mentor_register WHERE subjectId = ? AND observed <> '' ORDER BY onDate DESC LIMIT 10", [$id]) as $r) {
-        $timeline[] = ['at' => (string)$r['onDate'], 'icon' => 'binoculars', 'text' => 'Seen on Saturday: ' . implode(', ', json_decode((string)$r['observed'], true) ?: []), 'source' => 'Saturday observation'];
+    foreach (db_all("SELECT onDate, observed, note FROM mentor_register WHERE subjectId = ? AND (observed NOT IN ('', '[]') OR COALESCE(note, '') <> '') ORDER BY onDate DESC LIMIT 10", [$id]) as $r) {
+        $seen = json_decode((string)$r['observed'], true) ?: []; $note = trim((string)($r['note'] ?? ''));
+        $timeline[] = ['at' => (string)$r['onDate'], 'icon' => 'binoculars', 'text' => 'Seen on Saturday: ' . ($seen ? implode(', ', $seen) : 'a note') . ($note !== '' ? '. ' . mb_substr($note, 0, 160) : ''), 'source' => 'Saturday observation'];
     }
     foreach (db_all("SELECT observedOn, score, evidence FROM courage_marks WHERE subjectId = ? ORDER BY observedOn DESC LIMIT 8", [$id]) as $c) {
         $timeline[] = ['at' => (string)$c['observedOn'], 'icon' => 'flame', 'text' => 'Courage ' . (int)$c['score'] . ' of 5: ' . mb_substr((string)$c['evidence'], 0, 120), 'source' => 'Courage ladder'];
@@ -1207,7 +1209,7 @@ function member_mp_saturday(array $p): array {
     $ids = array_column($ms, 'id');
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        foreach (db_all("SELECT subjectId, here, observed, checks FROM mentor_register WHERE onDate = ? AND subjectId IN ($ph)", array_merge([$date], $ids)) as $r) $reg[$r['subjectId']] = ['here' => (int)$r['here'] === 1, 'observed' => json_decode((string)$r['observed'], true) ?: [], 'checks' => json_decode((string)($r['checks'] ?? ''), true) ?: []];
+        foreach (db_all("SELECT subjectId, here, observed, checks, note FROM mentor_register WHERE onDate = ? AND subjectId IN ($ph)", array_merge([$date], $ids)) as $r) $reg[$r['subjectId']] = ['here' => (int)$r['here'] === 1, 'observed' => json_decode((string)$r['observed'], true) ?: [], 'checks' => json_decode((string)($r['checks'] ?? ''), true) ?: [], 'note' => (string)($r['note'] ?? '')];
         /* The gate's check-in time answers "on time" for a child the mentor has not ticked: before 8:01 Lagos. */
         foreach (db_all("SELECT studentId, MIN(checkInAt) t FROM attendance WHERE date = ? AND studentId IN ($ph) GROUP BY studentId", array_merge([$date], $ids)) as $r) {
             $at = (string)$r['t']; $early = $at !== '' && gmdate('H:i', strtotime($at) + 3600) <= '08:00';
@@ -1285,8 +1287,10 @@ function member_mp_register(array $p): array {
         $obs = $here ? array_values(array_intersect(array_map('strval', (array)($r['observed'] ?? [])), MP_VALUES)) : [];
         // Duties only for a child who is here; anything outside MP_CHECKS is dropped, never stored.
         $chk = $here ? array_values(array_intersect(array_map('strval', (array)($r['checks'] ?? [])), MP_CHECKS)) : [];
-        db_upsert('mentor_register', ['onDate' => $date, 'subjectId' => $sid, 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'checks' => json_encode($chk), 'updatedAt' => $now],
-            ['onDate', 'subjectId'], ['here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'checks' => json_encode($chk), 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'updatedAt' => $now]);
+        $upd = ['here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'checks' => json_encode($chk), 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'updatedAt' => $now];
+        // The detail line is written only when the row carries one, so a tap on a value never wipes it.
+        if (array_key_exists('note', $r)) $upd['note'] = $here ? mb_substr(trim((string)$r['note']), 0, MP_NOTE_MAX) : '';
+        db_upsert('mentor_register', ['onDate' => $date, 'subjectId' => $sid] + $upd + ['note' => $upd['note'] ?? ''], ['onDate', 'subjectId'], $upd);
         $n++;
     }
     if (!empty($p['close'])) {

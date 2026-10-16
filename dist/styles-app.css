@@ -10023,9 +10023,18 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m15-614719b{display:flex;align-items:baseline;gap:8px;padding:14px 16px}
 .m15-b27294d{display:flex;align-items:center;gap:10px;min-height:64px;padding:8px 16px;border-top:1px solid #f0efea;flex-wrap:wrap}
 .m15-ec5a974{height:40px;min-width:92px;padding:0 12px;border-radius:12px;border:var(--dc-border, unset);background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-.m15-97c7778{flex:1;min-width:140px;font-size:15px;font-weight:600}
+.m15-e6313f2{flex:1;min-width:140px;min-height:40px;padding:0;border:0;background:none;text-align:left;font:inherit;font-size:15px;font-weight:600;color:#0b0b0c;cursor:pointer;display:flex;flex-direction:column;justify-content:center}
+.m15-a6165da{font-size:12.5px;font-weight:400;color:#6b6b72}
 .m15-1f83a83{height:40px;padding:0 12px;border-radius:999px;border:var(--dc-border, unset);background:var(--dc-background, unset);font-size:13px;font-weight:600;cursor:pointer;opacity:var(--dc-opacity, unset)}
-.m15-fa914aa{padding:12px 16px;border-top:1px solid #f0efea;font-size:13px;color:#6b6b72}
+.m15-8c20899{height:40px;padding:0 12px;border-radius:999px;border:1px dashed #b9b7ae;background:#fff;font-size:13px;font-weight:600;cursor:pointer;opacity:var(--dc-opacity, unset);display:inline-flex;align-items:center;gap:6px}
+.m15-0909729{flex-basis:100%;display:flex;flex-direction:column;gap:6px;padding:4px 0 8px}
+.m15-5bee6fc{font-size:12.5px;font-weight:600;color:#4a4a50}
+.m15-b006d34{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d6d4cc;border-radius:12px;font:inherit;font-size:14px;line-height:1.45;resize:vertical}
+.m15-d8a3515{flex:1;font-size:12.5px;color:#6b6b72}
+.m15-34938f3{height:40px;padding:0 16px;border:0;border-radius:12px;background:#0b0b0c;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer}
+.m15-db57d1d{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid #f0efea}
+.m15-cf56052{flex:1;min-width:220px;font-size:13px;color:#6b6b72}
+.m15-d9baa9c{height:40px;padding:0 14px;border:1px solid #d6d4cc;border-radius:12px;background:#fff;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .m15-c62d842{display:flex;flex-direction:column;gap:6px;max-width:560px}
 .m15-da57998{height:6px;border-radius:999px;background:#e8e5dd;overflow:hidden}
 .m15-30da494{height:100%;width:var(--dc-width, unset);background:#1d6b30}
@@ -10178,10 +10187,14 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 /* ── Mentor Portal v15: the controller's own states (loading, error with
    retry, boot) and the Saturday formation panel. Same ink and paper as the
    compiled design (m15-*), which these sit inside. ─────────────────────── */
-.m15-app main { container-type: inline-size; }
-.m15x-slot { padding: 32px 40px 0; }
+/* No container on <main>: containment would make it the containing block of
+   the class tools' fixed sheets and bars. The slot pads by main's width instead. */
+.m15x-slot { padding: 32px clamp(16px, 4%, 40px) 0; }
 .m15x-slot > :last-child { margin-bottom: 0; }
-@container (max-width: 760px) { .m15x-slot { padding: 16px 16px 0; } }
+/* The class tools inside the NGG mentor portal: the class page's own navy surface, as a panel. */
+.m15x-classic { background: #16223e; color: #eef2fb; border-radius: 18px; padding: 22px 18px 28px; font-family: var(--font-body, system-ui, sans-serif); margin-bottom: 32px; }
+.m15x-classic > * { max-width: 860px; margin-left: auto; margin-right: auto; }
+.m15x-classic-sub { margin: 0 0 12px; font-size: 13px; color: rgba(230, 238, 255, .7); }
 .sf-more { display: inline-flex; align-items: center; gap: 6px; height: 40px; margin-top: 8px; padding: 0 14px; border: 1px solid #d6d4cc; border-radius: 12px; background: #fff; color: #0b0b0c; font: 600 13.5px 'Geist', system-ui, sans-serif; cursor: pointer; }
 .m15x-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .m15x-load { height: 3px; margin: 0 0 16px; border-radius: 3px; background: #e8e5dd; overflow: hidden; position: relative; }
@@ -10195,7 +10208,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m15x-boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #f4f4f2; }
 .m15x-boot .m15x-bar { position: static; display: block; width: 120px; height: 3px; animation: none; opacity: .6; }
 .m15x-back { position: fixed; top: 12px; left: 12px; z-index: 50; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: #fff; color: #0b0b0c; font: 600 13.5px 'Geist', system-ui, sans-serif; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); cursor: pointer; }
-.sf-day { margin: 0 0 20px; padding: 16px; border: 1px solid #e8e5dd; border-radius: 18px; background: #fff; font-family: 'Geist', system-ui, sans-serif; color: #0b0b0c; }
+.sf-day { container-type: inline-size; margin: 0 0 20px; padding: 16px; border: 1px solid #e8e5dd; border-radius: 18px; background: #fff; font-family: 'Geist', system-ui, sans-serif; color: #0b0b0c; }
 .sf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .sf-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .sf-head span { font-size: 13px; color: #6b6b72; }

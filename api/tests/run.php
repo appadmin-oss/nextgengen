@@ -26359,6 +26359,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: the register saves only my children and only the four values; Away carries no values', $reg['saved'] === 2
         && db_row("SELECT observed FROM mentor_register WHERE subjectId = 'NGG-MPK1'")['observed'] === '["Courage"]'
         && db_row("SELECT observed FROM mentor_register WHERE subjectId = 'NGG-MPK2'")['observed'] === '[]');
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'note' => '  Offered to present first when nobody would. ' . str_repeat('x', 600)]]]));
+    $n1 = (string)db_row("SELECT note FROM mentor_register WHERE subjectId = 'NGG-MPK1' AND onDate = ?", [$T])['note'];
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage', 'Respect']]]]));
+    $n2 = (string)db_row("SELECT note FROM mentor_register WHERE subjectId = 'NGG-MPK1' AND onDate = ?", [$T])['note'];
+    chk('portal: the register keeps a detail line, trimmed and capped, and a tap without one never wipes it', str_starts_with($n1, 'Offered to present') && mb_strlen($n1) === MP_NOTE_MAX && $n2 === $n1);
+    $tl = backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1']));
+    chk('portal: the detail reaches the child’s timeline', (bool)array_filter((array)($tl['timeline'] ?? []), static fn($e) => str_contains((string)$e['text'], 'Offered to present')));
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'note' => 'Led the huddle.']]]));
     chk('portal: closing the register copies Here to the centre record', (bool)db_row("SELECT 1 FROM attendance WHERE studentId = 'NGG-MPK1' AND date = ? AND method = 'mentor'", [$T]));
     chk('portal: a weekly review needs all three ratings', (backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong']))['error'] ?? '') === 'rate_all_three');
     $rv = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Low', 'line' => 'Led the huddle']));
