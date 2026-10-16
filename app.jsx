@@ -335,8 +335,10 @@ function App() {
     /* The Control Room owns /control/<page>/<tab> and resolves the old
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
+    /* The mentor portals own /mentor/ngg, /mentor/summer and /mentor/class (MentorHome). */
+    const inMentorSubtree = page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -424,7 +426,7 @@ function App() {
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
     family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorPortal/>,
+    mentor:     <MentorHome/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,
     gate:       <GatePage/>,

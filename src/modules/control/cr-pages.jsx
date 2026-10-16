@@ -93,6 +93,7 @@ const CR_PAGES = {
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },
     { id: "anchor", label: "Anchor Journal", desc: "The weekly reflection every member writes.", cap: "content" },
     { id: "timetable", label: "Timetable", desc: "Which course meets when, where and with whom, at each centre.", cap: "club" },
+    { id: "formation", label: "Saturday formation", desc: "The 8:00–2:00 Saturday schedule every portal reads, and what each reader is told.", cap: "content" },
   ] },
   events: { label: "Events", icon: "calendar-blank", tabs: [
     { id: "events", label: "Events", desc: "Sessions, outings and showcases members can RSVP to.", cap: "content" },

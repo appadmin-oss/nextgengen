@@ -75,11 +75,17 @@ function club_class_roster(array $g, string $course, string $centre, string $dat
     $scan = [];
     foreach (db_all("SELECT studentId, status, method FROM attendance WHERE date = ? AND studentId IN ($ph)", array_merge([$date], $ids)) as $r)
         $scan[(string)$r['studentId']] = ['status' => (string)($r['status'] ?? ''), 'method' => (string)($r['method'] ?? '')];
-    $photos = [];
-    foreach (db_all("SELECT memberId, photoUrl FROM members WHERE memberId IN ($ph)", $ids) as $r) $photos[(string)$r['memberId']] = (string)$r['photoUrl'];
+    $photos = []; $dob = [];
+    foreach (db_all("SELECT memberId, photoUrl, dob FROM members WHERE memberId IN ($ph)", $ids) as $r) { $photos[(string)$r['memberId']] = (string)$r['photoUrl']; $dob[(string)$r['memberId']] = (string)($r['dob'] ?? ''); }
+    /* Who mentors each child, in one grouped read: the instructor's log
+     * remarks reach that mentor, so the class list says who it is. */
+    $mentor = [];
+    foreach (db_all("SELECT a.memberId, t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.status = 'active' AND a.memberId IN ($ph)", $ids) as $r) $mentor[(string)$r['memberId']] = (string)$r['fullName'];
+    $today = results_today();
     return array_map(static fn($r) => ['memberId' => (string)$r['memberId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
         'photoUrl' => $photos[(string)$r['memberId']] ?? '', 'scanned' => isset($scan[(string)$r['memberId']]),
-        'scanLate' => ($scan[(string)$r['memberId']]['status'] ?? '') === 'late'], $rows);
+        'scanLate' => ($scan[(string)$r['memberId']]['status'] ?? '') === 'late',
+        'mentor' => $mentor[(string)$r['memberId']] ?? '', 'age' => function_exists('mp_age') ? mp_age($dob[(string)$r['memberId']] ?? '', $today) : null], $rows);
 }
 
 function club_class_row(string $course, string $centre, string $date): ?array {
@@ -222,8 +228,52 @@ function instructor_class(array $p): array {
         'lesson' => club_class_lesson($slot['course'], $slot['date']),
         'skills' => $levels['skills'], 'levels' => (object)$levels['by'],
         'mix' => club_class_groups($roster, $levels, $present),
+        'division' => function_exists('nggc_division_for_track') ? nggc_division_for_track($slot['course']) : '',
+        'slotInfo' => club_class_slot_info($slot['course'], $slot['centre']),
+        'questions' => club_class_questions($slot['course'], $slot['date']),
         'carryOver' => ['from' => (string)($prev['date'] ?? ''), 'misconception' => (string)($prevExit['misconception'] ?? ''),
             'notYet' => array_values(array_map(static fn($id) => ['memberId' => $id, 'fullName' => $names[$id] ?? ''], array_filter($carry, static fn($id) => isset($names[$id]))))]];
+}
+
+/** The class's Saturday slot on the timetable (room and time), if it is scheduled there. */
+function club_class_slot_info(string $course, string $centre): ?array {
+    $r = db_row("SELECT t.startTime, t.endTime, t.room FROM timetable_slots t JOIN centres c ON c.centreId = t.centreId
+                 WHERE c.name = ? AND lower(t.course) = lower(?) AND t.weekday = 6 AND t.status = 'active' ORDER BY t.startTime LIMIT 1", [$centre, $course]);
+    return $r ? ['start' => (string)$r['startTime'], 'end' => (string)$r['endTime'], 'room' => (string)$r['room']] : null;
+}
+
+/**
+ * The questions the lesson already holds, so the instructor does not retype
+ * them: this week's first multiple-choice check is the hinge question (with
+ * its answer, which only staff are served), its last check the exit ticket,
+ * and earlier weeks' prompts the retrieval review (spaced practice).
+ */
+function club_class_questions(string $course, string $date): array {
+    $out = ['hinge' => null, 'exit' => '', 'retrieval' => []];
+    if (!function_exists('curriculum_load') || !function_exists('curriculum_schedule')) return $out;
+    $cfg = curriculum_schedule();
+    $units = curriculum_load("status = 'published' AND lower(course) = lower(?)", [$course], 'week, position');
+    if (!$units) return $out;
+    $week = (string)$cfg['startDate'] !== '' ? max(1, (int)floor((strtotime($date . 'T00:00:00Z') - strtotime($cfg['startDate'] . 'T00:00:00Z')) / (7 * 86400)) + 1) : null;
+    foreach ($units as $b) {
+        $w = (int)$b['unit']['week'];
+        if ($week !== null && $w === $week) {
+            foreach ($b['checks'] as $c) {
+                $opts = json_decode((string)$c['options'], true) ?: [];
+                if ($out['hinge'] === null && (string)$c['kind'] === 'mcq' && count($opts) >= 2)
+                    $out['hinge'] = ['question' => (string)$c['prompt'], 'options' => array_values($opts), 'correct' => ctype_digit((string)$c['answer']) ? (int)$c['answer'] : null];
+            }
+            $last = end($b['checks']);
+            if ($last) $out['exit'] = (string)$last['prompt'];
+        } elseif ($week === null || $w < $week) {
+            foreach ($b['checks'] as $c) if (trim((string)$c['prompt']) !== '')
+                $out['retrieval'][] = ['week' => $w, 'ago' => $week !== null ? $week - $w : null, 'q' => (string)$c['prompt']];
+        }
+    }
+    // The most recent weeks first: last week's material is the one most worth recalling.
+    usort($out['retrieval'], static fn($a, $b) => $b['week'] <=> $a['week']);
+    $out['retrieval'] = array_slice($out['retrieval'], 0, 12);
+    return $out;
 }
 
 /** instructor.class.roll — save marks as tapped; close to sync the centre's attendance. */

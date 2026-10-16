@@ -1,0 +1,9 @@
+{
+  "// what": "The Instructor Portal v6 design's sample copy, and the value that replaces it; plus the two bindings the design's concern form lacks (which child, and what happened). See tools/dc-compile.js.",
+  "<span style=\"font-size:12px;color:#6b6b72\">Weeks 2–7</span>": "<span style=\"font-size:12px;color:#6b6b72\">{{ stHistL }}</span>",
+  "<span style=\"font-size:12px;color:#6b6b72\">of 80 minutes</span>": "<span style=\"font-size:12px;color:#6b6b72\">{{ phBudgetL }}</span>",
+  "Showing what was saved on this device · last updated 09:12.": "{{ rsErrT }}",
+  "<sc-if value=\"{{ notSent }}\" hint-placeholder-val=\"{{ true }}\"><div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px\">": "<sc-if value=\"{{ notSent }}\" hint-placeholder-val=\"{{ true }}\"><label style=\"display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600\">Which child?<select value=\"{{ cKid }}\" onChange=\"{{ onCKid }}\" aria-label=\"Which child\" style=\"height:48px;padding:0 12px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;background:#fff\"><sc-for list=\"{{ kidOpts }}\" as=\"o\"><option value=\"{{ o.id }}\">{{ o.name }}</option></sc-for></select></label><div style=\"display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px\">",
+  "<textarea rows=\"5\" aria-label=\"What happened\"": "<textarea rows=\"5\" value=\"{{ cText }}\" onChange=\"{{ onCText }}\" aria-label=\"What happened\"",
+  "Received by the safeguarding officer.": "Received by the safeguarding officer. Reference {{ cRef }}."
+}

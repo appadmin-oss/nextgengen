@@ -59,6 +59,7 @@ if ($method === 'GET') {
             'centre'      => (string)($_GET['centre'] ?? ''),
             'scope'       => (string)($_GET['scope'] ?? ''),
             'period'      => (string)($_GET['period'] ?? ''),
+            'programme'   => (string)($_GET['programme'] ?? ''),
         ]);
     } elseif ($view === 'attention') {
         $res = gs_call('member.mentor.attention', [
@@ -79,6 +80,7 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'centre'      => (string)($_GET['centre'] ?? ''),
             'scope'       => (string)($_GET['scope'] ?? ''),
+            'programme'   => (string)($_GET['programme'] ?? ''),
         ]);
     }
 } elseif ($method === 'POST') {

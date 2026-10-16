@@ -347,13 +347,28 @@ function mentor_covers(array $g, string $programme): bool {
 function mentor_scope_centres(array $g): array {
     $centres = $g['centres'] ?? null;
     if ($centres !== null) return array_values($centres);
-    return array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    /* Narrowed to one programme (the roster's `programme`), an admin picks
+     * only among the centres that run it: a Summer School portal offering an
+     * NGG-only centre is the clash this exists to prevent. */
+    $only = $g['onlyProgramme'] ?? '';
+    $rows = db_all("SELECT name, programmes FROM centres WHERE status = 'active' ORDER BY name");
+    if ($only !== '') $rows = array_filter($rows, static fn($r) => in_array($only, array_map('trim', explode(',', (string)($r['programmes'] ?: 'ngg,summer'))), true));
+    return array_values(array_column($rows, 'name'));
 }
 
 /** The class for today — children in reach, each with today's star state so
  *  the portal can show what has already been given. */
 function mentor_roster(array $p): array {
     $g = mentor_gate($p); if (!$g['ok']) return $g;
+    /* `programme` (ngg | summer) narrows the roster to one programme. An
+     * admin covers both, and one list holding NGG members and Summer School
+     * participants side by side is how a star meant for one landed on the
+     * other. Asking for a programme you do not cover is refused, not widened. */
+    $prog = (string)($p['programme'] ?? '');
+    if ($prog === 'ngg' || $prog === 'summer') {
+        if (!mentor_covers($g, $prog)) return ['ok' => false, 'error' => 'not_this_programme'];
+        $g['programmes'] = [$prog]; $g['onlyProgramme'] = $prog;
+    }
     $today  = gmdate('Y-m-d');
 
     /* Whose children these are. `centres`/`courses` are null-means-everything,
@@ -499,6 +514,7 @@ function mentor_roster(array $p): array {
         'needsCentre' => $needsCentre,
         'scope' => $scope,
         'mineCount' => count($mineIds),
+        'programme' => $prog === 'ngg' || $prog === 'summer' ? $prog : '',
         'mentor' => ['name' => (string)($g['mentor']['fullName'] ?? ''),
                      'centre' => $want !== '' ? $want : (string)($g['mentor']['centre'] ?? ''),
                      'department' => (string)($g['mentor']['department'] ?? ''),

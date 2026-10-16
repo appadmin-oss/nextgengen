@@ -6258,15 +6258,15 @@ function McReview({ d, subjectId, onDone, setErr }) {
    The question §18 exists to ask, on the screen a mentor already opens. A
    count alone would be a number to feel bad about; the names are what make it
    an action, so each one opens that child's record at the review tab. */
-function MentorReviewsDue({ centre, scope, onOpenChild }) {
+function MentorReviewsDue({ centre, scope, onOpenChild, programme }) {
   const [d, setD] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
-    NGGApi.member.mentorReviewsDue({ centre: centre || "", scope: scope || "" })
+    NGGApi.member.mentorReviewsDue({ centre: centre || "", scope: scope || "", programme: programme || "" })
       .then(r => { if (alive) setD(r); })
       .catch(() => { if (alive) setD(null); });
     return () => { alive = false; };
-  }, [centre, scope]);
+  }, [centre, scope, programme]);
 
   // Nothing to say until it is known, and nothing to say for an empty class.
   if (!d || !d.total) return null;
@@ -6874,7 +6874,10 @@ function MentorConcernSheet({ students, onClose }) {
   );
 }
 
-function MentorPortal() {
+/* `programme` (ngg | summer) is which programme this portal is for: /mentor/summer
+   shows Summer School participants only, /mentor/class the NGG class (instructors,
+   stars and school results). The server narrows the roster; nothing here filters. */
+function MentorPortal({ programme } = {}) {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
@@ -6901,13 +6904,14 @@ function MentorPortal() {
   const ready = React.useRef(false);
   const load = React.useCallback((c, sc) => {
     if (!ready.current) setState("loading");
-    NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); ready.current = true; })
+    NGGApi.member.mentorRoster(c || "", sc || "", programme || "").then(r => { setData(r); setState("ready"); ready.current = true; })
       .catch(e => {
         const c2 = e.code || e.message;
         setState(c2 === "unauthorized" ? "need-auth"
                : c2 === "not_a_mentor" ? "not-mentor"
                : c2 === "not_cleared" ? "not-cleared"
                : c2 === "no_centre" ? "no-centre"
+               : c2 === "not_this_programme" ? "not-mentor"
                : "error");
       });
   }, []);
@@ -7066,7 +7070,7 @@ function MentorPortal() {
      reach anything but the roster. */
   /* The Club curriculum is for staff who serve NGG — a Summer-only mentor has
      none, and the server refuses them (curriculum_staff_gate). */
-  const servesClub = (m.programmes || []).includes("ngg");
+  const servesClub = programme !== "summer" && (m.programmes || []).includes("ngg");
   const tabList = (canTeach ? [["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]]
                             : [["class", "Stars & notes"]])
     .concat(servesClub ? [["curriculum", "Curriculum"], ["results", "School results"]] : [])
@@ -7094,9 +7098,9 @@ function MentorPortal() {
   const header = (
     <div className="mtr-head">
       <div>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{programme === "summer" ? "SUMMER SCHOOL · " : programme === "ngg" ? "NGG CLUB · " : ""}{roleMeta.eyebrow}</div>
         <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} {programme === "summer" ? "participant" : "student"}{students.length === 1 ? "" : "s"} · {done} starred today</p>
       </div>
       <button type="button" className="mtr-btn mtr-concern-btn" onClick={() => setConcernOn(true)}>Report a concern</button>
       {concernOn && <MentorConcernSheet students={students} onClose={() => setConcernOn(false)}/>}
@@ -7129,7 +7133,9 @@ function MentorPortal() {
     {/* §18's question on the screen a mentor already opens. Above the search,
         because a list of who has been missed is worth more than a list of
         everybody, and below the tabs because it belongs to this class. */}
-    <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} onOpenChild={setChildOn}/>
+    {/* NGG's Saturday, the instructor's or mentor's part of each block. Not for Summer School: its day is its own. */}
+    {programme === "ngg" && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
+    <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} programme={programme} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
     {students.length > 0 && (

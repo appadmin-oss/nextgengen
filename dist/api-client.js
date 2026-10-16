@@ -665,7 +665,7 @@
         read: (view, memberId) => request('/member/pod.php' + qs({ view, memberId: memberId || '' })),
         act:  (action, body) => request('/member/pod.php', { body: Object.assign({ action }, body || {}) }),
       },
-      mentorRoster:  (centre, scope) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '' })),
+      mentorRoster:  (centre, scope, programme) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '', programme: programme || '' })),
       // The mentoring record for one child: history, meetings, goals.
       mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
       // Open a record that is not my mentee's, for a week, saying why.
@@ -1039,6 +1039,7 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
+      formation: (audience) => request('/public/formation.php' + qs({ audience: audience || 'member' })),
       timetableSave: (body) => request('/public/timetable-save.php', { body }),
       timetableLoad: (k) => request('/public/timetable-save.php' + qs({ k })),
       timetableTerm: () => request('/public/timetable-term.php'),
@@ -1145,6 +1146,10 @@
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
+      },
+      formation: {
+        list: () => request('/admin/formation.php'),
+        save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
       },
       timetable: {
         list:   (centreId) => request('/admin/timetable.php' + qs({ centreId: centreId || '' })),
@@ -1858,6 +1863,9 @@
        register, weekly reviews and session notes. Each is an upsert or a
        single row on the server, so a replay after a dropped reply is safe. */
     'mentor.act':     (p) => request('/member/mentor.php', { body: p }),
+    /* The instructor's Saturday: roll, plan, hinge tally, exit ticket, log and
+       skill marks. Each is an upsert on the server, so a replay is safe. */
+    'teaching.act':   (p) => request('/member/teaching.php', { body: p }),
   };
 
   global.NGGApi = API;

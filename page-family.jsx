@@ -250,6 +250,8 @@ function FamilyHome({ me, reload }) {
         </section>
       )}
 
+      {/* What a Saturday at NGG holds, in the words families are told (the same schedule the reminders follow). */}
+      {active.length > 0 && typeof FormationDay === "function" && <FormationDay audience="parent"/>}
       {current ? <FamilyWard key={current.linkId} link={current} onRemoved={reload}/>
         : !adding && !waiting.length && <EmptyState title="No children connected yet" message="Add your child with the code from their NGG app." action={<button className="fam-btn is-primary" onClick={() => setAdding(true)}>Add a child</button>}/>}
     </>

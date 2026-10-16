@@ -256,6 +256,24 @@ Object.assign(CR_TAB_DEFS, {
   assignments: crPanel(() => <AdminAssignments/>),
   anchor: crPanel(() => <AdminAnchor/>),
   timetable: crPanel(() => <AdminTimetable/>),
+  /* The Saturday Formation Schedule (domain/saturday-formation.php): one
+     table, read by the mentor, member, instructor and family portals and by
+     the day's reminders. Editing a block changes all of them. */
+  formation: {
+    skeleton: ["table"],
+    load: async () => NGGApi.admin.formation.list(),
+    blocks: (d, ctx) => [{
+      type: "note", span: 6, icon: "calendar-star",
+      text: "Each block's part is shown only to its reader. Reminders go at each block's start on Saturday; families who take check-in news get the plan at 8:00, a not-arrived notice at 8:45 and the close at 2:00." + (d.lastSaturday ? " Last Saturday (" + d.lastSaturday + "): " + (d.sent || []).reduce((n, x) => n + Number(x.n), 0) + " sent." : ""),
+    }, {
+      type: "table", span: 6, title: "The day", sub: "Think. Create. Lead. Serve.", nosel: true,
+      cols: ["Time", "Block", "Flow", "Readers"],
+      rows: (d.blocks || []).map(b => ({ key: b.key, open: () => crFormationEdit(ctx, b), cells: [
+        { k: "mono", t: b.start + "–" + b.end }, { k: "person", t: b.title, s: b.purpose }, { k: "text", t: b.flow },
+        { k: "text", t: ["member", "mentor", "instructor", "admin"].filter(a => ((b.for || {})[a] || []).length).concat((b.for || {}).parent ? ["parent"] : []).join(" · ") || "—" }] })),
+      emptyText: "No blocks.",
+    }],
+  },
 });
 
 /* Curriculum: the lessons, bulk status and import are rebuilt above; the lesson
@@ -390,3 +408,33 @@ function CrDivisions({ ctx }) {
 Object.assign(CR_TAB_DEFS, {
   divisions: crPanel(ctx => <CrDivisions ctx={ctx}/>),
 });
+
+/* One block of the Saturday schedule: its times and words, and each reader's
+   part (one point per line). The server checks the times and the lengths. */
+function crFormationEdit(ctx, b) {
+  const F = b.for || {}; const lines = a => (F[a] || []).join("\n");
+  ctx.form({
+    title: b.title, intro: b.start + "–" + b.end + " · " + b.flow, submit: "Save block", busyLabel: "Saving…",
+    values: { start: b.start, end: b.end, title: b.title, flow: b.flow, purpose: b.purpose, quote: b.quote || "",
+              member: lines("member"), mentor: lines("mentor"), instructor: lines("instructor"), admin: lines("admin"), parent: F.parent || "" },
+    fields: [
+      { id: "start", l: "Starts (HH:MM)", req: true, check: v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use 24-hour time, like 08:30." },
+      { id: "end", l: "Ends (HH:MM)", req: true, check: v => /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use 24-hour time, like 10:00." },
+      { id: "title", l: "Block", req: true }, { id: "flow", l: "Formation flow word" }, { id: "purpose", l: "Purpose", type: "textarea" },
+      { id: "quote", l: "Key question or line", type: "textarea" },
+      { id: "member", l: "Members: what they do (one per line)", type: "textarea" },
+      { id: "mentor", l: "Mentors: what they watch for (one per line)", type: "textarea" },
+      { id: "instructor", l: "Instructors (one per line)", type: "textarea" },
+      { id: "admin", l: "Admin: what must be ready (one per line)", type: "textarea" },
+      { id: "parent", l: "What families are told", type: "textarea" },
+    ],
+    onSubmit: async v => {
+      const split = t => String(t || "").split("\n").map(x => x.trim()).filter(Boolean);
+      const r = await NGGApi.admin.formation.save({ key: b.key, start: v.start, end: v.end, title: v.title, flow: v.flow, purpose: v.purpose, quote: v.quote,
+        for: { member: split(v.member), mentor: split(v.mentor), instructor: split(v.instructor), admin: split(v.admin), parent: String(v.parent || "").trim() } });
+      ctx.reload(); ctx.toast(r && r.unchanged ? "Nothing changed." : "Saved. Every portal shows the new " + v.title + ".");
+      return r;
+    },
+    done: () => null,
+  });
+}

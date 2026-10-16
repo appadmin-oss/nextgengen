@@ -27453,5 +27453,51 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── The Saturday Formation Schedule: seeded once, read per audience, edited by content, sent once ──
+(function () {
+    db_exec('DELETE FROM saturday_formation'); db_exec('DELETE FROM saturday_formation_sends');
+    $m = public_formation(['audience' => 'mentor']);
+    $keys = array_column($m['blocks'], 'key');
+    chk('formation · seeded from the programme schedule: nine blocks, 8:00 to 2:00, in order',
+        $keys === ['checkin', 'musing', 'vanboja', 'anthem', 'special', 'division', 'break', 'chess', 'close'] && $m['blocks'][0]['start'] === '08:00' && end($m['blocks'])['end'] === '14:00');
+    chk('formation · each audience reads its own part (mentor: the key question; parent: one line)',
+        in_array('Take the register and note who is here.', $m['blocks'][1]['part'], true) && $m['blocks'][1]['quote'] === 'Who are you becoming, and what evidence do we have?'
+        && is_string(public_formation(['audience' => 'parent'])['blocks'][1]['part']) && !isset($m['blocks'][1]['for']));
+    chk('formation · an unknown audience falls back to member, never to everything', public_formation(['audience' => 'nobody'])['audience'] === 'member');
+    $n = (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c']; public_formation([]);
+    chk('formation · the seed runs once; the table is the timetable', $n === 9 && (int)db_row('SELECT COUNT(*) c FROM saturday_formation')['c'] === 9);
+    chk('formation · editing a block needs the content capability', empty(admin_formation_save(['requesterId' => 'NOBODY', 'key' => 'chess', 'start' => '13:10'])['ok']));
+    chk('formation · ledger: a send happens once per day, slot, person and channel',
+        sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === true && sf_once('2026-10-17', 'block:chess', 'M-1', 'push') === false && sf_once('2026-10-17', 'block:chess', 'M-1', 'email') === true);
+    chk('formation · the tick does nothing on a weekday', sf_tick(strtotime('2026-10-16T08:00:00Z'))['saturday'] === false);
+    $r = sf_tick(strtotime('2026-10-17T07:31:00Z'));   // 8:31 Lagos, a Saturday
+    chk('formation · on Saturday at 8:31 Lagos the breakout block is open', $r['saturday'] === true && $r['date'] === '2026-10-17');
+    // Families: a guardian who takes check-in news hears the plan, the not-arrived notice and the close; one who does not hears nothing.
+    $now = now_iso();
+    foreach ([['SF-K1', 'Ada Here'], ['SF-K2', 'Bayo Away']] as [$id, $nm]) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@sf.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['SF-G1', 'g1@sf.example', 'SF-K1', '{"checkin":true}'], ['SF-G2', 'g2@sf.example', 'SF-K2', '{"checkin":true}'], ['SF-G3', 'g3@sf.example', 'SF-K1', '{"checkin":false}']] as $i => [$gid, $em, $kid, $nt]) {
+        db_insert('guardians', ['guardianId' => $gid, 'email' => $em, 'fullName' => 'G ' . $i, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('guardian_wards', ['linkId' => 'SFL-' . $i, 'guardianId' => $gid, 'memberId' => $kid, 'status' => 'active', 'notify' => $nt, 'createdAt' => $now]);
+    }
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'SF-K1', 'token' => '', 'date' => '2026-10-17', 'checkInAt' => '2026-10-17T06:55:00Z', 'method' => 'qr']);
+    db_insert('mentor_register', ['onDate' => '2026-10-17', 'subjectId' => 'SF-K1', 'mentorId' => 'X', 'here' => 1, 'observed' => '["Courage"]', 'checks' => '["On time","Assignment in"]', 'updatedAt' => $now]);
+    $slots = static fn($slot) => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = '2026-10-17' AND slot = ?", [$slot]), 'recipient');
+    sf_tick(strtotime('2026-10-17T07:05:00Z'));   // 8:05 Lagos
+    $plan = $slots('parent:plan');
+    chk('formation · 8:00 plan: only guardians who take check-in news', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && !in_array('g3@sf.example|SF-K1', $plan, true));
+    sf_tick(strtotime('2026-10-17T07:50:00Z'));   // 8:50 Lagos
+    chk('formation · 8:45 not-arrived notice: the absent member only', $slots('parent:absent') === ['g2@sf.example|SF-K2']);
+    sf_tick(strtotime('2026-10-17T13:05:00Z'));   // 2:05pm Lagos
+    chk('formation · 2:00 close: the member who was here', $slots('parent:close') === ['g1@sf.example|SF-K1']);
+    $lines = implode(' | ', sf_day_lines('SF-K1', '2026-10-17', sf_blocks()));
+    chk('formation · the close says arrival, values seen and the duties', str_contains($lines, 'Checked in at 7:55am') && str_contains($lines, 'courage') && str_contains($lines, 'on time, assignment handed in'));
+    $n = count($slots('parent:close')); sf_tick(strtotime('2026-10-17T13:20:00Z'));
+    chk('formation · a second tick sends nothing twice', count($slots('parent:close')) === $n);
+    chk('formation · member reminders go to members in the building', in_array('SF-K1', $slots('block:close'), true) || in_array('SF-K1', array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE slot LIKE 'block:%' AND recipient = 'SF-K1'"), 'recipient'), true));
+    db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'SFL-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'SF-G%'");
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%'");
+    db_exec('DELETE FROM saturday_formation_sends');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
