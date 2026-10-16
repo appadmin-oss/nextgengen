@@ -1139,3 +1139,25 @@ portal (roster, School results tab, Report a concern).
   reads "invalid", exactly like a wrong code (no account enumeration).
 - The site-wide "one focus ring for one field" rule now skips `.signin-form`,
   `.signin-pw` and the portal gate's form, which it was boxing whole.
+
+## 2026-10-16 — The sign-in door, hardened against bots (one answer for everyone)
+
+Asked for an honest "no account found". Researched before shipping it: OWASP
+(WSTG identity testing, Authentication Cheat Sheet) asks for one response
+whether or not the account exists, and for a children's programme "this email
+is a member" is a safeguarding fact. So the door still answers unknown,
+suspended and real accounts identically, and what changed is the cost of asking:
+
+- `auth_find_member()` counts misses per address (`attempt_guard` scope
+  `auth.miss`): the 8th unknown identifier pauses that address for 30 minutes,
+  and while paused every lookup, real or not, gets `too_many_misses` (429),
+  so the pause is not itself an oracle. A hit never clears the count.
+- At most 5 codes of one purpose are emailed to one person an hour
+  (`AUTH_CODES_PER_HOUR`); past that the answer is unchanged and nothing is sent.
+- New hourly buckets `auth.gateway.hour` (120) and `auth.request.hour` (30).
+- A honeypot field (`hp`, `.signin-trap`) on gateway / request / reset /
+  login; filled → `request_failed`, audited `bot.trap`.
+
+The on-screen wording for "we sent a code" (neutral "if there's an account…")
+and an inbox notice to an address with no account are proposed, not built,
+pending the owner's decision.

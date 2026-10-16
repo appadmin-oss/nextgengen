@@ -4,8 +4,13 @@ require_method('POST');
 // Guarantee the default Super Admin exists before any sign-in (idempotent).
 ensure_super_admin();
 rate_limit_check('auth.request');
+rate_limit_check('auth.request.hour');
 
 $body = read_json_body();
+if (bot_trap_tripped($body)) {
+    audit('bot.trap', null, 'request', [], client_ip());
+    json_error('request_failed', 400);
+}
 v_require($body, ['identifier']);
 $identifier = v_safe_text($body['identifier'], 120);
 $identifier = trim($identifier);
@@ -21,7 +26,10 @@ $res = gs_call('auth.request', [
     'ip'         => client_ip(),
     'userAgent'  => client_ua(),
 ]);
-if (empty($res['ok'])) json_error($res['error'] ?? 'request_failed', 400);
+if (empty($res['ok'])) {
+    $e = (string)($res['error'] ?? 'request_failed');
+    json_error($e, $e === 'too_many_misses' ? 429 : 400);
+}
 
 json_ok([
     'masked'   => $res['masked'] ?? '',

@@ -591,6 +591,10 @@ body.cm-app .fab-top { display: none; }
 .signin-sub b { color: var(--cr-ink); font-weight: 600; }
 
 .signin-form { display: flex; flex-direction: column; }
+/* The honeypot (auth.jsx): off-screen, not display:none — some scripts skip
+   fields they can tell are hidden. aria-hidden + tabindex -1 keep it from
+   every person, screen-reader users included. */
+.signin-trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
 .signin-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 500; color: var(--cr-text); }
 .signin-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; }
 .signin-label-row .signin-label { margin-bottom: 6px; }

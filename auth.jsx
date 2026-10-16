@@ -300,6 +300,9 @@ function SignInModal({ seed, onClose, onVerified }) {
   const [err, setErr] = React.useState(seed && seed.error ? humanizeAuthError(seed.error) : "");
   const inputRef = React.useRef(null);
   const cardRef = React.useRef(null);
+  // Honeypot: a field no person sees or can tab to. A script that fills every
+  // input fills this one too, and the server turns it away.
+  const [hp, setHp] = React.useState("");
 
   // Mount-only: lock scroll, remember prior focus, trap Tab, restore on close.
   React.useEffect(() => {
@@ -334,7 +337,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.gateway(identifier.trim());
+      const r = await NGGApi.auth.gateway(identifier.trim(), hp);
       const m = r.methods || [];
       setMethods(m);
       if (m.includes("password")) { setStage("password"); }
@@ -350,7 +353,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.login(identifier.trim(), password, remember);
+      const r = await NGGApi.auth.login(identifier.trim(), password, remember, hp);
       onVerified(r.member);
     } catch (e) {
       const code = e.code || e.message;
@@ -366,7 +369,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   };
 
   const requestLinkInner = async () => {
-    const r = await NGGApi.auth.request(identifier.trim());
+    const r = await NGGApi.auth.request(identifier.trim(), hp);
     setMasked(r.masked || "");
     setDeliveryOk(r.delivery !== false);
     setStage("enter-otp");
@@ -396,7 +399,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (identifier.trim().length < 3) { setErr("Enter your email or member ID first."); return; }
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.resetRequest(identifier.trim());
+      const r = await NGGApi.auth.resetRequest(identifier.trim(), hp);
       setMasked(r.masked || "");
       setDeliveryOk(r.delivery !== false);
       setResetToken("");
@@ -501,6 +504,10 @@ function SignInModal({ seed, onClose, onVerified }) {
 
         {stage === "id" && (
           <form onSubmit={continueId} className="signin-form" noValidate>
+            <div className="signin-trap" aria-hidden="true">
+              <label htmlFor="signin-hp">Leave this empty</label>
+              <input id="signin-hp" name="ngg_hp" type="text" tabIndex={-1} autoComplete="off" value={hp} onChange={(e) => setHp(e.target.value)}/>
+            </div>
             <label className="signin-label" htmlFor="signin-idp">Member ID or email</label>
             <input id="signin-idp" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
               placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}/>
@@ -636,6 +643,8 @@ function SignInCode({ id, labelledBy, value, onChange, onComplete, bad, autoFocu
 function humanizeAuthError(code) {
   const map = {
     rate_limited: "Too many tries. Wait a minute and try again.",
+    too_many_misses: "Too many sign-in attempts from this network. Try again in 30 minutes.",
+    request_failed: "Something went wrong. Try again.",
     invalid: "That code isn’t right. Check it, or resend a new one.",
     bad_otp_format: "Enter the 6 digits from your email.",
     bad_member_id: "Check your Member ID (like NGG-2025-0042), or use your email.",

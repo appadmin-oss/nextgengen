@@ -41,10 +41,53 @@ function auth_fail_reset(array $m): void {
  * identically (['code']) so nothing about account existence — or staffness —
  * leaks from this endpoint. Staff simply look like members with a password.
  */
+/* ── Who is signing in: one answer for everyone, priced for bots ──────────
+ * An identifier with no account, and a suspended one, get the same answer as
+ * a real one — for a children's programme "this address is a member" is a
+ * safeguarding fact, and OWASP's rule is one response whatever the account.
+ * On top of that uniform answer:
+ *   - misses are counted per ADDRESS (attempt_guard 'auth.miss'); the
+ *     AUTH_MISS_MAX-th miss pauses that address for AUTH_MISS_LOCK seconds,
+ *     and while paused EVERY lookup is refused before the database is read,
+ *     real account or not, so the pause itself is not an oracle. A hit never
+ *     clears the count, or a bot would interleave a known address;
+ *   - one person is emailed at most AUTH_CODES_PER_HOUR codes an hour; past
+ *     that the answer stays the same and nothing more is sent, so the door
+ *     cannot flood an inbox;
+ *   - the routes add a per-hour bucket and a honeypot field. */
+const AUTH_MISS_MAX       = 8;
+const AUTH_MISS_LOCK      = 1800;
+const AUTH_CODES_PER_HOUR = 5;
+
+/** Look up an identifier for the sign-in door, counting misses per address. */
+function auth_find_member(string $identifier, string $ip, string $via): array {
+    if ($ip !== '' && attempt_locked('auth.miss', $ip)) {
+        audit('login.miss.locked', null, $identifier, ['via' => $via], $ip);
+        return ['ok' => false, 'error' => 'too_many_misses'];
+    }
+    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    if (!$member) {
+        $tripped = attempt_fail('auth.miss', $ip, AUTH_MISS_MAX, AUTH_MISS_LOCK);
+        audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier, 'via' => $via, 'paused' => $tripped], $ip);
+        return ['ok' => false, 'error' => 'no_account'];
+    }
+    return ['ok' => true, 'member' => $member];
+}
+
+/** Codes of one purpose emailed to one person in the last hour. */
+function auth_codes_last_hour(string $memberId, string $purpose): int {
+    $r = db_row('SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = ? AND purpose = ? AND createdAt > ?',
+                [$memberId, $purpose, gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]);
+    return (int)($r['n'] ?? 0);
+}
+
 function auth_gateway(array $p): array {
     $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
-    $member = db_row('SELECT passwordHash, status, role FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $found = auth_find_member($identifier, (string)($p['ip'] ?? ''), 'gateway');
+    if (($found['error'] ?? '') === 'too_many_misses') return $found;
+    // Unknown, suspended and passwordless all answer ['code'] — identically.
+    $member = $found['member'] ?? null;
     $methods = ['code'];
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
         // Staff/admin accounts are password-only: the config-provisioned password
@@ -74,17 +117,18 @@ function auth_request(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 
-    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
-
-    // Constant-ish response: never reveal whether an id exists.
+    $found = auth_find_member($identifier, $ip, 'request');
+    if (($found['error'] ?? '') === 'too_many_misses') return $found;
+    $member = $found['member'] ?? null;
+    // One answer for everyone: never reveal whether an id exists.
     $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
-
-    if (!$member) {
-        audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier], $ip);
-        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
-    }
+    if (!$member) return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     if ((string)$member['status'] === 'suspended') {
         audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    if (auth_codes_last_hour((string)$member['memberId'], 'login') >= AUTH_CODES_PER_HOUR) {
+        audit('login.request.capped', $member['memberId'], (string)$member['memberId'], [], $ip);
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
     // Admins must use their password — never an emailed sign-in code.
@@ -117,10 +161,9 @@ function auth_request(array $p): array {
         'footNote' => 'You requested a sign-in to Next Generation Genius. Didn\'t request this? Ignore this email — your account stays secure.',
     ]);
     // The OTP/link row is already banked. If the mail relay fails we must NOT
-    // hard-fail the request: that dead-ends the only email-free retry path and
-    // leaks that this identifier is a real, active account (unknown/suspended
-    // both return ok above). Report delivery=false instead so the UI can keep
-    // the code screen open, warn the user, and steer them to password sign-in.
+    // hard-fail the request: that dead-ends the only email-free retry path.
+    // Report delivery=false instead so the UI can keep the code screen open,
+    // warn the user, and steer them to password sign-in.
     $delivered = send_mail((string)$member['email'], 'Your sign-in to Next Generation Genius', $html);
     audit($delivered ? 'login.request' : 'login.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
@@ -277,11 +320,16 @@ function auth_reset_request(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 
-    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $found = auth_find_member($identifier, $ip, 'reset');
+    if (($found['error'] ?? '') === 'too_many_misses') return $found;
+    $member = $found['member'] ?? null;
     $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
-
     if (!$member || (string)$member['status'] === 'suspended') {
         audit('password.reset.request.noop', $member['memberId'] ?? null, $identifier, [], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    if (auth_codes_last_hour((string)$member['memberId'], 'reset') >= AUTH_CODES_PER_HOUR) {
+        audit('password.reset.capped', $member['memberId'], (string)$member['memberId'], [], $ip);
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
 

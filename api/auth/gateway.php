@@ -3,7 +3,9 @@
  * Sign-in gateway — step 1 of the unified door (W1). Given an identifier,
  * returns which sign-in methods apply: always ['code']; plus 'password' when
  * the account has one. Unknown accounts and staff are indistinguishable from
- * ordinary members here by design. Pre-session → CSRF-exempt, rate-limited.
+ * ordinary members here by design; misses pause the address
+ * (auth_find_member()) and the hidden `hp` field turns away scripts. Pre-session →
+ * CSRF-exempt, rate-limited per minute and per hour.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
@@ -14,8 +16,13 @@ ensure_super_admin();
 // a single NAT after ~2-3 teens. The tighter 'auth.request' still guards the
 // step that actually emails a code.
 rate_limit_check('auth.gateway');
+rate_limit_check('auth.gateway.hour');
 
 $body = read_json_body();
+if (bot_trap_tripped($body)) {
+    audit('bot.trap', null, 'gateway', [], client_ip());
+    json_error('request_failed', 400);
+}
 v_require($body, ['identifier']);
 $identifier = trim(v_safe_text($body['identifier'], 120));
 if (strlen($identifier) < 3) json_error('identifier_too_short', 422);
@@ -24,7 +31,10 @@ if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)
     json_error('bad_identifier_format', 422);
 }
 
-$res = gs_call('auth.gateway', ['identifier' => $identifier]);
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+$res = gs_call('auth.gateway', ['identifier' => $identifier, 'ip' => client_ip()]);
+if (empty($res['ok'])) {
+    $e = (string)($res['error'] ?? 'failed');
+    json_error($e, $e === 'too_many_misses' ? 429 : 400);
+}
 
 json_ok(['methods' => $res['methods']]);

@@ -28,6 +28,12 @@ function rate_limit_default(string $op): ?array {
          * buckets and not to the first-tier ones. */
         'auth.gateway'       => ['max' => 30, 'window' => 60],    // identifier lookup only; sends nothing
         'auth.request'       => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code — mail-amplification
+        /* The per-minute buckets above stop a burst; these stop the slow drip
+           that stays under them all day. A whole centre on
+           one WiFi signing in at once is ~30 lookups, not 120. The finer
+           control is the per-address miss pause in auth_find_member(). */
+        'auth.gateway.hour'  => ['max' => 120, 'window' => 3600],
+        'auth.request.hour'  => ['max' => 30,  'window' => 3600],
         'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
         'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
         'timetable.save'     => ['max' => 5,  'window' => 60],    // EMAILS a timetable link — mail-amplification

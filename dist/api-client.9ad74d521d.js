@@ -637,10 +637,12 @@
     // other than what the member chose.
     __mediaKindOf: mediaKindOf,
     auth: {
-      gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
-      request: (identifier) => request('/auth/request.php', { body: { identifier } }),
-      login:   (identifier, password, remember) => request('/auth/login.php', { body: { identifier, password, remember: !!remember } }),
-      resetRequest: (identifier) => request('/auth/reset-request.php', { body: { identifier } }),
+      // `hp` is the sign-in form's honeypot: empty from a person, filled by a
+      // script that types into every field (see bot_trap_tripped()).
+      gateway: (identifier, hp) => request('/auth/gateway.php', { body: { identifier, hp: hp || '' } }),
+      request: (identifier, hp) => request('/auth/request.php', { body: { identifier, hp: hp || '' } }),
+      login:   (identifier, password, remember, hp) => request('/auth/login.php', { body: { identifier, password, remember: !!remember, hp: hp || '' } }),
+      resetRequest: (identifier, hp) => request('/auth/reset-request.php', { body: { identifier, hp: hp || '' } }),
       resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
       verify:  (creds) => request('/auth/verify.php', { body: creds }),

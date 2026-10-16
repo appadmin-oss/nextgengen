@@ -1370,8 +1370,55 @@ chk('mail_mode honours apps_script=false opt-out', mail_mode() === 'php_mail');
 $GLOBALS['CONFIG']['apps_script_url'] = '';
 $GLOBALS['CONFIG']['shared_secret'] = '';
 unset($GLOBALS['CONFIG']['mail']['apps_script']);
-// Unknown identifier looks identical (ok + delivery=true) — no account oracle.
-chk('auth.request hides unknown accounts', (function () { $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']); return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked']); })());
+// Unknown identifier looks identical (ok + delivery=true) — no account oracle —
+// and nothing is banked or mailed.
+chk('auth.request hides unknown accounts and sends nothing', (function () {
+    $before = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions")['n'];
+    $r = backend_dispatch('auth.request', ['identifier' => 'ghost@example.com']);
+    return !empty($r['ok']) && $r['delivery'] === true && !empty($r['masked'])
+        && (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions")['n'] === $before;
+})());
+// Misses pause the ADDRESS, and a paused address learns nothing — not even
+// about an account that exists.
+chk('misses: the eighth unknown identifier from one address pauses it', (function () {
+    $ip = '203.0.113.77';
+    attempt_reset('auth.miss', $ip);
+    for ($i = 0; $i < AUTH_MISS_MAX - 1; $i++) {
+        if (empty(backend_dispatch('auth.gateway', ['identifier' => "bot$i@example.com", 'ip' => $ip])['ok'])) return false;
+    }
+    $real = backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com', 'ip' => $ip]);
+    $last = backend_dispatch('auth.gateway', ['identifier' => 'bot-last@example.com', 'ip' => $ip]);
+    return !empty($real['ok']) && !empty($last['ok']) && attempt_locked('auth.miss', $ip);
+})());
+chk('misses: while paused, a real account is refused the same way as an unknown one', (function () {
+    $ip = '203.0.113.77';
+    $real = backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com', 'ip' => $ip]);
+    $req  = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com', 'ip' => $ip]);
+    $rst  = backend_dispatch('auth.resetRequest', ['identifier' => 'tunde@example.com', 'ip' => $ip]);
+    $other = backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com', 'ip' => '203.0.113.78']);
+    attempt_reset('auth.miss', $ip);
+    return ($real['error'] ?? '') === 'too_many_misses' && ($req['error'] ?? '') === 'too_many_misses'
+        && ($rst['error'] ?? '') === 'too_many_misses' && !empty($other['ok']);
+})());
+chk('one person is emailed at most AUTH_CODES_PER_HOUR codes an hour, and the answer does not change', (function () {
+    db_exec("DELETE FROM auth_sessions WHERE memberId = 'NGG-2025-0770' AND purpose = 'login'");
+    for ($i = 0; $i < AUTH_CODES_PER_HOUR; $i++) {
+        if (empty(backend_dispatch('auth.request', ['identifier' => 'nopass@example.com'])['ok'])) return false;
+    }
+    $capped = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
+    $n = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = 'NGG-2025-0770' AND purpose = 'login'")['n'];
+    db_exec("DELETE FROM auth_sessions WHERE memberId = 'NGG-2025-0770' AND purpose = 'login'");
+    return !empty($capped['ok']) && $n === AUTH_CODES_PER_HOUR;
+})());
+chk('a suspended account answers like any other and is sent nothing', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0771', 'fullName' => 'Sus Pended', 'email' => 'suspended771@example.com', 'type' => 'NGG', 'status' => 'suspended', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $g = backend_dispatch('auth.gateway', ['identifier' => 'suspended771@example.com']);
+    $r = backend_dispatch('auth.request', ['identifier' => 'suspended771@example.com']);
+    $n = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = 'NGG-2025-0771'")['n'];
+    return ($g['methods'] ?? null) === ['code'] && !empty($r['ok']) && $n === 0;
+})());
+chk('the honeypot: an empty hp is a person, a filled one is a script', !bot_trap_tripped(['identifier' => 'x', 'hp' => ''])
+    && !bot_trap_tripped(['identifier' => 'x']) && bot_trap_tripped(['identifier' => 'x', 'hp' => 'http://spam.example']));
 
 // ── Web-cron (no-SSH host: opportunistic maintenance without cron) ──
 chk('web_cron_due fires once then throttles', (function () {

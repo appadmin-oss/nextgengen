@@ -1194,6 +1194,16 @@ function upload_is_doc_ext(string $ext): bool {
  */
 
 /** Is this subject currently locked out? */
+/**
+ * The sign-in forms carry a field no person can see or reach (`hp`). A person
+ * leaves it empty; a script that fills every input does not. Tripped → the
+ * request is refused with the same generic error a server fault gives, so the
+ * script learns nothing about why. Called from the pre-session routes only.
+ */
+function bot_trap_tripped(array $body): bool {
+    return trim((string)($body['hp'] ?? '')) !== '';
+}
+
 function attempt_locked(string $scope, string $subject): bool {
     if ($subject === '') return false;
     $r = db_row('SELECT lockedUntil FROM attempt_guard WHERE scope = ? AND subject = ? LIMIT 1',
