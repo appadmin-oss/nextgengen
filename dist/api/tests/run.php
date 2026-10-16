@@ -1283,6 +1283,12 @@ chk('login wrong password fails', backend_dispatch('auth.login', ['identifier' =
 chk('login unknown account fails uniformly', backend_dispatch('auth.login', ['identifier' => 'ghost@example.com', 'password' => 'x'])['error'] === 'invalid_login');
 chk('change password needs correct current', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'wrong'])['error'] === 'bad_current_password');
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
+// The current password cannot be guessed without limit by whoever holds the session.
+for ($i = 0; $i < 4; $i++) backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess' . $i]);
+chk('change password: the fifth wrong current password locks it', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess4'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: while locked, even the right current password is refused', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'brandnewpass9'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: the password did not change', password_verify('brandnewpass9', (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-2025-0001'")['passwordHash']));
+attempt_reset('pw.current', 'NGG-2025-0001');
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
 // ── Sign-in gateway (one door, no account-type leaks) ──
@@ -26604,6 +26610,235 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('today (member): a live plan shows this week\'s promises and a row for the sessions left', !empty($m1['ok']) && $m1['promises']['status'] === 'live'
         && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Remi');
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
+})();
+
+/* ══ The person directory push ════════════════════════════════════════════
+ *
+ * NGG is the store the matcher refuses WHOLESALE — neither table enforces
+ * one row per address, and siblings share a parent's inbox — so every row
+ * this sends lands in a human review queue over at CACENTRE. What is tested
+ * here is therefore not "does it link", which it must never do, but: does
+ * exactly the agreed data leave, and does the envelope agree to the byte
+ * with three implementations in three other repositories.
+ */
+(function () {
+    $KEY = 'ngg-directory-test-key-0123456789';
+
+    /* ── The shared vectors ──────────────────────────────────────────────
+       An identical copy of this file is asserted in cacentre-site (the
+       verifier and CFIS) and in afrovanguard-site. No package is shared
+       between any of them, so this is the only thing that makes four
+       implementations one wire format. */
+    $vec = json_decode((string)@file_get_contents(__DIR__ . '/directory-vectors.json'), true);
+    chk('dirpush: the shared vectors parse', is_array($vec));
+
+    $body = rtrim(strtr(base64_encode((string)$vec['sign']['payload']), '+/', '-_'), '=');
+    $mac  = rtrim(strtr(base64_encode(hash_hmac('sha256', $body, (string)$vec['secret'], true)), '+/', '-_'), '=');
+    chk('dirpush: a known payload and key produce the known token',
+        'v1.' . $body . '.' . $mac === (string)$vec['sign']['token']);
+
+    /* A MAC is over serialised bytes, so the ORDER of the claims is part of
+       the format whether anybody intended it or not. Two senders that
+       assemble the same claims differently produce different signatures and
+       neither is wrong — the failure no single side can find. */
+    $tok = dirpush_mint([['store' => 'members', 'local_id' => '1']], $KEY, 1760000000);
+    $cl  = json_decode((string)base64_decode(strtr(explode('.', $tok)[1], '-_', '+/') . '=='), true);
+    chk('dirpush: claims are assembled in the order the format fixes',
+        array_keys($cl) === ['rows', 'iss', 'typ', 'nonce', 'iat', 'exp']);
+    chk('dirpush: we name ourselves ngg', ($cl['iss'] ?? '') === 'ngg');
+    chk('dirpush: as a roster push, which an SSO assertion is not', ($cl['typ'] ?? '') === 'dir.push');
+    chk('dirpush: in the window the receiver allows', ($cl['exp'] ?? 0) === 1760000300);
+
+    /* ── NOTHING ABOUT A CHILD LEAVES BUT THEIR NAME ─────────────────────
+       This programme holds children's data. The directory asks who somebody
+       is; it gets that and nothing else. Asserted as a SET so a column added
+       to a shaper fails here rather than on another organisation's disk. */
+    $allowed = ['store', 'local_id', 'email', 'email_verified', 'name', 'local_role', 'local_status', 'last_seen_at'];
+
+    $m = dirpush_from_member([
+        'id' => 41, 'fullName' => 'Ada Nwosu', 'email' => ' Ada@Example.ORG ', 'type' => 'NGG',
+        'role' => 'member', 'status' => 'active',
+        /* Every one of these is on the real row and none may travel. */
+        'passwordHash' => '$2y$10$SECRETHASH', 'totpSecret' => 'TOTPSEED', 'dob' => '2012-04-01',
+        'phone' => '080...', 'parentEmail' => 'mum@example.org', 'parentPhone' => '081...',
+        'school' => 'A School', 'notes' => 'private note', 'cohort' => '2023',
+    ]);
+    $got = array_keys($m); sort($got); $want = $allowed; sort($want);
+    chk('dirpush: a member sends exactly the agreed fields and no others', $got === $want);
+
+    $wire = (string)json_encode($m);
+    chk('dirpush: NO password hash leaves this programme', !str_contains($wire, 'SECRETHASH'));
+    chk('dirpush: no TOTP seed either', !str_contains($wire, 'TOTPSEED'));
+    chk('dirpush: no date of birth', !str_contains($wire, '2012-04-01'));
+    chk('dirpush: no parent contact details', !str_contains($wire, 'mum@example.org') && !str_contains($wire, '081...'));
+    chk('dirpush: no school and no notes', !str_contains($wire, 'A School') && !str_contains($wire, 'private note'));
+    /* `members.cohort` is the INTAKE YEAR on a member row, not a Summer
+       edition — one word, two meanings — and the directory has no use for
+       either, so it does not travel and cannot be mistaken over there. */
+    chk('dirpush: and not members.cohort, which is the intake year and means nothing there',
+        !str_contains($wire, '2023'));
+
+    chk('dirpush: the address is normalised the way the matcher will read it', $m['email'] === 'ada@example.org');
+    chk('dirpush: the local id is the row\'s own key, as text', $m['local_id'] === '41');
+
+    /* ── THE TWO POPULATIONS STAY TELLABLE APART ─────────────────────────
+       `members` holds both, `type` is NGG or Summer, and the agreed payload
+       has no field for which. local_role carries it, because the difference
+       IS role-shaped in this programme's vocabulary: a Summer person is a
+       participant — never a student, never a member — and an operator
+       deciding whether two records are one human has to know which they are
+       looking at. */
+    chk('dirpush: an NGG member keeps their own role', $m['local_role'] === 'member');
+    $s = dirpush_from_member(['id' => 9, 'fullName' => 'A Child', 'email' => 'c@example.org', 'type' => 'Summer', 'role' => 'member', 'status' => 'active']);
+    chk('dirpush: a Summer account travels as a participant', $s['local_role'] === 'participant');
+    chk('dirpush: and never as a student or a member, which send an operator to the wrong screen',
+        $s['local_role'] !== 'student' && $s['local_role'] !== 'member');
+
+    /* ── Volunteers ──────────────────────────────────────────────────────
+       The second NGG store, and the reason CACENTRE could not see the
+       estate's volunteers at all until now: it was not in the registry. */
+    $v = dirpush_from_volunteer([
+        'id' => 7, 'fullName' => 'Chidi Eze', 'email' => 'chidi@example.org', 'role' => 'mentor',
+        'status' => 'active', 'token' => 'VOLTOKEN', 'photoUrl' => 'https://x/y.jpg',
+        'safeguarding' => 'cleared', 'memberId' => 'NGG-0001',
+    ]);
+    $got = array_keys($v); sort($got);
+    chk('dirpush: a volunteer sends exactly the agreed fields too', $got === $want);
+    $wire = (string)json_encode($v);
+    chk('dirpush: a volunteer\'s token is a credential and does not travel', !str_contains($wire, 'VOLTOKEN'));
+    /* A safeguarding clearance is a judgement about somebody working with
+       children. It belongs on the screen that can act on it; a copy on
+       another host is a copy nobody will remember to withdraw. */
+    chk('dirpush: nor does their safeguarding state', !str_contains($wire, 'cleared'));
+    chk('dirpush: the role the source records travels', $v['local_role'] === 'mentor');
+    chk('dirpush: and the status', $v['local_status'] === 'active');
+
+    /* Neither table tracks verification at all, so both answer null — the
+       third state. False would mark every child and every volunteer in the
+       programme "unverified" on a screen that is not about them. */
+    chk('dirpush: a member\'s address is "not tracked", not "unverified"', $m['email_verified'] === null);
+    chk('dirpush: and so is a volunteer\'s', $v['email_verified'] === null);
+
+    /* ── The sweep ───────────────────────────────────────────────────────
+       A rolling sweep, not a diff: updatedAt is a VARCHAR written by several
+       code paths over the years, exactly the column that quietly stops being
+       comparable. Every row is re-sent once a sweep and upserts over there. */
+    $b = dirpush_batch('members', 0, 2);
+    chk('dirpush: a page is the size asked for', count($b['rows']) === 2);
+    chk('dirpush: and a full page is not the end of the table', $b['wrapped'] === false);
+    chk('dirpush: the cursor is the last id sent', $b['cursor'] > 0);
+
+    $seen = []; $cursor = 0;
+    for ($i = 0; $i < 400; $i++) {
+        $p = dirpush_batch('members', $cursor, 50);
+        foreach ($p['rows'] as $r) $seen[] = (int)$r['local_id'];
+        $cursor = $p['cursor'];
+        if ($p['wrapped']) break;
+    }
+    chk('dirpush: one sweep covers every member exactly once', count($seen) === count(array_unique($seen)));
+    chk('dirpush: and ends back at the top so the next sweep starts again', $cursor === 0);
+    $total = (int)db_row('SELECT COUNT(*) c FROM members')['c'];
+    chk('dirpush: covering all of them', count($seen) === $total);
+
+    $b = dirpush_batch('volunteers', 0, 50);
+    chk('dirpush: the volunteers page the same way', is_array($b['rows']));
+    chk('dirpush: a store this app does not own pages nothing',
+        dirpush_batch('lms_users', 0, 50)['rows'] === []);
+
+    /* ── Off until a real key is set ─────────────────────────────────── */
+    foreach (['', 'short', 'changeme-changeme-changeme-changeme',
+              '<set this to something random>', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'] as $bad) {
+        $GLOBALS['CONFIG']['dir_push_secret'] = $bad;
+        chk('dirpush: a key of "' . substr($bad, 0, 12) . '" is not a key', !dirpush_ready());
+    }
+    $GLOBALS['CONFIG']['dir_push_secret'] = $KEY;
+    chk('dirpush: a real key is', dirpush_ready());
+    unset($GLOBALS['CONFIG']['dir_push_secret']);
+    chk('dirpush: and with none the tick does nothing rather than erroring every hour',
+        (dirpush_tick()['skipped'] ?? '') === 'no key');
+
+    chk('dirpush: only this app\'s own two stores are ever named',
+        DIRPUSH_STORES === ['members', 'volunteers']);
+    chk('dirpush: and the batch cap matches the one the receiver names in its refusal',
+        DIRPUSH_BATCH === 500);
+})();
+
+// ── CACENTRE CRM: NGG's adults pushed to the Audience; no child leaves ──
+(function () {
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+    foreach (['newsletter', 'contact_messages', 'donations', 'guardians'] as $t) db_exec("DELETE FROM {$t}");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'CRMV-%'");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('crm_push', 'crm_push_last')");
+    $now = now_iso();
+    db_insert('newsletter', ['email' => 'ada@example.org', 'source' => 'site', 'status' => 'subscribed', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('contact_messages', ['ref' => 'CT-1', 'purpose' => 'partnership', 'name' => 'Bola', 'email' => 'bola@example.org', 'phone' => '0803 111 0000', 'subject' => 'A visit', 'message' => 'private words', 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-1', 'email' => 'chi@example.org', 'name' => 'Chi', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'paid', 'paidAt' => $now, 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-2', 'email' => 'pending@example.org', 'name' => 'P', 'amount' => 1000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $adultDob = gmdate('Y-m-d', strtotime('-30 years')); $childDob = gmdate('Y-m-d', strtotime('-14 years'));
+    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-C', 'fullName' => 'Young Volunteer', 'email' => 'young@example.org', 'dob' => $childDob, 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-M', 'memberId' => 'NGG-X1', 'fullName' => 'Member Volunteer', 'email' => 'member@example.org', 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-1', 'email' => 'eko@example.org', 'fullName' => 'Eko Parent', 'phone' => '0803 222 0000', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $calls = 0;
+    $GLOBALS['__crm_push_transport'] = static function () use (&$calls) { $calls++; return ['code' => 200, 'body' => '{"ok":true}']; };
+    $r = crm_push_run();
+    chk('crm: with no secret set, nothing is sent', !empty($r['skipped']) && $calls === 0);
+
+    $secret = str_repeat('n', 43);
+    $tok = crm_push_sign([['kind' => 'subscriber', 'ref' => 'x', 'email' => 'x@example.org']], $secret, 1800000000);
+    $p = explode('.', $tok);
+    $un = static fn(string $s): string => (string)base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4), true);
+    $claims = json_decode($un($p[1]), true);
+    chk('crm: the envelope is v1, HMAC-SHA256 over the payload, app ngg, five minutes',
+        $p[0] === 'v1' && hash_equals(hash_hmac('sha256', $p[1], $secret, true), $un($p[2])) && $claims['app'] === 'ngg' && $claims['exp'] - $claims['iat'] === 300);
+
+    $c = crm_push_collect();
+    $by = array_column($c['rows'], null, 'ref');
+    chk('crm: a newsletter subscriber is sent', ($by['news:' . sha1('ada@example.org')]['status'] ?? '') === 'subscribed');
+    chk('crm: an enquiry is sent with its subject but never the message', ($by['contact:CT-1']['detail'] ?? '') === 'Partnership: A visit' && !str_contains(json_encode($c['rows']), 'private words'));
+    chk('crm: a paid donation is sent in naira; a pending one is not', ($by['gift:NGGD-1']['detail'] ?? '') === 'Gave ₦5,000' && !isset($by['gift:NGGD-2']));
+    chk('crm: an adult volunteer is sent', isset($by['vol:CRMV-A']));
+    chk('crm: a volunteer under 18 is never sent', !isset($by['vol:CRMV-C']) && !str_contains(json_encode($c['rows']), 'young@example.org'));
+    chk('crm: a member who volunteers, with no date of birth, is treated as a child and not sent', !isset($by['vol:CRMV-M']));
+    chk('crm: every ref fits CACENTRE\'s 64 characters', max(array_map(static fn($r) => strlen((string)$r['ref']), $c['rows'])) <= 64
+        && strlen(crm_push_ref('gift:', str_repeat('x', 191))) === 45);
+    chk('crm: a guardian is sent as a contact, with no ward named', ($by['guardian:G-1']['list'] ?? '') === 'NGG parents & guardians' && !isset($by['guardian:G-1']['detail']));
+    chk('crm: nothing is read from members, applications or Summer School participants', !preg_match('/\bFROM\s+(members|applications|summer_students)\b/i', (string)file_get_contents(dirname(__DIR__) . '/_lib/domain/crm-push.php')));
+
+    $GLOBALS['CONFIG']['cacentre']['crm_secret'] = $secret;
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 403, 'body' => '{"ok":false,"error":"bad-signature"}'];
+    $r = crm_push_run();
+    chk('crm: a refused push says why, and moves no cursor', $r['ok'] === false && str_contains($r['error'], 'secret here differs') && crm_push_cursors() === []);
+
+    $sent = [];
+    $GLOBALS['__crm_push_transport'] = static function (string $url, string $body) use (&$sent, $un) {
+        $sent[] = json_decode($un(explode('.', json_decode($body, true)['token'])[1]), true)['rows'];
+        return ['code' => 200, 'body' => '{"ok":true}'];
+    };
+    $r = crm_push_run();
+    chk('crm: a good push sends every row to CACENTRE\'s intake', $r['ok'] && $r['sent'] === count($c['rows']) && str_ends_with(crm_push_url(), '/api/crm-intake.php'));
+    $sent = [];
+    crm_push_run();
+    chk('crm: the next run sends nothing it already sent', $sent === []);
+
+    usleep(1100000);
+    db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['email' => 'ada@example.org']);
+    crm_push_run();
+    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:' . sha1('ada@example.org') && $sent[0][0]['status'] === 'unsubscribed');
+
+    db_insert('contact_messages', ['ref' => 'CT-2', 'name' => 'Odd', 'email' => 'odd@example.org', 'subject' => 'x', 'createdAt' => now_iso()]);
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 200, 'body' => '{"ok":true,"refused":[{"ref":"contact:CT-2","why":"bad-ref"}]}'];
+    $r = crm_push_run();
+    chk('crm: a row CACENTRE refused is counted as refused, not sent', $r['ok'] && $r['refused'] === 1 && $r['sent'] === 0
+        && str_contains(crm_push_last(), '1 refused by CACENTRE'));
+
+    chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
+    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+
+    $GLOBALS['__crm_push_transport'] = null;
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

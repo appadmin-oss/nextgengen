@@ -1480,6 +1480,9 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
       )}
 
       <div className="cmm-feed">
+        {/* The week's saying leads the whole feed — not a filtered view of it,
+            where it would be noise between the things being looked for. */}
+        {filter === "all" && <QuoteOfWeek variant="community"/>}
         {posts === null && <CmSkeleton rows={3}/>}
         {err && posts && posts.length === 0 && (
           <CmEmpty icon="⚠" title="That didn't load" body={err}

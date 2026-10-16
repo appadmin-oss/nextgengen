@@ -7456,6 +7456,40 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
   .qow-play:hover { transform: none; }
 }
 
+/* ── Quote of the week · in the Community (variant="community") ──────────
+   The same section as a card at the top of Today. The community feed is
+   light; this is its one deep-ink card, drawn from the community's own
+   tokens (--c-ink-deep, --c-accent, --c-r-card), so it reads as the week's
+   centrepiece without borrowing the marketing site's navy. Only the housing
+   and the type scale change — the controls are the home page's. */
+.qow.qow-cm {
+  --qow-ground: var(--c-ink-deep);
+  --qow-action: var(--c-accent);
+  --qow-on-action: var(--c-ink-deep);
+  --qow-eyebrow: var(--c-accent);
+  padding: 18px 18px 16px; border-radius: var(--c-r-card); flex: none;
+  box-shadow: 0 1px 2px rgba(12, 20, 50, 0.08);
+}
+.qow-cm::before { top: 2px; right: 10px; font-size: 140px; }
+.qow-cm .qow-inner { max-width: none; }
+.qow-cm .qow-head { padding-bottom: 12px; margin-bottom: 16px; gap: 6px 12px; }
+.qow-cm .qow-head::after { width: 40px; }
+.qow-cm .qow-eyebrow { font-family: var(--c-font-mono); font-size: 10.5px; }
+.qow-cm .qow-tag { font-family: var(--c-font-display); font-size: 13px; }
+.qow-cm .qow-text { font-family: var(--c-font-display); font-size: clamp(20px, 5.4cqi, 26px); line-height: 1.22; margin-bottom: 10px; }
+.qow-cm .qow-tr { font-size: 14.5px; }
+.qow-cm .qow-actions { margin-top: 16px; gap: 12px; }
+.qow-cm .qow-play { width: 48px; height: 48px; }
+.qow-cm .qow-play-ico { border-width: 7px 0 7px 12px; margin-left: 3px; }
+.qow-cm .qow-play-ico.is-stop { width: 12px; height: 12px; }
+.qow-cm .qow-listen { font-size: 10.5px; }
+.qow-cm .qow-btn { min-height: 40px; padding: 0 14px; font-size: 13px; }
+.qow-cm .qow-reveals { margin-top: 14px; gap: 10px; }
+.qow-cm .qow-answer, .qow-cm .qow-meaning { padding: 12px 14px; border-radius: 12px; }
+.qow-cm .qow-a { font-size: 20px; }
+.qow-cm .qow-meaning, .qow-cm .qow-a-en { font-size: 14px; }
+@media (pointer: coarse) { .qow-cm .qow-btn { min-height: 44px; } }
+
 /* ── Quote of the week · the share sheet — src/modules/qow/qow-card.jsx ──────
    The sheet that holds the share card. The card itself is styled only by
    assets/fonts/qcard/qcard.css (the exporter reads that file); this is the
