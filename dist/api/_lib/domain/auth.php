@@ -41,37 +41,96 @@ function auth_fail_reset(array $m): void {
  * identically (['code']) so nothing about account existence — or staffness —
  * leaks from this endpoint. Staff simply look like members with a password.
  */
-/* ── Who is signing in: one answer for everyone, priced for bots ──────────
- * An identifier with no account, and a suspended one, get the same answer as
- * a real one — for a children's programme "this address is a member" is a
- * safeguarding fact, and OWASP's rule is one response whatever the account.
- * On top of that uniform answer:
- *   - misses are counted per ADDRESS (attempt_guard 'auth.miss'); the
- *     AUTH_MISS_MAX-th miss pauses that address for AUTH_MISS_LOCK seconds,
- *     and while paused EVERY lookup is refused before the database is read,
- *     real account or not, so the pause itself is not an oracle. A hit never
- *     clears the count, or a bot would interleave a known address;
- *   - one person is emailed at most AUTH_CODES_PER_HOUR codes an hour; past
- *     that the answer stays the same and nothing more is sent, so the door
- *     cannot flood an inbox;
- *   - the routes add a per-hour bucket and a honeypot field. */
+/* ── Who is signing in: honest to people, worthless to bots ────────────────
+ * Two promises that pull against each other: a parent who typed last year's
+ * address must not sit waiting for a code that is never coming, and a
+ * stranger must not be able to ask "is this email an NGG member?" — for a
+ * children's programme that is a safeguarding fact, and OWASP's rule is one
+ * response whatever the account. So:
+ *
+ *   - A browser that has SIGNED IN HERE BEFORE (device_trust_id(), a signed
+ *     cookie that outlives sign-out) is told plainly: `no_account`. It has
+ *     already proven itself, and it gets AUTH_HONEST_PER_DAY plain answers a
+ *     day, so even an insider's browser is no enumeration tool.
+ *   - Anybody else gets the same neutral screen for a real and an unknown
+ *     account ("if there's an account for…, we've emailed it a code"), and
+ *     the TRUTH goes to the inbox: an address with no account is sent one
+ *     short "there's no NGG account for this email" note, at most one a day
+ *     (auth_notify_no_account()). Only the owner of the address learns it.
+ *   - Misses are counted per network ADDRESS (attempt_guard 'auth.miss');
+ *     the AUTH_MISS_MAX-th pauses it for AUTH_MISS_LOCK seconds, and while
+ *     paused EVERY lookup is refused before the database is read, real or
+ *     not, so the pause is not an oracle either. A hit never clears the
+ *     count, or a bot would interleave a known address.
+ *   - One person is emailed at most AUTH_CODES_PER_HOUR codes an hour; past
+ *     that the answer is unchanged and nothing more is sent.
+ *   - Suspended accounts answer like any other.
+ *   - The routes add per-minute and per-hour buckets and a honeypot field. */
 const AUTH_MISS_MAX       = 8;
 const AUTH_MISS_LOCK      = 1800;
 const AUTH_CODES_PER_HOUR = 5;
+const AUTH_HONEST_PER_DAY = 5;
 
-/** Look up an identifier for the sign-in door, counting misses per address. */
-function auth_find_member(string $identifier, string $ip, string $via): array {
+/**
+ * Look up an identifier for the sign-in door.
+ *   ['ok'=>false,'error'=>'too_many_misses']      this address is paused
+ *   ['ok'=>true,'member'=>row]                    found
+ *   ['ok'=>true,'member'=>null,'honest'=>bool]    not found; honest = this
+ *                                                 known device may be told so
+ * $countMiss: the step that answers uniformly and SENDS something counts every
+ * miss; the gateway, which sends nothing, counts only the misses it answers
+ * plainly — otherwise one typo cost two misses.
+ */
+function auth_find_member(string $identifier, string $ip, string $via, string $device = '', bool $countMiss = true): array {
     if ($ip !== '' && attempt_locked('auth.miss', $ip)) {
         audit('login.miss.locked', null, $identifier, ['via' => $via], $ip);
         return ['ok' => false, 'error' => 'too_many_misses'];
     }
     $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
-    if (!$member) {
-        $tripped = attempt_fail('auth.miss', $ip, AUTH_MISS_MAX, AUTH_MISS_LOCK);
-        audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier, 'via' => $via, 'paused' => $tripped], $ip);
-        return ['ok' => false, 'error' => 'no_account'];
-    }
-    return ['ok' => true, 'member' => $member];
+    if ($member) return ['ok' => true, 'member' => $member];
+
+    $honest = $device !== '' && !attempt_locked('auth.honest', $device);
+    if ($honest) attempt_fail('auth.honest', $device, AUTH_HONEST_PER_DAY, 86400);
+    $paused = ($countMiss || $honest) ? attempt_fail('auth.miss', $ip, AUTH_MISS_MAX, AUTH_MISS_LOCK) : false;
+    audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier, 'via' => $via, 'told' => $honest, 'paused' => $paused], $ip);
+    return ['ok' => true, 'member' => null, 'honest' => $honest];
+}
+
+/**
+ * What the code screen shows as "where it went": the address the person typed,
+ * masked — never the account's own address, and nothing for a Member ID. A
+ * real account and an unknown one therefore produce the same string (the old
+ * fake "a•@b.co" for an unknown ID was itself a tell).
+ */
+function auth_masked_for(string $identifier): string {
+    return strpos($identifier, '@') !== false ? mask_email($identifier) : '';
+}
+
+/**
+ * The truth, delivered to the only person entitled to it: an email typed at
+ * the door that has no account gets one short note saying so. At most one per
+ * address per day ('auth.nobody'), so the door cannot be used to mail-bomb a
+ * stranger; a Member ID has no inbox and gets nothing.
+ */
+function auth_notify_no_account(string $identifier, string $ip, string $via): void {
+    if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)) return;
+    if (attempt_locked('auth.nobody', $identifier)) return;
+    attempt_fail('auth.nobody', $identifier, 1, 86400);
+    global $CONFIG;
+    $origin = (string)($CONFIG['app_origin'] ?? '');
+    $html = email_template([
+        'eyebrow'  => $via === 'reset' ? 'Password reset' : 'Sign-in',
+        'title'    => 'There’s no NGG account for this email',
+        'intro'    => 'Someone, probably you, just tried to ' . ($via === 'reset' ? 'reset a password' : 'sign in')
+                    . ' at Next Generation Genius with this email address, but no account uses it, so no code was sent.',
+        'bodyHtml' => '<p style="margin:0 0 8px">Already a member? Try the email you joined with, or sign in with your Member ID (like NGG-2025-0042).</p>'
+                    . '<p style="margin:0">New to NGG? You can apply to join.</p>',
+        'ctaLabel' => 'Apply to join',
+        'ctaUrl'   => $origin . '/join',
+        'footNote' => 'Didn’t try to sign in? You can ignore this email. Nothing has been created or changed.',
+    ]);
+    $sent = send_mail($identifier, 'Sign-in attempt at Next Generation Genius', $html);
+    audit($sent ? 'login.nobody.notified' : 'login.nobody.mail_fail', null, $identifier, ['via' => $via], $ip);
 }
 
 /** Codes of one purpose emailed to one person in the last hour. */
@@ -84,10 +143,12 @@ function auth_codes_last_hour(string $memberId, string $purpose): int {
 function auth_gateway(array $p): array {
     $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
-    $found = auth_find_member($identifier, (string)($p['ip'] ?? ''), 'gateway');
-    if (($found['error'] ?? '') === 'too_many_misses') return $found;
-    // Unknown, suspended and passwordless all answer ['code'] — identically.
-    $member = $found['member'] ?? null;
+    $found = auth_find_member($identifier, (string)($p['ip'] ?? ''), 'gateway', (string)($p['device'] ?? ''), false);
+    if (empty($found['ok'])) return $found;
+    // A known device is told plainly; anyone else cannot tell unknown,
+    // suspended and passwordless apart — all answer ['code'].
+    if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
+    $member = $found['member'];
     $methods = ['code'];
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
         // Staff/admin accounts are password-only: the config-provisioned password
@@ -117,12 +178,15 @@ function auth_request(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 
-    $found = auth_find_member($identifier, $ip, 'request');
-    if (($found['error'] ?? '') === 'too_many_misses') return $found;
-    $member = $found['member'] ?? null;
-    // One answer for everyone: never reveal whether an id exists.
-    $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
-    if (!$member) return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    $found = auth_find_member($identifier, $ip, 'request', (string)($p['device'] ?? ''));
+    if (empty($found['ok'])) return $found;
+    $member = $found['member'];
+    $masked = auth_masked_for($identifier);
+    if (!$member) {
+        if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
+        auth_notify_no_account($identifier, $ip, 'request');
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
     if ((string)$member['status'] === 'suspended') {
         audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
@@ -320,11 +384,16 @@ function auth_reset_request(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 
-    $found = auth_find_member($identifier, $ip, 'reset');
-    if (($found['error'] ?? '') === 'too_many_misses') return $found;
-    $member = $found['member'] ?? null;
-    $masked = mask_email($member ? (string)$member['email'] : (strpos($identifier, '@') !== false ? $identifier : 'a@b.co'));
-    if (!$member || (string)$member['status'] === 'suspended') {
+    $found = auth_find_member($identifier, $ip, 'reset', (string)($p['device'] ?? ''));
+    if (empty($found['ok'])) return $found;
+    $member = $found['member'];
+    $masked = auth_masked_for($identifier);
+    if (!$member) {
+        if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
+        auth_notify_no_account($identifier, $ip, 'reset');
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    if ((string)$member['status'] === 'suspended') {
         audit('password.reset.request.noop', $member['memberId'] ?? null, $identifier, [], $ip);
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }

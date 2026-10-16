@@ -644,6 +644,7 @@ body.cm-app .fab-top { display: none; }
 .signin-ferr { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; font-size: 13px; line-height: 1.4; color: var(--cr-bad-fg); }
 .signin-ferr .ph { font-size: 15px; flex: none; margin-top: 1px; }
 .signin-help { margin: 8px 0 0; font-size: 12.5px; color: var(--cr-muted-3); }
+.signin-help--wait { line-height: 1.5; }
 .signin-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 4px; padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-warn-bg); color: var(--cr-warn-fg); font-size: 13px; line-height: 1.4; }
 .signin-who + .signin-note { margin-top: 16px; }
 .signin-note .ph { font-size: 15px; flex: none; margin-top: 1px; }

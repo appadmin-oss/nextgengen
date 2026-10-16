@@ -24,6 +24,7 @@ if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)
 $res = gs_call('auth.request', [
     'identifier' => $identifier,
     'ip'         => client_ip(),
+    'device'     => device_trust_id(),
     'userAgent'  => client_ua(),
 ]);
 if (empty($res['ok'])) {

@@ -1355,10 +1355,14 @@ function unzipDocumentXml(buf) {
         { id: 1, metOn: '2026-07-28', kind: 'one-to-one', discussed: 'Wants to lead the demo.',
           agreed: 'She opens it.', concern: false, mentorId: 'M9', mentorName: 'Segun Mentor', mine: false, createdAt: '' },
       ],
+      /* Goals are draft | active | achieved | paused (MENTOR_GOAL_STATUSES).
+         These rows still said open / done after the panel moved on, so every
+         goal read as closed and the two goal checks below failed for the
+         fixture, not for the screen. */
       goals: [
-        { id: 1, goal: 'Open the robotics demo.', dueOn: '2026-09-12', status: 'open', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
-        { id: 2, goal: 'Read one book a fortnight.', dueOn: '2026-08-01', status: 'open', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: true, createdAt: '' },
-        { id: 3, goal: 'Join the Tuesday coding club.', dueOn: '2026-06-30', status: 'done', closedOn: '2026-06-24', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
+        { id: 1, goal: 'Open the robotics demo.', dueOn: '2026-09-12', status: 'active', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
+        { id: 2, goal: 'Read one book a fortnight.', dueOn: '2026-08-01', status: 'active', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: true, createdAt: '' },
+        { id: 3, goal: 'Join the Tuesday coding club.', dueOn: '2026-06-30', status: 'achieved', closedOn: '2026-06-24', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
       ],
       kinds: ['one-to-one', 'group', 'call', 'guardian', 'check-in'],
       canWrite: true, role: 'mentor', rank: 'mentor', sessionId: 'S-2026',

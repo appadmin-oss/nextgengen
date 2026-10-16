@@ -5623,7 +5623,7 @@ const MC_NAVY = "#16223e", MC_GOLD = "#ffce54", MC_CARD = "rgba(255,255,255,.06)
    wait for — the reason goes to the child's own mentor and the centre lead at
    once, which is what keeps this both quick and safe. */
 const MTR_COVER_ERR = { say_why: "Say why in a sentence — it goes to their mentor and the lead.",
-  cover_limit: "You already have five records open on cover. They close after a week.", not_screened: MTR_GATE_ERR.not_screened };
+  cover_limit: "You already have five records open on cover. They close after a week." };   // not_screened: mtrGateErr, at call time
 function MentorCoverAsk({ student, onOpened }) {
   const [why, setWhy] = React.useState("");
   const [busy, setBusy] = React.useState(false);
