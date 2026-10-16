@@ -1354,6 +1354,34 @@ Follows the entry above.
 
 Tests: `run.php` +1; `ids-ask.test.js` 58 → 68.
 
+## 2026-10-16 — The assistant: reprint reasons, print history, undo in words
+
+- **Reprint reasons.**
+  - The planner reads `cause` (`IDS_PLAN_CAUSES`) only when the request says
+    it: "she lost it" / stolen / missing → `lost`; "never received" →
+    `never_received`; damaged / broken / faded → `damaged`; a corrected name →
+    `name`. "New cards" never carries one, and an unknown value is dropped.
+  - A carded person's "Reprint them" now queues with that cause, so a lost
+    card's reprint gets its new QR and the old card stops at the gate.
+    Without a cause it is still `asked`.
+  - The cause shows as a chip ("lost: new QR") with its ×.
+- **Print history** (`idsAskHistory`), read from `cardRuns`, the same op as
+  the Print log:
+  - "what did we print last?";
+  - "… today / yesterday / this week" (proofs not counted);
+  - "which cards didn't print?".
+  
+  Each answer carries the runs it names, and a button opens that run's
+  drawer. The rows travel with the answer, so the button still works after a
+  refresh.
+- **Undo in words**: "undo", "undo that", "go back", "put it back" do what the
+  newest Undo does. When there is nothing of the assistant's to undo, it says
+  so, and points to the toast's own Undo for changes made by hand.
+- **"Who hasn't been asked for a photo?"** lists only the people with no
+  photo who weren't asked in the last 3 days.
+
+Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
+
 
 ## 2026-10-16 · Mentor register detail, class tools inside the portal, Instructor Portal v6
 

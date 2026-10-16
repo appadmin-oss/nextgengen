@@ -152,6 +152,7 @@ function idsPlanWhat(p) {
   ["ids", "names"].forEach(k => ((p.also || {})[k] || []).forEach(v => out.push({ label: "+ " + v, tone: "add", drop: q => idsPlanDropFrom(q, "also", k, v) })));
   ["ids", "names"].forEach(k => ((p.exclude || {})[k] || []).forEach(v => out.push({ label: "not " + v, tone: "out", drop: q => idsPlanDropFrom(q, "exclude", k, v) })));
   if (p.limit) out.push({ label: "at most " + p.limit, drop: q => idsPlanWithout(q, ["limit"]) });
+  if (p.cause) out.push({ label: IDS_ASK_CAUSE[p.cause] || p.cause, drop: q => idsPlanWithout(q, ["cause"]) });
   return out;
 }
 
@@ -160,6 +161,7 @@ function idsPlanWhat(p) {
    be true of THIS sheet and THESE people. Returns null when the text is not a
    question this can answer; the request then goes to the planner.
    `c` is the studio's state, built in ids-app.jsx (askCtx). */
+const IDS_ASK_CAUSE = { lost: "lost: new QR", never_received: "never received: new QR", damaged: "damaged", name: "details changed" };
 const IDS_ASK_SEL_KEYS = ["kind", "centre", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "limit"];
 const idsPlanHasSel = p => IDS_ASK_SEL_KEYS.some(k => p && p[k] !== undefined);
 function idsAskIsQuestion(text) {
@@ -192,6 +194,37 @@ function idsAskFaq(t) {
   return hit ? hit[1] : null;
 }
 const idsList = (names, max) => names.slice(0, max || 8).join(", ") + (names.length > (max || 8) ? " and " + (names.length - (max || 8)) + " more" : "");
+/* Questions about printing that has happened: answered from the print log,
+   which the studio reads from the server. */
+function idsAskIsHistory(text) {
+  const t = String(text || "").toLowerCase();
+  return idsAskIsQuestion(text) && /\b(last (print|run|batch|time)|printed (today|yesterday|this week|last week)|print log|recent (runs?|prints?)|(failed|didn.t print|not printed)|history of (the )?print|what did (we|i) print|how many (did )?(we|i) print)\b/.test(t);
+}
+function idsAskHistory(text, runs) {
+  const t = String(text || "").toLowerCase();
+  if (!runs.length) return { text: "Nothing has been printed here yet: the print log is empty." };
+  const day = d => String(d || "").slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const yest = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const wk = (() => { const d = new Date(); const k = (d.getDay() + 6) % 7; d.setDate(d.getDate() - k); return d.toISOString().slice(0, 10); })();
+  const typeW = { new: "new cards", reprint: "reprints", proof: "a proof", external: "uploaded cards", mixed: "new cards and reprints" };
+  const line = r => "**" + r.runId + "**, " + r.at + (r.by ? " by " + r.by : "") + ": " + r.cards + " " + (r.cards === 1 ? "card" : "cards") + " (" + (typeW[r.type] || r.type) + ")" + (r.failed ? ", **" + r.failed + " not printed**" : "") + ".";
+  if (/\b(failed|didn.t print|not printed)\b/.test(t)) {
+    const bad = runs.filter(r => r.failed);
+    if (!bad.length) return { text: "No card in the recent runs was marked as not printed." };
+    return { text: bad.length + " recent " + (bad.length === 1 ? "run has" : "runs have") + " cards marked as not printed:\n\n" + bad.slice(0, 5).map(line).join("\n\n") + "\n\nOpen a run to reprint its failures.", runs: bad.slice(0, 3) };
+  }
+  const pick = /\btoday\b/.test(t) ? ["today", runs.filter(r => day(r.iso) === today)] : /\byesterday\b/.test(t) ? ["yesterday", runs.filter(r => day(r.iso) === yest)]
+    : /\bthis week\b/.test(t) ? ["this week", runs.filter(r => day(r.iso) >= wk)] : null;
+  if (pick) {
+    const [when, list] = pick;
+    if (!list.length) return { text: "Nothing was printed " + when + "." };
+    const n = list.reduce((k, r) => k + (r.proof ? 0 : r.cards), 0);
+    return { text: "**" + n + " " + (n === 1 ? "card" : "cards") + "** printed " + when + " in " + list.length + " " + (list.length === 1 ? "run" : "runs") + (list.some(r => r.proof) ? " (proofs not counted)" : "") + ":\n\n" + list.slice(0, 5).map(line).join("\n\n"), runs: list.slice(0, 3) };
+  }
+  const r = runs[0];
+  return { text: "The last run was " + line(r) + (r.design ? " Design: " + r.design + (r.version ? " " + r.version : "") + "." : ""), runs: [r] };
+}
 function idsAskAnswer(text, c) {
   if (!idsAskIsQuestion(text)) return null;
   const t = String(text || "").toLowerCase();
@@ -213,8 +246,13 @@ function idsAskAnswer(text, c) {
   }
   const faq = idsAskFaq(t);
   if (faq) return faq;
-  if (/\b(blocked|no photo|without (a )?photo|missing photos?|need(s)? (a )?photos?|waiting (for|on) (a )?photos?)\b/.test(t)) {
+  if (/\b(blocked|no photo|without (a )?photo|missing photos?|need(s)? (a )?photos?|waiting (for|on) (a )?photos?|asked for (a )?photos?)\b/.test(t)) {
     if (!c.blockedList.length) return "Nobody is blocked. Everyone waiting has a photo.";
+    if (/(n['’]t|\bnot|\bnever|\byet to)\b.*\basked\b|\bunasked\b/.test(t)) {
+      const un = c.blockedList.filter(p => !p.asked);
+      return un.length ? "**" + un.length + "** with no photo " + (un.length === 1 ? "hasn’t" : "haven’t") + " been asked in the last 3 days: " + idsList(un.map(p => p.name)) + ".\n\nSay “ask them for photos” and I’ll open the request for them."
+        : "Everyone with no photo has been asked in the last 3 days. Asking again needs a press on their row.";
+    }
     const asked = c.blockedList.filter(p => p.asked).length;
     return "**" + c.blockedList.length + "** " + (c.blockedList.length === 1 ? "person is" : "people are") + " waiting for a photo: " + idsList(c.blockedList.map(p => p.name)) + "."
       + (asked ? " " + asked + " " + (asked === 1 ? "has" : "have") + " been asked already." : "") + "\n\nSay “ask them for photos” and I’ll open the request, with the count, for you to send.";
@@ -433,6 +471,9 @@ function IdsAskReply({ m, A }) {
     <div className="ids-ai-card">
       <span className="ids-ai-who">Assistant</span>
       <IdsAskMini text={m.text}/>
+      {(m.runs || []).length > 0 && (
+        <div className="ids-ai-acts">{m.runs.map(r => <button key={r.runId} type="button" className="ids-btn ids-btn--sm" onClick={() => A.openRun(r)}><IdsIcon name="list-bullets"/>Open {r.runId}</button>)}</div>
+      )}
       {(m.people || []).map(key => {
         const P = A.person(key);
         return P && P.acts.length > 0 && (

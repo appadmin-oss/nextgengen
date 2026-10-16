@@ -25269,6 +25269,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id plan: "ask … for photos" is the ask act, narrowed to who was named', $pl['do'] === 'askPhotos' && $pl['kind'] === 'member' && $pl['centre'] === 'Planford');
     $pl = (array)$plan($CARDADM, 'new cards for Planford members, then fill the gaps')['plan'];
     chk('id plan: a selection with "then fill the gaps" keeps both: who, and the act after it', $pl['do'] === 'fill' && $pl['kind'] === 'member' && $pl['centre'] === 'Planford' && $pl['which'] === 'new');
+    $pl = (array)$plan($CARDADM, 'reprint 026-014, she lost it')['plan'];
+    chk('id plan: "she lost it" makes the reprint a lost card (new QR), with the ID kept', $pl['cause'] === 'lost' && $pl['ids'] === ['026-014']);
+    chk('id plan: damaged, never received and a changed name are each their own cause',
+      ((array)$plan($CARDADM, 'reprint 026-014, it is damaged')['plan'])['cause'] === 'damaged'
+      && ((array)$plan($CARDADM, 'reprint 026-014, he never received it')['plan'])['cause'] === 'never_received'
+      && ((array)$plan($CARDADM, 'reprint 026-014, the name was wrong and is corrected')['plan'])['cause'] === 'name');
+    chk('id plan: "new cards" carries no cause; an unknown cause is dropped', !isset(((array)$plan($CARDADM, 'new cards for Planford members')['plan'])['cause'])
+      && !isset(ids_plan_clean(['cause' => 'because'], ['member'], [])['plan']['cause']));
     chk('id plan: "fill the gaps" is the fill act', ((array)$plan($CARDADM, 'fill the gaps on the last sheet')['plan'])['do'] === 'fill');
     $r = $f('clear the sheet', $cur);
     chk('id plan: an act after a plan stands on its own rather than refining it', $r['refined'] === false && ((array)$r['plan'])['do'] === 'clear');

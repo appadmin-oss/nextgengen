@@ -526,7 +526,7 @@ const IDS_PLAN_IDS_MAX = 600;
 const IDS_PLAN_NAMES_MAX = 50;
 const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
 const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
-    'margin', 'gap', 'skip', 'breakBy', 'packing'];
+    'margin', 'gap', 'skip', 'breakBy', 'packing', 'cause'];
 /* One-off acts the assistant may ask the studio to do (v4's whitelist). Each
    is carried out in the browser through the studio's own controls, and the
    ones that reach people (asking for photos) still go through the confirm
@@ -535,6 +535,10 @@ const IDS_PLAN_DO = ['clear', 'fill', 'askPhotos'];
 const IDS_PLAN_MARGIN = [3, 30];
 const IDS_PLAN_GAP = [0, 20];
 const IDS_PLAN_SKIP_MAX = 60;
+/* Why a card is being reprinted, when the request says so. It matters: a
+   LOST (or never received) card's reprint gets a new QR and the old card
+   stops opening the gate; a damaged one keeps its QR. */
+const IDS_PLAN_CAUSES = ['lost', 'damaged', 'never_received', 'name'];
 const IDS_PLAN_NUMBER_WORDS = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
     'eleven' => 11, 'twelve' => 12, 'a dozen' => 12, 'dozen' => 12, 'fifteen' => 15, 'twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50, 'a hundred' => 100, 'hundred' => 100];
 const IDS_PLAN_MONTHS = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
@@ -651,6 +655,8 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
     if (isset($in['gap']) && is_numeric($in['gap'])) $out['gap'] = max(IDS_PLAN_GAP[0], min(IDS_PLAN_GAP[1], (int)round((float)$in['gap'])));
     if (isset($in['skip']) && is_numeric($in['skip']) && (int)$in['skip'] >= 0) $out['skip'] = min(IDS_PLAN_SKIP_MAX, (int)$in['skip']);
     foreach (['breakBy', 'packing'] as $k) if (isset($in[$k]) && is_bool($in[$k])) $out[$k] = $in[$k];
+    $cause = (string)($in['cause'] ?? '');
+    if (in_array($cause, IDS_PLAN_CAUSES, true)) $out['cause'] = $cause;
     $do = (string)($in['do'] ?? '');
     if (in_array($do, IDS_PLAN_DO, true)) $out['do'] = $do;
     return ['plan' => $out, 'notes' => $notes];
@@ -792,6 +798,12 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     elseif (preg_match('/\b(?:new|own|separate|fresh)\s+sheets?\s+(?:for|per)\s+(?:each\s+|every\s+)?(?:centre|center|kind|group)\b|\bkeep (?:the )?(?:centres|piles) apart\b/u', $t)) $p['breakBy'] = true;
     if (preg_match('/\b(?:no|without(?: a)?)\s+packing list\b/u', $t)) $p['packing'] = false;
     elseif (preg_match('/\bpacking list\b/u', $t)) $p['packing'] = true;
+    // Why a reprint, in so many words. Never inferred from "new".
+    if (preg_match('/\b(lost|stolen|missing|misplaced)\b/u', $t)) $p['cause'] = 'lost';
+    elseif (preg_match('/\bnever (got|received|arrived|reached)\b|\bdidn.?t (get|receive)\b/u', $t)) $p['cause'] = 'never_received';
+    elseif (preg_match('/\b(damaged|broken|cracked|faded|torn|bent|smudged)\b/u', $t)) $p['cause'] = 'damaged';
+    elseif (preg_match('/\b(name|details?|spelling)\b.*\b(changed|wrong|corrected|misspelt|misspelled|fixed)\b|\b(wrong|misspelt|misspelled) name\b/u', $t)) $p['cause'] = 'name';
+    if (isset($p['cause']) && !isset($p['which']) && empty($p['ids']) && !ids_plan_find_names($prompt, $centres)) $p['which'] = 'reprint';
     // Acts. Asked for in so many words, never inferred.
     if (preg_match('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u', $t)) $p['do'] = 'clear';
     elseif (preg_match('/\b(?:ask|chase|request|remind|nudge)\b.*\bphotos?\b/u', $t)) $p['do'] = 'askPhotos';
@@ -866,6 +878,7 @@ function ids_plan_instructions(array $kinds, array $centres, string $today, arra
         . "margin: millimetres round the sheet (3-30). gap: millimetres between cards (0-20). skip: slots already used on the first sheet (0-60).\n"
         . "breakBy: true for a new sheet for each centre (or kind), false to let them share sheets. packing: true/false for a packing list.\n"
         . "do: ONE act, only when asked in so many words: \"clear\" (take every card off the sheet), \"fill\" (fill the empty slots on the last sheet), \"askPhotos\" (ask the people with no photo for one). You can never print and never mark anyone printed; if asked to, leave do out.\n"
+        . "cause: why a card is reprinted, only when said: \"lost\" (lost or stolen; the reprint gets a new QR), \"never_received\", \"damaged\", \"name\" (details changed).\n"
         . "A request that only changes settings (\"make it A3\", \"margin 5mm\") holds only those fields.\n"
         . "Never invent people, ids, centres or dates that the request does not support.";
 }

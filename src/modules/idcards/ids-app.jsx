@@ -1187,7 +1187,7 @@ function IdCardStudioPage({ setPage }) {
   const IDS_LOG_PAGE = 50;
   const [log, setLog] = React.useState({ state: "idle", runs: [], total: 0, page: 0, kind: "", type: "" });
   const logRow = x => ({
-    runId: x.runId, at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
+    runId: x.runId, iso: x.startedAt || "", at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
     design: x.templateName || (x.kind === "graphic" ? "External upload" : "Standard card"), version: x.templateVersion ? "v" + x.templateVersion : "",
     type: x.kind === "graphic" ? "external" : x.mode === "proof" ? "proof" : x.mode === "reprint" ? "reprint" : x.reason === IDS_REASON_LABEL.mixed ? "mixed" : "new",
     cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Sheet PDF" : x.output === "pdf" ? "Print-ready PDF" : x.output === "png" ? "PNG images" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
@@ -1308,8 +1308,8 @@ function IdCardStudioPage({ setPage }) {
     if (sel.carded.length) {
       const list = sel.carded;
       issues.push({ key: "carded", tone: "info", text: idsN(list.length, "person", "people") + " already " + (list.length === 1 ? "has" : "have") + " a card (" + list.slice(0, 3).map(r => r.name).join(", ") + (list.length > 3 ? "…" : "") + ").",
-        action: "Reprint " + (list.length === 1 ? "it" : "them"), onAction: async () => {
-          if (!(await queueReprints(list, "asked"))) return;
+        action: "Reprint " + (list.length === 1 ? "it" : "them") + (plan.cause === "lost" || plan.cause === "never_received" ? " with a new QR" : ""), onAction: async () => {
+          if (!(await queueReprints(list, plan.cause || "asked"))) return;
           const add = list.filter(r => !isBlocked(r));
           setQueue(qq => qq.concat(add.filter(r => !qq.some(x => x.t === "r" && x.key === r.key)).map(r => ({ t: "r", key: r.key }))));
           set({ reason: n ? "mixed" : "reprint" });
@@ -1479,6 +1479,23 @@ function IdCardStudioPage({ setPage }) {
   const askPlan = prompt => {
     askLast.current = prompt;
     say2("me", { text: prompt });
+    // "Undo" in words does what the newest Undo button does.
+    if (/^\s*(undo|undo (that|it|this)|go back|revert( (that|it))?|put it back|take that back)\s*[.!]?\s*$/i.test(prompt)) {
+      const cmd = lastCmdId ? chat.find(m => m.id === lastCmdId) : null;
+      if (askRes && askUndo.current && liveId) { askUndoIt(); say2("studio", { kind: "answer", text: "Done: the sheet is back as it was before the plan." }); }
+      else if (cmd && cmd.undo && !cmd.undone) { undoCmd(cmd); say2("studio", { kind: "answer", text: "Done: undid “" + (cmd.ran || []).join(", ").toLowerCase() + "”." }); }
+      else say2("studio", { kind: "answer", text: "There’s nothing of mine to undo. Changes you made by hand have their own Undo on the toast." });
+      return;
+    }
+    // Printing that has happened: read from the print log.
+    if (idsAskIsHistory(prompt)) {
+      setAskBusy(true);
+      NGGApi.admin.registration.cardRuns({ pageSize: 50, page: 1 })
+        .then(r => { const a = idsAskHistory(prompt, (r.runs || []).map(logRow)); say2("studio", { kind: "answer", text: a.text, runs: a.runs }); })
+        .catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the print log. Check your connection, then try again." }))
+        .finally(() => setAskBusy(false));
+      return;
+    }
     // A question about the sheet or a person is answered here, from the studio's own data; nothing is sent.
     const local = idsAskAnswer(prompt, askCtx());
     if (local) { say2("studio", typeof local === "string" ? { kind: "answer", text: local } : { kind: "answer", text: local.text, people: local.people }); return; }
@@ -1590,6 +1607,7 @@ function IdCardStudioPage({ setPage }) {
   const A = { ask: askPlan, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
     chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => m.kind === "cmd" ? commitCmd(m.id, m.plan) : commit(m.id, m.res, m.prompt),
     lastCmdId, undoCmd, starters: askStarters, next: askNext, person: askPerson,
+    openRun: r => openRun(r),
     bindInput: ref => { aiInput.current = ref.current; },
     people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
     print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill };
