@@ -300,6 +300,25 @@ function cleanup() {
     chk('after a reload the transcript is still there', /clear the sheet/.test(await P.innerText('.ids-ai-log')) && /clear the sheet/.test(said));
     chk('…as a record: nothing in it is live, and no Undo comes back', !(await P.$('.ids-ai-card.is-live')) && !(await P.$('.ids-ai-card button:has-text("Undo")')));
 
+    console.log('printing that has happened, reprint reasons, and undo in words');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+    card = await ask('What did we print last?');
+    chk('"what did we print last?" reads the print log: the run, its cards and who printed it', /The last run was/.test(card) && /CRUN-/.test(card) && /3 cards/.test(card));
+    await P.click('.ids-ai-card >> nth=-1 >> button:has-text("Open CRUN-")');
+    await P.waitForSelector('.ids-drawer', { timeout: 8000 });
+    chk('…and opens that run from the answer', /CRUN-/.test(await P.innerText('.ids-drawer')));
+    await P.keyboard.press('Escape');
+    card = await ask('What did we print today?');
+    chk('"what did we print today?" counts today’s cards across the runs', /cards? printed today/.test(card));
+    card = await ask('Who hasn’t been asked for a photo yet?');
+    chk('"who hasn’t been asked?" names only the people with no photo who were not asked', /Gbenga Nophoto/.test(card) && /been asked in the last 3 days/.test(card));
+    card = await ask('Reprint 025-103, she lost it');
+    chk('"she lost it" is understood as a lost card, which gets a new QR', /lost: new QR/.test(card));
+    card = await ask('undo');
+    chk('"undo" in words undoes the newest change', /back as it was/.test(card) && (await nOnSheet()) <= 0);
+    card = await ask('undo');
+    chk('…and says so when there is nothing left to undo', /nothing of mine to undo/.test(card));
+
     console.log('a request it cannot read, and the keys');
     await P.click('.ids-ai-bar button[aria-label="New conversation"]');
     const before = await nOnSheet();
