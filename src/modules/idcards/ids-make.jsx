@@ -527,60 +527,46 @@ function IdsLanyardSize({ L }) {
   );
 }
 
+/* A section that is set up once and rarely changed: closed by default, with
+   what it holds summed up on its own line, and remembered open or closed in
+   this browser. The settings every print touches stay above it, open. */
+function IdsMore({ id, title, summary, children }) {
+  const key = "ngg.ids.more." + id;
+  const [open, setOpen] = React.useState(() => { try { return localStorage.getItem(key) === "1"; } catch (_) { return false; } });
+  return (
+    <details className="ids-more" open={open} onToggle={e => { const o = e.currentTarget.open; setOpen(o); try { localStorage.setItem(key, o ? "1" : "0"); } catch (_) {} }}>
+      <summary className="ids-more-sum"><span className="ids-more-t">{title}</span><span className="ids-more-s">{summary}</span><IdsIcon name="caret-down" className="ids-more-caret"/></summary>
+      <div className="ids-more-body">{children}</div>
+    </details>
+  );
+}
+
 function IdsSettings({ M }) {
   const set = M.set, st = M.settings, G = M.G;
+  const assigned = M.designsUI.filter(d => d.value);
+  const designSum = assigned.length ? assigned.map(d => d.label + ": " + ((d.options.find(o => o.templateId === d.value) || {}).name || "a design")).join(" · ") : "Standard cards";
+  const layoutSum = "Margin " + st.margin + " mm · gap " + st.gap + " mm · uploads " + (st.size === "custom" ? st.cw + " × " + st.ch + " mm" : IDS_SIZES[st.size][0]) + (st.skip ? " · skip " + st.skip : "");
   return (
     <aside className="ids-set" aria-label="Layout and print">
       <div className="ids-set-scroll">
-        <section className="ids-sec" aria-labelledby="ids-designs-h">
-          <h2 className="ids-h2" id="ids-designs-h">Designs</h2>
-          {M.designsUI.map(d => (
-            <label key={d.kind} className="ids-field">
-              <span className="ids-field-l">{d.label}</span>
-              <select className="ids-select" value={d.value} disabled={d.busy} onChange={e => M.setDesign(d.kind, e.target.value)}>
-                <option value="">Standard card</option>
-                {d.options.map(o => <option key={o.templateId} value={o.templateId}>{o.name} · v{o.version}{o.paired ? " · with back" : ""}</option>)}
-              </select>
-              <span className="ids-help">{d.help}</span>
-            </label>
-          ))}
-          {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
-          {M.lanyardUI && <IdsLanyardSize L={M.lanyardUI}/>}
-          <p className="ids-note"><span>Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</span></p>
-        </section>
-
-        {M.hasVolunteers && <IdsTiers onChanged={M.reload}/>}
-
         <section className="ids-sec">
-          <h2 className="ids-h2">Card size</h2>
-          <p className="ids-note"><span>Cards from records print at their own design’s size. This size is for uploaded images. When a run holds more than one size, each size gets its own sheets.</span></p>
-          <div className="ids-sizes" role="radiogroup" aria-label="Card size">
-            {IDS_SIZE_IDS.map(k => (
-              <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
-                <b>{IDS_SIZES[k][0]}</b><span>{IDS_SIZES[k][1]}</span>
+          <h2 className="ids-h2">Backs</h2>
+          <div className="ids-radios" role="radiogroup" aria-label="Backs">
+            {IDS_BACKS.map(([k, l, sub]) => (
+              <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
+                <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b>{st.backs === k && <span>{sub}</span>}</span>
               </button>
             ))}
           </div>
-          {st.size === "custom" && (
-            <div className="ids-row">
-              <IdsNum id="ids-cw" label="Width (mm)" value={st.cw} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxW} step={0.1} onChange={v => set({ cw: v })}/>
-              <IdsNum id="ids-ch" label="Height (mm)" value={st.ch} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxH} step={0.1} onChange={v => set({ ch: v })}/>
-            </div>
-          )}
         </section>
 
         <section className="ids-sec">
           <h2 className="ids-h2">Paper</h2>
           <IdsSeg label="Paper" value={st.paper} onChange={v => set({ paper: v })} options={IDS_PAPER_IDS.map(k => [k, IDS_PAPERS[k][0]])}/>
-          <div className="ids-row">
-            <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
-            <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
-          </div>
           {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
             <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
           ))}
           {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
-          <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, ((M.sections[0] || {}).G || G).per - 1)} onChange={v => set({ skip: v })}/>
         </section>
 
         <section className="ids-sec">
@@ -591,17 +577,6 @@ function IdsSettings({ M }) {
             {st.breakBy && M.pads > 0 && <p className="ids-note">{idsN(M.pads, "slot")} left blank so the piles never mix</p>}
           </>}
           <p className="ids-stock"><IdsIcon name="stack"/>{idsN(M.stock.sheets, "sheet")} of card stock · {M.stock.sides} printed sides · {M.stock.used}% used</p>
-        </section>
-
-        <section className="ids-sec">
-          <h2 className="ids-h2">Backs</h2>
-          <div className="ids-radios" role="radiogroup" aria-label="Backs">
-            {IDS_BACKS.map(([k, l, sub]) => (
-              <button key={k} type="button" role="radio" aria-checked={st.backs === k} className={"ids-radio" + (st.backs === k ? " is-on" : "")} onClick={() => set({ backs: k })}>
-                <span className="ids-radio-dot"/><span className="ids-grow"><b>{l}</b><span>{sub}</span></span>
-              </button>
-            ))}
-          </div>
         </section>
 
         <section className="ids-sec">
@@ -617,9 +592,57 @@ function IdsSettings({ M }) {
           <h2 className="ids-h2">Checks</h2>
           {M.checks.map((c, i) => <IdsCheck key={i} tone={c.tone} text={c.text} action={c.action} onAction={c.onAction}/>)}
         </section>
+
+        <IdsMore id="layout" title="Layout" summary={layoutSum}>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Card size for uploads</h2>
+            <p className="ids-note"><span>Cards from records print at their own design’s size. When a run holds more than one size, each size gets its own sheets.</span></p>
+            <div className="ids-sizes" role="radiogroup" aria-label="Card size">
+              {IDS_SIZE_IDS.map(k => (
+                <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
+                  <b>{IDS_SIZES[k][0]}</b><span>{IDS_SIZES[k][1]}</span>
+                </button>
+              ))}
+            </div>
+            {st.size === "custom" && (
+              <div className="ids-row">
+                <IdsNum id="ids-cw" label="Width (mm)" value={st.cw} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxW} step={0.1} onChange={v => set({ cw: v })}/>
+                <IdsNum id="ids-ch" label="Height (mm)" value={st.ch} min={IDS_CUSTOM_LIMITS.min} max={IDS_CUSTOM_LIMITS.maxH} step={0.1} onChange={v => set({ ch: v })}/>
+              </div>
+            )}
+          </section>
+          <section className="ids-sec">
+            <h2 className="ids-h2">Margins</h2>
+            <div className="ids-row">
+              <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
+              <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
+            </div>
+            <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, ((M.sections[0] || {}).G || G).per - 1)} onChange={v => set({ skip: v })}/>
+          </section>
+        </IdsMore>
+
+        <IdsMore id="designs" title="Designs" summary={designSum}>
+          <section className="ids-sec" aria-labelledby="ids-designs-h">
+            <h2 className="ids-h2 ids-sr" id="ids-designs-h">Designs</h2>
+            {M.designsUI.map(d => (
+              <label key={d.kind} className="ids-field">
+                <span className="ids-field-l">{d.label}</span>
+                <select className="ids-select" value={d.value} disabled={d.busy} onChange={e => M.setDesign(d.kind, e.target.value)}>
+                  <option value="">Standard card</option>
+                  {d.options.map(o => <option key={o.templateId} value={o.templateId}>{o.name} · v{o.version}{o.paired ? " · with back" : ""}</option>)}
+                </select>
+                <span className="ids-help">{d.help}</span>
+              </label>
+            ))}
+            {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
+            {M.lanyardUI && <IdsLanyardSize L={M.lanyardUI}/>}
+            <p className="ids-note"><span>Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</span></p>
+          </section>
+          {M.hasVolunteers && <IdsTiers onChanged={M.reload}/>}
+        </IdsMore>
       </div>
       <div className="ids-set-foot">
-        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "")} aria-disabled={!!M.printBlock || undefined} disabled={!!M.xjob} onClick={M.startPrint}>
+        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "") + (M.askActive ? " is-quiet" : "")} aria-disabled={!!M.printBlock || undefined} disabled={!!M.xjob} onClick={M.startPrint}>
           <IdsIcon name="printer"/>Print {idsN(M.nCards, "card")} · {idsN(M.sheet.count, "sheet")}
         </button>
         {M.nCards > 0 && !M.printBlock && (

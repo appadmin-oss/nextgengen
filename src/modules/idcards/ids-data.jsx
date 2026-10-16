@@ -83,7 +83,11 @@ async function idsLoad() {
   /* Afrovanguard is another site: a failure is said on the page, with its
      reason (not set up, wrong secret, unreachable), never a reason the
      studio's own cards cannot print. */
-  const avNote = av.ok || av.forbidden ? "" : "Afrovanguard cards couldn’t be fetched: " + ((av.e && (av.e.detail || av.e.message)) || "no answer") + "";
+  /* A deployment with no Afrovanguard link set up has nothing to fetch: that
+     is a setting, not a failure, so it is not announced on every visit. */
+  const avWhy = (av.e && (av.e.detail || av.e.message || av.e.code)) || "";
+  const avOff = /not_configured/.test(String(avWhy) + " " + String((av.e && av.e.code) || ""));
+  const avNote = av.ok || av.forbidden || avOff ? "" : "Afrovanguard cards couldn’t be fetched: " + (avWhy || "no answer");
   if (av.ok) lists.push(["afrovanguard", av]);
   const state = st.r || {};
   const records = [], programs = {};

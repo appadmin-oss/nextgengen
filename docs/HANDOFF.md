@@ -1070,3 +1070,48 @@ Removed: `portal-shell.jsx`, `member-portal.jsx`, `mp-*.jsx`, the `.mp-*` CSS,
 `tests/member-portal.test.js`. New: `tests/dashboard-results.test.js` (26,
 `npm run test:dashresults`); `tests/mentorship.test.js` drives the restored
 portal (roster, School results tab, Report a concern).
+
+## 2026-10-13 — OpenAI as a provider; print from a prompt in the ID Card Studio
+
+- **OpenAI** joins `AI_PROVIDERS` (ai.php): `ai.openai_api_key` / `ai.openai_model`
+  (default `gpt-4.1-mini`), on the Service keys screen, usable in any profile and
+  as a fallback like the others. Chat Completions with `max_completion_tokens`;
+  reasoning models (`o*`, `gpt-5*`) get no temperature. `ai_http_post` has a test
+  seam (`$GLOBALS['__ai_http']`) so the request shape is pinned in run.php.
+- **Print from a prompt** (`src/modules/idcards/ids-ask.jsx`, `admin.ids.plan` in
+  `domain/id-studio.php`). The server reads the request into a plan through the
+  `studio` AI profile when a key is set, and always with `ids_plan_rules`; the
+  model's fields win one by one, the IDs the rules saw are kept, and everything
+  is cleaned against allow-lists (kinds the operator may print, their centres,
+  fixed sides/paper/dpi/order). The op reads and writes nothing but an audit
+  line; the studio applies the plan to the lists it already shows
+  (`idsPlanSelect`, pure), sets its own controls, and shows the count before the
+  one Print press, which refuses if the sheet changed. Undo restores the sheet.
+  Rate limit `ids.plan` 30 per 10 minutes.
+- Tests: run.php (rules, AI merge and cleaning, scope, OpenAI request shape),
+  `tests/ids-ask.test.js` (19, `npm run test:idsask`).
+
+## 2026-10-13 — Print from a prompt, round 2: a conversation, not a form
+
+- **Follow-ups refine the plan on screen.** The studio sends the current plan
+  with the request (`current`, cleaned on the server like anything from the
+  browser). `ids_plan_is_refinement` decides: a request that names who (kind,
+  new/reprint, a list of IDs) starts again; anything else adjusts
+  (`ids_plan_refine`). The model is shown the current plan and returns the
+  whole updated one with `refine`.
+- **`also` and `exclude`**: people added on top of a filtered selection and
+  people left out ("except", "not", "remove"), each from its own clause, so
+  "except 026-002" never puts 026-002 on the sheet. Leaving out wins over an
+  earlier add.
+- **Near spellings**: centres (`ids_plan_typo_room`: none under 5 letters, one
+  under 8, two above, a unique best only) and names (`idsNameMatch`). Number
+  words ("the first ten"), months ("in October", last year's when it is
+  still to come), "since Monday", "since 3 October".
+- **On screen**: each understood part is a chip whose × re-applies the plan
+  without it (no second reading); "Updated"; the settings outlined are only
+  those that differ from before the plan; the last sheet's empty slots can be
+  filled from the cards still waiting (none when each centre starts its own
+  sheet); recent requests (localStorage, this browser), ↑ to recall, "/" to
+  focus. A fresh request that finds nobody leaves the sheet alone; a
+  follow-up always re-applies.
+- Tests: run.php +16; `tests/ids-ask.test.js` 32.

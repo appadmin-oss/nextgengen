@@ -37,6 +37,9 @@ const SERVICE_KEYS = [
     'anthropic' => ['group' => 'ai', 'label' => 'Anthropic (Claude)', 'link' => 'https://console.anthropic.com/settings/keys',
         'what' => 'Paid. The capable model that marks written answers and writes the Analyst’s reports.', 'test' => 'ai',
         'fields' => [['ai.anthropic_api_key', 'API key', 'secret', false, 'Starts “sk-ant-”.'], ['ai.anthropic_model', 'Model', 'model', true, '']]],
+    'openai' => ['group' => 'ai', 'label' => 'OpenAI (ChatGPT)', 'link' => 'https://platform.openai.com/api-keys',
+        'what' => 'Paid. GPT models, used wherever an AI profile names OpenAI, and as a fallback.', 'test' => 'ai',
+        'fields' => [['ai.openai_api_key', 'API key', 'secret', false, 'Starts “sk-”.'], ['ai.openai_model', 'Model', 'model', true, 'Blank: gpt-4.1-mini.']]],
     'openrouter' => ['group' => 'ai', 'label' => 'OpenRouter', 'link' => 'https://openrouter.ai/keys',
         'what' => 'One key for hundreds of models from every major lab.', 'test' => 'ai',
         'fields' => [['ai.openrouter_api_key', 'API key', 'secret', false, 'Starts “sk-or-”.'], ['ai.openrouter_model', 'Model', 'model', true, '']]],
@@ -70,11 +73,14 @@ const SERVICE_KEYS = [
     'googlemaps' => ['group' => 'maps', 'label' => 'Google Maps', 'link' => 'https://console.cloud.google.com/google/maps-apis/credentials',
         'what' => 'Finds where an address is, to suggest the nearest NGG centre. Without it, OpenStreetMap is used (free, less exact for Nigerian addresses). Enable the Geocoding API for the key.', 'test' => 'maps',
         'fields' => [['maps.google_key', 'API key', 'secret', false, 'Starts “AIza”. Restrict it to the Geocoding API.']]],
+    'cacentre' => ['group' => 'crm', 'label' => 'CACENTRE CRM', 'link' => 'https://cacentre.afrovanguard.org.ng/crm/audience.php#sites',
+        'what' => 'Sends NGG’s newsletter subscribers (and unsubscribes), contact-form enquiries, donors, adult volunteers and parents to the CACENTRE CRM’s Audience, signed. No child’s record is ever sent. In the CACENTRE console: Audience → Sites → Next Generation Genius → Generate secret, and paste it here.', 'test' => '',
+        'fields' => [['cacentre.crm_secret', 'Audience secret', 'secret', false, 'Shown once by CACENTRE when generated.'], ['cacentre.crm_url', 'CACENTRE address', 'text', true, 'Blank: https://cacentre.afrovanguard.org.ng']]],
     'spitch' => ['group' => 'voice', 'label' => 'Spitch', 'link' => 'https://spitch.app',
         'what' => 'Reads the Quote of the week aloud in Hausa, Igbo and Yoruba.', 'test' => '',
         'fields' => [['tts.spitch_key', 'API key', 'secret', false, '']]],
 ];
-const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice'];
+const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice', 'crm' => 'CACENTRE CRM'];
 
 /** Read a dotted path out of a nested array. */
 function service_cfg_read(array $cfg, string $path) {

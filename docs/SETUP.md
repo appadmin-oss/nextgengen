@@ -315,8 +315,11 @@ image bytes out of your database backups.
 
 ### AI providers and the analyst panel
 
-Four providers are supported and every one is optional: **Groq**, **Google
-Gemini**, **Anthropic**, and **OpenRouter**. Anything you leave blank is skipped,
+Five providers are supported and every one is optional: **Groq**, **Google
+Gemini**, **Anthropic**, **OpenAI** and **OpenRouter**. Keys can be entered in
+Control Room → System → Service keys or in `api/config.php` (`ai.openai_api_key`,
+`ai.openai_model`, default `gpt-4.1-mini`; reasoning models such as `o4-mini`
+or `gpt-5-mini` work too). Anything you leave blank is skipped,
 and each acts as a fallback for the others — one exhausted key costs speed, not
 capability. With none set, every AI feature degrades to deterministic behaviour
 and says so; nothing invents an answer.

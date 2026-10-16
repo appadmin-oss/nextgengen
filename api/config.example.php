@@ -172,7 +172,7 @@ return [
     'ai' => [
         // Default profile (legacy flat block — used when a purpose below has
         // no key of its own):
-        'provider'       => 'groq',                    // preference: groq | gemini | anthropic | openrouter
+        'provider'       => 'groq',                    // preference: groq | gemini | anthropic | openai | openrouter
         'groq_api_key'   => '',                        // leave empty to disable
         'groq_model'     => 'llama-3.1-8b-instant',
         'gemini_api_key' => '',                        // leave empty to disable
@@ -182,6 +182,8 @@ return [
         // key degrades speed, not capability.
         'anthropic_api_key'  => '',
         'anthropic_model'    => 'claude-haiku-4-5-20251001',
+        'openai_api_key'     => '',                    // https://platform.openai.com/api-keys
+        'openai_model'       => 'gpt-4.1-mini',        // or gpt-4.1, gpt-5-mini, o4-mini…
         // OpenRouter is the "and everything else": one key reaches hundreds of
         // models from every major lab, so trying a different one is a config
         // line rather than a deploy. Model ids look like 'vendor/model'.

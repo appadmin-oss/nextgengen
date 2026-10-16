@@ -1311,6 +1311,36 @@ says the browser holds an old copy of the print tools, reload the page
 
 The old address `/cards` still works and opens the ID Card Studio.
 
+**Print from a prompt.** The bar at the top of *Make cards* takes a request in
+your own words: *“New cards for Egbeda members, front and back”*, *“Reprint
+026-003 and 026-014”*, *“Summer School participants who registered this week,
+proof on A4”*, *“Volunteers, fronts only, by name”*. Press *Plan the print*
+(or Enter). The studio puts the matching people on the sheet, sets the sides,
+crop marks, paper, quality and order you asked for, and shows what it
+understood: the count, the sheets, the settings it changed (outlined), and
+anyone left out and why (no photo yet, *Ask for photos*; an ID not found;
+somebody who already has a card, *Reprint them*). **Print N cards** on that
+result makes the PDF at once. It refuses if the sheet changed since the plan.
+*Undo* puts the sheet and settings back. The list on the left shows the same
+filter, so you can check or change the selection by hand.
+
+**Change it in words.** While a plan is on screen, the bar takes a change:
+*“fronts only”*, *“only Ijaiye”*, *“add 026-010”*, *“not Ada”*, *“make it a
+proof”*, *“sort them by name”*. A request that names who to print (*“volunteers
+at Egbeda”*) starts a new plan instead. Each part the studio understood is a
+chip; its × takes that part out at once. *“Except …”* leaves people out, and
+names and centres may be misspelt (*“Egbda”*, *“Ada Obbi”*). It also reads *“the
+first ten”*, *“in October”*, *“since Monday”*, *“since 3 October”*. When the last
+sheet has empty slots, the result offers to fill them with other cards that are
+waiting. Recent requests show as chips under the bar, ↑ in the empty bar brings
+back the last one, and **/** anywhere in the studio jumps to the bar.
+
+It reads the request with whichever AI key is set (OpenAI, Claude, Gemini,
+Groq or OpenRouter; System → Service keys) and always with the studio's own
+rules, which work with no key at all. The result says which read it. It only
+selects from the people the studio already shows you and changes the studio's
+own settings: it never prints, sends or changes a record by itself.
+
 **Make cards.** The left column is everyone who needs a card: **New** (never
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
 *Ask for photo*, or *Ask everyone blocked* to ask up to 200 at once). A

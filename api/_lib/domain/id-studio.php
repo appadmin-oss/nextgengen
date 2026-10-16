@@ -498,3 +498,375 @@ function admin_ids_mint(array $p): array {
     audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused), 'codes' => count($codes), 'newQr' => count($newQr)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused, 'codes' => (object)$codes, 'newQr' => $newQr];
 }
+
+/* ── Print from a prompt (admin.ids.plan) ─────────────────────────────────────
+ * "New cards for Egbeda members, front and back" becomes a PLAN: which records
+ * (kind, centre, new/reprint/all, a date or number range, named IDs or people,
+ * people added on top and people left out) and how the sheet is set (sides,
+ * crop marks, paper, dpi, order, proof). The plan only ever SELECTS from what
+ * the studio already shows the operator and sets its own controls; it prints
+ * nothing and writes nothing but an audit line.
+ *
+ * A follow-up refines the plan on screen ("fronts only", "only Ijaiye", "add
+ * 026-010", "not Ada"): the studio sends the current plan with the request,
+ * and a request that names a fresh selection starts again.
+ *
+ * Read by the 'studio' AI profile when a key is set (Groq, Gemini, Anthropic,
+ * OpenAI, OpenRouter), and always by the rules below, which also stand alone
+ * with no key. Whatever the model returns is cleaned against allow-lists: a
+ * field outside them is dropped, never passed on. */
+const IDS_PLAN_PROMPT_MAX = 400;
+const IDS_PLAN_KINDS = ['member', 'summer', 'volunteer', 'afrovanguard'];   // the studio's kinds
+const IDS_PLAN_WHICH = ['new', 'reprint', 'all'];
+const IDS_PLAN_BACKS = ['off', 'long', 'short'];
+const IDS_PLAN_PAPERS = ['a4', 'letter', 'a3'];
+const IDS_PLAN_DPI = [150, 300, 600];
+const IDS_PLAN_ORDERS = ['centre', 'kind', 'name'];
+const IDS_PLAN_IDS_MAX = 600;
+const IDS_PLAN_NAMES_MAX = 50;
+const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
+const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof'];
+const IDS_PLAN_NUMBER_WORDS = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+    'eleven' => 11, 'twelve' => 12, 'a dozen' => 12, 'dozen' => 12, 'fifteen' => 15, 'twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50, 'a hundred' => 100, 'hundred' => 100];
+const IDS_PLAN_MONTHS = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+const IDS_PLAN_MONTH_RE = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+// Words that start a follow-up rather than a fresh request.
+const IDS_PLAN_REFINE_RE = '/^\s*(only|just|make (it|them)|and|also|add|plus|include|remove|drop|without|except|not|but|now|switch|change|instead|use|with|no|leave out|take (off|out))\b/u';
+// What introduces people to add, and people to leave out.
+const IDS_PLAN_ADD_RE = '/\b(?:add|also|plus|include|and also)\b(.*)$/u';
+const IDS_PLAN_EXCLUDE_RE = '/\b(?:except(?: for)?|excluding|apart from|other than|but not|leave out|take (?:off|out)|remove|drop|minus|not)\b(.*)$/u';
+
+/** The studio kinds this operator may print (a kind maps to the subject's owning capability). */
+function ids_plan_kinds(array $requester): array {
+    $map = ['member' => 'member', 'summer' => 'student', 'volunteer' => 'volunteer', 'afrovanguard' => 'afrovanguard'];
+    return array_values(array_filter(IDS_PLAN_KINDS, fn($k) => ids_can($requester, $map[$k])));
+}
+
+/** Centre names (and codes) the operator could mean: their scope when scoped, every centre otherwise. */
+function ids_plan_centres(array $requester): array {
+    $scope = admin_centre_names_in_scope($requester);
+    $out = [];
+    foreach (db_all("SELECT name, code FROM centres WHERE name <> '' ORDER BY name") as $c) {
+        if ($scope !== null && !in_array((string)$c['name'], $scope, true)) continue;
+        $out[] = ['name' => (string)$c['name'], 'code' => (string)$c['code']];
+    }
+    return $out;
+}
+
+function ids_plan_today(): string {
+    try { return (new DateTime('now', new DateTimeZone('Africa/Lagos')))->format('Y-m-d'); } catch (\Throwable $e) { return gmdate('Y-m-d'); }
+}
+
+/** How far a typed word may be from a name and still mean it: none under 5 letters, one under 8, two above. */
+function ids_plan_typo_room(string $s): int { $n = mb_strlen($s); return $n < 5 ? 0 : ($n < 8 ? 1 : 2); }
+
+/** A centre named in words: its exact name, its code, the one centre whose name contains it, or a near spelling. */
+function ids_plan_centre_match(string $said, array $centres): ?string {
+    $s = mb_strtolower(trim($said));
+    if ($s === '') return null;
+    if (in_array($s, ['none', 'no centre', 'no center', 'without a centre', 'without a center'], true)) return IDS_PLAN_NONE;
+    foreach ($centres as $c) if (mb_strtolower($c['name']) === $s || ($c['code'] !== '' && mb_strtolower($c['code']) === $s)) return $c['name'];
+    $hits = array_values(array_filter($centres, fn($c) => str_contains(mb_strtolower($c['name']), $s)));
+    if (count($hits) === 1) return $hits[0]['name'];
+    $best = null; $bestD = PHP_INT_MAX; $tie = false;
+    foreach ($centres as $c) {
+        $d = levenshtein($s, mb_strtolower($c['name']));
+        if ($d > ids_plan_typo_room($c['name'])) continue;
+        if ($d < $bestD) { $best = $c['name']; $bestD = $d; $tie = false; } elseif ($d === $bestD) $tie = true;
+    }
+    return $best !== null && !$tie ? $best : null;
+}
+
+function ids_plan_date($v): ?string {
+    $v = trim((string)$v);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) return null;
+    [$y, $m, $d] = array_map('intval', explode('-', $v));
+    return checkdate($m, $d, $y) ? $v : null;
+}
+
+/** IDs and names, checked: the shape of a printed ID or record id, and of a person's name. */
+function ids_plan_clean_people($in): array {
+    $in = is_array($in) ? $in : [];
+    $ids = []; $names = [];
+    foreach ((array)($in['ids'] ?? []) as $x) {
+        $x = strtoupper(trim((string)$x));
+        if ($x !== '' && strlen($x) <= 40 && preg_match('/^[A-Z0-9][A-Z0-9 \-_.\/]*$/', $x) && !in_array($x, $ids, true)) $ids[] = $x;
+        if (count($ids) >= IDS_PLAN_IDS_MAX) break;
+    }
+    foreach ((array)($in['names'] ?? []) as $x) {
+        $x = trim(preg_replace('/\s+/u', ' ', (string)$x));
+        if ($x !== '' && mb_strlen($x) <= 60 && preg_match('/^[\p{L}][\p{L}\p{M}\'’\- .]*$/u', $x) && !in_array($x, $names, true)) $names[] = $x;
+        if (count($names) >= IDS_PLAN_NAMES_MAX) break;
+    }
+    return array_filter(['ids' => $ids, 'names' => $names]);
+}
+
+/** Everything the plan may say, checked. Unknown or out-of-range values are dropped. */
+function ids_plan_clean(array $in, array $kinds, array $centres): array {
+    $out = [];
+    $notes = [];
+    $kind = strtolower(trim((string)($in['kind'] ?? '')));
+    if (in_array($kind, ['student', 'participant', 'participants'], true)) $kind = 'summer';
+    if (in_array($kind, ['members', 'ngg'], true)) $kind = 'member';
+    if (in_array($kind, ['volunteers'], true)) $kind = 'volunteer';
+    if ($kind !== '') {
+        if (in_array($kind, $kinds, true)) $out['kind'] = $kind;
+        elseif (in_array($kind, IDS_PLAN_KINDS, true)) $notes[] = 'You can’t print ' . $kind . ' cards here, so that part was left out.';
+    }
+    if (isset($in['centre']) && trim((string)$in['centre']) !== '') {
+        $c = ids_plan_centre_match((string)$in['centre'], $centres);
+        if ($c !== null) $out['centre'] = $c;
+        else $notes[] = 'No centre called “' . mb_substr(trim((string)$in['centre']), 0, 40) . '”, so every centre is included.';
+    }
+    $which = strtolower((string)($in['which'] ?? ''));
+    if (in_array($which, IDS_PLAN_WHICH, true)) $out['which'] = $which;
+    $out += ids_plan_clean_people(['ids' => $in['ids'] ?? [], 'names' => $in['names'] ?? []]);
+    foreach (['also', 'exclude'] as $k) { $pp = ids_plan_clean_people($in[$k] ?? []); if ($pp) $out[$k] = $pp; }
+    foreach (['dateFrom', 'dateTo'] as $k) if (($d = ids_plan_date($in[$k] ?? '')) !== null) $out[$k] = $d;
+    if (isset($out['dateFrom'], $out['dateTo']) && $out['dateFrom'] > $out['dateTo']) [$out['dateFrom'], $out['dateTo']] = [$out['dateTo'], $out['dateFrom']];
+    foreach (['numFrom', 'numTo'] as $k) {
+        if (isset($in[$k]) && is_numeric($in[$k]) && (int)$in[$k] >= 0 && (int)$in[$k] <= 999999) $out[$k] = (int)$in[$k];
+    }
+    if (isset($out['numFrom'], $out['numTo']) && $out['numFrom'] > $out['numTo']) [$out['numFrom'], $out['numTo']] = [$out['numTo'], $out['numFrom']];
+    if (isset($in['limit']) && is_numeric($in['limit']) && (int)$in['limit'] >= 1) $out['limit'] = min(IDS_BATCH_MAX, (int)$in['limit']);
+    $backs = strtolower((string)($in['backs'] ?? ''));
+    if (in_array($backs, IDS_PLAN_BACKS, true)) $out['backs'] = $backs;
+    if (isset($in['marks']) && is_bool($in['marks'])) $out['marks'] = $in['marks'];
+    $paper = strtolower((string)($in['paper'] ?? ''));
+    if (in_array($paper, IDS_PLAN_PAPERS, true)) $out['paper'] = $paper;
+    if (isset($in['dpi']) && in_array((int)$in['dpi'], IDS_PLAN_DPI, true)) $out['dpi'] = (int)$in['dpi'];
+    $order = strtolower((string)($in['order'] ?? ''));
+    if (in_array($order, IDS_PLAN_ORDERS, true)) $out['order'] = $order;
+    if (isset($in['proof']) && is_bool($in['proof'])) $out['proof'] = $in['proof'];
+    return ['plan' => $out, 'notes' => $notes];
+}
+
+/** Printed IDs as they are written: 026-014, EG-26-001, and record ids (NGG-…, SUM-…, VOL-…). */
+function ids_plan_find_ids(string $t): array {
+    preg_match_all('/\b(?:[a-z]{2,4}-\d{2}-\d{3,4}|\d{3}-\d{3,4}|(?:ngg|sum|vol|av)-[a-z0-9]+(?:-[a-z0-9]+)*)\b/iu', $t, $m);
+    return array_values(array_unique(array_map('strtoupper', $m[0])));
+}
+
+/** People's names in a clause: runs of capitalised words that are not a centre, a kind, a month or a command. */
+function ids_plan_find_names(string $clause, array $centres): array {
+    $skip = array_merge(['Add', 'Also', 'Plus', 'Include', 'Except', 'Not', 'But', 'And', 'Remove', 'Drop', 'Without', 'Leave', 'Take', 'Out', 'Off', 'Only', 'Just', 'The', 'For', 'At', 'In',
+        'Members', 'Member', 'Summer', 'School', 'Participants', 'Volunteers', 'Afrovanguard', 'NGG', 'Reprint', 'Reprints', 'New', 'Cards', 'Card', 'Print', 'Proof', 'Monday', 'Tuesday',
+        'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'A4', 'A3', 'Letter'], array_map(fn($c) => $c['name'], $centres));
+    preg_match_all('/\b\p{Lu}[\p{Ll}\'’\-]+(?:\s+\p{Lu}[\p{Ll}\'’\-]+)*/u', $clause, $m);
+    $out = [];
+    foreach ($m[0] as $run) {
+        $words = array_values(array_filter(preg_split('/\s+/u', $run), fn($w) => !in_array($w, $skip, true) && !preg_match('/^' . IDS_PLAN_MONTH_RE . '$/iu', $w)));
+        if ($words) $out[] = implode(' ', $words);
+    }
+    return array_values(array_unique($out));
+}
+
+/** A centre in free text: its name (or a near spelling of it), or its code after "at/in/for/from". */
+function ids_plan_find_centre(string $t, array $centres): ?string {
+    if (preg_match('/\b(no|without an?)\s+cent(re|er)\b/u', $t)) return IDS_PLAN_NONE;
+    $words = preg_split('/[^\p{L}]+/u', $t, -1, PREG_SPLIT_NO_EMPTY);
+    $best = null; $bestD = PHP_INT_MAX; $bestLen = 0;
+    foreach ($centres as $c) {
+        $n = mb_strtolower($c['name']);
+        if (preg_match('/(?<![\p{L}])' . preg_quote($n, '/') . '(?![\p{L}])/u', $t)
+            || ($c['code'] !== '' && preg_match('/\b(at|in|for|from)\s+' . preg_quote(mb_strtolower($c['code']), '/') . '\b(?!-)/u', $t))) {
+            $d = 0;
+        } else {
+            // A near spelling ("Egbda"), compared word for word with the name's own length.
+            $k = count(preg_split('/\s+/u', $n)); $room = ids_plan_typo_room($n); $d = PHP_INT_MAX;
+            if ($room > 0) for ($i = 0; $i + $k <= count($words); $i++) {
+                $w = implode(' ', array_slice($words, $i, $k));
+                if (mb_strlen($w) >= 4) $d = min($d, levenshtein($w, $n));
+            }
+            if ($d > $room) continue;
+        }
+        if ($d < $bestD || ($d === $bestD && mb_strlen($c['name']) > $bestLen)) { $best = $c['name']; $bestD = $d; $bestLen = mb_strlen($c['name']); }
+    }
+    return $best;
+}
+
+/** The rules: what the words plainly say. They always run; the model's reading wins where it says more. */
+function ids_plan_rules(string $prompt, array $kinds, array $centres, string $today): array {
+    $t = mb_strtolower($prompt);
+    $p = [];
+    /* People to leave out, and people to add, are read from their own clause,
+       so "except 026-002" never puts 026-002 on the sheet. "without a card",
+       "without crop marks" and "no centre" are not exclusions. */
+    $main = $prompt;
+    $exClause = '';
+    if (preg_match(IDS_PLAN_EXCLUDE_RE, $prompt, $m, PREG_OFFSET_CAPTURE) && !preg_match('/^\s*(?:the\s+|a\s+|any\s+)?(cards?|crop|cut|trim|backs?|cent(re|er)s?|marks?|proofs?|draft|limit|dates?|filter)\b/iu', $m[1][0])) {
+        $exClause = $m[1][0];
+        $main = substr($prompt, 0, $m[0][1]);
+    }
+    $addClause = '';
+    if (preg_match(IDS_PLAN_ADD_RE, $main, $m, PREG_OFFSET_CAPTURE) && (ids_plan_find_ids($m[1][0]) || ids_plan_find_names($m[1][0], $centres))) {
+        $addClause = $m[1][0];
+        $main = substr($main, 0, $m[0][1]);
+    }
+    $mt = mb_strtolower($main);
+    if ($exClause !== '') { $ex = array_filter(['ids' => ids_plan_find_ids($exClause), 'names' => ids_plan_find_names($exClause, $centres)]); if ($ex) $p['exclude'] = $ex; }
+    if ($addClause !== '') { $ad = array_filter(['ids' => ids_plan_find_ids($addClause), 'names' => ids_plan_find_names($addClause, $centres)]); if ($ad) $p['also'] = $ad; }
+
+    if (preg_match('/\b(summer|participants?|campers?)\b/u', $mt)) $p['kind'] = 'summer';
+    elseif (preg_match('/\b(volunteers?|mentors?|instructors?|staff)\b/u', $mt)) $p['kind'] = 'volunteer';
+    elseif (preg_match('/\b(afrovanguard|vanguard|ngv)\b/u', $mt)) $p['kind'] = 'afrovanguard';
+    elseif (preg_match('/\b(members?|ngg|kids|children|students?)\b/u', $mt)) $p['kind'] = 'member';
+    if (($c = ids_plan_find_centre($mt, $centres)) !== null) $p['centre'] = $c;
+    if (preg_match('/\b(reprints?|re-?print|replace(ment)?s?|lost|damaged|stolen)\b/u', $mt)) $p['which'] = 'reprint';
+    elseif (preg_match('/\b(new|first time|never had|haven.?t had|without a card)\b/u', $mt)) $p['which'] = 'new';
+    elseif (preg_match('/\b(everyone|everybody|all of them|whole (list|queue)|all waiting)\b/u', $mt)) $p['which'] = 'all';
+    $ids = ids_plan_find_ids($main);
+    if ($ids) $p['ids'] = $ids;
+    if (preg_match('/\b(?:cards?|numbers?|ids?|nos?\.?)\s*#?(\d{1,6})\s*(?:-|–|to|through|until)\s*#?(\d{1,6})\b/u', $mt, $r)) { $p['numFrom'] = (int)$r[1]; $p['numTo'] = (int)$r[2]; }
+
+    $d = new DateTime($today);
+    $ymd = fn(DateTime $x) => $x->format('Y-m-d');
+    $monthStart = function (int $mon) use ($d): DateTime {
+        $y = (int)$d->format('Y') - ($mon > (int)$d->format('n') ? 1 : 0);   // "in November" in October is last year's
+        return new DateTime(sprintf('%04d-%02d-01', $y, $mon));
+    };
+    $mon = fn(string $w) => IDS_PLAN_MONTHS[substr($w, 0, 3)] ?? 0;
+    if (preg_match('/\btoday\b/u', $mt)) { $p['dateFrom'] = $p['dateTo'] = $today; }
+    elseif (preg_match('/\byesterday\b/u', $mt)) { $p['dateFrom'] = $p['dateTo'] = $ymd((clone $d)->modify('-1 day')); }
+    elseif (preg_match('/\bthis week\b/u', $mt)) { $p['dateFrom'] = $ymd((clone $d)->modify('monday this week')); $p['dateTo'] = $today; }
+    elseif (preg_match('/\blast week\b/u', $mt)) { $p['dateFrom'] = $ymd((clone $d)->modify('monday last week')); $p['dateTo'] = $ymd((clone $d)->modify('sunday last week')); }
+    elseif (preg_match('/\bthis month\b/u', $mt)) { $p['dateFrom'] = $d->format('Y-m-01'); $p['dateTo'] = $today; }
+    elseif (preg_match('/\blast month\b/u', $mt)) { $l = (clone $d)->modify('first day of last month'); $p['dateFrom'] = $l->format('Y-m-01'); $p['dateTo'] = $l->format('Y-m-t'); }
+    elseif (preg_match('/\b(?:last|past)\s+(\d{1,3})\s+days?\b/u', $mt, $r)) { $p['dateFrom'] = $ymd((clone $d)->modify('-' . max(0, (int)$r[1] - 1) . ' days')); $p['dateTo'] = $today; }
+    elseif (preg_match('/\b(?:since|from)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/u', $mt, $r)) {
+        $x = (clone $d); if (strtolower($x->format('l')) !== $r[1]) $x->modify('last ' . $r[1]);
+        $p['dateFrom'] = $ymd($x); $p['dateTo'] = $today;
+    }
+    elseif (preg_match('/\b(?:since|from|after)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?' . IDS_PLAN_MONTH_RE . '\b/u', $mt, $ra)
+        || preg_match('/\b(?:since|from|after)\s+' . IDS_PLAN_MONTH_RE . '\s+(\d{1,2})(?:st|nd|rd|th)?\b/u', $mt, $rb)) {
+        [$day, $mm] = !empty($ra) ? [(int)$ra[1], $mon($ra[2])] : [(int)$rb[2], $mon($rb[1])];
+        $s = $monthStart($mm);
+        if ($day >= 1 && $day <= (int)$s->format('t')) { $p['dateFrom'] = $s->format('Y-m-') . sprintf('%02d', $day); $p['dateTo'] = $today; }
+    }
+    elseif (preg_match('/\b(?:in|during|for|joined|registered)\s+' . IDS_PLAN_MONTH_RE . '\b/u', $mt, $r)) {
+        $s = $monthStart($mon($r[1])); $p['dateFrom'] = $s->format('Y-m-01'); $p['dateTo'] = min($today, $s->format('Y-m-t'));
+    }
+    if (preg_match('/\b(?:since|from)\s+(\d{4}-\d{2}-\d{2})\b/u', $mt, $r)) $p['dateFrom'] = $r[1];
+    if (preg_match('/\b(?:to|until|till)\s+(\d{4}-\d{2}-\d{2})\b/u', $mt, $r)) $p['dateTo'] = $r[1];
+
+    if (preg_match('/\bshort[- ]edge\b/u', $t)) $p['backs'] = 'short';
+    elseif (preg_match('/\b(double[- ]sided|two[- ]sided|both sides|front and back|fronts and backs|duplex|with (the )?backs?|long[- ]edge)\b/u', $t)) $p['backs'] = 'long';
+    elseif (preg_match('/\b(fronts? only|only (the )?fronts?|single[- ]sided|one[- ]sided|no backs?|without (the )?backs?)\b/u', $t)) $p['backs'] = 'off';
+    if (preg_match('/\b(no|without)\s+(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = false;
+    elseif (preg_match('/\b(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = true;
+    if (preg_match('/\ba3\b/u', $t)) $p['paper'] = 'a3';
+    elseif (preg_match('/\b(us )?letter( paper| size)?\b/u', $t) && !preg_match('/\bletters?\s+(to|for)\b/u', $t)) $p['paper'] = 'letter';
+    elseif (preg_match('/\ba4\b/u', $t)) $p['paper'] = 'a4';
+    if (preg_match('/\bproofs?\b|\bdraft\b|\btest (print|sheet)\b/u', $t)) { $p['proof'] = true; $p['dpi'] = 150; }
+    elseif (preg_match('/\b(not a proof|for real|real print|final)\b/u', $t)) $p['proof'] = false;
+    if (preg_match('/\b600\s*dpi\b|\bhighest quality\b|\bfine\b/u', $t)) $p['dpi'] = 600;
+    elseif (preg_match('/\b300\s*dpi\b/u', $t)) $p['dpi'] = 300;
+    elseif (preg_match('/\b150\s*dpi\b/u', $t)) $p['dpi'] = 150;
+    if (preg_match('/\b(by name|alphabetical(ly)?|a to z|a-z)\b/u', $t)) $p['order'] = 'name';
+    elseif (preg_match('/\bby (centre|center)\b/u', $t)) $p['order'] = 'centre';
+    elseif (preg_match('/\bby (kind|type)\b/u', $t)) $p['order'] = 'kind';
+    $nw = implode('|', array_map(fn($w) => preg_quote($w, '/'), array_keys(IDS_PLAN_NUMBER_WORDS)));
+    if (preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
+    return ids_plan_clean($p, $kinds, $centres)['plan'];
+}
+
+/** Two people lists as one, without repeats. */
+function ids_plan_union(array $a, array $b): array {
+    $out = [];
+    foreach (['ids', 'names'] as $k) { $v = array_values(array_unique(array_merge($a[$k] ?? [], $b[$k] ?? []))); if ($v) $out[$k] = $v; }
+    return $out;
+}
+
+/** Is this a follow-up to the plan on screen, or a fresh request? */
+function ids_plan_is_refinement(string $prompt, array $current, array $read): bool {
+    if (!$current) return false;
+    if (preg_match(IDS_PLAN_REFINE_RE, mb_strtolower($prompt))) return true;
+    // A fresh request names who: a kind, new/reprint, or a whole list of IDs. Anything else adjusts the plan on screen.
+    return !isset($read['kind']) && !isset($read['which']) && empty($read['ids']);
+}
+
+/** A follow-up applied to the plan on screen: what it says replaces, people it names are added or left out. */
+function ids_plan_refine(array $current, array $read): array {
+    $plan = $current;
+    foreach (IDS_PLAN_SCALARS as $k) if (array_key_exists($k, $read)) $plan[$k] = $read[$k];
+    $named = ids_plan_union(['ids' => $read['ids'] ?? [], 'names' => $read['names'] ?? []], $read['also'] ?? []);
+    if ($named) {
+        // Named people join a named list; on a filtered selection they go on top of it.
+        if (!empty($current['ids']) || !empty($current['names'])) {
+            $u = ids_plan_union(['ids' => $current['ids'] ?? [], 'names' => $current['names'] ?? []], $named);
+            unset($plan['ids'], $plan['names']); $plan += $u;
+        } else $plan['also'] = ids_plan_union($plan['also'] ?? [], $named);
+    }
+    if (!empty($read['exclude'])) {
+        $plan['exclude'] = ids_plan_union($plan['exclude'] ?? [], $read['exclude']);
+        // Leaving somebody out wins over an earlier "add".
+        foreach (['ids', 'names'] as $k) if (!empty($plan['also'][$k])) $plan['also'][$k] = array_values(array_diff($plan['also'][$k], $plan['exclude'][$k] ?? []));
+        if (isset($plan['also'])) { $plan['also'] = array_filter($plan['also']); if (!$plan['also']) unset($plan['also']); }
+    }
+    return $plan;
+}
+
+function ids_plan_instructions(array $kinds, array $centres, string $today, array $current): string {
+    $cn = implode('; ', array_map(fn($c) => $c['name'] . ($c['code'] !== '' ? ' (code ' . $c['code'] . ')' : ''), $centres)) ?: '(none)';
+    return "You turn an ID-card print request from a programme coordinator into a JSON plan for the NGG ID Card Studio.\n"
+        . "Today is {$today} (Africa/Lagos). Weeks start on Monday.\n"
+        . "Kinds this person may print: " . implode(', ', $kinds) . " (member = NGG member; summer = Summer School participant; volunteer; afrovanguard).\n"
+        . "Centres: {$cn}. Requests may misspell a centre or a name; use the centre's exact name from the list.\n"
+        . ($current ? "The plan on screen now is: " . json_encode($current, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n"
+            . "If the request adjusts it (\"fronts only\", \"only Ijaiye\", \"add 026-010\", \"not Ada\"), return the WHOLE updated plan with \"refine\": true. If it is a new request, return a new plan with \"refine\": false.\n" : '')
+        . "Fields (include ONLY what the request says or clearly implies; omit everything else):\n"
+        . "kind: one of the kinds above.\n"
+        . "centre: a centre name from the list, or \"none\" for people with no centre.\n"
+        . "which: \"new\" (never had a card), \"reprint\" (replacing a card they have), or \"all\".\n"
+        . "ids: printed card numbers or record ids to print, e.g. \"026-014\", \"EG-26-001\".\n"
+        . "names: people's names to print (only names, as written).\n"
+        . "also: {ids, names} people to add on top of the selection.\n"
+        . "exclude: {ids, names} people to leave out (\"except…\", \"not…\").\n"
+        . "dateFrom, dateTo: YYYY-MM-DD, for when they registered or joined (\"last week\", \"since Monday\", \"in October\").\n"
+        . "numFrom, numTo: integers, for a block of card numbers (\"cards 40 to 80\").\n"
+        . "limit: integer, at most this many cards (\"the first ten\").\n"
+        . "backs: \"off\" (fronts only), \"long\" (double-sided, long edge, the usual), \"short\" (short edge).\n"
+        . "marks: true/false for crop marks.\n"
+        . "paper: \"a4\", \"letter\" or \"a3\".\n"
+        . "dpi: 150, 300 or 600.\n"
+        . "order: \"centre\", \"kind\" or \"name\".\n"
+        . "proof: true for a proof or test print, false to undo one.\n"
+        . "Never invent people, ids, centres or dates that the request does not support.";
+}
+
+/** admin.ids.plan — read a print request (and, for a follow-up, the plan on screen). Selects nothing itself. */
+function admin_ids_plan(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $prompt = trim(preg_replace('/\s+/u', ' ', (string)($p['prompt'] ?? '')));
+    if ($prompt === '') return ['ok' => false, 'error' => 'empty_prompt'];
+    if (mb_strlen($prompt) > IDS_PLAN_PROMPT_MAX) return ['ok' => false, 'error' => 'prompt_too_long', 'message' => 'Keep it under ' . IDS_PLAN_PROMPT_MAX . ' characters.'];
+    $kinds = ids_plan_kinds($g['requester']);
+    $centres = ids_plan_centres($g['requester']);
+    $today = ids_plan_today();
+    // The plan on screen comes from the browser: it is cleaned like anything else before it is used.
+    $current = is_array($p['current'] ?? null) ? ids_plan_clean($p['current'], $kinds, $centres)['plan'] : [];
+    $rules = ids_plan_rules($prompt, $kinds, $centres, $today);
+    $refine = ids_plan_is_refinement($prompt, $current, $rules);
+    $plan = $refine ? ids_plan_refine($current, $rules) : $rules;
+    $notes = []; $by = 'rules'; $provider = ''; $aiError = '';
+    if (ai_enabled('studio') || isset($GLOBALS['__ai_mock'])) {
+        $r = ai_classify(ids_plan_instructions($kinds, $centres, $today, $current), $prompt, 500, 'studio');
+        if (!empty($r['ok']) && is_array($r['data'])) {
+            $c = ids_plan_clean($r['data'], $kinds, $centres);
+            $aiRefine = $current && array_key_exists('refine', $r['data']) ? !empty($r['data']['refine']) : $refine;
+            /* The IDs the rules saw in each clause are kept (a pattern match
+               does not miss "026-014"). */
+            // A follow-up comes back whole (a field it dropped was meant to go); a fresh plan is filled out by the rules.
+            $plan = $aiRefine ? $c['plan'] : $c['plan'] + $rules;
+            foreach (['also', 'exclude'] as $k) if (!empty($rules[$k])) $plan[$k] = ids_plan_union($plan[$k] ?? [], $rules[$k]);
+            if (!$aiRefine && !empty($rules['ids'])) $plan['ids'] = array_values(array_unique(array_merge($c['plan']['ids'] ?? [], $rules['ids'])));
+            $refine = $aiRefine;
+            $notes = $c['notes']; $by = 'ai'; $provider = (string)($r['provider'] ?? '');
+        } else {
+            $aiError = (string)($r['error'] ?? 'ai_failed');
+        }
+    }
+    audit('ids.plan', (string)$g['requester']['memberId'], '', ['by' => $by, 'provider' => $provider, 'refine' => $refine, 'fields' => array_keys($plan)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'plan' => (object)$plan, 'notes' => $notes, 'by' => $by, 'provider' => $provider, 'aiError' => $aiError,
+            'refined' => $refine, 'kinds' => $kinds, 'understood' => count($plan) > 0];
+}
