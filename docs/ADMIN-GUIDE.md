@@ -1159,6 +1159,37 @@ gets a case number, and cannot be edited by the reporter. The **Safeguarding**
 tab is drawn only for people holding that capability; notes and status changes
 sit beside the report, never over it, and every opening of a case is recorded.
 
+**A concern can also start from a conversation note.** On a child's record,
+ticking *This is a concern about the child* on a conversation opens the same
+kind of case for the safeguarding officer, and tells the centre's lead mentors.
+It works at a centre with no lead mentor too: the case is what makes sure
+somebody hears. Marking a note that is already a concern again does not open a
+second case.
+
+**Who reads what.** A mentor opens a child's record only once their
+safeguarding **screening** is recorded (they can still report a concern before
+then). In the portal's *Needs attention* list, a concern's wording is shown to
+the centre's lead mentors and staff, to the mentor who wrote it, and to the
+child's own mentor — not to every mentor at the centre.
+
+**Pairing by hand** (*Members → Mentor*) now behaves like a chosen match: it
+starts the relationship (with its cadence and the first-weeks goal lock), a
+reassignment closes the old relationship and starts a new one, and removing the
+mentor closes it. A child has one mentor at a time.
+
+**Goals in the record** start as a *draft*. Once the mentee has agreed it,
+press *They agreed · start it*; only then is it live. *✓ Done* marks it
+achieved and *Drop* pauses it.
+
+**Automations paused while the new portal is withdrawn.** Control Room →
+Settings → Mentorship automations shows some cards as *Paused in code*: the
+ones whose only result appeared in the Mentor Portal v14 screens that were
+withdrawn (Due now, the Family tab, Saturday planning, scorecards,
+commitments, the Academy). They come back on together if those screens
+return. Pushes that fall in quiet hours (8pm–8am) now wait and go at 8am
+instead of being lost; a child is asked their side of the relationship check
+once per cycle, not every morning.
+
 **Impact** shows six measures against fixed targets — match length (≥ 70%
 reach 12 months), contact (≥ 85% with a one-to-one in 14 days), weekly reviews
 (≥ 90%), relationship quality (≥ 4 of 5), goals completed on time (≥ 60%) and

@@ -125,6 +125,23 @@ async function as(memberId, admin, viewport) {
     await mt.keyboard.press('Escape');
     chk('Escape closes the sheet', !(await mt.isVisible('.mtr-sheet')));
     chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
+    // Goals in the restored record: a draft goes live once the mentee agrees it,
+    // and Done is there to press — it never was while the panel looked for "open".
+    await mt.click('button[aria-label="Open the record for Mariam Yusuf"]');
+    await mt.waitForSelector('[role="tab"]:has-text("Goals (")', { timeout: 20000 });
+    await mt.click('[role="tab"]:has-text("Goals (")');
+    await mt.fill('input[aria-label="The goal"]', 'Present her robot to the centre.');
+    await mt.click('button[type=submit]:has-text("Add")');
+    await mt.waitForSelector('text=draft, not agreed yet', { timeout: 15000 }).catch(async e => { const b = await mt.innerText('body'); console.error('DEBUG sheet:', b.slice(b.indexOf('Goals ('), b.indexOf('Goals (') + 900)); throw e; });
+    chk('a new goal shows as a draft with a way to start it once agreed', await mt.isVisible('button:has-text("They agreed · start it")'));
+    await mt.click('button:has-text("They agreed · start it")');
+    await mt.waitForSelector('button:has-text("✓ Done")', { timeout: 15000 });
+    const gl = q(`db_row("SELECT status, agreed FROM mentor_goals WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`);
+    chk('…starting it records the agreement and makes it active', gl.status === 'active' && Number(gl.agreed) === 1);
+    await mt.click('button:has-text("✓ Done")');
+    await mt.waitForFunction(() => /achieved/.test(document.body.innerText), null, { timeout: 15000 });
+    chk('Done marks it achieved', q(`db_row("SELECT status FROM mentor_goals WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`).status === 'achieved');
+    await mt.keyboard.press('Escape');
     chk('no page errors in the portal', mt.errs.length === 0);
     if (mt.errs.length) console.error(mt.errs.join('\n'));
 
@@ -132,6 +149,7 @@ async function as(memberId, admin, viewport) {
     php(`db_exec("UPDATE mentors SET checkedAt = '' WHERE mentorId = 'MEN-MS-3'"); db_insert('members', ['memberId' => 'NGG-MS-K9', 'fullName' => 'Ife Ola', 'email' => 'ife@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
          db_insert('mentor_assignments', ['memberId' => 'NGG-MS-K9', 'mentorId' => 'MEN-MS-3', 'status' => 'active', 'startedAt' => '2026-01-01']);`);
     chk('an unscreened mentor gets no child’s record from the server', q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-M3'])['mentees']`).length === 0);
+    chk('…nor through the restored portal’s record', q(`backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MS-M3', 'subjectId' => 'NGG-MS-K9'])['error']`) === 'not_screened');
 
     const su = await as('NGG-MS-ADM', true);
 
@@ -168,10 +186,16 @@ async function as(memberId, admin, viewport) {
     await num.fill('21'); await num.press('Enter');
     await au.waitForFunction(() => /applies from the next run/.test(document.body.innerText), null, { timeout: 30000 });
     chk('automations: a number edited in the sentence is saved', q(`mp_opts()['overdueDays']`) === 21);
+    // Birthdays only fed the withdrawn v14 screens: paused in code, with the reason on its card.
     await au.fill('.cr-mpa-search input', 'birthday');
-    await au.click('.cr-mpa-card:has-text("Birthdays") [role=switch]');
-    await au.waitForFunction(() => /Birthdays is paused/.test(document.body.innerText), null, { timeout: 30000 });
-    chk('automations: an automation is paused from its card', q(`mpa_job_on('birthday') ? 1 : 0`) === 0);
+    chk('automations: a job for a withdrawn screen says it is paused in code, and why',
+      await au.isVisible('.cr-mpa-card:has-text("Birthdays") >> text=Paused in code')
+      && /Mentor Portal v14 screens, which are withdrawn/.test(await au.innerText('.cr-mpa-card:has-text("Birthdays")'))
+      && (await au.$$('.cr-mpa-card:has-text("Birthdays") [role=switch]')).length === 0);
+    await au.fill('.cr-mpa-search input', 'review date');
+    await au.click('.cr-mpa-card:has-text("Goal review date") [role=switch]');
+    await au.waitForFunction(() => /Goal review date is paused/.test(document.body.innerText), null, { timeout: 30000 });
+    chk('automations: an automation is paused from its card', q(`mpa_job_on('goalReviewDate') ? 1 : 0`) === 0);
     chk('no page errors on the automation board', au.errs.length === 0);
     if (au.errs.length) console.error(au.errs.join('\n'));
 

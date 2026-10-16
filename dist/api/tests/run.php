@@ -26053,6 +26053,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $SU = 'NGG-2025-0099';
     $T = '2026-10-10';                       // a Saturday
     $now = now_iso();
+    /* The v14 portal is withdrawn, so the jobs that only feed its screens are
+       paused in code, locked or not (MPA_NEEDS_PORTAL). The tests below are
+       how those jobs behave when it is back, so they run with it switched on. */
+    setting_set('mentor_automation', null);
+    chk('jobs: with the v14 portal withdrawn, a job that only feeds its screens is paused — even a locked one',
+        mpa_job_on('familyDraft') === false && mpa_job_on('twiceMonthly') === false && mpa_paused_reason('commitmentsRecalc') !== '');
+    chk('jobs: …while what is still seen keeps running: the child\'s relationship check, safeguarding, the lead\'s queue',
+        mpa_job_on('relCheckDue') && mpa_job_on('concernEscalate') && mpa_job_on('reviewOverdue') && mpa_paused_reason('relCheckDue') === '');
+    setting_set('mentor_automation', ['portalLive' => true]);
     $mk = static function (string $id, string $name, array $x = []) use ($now) {
         db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '', $name)) . '@mp.example', 'type' => 'NGG',
             'status' => 'active', 'role' => 'member', 'centre' => 'Portalville', 'track' => 'tech', 'joinDate' => '2026-01-05', 'dob' => '2012-03-01',
@@ -26278,7 +26287,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('jobs: an admin moves a job\'s time', mpa_job_cron('pickOneToOnes') === '0 17 * * 4');
     chk('jobs: the run log reports per job', (backend_dispatch('admin.mentor.automations.log', ['requesterId' => $SU, 'days' => 3650])['byJob']['overdueOneToOne']['runs'] ?? 0) >= 3);
     chk('jobs: a mentor cannot reach the admin controls', empty(backend_dispatch('admin.mentor.automations.list', ['requesterId' => 'NGG-MP1'])['ok']));
-    setting_set('mentor_automation', null);
+    setting_set('mentor_automation', ['portalLive' => true]);
 
     // The Academy recorded by hand, screening's self-protection, staff need neither.
     chk('clearance: an admin records the Academy as completed in person', !empty(backend_dispatch('admin.ms.mentor.mark', ['requesterId' => $SU, 'mentorId' => 'MEN-MP1', 'what' => 'academy', 'on' => true])['ok'])
@@ -26313,6 +26322,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('summer: the NGG review refuses a participant', (backend_dispatch('member.mentor.summer.review', ['requesterId' => 'NGG-MP1', 'subjectId' => 'NGG-MPK1', 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Strong'])['error'] ?? '') === 'not_a_participant');
     $sc = backend_dispatch('member.mentor.concern.create', ['requesterId' => 'NGG-MPS', 'subjectId' => 'SUM-MP-1', 'category' => 'Injury or harm', 'body' => 'He had a bruise he would not explain.']);
     chk('summer: a concern about a participant reaches the officer\'s queue', !empty($sc['ok']) && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sc['ref']])['subjectName'] === 'Tobi Participant');
+    setting_set('mentor_automation', null);   // portalLive does not outlive these tests
 })();
 
 
@@ -26944,6 +26954,116 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mem('FIX-FAR-1', 'Far Child'); db_exec("UPDATE members SET centre = 'Elsewhere' WHERE memberId = 'FIX-FAR-1'");
     chk('fix · a child outside their scope reads as not found, same as an id that does not exist',
         ($rep('FIXM-A', 'FIX-FAR-1')['error'] ?? '') === 'not_found' && ($rep('FIXM-A', 'FIX-NOBODY')['error'] ?? '') === 'not_found');
+
+    $wipe();
+})();
+
+// ── Mentor Portal functional pass (2026-10-16): jobs, goals, family, API-only ──
+(function () {
+    $C = 'Jobville'; $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_goals' => 'subjectId', 'mentor_reviews' => 'subjectId',
+                  'mentor_messages' => 'subjectId', 'mentor_nudges' => 'memberId', 'notifications' => 'memberId', 'mentor_register' => 'subjectId',
+                  'attendance' => 'studentId', 'journal' => 'memberId', 'guardian_wards' => 'memberId', 'mentor_meetings' => 'subjectId'] as $t => $c) {
+            db_exec("DELETE FROM $t WHERE $c LIKE 'JOB-%'");
+        }
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'JOBT-%'");
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'JOB-%'");
+        db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'JOB-%'");
+        db_exec("DELETE FROM mentor_nudges WHERE mentorId LIKE 'JOBT-%'");
+        setting_set('mentor_automation', null); setting_set('mentor_automation.held', null);
+    };
+    $wipe();
+    $mem = function ($id, $name, $x = []) use ($C, $now) {
+        db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $mem('JOB-M1', 'Jide Mentor');
+    db_insert('mentors', ['mentorId' => 'JOBT-1', 'fullName' => 'Jide Mentor', 'email' => 'job-m1@example.com', 'status' => 'active', 'centre' => $C,
+        'programme' => 'ngg', 'rank' => 'mentor', 'kind' => 'pod', 'memberId' => 'JOB-M1', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    $mem('JOB-K1', "Ọlá O'Neil", ['parentPhone' => '08030000001', 'parentEmail' => 'parent1@example.com', 'dob' => '2012-02-29']);
+    $mem('JOB-K2', 'Ngozi Child', ['parentPhone' => '08030000002']);
+    foreach (['JOB-K1', 'JOB-K2'] as $k) db_insert('mentor_assignments', ['memberId' => $k, 'mentorId' => 'JOBT-1', 'track' => '', 'sessionId' => '', 'status' => 'active', 'startedAt' => '2026-01-01', 'endedAt' => '']);
+    $pushes = fn($who) => (int)db_row('SELECT COUNT(*) c FROM notifications WHERE memberId = ?', [$who])['c'];
+
+    // Quiet hours hold pushes; they go at 8am.
+    $q7 = strtotime('2026-10-14T06:00:00Z');   // 07:00 Lagos
+    $GLOBALS['__mpa_push'] = []; mpa_push('JOB-M1', 'Something to do');
+    $before = $pushes('JOB-M1');
+    chk('jobs fix · a push queued in quiet hours is held, not dropped', mpa_push_flush('reviewReminder', $q7) === 0 && $pushes('JOB-M1') === $before
+        && count((array)setting_get('mentor_automation.held')) === 1);
+    chk('jobs fix · …and it goes once quiet hours are over, once', mpa_push_release(strtotime('2026-10-14T07:05:00Z')) === 1 && $pushes('JOB-M1') === $before + 1
+        && mpa_push_release(strtotime('2026-10-14T07:10:00Z')) === 0);
+
+    // A child is asked their side once per cycle, not every morning.
+    setting_set('mentor_automation', ['portalLive' => true]);
+    $ctx = mpa_context(strtotime('2026-10-14T09:00:00Z'));
+    $ctx['rows']['JOB-K1']['rel']['due'] = true; $ctx['kids'] = ['JOBT-1' => ['JOB-K1']];
+    $GLOBALS['__mpa_push'] = []; mpa_job_relCheckDue($ctx); $first = count($GLOBALS['__mpa_push']['JOB-K1']['lines'] ?? []);
+    $GLOBALS['__mpa_push'] = []; mpa_job_relCheckDue($ctx); $second = count($GLOBALS['__mpa_push']['JOB-K1']['lines'] ?? []);
+    chk('jobs fix · the relationship check asks the child once per cycle, not daily', $first === 1 && $second === 0);
+    $GLOBALS['__mpa_push'] = [];
+
+    // The scorecard lock follows its setting.
+    backend_dispatch('admin.mentor.automations.update', ['requesterId' => 'NGG-2025-0099', 'thresholds' => ['scorecardLockDay' => 15]]);
+    chk('jobs fix · the scorecard lock runs on the day the setting names', explode(' ', mpa_job_cron('scorecardLock'))[2] === '15');
+
+    // A lead nudge with no lead is reported, not filed to nobody.
+    $r = mpa_run('caseloadCheck', strtotime('2026-11-01T06:30:00Z'));
+    chk('jobs fix · with no lead mentor, a lead nudge is not written for nobody',
+        !db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:caseloadCheck' AND mentorId = ''") && str_contains($r['detail'], 'no lead mentor to tell'));
+    chk('jobs fix · the concern escalation is the first job a tick considers', array_key_first(array_merge(['concernEscalate' => 1], MPA_JOBS)) === 'concernEscalate');
+    chk('jobs fix · a 29 February birthday falls on the 28th in a common year',
+        mpa_birthday_today('02-29', '2027-02-28') && !mpa_birthday_today('02-29', '2028-02-28') && mpa_birthday_today('02-29', '2028-02-29'));
+    setting_set('mentor_automation', null);
+
+    // Goals: agreement is the rule; the stalled clock runs from creation.
+    $gid = db_insert('mentor_goals', ['subjectId' => 'JOB-K2', 'subjectType' => 'member', 'goal' => 'Read a book a fortnight', 'status' => 'draft', 'agreed' => 0,
+        'centre' => $C, 'setById' => 'JOB-M1', 'createdAt' => '2026-01-01T00:00:00Z', 'updatedAt' => $now]);
+    chk('goals fix · the old word "open" no longer skips the mentee\'s agreement',
+        (backend_dispatch('member.mentor.goal.status', ['requesterId' => 'JOB-M1', 'subjectId' => 'JOB-K2', 'id' => $gid, 'status' => 'open'])['error'] ?? '') === 'not_agreed');
+    backend_dispatch('member.mentor.goal.save', ['requesterId' => 'JOB-M1', 'subjectId' => 'JOB-K2', 'id' => $gid, 'goal' => 'Read a book a fortnight', 'dueOn' => '', 'agreed' => true]);
+    chk('goals fix · once agreed, it goes live', (backend_dispatch('member.mentor.goal.status', ['requesterId' => 'JOB-M1', 'subjectId' => 'JOB-K2', 'id' => $gid, 'status' => 'active'])['status'] ?? '') === 'active');
+    chk('goals fix · editing a goal does not restart its stalled clock',
+        mentor_goal_stalled(['status' => 'active', 'checks' => [], 'createdAt' => '2026-01-01T00:00:00Z', 'updatedAt' => '2026-10-15T00:00:00Z'], '2026-10-16'));
+
+    // Family: an opt-out is honoured; a failed send is a failure; one escaping.
+    db_insert('guardians', ['guardianId' => 'JOB-G1', 'fullName' => 'Mrs O', 'email' => 'guardian1@example.com', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'JOB-L1', 'guardianId' => 'JOB-G1', 'memberId' => 'JOB-K1', 'status' => 'active', 'notify' => json_encode(['checkin' => true, 'weekly' => true, 'alerts' => true])]);
+    $ch0 = mp_family_channels('JOB-K1', db_row("SELECT * FROM members WHERE memberId = 'JOB-K1'"));
+    chk('family fix · a guardian with an account is now actually reached (the old "updates" preference never existed)',
+        $ch0['optedOut'] === false && $ch0['emails'] === ['guardian1@example.com']);
+    db_exec("UPDATE guardian_wards SET notify = ? WHERE linkId = 'JOB-L1'", [json_encode(['checkin' => false, 'weekly' => false, 'alerts' => false])]);
+    $ch = mp_family_channels('JOB-K1', db_row("SELECT * FROM members WHERE memberId = 'JOB-K1'"));
+    chk('family fix · a guardian who turned updates off is not reached by SMS or by the record\'s email instead',
+        $ch['optedOut'] === true && $ch['phone'] === '' && $ch['emails'] === []);
+    $ch2 = mp_family_channels('JOB-K2', db_row("SELECT * FROM members WHERE memberId = 'JOB-K2'"));
+    chk('family fix · a child with no guardian account still uses the record\'s contacts', $ch2['optedOut'] === false && $ch2['phone'] === '08030000002');
+    $mid = mp_message_put('family:JOB-K1', 'Family update', 'JOB-K1', 'JOB-M1', 'Jide Mentor', 'guardian:JOB-K1', 'Hello');
+    chk('family fix · nothing goes to an opted-out family, and the message is marked failed',
+        mp_family_deliver($mid) === false && db_row('SELECT status FROM mentor_messages WHERE id = ?', [$mid])['status'] === 'failed');
+
+    // API-only: thread ownership, date bounds, review merge, the answer key, the week.
+    $mem('JOB-K9', 'Not Mine');
+    $rp = fn($t, $sub) => backend_dispatch('member.mentor.message.reply', ['requesterId' => 'JOB-M1', 'threadId' => $t, 'subjectId' => $sub, 'body' => 'hi']);
+    chk('api fix · a reply cannot be written into another child\'s chat by naming its thread', ($rp('chat:JOB-K9', '')['error'] ?? '') === 'not_in_caseload'
+        && ($rp('chat:JOB-K9', 'JOB-K1')['error'] ?? '') === 'not_found');
+    chk('api fix · …a reply to my own mentee\'s chat still goes', !empty($rp('chat:JOB-K1', 'JOB-K1')['ok']));
+    chk('api fix · a register cannot be closed for next month or two years ago',
+        (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2030-01-05', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range'
+        && (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2024-01-06', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range');
+    $per = iso_week_period(strtotime(mp_last_saturday(mp_today([])) . 'T12:00:00Z'));
+    db_insert('mentor_reviews', ['subjectId' => 'JOB-K1', 'subjectType' => 'member', 'period' => $per, 'answers' => json_encode(['learned' => 'x', 'proud' => 'Helped a friend']),
+        'answered' => 2, 'concern' => 1, 'mentorId' => 'JOB-M1', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    backend_dispatch('member.mentor.week.review', ['requesterId' => 'JOB-M1', 'subjectId' => 'JOB-K1', 'effort' => 'Steady', 'character' => 'Strong', 'wellbeing' => 'Steady', 'line' => 'Good week']);
+    $rv = db_row('SELECT * FROM mentor_reviews WHERE subjectId = ? AND period = ?', ['JOB-K1', $per]);
+    chk('api fix · the three-rating review keeps the week\'s concern flag and the other answers',
+        (int)$rv['concern'] === 1 && json_decode($rv['answers'], true)['proud'] === 'Helped a friend' && json_decode($rv['answers'], true)['learned'] === 'Good week');
+    $ac = backend_dispatch('member.mentor.academy', ['requesterId' => 'JOB-M1']);
+    $leak = false; foreach ($ac['modules'] ?? [] as $m) foreach ((array)($m['quiz'] ?? []) as $q) if (array_key_exists('answer', $q)) $leak = true;
+    chk('api fix · the Academy quiz goes to the browser without its answer key', !empty($ac['ok']) && !$leak);
+    chk('api fix · on a Wednesday, last Saturday\'s week is the one due',
+        iso_week_period(strtotime(mp_last_saturday('2026-10-14') . 'T12:00:00Z')) === iso_week_period(strtotime('2026-10-10T12:00:00Z')));
 
     $wipe();
 })();

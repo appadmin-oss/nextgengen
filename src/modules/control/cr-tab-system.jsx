@@ -1349,15 +1349,17 @@ function CrMpaCard({ ctx, d, j, busy, act, run, history }) {
     if (!patch) { ctx.toast(msg, null, true); return; }
     NGGApi.admin.mentorAutomations.thresholds(patch).then(r => { ctx.setData(x => Object.assign({}, x, r)); ctx.toast("Saved. It applies from the next run."); }, e => ctx.toast(crMpaErr(e, "Couldn’t save that."), null, true));
   };
-  const state = !j.on ? ["Paused", "neutral"] : failedLast ? ["Last run failed", "bad"] : j.locked ? ["Always on", "ok"] : ["Active", "ok"];
+  const state = j.pausedReason ? ["Paused · screen withdrawn", "neutral"] : !j.on ? ["Paused", "neutral"] : failedLast ? ["Last run failed", "bad"] : j.locked ? ["Always on", "ok"] : ["Active", "ok"];
   const prep = (j.uses || []).indexOf("prepDay") >= 0 ? (d.thresholds || []).find(t => t.key === "prepDay") : null;
   const extra = (j.uses || []).filter(k => !new RegExp("\\{" + k + "\\}").test(j.trigger + j.if + (j.then || []).join(" ")) && k !== "prepDay");
   return <article className={"cr-mpa-card" + (j.on ? "" : " is-off")} aria-labelledby={"mpa-" + j.key}>
     <header className="cr-mpa-head">
       <span className="cr-mpa-title"><b id={"mpa-" + j.key}>{j.label}</b><CrPill tone={state[1]} t={state[0]}/>{j.shows && <span className="cr-mpa-tag">Shows in Due now</span>}</span>
-      {j.locked ? <span className="cr-mpa-lock" title="Protects a child or a record, so it cannot be switched off"><CrIcon n="lock-simple"/>Locked on</span>
+      {j.pausedReason ? <span className="cr-mpa-lock" title={j.pausedReason}><CrIcon n="pause-circle"/>Paused in code</span>
+        : j.locked ? <span className="cr-mpa-lock" title="Protects a child or a record, so it cannot be switched off"><CrIcon n="lock-simple"/>Locked on</span>
         : <CrSwitch on={j.on} label={(j.on ? "Pause " : "Turn on ") + j.label} disabled={!edit || busy === j.key} onChange={v => act(j.key, { on: v }, j.label + (v ? " is on" : " is paused"))}/>}
     </header>
+    {j.pausedReason && <p className="cr-muted cr-mpa-why">{j.pausedReason}</p>}
     <ol className="cr-mpa-flow">
       <li><span className="cr-mpa-k"><CrIcon n={j.cron ? "clock" : "lightning"}/>When</span>
         <span className="cr-mpa-v"><CrMpaSentence text={j.trigger} d={d} editable={edit} onSet={setTh}/>
