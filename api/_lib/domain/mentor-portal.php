@@ -43,6 +43,9 @@ const MP_DEFAULTS = ['overdueDays' => 14, 'stalledDays' => 21, 'familyDays' => 3
                      'supervisionDays' => 45, 'concernHours' => 24];
 const MP_LEVELS = ['Low', 'Steady', 'Strong', 'Exceptional'];
 const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
+/* The Saturday Formation Schedule's mentor duties, ticked per child: 8:00 punctuality
+ * and assignment completion, and the 1:45 mentor check-out. */
+const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
 const MP_SESSION_KINDS = ['One-to-one' => 'one-to-one', 'Pod session' => 'pod', 'Family' => 'family', 'Phone or message' => 'phone', 'Note' => 'note'];
 const MP_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
 const MP_REL_Q = ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'];
@@ -185,7 +188,7 @@ function mp_caseload_ids_read(array $g): array {
         return array_slice(array_values(array_unique(array_map('strval', $ids))), 0, 400);
     }
     // coord / instructor: what the roster lets them see, one centre at a time.
-    $args = ['requesterId' => $g['me'], 'scope' => $role === 'instructor' ? 'mine' : 'centre', 'centre' => (string)($g['wantCentre'] ?? '')];
+    $args = ['requesterId' => $g['me'], 'scope' => $role === 'instructor' ? 'mine' : 'centre', 'centre' => (string)($g['wantCentre'] ?? ''), 'programme' => 'ngg'];
     $r = mentor_roster($args);
     if (!empty($r['ok']) && !empty($r['needsCentre']) && !empty($r['centres'])) $r = mentor_roster(['centre' => (string)$r['centres'][0]] + $args);
     if (empty($r['ok'])) return [];
@@ -202,7 +205,7 @@ function mp_screened(array $g): bool {
 /** The centres a coordinator may switch between, and the one on screen. */
 function mp_centres(array $g): array {
     if (!in_array($g['mpRole'], ['coord', 'instructor'], true)) return ['centre' => (string)($g['mentorRow']['centre'] ?? ''), 'centres' => []];
-    $pick = function_exists('mentor_scope_centres') ? mentor_scope_centres($g) : [];
+    $pick = function_exists('mentor_scope_centres') ? mentor_scope_centres($g + ['onlyProgramme' => 'ngg']) : [];  // the NGG portal offers NGG centres only
     $want = (string)($g['wantCentre'] ?? '');
     return ['centre' => in_array($want, $pick, true) ? $want : (string)($pick[0] ?? ''), 'centres' => array_values($pick)];
 }
@@ -316,6 +319,8 @@ function mp_me(array $g, array $o): array {
         'screened' => mp_screened($g), 'ngg' => ($g['role'] ?? '') !== 'mentor' || !$m || !function_exists('ms_mentor_is_ngg') || ms_mentor_is_ngg($m),
         'officer' => (function () use ($m, $g) { $o = function_exists('sg_officer') ? sg_officer((string)($m['centre'] ?? $g['mentor']['centre'] ?? '')) : null; return $o ? ['name' => (string)$o['fullName']] : null; })(),
         'centres' => mp_centres($g)['centres'], 'centreOnScreen' => mp_centres($g)['centre'],
+        // Which programmes this person may mentor in: /mentor offers the NGG and Summer School portals from it.
+        'programmes' => array_values((array)($g['programmes'] ?? [])), 'gateRole' => (string)($g['role'] ?? ''),
         'policyAcceptedAt' => $m ? (string)(db_row('SELECT acceptedAt FROM mentor_policy WHERE mentorId = ? ORDER BY id DESC LIMIT 1', [(string)$m['mentorId']])['acceptedAt'] ?? '') : '',
         'opts' => $o];
 }
@@ -1202,15 +1207,20 @@ function member_mp_saturday(array $p): array {
     $ids = array_column($ms, 'id');
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        foreach (db_all("SELECT subjectId, here, observed FROM mentor_register WHERE onDate = ? AND subjectId IN ($ph)", array_merge([$date], $ids)) as $r) $reg[$r['subjectId']] = ['here' => (int)$r['here'] === 1, 'observed' => json_decode((string)$r['observed'], true) ?: []];
-        foreach (db_all("SELECT DISTINCT studentId FROM attendance WHERE date = ? AND studentId IN ($ph)", array_merge([$date], $ids)) as $r) if (!isset($reg[$r['studentId']])) $reg[$r['studentId']] = ['here' => true, 'observed' => [], 'gate' => true];
+        foreach (db_all("SELECT subjectId, here, observed, checks FROM mentor_register WHERE onDate = ? AND subjectId IN ($ph)", array_merge([$date], $ids)) as $r) $reg[$r['subjectId']] = ['here' => (int)$r['here'] === 1, 'observed' => json_decode((string)$r['observed'], true) ?: [], 'checks' => json_decode((string)($r['checks'] ?? ''), true) ?: []];
+        /* The gate's check-in time answers "on time" for a child the mentor has not ticked: before 8:01 Lagos. */
+        foreach (db_all("SELECT studentId, MIN(checkInAt) t FROM attendance WHERE date = ? AND studentId IN ($ph) GROUP BY studentId", array_merge([$date], $ids)) as $r) {
+            $at = (string)$r['t']; $early = $at !== '' && gmdate('H:i', strtotime($at) + 3600) <= '08:00';
+            if (!isset($reg[$r['studentId']])) $reg[$r['studentId']] = ['here' => true, 'observed' => [], 'checks' => $early ? ['On time'] : [], 'gate' => true];
+            $reg[$r['studentId']]['arrivedAt'] = $at !== '' ? gmdate('H:i', strtotime($at) + 3600) : '';
+        }
     }
     $period = iso_week_period(strtotime($date . 'T12:00:00Z'));
     $reviews = [];
     if ($ids) foreach (db_all('SELECT subjectId, effort, characterLevel, wellbeing, line FROM mentor_reviews WHERE period = ? AND subjectId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$period], $ids)) as $r) $reviews[$r['subjectId']] = $r;
     return ['ok' => true, 'date' => $date, 'agenda' => $row && $row['agendaJson'] !== '' ? json_decode((string)$row['agendaJson'], true) : MP_AGENDA_DEFAULT,
         'oneToOnes' => $picks, 'sharedAt' => (string)($row['sharedAt'] ?? ''), 'registerClosedAt' => (string)($row['registerClosedAt'] ?? ''),
-        'activities' => MP_ACTIVITIES, 'values' => MP_VALUES, 'levels' => MP_LEVELS,
+        'activities' => MP_ACTIVITIES, 'values' => MP_VALUES, 'checks' => MP_CHECKS, 'levels' => MP_LEVELS,
         'mentees' => array_map(static fn($m) => ['id' => $m['id'], 'name' => $m['name'], 'first' => $m['first'], 'initials' => $m['initials'], 'contactDays' => $m['flags']['contactDays']], $ms),
         'register' => $reg, 'reviews' => $reviews, 'period' => $period];
 }
@@ -1273,8 +1283,10 @@ function member_mp_register(array $p): array {
         if (!in_array($sid, $case, true)) continue;
         $here = !empty($r['here']);
         $obs = $here ? array_values(array_intersect(array_map('strval', (array)($r['observed'] ?? [])), MP_VALUES)) : [];
-        db_upsert('mentor_register', ['onDate' => $date, 'subjectId' => $sid, 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'updatedAt' => $now],
-            ['onDate', 'subjectId'], ['here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'updatedAt' => $now]);
+        // Duties only for a child who is here; anything outside MP_CHECKS is dropped, never stored.
+        $chk = $here ? array_values(array_intersect(array_map('strval', (array)($r['checks'] ?? [])), MP_CHECKS)) : [];
+        db_upsert('mentor_register', ['onDate' => $date, 'subjectId' => $sid, 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'checks' => json_encode($chk), 'updatedAt' => $now],
+            ['onDate', 'subjectId'], ['here' => $here ? 1 : 0, 'observed' => json_encode($obs), 'checks' => json_encode($chk), 'mentorId' => (string)($g['mentorId'] ?: $g['me']), 'updatedAt' => $now]);
         $n++;
     }
     if (!empty($p['close'])) {

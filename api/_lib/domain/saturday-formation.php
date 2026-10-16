@@ -107,6 +107,14 @@ function public_formation(array $p): array {
             'logic' => 'Accountability → Reflection → Inspiration → Identity → Exposure → Competence → Strategy → Service', 'blocks' => sf_for($a)];
 }
 
+/** admin.formation.list — every block with every audience's part, for the editor, and what the reminders sent last Saturday. */
+function admin_formation_list(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (empty($g['ok'])) return $g;
+    $last = (string)(db_row('SELECT MAX(onDate) d FROM saturday_formation_sends')['d'] ?? '');
+    $sent = $last !== '' ? db_all('SELECT slot, channel, COUNT(*) n FROM saturday_formation_sends WHERE onDate = ? GROUP BY slot, channel ORDER BY slot', [$last]) : [];
+    return ['ok' => true, 'blocks' => sf_blocks(), 'audiences' => SF_AUDIENCES, 'settings' => sf_setting(), 'lastSaturday' => $last, 'sent' => $sent];
+}
+
 /** admin.formation.save — edit one block (times, wording, each audience's part). Capability: content. */
 function admin_formation_save(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (empty($g['ok'])) return $g;
@@ -261,8 +269,10 @@ function sf_day_lines(string $mid, string $date, array $blocks): array {
     $in = db_row("SELECT MIN(checkInAt) t FROM attendance WHERE studentId = ? AND date = ?", [$mid, $date]);
     $t = (string)($in['t'] ?? '');
     $lines = [$t !== '' ? 'Checked in at ' . gmdate('g:ia', strtotime($t) + 3600) . '.' : 'Marked here by their mentor.'];
-    $reg = db_row('SELECT observed FROM mentor_register WHERE onDate = ? AND subjectId = ?', [$date, $mid]);
+    $reg = db_row('SELECT observed, checks FROM mentor_register WHERE onDate = ? AND subjectId = ?', [$date, $mid]);
     $obs = $reg ? (json_decode((string)$reg['observed'], true) ?: []) : [];
+    $chk = $reg ? (json_decode((string)($reg['checks'] ?? ''), true) ?: []) : [];
+    if ($chk) $lines[] = 'Accountability: ' . (in_array('On time', $chk, true) ? 'on time' : 'not marked on time') . ', ' . (in_array('Assignment in', $chk, true) ? 'assignment handed in' : 'assignment not handed in') . (in_array('Checked out', $chk, true) ? ', checked out by their mentor.' : '.');
     $mentor = db_row("SELECT t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$mid]);
     $lines[] = 'Musing & mentor breakout' . ($mentor ? ' with ' . (string)$mentor['fullName'] : '') . ($obs ? ': their mentor saw ' . strtolower(implode(', ', $obs)) . '.' : '.');
     $rev = db_row('SELECT line FROM mentor_reviews WHERE subjectId = ? AND period = ?', [$mid, iso_week_period(strtotime($date . 'T12:00:00Z'))]);

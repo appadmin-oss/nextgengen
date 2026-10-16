@@ -15,13 +15,14 @@ function sfClock(h) { const m = sfMin(h), hh = Math.floor(m / 60), mm = m % 60; 
 function FormationDay({ audience, compact, onMore }) {
   const [d, err, load] = useFormation(audience);
   const [open, setOpen] = React.useState(null);
+  const [whole, setWhole] = React.useState(false);
   const [tick, setTick] = React.useState(0);
   React.useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 60000); return () => clearInterval(t); }, []);
   if (err) return <div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>The Saturday schedule couldn’t load.</span><button type="button" onClick={load}>Retry</button></div>;
   if (!d) return <div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading the Saturday schedule</span></div>;
   const n = sfNowMin(); const blocks = d.blocks || [];
   const cur = n.sat ? blocks.findIndex(b => n.min >= sfMin(b.start) && n.min < sfMin(b.end)) : -1;
-  const shown = compact ? (cur >= 0 ? blocks.slice(cur, cur + 2) : blocks.slice(0, 3)) : blocks;
+  const shown = compact && !whole ? (cur >= 0 ? blocks.slice(cur, cur + 2) : blocks.slice(0, 3)) : blocks;
   return <section className="sf-day" aria-labelledby="sf-h">
     <div className="sf-head"><h2 id="sf-h">Saturday formation · {d.hours}</h2><span>{d.theme}</span></div>
     <ol className="sf-list">
@@ -37,7 +38,7 @@ function FormationDay({ audience, compact, onMore }) {
           </div>}
         </li>; })}
     </ol>
-    {!compact && <p className="sf-logic">{d.logic}</p>}
-    {compact && onMore && <button type="button" className="sf-more" onClick={onMore}>The whole Saturday, {blocks.length} blocks<i className="ph ph-caret-right" aria-hidden="true"/></button>}
+    {(!compact || whole) && <p className="sf-logic">{d.logic}</p>}
+    {compact && <button type="button" className="sf-more" aria-expanded={whole ? 'true' : 'false'} onClick={onMore || (() => setWhole(w => !w))}>{whole ? 'Show less' : 'The whole Saturday, ' + blocks.length + ' blocks'}<i className={'ph ' + (onMore ? 'ph-caret-right' : whole ? 'ph-caret-up' : 'ph-caret-down')} aria-hidden="true"/></button>}
   </section>;
 }

@@ -1104,7 +1104,24 @@ the Monday weekly summary, and an alert when a fine is issued.
 ### Mentorship: Anchor Pods
 
 **Control Room → People → Mentorship** (`/control/mentorship`) is HQ's and the
-leads' workspace. Mentors use the **Mentor Portal** at `/mentor`.
+leads' workspace. Mentors use the **Mentor Portal** at `/mentor`, which has one
+address per programme so NGG members and Summer School participants never share a list:
+
+| Address | Who | What |
+|---|---|---|
+| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), My role, Academy |
+| `/mentor/summer` | Summer School mentors; admins | This edition's participants only: stars, notes, reviews, concerns |
+| `/mentor/class` | Instructors; NGG mentors' "Stars & results" | Today's session, stars, skills, curriculum, school results |
+
+`/mentor` sends a person with one portal straight to it and shows a chooser to anyone who
+covers both programmes. A coordinator over several centres switches centre at the top of every screen.
+
+**Saturday Formation Schedule** (Control Room → Learning → Saturday formation, `content`):
+the 8:00–2:00 day, block by block, with what members do, what mentors watch for, what
+instructors deliver, what admin must have ready and what families are told. Every portal
+and the Saturday reminders read this one table; edit a block and they all change. On the
+Saturday register a mentor ticks, per child, the values seen and the duties: On time
+(the gate's arrival time is shown), Assignment in, Checked out.
 
 **A pod** is one mentor and the members matched to them, at one centre: at
 least **five** (the Commitment Policy) and at most **eight**. Every match moves
@@ -1206,7 +1223,7 @@ nightly jobs) still run.
 (**School results** tab), checks the scores and writes a plan for at most three
 subjects, each with a "when and where". It goes to their mentor, who approves it
 or sends it back with a note in the Mentor Portal's **School results** tab
-(`/mentor?tab=results`, where the email links). Approved, it is live; the family
+(`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
 missed are listed there too.
 

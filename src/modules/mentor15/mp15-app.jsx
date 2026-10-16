@@ -178,13 +178,15 @@ class Mp15Portal extends React.Component {
   flushRegister() {
     const ids = Object.keys(this.regDirty || {}); if (!ids.length) return;
     this.regDirty = {};
-    const rows = ids.map(id => ({ subjectId: id, here: this.hereOf(id), observed: this.obsOf(id) }));
+    const rows = ids.map(id => ({ subjectId: id, here: this.hereOf(id), observed: this.obsOf(id), checks: this.chkOf(id) }));
     mp15Api.act('register', { centre: this.state.centre || '', date: this.satLastDate(), rows })
       .catch(e => { ids.forEach(id => { this.regDirty[id] = true; }); this.say(mp15ErrText(e) + ' The register will retry.'); this.timers.reg = setTimeout(() => this.flushRegister(), 8000); });
   }
   satDuring() { return this.state.d.satLast || this.state.d.satNext || null; }
   hereOf(id) { const S = this.state; if (S.here[id] !== undefined) return S.here[id]; const r = (this.satDuring() || {}).register || {}; return !!(r[id] && r[id].here); }
   obsOf(id) { const S = this.state; if (S.obs[id]) return Object.keys(S.obs[id]).filter(v => S.obs[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].observed) || []; }
+  /* The formation duties (On time · Assignment in · Checked out): the mentor's tick, or the gate's arrival time for On time. */
+  chkOf(id) { const S = this.state; if (S.chk && S.chk[id]) return Object.keys(S.chk[id]).filter(v => S.chk[id][v]); const r = (this.satDuring() || {}).register || {}; return (r[id] && r[id].checks) || []; }
   agendaNow() {
     const S = this.state; if (S.agenda) return S.agenda;
     const a = (this.state.d.satNext || {}).agenda || [];
@@ -290,16 +292,16 @@ class Mp15Portal extends React.Component {
     const acMods = ((D.academy || {}).modules) || [];
     const modDone = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']]]]
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
-    const goId = id => id === 'classic' ? this.props.onClassic() : this.go(id);
+    const goId = id => id === 'classic' ? this.props.onClassic() : id === 'hub' ? this.props.onHub() : this.go(id);
     const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
     const areaNav = AREAS.map(a => { const on = a === area; return { l: a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)' : 'none', fw: on ? 600 : 500, b: a.b, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? '#0b0b0c' : '#5a5a60', fw: on ? 600 : 500, bar: on ? '#0b0b0c' : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']];
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     const tabIds = ['week', 'list', 'sat', 'msg'];
     const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
@@ -422,7 +424,9 @@ class Mp15Portal extends React.Component {
       reg: satKidsAll.map(k => { const h = this.hereOf(k.id); const o = this.obsOf(k.id); const VALS = satL.values || ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
         return { name: k.name, hereA: h ? 'true' : 'false', hereL: h ? 'Here' : 'Away', icon: h ? 'ph ph-check' : 'ph ph-minus', line: h ? '#1d6b30' : '#d6d4cc', bg: h ? '#f3faf4' : '#fff', fg: h ? '#1d6b30' : '#6b6b72', away: !h, op: h ? 1 : 0.4,
           toggle: () => { set({ here: { ...this.state.here, [k.id]: !h } }); this.queueRegister(k.id); },
-          vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; }) }; }),
+          vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; })
+            .concat((satL.checks || ['On time', 'Assignment in', 'Checked out']).map(v => { const cs = this.chkOf(k.id); const on = cs.includes(v); const arr = (((satL.register || {})[k.id]) || {}).arrivedAt;
+              return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
       revText: revDoneN + ' of ' + revTotal + ' reviews done · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%',
       reviews: revKids.map(k => { const srv = (satL.reviews || {})[k.id]; const v = S.rv[k.id] || (srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {}); const done = reviewed(k.id); const ok = v.Effort && v.Character && v.Wellbeing; const obs = this.obsOf(k.id);
         return { name: k.name, done, open: !done, seen: obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday', line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }),
@@ -487,6 +491,17 @@ class Mp15Portal extends React.Component {
 
   /* Loading and an honest error, inside <main>, for the screen on display. */
   slot() {
+    const inner = this.slotInner();
+    const cs = this.me().centres || [];
+    if (this.role() !== 'coord' || cs.length < 2) return inner;
+    /* A coordinator over several centres works one at a time; switching re-reads every screen for that centre. */
+    return <>
+      <div className="m15x-slot m15x-centre"><label><span>Centre</span>
+        <select value={this.state.centre || this.me().centreOnScreen || ''} onChange={e => this.setState({ centre: e.target.value, d: { week: this.state.d.week }, sel: {}, here: {}, obs: {}, chk: {}, agenda: null }, () => this.loadAll())}>
+          {cs.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
+      {inner}</>;
+  }
+  slotInner() {
     const S = this.state;
     const need = { week: ['week', 'case'], list: ['case'], goals: ['goals', 'case'], sess: ['sess', 'case'], sat: ['satNext', 'case'].concat(this.satLastDate() !== this.satNextDate() ? ['satLast'] : []),
                    msg: ['msgs'], growth: ['index'], academy: ['academy'], module: ['academy'], role: ['role'], mentors: ['team'], kid: ['kid:' + S.kid], concern: ['case'] }[S.scr] || [];
@@ -500,7 +515,7 @@ class Mp15Portal extends React.Component {
     /* The Saturday Formation Schedule, the mentor's part of each block: the
        next two blocks on This week, the whole day on Saturday. */
     if (S.scr === 'week') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor"/></div>;
+    if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true}/></div>;
     return null;
   }
 
@@ -746,30 +761,75 @@ class Mp15Portal extends React.Component {
   render() { return Mp15View(this.renderVals()); }
 }
 
-/* /mentor: the v15 portal for NGG mentors; the class portal for everyone else
-   and for its own tabs. One request decides, and it is the portal's own first
-   read, handed over so the portal does not ask twice. */
+/* /mentor and its three portals — one address per programme, so nobody (an
+   admin least of all) is ever shown NGG members and Summer School participants
+   in one list:
+     /mentor/ngg     the NGG Mentor Portal (v15): pod, peer, lead, coordinator
+     /mentor/summer  Summer School: participants only (the server narrows it)
+     /mentor/class   the NGG class: instructors' sessions, stars, school results
+   /mentor itself sends a person with one portal straight to it and shows a
+   chooser to anyone with more. Old links (/mentor?tab=results, from the school
+   results email) land on /mentor/class with their tab. */
+const MP15_SUBS = ['ngg', 'summer', 'class'];
+function mp15Sub() { const p = (location.pathname || '').replace(/^\/+|\/+$/g, '').split('/'); return p[0] === 'mentor' && MP15_SUBS.includes(p[1]) ? p[1] : ''; }
+function mp15Portals(r) {
+  const me = (r && r.me) || {}; const progs = me.programmes || []; const out = [];
+  const v15 = ['pod', 'peer', 'lead', 'coord'].includes(me.role) && me.ngg !== false && progs.includes('ngg');
+  if (v15) out.push('ngg');
+  if (progs.includes('summer')) out.push('summer');
+  if (progs.includes('ngg') && (me.role === 'instructor' || me.gateRole === 'admin' || v15)) out.push('class');
+  return { v15, out };
+}
 function MentorHome() {
-  const tabOf = () => { try { return new URLSearchParams(location.search).get('tab') || ''; } catch (_) { return ''; } };
-  const [mode, setMode] = React.useState(() => MP15_CLASSIC_TABS.includes(tabOf()) ? 'classic' : 'probe');
+  const [sub, setSub] = React.useState(() => {
+    const t = (() => { try { return new URLSearchParams(location.search).get('tab') || ''; } catch (_) { return ''; } })();
+    if (!mp15Sub() && MP15_CLASSIC_TABS.includes(t)) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/class' + location.search); } catch (_) {} return 'class'; }
+    return mp15Sub();
+  });
   const [boot, setBoot] = React.useState(null);
-  const [v15, setV15] = React.useState(false);
+  const [state, setState] = React.useState('loading');   // loading | ready | refused
   const auth = (window.useAuth || (() => null))();
   const probe = React.useCallback(() => {
-    mp15Api.view('week', {}).then(r => {
-      const ok = r && r.me && ['pod', 'peer', 'lead', 'coord'].includes(r.me.role) && r.me.ngg !== false;
-      setV15(!!ok); setBoot(r);
-      if (mode === 'probe') setMode(ok ? 'v15' : 'classic');
-    }).catch(() => { setV15(false); if (mode === 'probe') setMode('classic'); });
-  }, [mode]);
-  React.useEffect(() => { probe(); }, []);
-  React.useEffect(() => { if (auth && auth.isSignedIn && !v15) probe(); }, [auth && auth.isSignedIn]);
-  const toClassic = () => { try { history.replaceState(history.state, '', '/mentor?tab=class'); } catch (_) {} setMode('classic'); };
-  const toV15 = () => { try { history.replaceState(history.state, '', '/mentor'); } catch (_) {} setMode('v15'); };
-  if (mode === 'probe') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the mentor portal</span></div>;
-  if (mode === 'v15' && boot) return <Mp15Portal boot={boot} onClassic={toClassic}/>;
-  return <>
-    {v15 && boot && <button type="button" className="m15x-back" onClick={toV15}><i className="ph ph-arrow-left" aria-hidden="true"/>Mentor portal</button>}
-    <MentorPortal/>
-  </>;
+    mp15Api.view('week', {}).then(r => { setBoot(r); setState('ready'); }).catch(() => setState('refused'));
+  }, []);
+  React.useEffect(() => { probe(); }, [probe]);
+  React.useEffect(() => { if (auth && auth.isSignedIn && state === 'refused') probe(); }, [auth && auth.isSignedIn]);
+  React.useEffect(() => { const f = () => setSub(mp15Sub()); window.addEventListener('popstate', f); return () => window.removeEventListener('popstate', f); }, []);
+  const go = to => { try { history.pushState({ page: 'mentor' }, '', '/mentor' + (to ? '/' + to : '')); } catch (_) {} setSub(to); try { window.scrollTo(0, 0); } catch (_) {} };
+  const { v15, out } = mp15Portals(boot);
+  /* With no sub-route: one portal → straight there; several → choose. */
+  React.useEffect(() => {
+    if (state !== 'ready' || sub) return;
+    /* The class tools are inside the NGG portal (Stars & results), so they are
+       not a reason to choose: only covering Summer School as well is. */
+    const main = v15 && !out.includes('summer') ? 'ngg' : out.length === 1 ? out[0] : '';
+    if (main) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/' + main + location.search); } catch (_) {} setSub(main); }
+  }, [state, sub, v15, out.join()]);
+  if (state === 'loading' && sub !== 'summer' && sub !== 'class') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the mentor portal</span></div>;
+  /* Refused (not signed in, not cleared, no centre, not a mentor): the class
+     portal owns those answers and its sign-in doors. */
+  const hubBtn = out.includes('summer') && out.length > 1 && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Mentor portals</button>;
+  if (sub === 'summer') return <>{hubBtn}<MentorPortal key="summer" programme="summer"/></>;
+  if (sub === 'class') return <>{v15 ? <button type="button" className="m15x-back" onClick={() => go('ngg')}><i className="ph ph-arrow-left" aria-hidden="true"/>NGG mentor portal</button> : hubBtn}<MentorPortal key="class" programme="ngg"/></>;
+  if (state === 'refused') return <MentorPortal key="any"/>;
+  if (sub === 'ngg') {
+    if (v15) return <Mp15Portal boot={boot} onClassic={() => go('class')} onHub={out.includes('summer') ? () => go('') : null}/>;
+    return <div className="m15x-hub"><div className="m15x-hub-in"><h1>The NGG mentor portal isn’t yours</h1>
+      <p>It opens for NGG pod, peer and lead mentors and for coordinators.{out.length ? ' These are open to you:' : ' Ask your coordinator if you think that’s wrong.'}</p>
+      <Mp15HubCards out={out} go={go}/></div></div>;
+  }
+  if (!out.length) return <MentorPortal key="any"/>;
+  return <div className="m15x-hub"><div className="m15x-hub-in">
+    <img src="/assets/logo.png" alt="" width="40" height="40"/>
+    <h1>Which portal?</h1>
+    <p>NGG and Summer School are separate programmes, so each has its own portal and its own list of children.</p>
+    <Mp15HubCards out={out} go={go}/>
+  </div></div>;
+}
+function Mp15HubCards({ out, go }) {
+  const C = { ngg: ['ph ph-users-three', 'NGG mentor portal', 'Your NGG mentees, the week, Saturday formation, goals, the Leadership Index, families.', '/mentor/ngg'],
+              summer: ['ph ph-sun', 'Summer School', 'This edition’s participants: stars, notes, weekly reviews, concerns.', '/mentor/summer'],
+              class: ['ph ph-chalkboard', 'NGG class tools', 'Today’s session, stars, skills, curriculum and school results.', '/mentor/class'] };
+  return <ul className="m15x-cards">{out.map(k => <li key={k}><a href={C[k][3]} onClick={e => { e.preventDefault(); go(k); }}>
+    <i className={C[k][0]} aria-hidden="true"/><span><b>{C[k][1]}</b><span>{C[k][2]}</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li>)}</ul>;
 }

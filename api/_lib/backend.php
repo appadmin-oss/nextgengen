@@ -261,6 +261,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.timetable'         => 'public_timetable',
             'public.formation'         => 'public_formation',
             'admin.formation.save'     => 'admin_formation_save',
+            'admin.formation.list'     => 'admin_formation_list',
             'member.myTimetable'       => 'member_my_timetable',
             'member.myTimetable.save'  => 'member_my_timetable_save',
             'public.timetableSave'     => 'public_timetable_save',

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 148;
+const NGG_SCHEMA_TARGET = 149;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4643,6 +4643,9 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_sfs ON saturday_formation_sends(onDate, slot, recipient, channel);
         ",
+        /* 149 — the Saturday register's mentor duties (Saturday Formation
+         * Schedule): on time at 8:00, assignment handed in, checked out at the close. */
+        149 => "ALTER TABLE mentor_register ADD COLUMN checks TEXT DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

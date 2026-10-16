@@ -3669,3 +3669,7 @@ CREATE TABLE IF NOT EXISTS saturday_formation_sends (
   UNIQUE KEY uq_sfs (onDate, slot, recipient, channel)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (148) ON DUPLICATE KEY UPDATE version = version;
+
+-- 149: the Saturday register's mentor duties.
+ALTER TABLE mentor_register ADD COLUMN checks TEXT;
+INSERT INTO schema_version (version) VALUES (149) ON DUPLICATE KEY UPDATE version = version;

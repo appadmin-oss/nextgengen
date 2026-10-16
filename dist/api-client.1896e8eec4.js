@@ -665,7 +665,7 @@
         read: (view, memberId) => request('/member/pod.php' + qs({ view, memberId: memberId || '' })),
         act:  (action, body) => request('/member/pod.php', { body: Object.assign({ action }, body || {}) }),
       },
-      mentorRoster:  (centre, scope) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '' })),
+      mentorRoster:  (centre, scope, programme) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '', programme: programme || '' })),
       // The mentoring record for one child: history, meetings, goals.
       mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
       // Open a record that is not my mentee's, for a week, saying why.
@@ -1146,6 +1146,10 @@
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
+      },
+      formation: {
+        list: () => request('/admin/formation.php'),
+        save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
       },
       timetable: {
         list:   (centreId) => request('/admin/timetable.php' + qs({ centreId: centreId || '' })),

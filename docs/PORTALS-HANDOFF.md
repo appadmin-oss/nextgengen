@@ -3,6 +3,23 @@
 The three portals in the design handoff (Mentor v15, Member v9, Instructor v6),
 built on the APIs that already exist. Newest entry first. Append; never rewrite.
 
+## 2026-10-16 (later) · One address per programme; the Saturday duties; admin editor
+
+- `/mentor/ngg` (v15), `/mentor/summer` (Summer participants only), `/mentor/class` (instructors,
+  stars, school results). `/mentor` routes a one-portal person straight there; an admin or a
+  dual mentor gets a chooser. `mentor_roster` takes `programme` and refuses one you don't cover
+  (`not_this_programme`); an admin's centre list is narrowed to centres running that programme.
+  The NGG portal's caseload asks for `programme=ngg`, so Summer participants never enter it.
+- Coordinators over several NGG centres get a centre switcher in the portal.
+- Saturday register: per child, values seen and the formation duties (On time · Assignment in ·
+  Checked out), migration 149 (`mentor_register.checks`); the gate's arrival time pre-ticks On time.
+  The 2:00 family summary reports them.
+- Control Room → Learning → Saturday formation: edit any block (times, words, each reader's part).
+- The schedule now shows in the member dashboard (member part), the family page (parent part)
+  and the class portal (instructor/mentor part). Summer School keeps its own day.
+- Verified: PHP 4360 · mentor-v15 25 (mentor, admin, member; programmes kept apart; Control Room edit)
+  · mentorship 28 · curriculum-ui 35 · ui-smoke 661 · routes 60 · build 31.
+
 ## 2026-10-16 · Mentor Portal v15 — shipped at /mentor
 
 **Built**

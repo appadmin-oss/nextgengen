@@ -93,6 +93,11 @@ async function as(memberId, admin, viewport) {
       db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-MS-K1'", [gmdate('Y-m-d', time() - 30 * 86400)]);
       db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-MS-K2'", [gmdate('Y-m-d', time() - 10 * 86400)]);
       db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-MS-K1', 'token' => '', 'date' => mp_today(), 'checkInAt' => $now, 'method' => 'qr']);
+      // Summer School: its own centre and a participant, so the two programmes can be seen not to mix.
+      db_insert('centres', ['centreId' => 'C-EGS', 'name' => 'Egbeda (Summer School)', 'code' => 'EGS', 'status' => 'active', 'programmes' => 'summer', 'slug' => 'egbeda-summer', 'createdAt' => $now]);
+      db_insert('centres', ['centreId' => 'C-EGN', 'name' => 'Egbeda', 'code' => 'EGN', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
+      db_insert('centres', ['centreId' => 'C-IKJ', 'name' => 'Ikeja', 'code' => 'IKJ', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'ikeja', 'createdAt' => $now]);
+      db_insert('summer_students', ['studentId' => 'SUM-MP-1', 'cohortId' => '', 'handle' => 'peace', 'fullName' => 'Peace Summer', 'centre' => 'Egbeda (Summer School)', 'track' => 'Music', 'status' => 'active', 'enrolledAt' => $now, 'updatedAt' => $now]);
       echo json_encode(ms_rules_run());`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -100,10 +105,12 @@ async function as(memberId, admin, viewport) {
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
 
-    // ── /mentor as Ngozi, a pod mentor: the v15 portal, on real data ──
+    // ── /mentor as Ngozi, a pod mentor: straight to /mentor/ngg, the v15 portal, on real data ──
     const mt = await as('NGG-MS-M1', false);
     await mt.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
+    await mt.waitForFunction(() => location.pathname === '/mentor/ngg', null, { timeout: 60000 }).catch(() => {});
+    chk('/mentor sends an NGG-only mentor to /mentor/ngg', new URL(mt.url()).pathname === '/mentor/ngg');
     await mt.waitForSelector('.m15-app', { timeout: 60000 }).catch(async e => { console.error('DEBUG', mt.errs.join('\n'), await mt.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = true); return document.body.innerText.slice(0, 2500); })); throw e; });
     await mt.waitForFunction(() => !document.querySelector('.m15x-load'), null, { timeout: 60000 });
     const wk = await mt.innerText('main');
@@ -146,9 +153,21 @@ async function as(memberId, admin, viewport) {
     // Saturday: Before shows the formation day and the 8:30 breakout agenda
     await mt.click('nav >> text=Saturday');
     await mt.waitForFunction(() => /Musing/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
+    await mt.click('main .sf-more');
     const sat = await mt.innerText('main');
     chk('Saturday shows the whole formation day and the 8:30 breakout', /Chess & strategic thinking/.test(sat) && /8:30/.test(sat));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/sat.png' : path.join(TMP, 'sat.png'), fullPage: false });
+    // During: the register's formation duties, saved as tapped
+    await mt.click('main button:has-text("During")');
+    await mt.waitForFunction(() => /Assignment in/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
+    const regRow = mt.locator('main li, main [role=listitem], main div').filter({ hasText: 'Mariam Yusuf' }).filter({ hasText: 'Assignment in' }).last();
+    await regRow.locator('button', { hasText: /^Away$|^Here$/ }).first().click().catch(() => {});
+    await mt.waitForTimeout(300);
+    await regRow.locator('button', { hasText: 'Assignment in' }).first().click();
+    await mt.waitForTimeout(1600);
+    const reg = q(`db_row("SELECT here, checks FROM mentor_register WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`) || {};
+    chk('During: Here and “Assignment in” are on the register', Number(reg.here) === 1 && /Assignment in/.test(reg.checks || ''));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/during.png' : path.join(TMP, 'during.png') });
     // Report a concern: one queue
     await mt.click('button:has-text("Report a concern")');
     await mt.waitForSelector('main textarea', { timeout: 15000 });
@@ -160,12 +179,63 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /SG-\d{6}/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     chk('Report a concern: a safeguarding case with the server’s SG reference', q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-MS-K1'")['c']`) === 1);
     chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
-    // Stars & results still reachable
+    // Stars & results still reachable; the old email link lands on /mentor/class with its tab
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
     await mt.waitForSelector('.m15x-back', { timeout: 60000 });
+    chk('/mentor?tab=results lands on /mentor/class', new URL(mt.url()).pathname === '/mentor/class');
     chk('the class portal (stars, school results) is one press away, with a way back', await mt.isVisible('[role="tab"]:has-text("School results")'));
-    chk('no page errors', mt.errs.length === 0);
+    await mt.goto(BASE + '/mentor/summer', { waitUntil: 'domcontentloaded' });
+    await mt.waitForFunction(() => /no class|isn’t/i.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
+    chk('an NGG-only mentor is refused the Summer School portal', !/Peace Summer/.test(await mt.innerText('body')) && q(`backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MS-M1', 'programme' => 'summer'])['error'] ?? ''`) === 'not_this_programme');
+    chk('no page errors (mentor)', mt.errs.length === 0);
     if (mt.errs.length) console.error(mt.errs.join('\n'));
+
+    // ── An admin covers both programmes: a chooser, and the two never mix ──
+    const ad = await as('NGG-MS-ADM', true);
+    await ad.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
+    await ad.waitForSelector('.m15x-cards', { timeout: 60000 });
+    const hub = await ad.innerText('.m15x-cards');
+    chk('/mentor offers an admin the NGG portal, Summer School and the class tools', /NGG mentor portal/.test(hub) && /Summer School/.test(hub) && /class tools/.test(hub));
+    await ad.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/hub.png' : path.join(TMP, 'hub.png') });
+    await ad.click('.m15x-cards >> text=Summer School');
+    await ad.waitForFunction(() => location.pathname === '/mentor/summer', null, { timeout: 10000 });
+    await ad.waitForFunction(() => /Pick a centre|Peace Summer|participant/.test(document.body.innerText), null, { timeout: 60000 });
+    const pick = await ad.$('select');
+    const opts = pick ? await pick.evaluate(el => Array.from(el.options).map(o => o.value).filter(Boolean)) : [];
+    console.log('DEBUG opts', JSON.stringify(opts));
+    chk('Summer School offers an admin only Summer School centres (one here, so no picker)', opts.every(o => o === 'Egbeda (Summer School)'));
+    if (pick) await pick.selectOption('Egbeda (Summer School)');
+    await ad.waitForFunction(() => /Peace Summer/.test(document.body.innerText), null, { timeout: 60000 });
+    const sumTxt = await ad.innerText('body');
+    chk('/mentor/summer: Summer participants only, never NGG members', /Peace Summer/.test(sumTxt) && !/Mariam Yusuf|Daniel Okafor/.test(sumTxt) && /SUMMER SCHOOL/.test(sumTxt));
+    await ad.goto(BASE + '/mentor/ngg', { waitUntil: 'domcontentloaded' });
+    await ad.waitForSelector('.m15-app', { timeout: 60000 });
+    const cs = await ad.$('.m15x-centre select');
+    chk('a coordinator over two NGG centres gets a centre switcher, NGG centres only', !!cs && JSON.stringify(await cs.evaluate(el => Array.from(el.options).map(o => o.value))) === JSON.stringify(['Egbeda', 'Ikeja']));
+    await ad.click('nav >> text=Mentees');
+    await ad.waitForFunction(() => /Mariam Yusuf/.test(document.querySelector('main').innerText), null, { timeout: 60000 }).catch(async e => { console.error('DEBUG ngg', ad.errs.join('\n'), (await ad.innerText('main')).slice(0, 800), JSON.stringify(q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-ADM'])`)).slice(0, 600)); throw e; });
+    chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
+    // Control Room → Learning → Saturday formation: edit a block, every portal reads it
+    await ad.goto(BASE + '/control/learning/formation', { waitUntil: 'domcontentloaded' });
+    await ad.waitForFunction(() => /Chess & strategic thinking/.test(document.body.innerText), null, { timeout: 60000 });
+    await ad.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/admin-formation.png' : path.join(TMP, 'admin-formation.png') });
+    await ad.click('tr:has-text("Chess & strategic thinking"), [role=row]:has-text("Chess & strategic thinking")');
+    await ad.getByLabel('Key question or line').fill('What do you do after making a bad move?');
+    await ad.click('button:has-text("Save block")');
+    await ad.waitForFunction(() => /Every portal shows the new/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('Control Room: saving a block changes the schedule every portal reads', q(`public_formation(['audience' => 'mentor'])['blocks'][7]['quote']`) === 'What do you do after making a bad move?');
+    chk('…and a member without the content capability cannot', !q(`admin_formation_save(['requesterId' => 'NGG-MS-K1', 'key' => 'chess', 'quote' => 'x'])['ok'] ?? false`));
+    chk('no page errors (admin)', ad.errs.length === 0);
+    if (ad.errs.length) console.error(ad.errs.join('\n'));
+
+    // ── A member: their dashboard carries their part of the Saturday ──
+    const me = await as('NGG-MS-K1', false);
+    await me.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(me);
+    await me.waitForSelector('.sf-day', { timeout: 60000 }).catch(() => {});
+    chk('member dashboard: the Saturday schedule, the member’s part', await me.isVisible('.sf-day') && /Saturday formation/.test(await me.innerText('.sf-day')));
+    chk('the family message for each block is a sentence, never the mentor’s notes', typeof q(`public_formation(['audience' => 'parent'])['blocks'][1]['part']`) === 'string');
   } catch (e) {
     failed++;
     console.error('  ✗ FAIL: ' + (e && e.stack || e));
