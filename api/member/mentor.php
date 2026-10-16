@@ -166,6 +166,10 @@ if ($method === 'GET') {
             'dueOn'       => $b['dueOn'] ?? '',
             'ip'          => client_ip(),
         ] + array_intersect_key($b, array_flip(['outcome', 'obstacle', 'plan', 'area', 'reviewBy', 'agreed'])));
+    } elseif ((string)($b['action'] ?? '') === 'cover') {
+        // Open a record I am not paired to, with a reason the child's mentor and lead will see.
+        $res = gs_call('member.mentor.record.cover', ['requesterId' => $s['mid'], 'subjectId' => (string)($b['subjectId'] ?? ''),
+                                                      'reason' => (string)($b['reason'] ?? ''), 'ip' => client_ip()]);
     } elseif ((string)($b['action'] ?? '') === 'goalStatus') {
         $res = gs_call('member.mentor.goal.status', [
             'requesterId' => $s['mid'],

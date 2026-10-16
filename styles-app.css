@@ -9585,3 +9585,22 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .mtr-chip.is-on { background: rgba(255,206,84,.18); border-color: #ffce54; color: #ffce54; font-weight: 700; }
 .mtr-err { margin: 4px 0; color: #ffb4a8; font-size: 14px; }
 .mtr-sent p { margin: 0 0 8px; }
+
+/* ── Mentor Portal · cover: opening a record that is not my mentee's ────── */
+.mtr-cover { display: grid; gap: 10px; padding: 16px; margin: 0 0 16px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,206,84,.45); }
+.mtr-cover-h { margin: 0; font-size: 16px; font-weight: 800; color: #fff; }
+.mtr-cover-p { margin: 0; font-size: 14px; line-height: 1.55; color: rgba(230,238,255,.82); }
+.mtr-cover-l { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: rgba(230,238,255,.72); }
+.mtr-cover-in { width: 100%; box-sizing: border-box; padding: 11px 13px; border-radius: 11px; font: inherit; font-size: 16px; min-height: 44px; resize: vertical;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.2); color: #eef2fb; }
+.mtr-cover-go { justify-self: start; min-height: 44px; padding: 0 20px; border-radius: 11px; border: 0; background: #ffce54; color: #2b2100; font-weight: 800; cursor: pointer; }
+.mtr-cover-go:disabled { opacity: .55; cursor: not-allowed; }
+.mtr-cover-go:focus-visible, .mtr-cover-in:focus-visible, .mtr-cover-who:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.mtr-cover-note { margin: 0 0 14px; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; background: rgba(255,206,84,.12); border: 1px solid rgba(255,206,84,.4); color: #ffe6a8; }
+.mtr-cover-withheld { margin: 0 0 6px; font-size: 13.5px; line-height: 1.5; color: #ffd2b0; font-style: italic; }
+.mtr-att-h { font-size: 13px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: rgba(230,238,255,.72); margin: 0 0 10px; }
+.mtr-cover-list { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 8px; }
+.mtr-cover-row { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
+.mtr-cover-who { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-weight: 800; font-size: 15px; color: #fff; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.mtr-cover-meta { font-size: 12px; color: rgba(230,238,255,.72); font-variant-numeric: tabular-nums; }
+.mtr-cover-why { font-size: 14px; color: #eef2fb; }

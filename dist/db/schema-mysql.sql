@@ -3645,3 +3645,13 @@ INSERT INTO schema_version (version) VALUES (145) ON DUPLICATE KEY UPDATE versio
 -- 146 · one active mentor per child. Data only: the UPDATE is in
 -- NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
 INSERT INTO schema_version (version) VALUES (146) ON DUPLICATE KEY UPDATE version = version;
+
+-- 147 · cover: a mentor opening another mentor's mentee's record, with a reason
+CREATE TABLE IF NOT EXISTS mentor_record_cover (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mentorMemberId VARCHAR(64) NOT NULL, mentorName VARCHAR(190) DEFAULT '',
+  subjectId VARCHAR(64) NOT NULL, centre VARCHAR(120) DEFAULT '', reason TEXT NOT NULL,
+  grantedAt VARCHAR(40) NOT NULL, expiresAt VARCHAR(40) NOT NULL, endedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mrc_mentor (mentorMemberId, subjectId, expiresAt), INDEX idx_mrc_centre (centre, grantedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (147) ON DUPLICATE KEY UPDATE version = version;

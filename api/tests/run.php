@@ -9454,11 +9454,15 @@ chk('a member can read their own courage record', (function () {
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-COURAGE', 'fullName' => 'Nia NGG-Mentor', 'email' => 'couragementor@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
+    // Her mentee: a courage mark is a record, and records are the caseload's.
+    db_insert('mentor_assignments', ['memberId' => 'NGG-2025-0510', 'mentorId' => 'MEN-COURAGE', 'track' => '', 'sessionId' => '', 'status' => 'active', 'startedAt' => now_iso(), 'endedAt' => '']);
     $mk = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0511',
         'subjectId' => 'NGG-2025-0510', 'score' => 4,
         'evidence' => 'Apologised to the group without being prompted.']);
     if (empty($mk['ok'])) return false;
     $r = backend_dispatch('member.courage', ['memberId' => 'NGG-2025-0510']);
+    // The pairing was only for the mark; later jobs count every paired mentee.
+    db_exec("DELETE FROM mentor_assignments WHERE memberId = 'NGG-2025-0510' AND mentorId = 'MEN-COURAGE'");
     return !empty($r['ok']) && (int)$r['courage']['inWindow'] === 1
         && count($r['ladder']) === 5 && $r['courage']['marks'][0]['score'] === 4
         && $r['courage']['marks'][0]['markedByName'] === 'Nia NGG-Mentor';
@@ -20207,6 +20211,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     /* Only the author may edit. A lead rewriting another mentor's account of a
        conversation they were not in is not oversight — it is the record losing
        its author. A lead who disagrees writes their own entry, and both stand. */
+    /* Ada is not Segun's mentee, so her record is closed to him until he takes
+       cover — and even then, authorship holds: covering is reading and adding,
+       never rewriting another mentor's account. */
+    chk('caseload first: a mentor who is not the child\'s cannot open the record without cover',
+        (backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-2', 'subjectId' => 'NGG-KID-1'])['error'] ?? '') === 'not_your_mentee');
+    backend_dispatch('member.mentor.record.cover', ['requesterId' => 'NGG-MENT-2', 'subjectId' => 'NGG-KID-1', 'reason' => 'Covering Nkechi on Saturday']);
     chk('another mentor cannot rewrite an account of a conversation they were not in',
         backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-2', 'subjectId' => 'NGG-KID-1',
             'id' => (int)$m1['id'], 'discussed' => 'Nothing happened.'])['error'] === 'not_yours');
@@ -20224,7 +20234,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     /* A concern is RAISED, not merely stored. A flag nobody is told about is a
        flag nobody sees. */
-    db_exec("DELETE FROM notifications WHERE memberId = 'NGG-LEAD-1'");
+    // Clear what came before (Segun's cover told Nkechi), so the counts below are about this concern.
+    db_exec("DELETE FROM notifications WHERE memberId IN ('NGG-LEAD-1', 'NGG-MENT-1')");
     $m2 = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
         'kind' => 'guardian', 'discussed' => 'Guardian says she has not been sleeping.', 'concern' => true]);
     chk('a concern reaches the lead mentor at that centre',
@@ -26926,6 +26937,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         }
         db_exec("DELETE FROM members WHERE memberId LIKE 'FIXM-%'");
         db_exec("DELETE FROM mentors WHERE mentorId LIKE 'FIXT-%'");
+        db_exec("DELETE FROM mentor_record_cover WHERE subjectId LIKE 'FIX-%'");
     };
     $wipe();
     $mem = function ($id, $name, $role = 'member') use ($C, $now) {
@@ -26947,8 +26959,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         (backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1'])['error'] ?? '') === 'not_screened');
     chk('fix · …nor write a meeting about them',
         (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1', 'discussed' => 'Anything'])['error'] ?? '') === 'not_screened');
-    chk('fix · a screened mentor at the centre still can',
+    db_insert('mentor_assignments', ['memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-A', 'track' => '', 'sessionId' => 'T', 'status' => 'active', 'startedAt' => '2026-01-01', 'endedAt' => '']);
+    chk('fix · a screened mentor opens their own mentee\'s record',
         !empty(backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-1'])['ok']));
+    db_exec("DELETE FROM mentor_assignments WHERE memberId = 'FIX-KID-1'");
 
     // 5. Admin pairing keeps the match in step, and one mentor per child.
     db_insert('mentor_assignments', ['memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B', 'track' => '', 'sessionId' => 'OLD-TERM', 'status' => 'active', 'startedAt' => '2025-01-01', 'endedAt' => '']);
@@ -26996,6 +27010,36 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('fix · an unscreened mentor sees no concerns at all', $att('FIXM-U') === []);
     $ment('FIXT-L', 'FIXM-L', 'Lola Lead', true, 'lead');
     chk('fix · a lead mentor at the centre does', in_array('FIX-KID-2', $att('FIXM-L'), true));
+
+    // Cover: caseload first, and another mentor opens a record accountably.
+    db_exec("DELETE FROM notifications WHERE memberId IN ('FIXM-A','FIXM-L')");
+    $open = fn($who, $kid) => backend_dispatch('member.mentor.child', ['requesterId' => $who, 'subjectId' => $kid]);
+    $cov = fn($who, $kid, $why) => backend_dispatch('member.mentor.record.cover', ['requesterId' => $who, 'subjectId' => $kid, 'reason' => $why]);
+    chk('cover · a mentor who is not the child\'s is told so, and offered cover', ($open('FIXM-B', 'FIX-KID-2')['error'] ?? '') === 'not_your_mentee'
+        && !empty($open('FIXM-B', 'FIX-KID-2')['canCover']));
+    chk('cover · it needs a reason', ($cov('FIXM-B', 'FIX-KID-2', 'because')['error'] ?? '') === 'say_why');
+    chk('cover · an unscreened mentor cannot take cover', ($cov('FIXM-U', 'FIX-KID-2', 'Covering Ada this Saturday')['error'] ?? '') === 'not_screened');
+    $c1 = $cov('FIXM-B', 'FIX-KID-2', 'Covering Ada this Saturday');
+    $rec = $open('FIXM-B', 'FIX-KID-2');
+    chk('cover · with a reason the record opens at once, for a week, and says it is cover',
+        !empty($c1['ok']) && !empty($rec['ok']) && ($rec['access']['via'] ?? '') === 'cover' && strtotime($c1['expiresAt']) - time() > 6 * 86400);
+    chk('cover · the child\'s own mentor and the centre lead are told, with the reason',
+        (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'FIXM-A' AND body LIKE '%Covering Ada this Saturday%'")
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'FIXM-L' AND body LIKE '%Covering Ada this Saturday%'"));
+    $withheld = array_values(array_filter($rec['meetings'], fn($m) => $m['concern']));
+    chk('cover · a concern shows that it exists, not what it says',
+        $withheld && !array_filter($withheld, fn($m) => $m['discussed'] !== '' || empty($m['withheld'])));
+    chk('cover · …while the child\'s own mentor still reads it in full',
+        (bool)array_filter($open('FIXM-A', 'FIX-KID-2')['meetings'], fn($m) => $m['concern'] && str_contains($m['discussed'], 'hits her')));
+    chk('cover · asking again while it is open changes nothing', !empty($cov('FIXM-B', 'FIX-KID-2', 'Covering Ada this Saturday')['unchanged']));
+    $leadCovers = backend_dispatch('member.mentor.attention', ['requesterId' => 'FIXM-L'])['covers'] ?? [];
+    chk('cover · the lead sees who opened whose record, and why', (bool)array_filter($leadCovers, fn($c) => $c['subjectId'] === 'FIX-KID-2' && $c['reason'] === 'Covering Ada this Saturday'));
+    chk('cover · a mentor does not see the list of covers', (backend_dispatch('member.mentor.attention', ['requesterId' => 'FIXM-B'])['covers'] ?? []) === []);
+    for ($i = 1; $i <= 4; $i++) { $mem("FIX-CAP-$i", "Cap Child $i"); $cov('FIXM-B', "FIX-CAP-$i", 'Covering the whole pod today'); }
+    $mem('FIX-CAP-5', 'Cap Child 5');
+    chk('cover · at most five open at once — cover is for helping, not browsing', ($cov('FIXM-B', 'FIX-CAP-5', 'Covering the whole pod today')['error'] ?? '') === 'cover_limit');
+    db_exec("UPDATE mentor_record_cover SET expiresAt = '2020-01-01T00:00:00Z' WHERE mentorMemberId = 'FIXM-B' AND subjectId = 'FIX-KID-2'");
+    chk('cover · when the week is up, the record closes again', ($open('FIXM-B', 'FIX-KID-2')['error'] ?? '') === 'not_your_mentee');
 
     // 4. Report a concern: mentors and staff, about children in their scope.
     $rep = fn($who, $kid) => backend_dispatch('member.mentor.concern.create', ['requesterId' => $who, 'subjectId' => $kid,

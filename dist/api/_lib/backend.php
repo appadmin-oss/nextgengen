@@ -90,6 +90,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.family.send'    => 'member_mp_family_send',
             'member.mentor.family.drafts'  => 'member_mp_family_drafts',
             'member.mentor.concern.create' => 'member_mp_concern',
+            'member.mentor.record.cover'   => 'mentoring_cover',
             'member.mentor.commitments'    => 'member_mp_role',
             'member.mentor.supervision.prep' => 'member_mp_supervision_prep',
             'member.mentor.supervision.book' => 'member_mp_supervision_book',
