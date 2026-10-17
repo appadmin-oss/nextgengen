@@ -6877,7 +6877,7 @@ function MentorConcernSheet({ students, onClose }) {
 /* `programme` (ngg | summer) is which programme this portal is for: /mentor/summer
    shows Summer School participants only, /mentor/class the NGG class (instructors,
    stars and school results). The server narrows the roster; nothing here filters. */
-function MentorPortal({ programme, embedded } = {}) {
+function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
@@ -6888,7 +6888,9 @@ function MentorPortal({ programme, embedded } = {}) {
   const [bulkOpen, setBulkOpen] = React.useState(false);
   /* Which centre's class is on screen. Only ever set by someone who covers
      more than one — a mentor at a single centre never sees the control. */
-  const [centre, setCentre] = React.useState("");
+  /* Embedded in the NGG mentor portal it opens on the centre that portal has
+     on screen, rather than asking a coordinator to pick it a second time. */
+  const [centre, setCentre] = React.useState(embedded && centreIn ? centreIn : "");
   /* ?tab=results is where the "sent their results and plan" email lands. */
   const [tabState, setTabState] = React.useState(() => { try { return new URLSearchParams(location.search).get("tab") || ""; } catch (_) { return ""; } });
   /* "" lets the SERVER decide: my mentees if I have any, the centre otherwise.

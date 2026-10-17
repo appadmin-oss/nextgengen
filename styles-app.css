@@ -9847,6 +9847,9 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m15-9083d83{height:40px;padding:0 14px;border-radius:12px;border:var(--dc-border, unset);background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .m15-b6860b8{display:flex;gap:20px;border-bottom:1px solid #e8e5dd;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
 .m15-d58d0a3{height:44px;padding:0;border:0;border-bottom:var(--dc-border-bottom, unset);margin-bottom:-1px;background:none;font-size:14.5px;font-weight:var(--dc-font-weight, unset);color:var(--dc-color, unset);cursor:pointer;white-space:nowrap}
+.m15-7079e24{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:20px 16px}
+.m15-60e0bb7{font-size:14px;color:#4a4a50;line-height:1.5}
+.m15-7749057{height:44px;padding:0 16px;border:0;border-radius:12px;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .m15-2ce9cf4{display:flex;gap:12px;padding:12px 16px;border-top:1px solid #f0efea}
 .m15-1c151a7{font-size:18px;color:var(--dc-color, unset);margin-top:1px}
 .m15-524ae6b{flex:1;display:flex;flex-direction:column;gap:2px}
@@ -9889,7 +9892,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m15-c7dc9f5{align-self:flex-start;height:44px;padding:0 18px;border:0;border-radius:12px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:14px;font-weight:600;cursor:pointer}
 .m15-8fcaf62{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:24px 16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
 .m15-c0a911d{font-size:15.5px;font-weight:600}
-.m15-60e0bb7{font-size:14px;color:#4a4a50;line-height:1.5}
 .m15-5eb21fb{height:44px;padding:0 18px;border:0;border-radius:12px;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .m15-261ff9c{background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden;max-width:860px}
 .m15-d9f0d8c{display:flex;align-items:flex-end;gap:16px;padding:16px;flex-wrap:wrap;border-bottom:1px solid #f0efea}
@@ -10189,7 +10191,13 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
    compiled design (m15-*), which these sit inside. ─────────────────────── */
 /* No container on <main>: containment would make it the containing block of
    the class tools' fixed sheets and bars. The slot pads by main's width instead. */
-.m15x-slot { padding: 32px clamp(16px, 4%, 40px) 0; }
+.m15x-slot { box-sizing: border-box; max-width: 1120px; margin: 0 auto; padding: 32px clamp(16px, 4%, 40px) 0; }
+/* The slot after a screen's content sits inside the column the design draws
+   (1120 wide, 40px gutters), 20px under the last card: it cancels all but 20px
+   of the column's bottom padding (56px wide, 28px narrow) and carries it itself. */
+.m15x-end { margin-top: -36px; padding: 0 40px 56px; }
+.m15x-end.is-narrow { margin-top: -8px; padding: 0 16px 28px; }
+.m15x-end .sf-day { margin-bottom: 0; }
 .m15x-slot > :last-child { margin-bottom: 0; }
 /* The class tools inside the NGG mentor portal: the class page's own navy surface, as a panel. */
 .m15x-classic { background: #16223e; color: #eef2fb; border-radius: 18px; padding: 22px 18px 28px; font-family: var(--font-body, system-ui, sans-serif); margin-bottom: 32px; }

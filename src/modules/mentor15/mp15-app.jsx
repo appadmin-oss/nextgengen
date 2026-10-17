@@ -112,7 +112,7 @@ class Mp15Portal extends React.Component {
     this.load('week', 'week'); this.load('case', 'caseload'); this.load('goals', 'goals'); this.load('sess', 'sessions');
     this.load('satNext', 'saturday', { date: this.satNextDate() });
     if (this.satLastDate() !== this.satNextDate()) this.load('satLast', 'saturday', { date: this.satLastDate() });
-    this.load('msgs', 'messages'); this.load('index', 'index'); this.load('role', 'commitments'); this.load('academy', 'academy');
+    this.load('msgs', 'messages'); this.load('index', 'index'); this.load('role', 'commitments'); if (this.me().mentorId) this.load('academy', 'academy');
     if (this.isLead()) this.load('team', 'team');
   }
   loadKid(id) { if (id) return this.load('kid:' + id, 'mentee', { subjectId: id }); }
@@ -164,7 +164,7 @@ class Mp15Portal extends React.Component {
     return (this._k = c.mentees.map(r => ({
       id: r.id, first: r.first, name: r.name, ini: r.initials, age: r.age, school: r.school || '', phase: r.phase || 'Grow', week: r.week,
       contact: r.flags ? r.flags.contactDays : null, wb: r.wellbeing || 'Okay', relM: r.rel ? r.rel.mentor : null, relC: r.rel ? r.rel.child : null,
-      relDue: !!(r.rel && r.rel.due), mentor: r.mentorName || '', guardian: r.guardianName || 'their family', flags: r.flags || {}, urgency: r.urgency || 0,
+      relDue: !!(r.rel && r.rel.due), mentor: r.mentorName || '', guardian: r.guardianName || '', flags: r.flags || {}, urgency: r.urgency || 0,
       ag: r.activeGoal, famDays: r.lastFamilyUpdateAt ? mp15Days(r.lastFamilyUpdateAt, today) : null, pills: r.pills || [],
     })));
   }
@@ -265,7 +265,7 @@ class Mp15Portal extends React.Component {
       (ix.skills || []).forEach(s => line(s.skill + ': ' + (s.avg === null ? '—' : s.avg.toFixed(1)) + (s.change !== null && s.change !== undefined ? '  (' + (s.change >= 0 ? '+' : '') + s.change.toFixed(1) + ')' : ''), 10));
       rule(); line('The last 8 Saturdays', 12.5, true); series(((ix.outcomes || {}).items) || []);
       rule(); line('By mentee, lowest total first', 12.5, true);
-      (ix.byMentee || []).forEach(b => line(b.name + ': ' + b.total + (b.prevTotal !== null && b.prevTotal !== undefined ? ' (' + (b.total - b.prevTotal >= 0 ? '+' : '') + (b.total - b.prevTotal) + ')' : '') + ' · lowest: ' + b.lowSkill, 10));
+      (ix.byMentee || []).filter(b => b.total !== null && b.total !== undefined).forEach(b => line(b.name + ': ' + b.total + (b.prevTotal !== null && b.prevTotal !== undefined ? ' (' + (b.total - b.prevTotal >= 0 ? '+' : '') + (b.total - b.prevTotal) + ')' : '') + ' · lowest: ' + b.lowSkill, 10));
       doc.save('NGG-pod-report-' + today + '.pdf');
       this.say('Pod report saved as a PDF');
     } catch (e) { this.say('Couldn’t build the PDF. Check your connection and try again.'); }
@@ -298,7 +298,8 @@ class Mp15Portal extends React.Component {
     const acMods = ((D.academy || {}).modules) || [];
     const modDone = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+    /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ...(me.mentorId ? [['academy', 'Academy']] : []), ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -307,12 +308,12 @@ class Mp15Portal extends React.Component {
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? '#0b0b0c' : '#5a5a60', fw: on ? 600 : 500, bar: on ? '#0b0b0c' : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     const tabIds = ['week', 'list', 'sat', 'msg'];
     const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
 
-    const ck0 = all.find(k => k.id === S.kid) || all[0] || { id: '', first: '', name: '', ini: '', age: null, school: '', phase: '', contact: null, wb: 'Okay', relM: null, relC: null, relDue: false, guardian: 'their family', flags: {}, famDays: null };
+    const ck0 = all.find(k => k.id === S.kid) || all[0] || { id: '', first: '', name: '', ini: '', age: null, school: '', phase: '', contact: null, wb: 'Okay', relM: null, relC: null, relDue: false, guardian: '', flags: {}, famDays: null };
     const kd = D['kid:' + ck0.id] || null;
     const q = S.q.trim().toLowerCase();
     let kids = all.filter(k => (S.filter === 'all' || (B[S.filter] && B[S.filter](k))) && (!q || (k.name + ' ' + k.school).toLowerCase().includes(q)));
@@ -324,9 +325,11 @@ class Mp15Portal extends React.Component {
     const due = (wk.due || []).map(x => { const t = MP15_TONE[x.tone] || MP15_TONE.neu; return { icon: 'ph ph-' + x.icon, bg: t[0], fg: t[1], t: x.title, s: x.sub, go: () => this.goDue(x.go) }; });
 
     const firstMe = mp15First(me.name);
-    const PT = { saw: ['Something I saw', 'Good afternoon ' + ck0.guardian + '. On Saturday I saw ' + ck0.first + ' [what you saw]. What have you noticed at home this month? – ' + firstMe],
-                 plan: ['Their growth plan', 'Good afternoon ' + ck0.guardian + '. ' + ck0.first + ' and I agreed a plan' + (ck0.ag ? ': ' + ck0.ag.title : '') + '. You can help by asking how it went after school. – ' + firstMe],
-                 meet: ['Ask to meet', 'Good afternoon ' + ck0.guardian + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck0.first + ' is growing? – ' + firstMe] };
+    /* No guardian on record: greet without a name, never "Good afternoon their family". */
+    const hello = 'Good afternoon' + (ck0.guardian ? ' ' + ck0.guardian : '');
+    const PT = { saw: ['Something I saw', hello + '. On Saturday I saw ' + ck0.first + ' [what you saw]. What have you noticed at home this month? – ' + firstMe],
+                 plan: ['Their growth plan', hello + '. ' + ck0.first + ' and I agreed a plan' + (ck0.ag ? ': ' + ck0.ag.title : '') + '. You can help by asking how it went after school. – ' + firstMe],
+                 meet: ['Ask to meet', hello + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck0.first + ' is growing? – ' + firstMe] };
     const draft = kd && kd.familyDraft;
     const pBody = S.pBody != null ? S.pBody : (draft && S.pTpl === 'saw' ? draft.body : PT[S.pTpl][1]);
 
@@ -382,7 +385,7 @@ class Mp15Portal extends React.Component {
       /* The class tools (stars, V3, notes, curriculum, school results and growth
          plans) are this portal's own screen, under its title and tabs: the same
          component /mentor/class has always run, as a panel, on the centre on screen. */
-      mainSlotEnd: S.scr === 'classic' ? <div className="m15x-slot"><MentorPortal key={'class:' + (S.centre || '')} programme="ngg" embedded={true}/></div> : null, roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+      mainSlotEnd: this.slotEnd(narrow), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
       areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
@@ -400,19 +403,22 @@ class Mp15Portal extends React.Component {
       bulk: [['Add to Saturday one-to-ones', 'ph ph-calendar-plus', () => this.act('oneToOnesAdd', { subjectIds: selIds }, r => (r.added || 0) + ' added to ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + '’s one-to-ones').then(r => { if (r) { set({ sel: {} }); this.refresh(['sat']); } }), false],
              ['Family update', 'ph ph-house-line', () => this.act('familyDrafts', { subjectIds: selIds }, r => 'Drafts ready for ' + r.drafted + ' families. Review each before sending.').then(r => { if (r) set({ sel: {} }); }), isPeer],
              ['Add a note', 'ph ph-note-pencil', () => this.bulkNote(selIds), false]].map(([l, icon, go, off]) => ({ l, icon, go: off ? () => this.say('Your lead mentor contacts families') : go, off, why: off ? 'Your lead mentor contacts families' : '', op: off ? 0.4 : 1 })),
-      wideCols, cols: wideCols ? '40px minmax(220px, 1.6fr) 130px 110px minmax(110px, 1fr) minmax(150px, auto)' : '40px minmax(0, 1fr) auto',
+      wideCols, cols: wideCols ? '40px minmax(200px, 1.5fr) 120px 110px minmax(110px, 1fr) 250px' : '40px minmax(0, 1fr) minmax(0, max-content)',
       kids: kids.map(k => { const on = !!S.sel[k.id]; return { ...k, sub: [k.age !== null && k.age !== undefined ? 'Age ' + k.age : '', k.phase, isLead ? (k.mentor || 'No mentor') : k.school].filter(Boolean).join(' · '), contact: mp15Ago(k.contact), cFg: B.contact(k) ? '#7a5600' : '#4a4a50', cFw: B.contact(k) ? 600 : 400,
-        rel: (k.relC === null ? '–' : k.relC) + ' · ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
+        rel: k.relC === null && k.relM === null ? 'Not asked' : (k.relC === null ? '–' : k.relC) + ' · ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
         relDot: k.relC !== null && k.relC <= 2 ? '#b0361c' : k.relC !== null && k.relM !== null && k.relM - k.relC >= 2 ? '#e0a100' : k.relC === null ? '#d6d4cc' : '#2f9e44',
-        goal: k.ag ? k.ag.title : 'No goal yet', flags: flagsOf(k), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
+        goal: k.ag ? k.ag.title : 'No goal yet', flags: wideCols ? flagsOf(k) : flagsOf(k).slice(0, 1), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
         toggle: () => set({ sel: { ...S.sel, [k.id]: !on } }), open: () => this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }) }; }),
       noKids: kids.length === 0 && !!D.case, emptyT: !N ? 'Nobody is paired with you yet. Your coordinator makes the match.' : S.filter === 'all' ? 'Nobody matches that search.' : 'Nobody in this group right now.', resetF: () => set({ filter: 'all', q: '' }),
-      ck: { ...ck0, sub: [ck0.age !== null && ck0.age !== undefined ? 'Age ' + ck0.age : '', ck0.phase ? ck0.phase + ' phase' : '', ck0.school, ck0.guardian].filter(Boolean).join(' · '), relGap: ck0.relM !== null && ck0.relC !== null && ck0.relM - ck0.relC >= 2 },
+      ck: { ...ck0, sub: [ck0.age !== null && ck0.age !== undefined ? 'Age ' + ck0.age : '', ck0.phase ? ck0.phase + ' phase' : '', ck0.school, ck0.guardian ? 'Family: ' + ck0.guardian : ''].filter(Boolean).join(' · '),
+        relCT: ck0.relC === null || ck0.relC === undefined ? 'Not yet' : ck0.relC + ' / 5', relMT: ck0.relM === null || ck0.relM === undefined ? 'Not yet' : ck0.relM + ' / 5',
+        famWho: ck0.guardian || 'No family contact named', famT: ck0.famDays === null || ck0.famDays === undefined ? 'no update yet' : ck0.famDays <= 0 ? 'last update today' : 'last update ' + ck0.famDays + (ck0.famDays === 1 ? ' day ago' : ' days ago'), relGap: ck0.relM !== null && ck0.relC !== null && ck0.relM - ck0.relC >= 2 },
       facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
               ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
               ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
       kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Progress']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
       kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
+      noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
       timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
       relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
       saveRel: () => { const a = S.rel[ck0.id] || {}; if ([0, 1, 2, 3].some(i => !a[i])) return this.say('Answer all four first'); this.act('relCheck', { subjectId: ck0.id, answers: [a[0], a[1], a[2], a[3]] }, 'Saved. ' + ck0.first + ' answers their side this week.').then(r => r && this.refresh(['case'], ck0.id)); },
@@ -520,6 +526,21 @@ class Mp15Portal extends React.Component {
           {cs.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
       {inner}</>;
   }
+  /* After the screen's own title and content (v.mainSlotEnd): the Saturday
+     Formation Schedule, the mentor's part of each block (the next blocks on
+     This week, the whole day on Saturday), and the class tools (stars, V3,
+     notes, curriculum, school results and growth plans) as this portal's own
+     screen, on the centre on screen. Below the title, never above it. */
+  slotEnd(narrow) {
+    const S = this.state; const cls = 'm15x-slot m15x-end' + (narrow ? ' is-narrow' : '');
+    const need = { week: ['week'], sat: ['satNext'] }[S.scr];
+    if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
+    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'classic') { const cs = this.me().centres || []; const ce = this.state.centre || this.me().centreOnScreen || (cs.length === 1 ? cs[0] : '');
+      return <div className={cls}><MentorPortal key={'class:' + ce} programme="ngg" embedded={true} centre={ce}/></div>; }
+    return null;
+  }
   slotInner() {
     const S = this.state;
     const need = { week: ['week', 'case'], list: ['case'], goals: ['goals', 'case'], sess: ['sess', 'case'], sat: ['satNext', 'case'].concat(this.satLastDate() !== this.satNextDate() ? ['satLast'] : []),
@@ -531,10 +552,6 @@ class Mp15Portal extends React.Component {
         <button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); if (S.scr === 'kid') this.loadKid(S.kid); }}>Retry</button></div></div>;
     }
     if (loading) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading</span></div></div>;
-    /* The Saturday Formation Schedule, the mentor's part of each block: the
-       next two blocks on This week, the whole day on Saturday. */
-    if (S.scr === 'week') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true}/></div>;
     /* The class tools (stars, V3, notes, curriculum, school results and growth
        plans) are this portal's own screen: the same component /mentor/class
        has always run, in the portal's frame, on the centre on screen. */
@@ -737,7 +754,7 @@ class Mp15Portal extends React.Component {
       msgs: c.mList.map(m => ({ ...m, who: m.from, when: mp15When(m.at, today), t: m.body, unread: !m.read && !S.read[m.id] && m.kind !== 'From your lead', cur: c.mSel && m.id === c.mSel.id ? 'true' : undefined, bg: wideMsg && c.mSel && m.id === c.mSel.id ? '#fafaf8' : '#fff',
         go: () => { set({ msel: m.id, mOpen: true, read: { ...S.read, [m.id]: true }, reply: '' }); if (!m.read) mp15Api.act('messageRead', { threadId: m.id.indexOf('m:') === 0 ? m.id : m.threadId }).catch(() => {}); } })),
       bmCols: c.wideCols ? 'minmax(0, 1.4fr) minmax(0, 1fr) 96px 56px' : 'minmax(0, 1fr) 96px 48px',
-      bmRows: bmShow.map(r => { const d = r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, low: r.lowSkill, tot: r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
+      bmRows: bmShow.map(r => { const un = r.total === null || r.total === undefined; const d = un || r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, lowT: un ? 'Not scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet' : 'Lowest: ' + r.lowSkill, tot: un ? '—' : r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
       bmMore: bm.length > 8 && !S.bmAll, bmMoreL: 'Show all ' + bm.length, bmShowAll: () => set({ bmAll: true }),
       liMeta: (ix.scored ? 'out of 10 · ' + ix.scored + ' of ' + ix.of + ' scored for ' + mp15Month(ix.month) + ((ix.skills || []).some(x => x.change !== null && x.change !== undefined) ? ' · change since ' + mp15Month(ix.prevMonth) : ' · no earlier month to compare') : 'Nobody scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet'), liRows,
       md,

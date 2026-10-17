@@ -607,6 +607,13 @@ function mp_index_for(array $ids, string $month): array {
                  'prevTotal' => isset($prev[$sid]) ? array_sum($prev[$sid]) : null, 'lowSkill' => MP_SKILLS[$low][0]];
     }
     usort($by, static fn($x, $y) => $x['total'] <=> $y['total']);
+    /* Nobody falls off the board for not being scored yet: the mentees with no
+     * scorecard this month lead it (total null), since they are the ones to score. */
+    $unscored = [];
+    foreach ($ids as $sid) if (!isset($cur[$sid])) $unscored[] = ['subjectId' => $sid, 'name' => $names[$sid] ?? $sid, 'initials' => mp_initials($names[$sid] ?? '?'),
+        'total' => null, 'prevTotal' => isset($prev[$sid]) ? array_sum($prev[$sid]) : null, 'lowSkill' => ''];
+    usort($unscored, static fn($x, $y) => strcmp($x['name'], $y['name']));
+    $by = array_merge($unscored, $by);
     return ['skills' => $skills, 'byMentee' => $by, 'scored' => count($cur), 'of' => count($ids), 'prevMonth' => $prevMonth];
 }
 /** Four outcomes over the last 8 Saturdays: courage, responsibility (observations), wellbeing, relationship. */

@@ -26332,7 +26332,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ix = backend_dispatch('member.mentor.index', $p('NGG-MP1', ['month' => '2026-10']));
     $acc = array_values(array_filter($ix['skills'], static fn($x) => $x['skill'] === 'Accountability'))[0];
     chk('portal: the Index averages each skill and its change from last month', $acc['avg'] === 8.0 && $acc['change'] === 1.0 && $ix['scored'] === 1 && $ix['of'] === 5
-        && $ix['byMentee'][0]['lowSkill'] === 'Multiplication' && $ix['byMentee'][0]['prevTotal'] === 48);
+        && ($ixSc = array_values(array_filter($ix['byMentee'], static fn($r) => $r['total'] !== null))) && $ixSc[0]['lowSkill'] === 'Multiplication' && $ixSc[0]['prevTotal'] === 48);
+    chk('portal: By mentee lists every mentee, the unscored first (total null) so nobody drops off the board', count($ix['byMentee']) === $ix['of'] && $ix['byMentee'][0]['total'] === null
+        && $ix['byMentee'][count($ix['byMentee']) - 1]['subjectId'] === 'NGG-MPK1');
 
     // Relationship check: the mentor's side, then the child's; only the coordinator reads the child's answers.
     chk('portal: the relationship check needs all four answers 1–5', (backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 5]]))['error'] ?? '') === 'answer_all_four');
