@@ -38,6 +38,7 @@ if ($method === 'GET') {
 }
 if (empty($res['ok'])) {
     $e = (string)($res['error'] ?? 'failed');
-    json_error($e, in_array($e, ['not_in_pod', 'not_cleared', 'forbidden', 'not_a_mentor', 'no_mentor_record'], true) ? 403 : 400);
+    json_error($e, in_array($e, ['not_in_pod', 'not_cleared', 'forbidden', 'not_a_mentor', 'no_mentor_record'], true) ? 403 : 400,
+               isset($res['detail']) ? (string)$res['detail'] : null);
 }
 unset($res['ok']); json_ok($res);

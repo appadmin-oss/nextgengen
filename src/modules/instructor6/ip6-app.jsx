@@ -49,7 +49,7 @@ const IP6_ERR = {
   aim_required: 'Write the lesson goal first.', question_and_two_options: 'The hinge needs a question and two options.', no_results: 'Mark at least one exit ticket.',
   summary_required: 'Write what you covered first.', roll_not_closed: 'Close the roll before filing the log.', evidence_required: 'Say what you saw for each child who moved up.',
   no_marks: 'Nothing to save.', not_found: 'That record wasn’t found.', network: 'You’re offline. It’s saved on this device and will send.', rate_limited: 'Too many in a row. Wait a minute.',
-  choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.',
+  choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.',
 };
 function ip6Err(e) { const c = (e && (e.code || e.message)) || 'failed'; return IP6_ERR[c] || ('Couldn’t save (' + c + ').'); }
 function ip6Ini(n) { const p = String(n || '').replace(/^(Dr|Mr|Mrs|Ms)\.?\s+/i, '').trim().split(/\s+/).filter(Boolean); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }

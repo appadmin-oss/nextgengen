@@ -27285,6 +27285,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('api fix · a reply cannot be written into another child\'s chat by naming its thread', ($rp('chat:JOB-K9', '')['error'] ?? '') === 'not_in_caseload'
         && ($rp('chat:JOB-K9', 'JOB-K1')['error'] ?? '') === 'not_found');
     chk('api fix · …a reply to my own mentee\'s chat still goes', !empty($rp('chat:JOB-K1', 'JOB-K1')['ok']));
+    chk('api fix · the reply is filed under the thread the server built', (string)(db_row("SELECT threadId FROM mentor_messages WHERE fromId = 'JOB-M1' AND kind = 'Reply' ORDER BY id DESC LIMIT 1")['threadId'] ?? '') === 'chat:JOB-K1');
+    chk('api fix · a reply longer than the chat limit is refused, not truncated',
+        (backend_dispatch('member.mentor.message.reply', ['requesterId' => 'JOB-M1', 'threadId' => 'chat:JOB-K1', 'subjectId' => 'JOB-K1', 'body' => str_repeat('a', MP_CHAT_MAX + 1)])['error'] ?? '') === 'too_long');
     chk('api fix · a register cannot be closed for next month or two years ago',
         (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2030-01-05', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range'
         && (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2024-01-06', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range');
@@ -27534,6 +27537,107 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'SFL-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'SF-G%'");
     db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%'");
     db_exec('DELETE FROM saturday_formation_sends');
+})();
+
+// ── Attention is centre-wide for leads and coordinators only (High 3) ─────────
+(function () {
+    $now = now_iso(); $C = 'Attnville'; $past = gmdate('Y-m-d', time() - 3 * 86400);
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'AT-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'ATT-%'");
+        db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'ATV-%'"); db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'AT-%'");
+        db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'AT-%'"); db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'AT-%'");
+    };
+    $wipe();
+    foreach (['AT-K1', 'AT-K2', 'AT-M1', 'AT-L1'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['ATT-M1', 'AT-M1', 'mentor'], ['ATT-L1', 'AT-L1', 'lead']] as [$tid, $mid, $rank]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid,
+        'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'AT-K1', 'mentorId' => 'ATT-M1', 'status' => 'active', 'startedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'ATV-I', 'fullName' => 'Inst', 'email' => 'ati@example.com', 'role' => 'instructor', 'status' => 'active',
+        'centre' => $C, 'safeguarding' => 'cleared', 'createdAt' => $now]);
+    foreach (['AT-K1', 'AT-K2'] as $k) {
+        db_insert('mentor_meetings', ['subjectId' => $k, 'subjectType' => 'member', 'metOn' => $past, 'kind' => 'one-to-one', 'discussed' => 'Worrying', 'agreed' => '',
+            'mentorId' => 'SOMEONE-ELSE', 'mentorName' => 'Other', 'centre' => $C, 'concern' => 1, 'createdAt' => $now]);
+        db_insert('mentor_goals', ['subjectId' => $k, 'subjectType' => 'member', 'goal' => 'Read', 'dueOn' => $past, 'setById' => 'X', 'setByName' => 'X', 'updatedAt' => $now, 'centre' => $C, 'status' => 'active', 'createdAt' => $now]);
+    }
+    $att = fn($who) => backend_dispatch('member.mentor.attention', ['requesterId' => $who]);
+    $subs = fn($r, $k) => array_values(array_unique(array_column($r[$k] ?? [], 'subjectId')));
+    $m = $att('AT-M1'); $l = $att('AT-L1'); $i = $att('ATV-I');
+    chk('attention · a mentor sees concerns and overdue goals for their own mentee only', $subs($m, 'concerns') === ['AT-K1'] && $subs($m, 'overdue') === ['AT-K1']);
+    chk('attention · a lead sees the whole centre', count($subs($l, 'concerns')) === 2 && count($subs($l, 'overdue')) === 2);
+    chk('attention · an instructor is not staff: no other child\'s concern, no cover list',
+        !empty($i['ok']) && $subs($i, 'concerns') === [] && ($i['covers'] ?? []) === []);
+    $wipe();
+})();
+
+// ── Every legacy record action, as a screened mentor who is NOT the child's ───
+(function () {
+    $now = now_iso(); $C = 'Legacyville';
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'LG-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'LGT-%'");
+        db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'LG-%'");
+        db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_reviews WHERE subjectId LIKE 'LG-%'");
+        db_exec("DELETE FROM courage_marks WHERE subjectId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_record_cover WHERE subjectId LIKE 'LG-%'");
+    };
+    $wipe();
+    foreach (['LG-KID', 'LG-OWN', 'LG-OTHER'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => $C, 'dob' => '2012-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['LGT-OWN', 'LG-OWN'], ['LGT-OTHER', 'LG-OTHER']] as [$tid, $mid]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid, 'status' => 'active',
+        'centre' => $C, 'programme' => 'ngg', 'rank' => 'mentor', 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'LG-KID', 'mentorId' => 'LGT-OWN', 'status' => 'active', 'startedAt' => $now]);
+    $mt = db_insert('mentor_meetings', ['subjectId' => 'LG-KID', 'subjectType' => 'member', 'mentorId' => 'LG-OWN', 'metOn' => gmdate('Y-m-d'), 'kind' => 'one-to-one',
+        'discussed' => 'School', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    $gl = db_insert('mentor_goals', ['subjectId' => 'LG-KID', 'subjectType' => 'member', 'goal' => 'Read', 'status' => 'active', 'agreed' => 1, 'setById' => 'LG-OWN',
+        'setByName' => 'Own', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    $ops = [
+        'member.mentor.child'          => [],
+        'member.mentor.meeting.save'   => ['discussed' => 'Talked'],
+        'member.mentor.meeting.delete' => ['meetingId' => $mt, 'id' => $mt],
+        'member.mentor.goal.save'      => ['goal' => 'A goal I set'],
+        'member.mentor.goal.status'    => ['goalId' => $gl, 'id' => $gl, 'status' => 'paused'],
+        'member.mentor.goal.checkin'   => ['goalId' => $gl, 'id' => $gl, 'progress' => 50],
+        'member.mentor.courage.mark'   => ['score' => 3, 'evidence' => 'Spoke up in front of the group'],
+        'member.mentor.review.save'    => ['answers' => ['learned' => 'x']],
+    ];
+    $leaks = [];
+    foreach ($ops as $op => $extra) {
+        $r = backend_dispatch($op, ['requesterId' => 'LG-OTHER', 'subjectId' => 'LG-KID'] + $extra);
+        if (!empty($r['ok']) || ($r['error'] ?? '') !== 'not_your_mentee') $leaks[] = $op . '=' . ($r['error'] ?? 'ok');
+    }
+    if ($leaks) fwrite(STDERR, "\n  legacy leaks: " . implode(', ', $leaks) . "\n");
+    chk('legacy · every record action refuses a mentor who is not the child\'s (not_your_mentee)', $leaks === []);
+    chk('legacy · …and nothing was written while refusing',
+        (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'LG-KID'")['c'] === 1
+        && (string)db_row('SELECT status FROM mentor_goals WHERE id = ?', [$gl])['status'] === 'active'
+        && (int)db_row("SELECT COUNT(*) c FROM courage_marks WHERE subjectId = 'LG-KID'")['c'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_reviews WHERE subjectId = 'LG-KID'")['c'] === 0);
+    chk('legacy · the child\'s own mentor still opens the record', !empty(backend_dispatch('member.mentor.child', ['requesterId' => 'LG-OWN', 'subjectId' => 'LG-KID'])['ok']));
+    $wipe();
+})();
+
+// ── Safeguarding reports: mentors and staff, in reach, capped per day ─────────
+(function () {
+    $now = now_iso(); $C = 'Reportville';
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'RP-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'RPT-%'");
+        db_exec("DELETE FROM safeguarding_cases WHERE reporterId LIKE 'RP-%'");
+    };
+    $wipe();
+    foreach ([['RP-KID', $C], ['RP-FAR', 'Elsewhere'], ['RP-M', $C], ['RP-PLAIN', $C]] as [$id, $c]) db_insert('members', ['memberId' => $id, 'fullName' => $id,
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $c, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'RPT-M', 'fullName' => 'RP-M', 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'memberId' => 'RP-M',
+        'checkedAt' => '', 'createdAt' => $now]);
+    $file = fn($who, $kid) => backend_dispatch('member.ms.concern', ['requesterId' => $who, 'subjectId' => $kid, 'category' => 'Something else', 'body' => 'A worrying thing happened today.']);
+    chk('report · a plain member cannot file a case through the pod portal', ($file('RP-PLAIN', 'RP-KID')['error'] ?? '') === 'not_a_mentor');
+    chk('report · a mentor cannot name a child outside their centre', ($file('RP-M', 'RP-FAR')['error'] ?? '') === 'not_found');
+    chk('report · an unscreened mentor can report a child at their centre', !empty($file('RP-M', 'RP-KID')['ok']));
+    for ($i = 1; $i < SG_REPORTS_PER_DAY; $i++) $file('RP-M', 'RP-KID');
+    $over = $file('RP-M', 'RP-KID');
+    $mp = backend_dispatch('member.mentor.concern.create', ['requesterId' => 'RP-M', 'subjectId' => 'RP-KID', 'category' => MP_CONCERN_KINDS[0], 'body' => 'Another worrying thing today.']);
+    chk('report · past the daily cap both paths refuse, name the cap and say who to call',
+        ($over['error'] ?? '') === 'report_limit' && ($mp['error'] ?? '') === 'report_limit' && ($over['max'] ?? 0) === SG_REPORTS_PER_DAY && str_contains((string)($over['detail'] ?? ''), 'call')
+        && (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE reporterId = 'RP-M'")['c'] === SG_REPORTS_PER_DAY);
+    $wipe();
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

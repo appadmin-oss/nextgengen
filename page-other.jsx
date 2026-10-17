@@ -6807,7 +6807,7 @@ const MTR_GATE_ERR = {
 const mtrGateErr = (e, fallback) => MTR_GATE_ERR[e && e.message] || (e && e.message) || fallback;
 const MTR_CONCERN_KINDS = ["Something they told me", "Injury or harm", "Neglect", "Online safety", "An adult’s behaviour", "Something else"];
 const MTR_CONCERN_ERR = { choose_the_child: "Choose the child first.", choose_the_kind: "Choose what kind of concern it is.",
-  say_what_happened: "Say what happened, in your own words.", not_found: "That child could not be found.",
+  say_what_happened: "Say what happened, in your own words.", report_limit: "You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.", not_found: "That child could not be found.",
   not_a_mentor: "Only mentors and staff can report from here — tell a mentor or the centre lead." };
 function MentorConcernSheet({ students, onClose }) {
   const [who, setWho] = React.useState("");

@@ -51,7 +51,7 @@ function mp15First(name) { return String(name || '').trim().split(/\s+/)[0] || '
    as themselves rather than as a reassurance. */
 const MP15_ERR = {
   not_in_caseload: 'That child isn’t in your caseload.', peer_no_family: 'Peer mentors don’t contact families. Your lead will.',
-  say_what_happened: 'Write what happened first.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
+  say_what_happened: 'Write what happened first.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
   bad_date: 'That date isn’t right.', date_out_of_range: 'That Saturday is outside the two-week window for writing it up.',
   locked: 'This month’s scores are locked.', ten_scores: 'Score all ten skills.', answer_all_four: 'Answer all four first.',
   write_a_message: 'Write a message first.', write_a_reply: 'Write a reply first.', no_guardian_contact: 'There’s no family contact on their record. Ask your coordinator to add one.',

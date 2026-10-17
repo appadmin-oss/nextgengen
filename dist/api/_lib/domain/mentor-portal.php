@@ -996,6 +996,7 @@ function member_mp_message_reply(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $t = (string)($p['threadId'] ?? ''); $body = trim((string)($p['body'] ?? ''));
     if ($body === '') return ['ok' => false, 'error' => 'write_a_reply'];
+    if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
     $subject = trim((string)($p['subjectId'] ?? ''));
     if ($subject !== '' && !in_array($subject, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
     if (str_starts_with($t, 'family:') && $g['mpRole'] === 'peer') return ['ok' => false, 'error' => 'peer_no_family'];
@@ -1013,6 +1014,9 @@ function member_mp_message_reply(array $p): array {
             default => false,
         };
         if (!$own) return ['ok' => false, 'error' => 'not_found'];
+        // The id written is the server's, built from the checked parts, never
+        // the string the client sent (which may carry trailing text).
+        $t = $kind . ':' . ($kind === 'checkin' ? (string)(int)$ref : ($kind === 'journal' ? $ref : $subject));
     }
     if (str_starts_with($t, 'lead:')) {
         // Mentor ↔ lead conversations are colleagues, not families: no quiet-hours hold.
@@ -1408,6 +1412,7 @@ function member_mp_concern(array $p): array {
  */
 function mp_concern_file(array $reporter, array $sub, string $cat, string $body, string $ip, string $source): array {
     $kid = ['memberId' => (string)$sub['id'], 'fullName' => (string)$sub['fullName'], 'centre' => (string)$sub['centre']];
+    if (function_exists('sg_report_capped') && sg_report_capped((string)$reporter['memberId'])) return sg_report_refusal((string)$reporter['memberId'], (string)$kid['centre']);
     $officer = function_exists('sg_officer') ? sg_officer((string)$kid['centre']) : null;
     $ref = '';
     for ($i = 0; $i < 6 && $ref === ''; $i++) { $c = 'SG-' . str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT); if (!db_row('SELECT 1 FROM safeguarding_cases WHERE caseNo = ?', [$c])) $ref = $c; }

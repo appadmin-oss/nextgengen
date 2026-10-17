@@ -27615,5 +27615,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Safeguarding reports: mentors and staff, in reach, capped per day ─────────
+(function () {
+    $now = now_iso(); $C = 'Reportville';
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'RP-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'RPT-%'");
+        db_exec("DELETE FROM safeguarding_cases WHERE reporterId LIKE 'RP-%'");
+    };
+    $wipe();
+    foreach ([['RP-KID', $C], ['RP-FAR', 'Elsewhere'], ['RP-M', $C], ['RP-PLAIN', $C]] as [$id, $c]) db_insert('members', ['memberId' => $id, 'fullName' => $id,
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $c, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'RPT-M', 'fullName' => 'RP-M', 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'memberId' => 'RP-M',
+        'checkedAt' => '', 'createdAt' => $now]);
+    $file = fn($who, $kid) => backend_dispatch('member.ms.concern', ['requesterId' => $who, 'subjectId' => $kid, 'category' => 'Something else', 'body' => 'A worrying thing happened today.']);
+    chk('report · a plain member cannot file a case through the pod portal', ($file('RP-PLAIN', 'RP-KID')['error'] ?? '') === 'not_a_mentor');
+    chk('report · a mentor cannot name a child outside their centre', ($file('RP-M', 'RP-FAR')['error'] ?? '') === 'not_found');
+    chk('report · an unscreened mentor can report a child at their centre', !empty($file('RP-M', 'RP-KID')['ok']));
+    for ($i = 1; $i < SG_REPORTS_PER_DAY; $i++) $file('RP-M', 'RP-KID');
+    $over = $file('RP-M', 'RP-KID');
+    $mp = backend_dispatch('member.mentor.concern.create', ['requesterId' => 'RP-M', 'subjectId' => 'RP-KID', 'category' => MP_CONCERN_KINDS[0], 'body' => 'Another worrying thing today.']);
+    chk('report · past the daily cap both paths refuse, name the cap and say who to call',
+        ($over['error'] ?? '') === 'report_limit' && ($mp['error'] ?? '') === 'report_limit' && ($over['max'] ?? 0) === SG_REPORTS_PER_DAY && str_contains((string)($over['detail'] ?? ''), 'call')
+        && (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE reporterId = 'RP-M'")['c'] === SG_REPORTS_PER_DAY);
+    $wipe();
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

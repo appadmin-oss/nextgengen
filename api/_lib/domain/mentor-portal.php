@@ -1412,6 +1412,7 @@ function member_mp_concern(array $p): array {
  */
 function mp_concern_file(array $reporter, array $sub, string $cat, string $body, string $ip, string $source): array {
     $kid = ['memberId' => (string)$sub['id'], 'fullName' => (string)$sub['fullName'], 'centre' => (string)$sub['centre']];
+    if (function_exists('sg_report_capped') && sg_report_capped((string)$reporter['memberId'])) return sg_report_refusal((string)$reporter['memberId'], (string)$kid['centre']);
     $officer = function_exists('sg_officer') ? sg_officer((string)$kid['centre']) : null;
     $ref = '';
     for ($i = 0; $i < 6 && $ref === ''; $i++) { $c = 'SG-' . str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT); if (!db_row('SELECT 1 FROM safeguarding_cases WHERE caseNo = ?', [$c])) $ref = $c; }
