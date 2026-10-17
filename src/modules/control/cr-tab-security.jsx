@@ -146,7 +146,7 @@ function AdminSignInSecurity() {
           </div>
           <p className="admin-hint">Required: anyone without one sets it up before their portal opens. Optional: they are shown an alert until they do.
             Taking a way away stops new set-ups with it; people already using it keep it until they change. Everyone also gets eight one-time backup codes.</p>
-          <button type="button" className="btn btn-primary btn-sm" disabled={savingPolicy} onClick={savePolicy}>{savingPolicy ? "Saving…" : "Save the policy"}</button>
+          <button type="button" className="cr-btn is-sm is-primary" disabled={savingPolicy} onClick={savePolicy}>{savingPolicy ? "Saving…" : "Save the policy"}</button>
         </details>
       )}
 
