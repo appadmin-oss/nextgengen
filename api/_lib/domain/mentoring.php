@@ -122,6 +122,17 @@ function mentoring_cover(array $p): array {
     return ['ok' => true, 'expiresAt' => $exp, 'told' => count($tell)];
 }
 
+/** A week's review belongs to the mentor who wrote it. Another mentor saving
+ *  over it replaced their judgement with no trace; a lead or coordinator may
+ *  still correct it, and the overwrite is audited by the caller. Returns the
+ *  refusal, or null when the save may go ahead. */
+function mentor_review_owner_check(?array $existing, string $me, bool $wide): ?array {
+    if (!$existing) return null;
+    $by = trim((string)($existing['mentorId'] ?? ''));
+    if ($by === '' || $by === $me || $wide) return null;
+    return ['ok' => false, 'error' => 'reviewed_by_another', 'by' => (string)($existing['mentorName'] ?? '')];
+}
+
 /** Decided once, in mentor_gate — see mp_screened. */
 function mentoring_screened(array $g): bool {
     return ($g['screened'] ?? false) === true;
@@ -925,7 +936,12 @@ function mentor_review_save(array $p): array {
         'centre' => (string)($s['centre'] ?? ''),
         'updatedAt' => $now,
     ];
-    $existing = db_row("SELECT id FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]);
+    $existing = db_row("SELECT id, mentorId, mentorName FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]);
+    $wide = in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true);
+    if ($stop = mentor_review_owner_check($existing, (string)$g['member']['memberId'], $wide)) return $stop;
+    if ($existing && (string)$existing['mentorId'] !== '' && (string)$existing['mentorId'] !== (string)$g['member']['memberId']) {
+        audit('mentor.review.overwrite', (string)$g['member']['memberId'], $id, ['period' => $period, 'was' => (string)$existing['mentorId']], (string)($p['ip'] ?? ''));
+    }
     if ($existing) {
         db_update('mentor_reviews', $row, ['id' => (int)$existing['id']]);
     } else {

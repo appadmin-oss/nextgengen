@@ -47,6 +47,8 @@ const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
  * and assignment completion, and the 1:45 mentor check-out. */
 const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
 const MP_NOTE_MAX = 500;
+const MP_REL_ASK_TITLE = 'How is mentoring going?';
+const MP_REL_ASK_DAYS = 28;   // the relationship check's own cadence
 /* A Saturday follow-up has done its job once that Saturday has passed: older
  * than this, the week view hides it and mpa_tick closes it. A read never writes. */
 const MP_FOLLOWUP_STALE_DAYS = 9;
@@ -686,7 +688,12 @@ function member_mp_rel_save(array $p): array {
     if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
     $r = mp_rel_write($id, 'mentor', (array)($p['answers'] ?? []), $g['me']);
     if (empty($r['ok'])) return $r;
-    if (function_exists('push_notification')) push_notification($id, ['kind' => 'mentor', 'title' => 'How is mentoring going?', 'body' => 'Four quick questions about you and your mentor. Only the coordinator sees your answers.', 'linkPage' => 'dashboard']);
+    /* The child is asked once a month, not once per save: a mentor correcting
+     * their own answers three times sent the child three identical pushes. */
+    $asked = (bool)db_row("SELECT 1 FROM notifications WHERE memberId = ? AND kind = 'mentor' AND title = ? AND createdAt >= ? LIMIT 1",
+                          [$id, MP_REL_ASK_TITLE, gmdate('Y-m-d', time() - MP_REL_ASK_DAYS * 86400)]);
+    if (!$asked && function_exists('push_notification')) push_notification($id, ['kind' => 'mentor', 'title' => MP_REL_ASK_TITLE, 'body' => 'Four quick questions about you and your mentor. Only the coordinator sees your answers.', 'linkPage' => 'dashboard']);
+    $r['childAsked'] = !$asked;
     audit('mentor.rel.check', $g['me'], $id, ['score' => $r['score']], (string)($p['ip'] ?? ''));
     return $r;
 }
@@ -1369,6 +1376,10 @@ function member_mp_review(array $p): array {
     $centre = (string)(db_row('SELECT centre FROM members WHERE memberId = ?', [$sid])['centre'] ?? '');
     $trend = ['Low' => 'worse', 'Steady' => 'same', 'Strong' => 'better', 'Exceptional' => 'better'][(string)$p['effort']] ?? '';
     $existing = db_row('SELECT * FROM mentor_reviews WHERE subjectId = ? AND period = ?', [$sid, $period]);
+    if ($stop = mentor_review_owner_check($existing, $g['me'], in_array($g['mpRole'], ['lead', 'coord'], true))) return $stop;
+    if ($existing && (string)$existing['mentorId'] !== '' && (string)$existing['mentorId'] !== $g['me']) {
+        audit('mentor.review.overwrite', $g['me'], $sid, ['period' => $period, 'was' => (string)$existing['mentorId']], (string)($p['ip'] ?? ''));
+    }
     $row = ['effort' => (string)$p['effort'], 'characterLevel' => (string)$p['character'], 'wellbeing' => (string)$p['wellbeing'], 'line' => $line,
             'answers' => mp_review_answers_merge($existing, $line), 'answered' => 1, 'trend' => $trend, 'mentorId' => $g['me'],
             'mentorName' => (string)($g['mentorRow']['fullName'] ?? ''), 'centre' => $centre, 'updatedAt' => $now];

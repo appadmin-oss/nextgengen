@@ -26344,7 +26344,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     // Relationship check: the mentor's side, then the child's; only the coordinator reads the child's answers.
     chk('portal: the relationship check needs all four answers 1–5', (backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 5]]))['error'] ?? '') === 'answer_all_four');
-    backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 4, 5]]));
+    db_exec("DELETE FROM notifications WHERE memberId = 'NGG-MPK4' AND title = ?", [MP_REL_ASK_TITLE]);
+    $rs1 = backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 4, 5]]));
+    $rs2 = backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 4, 5]]));
+    chk('portal: saving the relationship check twice asks the child once',
+        !empty($rs1['childAsked']) && empty($rs2['childAsked']) && !empty($rs2['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-MPK4' AND title = ?", [MP_REL_ASK_TITLE])['c'] === 1);
     backend_dispatch('member.mentor.rel.child', ['requesterId' => 'NGG-MPK4', 'answers' => [2, 3, 2, 3]]);
     $m4 = backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4']));
     chk('portal: a gap of two between the sides flags the relationship; the mentor sees the child\'s score, not their answers',
@@ -27796,6 +27801,50 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('academy · a day later they can try again, and a pass is recorded', !empty($r5['passed']) && db_row("SELECT 1 FROM mentor_academy WHERE mentorId = 'ACQT' AND passedAt <> ''"));
     db_exec("DELETE FROM members WHERE memberId = 'ACQ-M'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACQT'");
     db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACQT'"); db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACQT'");
+})();
+
+// ── The week view reads; it never writes (Low: UPDATE inside a GET) ──────────
+(function () {
+    $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId = 'WK-M'"); db_exec("DELETE FROM mentors WHERE mentorId = 'WKT'"); db_exec("DELETE FROM mentor_nudges WHERE mentorId = 'WKT'");
+    db_insert('members', ['memberId' => 'WK-M', 'fullName' => 'Week Mentor', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Weekville', 'dob' => '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'WKT', 'fullName' => 'Week Mentor', 'status' => 'active', 'centre' => 'Weekville', 'programme' => 'ngg', 'memberId' => 'WK-M', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    foreach ([['WK:old', gmdate('Y-m-d', time() - 20 * 86400), 'Old follow-up'], ['WK:new', gmdate('Y-m-d'), 'New follow-up']] as [$k, $at, $t]) {
+        db_insert('mentor_nudges', ['nudgeKey' => $k, 'rule' => 'J:sessionFollowUp', 'audience' => 'mentor', 'mentorId' => 'WKT', 'title' => $t, 'status' => 'open', 'createdAt' => $at]);
+    }
+    $w = backend_dispatch('member.mentor.week', ['requesterId' => 'WK-M']);
+    $titles = array_column($w['due'] ?? [], 'title');
+    chk('week · a follow-up whose Saturday has passed is not shown, and reading it changed nothing',
+        !empty($w['ok']) && in_array('New follow-up', $titles, true) && !in_array('Old follow-up', $titles, true)
+        && db_row("SELECT status FROM mentor_nudges WHERE nudgeKey = 'WK:old'")['status'] === 'open');
+    mpa_tick(time(), 0);
+    chk('week · the background tick closes it', db_row("SELECT status, resolvedBy FROM mentor_nudges WHERE nudgeKey = 'WK:old'")['resolvedBy'] === 'expired'
+        && db_row("SELECT status FROM mentor_nudges WHERE nudgeKey = 'WK:new'")['status'] === 'open');
+    db_exec("DELETE FROM members WHERE memberId = 'WK-M'"); db_exec("DELETE FROM mentors WHERE mentorId = 'WKT'"); db_exec("DELETE FROM mentor_nudges WHERE mentorId = 'WKT'");
+})();
+
+// ── A week's review belongs to the mentor who wrote it ────────────────────────
+(function () {
+    $now = now_iso(); $C = 'Reviewville';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_reviews' => 'subjectId', 'mentor_meetings' => 'subjectId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'RV-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'RVT-%'");
+    };
+    $wipe();
+    foreach (['RV-KID', 'RV-A', 'RV-B', 'RV-L'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => $C, 'dob' => $id === 'RV-KID' ? '2013-01-01' : '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['RVT-A', 'RV-A', 'mentor'], ['RVT-B', 'RV-B', 'mentor'], ['RVT-L', 'RV-L', 'lead']] as [$tid, $mid, $rank]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid,
+        'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    $assign = fn($t) => db_exec("DELETE FROM mentor_assignments WHERE memberId = 'RV-KID'") + db_insert('mentor_assignments', ['memberId' => 'RV-KID', 'mentorId' => $t, 'status' => 'active', 'startedAt' => $now]);
+    $rev = fn($who) => backend_dispatch('member.mentor.week.review', ['requesterId' => $who, 'subjectId' => 'RV-KID', 'effort' => 'Strong', 'character' => 'Strong', 'wellbeing' => 'Steady', 'line' => 'By ' . $who]);
+    $assign('RVT-A'); $a = $rev('RV-A');
+    $assign('RVT-B'); $b = $rev('RV-B');
+    chk('review · a mentor cannot save over another mentor\'s review of the same week', !empty($a['ok']) && ($b['error'] ?? '') === 'reviewed_by_another' && ($b['by'] ?? '') === 'RV-A'
+        && (string)db_row("SELECT line FROM mentor_reviews WHERE subjectId = 'RV-KID'")['line'] === 'By RV-A');
+    $l = $rev('RV-L');
+    chk('review · a lead may correct it, and the overwrite is in the audit log', !empty($l['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'mentor.review.overwrite' AND subject = 'RV-KID'")['c'] === 1);
+    $wipe(); db_exec("DELETE FROM audit_log WHERE event = 'mentor.review.overwrite' AND subject = 'RV-KID'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
