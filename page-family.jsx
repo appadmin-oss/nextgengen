@@ -8,7 +8,7 @@
 
    What a parent sees is read from the same functions as the member's own
    dashboard, server-side; what they can DO is tell the desk something
-   (an absence, an appeal, a lost card) and choose which mails arrive.
+   (an absence, an appeal, a lost card). Every family email (check-ins, the weekly summary, alerts) is always on.
    ================================================================ */
 
 const FAMILY_ERRORS = {
@@ -498,14 +498,7 @@ function FamilyTellCentre({ d, link, first, reload }) {
 }
 
 function FamilyNotify({ link, first, onRemoved }) {
-  const [prefs, setPrefs] = React.useState(link.notify || {});
   const [err, setErr] = React.useState("");
-  const toggle = async (k) => {
-    const next = Object.assign({}, prefs, { [k]: !prefs[k] });
-    setPrefs(next); setErr("");
-    try { const r = await NGGApi.family.act("ward.notify", { linkId: link.linkId, notify: { [k]: next[k] } }); setPrefs(r.notify || next); }
-    catch (x) { setPrefs(prefs); setErr(familyErr(x)); }
-  };
   const remove = async () => {
     if (!(await dialog.confirm({ title: "Disconnect from " + first + "?", body: "You'll stop seeing " + first + "'s dashboard and getting their emails. You can connect again later with their code.", cta: "Disconnect", danger: true }))) return;
     try { await NGGApi.family.act("ward.remove", { linkId: link.linkId }); onRemoved(); } catch (x) { setErr(familyErr(x)); }
@@ -513,14 +506,16 @@ function FamilyNotify({ link, first, onRemoved }) {
   return (
     <section className="fam-card" aria-labelledby="fam-ntf-h">
       <h3 id="fam-ntf-h" className="fam-h3">Emails about {first}</h3>
+      {/* Always on: these emails are part of membership, so there is nothing to switch. */}
       <ul className="fam-list">
         {FAMILY_NOTIFY_LABELS.map(([k, label, hint]) => (
-          <li key={k} className="fam-list-row is-switch">
+          <li key={k} className="fam-list-row">
             <span><b>{label}</b><span className="fam-meta"> · {hint}</span></span>
-            <button type="button" className={"fam-switch" + (prefs[k] ? " is-on" : "")} aria-pressed={!!prefs[k]} aria-label={label} onClick={() => toggle(k)}><span aria-hidden="true"/></button>
+            <span className="fam-meta">On</span>
           </li>
         ))}
       </ul>
+      <p className="fam-hint">These emails are part of {first}’s membership and are always on.</p>
       {err && <p className="fam-err" role="alert">{err}</p>}
       <button type="button" className="fam-link is-danger" onClick={remove}>Disconnect from {first}</button>
     </section>

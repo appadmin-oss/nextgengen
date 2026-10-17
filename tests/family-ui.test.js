@@ -160,9 +160,10 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.waitForSelector('text=Sent. The centre will reply by email.');
     chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs',
       php(`echo json_encode(db_row("SELECT kind, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID'"));`) === '{"kind":"leave","fam":1}');
-    await fp.click('.fam-switch[aria-label="Sign-in and sign-out"]');
-    await fp.waitForFunction(() => document.querySelector('.fam-switch[aria-label="Sign-in and sign-out"]').getAttribute('aria-pressed') === 'true');
-    chk('…and switching on sign-in mails is saved', /"checkin":true/.test(php(`echo db_row("SELECT notify FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['notify'];`)));
+    // Family emails are always on: listed as On, with nothing to switch.
+    const ntf = await fp.evaluate(() => { const c = document.getElementById('fam-ntf-h'); const s = c && c.closest('section'); return s ? { text: s.innerText, switches: s.querySelectorAll('.fam-switch, [aria-pressed]').length } : null; });
+    chk('…and every family email is shown as always on, with no switch to turn one off',
+      !!ntf && ntf.switches === 0 && /Sign-in and sign-out/.test(ntf.text) && /always on/i.test(ntf.text));
     await fp.screenshot({ path: path.join(SHOTS, 'family-desktop.png'), fullPage: true });
 
     /* ── The Control Room approves the sibling ── */

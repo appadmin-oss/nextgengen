@@ -1109,8 +1109,11 @@ requests** marked *From their family account*, and your reply is emailed to
 the parent as well as the member. A parent cannot claim a payment — an
 offline payment needs a verified receipt, which is the member's path.
 
-Parents choose per child which emails they get: every sign-in and sign-out,
-the Monday weekly summary, and an alert when a fine is issued.
+Every family email is **always on** and cannot be switched off: every sign-in
+and sign-out, the Saturday plan and close, the Monday weekly summary, alerts
+(a fine issued, a child not arrived) and mentors' family updates. They are part
+of membership. The family account lists them as *On*; preferences a parent set
+before this rule are ignored.
 
 ---
 

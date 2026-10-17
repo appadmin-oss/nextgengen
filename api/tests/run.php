@@ -27276,7 +27276,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('goals fix · editing a goal does not restart its stalled clock',
         mentor_goal_stalled(['status' => 'active', 'checks' => [], 'createdAt' => '2026-01-01T00:00:00Z', 'updatedAt' => '2026-10-15T00:00:00Z'], '2026-10-16'));
 
-    // Family: an opt-out is honoured; a failed send is a failure; one escaping.
+    // Family: notifications are always on; a failed send is a failure; one escaping.
     db_insert('guardians', ['guardianId' => 'JOB-G1', 'fullName' => 'Mrs O', 'email' => 'guardian1@example.com', 'status' => 'active', 'createdAt' => $now]);
     db_insert('guardian_wards', ['linkId' => 'JOB-L1', 'guardianId' => 'JOB-G1', 'memberId' => 'JOB-K1', 'status' => 'active', 'notify' => json_encode(['checkin' => true, 'weekly' => true, 'alerts' => true])]);
     $ch0 = mp_family_channels('JOB-K1', db_row("SELECT * FROM members WHERE memberId = 'JOB-K1'"));
@@ -27284,12 +27284,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         $ch0['optedOut'] === false && $ch0['emails'] === ['guardian1@example.com']);
     db_exec("UPDATE guardian_wards SET notify = ? WHERE linkId = 'JOB-L1'", [json_encode(['checkin' => false, 'weekly' => false, 'alerts' => false])]);
     $ch = mp_family_channels('JOB-K1', db_row("SELECT * FROM members WHERE memberId = 'JOB-K1'"));
-    chk('family fix · a guardian who turned updates off is not reached by SMS or by the record\'s email instead',
-        $ch['optedOut'] === true && $ch['phone'] === '' && $ch['emails'] === []);
+    chk('family fix · a guardian whose old preferences were all off is still reached: family notifications are always on',
+        $ch['optedOut'] === false && $ch['emails'] === ['guardian1@example.com']
+        && backend_dispatch('family.ward.notify', ['guardianId' => 'JOB-G1', 'linkId' => 'JOB-L1', 'notify' => ['weekly' => false]])['notify'] === ['checkin' => true, 'weekly' => true, 'alerts' => true]);
     $ch2 = mp_family_channels('JOB-K2', db_row("SELECT * FROM members WHERE memberId = 'JOB-K2'"));
     chk('family fix · a child with no guardian account still uses the record\'s contacts', $ch2['optedOut'] === false && $ch2['phone'] === '08030000002');
     $mid = mp_message_put('family:JOB-K1', 'Family update', 'JOB-K1', 'JOB-M1', 'Jide Mentor', 'guardian:JOB-K1', 'Hello');
-    chk('family fix · nothing goes to an opted-out family, and the message is marked failed',
+    chk('family fix · a family message that could not be delivered is marked failed, never sent',
         mp_family_deliver($mid) === false && db_row('SELECT status FROM mentor_messages WHERE id = ?', [$mid])['status'] === 'failed');
 
     // API-only: thread ownership, date bounds, review merge, the answer key, the week.
@@ -27549,11 +27550,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $slots = static fn($slot) => array_column(db_all("SELECT recipient FROM saturday_formation_sends WHERE onDate = '2026-10-17' AND slot = ?", [$slot]), 'recipient');
     sf_tick(strtotime('2026-10-17T07:05:00Z'));   // 8:05 Lagos
     $plan = $slots('parent:plan');
-    chk('formation · 8:00 plan: only guardians who take check-in news', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && !in_array('g3@sf.example|SF-K1', $plan, true));
+    chk('formation · 8:00 plan: every linked guardian, whatever they once chose (always on)', in_array('g1@sf.example|SF-K1', $plan, true) && in_array('g2@sf.example|SF-K2', $plan, true) && in_array('g3@sf.example|SF-K1', $plan, true));
     sf_tick(strtotime('2026-10-17T07:50:00Z'));   // 8:50 Lagos
     chk('formation · 8:45 not-arrived notice: the absent member only', $slots('parent:absent') === ['g2@sf.example|SF-K2']);
     sf_tick(strtotime('2026-10-17T13:05:00Z'));   // 2:05pm Lagos
-    chk('formation · 2:00 close: the member who was here', $slots('parent:close') === ['g1@sf.example|SF-K1']);
+    $close = $slots('parent:close'); sort($close);
+    chk('formation · 2:00 close: both guardians of the member who was here, nobody for the one who was not', $close === ['g1@sf.example|SF-K1', 'g3@sf.example|SF-K1']);
     $lines = implode(' | ', sf_day_lines('SF-K1', '2026-10-17', sf_blocks()));
     chk('formation · the close says arrival, values seen and the duties', str_contains($lines, 'Checked in at 7:55am') && str_contains($lines, 'courage') && str_contains($lines, 'on time, assignment handed in'));
     $n = count($slots('parent:close')); sf_tick(strtotime('2026-10-17T13:20:00Z'));

@@ -1434,3 +1434,10 @@ Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
 - Production CSP (dist only) by hash, no unsafe-inline/eval — `tests/prod-csp.test.js`. No source map and no `api/tests` in dist.
 - Instructors/volunteer mentors with safeguarding pending: admitted with no reach; they see their courses in Curriculum, and the class screen says why it is empty.
 - Pre-existing, not fixed: `tests/mentor-v15.test.js` fails its Saturday register step ("Assignment in" click times out) on 10bee246 too; `tests/family-ui.test.js` fails one selector timeout.
+
+## 2026-10-17 — family notifications always on
+
+The owner's rule: every guardian notification is compulsory. `family_notify_prefs()`
+returns `FAMILY_NOTIFY_DEFAULT` (all true) regardless of the stored
+`guardian_wards.notify`, which is now unread; `family.ward.notify` writes nothing and
+answers `required: true`. The family portal shows each email as *On* with no switch.
