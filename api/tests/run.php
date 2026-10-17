@@ -27570,5 +27570,50 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Every legacy record action, as a screened mentor who is NOT the child's ───
+(function () {
+    $now = now_iso(); $C = 'Legacyville';
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'LG-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'LGT-%'");
+        db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'LG-%'");
+        db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_reviews WHERE subjectId LIKE 'LG-%'");
+        db_exec("DELETE FROM courage_marks WHERE subjectId LIKE 'LG-%'"); db_exec("DELETE FROM mentor_record_cover WHERE subjectId LIKE 'LG-%'");
+    };
+    $wipe();
+    foreach (['LG-KID', 'LG-OWN', 'LG-OTHER'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => $C, 'dob' => '2012-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['LGT-OWN', 'LG-OWN'], ['LGT-OTHER', 'LG-OTHER']] as [$tid, $mid]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid, 'status' => 'active',
+        'centre' => $C, 'programme' => 'ngg', 'rank' => 'mentor', 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'LG-KID', 'mentorId' => 'LGT-OWN', 'status' => 'active', 'startedAt' => $now]);
+    $mt = db_insert('mentor_meetings', ['subjectId' => 'LG-KID', 'subjectType' => 'member', 'mentorId' => 'LG-OWN', 'metOn' => gmdate('Y-m-d'), 'kind' => 'one-to-one',
+        'discussed' => 'School', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    $gl = db_insert('mentor_goals', ['subjectId' => 'LG-KID', 'subjectType' => 'member', 'goal' => 'Read', 'status' => 'active', 'agreed' => 1, 'setById' => 'LG-OWN',
+        'setByName' => 'Own', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    $ops = [
+        'member.mentor.child'          => [],
+        'member.mentor.meeting.save'   => ['discussed' => 'Talked'],
+        'member.mentor.meeting.delete' => ['meetingId' => $mt, 'id' => $mt],
+        'member.mentor.goal.save'      => ['goal' => 'A goal I set'],
+        'member.mentor.goal.status'    => ['goalId' => $gl, 'id' => $gl, 'status' => 'paused'],
+        'member.mentor.goal.checkin'   => ['goalId' => $gl, 'id' => $gl, 'progress' => 50],
+        'member.mentor.courage.mark'   => ['score' => 3, 'evidence' => 'Spoke up in front of the group'],
+        'member.mentor.review.save'    => ['answers' => ['learned' => 'x']],
+    ];
+    $leaks = [];
+    foreach ($ops as $op => $extra) {
+        $r = backend_dispatch($op, ['requesterId' => 'LG-OTHER', 'subjectId' => 'LG-KID'] + $extra);
+        if (!empty($r['ok']) || ($r['error'] ?? '') !== 'not_your_mentee') $leaks[] = $op . '=' . ($r['error'] ?? 'ok');
+    }
+    if ($leaks) fwrite(STDERR, "\n  legacy leaks: " . implode(', ', $leaks) . "\n");
+    chk('legacy · every record action refuses a mentor who is not the child\'s (not_your_mentee)', $leaks === []);
+    chk('legacy · …and nothing was written while refusing',
+        (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'LG-KID'")['c'] === 1
+        && (string)db_row('SELECT status FROM mentor_goals WHERE id = ?', [$gl])['status'] === 'active'
+        && (int)db_row("SELECT COUNT(*) c FROM courage_marks WHERE subjectId = 'LG-KID'")['c'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_reviews WHERE subjectId = 'LG-KID'")['c'] === 0);
+    chk('legacy · the child\'s own mentor still opens the record', !empty(backend_dispatch('member.mentor.child', ['requesterId' => 'LG-OWN', 'subjectId' => 'LG-KID'])['ok']));
+    $wipe();
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
