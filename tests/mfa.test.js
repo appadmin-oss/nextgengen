@@ -159,6 +159,11 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await kid.waitForSelector('#signin-idp', { timeout: 60000 });
     await kid.fill('#signin-idp', 'kemi.okoro@mfa.example');
     await kid.click('.signin-card button[type="submit"]');
+    /* A browser that has not signed in before gets the same screen for every
+       address (password, or a code) — so the member asks for the code. */
+    await kid.waitForSelector('#signin-pw', { timeout: 20000 });
+    chk('a new browser is shown the same first screen for every account: password, or a code', /No password\? Email me a sign-in code/.test(await kid.innerText('.signin-alts')));
+    await kid.click('.signin-alts button');
     await kid.waitForSelector('#signin-otp', { timeout: 20000 });
     await typeCode(kid, '#signin-otp', otpFor('NGG-MF-K1'));
     await kid.waitForSelector('.mfa-q', { timeout: 20000 });
