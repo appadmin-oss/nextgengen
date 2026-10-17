@@ -17,7 +17,13 @@ Object.assign(Mp9Portal.prototype, {
         next: done ? "Done · " + pr.bestPct + "%" : pr && pr.pending ? "Waiting for your instructor to mark it" : pr ? "Carry on · " + (u.checks ? u.checks + (u.checks === 1 ? " question" : " questions") : "read it") : "Start · about " + (u.durationMins || 20) + " minutes",
         open: () => this.openLesson(u.unitId) };
     });
-    if (!lessons.length) lessons.push({ div: me.track || "Your course", t: cur.error ? "Lessons couldn’t load" : "No lessons published yet", p: 0, w: "0%", c: "#0b0b0c", next: "Your instructor publishes the term’s lessons here", open: () => this.toast("Nothing to open yet.") });
+    // Loading, an honest error with a retry, and empty are three different things.
+    const curErr = !!(s.er && s.er.cur) && !this.dd("cur");
+    if (!lessons.length) lessons.push({ div: me.track || "Your course",
+      t: curErr ? "Lessons couldn’t load" : !this.dd("cur") ? "Loading your lessons…" : "No lessons published yet",
+      p: 0, w: "0%", c: "#0b0b0c",
+      next: curErr ? "Tap to try again" : "Your instructor publishes the term’s lessons here",
+      open: () => { if (curErr) this.load("cur"); else this.toast("Nothing to open yet."); } });
     const asg = (d.assignments || []).map(a => {
       const sub = a.submission, st = sub ? (sub.mark !== undefined && sub.mark !== null && sub.mark !== "" ? "Marked · " + sub.mark + (a.points ? "/" + a.points : "") : "Submitted") : "Not started";
       return { t: a.title, div: a.track || me.track || "Club", due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,

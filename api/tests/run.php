@@ -28253,6 +28253,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('curriculum · a MUSIC member sees Music, not every arts course’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
     chk('curriculum · two faculties on the card bring both divisions', in_array('CMU-CODE', $ids('CMC-2'), true) && in_array('CMU-VID', $ids('CMC-2'), true));
     chk('curriculum · a member with only a division gets that division’s lessons', in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
+    $u('CMU-ML', 'Media Lab');
+    chk('curriculum · a lesson filed under a course the catalogue never listed still reaches its division', in_array('CMU-ML', $ids('CMC-2'), true) && !in_array('CMU-ML', $ids('CMC-T'), true));
     chk('curriculum · a track that is a course name stays that one course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
     setting_set('club_catalogue', $prevCat);
     db_exec("DELETE FROM members WHERE memberId LIKE 'CMC-%'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CMU-%'");

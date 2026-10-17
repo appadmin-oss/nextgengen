@@ -830,11 +830,19 @@ function curriculum_member_courses(array $m): array {
         foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) { if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id; }
         return '';
     };
-    $divCourses = function (string $divId) use ($catalogue, $divOf): array {
+    /* …and every course lessons are actually filed under that reads as the
+     * division ("Media Lab" is Media, "Practical Coding" is Technology): an
+     * imported programme can name a course the catalogue never listed. */
+    $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
+    $divCourses = function (string $divId) use ($catalogue, $divOf, $unitCourses): array {
         $d = function_exists('nggc_division') ? nggc_division($divId) : null;
         if (!$d) return [];
         $out = array_values($d['courses'] ?? []);
-        foreach ($catalogue as $name => $courses) if ($divOf((string)$name) === $d['id']) $out = array_merge($out, array_values($courses));
+        foreach ($catalogue as $name => $courses) {
+            if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
+            foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+        }
+        foreach ($unitCourses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
         return $out;
     };
     $words = [];
