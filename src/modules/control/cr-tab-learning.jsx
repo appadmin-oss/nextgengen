@@ -274,7 +274,55 @@ Object.assign(CR_TAB_DEFS, {
       emptyText: "No blocks.",
     }],
   },
+  /* Opportunities (domain/opportunities.php): what the Member Portal's
+     Opportunities screen offers. A member sees the open ones that fit their
+     age; a closed or hidden one disappears from every portal at once. */
+  opps: {
+    skeleton: ["table"],
+    load: async () => NGGApi.admin.opps.list(),
+    actions: (d, ctx) => [{ l: "Add an opportunity", icon: "plus", primary: true, run: () => crOppEdit(ctx, d, null) }],
+    blocks: (d, ctx) => [{
+      type: "table", span: 6, title: "Opportunities", sub: "Shown to members in Learn → Opportunities, matched to their age", nosel: true,
+      cols: ["Opportunity", "Type", "Closes", "Ages", "Status"],
+      rows: (d.items || []).map(o => ({ key: o.oppId, open: () => crOppEdit(ctx, d, o), cells: [
+        { k: "person", t: o.title, s: o.org }, { k: "text", t: o.type }, { k: "mono", t: o.closesOn || "Open" },
+        { k: "text", t: o.ageMin || o.ageMax ? (o.ageMin || "Any") + "–" + (o.ageMax || "any") : "Every age" },
+        { k: "status", t: o.status === "hidden" ? "Hidden" : o.closesOn && o.closesOn < new Date().toISOString().slice(0, 10) ? "Closed" : "Showing", tone: o.status === "hidden" ? "neutral" : "ok" }] })),
+      emptyText: "No opportunities yet. Add one and members see it on their next visit.",
+    }],
+  },
 });
+
+/* One opportunity: add, change, hide or remove. The server validates the
+   whole row (type, date, link, ages) before it writes. */
+function crOppEdit(ctx, d, o) {
+  ctx.form({
+    title: o ? o.title : "Add an opportunity", submit: o ? "Save" : "Add", busyLabel: "Saving…",
+    values: o ? { title: o.title, org: o.org, type: o.type, closesOn: o.closesOn, why: o.why, url: o.url, ageMin: o.ageMin ? String(o.ageMin) : "", ageMax: o.ageMax ? String(o.ageMax) : "", status: o.status }
+              : { type: "Training", status: "active", ageMin: "", ageMax: "" },
+    fields: [
+      { id: "title", l: "Title", req: true }, { id: "org", l: "Who runs it" },
+      { id: "type", l: "Kind", type: "select", req: true, opts: (d.types || []).map(t => [t, t]) },
+      { id: "closesOn", l: "Closes on (YYYY-MM-DD, blank if open)", check: v => !v || /^\d{4}-\d{2}-\d{2}$/.test(v) ? "" : "Use a date like 2026-11-01." },
+      { id: "why", l: "Why a member would want it", type: "textarea" },
+      { id: "url", l: "Link (optional)", check: v => !v || /^https?:\/\//i.test(v) ? "" : "Start the link with https://" },
+      { id: "ageMin", l: "Youngest age (blank for any)", check: v => !v || /^\d{1,2}$/.test(v) ? "" : "A number of years." },
+      { id: "ageMax", l: "Oldest age (blank for any)", check: v => !v || /^\d{1,2}$/.test(v) ? "" : "A number of years." },
+      { id: "status", l: "Show it", type: "chips", req: true, opts: [["active", "Showing"], ["hidden", "Hidden"]].concat(o ? [["remove", "Remove it"]] : []) },
+    ],
+    onSubmit: async v => {
+      if (v.status === "remove") {
+        if (!(await ctx.confirm({ title: "Remove " + o.title + "?", body: "It disappears from every member's Opportunities, and members who saved it lose the bookmark.", cta: "Remove", danger: true }))) return null;
+        const r = await NGGApi.admin.opps.save({ oppId: o.oppId, remove: true }); ctx.reload(); ctx.toast("Removed."); return r;
+      }
+      const r = await NGGApi.admin.opps.save({ oppId: o ? o.oppId : "", title: v.title, org: v.org, type: v.type, closesOn: v.closesOn || "", why: v.why || "", url: v.url || "",
+        ageMin: v.ageMin ? Number(v.ageMin) : 0, ageMax: v.ageMax ? Number(v.ageMax) : 0, status: v.status });
+      ctx.reload(); ctx.toast(o ? "Saved." : "Added. Members see it on their next visit.");
+      return r;
+    },
+    done: () => null,
+  });
+}
 
 /* Curriculum: the lessons, bulk status and import are rebuilt above; the lesson
    editor, the Club's course list, the progress report, the submissions queue

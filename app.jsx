@@ -75,7 +75,7 @@ const ROUTES = [
 
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
-  { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
+  { id: "dashboard",   title: "My NGG · Member portal",                    desc: "Your missions, mentor, streak and journal — the member dashboard.", chrome: "own", index: false },
   { id: "summerprofile", title: "ID card · NGG",                           desc: "The page an NGG or Summer School card opens when it is scanned.", addressable: false, index: false },
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
@@ -470,7 +470,7 @@ function App() {
         <ToastHost/>
         <DialogHost/>
         {/* The Control Room has its own palette (⌘K, CONTROL_ROOM.md §4.1). */}
-        {page !== "admin" && <CommandPalette/>}
+        {page !== "admin" && page !== "dashboard" && <CommandPalette/>}
         <div id="ngg-a11y-live" aria-live="polite" className="sr-only"/>
       </div>
     );

@@ -45,6 +45,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.notificationRead' => 'member_notification_read',
             'member.state.get'        => 'member_state_get',
             'member.state.set'        => 'member_state_set',
+            'member.opps'             => 'member_opps',
+            'member.opps.save'        => 'member_opps_save',
+            'admin.opps.list'         => 'admin_opps_list',
+            'admin.opps.save'         => 'admin_opps_save',
             // Anchor
             'anchor.weeks'            => 'anchor_weeks',
             'anchor.mission.submit'   => 'anchor_mission_submit',

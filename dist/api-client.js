@@ -807,6 +807,9 @@
       compliance:   () => request('/member/compliance.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       companion:    () => request('/member/companion.php'),
+      /* Opportunities that fit me (domain/opportunities.php); save toggles my bookmark. */
+      opps:         () => request('/member/opps.php'),
+      oppsSave:     (oppId) => request('/member/opps.php', { body: { action: 'save', oppId } }),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
@@ -1150,6 +1153,11 @@
       formation: {
         list: () => request('/admin/formation.php'),
         save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
+      },
+      /* Opportunities shown to members (Learning → Opportunities). Capability: content. */
+      opps: {
+        list: () => request('/admin/opps.php'),
+        save: (o) => request('/admin/opps.php', { body: Object.assign({ action: 'save' }, o || {}) }),
       },
       timetable: {
         list:   (centreId) => request('/admin/timetable.php' + qs({ centreId: centreId || '' })),

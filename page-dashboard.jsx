@@ -588,8 +588,11 @@ function DashboardPage({ setPage }) {
   // calls (members reported the dashboard chewing data on phones left
   // in their pocket). We also refresh immediately on becoming-visible
   // so the dashboard is current the moment they look at it.
+  /* NGG members get the Member Portal (v9, src/modules/member9), which reads
+     its own data per screen; `?classic=1` keeps this dashboard reachable. */
+  const v9 = !!(data && data.member && data.member.type === "NGG") && !/[?&]classic=1/.test(window.location.search || "") && typeof Mp9Portal === "function";
   React.useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn || v9) return;
     let id = null;
     const start = () => { if (!id) id = setInterval(() => setReload(r => r + 1), 60000); };
     const stop  = () => { if (id) { clearInterval(id); id = null; } };
@@ -600,30 +603,32 @@ function DashboardPage({ setPage }) {
     if (!document.hidden) start();
     document.addEventListener("visibilitychange", onVis);
     return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
-  }, [isSignedIn]);
+  }, [isSignedIn, v9]);
 
   if (loading) {
-    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSkeleton/></DashboardShell>;
   }
   if (!isSignedIn) {
-    return <DashboardShell><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
   }
   // Full error screen only when we have nothing to show.
   if (err && !data) {
-    if (rec && rec.locked) return <DashboardShell><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
-    return <DashboardShell><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
+    if (rec && rec.locked) return <DashboardShell setPage={setPage}><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
   }
   if (!data) {
-    return <DashboardShell><DashboardSkeleton/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><DashboardSkeleton/></DashboardShell>;
   }
 
   // The record drive: past its deadline, an incomplete record is the only screen.
   if (rec && rec.locked) {
-    return <DashboardShell><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
+    return <DashboardShell setPage={setPage}><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
   }
 
+  if (v9) return <Mp9Portal rec={rec} onRecSaved={setRec} onSignOut={signOut}/>;
+
   return (
-    <DashboardShell>
+    <DashboardShell setPage={setPage}>
       {rec && rec.asked && <RecordDrive status={rec} onSaved={setRec}/>}
       <DashboardLive
         data={data}
@@ -715,11 +720,20 @@ function RecordDrive({ status, locked, onSaved, onSignOut }) {
   );
 }
 
-function DashboardShell({ children }) {
+/* The dashboard route draws its own chrome (the Member Portal is a whole app);
+   this older dashboard puts the site's header and footer back around itself. */
+function DashboardShell({ children, setPage }) {
+  setPage = setPage || (() => {});
   return (
-    <div className="page dashboard" data-screen-label="05 Dashboard">
-      {children}
-    </div>
+    <React.Fragment>
+      {typeof TopNav === "function" && <TopNav page="dashboard" setPage={setPage}/>}
+      <main id="main" style={{ flex: 1 }}>
+        <div className="page dashboard" data-screen-label="05 Dashboard">
+          {children}
+        </div>
+      </main>
+      {typeof Footer === "function" && <Footer setPage={setPage} page="dashboard"/>}
+    </React.Fragment>
   );
 }
 

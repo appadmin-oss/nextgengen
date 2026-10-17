@@ -1,0 +1,11 @@
+{
+  "// what": "The Member Portal v9 design's sample copy that is really data, and its binding. See tools/dc-compile.js.",
+  "placeholder=\"Write to Adaeze\"": "placeholder=\"Write to {{ mentorFirst }}\"",
+  "Ticking a step tells Adaeze. You'll check it together on Saturday.": "Ticking a step tells {{ mentorFirst }}. You'll check it together on Saturday.",
+  "This goes straight to Mrs. Bisi, who keeps young people safe at NGG. She'll talk to you today.": "This goes straight to {{ sg.name }}, who keeps young people safe at NGG. They'll talk to you today.",
+  "Sent. Adaeze will look at it before Saturday.": "Sent. {{ mentorFirst }} will look at it before Saturday.",
+  "Only your coordinator sees this. Adaeze won't be told what you said. Asking is always okay.": "Only your coordinator sees this. {{ mentorFirst }} won't be told what you said. Asking is always okay.",
+  "Only the NGG team sees your answers. Adaeze doesn't.": "Only the NGG team sees your answers. {{ mentorFirst }} sees the overall score, never the answers.",
+  "How is it going with Adaeze?": "How is it going with {{ mentorFirst }}?",
+  "Chats are kept until the end of this NGG session (Session 4, ends 13 December).": "Chats are kept until the end of this NGG session ({{ sessEnds }})."
+}

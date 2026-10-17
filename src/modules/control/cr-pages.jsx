@@ -94,6 +94,7 @@ const CR_PAGES = {
     { id: "anchor", label: "Anchor Journal", desc: "The weekly reflection every member writes.", cap: "content" },
     { id: "timetable", label: "Timetable", desc: "Which course meets when, where and with whom, at each centre.", cap: "club" },
     { id: "formation", label: "Saturday formation", desc: "The 8:00–2:00 Saturday schedule every portal reads, and what each reader is told.", cap: "content" },
+    { id: "opps", label: "Opportunities", desc: "Bootcamps, competitions and volunteering shown to members, matched to their age.", cap: "content" },
   ] },
   events: { label: "Events", icon: "calendar-blank", tabs: [
     { id: "events", label: "Events", desc: "Sessions, outings and showcases members can RSVP to.", cap: "content" },

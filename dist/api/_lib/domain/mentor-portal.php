@@ -460,6 +460,15 @@ function member_mp_mentee(array $p): array {
         $seen = json_decode((string)$r['observed'], true) ?: []; $note = trim((string)($r['note'] ?? ''));
         $timeline[] = ['at' => (string)$r['onDate'], 'icon' => 'binoculars', 'text' => 'Seen on Saturday: ' . ($seen ? implode(', ', $seen) : 'a note') . ($note !== '' ? '. ' . mb_substr($note, 0, 160) : ''), 'source' => 'Saturday observation'];
     }
+    /* The member's own "Who I'm becoming" (Member Portal → My growth), which
+     * they write for their mentor to see — so it is on the mentor's page. */
+    $grow = safe_json((string)(db_row("SELECT stateValue, updatedAt FROM member_state WHERE memberId = ? AND stateKey = 'mp9.grow'", [$id])['stateValue'] ?? ''));
+    if (is_array($grow) && trim((string)($grow['fs']['statement'] ?? '')) !== '') {
+        $fs = $grow['fs']; $steps = array_values(array_filter(array_map('strval', (array)($fs['steps'] ?? []))));
+        $done = count(array_filter((array)($fs['done'] ?? [])));
+        $timeline[] = ['at' => substr((string)($grow['at'] ?? ''), 0, 10), 'icon' => 'path', 'source' => 'Their own words',
+            'text' => 'Who I’m becoming: someone who ' . mb_substr(trim((string)$fs['statement']), 0, 160) . ($steps ? ' · ' . $done . ' of ' . count($steps) . ' steps done' : '')];
+    }
     foreach (db_all("SELECT observedOn, score, evidence FROM courage_marks WHERE subjectId = ? ORDER BY observedOn DESC LIMIT 8", [$id]) as $c) {
         $timeline[] = ['at' => (string)$c['observedOn'], 'icon' => 'flame', 'text' => 'Courage ' . (int)$c['score'] . ' of 5: ' . mb_substr((string)$c['evidence'], 0, 120), 'source' => 'Courage ladder'];
     }
@@ -682,8 +691,20 @@ function member_mp_rel_save(array $p): array {
 /** The member's own side. */
 function member_mp_rel_child(array $p): array {
     $me = (string)($p['requesterId'] ?? '');
-    if (!db_row("SELECT 1 FROM mentor_assignments WHERE memberId = ? AND status = 'active'", [$me])) return ['ok' => false, 'error' => 'no_mentor'];
-    return mp_rel_write($me, 'child', (array)($p['answers'] ?? []), $me);
+    $asg = db_row("SELECT a.mentorId, t.leadId, t.centre FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$me]);
+    if (!$asg) return ['ok' => false, 'error' => 'no_mentor'];
+    $r = mp_rel_write($me, 'child', (array)($p['answers'] ?? []), $me);
+    /* "Not really" on any question is a conversation the coordinator has with
+     * the child this week, just the two of them — not something that waits for
+     * a second low check. The mentor is not the one told. */
+    if (!empty($r['ok']) && min(array_map('intval', array_values((array)$p['answers']))) <= 2 && function_exists('ms_nudge')) {
+        $m = db_row('SELECT fullName, centre FROM members WHERE memberId = ?', [$me]);
+        ms_nudge('J:relChildLow:' . $me . ':' . $r['cycle'], 'J:relChildLow', ['audience' => 'lead', 'mentorId' => (string)($asg['leadId'] ?? ''), 'memberId' => $me,
+            'centre' => (string)($m['centre'] ?? $asg['centre'] ?? ''), 'title' => mp_first((string)($m['fullName'] ?? '')) . ' answered “not really” in their relationship check',
+            'body' => 'Talk to them this week, just the two of you. Their mentor is not told what they said.', 'suggestion' => 'A short private chat on Saturday.']);
+        $r['coordinator'] = true;
+    }
+    return $r;
 }
 /** relFit — "Talk to the coordinator about fit". Nothing changes until they have talked. */
 function member_mp_rel_fit(array $p): array {
@@ -1129,7 +1150,7 @@ function member_mp_mine(array $p): array {
     $me = (string)($p['requesterId'] ?? '');
     if (!db_row("SELECT 1 FROM members WHERE memberId = ? AND status = 'active'", [$me])) return ['ok' => false, 'error' => 'no_member'];
     $o = mp_opts();
-    $a = db_row("SELECT a.mentorId, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$me]);
+    $a = db_row("SELECT a.mentorId, a.startedAt, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$me]);
     $week = iso_week_period(mp_lagos_now());
     $chk = db_row('SELECT wellbeing, sleep, stress, energy, note, createdAt FROM member_checkins WHERE memberId = ? AND week = ?', [$me, $week]);
     $cycle = mp_cycle(gmdate('Y-m-d', mp_lagos_now()), $o['relWeeks']);
@@ -1138,7 +1159,7 @@ function member_mp_mine(array $p): array {
     $goal = db_row("SELECT id, goal, outcome, obstacle, plan, area, reviewBy FROM mentor_goals WHERE subjectId = ? AND status = 'active' AND agreed = 1 ORDER BY id DESC LIMIT 1", [$me]);
     if ($goal) { $c = mentor_goal_checks_for([(int)$goal['id']])[(int)$goal['id']] ?? []; $goal['progress'] = $c ? (int)end($c)['progress'] : 0; }
     $self = db_row("SELECT month, scores FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'member' ORDER BY month DESC LIMIT 1", [$me]);
-    return ['ok' => true, 'week' => $week, 'checkin' => $chk, 'mentor' => $a ? ['name' => (string)$a['fullName'], 'first' => mp_first((string)$a['fullName'])] : null,
+    return ['ok' => true, 'week' => $week, 'checkin' => $chk, 'mentor' => $a ? ['name' => (string)$a['fullName'], 'first' => mp_first((string)$a['fullName']), 'since' => substr((string)($a['startedAt'] ?? ''), 0, 10)] : null,
             'relAsked' => $a !== null && ($mentorSide !== null || ($childSide === null && db_row("SELECT 1 FROM mentor_nudges WHERE status = 'open' AND rule = 'J:relCheckDue' AND memberId = ?", [$me]) !== null)),
             'relDone' => $childSide !== null, 'relQuestions' => MP_REL_Q_CHILD, 'goal' => $goal,
             'selfScore' => $self ? ['month' => (string)$self['month'], 'scores' => array_map('intval', explode(',', (string)$self['scores']))] : null,

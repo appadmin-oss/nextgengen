@@ -26374,6 +26374,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: the register keeps a detail line, trimmed and capped, and a tap without one never wipes it', str_starts_with($n1, 'Offered to present') && mb_strlen($n1) === MP_NOTE_MAX && $n2 === $n1);
     $tl = backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1']));
     chk('portal: the detail reaches the child’s timeline', (bool)array_filter((array)($tl['timeline'] ?? []), static fn($e) => str_contains((string)$e['text'], 'Offered to present')));
+    // Member Portal v9: "Who I'm becoming" is on the mentor's timeline; a low relationship answer reaches the lead now.
+    member_state_set(['memberId' => 'NGG-MPK1', 'key' => 'mp9.grow', 'value' => ['fs' => ['statement' => 'helps younger children read', 'steps' => ['Read with my brother'], 'done' => [true]], 'at' => '2026-10-01T09:00:00Z']]);
+    $tl2 = backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1']));
+    chk('member v9: who they are becoming reaches the mentor’s timeline, with the steps done', (bool)array_filter((array)($tl2['timeline'] ?? []), static fn($e) => str_contains((string)$e['text'], 'helps younger children read') && str_contains((string)$e['text'], '1 of 1')));
+    db_exec("DELETE FROM mentor_rel_checks WHERE subjectId = 'NGG-MPK1' AND side = 'child'");
+    $rc = backend_dispatch('member.mentor.rel.child', ['requesterId' => 'NGG-MPK1', 'answers' => [5, 1, 4, 4]]);
+    chk('member v9: a “not really” in the relationship check tells the lead this week, not the mentor', !empty($rc['coordinator'])
+        && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:relChildLow' AND memberId = 'NGG-MPK1' AND audience = 'lead'"));
+    $mine9 = backend_dispatch('member.mentor.mine', ['requesterId' => 'NGG-MPK1']);
+    chk('member v9: the member sees when their mentor pairing began', isset($mine9['mentor']['since']));
     backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'note' => 'Led the huddle.']]]));
     chk('portal: closing the register copies Here to the centre record', (bool)db_row("SELECT 1 FROM attendance WHERE studentId = 'NGG-MPK1' AND date = ? AND method = 'mentor'", [$T]));
     chk('portal: a weekly review needs all three ratings', (backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong']))['error'] ?? '') === 'rate_all_three');
@@ -27534,6 +27544,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM guardian_wards WHERE linkId LIKE 'SFL-%'"); db_exec("DELETE FROM guardians WHERE guardianId LIKE 'SF-G%'");
     db_exec("DELETE FROM attendance WHERE studentId LIKE 'SF-K%'"); db_exec("DELETE FROM mentor_register WHERE subjectId LIKE 'SF-K%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'SF-K%'");
     db_exec('DELETE FROM saturday_formation_sends');
+})();
+
+/* ── Opportunities (domain/opportunities.php): staff-edited, matched to the member's age ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'OPP-K1', 'fullName' => 'Opp Kid', 'email' => 'opp.k1@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => gmdate('Y-m-d', strtotime('-13 years -1 month')), 'createdAt' => $now, 'updatedAt' => $now]);
+    $adm = 'NGG-2025-0099';
+    chk('opps · a title is required, the whole row is checked first', (backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => ''])['error'] ?? '') === 'title_required'
+        && (backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'X', 'url' => 'javascript:alert(1)'])['error'] ?? '') === 'bad_url'
+        && (backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'X', 'ageMin' => 15, 'ageMax' => 12])['error'] ?? '') === 'bad_ages'
+        && opp_all() === []);
+    $a = backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'Coding bootcamp', 'type' => 'Training', 'ageMin' => 12, 'ageMax' => 15, 'closesOn' => gmdate('Y-m-d', time() + 9 * 86400)]);
+    backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'Only for 16+', 'ageMin' => 16]);
+    backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'Closed one', 'closesOn' => '2020-01-01']);
+    backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'title' => 'Hidden one', 'status' => 'hidden']);
+    $mine = member_opps(['memberId' => 'OPP-K1']);
+    chk('opps · a member sees only the open, visible ones that fit their age', array_column($mine['items'], 'title') === ['Coding bootcamp'] && $mine['age'] === 13);
+    chk('opps · a member without content cannot edit the list', empty(backend_dispatch('admin.opps.save', ['requesterId' => 'OPP-K1', 'title' => 'Mine'])['ok']));
+    $s1 = member_opps_save(['memberId' => 'OPP-K1', 'oppId' => $a['item']['oppId']]); $s2 = member_opps_save(['memberId' => 'OPP-K1', 'oppId' => $a['item']['oppId']]);
+    chk('opps · Save toggles the member’s own bookmark, and an unknown id is refused', $s1['saved'] === true && $s2['saved'] === false
+        && (member_opps_save(['memberId' => 'OPP-K1', 'oppId' => 'OPP-NOPE'])['error'] ?? '') === 'not_found');
+    $r = backend_dispatch('admin.opps.save', ['requesterId' => $adm, 'oppId' => $a['item']['oppId'], 'remove' => true]);
+    chk('opps · removing one takes it off every member’s list', !empty($r['ok']) && member_opps(['memberId' => 'OPP-K1'])['items'] === []);
+    setting_set('opportunities', []);
+    db_exec("DELETE FROM members WHERE memberId = 'OPP-K1'"); db_exec("DELETE FROM member_state WHERE memberId = 'OPP-K1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

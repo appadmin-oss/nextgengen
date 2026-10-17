@@ -484,7 +484,14 @@ function member_today(array $p): array {
     try {
         $c = member_compliance(['memberId' => $mid]);
         if (!empty($c['ok']) && !empty($c['enabled']) && in_array((string)$c['state'], ['warned', 'dormant', 'suspended', 'evicted'], true))
-            $standing = ['state' => (string)$c['state'], 'until' => (string)$c['until'], 'reason' => (string)$c['reason'], 'finesOwed' => (int)$c['finesOwed']];
+            $standing = ['state' => (string)$c['state'], 'until' => (string)$c['until'], 'reason' => (string)$c['reason'], 'finesOwed' => (int)$c['finesOwed'],
+                // The counts behind the state, so the member sees how close the next step is.
+                'lates' => 0, 'absences' => 0, 'latenessCap' => 3, 'absenceLimit' => 3];
+        if ($standing) {
+            $ps = policy_state($mid, 'member'); $pc = policy_settings();
+            $standing['lates'] = (int)($ps['lates'] ?? 0); $standing['absences'] = (int)($ps['absences'] ?? 0);
+            $pm = (array)($pc['member'] ?? $pc['student'] ?? []); $standing['latenessCap'] = (int)($pm['latenessCap'] ?? 3); $standing['absenceLimit'] = (int)($pm['absenceLimit'] ?? 2) + 1; $standing['lateRedline'] = (string)($pm['lateRedline'] ?? '08:30'); $standing['fine'] = (int)($pm['fine'] ?? 0);
+        }
         $fines = !empty($c['ok']) ? (int)$c['finesOwed'] : 0;
     } catch (\Throwable $e) { $fines = 0; }
 
@@ -579,6 +586,9 @@ function member_today(array $p): array {
         'week' => ['saturday' => $sat, 'isToday' => $sat === $today, 'centre' => (string)$m['centre'], 'track' => (string)$m['track'],
             'mentor' => $mentor ? ['name' => (string)$mentor['fullName'], 'first' => mp_first((string)$mentor['fullName'])] : null],
         'promises' => $promises,
+        // Who to call: the centre's safeguarding officer (the Get help screen's "Talk to someone now").
+        'safeguarding' => (function () use ($m) { $o = function_exists('sg_officer') ? sg_officer((string)$m['centre']) : null;
+            return $o ? ['name' => (string)($o['fullName'] ?? ''), 'phone' => (string)($o['phone'] ?? ''), 'centre' => (string)$m['centre']] : null; })(),
         'glance' => ['index' => $sc ? (int)$sc[0]['total'] : null, 'indexChange' => count($sc) === 2 ? (int)$sc[0]['total'] - (int)$sc[1]['total'] : null,
             'indexMonth' => (string)($sc[0]['month'] ?? ''), 'level' => (int)($stats['level'] ?? 1), 'streak' => (int)($stats['streak'] ?? 0), 'week' => (int)($stats['currentWeek'] ?? 0)],
         'badges' => (object)$badges];
