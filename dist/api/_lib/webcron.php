@@ -199,6 +199,8 @@ function web_cron_run(): void {
                 // this tick only asks whether a slot has come. Family messages held
                 // for quiet hours go out here too.
                 if (web_cron_due('mentor_jobs', web_cron_cfg('mentor_jobs', 600)) && function_exists('mpa_tick')) web_cron_guard('mentor_jobs', fn() => mpa_tick());
+                // Cloudinary usage: read every six hours, alert as it climbs, pause uploads when full.
+                if (web_cron_due('media_usage', web_cron_cfg('media_usage', MEDIA_REFRESH_SECONDS)) && function_exists('media_usage_refresh')) web_cron_guard('media_usage', fn() => media_usage_refresh());
                 /* Flag anybody whose clock ran out while nobody was watching.
                  * The board poll catches this the instant somebody looks; two
                  * players who both closed the tab leave a game open forever,

@@ -27888,5 +27888,57 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Media storage: watch, tell, protect, slim (media-storage.php) ─────────────
+(function () use ($SU) {
+    $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'testcloud', 'api_key' => '1', 'api_secret' => 'secret', 'folder' => 'ngg'];
+    setting_set('media.usage', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    $usage = 50.0; $calls = [];
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q) use (&$usage, &$calls) {
+        $calls[] = $m . ' ' . $path;
+        if ($path === '/usage') return ['code' => 200, 'body' => ['plan' => 'Free', 'credits' => ['usage' => $usage / 4, 'limit' => 25, 'used_percent' => $usage],
+            'storage' => ['usage' => 1, 'used_percent' => $usage - 10], 'bandwidth' => ['usage' => 1, 'used_percent' => 5]]];
+        static $n = 0; $n++;
+        return ['code' => 200, 'body' => ['deleted' => array_fill(0, 3, 'x'), 'partial' => $n === 1]];
+    };
+    $r = media_usage_refresh(true);
+    chk('media · 50% used is ok, with the parts kept', $r['level'] === 'ok' && $r['parts']['credits']['pct'] === 50.0 && $r['parts']['storage']['pct'] === 40.0 && media_uploads_allowed());
+    db_exec("DELETE FROM ops_events WHERE source = 'media.storage'");
+    $usage = 88.0; $r = media_usage_refresh(true);
+    chk('media · 88% is high: an alert goes once, and the paid AI photo edits stop', $r['level'] === 'high' && !cloudinary_credits_ok()
+        && (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'media.storage'") && media_uploads_allowed());
+    $hits = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'media.storage.alert'")['c'];
+    media_usage_refresh(true);
+    chk('media · …and staying high does not alert again', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'media.storage.alert'")['c'] === $hits);
+    $usage = 97.0; $r = media_usage_refresh(true);
+    chk('media · 97% is critical: uploads are paused', $r['level'] === 'critical' && !media_uploads_allowed());
+    chk('media · …a photo kept on the site is not pushed up to Cloudinary', (cloudinary_adopt('/api/public/photo.php?p=0123456789abcdef0123456789abcdef.jpg')['error'] ?? '') === 'media_storage_full');
+    $GLOBALS['__media_api_mock'] = fn($m, $p, $q) => ['code' => 420, 'body' => null];
+    chk('media · Cloudinary refusing work (HTTP 420) is critical whatever the last reading', media_usage_refresh(true)['level'] === 'critical');
+    chk('media · the cadence holds between web-cron ticks', media_usage_refresh(false)['checkedAt'] === media_usage_state()['checkedAt']);
+    chk('media · every image upload is compressed before it is stored, sized for its use',
+        media_incoming_transformation('headshot') === 'c_limit,w_1200,h_1200,q_auto:good' && str_contains(media_incoming_transformation('proof'), 'w_1600')
+        && !str_contains(media_incoming_transformation('headshot'), 'f_auto'));
+    chk('media · the usage op is for settings holders', (backend_dispatch('admin.media.usage', ['requesterId' => 'NOBODY'])['ok'] ?? true) === false
+        && !empty(backend_dispatch('admin.media.usage', ['requesterId' => $SU])['ok']));
+    $usage = 60.0;
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q) use (&$usage, &$calls) {
+        $calls[] = $m . ' ' . $path . ' ' . json_encode($q);
+        if ($path === '/usage') return ['code' => 200, 'body' => ['credits' => ['usage' => 15, 'limit' => 25, 'used_percent' => $usage]]];
+        static $n = 0; $n++;
+        return ['code' => 200, 'body' => ['deleted' => array_fill(0, 3, 'x'), 'partial' => $n === 1]];
+    };
+    chk('media · freeing space needs the typed confirmation', (backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU])['error'] ?? '') === 'confirm_required');
+    $calls = [];
+    $pg = backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE']);
+    $del = array_values(array_filter($calls, static fn($c) => str_starts_with($c, 'DELETE')));
+    chk('media · freeing space deletes derived copies only (keep_original), follows partial results, and re-reads usage',
+        !empty($pg['ok']) && $pg['deleted'] === 9 && count($del) === 3 && str_contains($del[0], '"keep_original":"true"') && ($pg['usage']['level'] ?? '') === 'ok');
+    chk('media · …once, in the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.purge_derived' ORDER BY id DESC LIMIT 1"));
+    unset($GLOBALS['__media_api_mock']);
+    setting_set('media.usage', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

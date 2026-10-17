@@ -280,14 +280,21 @@ function ops_cloudinary_health(): array {
         $d = json_decode((string)($res['body'] ?? ''), true);
         $pct = null;
         if (is_array($d)) {
-            foreach (['credits', 'storage', 'bandwidth'] as $k) {
-                if (isset($d[$k]['used_percent'])) { $pct = (float)$d[$k]['used_percent']; break; }
+            // The worst part decides, as in media_usage_refresh().
+            foreach (['credits', 'storage', 'bandwidth', 'transformations'] as $k) {
+                if (isset($d[$k]['used_percent'])) $pct = max($pct ?? 0.0, (float)$d[$k]['used_percent']);
             }
         }
-        $out['ok'] = true;
-        $out['state'] = 'ok';
+        /* Answering is not the same as healthy: at 99% the old line read
+           "Operational". The level is media-storage.php's, so the health line,
+           the alerts and the upload guard all agree. */
+        $level = function_exists('media_level_for') ? media_level_for($pct) : 'ok';
+        $out['ok'] = $level === 'ok' || $level === 'warn';
+        $out['state'] = ['ok' => 'ok', 'warn' => 'filling', 'high' => 'near_limit', 'critical' => 'full'][$level];
+        $out['level'] = $level;
         $out['usedPercent'] = $pct;
-        $out['detail'] = $pct === null ? 'Connected.' : 'Connected — ' . round($pct) . '% of the plan used.';
+        $out['detail'] = $pct === null ? 'Connected.' : 'Connected — ' . round($pct) . '% of the plan used'
+            . ($level === 'critical' ? '. New uploads are paused; photos are stored on the site.' : ($level === 'high' ? '. AI photo edits have stopped.' : '.'));
     } else {
         $out['state'] = 'unreachable';
         $out['detail'] = 'Could not reach Cloudinary' . ($res['error'] ? ': ' . substr((string)$res['error'], 0, 120) : ' (HTTP ' . $code . ').');

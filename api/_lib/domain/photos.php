@@ -1358,6 +1358,8 @@ function cloudinary_adopt(string $url): array {
     if ($url === '') return ['ok' => false, 'error' => 'no_photo'];
     if (cloudinary_hosted($url)) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
     if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    // Storage full: the photo stays on the site's own store rather than tipping the plan over.
+    if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return ['ok' => false, 'error' => 'media_storage_full'];
     $file = '';
     if (photo_is_stored_locally($url) && preg_match('/p=([0-9a-f]{32}\.(jpg|png|webp))$/', $url, $m)) {
         $path = photo_store_find($m[1]);

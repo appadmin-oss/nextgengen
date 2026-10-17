@@ -1626,6 +1626,32 @@ Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
 
+## Image storage (Cloudinary)
+
+Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
+shared between storage, bandwidth — every time a page shows an image — and
+transformations). The site watches it for you:
+
+- **Checked every six hours.** Control Room → Settings → **Diagnostics** →
+  *Image storage* shows how much of the plan is used, part by part, and when it
+  was last checked. **Check now** reads it at once.
+- **You are told as it climbs**: at 70%, 85% and 95% the admissions inbox and
+  everyone with the `settings` permission get an email and an app alert, once
+  per level. At 85% and above it also appears first in **Home → Needs you**.
+- **What happens as it fills**: from 85% the paid AI photo edits stop. At 95%
+  (or when Cloudinary starts refusing work) **new uploads are paused** so the
+  account is not tipped over: photos are kept on the site's own storage
+  instead, and other uploads say why they can't go. Nothing already stored is
+  touched.
+- **Less is stored per upload**: every image (headshots, avatars, covers,
+  proofs, submissions, community posts) is resized and compressed by Cloudinary
+  *before* it is stored, so a 6 MB phone photo is kept at a fraction of that.
+  Documents and videos are not re-encoded.
+- **Free space…** (Diagnostics) deletes the resized copies Cloudinary made for
+  each page — every original is kept, and a copy is remade when a page next
+  needs it. Type FREE SPACE to confirm. If storage is still high afterwards,
+  the plan itself needs upgrading on cloudinary.com.
+
 ## Settings and connected services
 
 Settings (Control Room → Settings) is split by what a setting changes:

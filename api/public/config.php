@@ -18,6 +18,11 @@ header('Cache-Control: public, max-age=300');
 // application form so a prospective member can attach a headshot before they
 // have an account. The api_secret is never involved in unsigned uploads.
 $publicUpload = !empty($cld['cloud_name']) && !empty($cld['unsigned_preset']);
+/* Storage full: neither cloud path is offered, so a photo goes straight to the
+   site's own store and other uploads can say why (media-storage.php). The
+   unsigned preset matters most here — it is the one path no signer can stop. */
+$storageFull = function_exists('media_uploads_allowed') && !media_uploads_allowed();
+if ($storageFull) { $uploadsEnabled = false; $publicUpload = false; }
 
 json_ok([
     'uploads' => [
@@ -25,6 +30,7 @@ json_ok([
         'cloudName' => $uploadsEnabled ? $cld['cloud_name'] : '',
         'maxBytes'  => (int)($cld['max_bytes'] ?? (25 * 1024 * 1024)),
     ],
+    'storageFull' => $storageFull,
     'publicUpload' => [
         'enabled'   => $publicUpload,
         'cloudName' => $publicUpload ? $cld['cloud_name'] : '',

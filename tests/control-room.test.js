@@ -203,6 +203,21 @@ function cleanup() {
     chk('/nextadmin?s=messages lands on Inbox › Messages at /control/inbox/messages', new URL(Q.url()).pathname === '/control/inbox/messages' && /Messages/.test(await Q.innerText('.cr-crumb')) && /^Messages/.test(await Q.getAttribute('.cr-ib-view[aria-current="page"]', 'aria-label')));
     await Q.context().close();
 
+    console.log('image storage');
+    /* A full Cloudinary plan, as the six-hourly check would have recorded it: the
+       Diagnostics page must say so with the numbers, and offer both remedies. */
+    php(`setting_set('media.usage', ['configured' => true, 'level' => 'critical', 'pct' => 97.0, 'plan' => 'Free', 'checkedAt' => gmdate('c'), 'error' => '',
+      'parts' => ['credits' => ['usage' => 24.2, 'limit' => 25, 'pct' => 97.0], 'storage' => ['usage' => 1, 'limit' => 0, 'pct' => 61.0]]], 'test');`, ['bootstrap']);
+    const D = await open(1280, 900, '/control/settings/ops');
+    await D.waitForSelector('text=Image storage', { timeout: 30000 });
+    const dtext = await D.evaluate(() => document.body.innerText);
+    chk('Diagnostics shows image storage as full, with each part of the plan', /Full — new uploads are paused/.test(dtext) && /Plan credits\s*97% used/.test(dtext) && /Storage\s*61% used/.test(dtext));
+    chk('…says what that does to uploads, and offers Check now and Free space', /photos are kept on this site instead/.test(dtext) && !!(await D.$('button:has-text("Check now")')) && !!(await D.$('button:has-text("Free space")')));
+    await D.click('button:has-text("Free space")');
+    await D.waitForSelector('text=Type FREE SPACE', { timeout: 10000 });
+    chk('…and freeing space asks for the typed confirmation first', /Originals are not touched/.test(await D.evaluate(() => document.body.innerText)));
+    await D.context().close();
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

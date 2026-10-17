@@ -1441,3 +1441,21 @@ The owner's rule: every guardian notification is compulsory. `family_notify_pref
 returns `FAMILY_NOTIFY_DEFAULT` (all true) regardless of the stored
 `guardian_wards.notify`, which is now unread; `family.ward.notify` writes nothing and
 answers `required: true`. The family portal shows each email as *On* with no switch.
+
+## 2026-10-17 — Cloudinary storage: watched, protected, slimmer
+
+The plan neared its limit and nothing said so: `cloudinary_refresh_usage` was
+called only by tests, and the health line read "Operational" at 99%.
+`domain/media-storage.php` now reads `/usage` every 6h from web-cron
+(`media_usage_refresh`), keeps the parts in setting `media.usage`, sets a level
+(warn 70 / high 85 / critical 95, or HTTP 420), alerts once per level rise
+(intake inbox + every `settings` holder, ops event), stops AI edits from high,
+and at critical refuses to sign uploads (`media_storage_full`), hides both
+cloud paths from `/api/public/config.php` and stops `cloudinary_adopt`, so
+photos land in the local store. Every image upload now carries a signed
+incoming transformation (`media_incoming_transformation`), and the client
+prefers the signed path over the unsigned preset. Diagnostics shows the
+breakdown; `admin.media.purgeDerived` deletes derived copies (keep_original).
+Not done: re-compressing originals already stored, and finding orphaned
+originals no record points at — both need care, because deleting a photo on a
+printed card's record is unrecoverable.

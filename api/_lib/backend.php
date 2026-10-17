@@ -591,6 +591,8 @@ function backend_dispatch(string $op, array $args = []): array {
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
             'member.fees.pay'             => 'member_fees_pay',
+            'admin.media.usage'           => 'admin_media_usage',
+            'admin.media.purgeDerived'    => 'admin_media_purge_derived',
             'family.fees.pay'             => 'family_fees_pay',
             /* Self-service. Every one of these takes its memberId from the
                SESSION, never the body — see member-self.php. */

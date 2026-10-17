@@ -105,6 +105,7 @@ function rate_limit_default(string $op): ?array {
         'mentor.concern'     => ['max' => 5,  'window' => 600],   // the per-day cap is sg_report_capped()
         'mentor.write'       => ['max' => 120, 'window' => 600],  // every other portal write
         'safeguarding.report' => ['max' => 5, 'window' => 600],
+        'media.purge'        => ['max' => 3, 'window' => 3600],   // each press may run ~20 Cloudinary deletes
         /* A typing ping. One write per 3s while actually typing is 20/minute;
            this ceiling is triple that, so a real conversation never reaches it
            and a stuck client is stopped. */

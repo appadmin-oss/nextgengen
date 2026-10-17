@@ -481,13 +481,16 @@
      * happened to open the Cloudinary dashboard. The fallback stays; the silence
      * does not. */
     let why = '';
-    if (canPublic) {
-      try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
-      catch (e) { why = 'public: ' + (e && e.message || 'failed'); }
-    }
+    /* Signed first: the signer compresses the image before Cloudinary stores
+       it and refuses when storage is full. The unsigned preset does neither,
+       so it is only the fallback for a host with no signing keys. */
     if (canSigned) {
       try { return Object.assign({ inline: false }, await uploadFile(file, kind, onProgress)); }
-      catch (e) { why = (why ? why + '; ' : '') + 'signed: ' + (e && e.message || 'failed'); }
+      catch (e) { why = 'signed: ' + (e && e.message || 'failed'); }
+    }
+    if (canPublic && !canSigned) {
+      try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
+      catch (e) { why = (why ? why + '; ' : '') + 'public: ' + (e && e.message || 'failed'); }
     }
     if (onProgress) onProgress(50);
     const url = await inlineImage(file);
@@ -1604,6 +1607,10 @@
         review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
       },
       /* Is it broken, and did anyone notice. */
+      media: {
+        usage:   (refresh) => request('/admin/media.php' + (refresh ? '?refresh=1' : '')),
+        purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
+      },
       ops: {
         status: () => request('/admin/ops.php'),
         clear:  (id) => request('/admin/ops.php', { body: { action: 'clear', id: id || 0 } }),

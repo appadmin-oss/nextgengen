@@ -102,6 +102,16 @@ $signParams = [
 //    extension) on the delivered URL, so a `.pdf` stays recognisably a `.pdf`
 //    to the viewer, the browser and the person downloading it.
 $eager = ''; $incoming = ''; $useFilename = false;
+// Storage full: refuse before signing, so nothing new tips the plan over (media-storage.php).
+if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) { $r = media_full_refusal(); json_error($r['error'], 503, $r['detail']); }
+/* Every IMAGE upload is compressed before it is stored, not only community
+   posts: headshots, avatars, covers and any image kind. A document, a video
+   or an `auto` upload whose client did not say it is an image is left alone. */
+$isImage = $resourceType === 'image' || ($resourceType === 'auto' && upload_media_kind((string)($body['mediaKind'] ?? '')) === 'image' && isset($body['mediaKind']));
+if ($kind !== 'post' && $isImage) {
+    $incoming = media_incoming_transformation($kind);
+    $signParams['transformation'] = $incoming;
+}
 if ($kind === 'post') {
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     if ($mk === 'video') {
