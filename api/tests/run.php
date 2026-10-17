@@ -27285,6 +27285,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('api fix · a reply cannot be written into another child\'s chat by naming its thread', ($rp('chat:JOB-K9', '')['error'] ?? '') === 'not_in_caseload'
         && ($rp('chat:JOB-K9', 'JOB-K1')['error'] ?? '') === 'not_found');
     chk('api fix · …a reply to my own mentee\'s chat still goes', !empty($rp('chat:JOB-K1', 'JOB-K1')['ok']));
+    chk('api fix · the reply is filed under the thread the server built', (string)(db_row("SELECT threadId FROM mentor_messages WHERE fromId = 'JOB-M1' AND kind = 'Reply' ORDER BY id DESC LIMIT 1")['threadId'] ?? '') === 'chat:JOB-K1');
+    chk('api fix · a reply longer than the chat limit is refused, not truncated',
+        (backend_dispatch('member.mentor.message.reply', ['requesterId' => 'JOB-M1', 'threadId' => 'chat:JOB-K1', 'subjectId' => 'JOB-K1', 'body' => str_repeat('a', MP_CHAT_MAX + 1)])['error'] ?? '') === 'too_long');
     chk('api fix · a register cannot be closed for next month or two years ago',
         (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2030-01-05', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range'
         && (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2024-01-06', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range');
