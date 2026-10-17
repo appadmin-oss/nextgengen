@@ -3677,3 +3677,7 @@ INSERT INTO schema_version (version) VALUES (149) ON DUPLICATE KEY UPDATE versio
 -- 150: the Saturday register's detail line (what the mentor saw).
 ALTER TABLE mentor_register ADD COLUMN note TEXT;
 INSERT INTO schema_version (version) VALUES (150) ON DUPLICATE KEY UPDATE version = version;
+
+-- 151: the Saturday evaluation (formation criteria, strength, next step) on the week's review.
+ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT;
+INSERT INTO schema_version (version) VALUES (151) ON DUPLICATE KEY UPDATE version = version;

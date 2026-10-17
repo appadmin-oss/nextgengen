@@ -26384,6 +26384,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && !empty(backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Strong', 'wellbeing' => 'Low']))['ok'])
         && (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1' AND kind = 'pod' AND metOn = ?", [$T])['c'] === 1);
 
+    // The Saturday evaluation: the formation criteria, a strength and a next step, on the same row.
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'checks' => ['Assignment in'], 'note' => 'Led the huddle.']]]));
+    $satE = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]));
+    $pf = $satE['evalPrefill']['NGG-MPK1'] ?? [];
+    chk('evaluation: the register pre-fills it (assignment handed in, a value seen, the detail line as the strength)', ($pf['criteria']['assignment'] ?? '') === 'Demonstrated'
+        && ($pf['criteria']['courage'] ?? '') === 'Demonstrated' && ($pf['strength'] ?? '') === 'Led the huddle.' && count($satE['evalCriteria']) === 8 && $satE['evalScale'] === MP_EVAL_SCALE);
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'checks' => ['On time']]]]));
+    $pf2 = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]))['evalPrefill']['NGG-MPK1'] ?? [];
+    chk('evaluation: on time pre-fills punctuality; no assignment ticked pre-fills Not yet', ($pf2['criteria']['punctuality'] ?? '') === 'Demonstrated' && ($pf2['criteria']['assignment'] ?? '') === 'Not yet');
+    $crit = ['punctuality' => 'Demonstrated', 'assignment' => 'Not yet', 'participation' => 'Strong', 'respect' => 'Demonstrated', 'teamwork' => 'Emerging', 'courage' => 'Strong', 'initiative' => 'Emerging', 'reflection' => 'Demonstrated'];
+    $base3 = ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Steady', 'line' => 'Private: mum mentioned money is tight'];
+    $evBefore = (string)(db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'] ?? '');
+    $bad1 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => array_slice($crit, 0, 7, true), 'strength' => 'x', 'next' => 'y']]));
+    $bad2 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => ['respect' => 'Brilliant'] + $crit, 'strength' => 'x', 'next' => 'y']]));
+    $bad3 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit + ['charm' => 'Strong'], 'strength' => 'x', 'next' => 'y']]));
+    $bad4 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit, 'strength' => '', 'next' => 'y']]));
+    $evAfter = (string)(db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'] ?? '');
+    $lineAfter = (string)(db_row("SELECT line FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['line'] ?? '');
+    chk('evaluation: the whole payload is validated before any write (a missing criterion, a level off the scale, an unknown criterion, no strength)',
+        ($bad1['error'] ?? '') === 'rate_every_criterion' && ($bad1['missing'] ?? []) === ['Reflection'] && ($bad2['error'] ?? '') === 'bad_level'
+        && ($bad3['error'] ?? '') === 'unknown_criterion' && ($bad4['error'] ?? '') === 'strength_and_next' && $evAfter === $evBefore && $lineAfter !== $base3['line']);
+    $evOk = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit, 'strength' => 'Chaired the huddle and kept everyone to time.', 'next' => 'Hand the assignment in at check-in.']]));
+    $evRow = json_decode((string)db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'], true);
+    chk('evaluation: a full evaluation saves on the week’s row with its date and the mentor’s first name', !empty($evOk['ok']) && !empty($evOk['evaluated'])
+        && $evRow['criteria'] === $crit && $evRow['date'] === $T && $evRow['strength'] === 'Chaired the huddle and kept everyone to time.' && $evRow['by'] !== '');
+    $old = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Exceptional', 'character' => 'Strong', 'wellbeing' => 'Steady']));
+    $evKeep = json_decode((string)db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'], true);
+    chk('evaluation: an old three-rating payload is still accepted, and leaves the evaluation in place', !empty($old['ok']) && ($evKeep['criteria'] ?? null) === $crit);
+    $mine = backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MPK1']);
+    $e0 = $mine['evals'][0] ?? [];
+    chk('evaluation: the member reads their own, with only the criteria, the strength and the next step (no ratings, no staff line)',
+        !empty($mine['ok']) && count($mine['evals']) === 1 && array_keys($e0) === ['date', 'period', 'mentor', 'criteria', 'strength', 'next']
+        && count($e0['criteria']) === 8 && $e0['criteria'][0] === ['key' => 'punctuality', 'label' => 'Punctuality', 'level' => 'Demonstrated']
+        && $e0['next'] === 'Hand the assignment in at check-in.' && !str_contains(json_encode($mine), 'money is tight') && !str_contains(json_encode($mine), 'Exceptional'));
+    chk('evaluation: another member sees none of it', (backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MPK2'])['evals'] ?? null) === []);
+    $fam = implode("\n", sf_day_lines('NGG-MPK1', $T, []));
+    chk('evaluation: the family’s 2:00 summary carries the strength and the next step, never the staff line', str_contains($fam, 'Chaired the huddle') && str_contains($fam, 'Hand the assignment in') && !str_contains($fam, 'money is tight'));
+    $wkE = backend_dispatch('member.mentor.week', $p('NGG-MP1'));
+    chk('evaluation: This week counts Saturday evaluations, not three-rating reviews', !array_filter($wkE['due'] ?? [], static fn($d) => str_contains((string)$d['title'], 'weekly review')));
+    $sat2 = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]));
+    chk('evaluation: the Saturday read returns it for editing, marked evaluated', !empty($sat2['reviews']['NGG-MPK1']['evaluated']) && ($sat2['reviews']['NGG-MPK1']['eval']['criteria'] ?? null) === $crit);
+
     // Concern: one queue, the officer, nothing on the child's record.
     chk('portal: a concern needs the kind and more than ten characters', (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Neglect', 'body' => 'short']))['error'] ?? '') === 'say_what_happened'
         && (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Made up', 'body' => 'A long enough account']))['error'] ?? '') === 'choose_the_kind');

@@ -47,6 +47,20 @@ const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
  * and assignment completion, and the 1:45 mentor check-out. */
 const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
 const MP_NOTE_MAX = 500;
+/* The Saturday evaluation: one child, one Saturday, on the formation day's
+ * criteria. The scale is the growth scale the member sees, never a mark out of ten. */
+const MP_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
+const MP_EVAL_CRITERIA = [
+    'punctuality'   => ['Punctuality', 'Here and checked in by 8:00am'],
+    'assignment'    => ['Assignment', 'The week’s assignment handed in at check-in'],
+    'participation' => ['Participation', 'Took part in the huddle, the breakout and the class'],
+    'respect'       => ['Respect', 'To peers, mentors and instructors'],
+    'teamwork'      => ['Teamwork', 'Worked with others and helped them'],
+    'courage'       => ['Courage', 'Tried something hard or spoke up'],
+    'initiative'    => ['Initiative', 'Started things without being asked'],
+    'reflection'    => ['Reflection', 'Named what they learned and what is next'],
+];
+const MP_EVAL_TEXT_MAX = 400;
 const MP_SESSION_KINDS = ['One-to-one' => 'one-to-one', 'Pod session' => 'pod', 'Family' => 'family', 'Phone or message' => 'phone', 'Note' => 'note'];
 const MP_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
 const MP_REL_Q = ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'];
@@ -381,10 +395,11 @@ function member_mp_week(array $p): array {
      * Saturday to Tuesday; on Wednesday 14 Oct it named W42, so every child
      * seen on Saturday the 10th (W41) read as unreviewed until Friday. */
     $period = iso_week_period(strtotime(mp_last_saturday($today) . 'T12:00:00Z'));
-    $revDone = $ids ? array_column(db_all('SELECT subjectId FROM mentor_reviews WHERE period = ? AND subjectId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$period], $ids)), 'subjectId') : [];
+    // Done means evaluated: a three-rating review alone leaves the Saturday's evaluation to do.
+    $revDone = $ids ? array_column(db_all("SELECT subjectId FROM mentor_reviews WHERE period = ? AND evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$period], $ids)), 'subjectId') : [];
     $here = mp_last_register($g, $today);
     $open = count(array_diff($here, $revDone));
-    if ($open) $due[] = ['key' => 'reviews', 'icon' => 'clipboard-text', 'tone' => 'neu', 'title' => $open . ' weekly review' . ($open === 1 ? '' : 's') . ' to finish', 'sub' => 'From last Saturday · due Monday', 'go' => ['screen' => 'saturday', 'step' => 'after']];
+    if ($open) $due[] = ['key' => 'reviews', 'icon' => 'clipboard-text', 'tone' => 'neu', 'title' => $open . ' Saturday evaluation' . ($open === 1 ? '' : 's') . ' to finish', 'sub' => 'Last Saturday · due Monday', 'go' => ['screen' => 'saturday', 'step' => 'after']];
     $rel = count(array_filter($ms, static fn($m) => $m['flags']['rel']));
     if ($rel) $due[] = ['key' => 'rel', 'icon' => 'handshake', 'tone' => 'neu', 'title' => $rel . ' relationship check' . ($rel === 1 ? '' : 's') . ' to look at', 'sub' => 'Due, low, or you and the child disagree', 'go' => ['screen' => 'mentees', 'filter' => 'rel']];
     $stalled = count(array_filter($ms, static fn($m) => $m['activeGoal'] && $m['activeGoal']['stalled']));
@@ -1226,12 +1241,20 @@ function member_mp_saturday(array $p): array {
     }
     $period = iso_week_period(strtotime($date . 'T12:00:00Z'));
     $reviews = [];
-    if ($ids) foreach (db_all('SELECT subjectId, effort, characterLevel, wellbeing, line FROM mentor_reviews WHERE period = ? AND subjectId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$period], $ids)) as $r) $reviews[$r['subjectId']] = $r;
+    if ($ids) foreach (db_all('SELECT subjectId, effort, characterLevel, wellbeing, line, evalJson FROM mentor_reviews WHERE period = ? AND subjectId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', array_merge([$period], $ids)) as $r) {
+        $ev = json_decode((string)($r['evalJson'] ?? ''), true);
+        unset($r['evalJson']);
+        $reviews[$r['subjectId']] = $r + ['eval' => is_array($ev) ? $ev : null, 'evaluated' => is_array($ev)];
+    }
+    $prefill = [];
+    foreach ($reg as $sid => $r) $prefill[$sid] = mp_eval_prefill($r);
     return ['ok' => true, 'date' => $date, 'agenda' => $row && $row['agendaJson'] !== '' ? json_decode((string)$row['agendaJson'], true) : MP_AGENDA_DEFAULT,
         'oneToOnes' => $picks, 'sharedAt' => (string)($row['sharedAt'] ?? ''), 'registerClosedAt' => (string)($row['registerClosedAt'] ?? ''),
         'activities' => MP_ACTIVITIES, 'values' => MP_VALUES, 'checks' => MP_CHECKS, 'levels' => MP_LEVELS,
         'mentees' => array_map(static fn($m) => ['id' => $m['id'], 'name' => $m['name'], 'first' => $m['first'], 'initials' => $m['initials'], 'contactDays' => $m['flags']['contactDays']], $ms),
-        'register' => $reg, 'reviews' => $reviews, 'period' => $period];
+        'register' => $reg, 'reviews' => $reviews, 'period' => $period,
+        'evalScale' => MP_EVAL_SCALE, 'evalCriteria' => array_map(static fn($k, $c) => ['key' => $k, 'label' => $c[0], 'hint' => $c[1]], array_keys(MP_EVAL_CRITERIA), MP_EVAL_CRITERIA),
+        'evalPrefill' => $prefill];
 }
 /** saturdayPlan — the agenda and the one-to-ones. Fixed items cannot be removed; total ≤ 90 is advised, not enforced. */
 function member_mp_saturday_plan(array $p): array {
@@ -1334,6 +1357,15 @@ function member_mp_review(array $p): array {
     foreach (['effort', 'character', 'wellbeing'] as $k) if (!in_array((string)($p[$k] ?? ''), MP_LEVELS, true)) return ['ok' => false, 'error' => 'rate_all_three'];
     $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($p['date'] ?? '')) ? (string)$p['date'] : mp_last_saturday(mp_today($p));
     if (!mp_recent_date($date, mp_today($p))) return ['ok' => false, 'error' => 'date_out_of_range'];
+    /* The Saturday evaluation rides on the same row. It is optional (a three-
+     * rating review is still a review), but when it is sent it is validated
+     * whole before anything is written: every criterion, on the scale. */
+    $eval = null;
+    if (array_key_exists('eval', $p) && $p['eval'] !== null) {
+        $ev = mp_eval_validate($p['eval']);
+        if (empty($ev['ok'])) return $ev;
+        $eval = $ev['eval'] + ['date' => $date, 'by' => mp_first((string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? '')), 'at' => now_iso()];
+    }
     $period = iso_week_period(strtotime($date . 'T12:00:00Z'));
     $line = mb_substr(trim((string)($p['line'] ?? '')), 0, 600);
     $now = now_iso();
@@ -1343,6 +1375,8 @@ function member_mp_review(array $p): array {
     $row = ['effort' => (string)$p['effort'], 'characterLevel' => (string)$p['character'], 'wellbeing' => (string)$p['wellbeing'], 'line' => $line,
             'answers' => mp_review_answers_merge($existing, $line), 'answered' => 1, 'trend' => $trend, 'mentorId' => $g['me'],
             'mentorName' => (string)($g['mentorRow']['fullName'] ?? ''), 'centre' => $centre, 'updatedAt' => $now];
+    // An old three-rating save leaves an evaluation already on the row alone.
+    if ($eval !== null) $row['evalJson'] = json_encode($eval, JSON_UNESCAPED_UNICODE);
     // A concern flag on the week's review is never cleared by saving a rating.
     if (!$existing) $row['concern'] = 0;
     if ($existing) db_update('mentor_reviews', $row, ['id' => (int)$existing['id']]);
@@ -1353,7 +1387,57 @@ function member_mp_review(array $p): array {
             'metOn' => $date, 'kind' => 'pod', 'discussed' => 'Saturday pod session' . ($line !== '' ? ': ' . $line : ''), 'agreed' => '', 'concern' => 0, 'centre' => $centre,
             'minutes' => 90, 'goalId' => 0, 'sharedWithLead' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
     }
-    return ['ok' => true, 'period' => $period];
+    return ['ok' => true, 'period' => $period, 'evaluated' => $eval !== null || ($existing && (string)($existing['evalJson'] ?? '') !== '')];
+}
+/** The evaluation payload, checked whole: {criteria: {key: level}, strength, next}. */
+function mp_eval_validate($e): array {
+    if (!is_array($e)) return ['ok' => false, 'error' => 'bad_evaluation'];
+    $crit = is_array($e['criteria'] ?? null) ? $e['criteria'] : [];
+    foreach ($crit as $k => $v) if (!isset(MP_EVAL_CRITERIA[$k])) return ['ok' => false, 'error' => 'unknown_criterion', 'criterion' => (string)$k];
+    $out = []; $missing = [];
+    foreach (MP_EVAL_CRITERIA as $k => $c) {
+        $v = (string)($crit[$k] ?? '');
+        if ($v === '') { $missing[] = $c[0]; continue; }
+        if (!in_array($v, MP_EVAL_SCALE, true)) return ['ok' => false, 'error' => 'bad_level', 'criterion' => $c[0]];
+        $out[$k] = $v;
+    }
+    if ($missing) return ['ok' => false, 'error' => 'rate_every_criterion', 'missing' => $missing];
+    $strength = trim((string)($e['strength'] ?? '')); $next = trim((string)($e['next'] ?? ''));
+    if (mb_strlen($strength) > MP_EVAL_TEXT_MAX || mb_strlen($next) > MP_EVAL_TEXT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_EVAL_TEXT_MAX];
+    if ($strength === '' || $next === '') return ['ok' => false, 'error' => 'strength_and_next'];
+    return ['ok' => true, 'eval' => ['criteria' => $out, 'strength' => $strength, 'next' => $next]];
+}
+/**
+ * What the register already knows, as a starting point the mentor confirms:
+ * on time (the mentor's tick or the gate's arrival by 8:00), the assignment
+ * handed in and the values seen; the register's detail line as the strength.
+ * Never saved by itself.
+ */
+function mp_eval_prefill(array $r): array {
+    if (empty($r['here'])) return ['criteria' => [], 'strength' => ''];
+    $chk = (array)($r['checks'] ?? []); $obs = (array)($r['observed'] ?? []);
+    $c = ['punctuality' => in_array('On time', $chk, true) ? 'Demonstrated' : ((string)($r['arrivedAt'] ?? '') !== '' ? 'Emerging' : ''),
+          'assignment' => in_array('Assignment in', $chk, true) ? 'Demonstrated' : 'Not yet'];
+    foreach (['Respect' => 'respect', 'Teamwork' => 'teamwork', 'Courage' => 'courage'] as $v => $k) if (in_array($v, $obs, true)) $c[$k] = 'Demonstrated';
+    return ['criteria' => array_filter($c, static fn($v) => $v !== ''), 'strength' => trim((string)($r['note'] ?? ''))];
+}
+/**
+ * member.saturday.evals — the member's own last eight Saturday evaluations, to
+ * read in their portal. Only the criteria, the strength and the next step; the
+ * mentor's three ratings, their line and any concern stay staff notes.
+ */
+function member_saturday_evals(array $p): array {
+    $me = (string)($p['requesterId'] ?? '');
+    if ($me === '' || !db_row("SELECT 1 FROM members WHERE memberId = ? AND status = 'active'", [$me])) return ['ok' => false, 'error' => 'no_member'];
+    $rows = db_all("SELECT period, evalJson FROM mentor_reviews WHERE subjectId = ? AND evalJson IS NOT NULL AND evalJson <> '' ORDER BY period DESC LIMIT 8", [$me]);
+    $out = [];
+    foreach ($rows as $r) {
+        $e = json_decode((string)$r['evalJson'], true); if (!is_array($e)) continue;
+        $out[] = ['date' => (string)($e['date'] ?? ''), 'period' => (string)$r['period'], 'mentor' => (string)($e['by'] ?? ''),
+                  'criteria' => array_map(static fn($k, $c) => ['key' => $k, 'label' => $c[0], 'level' => (string)($e['criteria'][$k] ?? '')], array_keys(MP_EVAL_CRITERIA), MP_EVAL_CRITERIA),
+                  'strength' => (string)($e['strength'] ?? ''), 'next' => (string)($e['next'] ?? '')];
+    }
+    return ['ok' => true, 'scale' => MP_EVAL_SCALE, 'evals' => $out];
 }
 function member_mp_review_undo(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
@@ -1455,7 +1539,7 @@ function mp_commitments(array $g, string $month, string $today): array {
      * seen on Saturday the 10th (W41) read as unreviewed until Friday. */
     $period = iso_week_period(strtotime(mp_last_saturday($today) . 'T12:00:00Z'));
     $here = mp_last_register($g, $today);
-    $revDone = $here ? count(db_all('SELECT 1 FROM mentor_reviews WHERE period = ? AND subjectId IN (' . implode(',', array_fill(0, count($here), '?')) . ')', array_merge([$period], $here))) : 0;
+    $revDone = $here ? count(db_all("SELECT 1 FROM mentor_reviews WHERE period = ? AND evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN (" . implode(',', array_fill(0, count($here), '?')) . ')', array_merge([$period], $here))) : 0;
     $prevMonth = mp_prev_month($month);
     $scMissing = 0;
     if ($ids && (int)substr($today, 8, 2) >= 1) {
@@ -1477,8 +1561,8 @@ function mp_commitments(array $g, string $month, string $today): array {
         $row('saturdays', 'Mentor at the 8:30am breakout at least twice a month', $satsLeft . ' Saturday' . ($satsLeft === 1 ? '' : 's') . ' left', $satMentored >= $o['minSaturdays'] ? 'ok' : ($satsLeft + $satMentored < $o['minSaturdays'] ? 'bad' : 'warn'),
              $satMentored . ' of ' . $o['minSaturdays'], 'Saturday register', ['label' => 'Plan Saturday', 'route' => 'saturday:before']),
         $row('caseload', 'At least five children in your care', 'Assessment, scoring, follow-up and mentoring', ($peer || count($ids) >= $o['minCaseload']) ? 'ok' : 'bad', count($ids) . ' children', 'Your caseload'),
-        $row('platform', 'Assess, score and monitor on the platform', 'Observations and weekly reviews by Monday', ($revDone >= count($here) && $scMissing === 0) ? 'ok' : 'warn',
-             $revDone . ' of ' . count($here) . ' reviewed' . ($scMissing ? ' · ' . $scMissing . ' to score for ' . gmdate('F', strtotime($prevMonth . '-01')) : ''), 'Weekly reviews + scorecards', ['label' => 'Finish reviews', 'route' => 'saturday:after']),
+        $row('platform', 'Assess, score and monitor on the platform', 'Observations and Saturday evaluations by Monday', ($revDone >= count($here) && $scMissing === 0) ? 'ok' : 'warn',
+             $revDone . ' of ' . count($here) . ' evaluated' . ($scMissing ? ' · ' . $scMissing . ' to score for ' . gmdate('F', strtotime($prevMonth . '-01')) : ''), 'Saturday evaluations + scorecards', ['label' => 'Finish evaluations', 'route' => 'saturday:after']),
         $row('journal', 'Anchor Journal with families and teachers', 'Reply to shared entries within a week', $j['over7'] ? 'warn' : 'ok', $j['n'] ? $j['n'] . ' waiting' : 'Up to date', 'Messages', ['label' => 'Open messages', 'route' => 'messages']),
         $row('sts', 'Tuesday STS meeting', 'Planning and review', $att('sts') >= $count(2) ? 'ok' : 'warn', $att('sts') . ' of ' . $count(2), 'Meeting register'),
         $row('parents', 'Parent engagements', 'Meetings and conversations about your mentees', ($peer || !$famDue) ? 'ok' : 'warn', $peer ? 'Your lead contacts families' : ($famDue ? $famDue . ($famDue === 1 ? ' family due' : ' families due') : 'Up to date'), 'Family updates', ['label' => 'See families', 'route' => 'mentees:family']),
@@ -1594,6 +1678,15 @@ function member_mp_team(array $p): array {
         foreach (db_all("SELECT DISTINCT subjectId FROM mentor_meetings WHERE kind IN ('one-to-one','pod') AND metOn >= ? AND subjectId IN ($kp)", array_merge([gmdate('Y-m-d', strtotime($today) - 14 * 86400)], $all)) as $r) $seen[$r['subjectId']] = true;
         foreach (db_all("SELECT subjectId, score FROM mentor_rel_checks WHERE side = 'child' AND subjectId IN ($kp) ORDER BY createdAt", $all) as $r) $rel[$r['subjectId']] = (int)$r['score'];
     }
+    /* Last Saturday's evaluations: who was here, and who has been evaluated (one grouped read each). */
+    $sat = mp_last_saturday($today); $satPeriod = iso_week_period(strtotime($sat . 'T12:00:00Z'));
+    $wasHere = []; $evald = [];
+    if ($all) {
+        $kp = implode(',', array_fill(0, count($all), '?'));
+        foreach (db_all("SELECT subjectId FROM mentor_register WHERE onDate = ? AND here = 1 AND subjectId IN ($kp)", array_merge([$sat], $all)) as $r) $wasHere[$r['subjectId']] = true;
+        foreach (db_all("SELECT DISTINCT studentId FROM attendance WHERE date = ? AND studentId IN ($kp)", array_merge([$sat], $all)) as $r) $wasHere[$r['studentId']] = true;
+        foreach (db_all("SELECT subjectId FROM mentor_reviews WHERE period = ? AND evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN ($kp)", array_merge([$satPeriod], $all)) as $r) $evald[$r['subjectId']] = true;
+    }
     $booked = [];
     foreach (db_all("SELECT mentorId FROM mentor_supervision WHERE onDate >= ? AND mentorId IN ($ph)", array_merge([$today], $mids)) as $r) $booked[$r['mentorId']] = true;
     $o = mp_opts(); $out = [];
@@ -1607,7 +1700,8 @@ function member_mp_team(array $p): array {
         $out[] = ['mentorId' => (string)$t['mentorId'], 'name' => (string)$t['fullName'], 'first' => mp_first((string)$t['fullName']), 'initials' => mp_initials((string)$t['fullName']),
                   'kind' => ['pod' => 'Pod mentor', 'peer' => 'Peer mentor', 'instructor' => 'Instructor mentor', 'lead' => 'Lead mentor', 'coord' => 'Coordinator'][$role] ?? 'Mentor',
                   'mentees' => count($k), 'seenPct' => $k ? (int)round(100 * $s / count($k)) : null, 'relAvg' => $rs ? round(array_sum($rs) / count($rs), 1) : null,
-                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']])];
+                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']]),
+                  'evalOf' => count(array_filter($k, static fn($x) => isset($wasHere[$x]))), 'evalDone' => count(array_filter($k, static fn($x) => isset($wasHere[$x]) && isset($evald[$x])))];
     }
     usort($out, static fn($a, $b) => [($a['seenPct'] ?? 101), $a['name']] <=> [($b['seenPct'] ?? 101), $b['name']]);
     return ['ok' => true, 'mentors' => $out];

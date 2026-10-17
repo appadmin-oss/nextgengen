@@ -197,6 +197,31 @@ async function as(memberId, admin, viewport) {
     await mt.click('main button:has-text("Go to the weekly review")');
     await mt.waitForTimeout(400);
     chk('After: the weekly review starts from the detail', /Noted: “Offered to present first/.test(await mt.innerText('main')));
+    // The Saturday evaluation: Mariam's card is open (the first not yet evaluated); rate everything, by keyboard-reachable radios.
+    chk('After: progress counts evaluations, due Monday', /0 of 1 evaluated · due Monday/.test(await mt.innerText('main')));
+    const card = mt.locator('main section[aria-label="Saturday evaluation for Mariam Yusuf"]');
+    chk('After: the register pre-fills the evaluation (assignment handed in, the detail as the strength)',
+      await card.getByRole('radiogroup', { name: 'Assignment for Mariam Yusuf' }).getByRole('radio', { name: 'Demonstrated' }).getAttribute('aria-checked') === 'true'
+      && /Offered to present first/.test(await card.locator('textarea').first().inputValue()));
+    for (const [g, o] of [['Effort', 'Strong'], ['Character', 'Steady'], ['Wellbeing', 'Steady']]) await card.getByRole('radiogroup', { name: g + ' for Mariam Yusuf' }).getByRole('radio', { name: o, exact: true }).click();
+    await card.locator('button:has-text("Save evaluation")').click({ force: true });
+    chk('After: an incomplete evaluation names what is left, and saves nothing', /Still to do:/.test(await card.innerText()) && !q(`db_row("SELECT 1 FROM mentor_reviews WHERE subjectId = 'NGG-MS-K1' AND evalJson <> ''")`));
+    for (const [c, o] of [['Punctuality', 'Demonstrated'], ['Participation', 'Strong'], ['Respect', 'Demonstrated'], ['Teamwork', 'Emerging'], ['Courage', 'Strong'], ['Initiative', 'Emerging'], ['Reflection', 'Demonstrated']]) {
+      const r = card.getByRole('radiogroup', { name: c + ' for Mariam Yusuf' }).getByRole('radio', { name: o, exact: true });
+      await r.focus(); await mt.keyboard.press('Enter');
+    }
+    await card.locator('textarea').nth(1).fill('Practise the two-minute talk once at home.');
+    await card.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/after-evaluating.png' : path.join(TMP, 'after-evaluating.png') });
+    await card.locator('button:has-text("Save evaluation")').click();
+    await mt.waitForFunction(() => /Evaluation saved for Mariam/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    await mt.waitForTimeout(800);
+    const evRow = JSON.parse((q(`db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MS-K1' AND evalJson <> ''")`) || {}).evalJson || '{}');
+    chk('After: a full Saturday evaluation is on her row (8 criteria, strength from the register, the next step)',
+      Object.keys(evRow.criteria || {}).length === 8 && evRow.criteria.participation === 'Strong' && evRow.criteria.assignment === 'Demonstrated'
+      && /Offered to present first/.test(evRow.strength || '') && evRow.next === 'Practise the two-minute talk once at home.');
+    chk('After: the card reads Evaluated and the count moves', /1 of 1 evaluated/.test(await mt.innerText('main')) && /Evaluated/.test(await card.innerText()));
+    chk('her own read returns it, without the staff fields', (() => { const r = q(`backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MS-K1'])`); return r.evals.length === 1 && r.evals[0].next === 'Practise the two-minute talk once at home.' && !('line' in r.evals[0]); })());
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/after-evaluated.png' : path.join(TMP, 'after-evaluated.png'), fullPage: true });
     // The child's name opens their profile
     await mt.click('main button:has-text("During")');
     await mt.click('main button[aria-label="Open Mariam Yusuf’s profile"]');

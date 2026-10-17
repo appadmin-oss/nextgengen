@@ -114,6 +114,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.selfscore'      => 'member_mp_selfscore',
             'member.mentor.rel.child'      => 'member_mp_rel_child',
             'member.mentor.mine'           => 'member_mp_mine',
+            'member.saturday.evals'        => 'member_saturday_evals',
             'member.mentor.chat'           => 'member_mp_chat',
             'member.mentor.chat.send'      => 'member_mp_chat_send',
             'member.mentor.attention'      => 'mentor_attention',

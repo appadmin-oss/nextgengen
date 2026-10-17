@@ -20,6 +20,12 @@
  * its sign-in doors and its not-cleared / no-centre answers still apply.
  */
 
+/* The Saturday evaluation's scale and criteria, as the server sends them (mentor-portal.php MP_EVAL_*); this copy is only the fallback before the read lands. */
+const MP15_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
+const MP15_EVAL_CRITERIA = [['punctuality', 'Punctuality', 'Here and checked in by 8:00am'], ['assignment', 'Assignment', 'The week’s assignment handed in at check-in'],
+  ['participation', 'Participation', 'Took part in the huddle, the breakout and the class'], ['respect', 'Respect', 'To peers, mentors and instructors'],
+  ['teamwork', 'Teamwork', 'Worked with others and helped them'], ['courage', 'Courage', 'Tried something hard or spoke up'],
+  ['initiative', 'Initiative', 'Started things without being asked'], ['reflection', 'Reflection', 'Named what they learned and what is next']].map(([key, label, hint]) => ({ key, label, hint }));
 const MP15_ROLES = { pod: 'Pod mentor', peer: 'Peer mentor', instructor: 'Instructor mentor', lead: 'Lead mentor', coord: 'Centre coordinator' };
 const MP15_TONE = { bad: ['#fdeeea', '#b0361c'], warn: ['#fdf6e3', '#7a5600'], ok: ['#f3faf4', '#1d6b30'], neu: ['#f0efea', '#4a4a50'] };
 const MP15_KIND_TYPE = { 'one-to-one': 'One-to-one', one_to_one: 'One-to-one', pod: 'Pod session', family: 'Family', phone: 'Phone or message', note: 'Note' };
@@ -289,7 +295,8 @@ class Mp15Portal extends React.Component {
     /* Saturday: Before plans the next one; During and After are the one just gone (or today). */
     const satN = D.satNext || {}, satL = this.satDuring() || {};
     const satKidsAll = all;
-    const reviewed = id => !!(S.rvDone[id] !== undefined ? S.rvDone[id] : (satL.reviews || {})[id]);
+    /* Done means evaluated: the Saturday's criteria, a strength and a next step, not only the three ratings. */
+    const reviewed = id => !!(S.rvDone[id] !== undefined ? S.rvDone[id] : ((satL.reviews || {})[id] || {}).evaluated);
     const hereIds = satKidsAll.filter(k => this.hereOf(k.id)).map(k => k.id);
     const revKids = hereIds.length ? satKidsAll.filter(k => hereIds.includes(k.id)) : [];
     const revTotal = revKids.length, revDoneN = revKids.filter(k => reviewed(k.id)).length;
@@ -390,7 +397,7 @@ class Mp15Portal extends React.Component {
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
                ['Struggling this week', String(struggling.length), struggling.length ? 'Talk before Saturday' : 'Nobody flagged', struggling.length ? '#b0361c' : '#1d6b30', () => this.go('list', { filter: 'wellbeing' })],
-               ['Weekly reviews', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
+               ['Saturday evaluations', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
       title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: inDetail, back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
       goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
       onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: S.scr === 'msg', onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
@@ -426,7 +433,7 @@ class Mp15Portal extends React.Component {
       pTpls: Object.keys(PT).map(id => ({ l: PT[id][0], on: S.pTpl === id, ...pill(S.pTpl === id), go: () => set({ pTpl: id, pBody: null }) })), pBody, onPBody: e => set({ pBody: e.target.value }),
       outcomes: (((kd && kd.progress) || {}).items || []).map(it => mkOut(it, ((kd.progress || {}).saturdays || [])[0])),
       makeReport: () => this.report('kid'),
-      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', hereIds.length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' reviewed']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => { if (S.step === 'during' && id !== 'during') this.flushRegister(); set({ step: id }); } })),
+      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', hereIds.length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' evaluated']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => { if (S.step === 'during' && id !== 'during') this.flushRegister(); set({ step: id }); } })),
       sBefore: S.step === 'before', sDuring: S.step === 'during', sAfter: S.step === 'after',
       agenda: agenda.map((a, i) => { const at = t0; t0 += a.m; return { ...a, at: Math.floor(at / 60) + ':' + String(at % 60).padStart(2, '0'), first: i === 0, upOp: i ? 1 : 0.3, rmOp: a.fixed ? 0.3 : 1,
         up: () => { if (!i) return; const n = agenda.slice(); [n[i - 1], n[i]] = [n[i], n[i - 1]]; this.setAgenda(n); }, rm: () => { if (a.fixed) return this.say('The huddle, one-to-ones and close stay on the agenda'); this.setAgenda(agenda.filter((_, j) => j !== i)); } }; }),
@@ -452,16 +459,8 @@ class Mp15Portal extends React.Component {
           vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; })
             .concat((satL.checks || ['On time', 'Assignment in', 'Checked out']).map(v => { const cs = this.chkOf(k.id); const on = cs.includes(v); const arr = (((satL.register || {})[k.id]) || {}).arrivedAt;
               return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
-      revText: revDoneN + ' of ' + revTotal + ' reviews done · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%',
-      reviews: revKids.map(k => { const srv = (satL.reviews || {})[k.id]; const v = S.rv[k.id] || (srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {}); const done = reviewed(k.id); const ok = v.Effort && v.Character && v.Wellbeing; const obs = this.obsOf(k.id);
-        return { name: k.name, done, open: !done, seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (this.noteOf(k.id) ? '. Noted: “' + this.noteOf(k.id) + '”' : ''), line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }),
-          scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o, ...pill(v[l] === o), go: () => set({ rv: { ...S.rv, [k.id]: { ...v, [l]: o } } }) })) })),
-          cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
-          submit: () => { if (!ok) return this.say('Rate effort, character and wellbeing first');
-            this.act('weekReview', { subjectId: k.id, date: this.satLastDate(), effort: v.Effort, character: v.Character, wellbeing: v.Wellbeing, line: v.line || '' }).then(r => { if (!r) return;
-              set({ rvDone: { ...this.state.rvDone, [k.id]: true } });
-              this.say('Review saved for ' + k.first, () => this.act('weekReviewUndo', { subjectId: k.id, period: r.period }).then(u => { if (u) { set({ rvDone: { ...this.state.rvDone, [k.id]: false } }); this.refresh(['sat', 'sess']); } }));
-              this.refresh(['sess', 'week']); }); } }; }),
+      revText: revDoneN + ' of ' + revTotal + ' evaluated · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%', noReviews: revTotal === 0 && !!satL.date,
+      reviews: revKids.map((k, ki) => this.evalCard(k, ki, revKids, satL, reviewed, pill)),
       mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins'], ['chat', 'Mentees']].concat(isPeer ? [] : [['family', 'Families']]).concat([['lead', isLead ? 'Mentors' : 'From ' + lead]]).filter(([id]) => id === 'all' || msgRows.some(m => m.filter === id)).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
       mCols: S.w >= 1000 ? 'minmax(0, 1fr) minmax(0, 1.2fr)' : 'minmax(0, 1fr)',
       hasMsg: !!mSel0, mSel: mView(mSel0), reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel0 && /Journal/.test(mSel0.kind) ? 'Name what you noticed. One line is enough.' : 'Write a reply',
@@ -525,6 +524,67 @@ class Mp15Portal extends React.Component {
         <select value={this.state.centre || this.me().centreOnScreen || ''} onChange={e => this.setState({ centre: e.target.value, d: { week: this.state.d.week }, sel: {}, here: {}, obs: {}, chk: {}, agenda: null }, () => this.loadAll())}>
           {cs.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
       {inner}</>;
+  }
+  /* One child's Saturday evaluation on After: the week's three ratings, the
+     formation criteria (pre-filled from the register, confirmed by the mentor),
+     a strength and a next step the child and family read, and a staff-only line.
+     One card open at a time; "Save and next child" walks the pod. */
+  evalPrefill(id, satL) {
+    if (!this.hereOf(id)) return { criteria: {}, strength: '' };
+    const chk = this.chkOf(id), obs = this.obsOf(id), arr = (((satL.register || {})[id]) || {}).arrivedAt || '';
+    const c = { assignment: chk.includes('Assignment in') ? 'Demonstrated' : 'Not yet' };
+    if (chk.includes('On time')) c.punctuality = 'Demonstrated'; else if (arr) c.punctuality = 'Emerging';
+    [['Respect', 'respect'], ['Teamwork', 'teamwork'], ['Courage', 'courage']].forEach(([v, key]) => { if (obs.includes(v)) c[key] = 'Demonstrated'; });
+    return { criteria: c, strength: (this.noteOf(id) || '').trim() };
+  }
+  evalCard(k, ki, kids, satL, reviewed, pill) {
+    const S = this.state, set = o => this.setState(o);
+    const CR = satL.evalCriteria || MP15_EVAL_CRITERIA, SCALE = satL.evalScale || MP15_EVAL_SCALE;
+    /* The pre-fill mirrors mp_eval_prefill on the server, from the register as it stands on this screen
+       (taps on During this morning included), so After never starts from a stale read. */
+    const srv = (satL.reviews || {})[k.id], pre = this.evalPrefill(k.id, satL);
+    const base = srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {};
+    const sev = srv && srv.eval ? srv.eval : null;
+    const v = S.rv[k.id] || { ...base, crit: sev ? { ...sev.criteria } : { ...pre.criteria }, strength: sev ? sev.strength : (pre.strength || ''), next: sev ? sev.next : '' };
+    const put = p => set({ rv: { ...this.state.rv, [k.id]: { ...v, ...p } }, evErr: { ...(this.state.evErr || {}), [k.id]: '' } });
+    const done = reviewed(k.id);
+    const firstOpen = kids.find(x => !reviewed(x.id));
+    const openId = S.evOpen !== undefined ? S.evOpen : (firstOpen ? firstOpen.id : null);
+    const open = openId === k.id;
+    const crit = v.crit || {};
+    const ratedN = CR.filter(c => crit[c.key]).length;
+    const ok3 = v.Effort && v.Character && v.Wellbeing;
+    const ok = ok3 && ratedN === CR.length && (v.strength || '').trim() && (v.next || '').trim();
+    const obs = this.obsOf(k.id), note = this.noteOf(k.id);
+    const next = kids.slice(ki + 1).find(x => !reviewed(x.id)) || kids.find((x, i) => i !== ki && !reviewed(x.id));
+    const err = (S.evErr || {})[k.id] || '';
+    const missing = () => [!ok3 ? 'effort, character and wellbeing' : '', ratedN < CR.length ? (CR.length - ratedN) + ' of the Saturday criteria' : '', !(v.strength || '').trim() ? 'a strength' : '', !(v.next || '').trim() ? 'a next step' : ''].filter(Boolean);
+    const save = goNext => {
+      if (!ok) { const m = missing(); return set({ evErr: { ...(this.state.evErr || {}), [k.id]: 'Still to do: ' + m.join(', ') + '.' } }); }
+      const body = { subjectId: k.id, date: this.satLastDate(), effort: v.Effort, character: v.Character, wellbeing: v.Wellbeing, line: v.line || '',
+        eval: { criteria: crit, strength: (v.strength || '').trim(), next: (v.next || '').trim() } };
+      mp15Api.act('weekReview', Object.assign({ centre: this.state.centre || '' }, body)).then(r => {
+        set({ rvDone: { ...this.state.rvDone, [k.id]: true }, evOpen: goNext && next ? next.id : null });
+        this.say('Evaluation saved for ' + k.first, () => this.act('weekReviewUndo', { subjectId: k.id, period: r.period }).then(u => { if (u) { const rv = { ...this.state.rvDone }; delete rv[k.id]; set({ rvDone: rv, evOpen: k.id }); this.refresh(['sat', 'sess', 'week']); } }));
+        this.refresh(['sat', 'sess', 'week']);
+      }).catch(e => { const c = e.code || e.message || ''; set({ evErr: { ...(this.state.evErr || {}), [k.id]: c === 'rate_every_criterion' ? 'Rate every Saturday criterion first.' : c === 'strength_and_next' ? 'Write a strength and a next step first.' : mp15ErrText(e) } }); });
+    };
+    const sumLine = done && sev ? 'Strength: ' + sev.strength + ' · Next: ' + sev.next : done ? 'Evaluated' : '';
+    return { name: k.name, first: k.first, done, open, openA: open ? 'true' : 'false', panelId: 'm15-ev-' + k.id, chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down',
+      toggleL: open ? 'Close' : done ? 'Edit' : 'Evaluate', toggle: () => set({ evOpen: open ? null : k.id }),
+      bd: open ? '#0b0b0c' : '#e8e5dd', stL: done ? 'Evaluated' : 'To do', stBg: done ? '#f3faf4' : '#fdf6e3', stFg: done ? '#1d6b30' : '#7a5600',
+      seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (note ? '. Noted: “' + note + '”' : ''),
+      hasSum: !open && !!sumLine, sum: sumLine,
+      scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o ? 'true' : 'false', ...pill(v[l] === o), go: () => put({ [l]: o }) })) })),
+      critMeta: ratedN + ' of ' + CR.length + ' rated',
+      crit: CR.map(c => { const cur = crit[c.key]; const fromReg = !sev && !(S.rv[k.id]) && pre.criteria[c.key] && pre.criteria[c.key] === cur;
+        return { l: c.label, h: c.hint, pre: !!fromReg, preL: 'From the register',
+          opts: SCALE.map(o => { const on = cur === o; return { l: o, on: on ? 'true' : 'false', ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => put({ crit: { ...crit, [c.key]: o } }) }; }) }; }),
+      strength: v.strength || '', onStrength: e => put({ strength: e.target.value.slice(0, 400) }), strBd: err && !(v.strength || '').trim() ? '#b0361c' : '#d6d4cc',
+      next: v.next || '', onNext: e => put({ next: e.target.value.slice(0, 400) }), nextBd: err && !(v.next || '').trim() ? '#b0361c' : '#d6d4cc',
+      line: v.line || '', onLine: e => put({ line: e.target.value }),
+      hasErr: !!err, err, cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
+      hasNext: !!next, submit: () => save(false), submitNext: () => save(true) };
   }
   /* After the screen's own title and content (v.mainSlotEnd): the Saturday
      Formation Schedule, the mentor's part of each block (the next blocks on
@@ -735,7 +795,7 @@ class Mp15Portal extends React.Component {
     const cOk = !!S.cKid && !!S.cCat && S.cText.trim().length > 10;
     const cHint = !S.cKid ? 'Choose the child first.' : !S.cCat ? 'Choose what kind of concern.' : S.cText.trim().length <= 10 ? 'Write what happened, in a sentence or two.' : '';
     const mtAll = (c.isLead ? ((S.d.team || {}).mentors || []) : []).map(m => { const pct = m.seenPct; const tone = m.commitments === 'On track' ? 'ok' : m.commitments === 'Below 5 mentees' ? 'bad' : 'warn'; const booked = m.booked || !!(S.supBooked || {})[m.mentorId];
-      return { name: m.name, kind: m.kind, n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
+      return { name: m.name, kind: m.kind + (m.evalOf ? ' · ' + (m.evalDone || 0) + ' of ' + m.evalOf + ' evaluated Saturday' : ''), n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
         commit: m.commitments, cBg: MP15_TONE[tone][0], cFg: MP15_TONE[tone][1], need: !!m.needSupport, supL: booked ? 'Booked' : 'Book supervision', supOp: booked ? 0.55 : 1,
         sup: () => { if (booked) return; this.act('supervisionBook', { mentorId: m.mentorId }, r => 'Supervision booked with ' + m.first + ' for ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ' after STS').then(r => { if (r) { set({ supBooked: { ...(S.supBooked || {}), [m.mentorId]: true } }); this.refresh(['team']); } }); } }; });
     const mq = (S.mtQ || '').trim().toLowerCase(), mf = S.mtF || 'all';
