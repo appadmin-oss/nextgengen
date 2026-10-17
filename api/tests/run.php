@@ -27676,6 +27676,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("UPDATE mentor_assignments SET mentorId = 'PRT-ADULT' WHERE memberId = 'PR-KID'");
     $am = backend_dispatch('member.mentor.mentee', ['requesterId' => 'PR-ADULT', 'subjectId' => 'PR-KID']);
     $ak = array_column(backend_dispatch('member.mentor.messages', ['requesterId' => 'PR-ADULT'])['messages'] ?? [], 'filter');
+    foreach ([1, 2] as $n) mp_message_put('family:PR-KID', 'Family update', 'PR-KID', 'PR-ADULT', 'Adult', 'guardian:PR-KID', 'Update ' . $n, 'sent');
+    mp_message_put('family:PR-KID', 'Family update', 'PR-KID', 'PR-ADULT', 'Adult', 'guardian:PR-KID', 'Never arrived', 'failed');
+    $fs = backend_dispatch('member.mentor.family.send', ['requesterId' => 'PR-ADULT', 'subjectId' => 'PR-KID', 'body' => 'A third today']);
+    chk('family · a child\'s guardians get at most MP_FAMILY_PER_DAY messages a day; failed sends do not count',
+        ($fs['error'] ?? '') === 'family_daily_limit' && ($fs['max'] ?? 0) === MP_FAMILY_PER_DAY);
     chk('peer · an adult mentor of the same child keeps the family and inbox views',
         ($am['mentee']['guardianName'] ?? '') === 'Mrs Guardian' && count($am['family'] ?? []) === 1 && in_array('journal', $ak, true) && in_array('checkin', $ak, true));
     $wipe();

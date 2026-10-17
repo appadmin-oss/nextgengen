@@ -800,6 +800,11 @@ function member_mp_sessions(array $p): array {
 
 /* ── Family updates ─────────────────────────────────────────────────────── */
 
+/* Family messages one child's guardians receive in 24 hours, from every
+ * mentor together. A family is not a channel to be flooded, and two different
+ * mentors each "just checking in" is how it happens. */
+const MP_FAMILY_PER_DAY = 2;
+
 /**
  * familySend — a message to the guardian(s) of one mentee: SMS to the phone on
  * the record and email to guardians who take updates. Outside 8am–8pm Lagos it
@@ -818,6 +823,10 @@ function member_mp_family_send(array $p): array {
     $m = db_row('SELECT memberId, fullName, parentName, parentPhone, parentEmail, centre FROM members WHERE memberId = ?', [$id]);
     if (trim((string)$m['parentPhone']) === '' && !filter_var((string)$m['parentEmail'], FILTER_VALIDATE_EMAIL) && !(function_exists('family_guardian_emails') && family_guardian_emails($id, 'updates')))
         return ['ok' => false, 'error' => 'no_guardian_contact'];
+    // Failed sends do not count: the family never received them.
+    $sent = (int)(db_row("SELECT COUNT(*) c FROM mentor_messages WHERE kind = 'Family update' AND subjectId = ? AND status <> 'failed' AND createdAt >= ?",
+                         [$id, gmdate('Y-m-d\TH:i:s', time() - 86400)])['c'] ?? 0);
+    if ($sent >= MP_FAMILY_PER_DAY) return ['ok' => false, 'error' => 'family_daily_limit', 'max' => MP_FAMILY_PER_DAY];
     if ((int)($p['draftId'] ?? 0) > 0) db_exec("UPDATE mentor_messages SET status = 'used' WHERE id = ? AND kind = 'Family draft' AND subjectId = ?", [(int)$p['draftId'], $id]);
     $later = mp_next_send_time();
     $mid = mp_message_put('family:' . $id, 'Family update', $id, $g['me'], (string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? ''),
