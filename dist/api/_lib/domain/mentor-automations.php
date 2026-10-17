@@ -188,6 +188,8 @@ function mpa_tick(?int $now = null, int $max = 6): array {
     // The Saturday Formation Schedule's reminders and family messages (idempotent per day, block and person).
     if (function_exists('sf_tick')) { try { sf_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'formation.tick', $e->getMessage(), ''); } }
     mpa_push_release($now);
+    // Duty reminders: one email a day to anyone with something open (domain/duties.php), in batches.
+    if (function_exists('duties_tick')) { try { duties_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'duties.tick', $e->getMessage(), ''); } }
     /* Safety first. The tick runs at most $max jobs, in table order, and the
      * hourly concern escalation sat near the end — so a Monday-morning backlog
      * could push it into a later tick. It goes first. */

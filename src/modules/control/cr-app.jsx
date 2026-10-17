@@ -295,6 +295,7 @@ function CrRoom({ auth, setPage, unlockNote }) {
   return (
     <div className={"cr-app is-" + density} ref={rootRef} data-tree={phone ? "phone" : "desktop"}>
       {phone ? <CrPhone S={S} nav={nav} tabs={tabs} ctx={ctx}/> : <CrDesktop S={S} nav={nav} tabs={tabs} ctx={ctx} L={L}/>}
+      {typeof GuideTour === "function" && <GuideTour portal="control"/>}
       {phone && ask && <CrAsk where={CR_PAGES[cur.page].label} facts={tabState.facts} mode="overlay" onClose={() => setAsk(false)}/>}
       {acct && !phone && <CrAccountMenu me={me} ends={ends.long} density={density} setDensity={setDensity} onLock={lock} onSignOut={signOut} onClose={() => setAcct(false)}
         onShortcuts={() => { setAcct(false); say("⌘K search · ⌘J analyst · [ sidebar · J/K and 1–9 in Inbox · Esc close"); }}/>}

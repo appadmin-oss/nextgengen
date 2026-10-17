@@ -27571,5 +27571,40 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId = 'OPP-K1'"); db_exec("DELETE FROM member_state WHERE memberId = 'OPP-K1'");
 })();
 
+/* ── Duty reminders (domain/duties.php): pop-up list, daily email, escalation ── */
+(function () {
+    $now = now_iso(); $GLOBALS['__mail_sink'] = [];
+    db_insert('members', ['memberId' => 'DTY-K1', 'fullName' => 'Duty Kid', 'email' => 'duty.kid@x.example', 'parentEmail' => 'duty.parent@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => '2012-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    $thu = strtotime('2026-10-15T16:30:00Z');   // Thursday 5:30pm Lagos
+    $tue = strtotime('2026-10-13T16:30:00Z');   // Tuesday
+    $keys = fn($t) => array_column(duties_for('DTY-K1', $t), 'key');
+    chk('duties · the weekly check-in becomes a duty from Thursday, not before', in_array('member:checkin', $keys($thu), true) && !in_array('member:checkin', $keys($tue), true));
+    $sat = strtotime('2026-10-17T09:00:00Z');
+    chk('duties · on Saturday an unanswered check-in is urgent', (array_values(array_filter(duties_for('DTY-K1', $sat), fn($d) => $d['key'] === 'member:checkin'))[0]['level'] ?? '') === 'urgent');
+    member_state_set(['memberId' => 'DTY-K1', 'key' => 'duty.seen', 'value' => (object)[]]);
+    setting_set('duty_cursor', null);
+    $before = count($GLOBALS['__mail_sink']);
+    chk('duties · nothing is emailed before the hour', (duties_tick(strtotime('2026-10-15T10:00:00Z'))['skipped'] ?? '') === 'early');
+    $r = duties_tick($thu);
+    $mails = array_slice($GLOBALS['__mail_sink'], $before);
+    chk('duties · after the hour, one email goes to the member with the duty in it', count(array_filter($mails, fn($m) => ($m['to'] ?? '') === 'duty.kid@x.example' && str_contains((string)($m['html'] ?? $m['body'] ?? ''), 'check-in'))) === 1);
+    chk('duties · and a notification for the bell', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'DTY-K1' AND kind = 'duty'"));
+    $n = count($GLOBALS['__mail_sink']); setting_set('duty_cursor', null); duties_tick($thu + 600);
+    chk('duties · never twice in a day', count(array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => ($m['to'] ?? '') === 'duty.kid@x.example')) === 0);
+    // A week later the guardian is copied, once.
+    member_state_set(['memberId' => 'DTY-K1', 'key' => 'duty.seen', 'value' => ['member:checkin' => '2026-10-08']]);
+    $n = count($GLOBALS['__mail_sink']); setting_set('duty_cursor', null); $fri = strtotime('2026-10-16T16:30:00Z'); duties_tick($fri);
+    $g = array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => ($m['to'] ?? '') === 'duty.parent@x.example');
+    chk('duties · past a week the guardian is asked to help, once', count($g) === 1);
+    $n = count($GLOBALS['__mail_sink']); setting_set('duty_cursor', null); duties_tick($fri + 86400);
+    chk('duties · the guardian is not asked again for the same duty', count(array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => ($m['to'] ?? '') === 'duty.parent@x.example')) === 0);
+    $sn = member_duties_snooze(['requesterId' => 'DTY-K1', 'hours' => 99]);
+    chk('duties · “remind me later” waits at most eight hours', strtotime($sn['snoozedUntil']) <= time() + 8 * 3600 + 5 && member_duties(['requesterId' => 'DTY-K1'])['snoozedUntil'] !== '');
+    setting_set('duty_reminders', ['enabled' => false]);
+    chk('duties · the daily email can be switched off', (duties_tick($thu)['skipped'] ?? '') === 'off');
+    setting_set('duty_reminders', null); setting_set('duty_cursor', null);
+    db_exec("DELETE FROM members WHERE memberId = 'DTY-K1'"); db_exec("DELETE FROM member_state WHERE memberId = 'DTY-K1'"); db_exec("DELETE FROM notifications WHERE memberId = 'DTY-K1'"); unset($GLOBALS['__mail_sink']);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

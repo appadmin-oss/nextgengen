@@ -581,7 +581,12 @@ class Ip6Portal extends React.Component {
     v.skRows = (v.skRows || []).map(r => ({ ...r, evOn: movesUp(r), evV: ev[key(r)] || '', evBd: S.skTried && movesUp(r) && !(ev[key(r)] || '').trim() ? '#b0361c' : '#d6d4cc', evPh: 'What did you see ' + (r.first || r.name) + ' do?', onEv: e => set({ ev: { ...(this.state.ev || {}), [key(r)]: e.target.value } }) }));
     const saveSk = v.skSave; const missing = v.skRows.filter(r => r.evOn && !(ev[key(r)] || '').trim());
     v.skSave = () => { if (missing.length) { set({ skTried: true }); return this.toast('Add what you saw for ' + missing.length + (missing.length > 1 ? ' students' : ' student') + ' who moved up.'); } set({ skTried: false }); saveSk(); };
-    return Ip6View(v);
+    /* First visit: a short tour. Any visit with something due: the duty reminder,
+       whose buttons open the screen that does it. */
+    const dutyGo = d => { const k = String(d.key || '').replace(/^instructor:/, '');
+      const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : /^results/.test(k) ? 'results' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
+      this.goTop(scr); return true; };
+    return <>{Ip6View(v)}{typeof GuideTour === 'function' && <GuideTour portal="instructor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="instructor" onGo={dutyGo}/>}</>;
   }
 }
 

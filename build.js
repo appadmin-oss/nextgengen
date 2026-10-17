@@ -100,6 +100,7 @@ const ORDER = [
   'src/modules/mentor15/mp15-app.jsx',
   'src/modules/instructor6/ip6-view.jsx',
   'src/modules/instructor6/ip6-app.jsx',
+  'src/modules/guide/guide.jsx',
   'src/modules/member9/mp9-view.jsx',
   'src/modules/member9/mp9-app.jsx',
   'src/modules/member9/mp9-more.jsx',

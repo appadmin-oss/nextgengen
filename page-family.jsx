@@ -213,6 +213,7 @@ function FamilyHome({ me, reload }) {
 
   return (
     <>
+      {typeof GuideTour === "function" && <GuideTour portal="family"/>}
       <div className="fam-head">
         <div>
           <p className="fam-eyebrow">Family account</p>

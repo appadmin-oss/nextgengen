@@ -810,6 +810,9 @@
       /* Opportunities that fit me (domain/opportunities.php); save toggles my bookmark. */
       opps:         () => request('/member/opps.php'),
       oppsSave:     (oppId) => request('/member/opps.php', { body: { action: 'save', oppId } }),
+      /* What I still have to do across my roles (domain/duties.php), and "remind me later". */
+      duties:       (role) => request('/member/duties.php' + qs({ role: role || '' })),
+      dutiesSnooze: (hours) => request('/member/duties.php', { body: { action: 'snooze', hours: hours || 4 } }),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),

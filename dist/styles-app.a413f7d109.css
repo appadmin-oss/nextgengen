@@ -11490,3 +11490,43 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 :where(.m9-app) :focus-visible{outline:3px solid #f5b026;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){:where(.m9-app) *{transition:none;animation:none}}
 /* @generated dc-compile:m9 end */
+
+/* ── Onboarding tours and duty pop-ups (src/modules/guide/guide.jsx) ──────
+   One card on a dimmed page: big type, one idea per step, every control at
+   least 44px. Light surface in every portal, so it reads the same wherever it
+   opens; on a phone the card sits at the bottom, within a thumb's reach. ── */
+.ngt-scrim { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 0; background: rgba(11, 11, 12, .55); font-family: 'Geist', 'Inter', system-ui, sans-serif; container-type: inline-size; }
+.ngt-card, .ndp-card { width: min(520px, calc(100% - 32px)); margin: 16px; max-height: calc(100vh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 24px; border-radius: 22px; background: #fff; color: #0b0b0c; box-shadow: 0 24px 60px rgba(11, 11, 12, .3); }
+.ngt-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ngt-eyebrow { font-size: 13px; font-weight: 600; color: #4a4a50; }
+.ngt-skip { min-height: 44px; padding: 0 4px; border: 0; background: none; color: #4a4a50; font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
+.ngt-icon, .ndp-icon { width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; background: #fdf6e3; color: #7a5600; font-size: 34px; }
+.ngt-card h2, .ndp-card h2 { margin: 4px 0 0; font-size: 26px; line-height: 1.2; font-weight: 700; }
+.ngt-card p, .ndp-card > p { margin: 0; font-size: 17px; line-height: 1.55; color: #2b2b30; }
+.ngt-dots { display: flex; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
+.ngt-dots li { width: 10px; height: 10px; border-radius: 50%; background: #e6e5e0; }
+.ngt-dots li.is-done { background: #4a4a50; }
+.ngt-dots li.is-on { width: 26px; border-radius: 5px; background: #0b0b0c; }
+.ngt-acts { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 6px; }
+.ngt-back, .ngt-next { min-height: 52px; padding: 0 22px; border-radius: 14px; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.ngt-back { border: 1px solid #d6d4cc; background: #fff; color: #0b0b0c; }
+.ngt-next { border: 0; background: #0b0b0c; color: #fff; }
+.ngt-foot { margin: 0; font-size: 13px; color: #4a4a50; }
+.ngt-card p.ngt-foot, .ndp-card p.ngt-foot { font-size: 13px; color: #4a4a50; }
+.ndp-card.is-urgent .ndp-icon { background: #fdeeea; color: #a3331c; }
+.ndp-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.ndp-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid #e8e5dd; background: #fafaf8; }
+.ndp-item.is-urgent { border-color: #f3cfc5; background: #fdeeea; }
+.ndp-item > i { font-size: 22px; color: #4a4a50; flex-shrink: 0; }
+.ndp-item.is-urgent > i { color: #a3331c; }
+.ndp-item span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ndp-item b { font-size: 16px; line-height: 1.3; }
+.ndp-item small { font-size: 14px; color: #4a4a50; line-height: 1.4; }
+.ndp-go { min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: #0b0b0c; color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+.ndp-more { margin: 0; font-size: 14px; color: #4a4a50; }
+@container (max-width: 560px) {
+  .ngt-card, .ndp-card { align-self: end; width: 100%; margin: 0; border-radius: 22px 22px 0 0; max-height: 92vh; }
+  .ngt-acts > button { flex: 1; }
+  .ndp-item { flex-wrap: wrap; }
+  .ndp-go { width: 100%; }
+}

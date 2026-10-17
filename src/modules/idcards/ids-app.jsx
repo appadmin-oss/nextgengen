@@ -1660,6 +1660,7 @@ function IdCardStudioPage({ setPage }) {
 
   return (
     <div className={"ids-app" + (phone ? " is-phone" : "")} ref={rootRef}>
+      {typeof GuideTour === "function" && <GuideTour portal="idcards"/>}
       <header className="ids-head">
         <a href="/club-admin" className="ids-brand" aria-label="Back to the Club portal" onClick={e => { e.preventDefault(); setPage && setPage("club-admin"); }}>
           <IdsIcon name="caret-left" className="ids-brand-back"/><img src="/assets/logo.png" alt="" width="26" height="26"/><span>ID Card Studio</span>
