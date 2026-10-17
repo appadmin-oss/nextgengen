@@ -143,16 +143,16 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
 
     // The signature is for one exact length: a different body is refused by the bucket.
     const bad = await p.evaluate(async () => {
-      const sig = await (await fetch('/api/member/upload-sign.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-NGG-CSRF': 'e2e-csrf-token-0123456789' },
+      const sig = await (await fetch('/api/member/upload-sign.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-NGG-CSRF': (document.cookie.match(/(?:^|; )ngg_csrf=([^;]+)/) || [])[1] || '' },
         body: JSON.stringify({ kind: 'assignment', mediaKind: 'pdf', name: 'a.pdf', contentType: 'application/pdf', size: 10 }) })).json();
       const r1 = await fetch(sig.uploadUrl, { method: 'PUT', headers: sig.headers, body: 'a much longer body than ten bytes' }).then(x => x.status, () => 0);
       const r2 = await fetch(sig.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: '0123456789' }).then(x => x.status, () => 0);
       return { r1, r2 };
     });
     chk('a signed upload cannot be swapped for a longer file, or stored as another type', bad.r1 === 403 && bad.r2 === 403, JSON.stringify(bad));
-    const svg = await p.evaluate(async () => (await fetch('/api/member/upload-sign.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-NGG-CSRF': 'e2e-csrf-token-0123456789' },
+    const svg = await p.evaluate(async () => (await fetch('/api/member/upload-sign.php', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-NGG-CSRF': (document.cookie.match(/(?:^|; )ngg_csrf=([^;]+)/) || [])[1] || '' },
         body: JSON.stringify({ kind: 'headshot', mediaKind: 'image', name: 'x.svg', contentType: 'image/svg+xml', size: 100 }) })).json());
-    chk('an SVG is refused before anything is signed', svg.ok === false && svg.error === 'bad_file_type' && !svg.uploadUrl);
+    chk('an SVG is refused before anything is signed', svg.ok === false && svg.error === 'bad_file_type' && !svg.uploadUrl, JSON.stringify(svg));
     chk('no page errors', !errs.length, errs.join(' | '));
   } catch (e) { failed++; console.error('  ✗ FAIL: ' + (e && e.stack || e)); }
   finally { try { browser && await browser.close(); } catch (_) {} cleanup(); }

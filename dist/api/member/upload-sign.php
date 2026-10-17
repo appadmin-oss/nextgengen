@@ -83,7 +83,10 @@ if ($useStore) {
        image kind takes only images; a post or a hand-in takes what it is. No
        server-side transformation exists on a bucket, so images arrive already
        shrunk by the browser (api-client.js shrinkForUpload). */
-    $mk = $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
+    /* A post or a hand-in is what the file is (Cloudinary files a PDF under
+       `image`, which here would refuse it); any other image kind takes images. */
+    $mediaAware0 = $kind === 'post' || $kind === 'assignment';
+    $mk = !$mediaAware0 && $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $sc = $CONFIG['storage'] ?? [];
     $r = store_upload_spec((string)preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$sub)), $mk, (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''),
                            $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)));
