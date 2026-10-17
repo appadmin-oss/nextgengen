@@ -1459,3 +1459,15 @@ breakdown; `admin.media.purgeDerived` deletes derived copies (keep_original).
 Not done: re-compressing originals already stored, and finding orphaned
 originals no record points at — both need care, because deleting a photo on a
 printed card's record is unrecoverable.
+
+## 2026-10-17 — the family portal in the portals' design language
+
+No family design was in the handoff, so `/family` was rebuilt on its shared
+tokens (ink on white, gold only accent, Geist, 16px panels, 232px sidebar,
+phone tab bar) as one closed `--fx-*` set on `.fam` in styles.css. The one long
+page became five screens from one registry (`FAMILY_VIEWS`): Today (needs +
+shortcuts + four tiles + check-in + Saturday), Attendance & conduct, Fees,
+Lessons & timetable, Messages; plus Emails & connection. State in the URL
+(`?child=&view=`). Same API, no new ops. family-ui.test.js drives the new
+navigation (28/28). Also fixed: the new inbox shows "From their family account"
+on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.

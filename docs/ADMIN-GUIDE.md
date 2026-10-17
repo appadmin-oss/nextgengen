@@ -1083,7 +1083,13 @@ notification **and** an email with a link straight to the right screen:
 sees and decides only their own centres' children.
 
 Parents sign in at **/family** with their own email — a six-digit code, no
-password. It is a separate account, not a member account: it cannot open
+password. The account is laid out like the other portals: their children down
+the left (along the top on a phone), and five screens for the child chosen —
+**Today** (what needs them, with one-tap *will be away*, *lost ID card* and
+*question a charge*), **Attendance & conduct**, **Fees** (with *Pay online*),
+**Lessons & timetable** and **Messages to the centre** — plus *Emails &
+connection*. The address carries the child and the screen, so a shared link
+opens the same place. It is a separate account, not a member account: it cannot open
 any member page, and nothing in it can reach the Control Room. On it they see,
 for each child: today's sign-in (late, and by how much), attendance this term,
 conduct and fines, fees due, lesson progress and the weekly check-in. They
