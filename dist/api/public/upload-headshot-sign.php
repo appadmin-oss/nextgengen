@@ -21,6 +21,7 @@ if (store_configured()) {
     $r = store_upload_spec('headshot', 'image', (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''), $body['size'] ?? 0,
                            (int)(($CONFIG['storage']['headshot_max_bytes'] ?? null) ?: STORE_HEADSHOT_MAX_BYTES));
     if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
+    media_obj_record_signed($r, '', 'headshot');   // an abandoned sign-up's photo is swept a week later
     json_ok($r);
 }
 if (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret'])) {

@@ -28717,5 +28717,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM telegram_links");
 })();
 
+/* Files in the bucket: stored once (a hash the SERVER verified), swept when unused (media-objects.php). */
+(function () {
+    $keep = $GLOBALS['CONFIG']['storage'] ?? null;
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acct.r2.cloudflarestorage.com', 'bucket' => 'b', 'access_key' => 'k', 'secret_key' => 's', 'public_base' => 'https://pub-mo.r2.dev', 'folder' => 'ngg'];
+    db_exec("DELETE FROM media_objects");
+    $body = '%PDF-1.4 worksheet ' . str_repeat('x', 500);
+    $sha = hash('sha256', $body); $n = strlen($body);
+    $spec = store_upload_spec('assignments', 'pdf', 'worksheet.pdf', 'application/pdf', $n, STORE_MAX_BYTES, store_owner_segment('NGG-MO-1'));
+    media_obj_record_signed($spec, 'NGG-MO-1', 'assignment');
+    chk('stored once · every signed upload is recorded, waiting to be confirmed', db_row("SELECT status FROM media_objects WHERE storeKey = ?", [$spec['key']])['status'] === 'signed'
+        && media_obj_find_dup($sha, $n, store_formats('pdf')) === null);
+
+    $GLOBALS['__media_fetch_mock'] = fn($url) => 'something else entirely';
+    chk('stored once · a hash the browser claims is NOT believed: the server reads the file and it does not match', (media_obj_confirm(['memberId' => 'NGG-MO-1', 'key' => $spec['key'], 'sha256' => $sha])['verified'] ?? true) === false
+        && media_obj_find_dup($sha, $n, store_formats('pdf')) === null);
+    $GLOBALS['__media_fetch_mock'] = fn($url) => $body;
+    chk('stored once · someone else cannot confirm my upload', (media_obj_confirm(['memberId' => 'NGG-MO-2', 'key' => $spec['key'], 'sha256' => $sha])['verified'] ?? true) === false);
+    chk('stored once · the owner\'s confirm, read back and matching, makes it reusable', !empty(media_obj_confirm(['memberId' => 'NGG-MO-1', 'key' => $spec['key'], 'sha256' => $sha])['verified']));
+    $dup = media_obj_find_dup($sha, $n, store_formats('pdf'));
+    chk('stored once · the same bytes again are found — and the upload is answered with the stored file', $dup && media_obj_reuse_answer($dup)['provider'] === 'existing'
+        && media_obj_reuse_answer($dup)['publicUrl'] === $spec['publicUrl'] && (int)db_row("SELECT reuses FROM media_objects WHERE id = ?", [(int)$dup['id']])['reuses'] === 2);
+    chk('stored once · …but never to a kind that may not store it (a PDF is not a profile picture), nor at a different size', media_obj_find_dup($sha, $n, store_formats('image')) === null
+        && media_obj_find_dup($sha, $n + 1, store_formats('pdf')) === null);
+
+    // The sweep: a week old and mentioned nowhere → deleted; still on a record → kept.
+    $old = gmdate('c', time() - 8 * 86400);
+    $orphan = store_upload_spec('community', 'image', 'x.jpg', 'image/jpeg', 100, STORE_MAX_BYTES); media_obj_record_signed($orphan, 'NGG-MO-1', 'post');
+    $young = store_upload_spec('community', 'image', 'y.jpg', 'image/jpeg', 100, STORE_MAX_BYTES); media_obj_record_signed($young, 'NGG-MO-1', 'post');
+    db_exec("UPDATE media_objects SET createdAt = ? WHERE storeKey IN (?, ?)", [$old, $orphan['key'], $spec['key']]);
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-MO-1', 'fullName' => 'Bucket Kid', 'type' => 'NGG', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now, 'photoUrl' => $spec['publicUrl']]);
+    $deleted = []; $GLOBALS['__store_http_mock'] = function ($m, $k, $b = '', $x = []) use (&$deleted) { if ($m === 'DELETE') $deleted[] = $k; return ['code' => 204, 'body' => '']; };
+    $r = media_obj_sweep();
+    chk('sweep · a week-old file nothing mentions is deleted from the bucket — only that one', $deleted === [$orphan['key']] && $r['deleted'] === 1 && $r['freed'] === 100
+        && db_row("SELECT status FROM media_objects WHERE storeKey = ?", [$orphan['key']])['status'] === 'deleted');
+    chk('sweep · a file still on a record, and one under a week old, are kept', db_row("SELECT status FROM media_objects WHERE storeKey = ?", [$spec['key']])['status'] === 'ok'
+        && db_row("SELECT status FROM media_objects WHERE storeKey = ?", [$young['key']])['status'] === 'signed');
+    $deleted = []; media_obj_sweep();
+    chk('sweep · a file checked today is not searched again until tomorrow', $deleted === []);
+    unset($GLOBALS['__store_http_mock'], $GLOBALS['__media_fetch_mock']);
+
+    $SU = db_row("SELECT memberId FROM members WHERE role = 'super_admin' LIMIT 1")['memberId'] ?? '';
+    $v = admin_media_objects(['requesterId' => $SU]);
+    chk('storage manager · what the bucket holds, what was not stored twice, what was swept, the biggest files', !empty($v['ok']) && $v['total']['files'] === 2
+        && $v['deduped']['uploads'] === 2 && $v['deduped']['bytes'] === 2 * $n && $v['swept']['bytes'] === 100 && $v['largest'][0]['key'] === $spec['key'] && $v['largest'][0]['owner'] === 'Bucket Kid');
+    chk('storage manager · needs the settings permission', empty(admin_media_objects(['requesterId' => 'NGG-MO-1'])['ok']));
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MO-1'"); db_exec("DELETE FROM media_objects");
+    if ($keep === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keep;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 157;
+const NGG_SCHEMA_TARGET = 158;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4721,6 +4721,31 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_phone ON telegram_links(phone);
             CREATE INDEX IF NOT EXISTS idx_tg_chat ON telegram_links(chatId);
+        ",
+        /* 158 — every file uploaded to the storage bucket, so the same file is
+         * stored once (sha256, verified by the server reading the object back,
+         * never taken from the browser's word), and a file nothing points at
+         * any more is found and deleted (domain/media-objects.php). */
+        158 => "
+            CREATE TABLE IF NOT EXISTS media_objects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              storeKey TEXT NOT NULL,
+              url TEXT NOT NULL,
+              sha256 TEXT DEFAULT '',
+              bytes INTEGER DEFAULT 0,
+              mediaKind TEXT DEFAULT '',
+              kind TEXT DEFAULT '',
+              ownerId TEXT DEFAULT '',
+              status TEXT DEFAULT 'signed',
+              reuses INTEGER DEFAULT 0,
+              createdAt TEXT DEFAULT '',
+              verifiedAt TEXT DEFAULT '',
+              checkedAt TEXT DEFAULT '',
+              deletedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mo_key ON media_objects(storeKey);
+            CREATE INDEX IF NOT EXISTS idx_mo_sha ON media_objects(sha256, status);
+            CREATE INDEX IF NOT EXISTS idx_mo_status ON media_objects(status, createdAt);
         ",
     ];
 

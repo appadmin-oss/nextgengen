@@ -136,7 +136,7 @@ function store_http(string $method, string $key, string $body = '', array $extra
             CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2];
     if ($method === 'HEAD') $opt[CURLOPT_NOBODY] = true;
     if ($body !== '') $opt[CURLOPT_POSTFIELDS] = $body;
-    curl_setopt_array($ch, $opt);
+    curl_setopt_array($ch, $opt + store_curl_tls());
     $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
     return ['code' => $code, 'body' => is_string($out) ? $out : '', 'error' => $err];
 }
@@ -204,6 +204,12 @@ function store_upload_spec(string $sub, string $mediaKind, string $name, string 
     return ['ok' => true, 'provider' => 's3', 'uploadUrl' => $url, 'method' => 'PUT', 'headers' => ['Content-Type' => $ctype],
             'publicUrl' => store_public_url($key), 'key' => $key, 'format' => $ext, 'size' => $size, 'maxBytes' => $maxBytes,
             'resourceType' => $mediaKind === 'video' ? 'video' : ($mediaKind === 'raw' ? 'raw' : 'image')];
+}
+
+/** cURL options every request to the bucket shares: a private CA file for a self-hosted store (MinIO with its own certificate). */
+function store_curl_tls(): array {
+    $ca = trim((string)(store_cfg()['ca_file'] ?? ''));
+    return $ca !== '' && is_readable($ca) ? [CURLOPT_CAINFO => $ca] : [];
 }
 
 /** The extensions a media kind may be stored as — the same list for the bucket and for Cloudinary's `allowed_formats`. */

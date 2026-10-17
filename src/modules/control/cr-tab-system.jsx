@@ -45,6 +45,29 @@ function crSyMediaBlocks(m, ctx) {
              act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
   return out;
 }
+/* What the storage bucket holds, and what was saved without touching a pixel:
+   identical files stored once, and unused files swept (media-objects.php). */
+const crSyBytes = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const CR_SY_KIND_NAMES = { post: "Community posts", assignment: "Hand-ins", headshot: "Headshots", avatar: "Profile pictures", cover: "Covers", proof: "Proofs", results: "School reports" };
+function crSyObjectBlocks(o, ctx) {
+  const out = [{ type: "status", span: 3, title: "Files in the bucket", sub: crNum(o.total.files) + " files · " + crSyBytes(o.total.bytes),
+    summary: o.deduped.bytes || o.swept.bytes ? "Saved " + crSyBytes(o.deduped.bytes + o.swept.bytes) : "Nothing to save yet", tone: "ok",
+    items: [["Identical files stored once", crNum(o.deduped.uploads) + " uploads · " + crSyBytes(o.deduped.bytes) + " not stored", "ok"],
+            ["Unused files deleted", crNum(o.swept.files) + " · " + crSyBytes(o.swept.bytes) + " freed", "ok"]]
+      .concat((o.byKind || []).slice(0, 5).map(k => [CR_SY_KIND_NAMES[k.kind] || k.kind || "Other", crNum(k.files) + " · " + crSyBytes(k.bytes), "neutral"])) }];
+  out.push({ type: "note", span: 3, icon: "broom", text: "A file nothing uses for " + o.graceDays + " days — a photo picked and abandoned, a post deleted, a hand-in replaced — is deleted from the bucket every night. A file still on any record is never touched.",
+    act: { l: "Clean up now", run: () => crSyObjectSweep(ctx) } });
+  if (o.largest && o.largest.length) out.push({ type: "table", span: 6, title: "Largest files", sub: "Open one to see it. “Reused ×3” means three uploads of the same file, stored once.", nosel: true,
+    cols: ["File", "Where", "By", { l: "Size", num: true }, { l: "Reused", num: true }, "Uploaded"],
+    rows: o.largest.map(f => ({ key: f.key, cells: [{ k: "mono", t: f.key.split("/").pop() }, { k: "text", t: CR_SY_KIND_NAMES[f.kind] || f.kind || "—" }, { k: "text", t: f.owner || "—" },
+        { k: "num", t: crSyBytes(f.bytes), v: f.bytes }, { k: "num", t: f.reuses ? "×" + (f.reuses + 1) : "—", v: f.reuses }, { k: "text", t: f.createdAt ? crAgo(f.createdAt) + " ago" : "—" }],
+      open: () => { try { window.open(f.url, "_blank", "noopener"); } catch (_) {} } })) });
+  return out;
+}
+async function crSyObjectSweep(ctx) {
+  try { const r = await NGGApi.admin.media.sweep(); const x = r.ran || {}; ctx.toast(x.deleted ? "Deleted " + crNum(x.deleted) + " unused " + (x.deleted === 1 ? "file" : "files") + " · " + crSyBytes(x.freed) + " freed." : "Nothing to clean up: every file older than a week is still in use."); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t clean up the bucket."), null, true); }
+}
 async function crSyMediaCheck(ctx) {
   try { const r = await NGGApi.admin.media.usage(true); const u = r.usage || {}; ctx.toast("Checked: " + (u.pct == null ? "usage not reported" : Math.round(u.pct) + "% of the plan used") + "."); ctx.reload(); }
   catch (e) { ctx.toast(crErr(e, "Couldn’t reach Cloudinary."), null, true); }
@@ -271,8 +294,8 @@ Object.assign(CR_TAB_DEFS, {
   ops: {
     skeleton: ["kpis", "table"],
     load: async () => {
-      const [st, media] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null)]);
-      return Object.assign({}, st, { media: media && media.usage ? media : null });
+      const [st, media, objects] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null)]);
+      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null });
     },
     actions: (d, ctx) => [
       { l: "Mark all dealt with", icon: "checks", primary: true, run: () => crSyOpsClear(ctx, 0, (d.events || []).length), disabled: !(d.events || []).length, why: (d.events || []).length ? undefined : "There are no open faults." },
@@ -347,6 +370,7 @@ Object.assign(CR_TAB_DEFS, {
             items: [["Files served from", d.media.store.host, "neutral"], ["Cloudinary", d.media.usage && d.media.usage.configured ? "Keeps serving what it already holds" : "Not used", "neutral"]] }
         : { type: "note", span: 3, icon: "info", text: "New uploads go to " + (d.media.uploadsTo === "cloudinary" ? "Cloudinary." : "this server.") + " A storage bucket (Cloudflare R2 or Backblaze B2) takes them instead once it is set in Settings → API keys → File storage.",
             act: { l: "Set up storage", run: () => ctx.go("settings", "keys") } });
+      if (d.objects) out.push(...crSyObjectBlocks(d.objects, ctx));
       if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
 
       const jobs = Object.keys(h.cron || {});

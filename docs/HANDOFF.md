@@ -1747,3 +1747,21 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   connection*, and the public `/telegram` route (ROUTES) with a QR.
 - `tests/telegram.test.js`, and PHP tests for the linking, routing, fallback,
   unlink-on-block and setup.
+
+## 2026-10-17 — community media: same quality, fewer bytes
+
+- `vendor/image-tools.js`: `encodeBest` (WebP when smaller than JPEG at the
+  same quality; Safari's canvas returns PNG for WebP, so the blob TYPE is
+  checked) and `stripJpegMeta` (lossless: drops EXIF unless it carries a
+  rotation, XMP, IPTC, COM, APPn other than JFIF/ICC/Adobe; scan data copied
+  whole). `SHRINK.post`/`proof` take `webp: true`; headshots stay JPEG.
+- Migration 158 `media_objects` + `domain/media-objects.php`: every bucket
+  upload recorded at signing; `member/upload-done.php` makes the server
+  stream the object back and hash it (`media_obj_hash_url`), and only a match
+  is reusable — the browser's hash alone would let one person poison a common
+  file. `upload-sign.php` answers `provider: existing` for a verified hash +
+  size whose extension the kind may store. Nightly `media_obj_sweep` deletes
+  week-old objects `photo_store_live_refs` finds nowhere (skipping
+  audit_log, photo_assets, media_objects); unknown keeps.
+- `storage.ca_file` for a self-hosted store with a private CA (also what the
+  e2e uses). Diagnostics shows *Files in the bucket*.

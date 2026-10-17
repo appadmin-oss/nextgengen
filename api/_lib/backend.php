@@ -616,6 +616,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.fees'                 => 'member_fees_account',
             'member.fees.pay'             => 'member_fees_pay',
             'admin.media.usage'           => 'admin_media_usage',
+            'admin.media.objects'         => 'admin_media_objects',
+            'member.upload.done'          => 'media_obj_confirm',
             'admin.media.purgeDerived'    => 'admin_media_purge_derived',
             'family.fees.pay'             => 'family_fees_pay',
             /* Self-service. Every one of these takes its memberId from the

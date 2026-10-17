@@ -3,10 +3,14 @@
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-if ($method === 'GET') {
+if ($method === 'GET' && ($_GET['view'] ?? '') === 'objects') {
+    $res = gs_call('admin.media.objects', ['requesterId' => $s['mid']]);
+} elseif ($method === 'GET') {
     $res = gs_call('admin.media.usage', ['requesterId' => $s['mid'], 'refresh' => !empty($_GET['refresh'])]);
+} elseif ($method === 'POST' && (string)(($b = read_json_body())['action'] ?? '') === 'sweepObjects') {
+    rate_limit_check_actor('media.purge', (string)$s['mid']);
+    $res = gs_call('admin.media.objects', ['requesterId' => $s['mid'], 'sweep' => true, 'ip' => client_ip()]);
 } elseif ($method === 'POST') {
-    $b = read_json_body();
     if ((string)($b['action'] ?? '') !== 'purgeDerived') json_error('unknown_action', 400);
     rate_limit_check_actor('media.purge', (string)$s['mid']);
     $res = gs_call('admin.media.purgeDerived', ['requesterId' => $s['mid'], 'confirm' => (string)($b['confirm'] ?? ''), 'ip' => client_ip()]);

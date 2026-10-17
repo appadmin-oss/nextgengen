@@ -188,6 +188,67 @@
     return canvas;
   }
 
+  /* ── The same picture in fewer bytes ──────────────────────────────────────
+   * WebP keeps the same visual quality as JPEG at the same quality setting in
+   * roughly a quarter to a third fewer bytes. Where this browser can encode it
+   * (Chrome, Edge, Firefox, Android; not every Safari — whose canvas hands
+   * back a PNG when asked for WebP, so the type is CHECKED, not assumed), both
+   * are made and the smaller is kept. Nothing is traded for the saving: same
+   * pixels in, same quality setting out. */
+  async function encodeBest(canvas, quality, allowWebp) {
+    var jpg = await toBlob(canvas, 'image/jpeg', quality);
+    if (!allowWebp) return jpg;
+    var webp = null;
+    try { webp = await toBlob(canvas, 'image/webp', quality); } catch (e) { webp = null; }
+    if (webp && webp.type === 'image/webp' && (!jpg || webp.size < jpg.size)) return webp;
+    return jpg;
+  }
+
+  /* Lossless: the same JPEG with its hidden extras removed. A phone photo
+   * carries a block of camera data — and, too often, the GPS position where
+   * it was taken, which on a child's photo is the one thing it must not carry.
+   * Removed: EXIF (APP1) unless it holds a rotation the picture still needs,
+   * XMP (APP1), Photoshop/IPTC (APP13), comments (COM) and other app blocks.
+   * Kept: JFIF (APP0), the colour profile (APP2 ICC) and Adobe's colour block
+   * (APP14), because they change how the colours are drawn. The image data
+   * itself is copied byte for byte — not one pixel is re-encoded. Anything
+   * that does not parse as a JPEG is returned unchanged. */
+  function exifOrientation(seg) {
+    // seg: Uint8Array of an APP1 payload starting "Exif\0\0".
+    try {
+      var t = 6, le = seg[t] === 0x49;
+      var u16 = function (o) { return le ? seg[o] | (seg[o + 1] << 8) : (seg[o] << 8) | seg[o + 1]; };
+      var u32 = function (o) { return le ? (seg[o] | (seg[o + 1] << 8) | (seg[o + 2] << 16) | (seg[o + 3] << 24)) >>> 0 : ((seg[o] << 24) | (seg[o + 1] << 16) | (seg[o + 2] << 8) | seg[o + 3]) >>> 0; };
+      var ifd = t + u32(t + 4), n = u16(ifd);
+      for (var i = 0; i < n; i++) { var e = ifd + 2 + i * 12; if (u16(e) === 0x0112) return u16(e + 8); }
+    } catch (e) {}
+    return 1;
+  }
+  async function stripJpegMeta(blob) {
+    if (!blob || !/jpe?g/i.test(blob.type || '')) return blob;
+    var b = new Uint8Array(await blob.arrayBuffer());
+    if (b.length < 4 || b[0] !== 0xFF || b[1] !== 0xD8) return blob;
+    var out = [b.subarray(0, 2)], p = 2, removed = 0;
+    while (p + 4 <= b.length) {
+      if (b[p] !== 0xFF) return blob;                       // not a marker where one must be: leave the file alone
+      var m = b[p + 1];
+      if (m === 0xFF) { p++; continue; }                     // fill byte before a marker
+      if (m === 0xDA) { out.push(b.subarray(p)); p = b.length; break; }   // start of scan: the image itself, copied whole
+      if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { out.push(b.subarray(p, p + 2)); p += 2; continue; }
+      var len = (b[p + 2] << 8) | b[p + 3];
+      if (len < 2 || p + 2 + len > b.length) return blob;
+      var seg = b.subarray(p + 4, p + 2 + len), drop = false;
+      if (m === 0xE1) {
+        var isExif = seg[0] === 0x45 && seg[1] === 0x78 && seg[2] === 0x69 && seg[3] === 0x66;
+        drop = !isExif || exifOrientation(seg) === 1;          // keep EXIF only when it holds a needed rotation
+      } else if (m === 0xFE || m === 0xED || m === 0xEC || (m >= 0xE3 && m <= 0xEF && m !== 0xEE)) drop = true;
+      if (drop) removed += len + 2; else out.push(b.subarray(p, p + 2 + len));
+      p += 2 + len;
+    }
+    if (!removed) return blob;
+    return new Blob(out, { type: 'image/jpeg' });
+  }
+
   /* Formats the rest of the product will accept. Anything else HAS to be
    * re-encoded here, whatever its size — see prepare(). */
   var OK_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -230,26 +291,28 @@
     }
     var long = Math.max(dec.width, dec.height);
     if (!mustConvert && long <= maxPx && before && before <= floorBytes) {
-      return { blob: file, width: dec.width, height: dec.height, before: before, after: before,
-               skipped: true, reason: 'already_small', type: file.type, typeOk: true };
+      var lean = opts.strip === false ? file : await stripJpegMeta(file);
+      return { blob: lean, width: dec.width, height: dec.height, before: before, after: lean.size || before,
+               skipped: lean === file, reason: 'already_small', type: file.type, typeOk: true, stripped: lean !== file };
     }
     var scale = Math.min(1, maxPx / long);
     var canvas = await resample(dec.source, dec.width * scale, dec.height * scale);
     if (opts.adjust) adjust(canvas, opts.adjust);
-    var blob = await toBlob(canvas, 'image/jpeg', quality);
+    var blob = await encodeBest(canvas, quality, !!opts.webp);
     if (dec.source.close) { try { dec.source.close(); } catch (e) {} }
     // A pathological source can encode larger than it arrived; keep the smaller
     // — but never in exchange for keeping a format we cannot send.
     if (!blob || (!mustConvert && before && blob.size >= before && long <= maxPx)) {
       if (blob && mustConvert) {
         return { blob: blob, width: canvas.width, height: canvas.height, before: before,
-                 after: blob.size, skipped: false, type: 'image/jpeg', typeOk: true };
+                 after: blob.size, skipped: false, type: blob.type || 'image/jpeg', typeOk: true };
       }
-      return { blob: file, width: dec.width, height: dec.height, before: before, after: before,
-               skipped: true, reason: 'no_gain', type: (file && file.type) || '', typeOk: !mustConvert };
+      var kept = opts.strip === false ? file : await stripJpegMeta(file);
+      return { blob: kept, width: dec.width, height: dec.height, before: before, after: kept.size || before,
+               skipped: kept === file, reason: 'no_gain', type: (file && file.type) || '', typeOk: !mustConvert, stripped: kept !== file };
     }
     return { blob: blob, width: canvas.width, height: canvas.height, before: before, after: blob.size,
-             skipped: false, type: 'image/jpeg', typeOk: true };
+             skipped: false, type: blob.type || 'image/jpeg', typeOk: true };
   }
 
   /* Render the crop Cropper hands back, at a chosen output size, resampled
@@ -272,6 +335,7 @@
     ensurePica: ensurePica, ensureCropper: ensureCropper,
     decode: decode, resample: resample, adjust: adjust, toBlob: toBlob,
     prepare: prepare, renderCrop: renderCrop, canvasOf: canvasOf,
+    encodeBest: encodeBest, stripJpegMeta: stripJpegMeta,
     // Exposed so a caller can check a picked file before doing any work with it.
     typeOk: typeOk, okTypes: OK_TYPES.slice(),
   };

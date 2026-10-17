@@ -508,6 +508,7 @@ return [
         'secret_key'  => '',               // NEVER exposed to the browser
         'public_base' => '',               // R2: https://pub-<hash>.r2.dev (or a custom domain) · B2: https://f004.backblazeb2.com/file/ngg-media
         'folder'      => 'ngg',            // key prefix
+        'ca_file'     => '',               // only for a self-hosted store with its own certificate (MinIO): path to its CA .pem
         'max_bytes'   => 25 * 1024 * 1024, // per file
     ],
 

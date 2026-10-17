@@ -169,8 +169,13 @@
    * exactly as it arrived. */
   const SHRINK = {
     headshot: { maxPx: 1600, quality: 0.86 },   // card art is delivered at 900px
-    post: { maxPx: 1600, quality: 0.82 },       // matches the server incoming transform
-    proof: { maxPx: 2000, quality: 0.82 },
+    /* Community posts and hand-ins: the same size and quality setting as
+       before, encoded as WebP when that is smaller (it usually is, by a
+       quarter to a third), and a photo already small enough keeps its own
+       pixels with only its hidden data (camera, GPS) removed — lossless.
+       Headshots stay JPEG: they are print artwork for the card pipeline. */
+    post: { maxPx: 1600, quality: 0.82, webp: true },
+    proof: { maxPx: 2000, quality: 0.82, webp: true },
     /* For an image that travels INSIDE a JSON submission rather than as its own
        upload. Sized against nginx's 1MB client_max_body_size default, which is
        the tightest limit in common use — a 413 on a form's last tap is the
@@ -273,8 +278,9 @@
       const tools = await ensureImageTools();
       const r = await tools.prepare(file, SHRINK[kind] || SHRINK.proof);
       if (r.skipped || !r.blob) return file;
-      const name = String(file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
-      return new File([r.blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+      const type = r.blob.type || 'image/jpeg';
+      const name = String(file.name || 'photo').replace(/\.[^.]+$/, '') + (type === 'image/webp' ? '.webp' : type === 'image/png' ? '.png' : '.jpg');
+      return new File([r.blob], name, { type, lastModified: Date.now() });
     } catch (_) {
       return file;   // optimiser unavailable — send the original rather than fail
     }
@@ -315,10 +321,24 @@
     /* name, type and size travel too: a bucket upload (R2 / B2) is signed for
        one content type and one exact length, so the server must know both. */
     const about = { name: file.name || '', contentType: file.type || '', size: file.size || 0 };
+    /* The file's fingerprint: if the bucket already holds these exact bytes,
+       the server says so and nothing is uploaded (api/_lib/domain/media-objects.php). */
+    const sha256 = kind === 'headshot' ? '' : await fileSha256(file);
+    if (sha256) about.sha256 = sha256;
     const sig = kind === 'headshot'
       ? await request('/public/upload-headshot-sign.php', { body: about })
       : await request('/member/upload-sign.php', { body: Object.assign({ kind, mediaKind }, about) });
-    if (sig.provider === 's3') return await putToStore(file, sig, mediaKind, onProgress);
+    if (sig.provider === 'existing') {
+      if (onProgress) onProgress(100);
+      return { url: sig.publicUrl, publicId: sig.key, resourceType: sig.resourceType, format: sig.format, bytes: sig.size,
+               mediaKind: mediaKind, pages: 0, originalName: file.name || '', reused: true };
+    }
+    if (sig.provider === 's3') {
+      const done = await putToStore(file, sig, mediaKind, onProgress);
+      // Let the server read it back and fingerprint it, so the next identical upload can reuse it. Best effort.
+      if (sha256) request('/member/upload-done.php', { body: { key: sig.key, sha256 } }).catch(() => {});
+      return done;
+    }
     return await new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('file', file);
@@ -356,6 +376,15 @@
       xhr.onerror = () => reject(new Error('upload_network_error'));
       xhr.send(fd);
     });
+  }
+
+  /* SHA-256 of a file, hex, or '' where the browser cannot (an http:// page has no crypto.subtle). */
+  async function fileSha256(file) {
+    try {
+      if (!(window.crypto && crypto.subtle && file && file.arrayBuffer) || file.size > 30 * 1024 * 1024) return '';
+      const h = new Uint8Array(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+      return Array.prototype.map.call(h, b => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) { return ''; }
   }
 
   /* A presigned PUT straight to the bucket. The URL is good for one key, one
@@ -1682,6 +1711,8 @@
       media: {
         usage:   (refresh) => request('/admin/media.php' + (refresh ? '?refresh=1' : '')),
         purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
+        objects: () => request('/admin/media.php?view=objects'),
+        sweep:   () => request('/admin/media.php', { body: { action: 'sweepObjects' } }),
       },
       ops: {
         status: () => request('/admin/ops.php'),

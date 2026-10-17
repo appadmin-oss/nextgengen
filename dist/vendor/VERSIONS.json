@@ -74,8 +74,8 @@
     "image-tools.js": {
       "package": null,
       "version": null,
-      "bytes": 13409,
-      "sha256": "f9620ef7be02aeecff1e6e603ac70a5f1e273ea9c694951932fa354b41e907c8",
+      "bytes": 17516,
+      "sha256": "9c088d9cbf0eafdfce08c273ad409ca3543d1b0ff208c5fc4a67284542fe8756",
       "note": "first-party (this repo)"
     },
     "jsQR.min.js": {

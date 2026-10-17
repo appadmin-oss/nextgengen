@@ -88,9 +88,14 @@ if ($useStore) {
     $mediaAware0 = $kind === 'post' || $kind === 'assignment';
     $mk = !$mediaAware0 && $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $sc = $CONFIG['storage'] ?? [];
+    /* Already stored? The same bytes (verified hash and size) are handed back
+       and nothing is uploaded — no storage, no data spent (media-objects.php). */
+    $dup = media_obj_find_dup(strtolower((string)($body['sha256'] ?? '')), (int)($body['size'] ?? 0), store_formats($mk));
+    if ($dup) json_ok(media_obj_reuse_answer($dup));
     $r = store_upload_spec((string)preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$sub)), $mk, (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''),
                            $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)), store_owner_segment((string)($s['mid'] ?? '')));
     if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
+    media_obj_record_signed($r, (string)($s['mid'] ?? ''), (string)$kind);
     json_ok($r);
 }
 $base = trim((string)($cfg['folder'] ?? 'ngg'), '/');

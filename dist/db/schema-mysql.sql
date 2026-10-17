@@ -3729,3 +3729,25 @@ CREATE TABLE IF NOT EXISTS telegram_links (
   KEY idx_tg_chat (chatId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (157) ON DUPLICATE KEY UPDATE version = version;
+
+-- 158: files in the storage bucket — stored once (verified sha256), swept when nothing uses them.
+CREATE TABLE IF NOT EXISTS media_objects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  storeKey VARCHAR(300) NOT NULL,
+  url VARCHAR(600) NOT NULL,
+  sha256 VARCHAR(64) DEFAULT '',
+  bytes BIGINT DEFAULT 0,
+  mediaKind VARCHAR(16) DEFAULT '',
+  kind VARCHAR(40) DEFAULT '',
+  ownerId VARCHAR(64) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'signed',
+  reuses INT DEFAULT 0,
+  createdAt VARCHAR(32) DEFAULT '',
+  verifiedAt VARCHAR(32) DEFAULT '',
+  checkedAt VARCHAR(32) DEFAULT '',
+  deletedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_mo_key (storeKey),
+  KEY idx_mo_sha (sha256, status),
+  KEY idx_mo_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (158) ON DUPLICATE KEY UPDATE version = version;

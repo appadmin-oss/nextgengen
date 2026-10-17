@@ -1830,6 +1830,26 @@ those photos keep showing from where they are.
 - **Replacing a photo** deletes the old one from the bucket, unless another
   record still uses it.
 
+### How the bucket saves space without losing quality
+
+- **The same file is stored once.** When somebody uploads a photo or a PDF the
+  bucket already holds (a picture shared by five people, a worksheet handed in
+  by a whole class), nothing is uploaded: the stored copy is used. The site
+  checks this by reading the stored file back itself, so nobody can trick it
+  into handing out a different file.
+- **Hidden photo data is removed, not the picture.** A phone photo carries
+  camera details and often the GPS position where it was taken. That is
+  stripped from every community photo and hand-in; the picture itself is kept
+  byte for byte.
+- **Large photos are stored as WebP** when that is smaller than JPEG at the same
+  quality setting — usually a quarter to a third fewer bytes for the same
+  picture. Headshots stay JPEG for printing.
+- **Unused files are deleted.** A photo picked and then abandoned, a deleted
+  post, a replaced hand-in: once nothing on any record has used a file for a
+  week, it is removed from the bucket overnight. Diagnostics → *Files in the
+  bucket* shows what is stored, what was saved, the largest files, and a
+  **Clean up now** button.
+
 ## Image storage (Cloudinary)
 
 Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
