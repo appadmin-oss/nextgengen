@@ -29,7 +29,7 @@ if ($method === 'GET') {
     $action = (string)($b['action'] ?? '');
     $op = POD_WRITES[$action] ?? null;
     if (!$op) json_error('unknown_action', 400);
-    if ($action === 'concern') rate_limit_check('safeguarding.report');
+    if ($action === 'concern') rate_limit_check_actor('safeguarding.report', (string)$s['mid']);
     $args = ['requesterId' => $s['mid'], 'ip' => client_ip()];
     foreach (POD_FIELDS as $f) if (array_key_exists($f, $b)) $args[$f] = $b[$f];
     $res = gs_call($op, $args);
