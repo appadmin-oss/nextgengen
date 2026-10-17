@@ -3911,3 +3911,40 @@ function installNggSelect() {
   }, true);
 }
 installNggSelect();
+
+/* ── Pay the balance online ─────────────────────────────────────────────────
+ * One button for every screen that shows a balance (the member's account, the
+ * family portal). `pay()` asks the server for a balance invoice; the browser
+ * goes to that invoice's /pay page, where Paystack takes the payment and the
+ * server's own verify settles it. Nothing is marked paid from here. */
+const PAY_BALANCE_ERR = {
+  payments_unavailable: "Online payment is not switched on yet. Pay by transfer and the centre will record it.",
+  nothing_to_pay: "There is nothing to pay right now.",
+  offline_pending: "A transfer is waiting to be checked by the centre, so there is nothing to pay online until it is.",
+  no_email: "We need an email address for the receipt. Ask the centre to add one.",
+  fees_off: "Fees are not switched on at this centre.",
+  not_ngg: "Online payment is for NGG membership.",
+  rate_limited: "Too many tries. Wait a minute and try again.",
+};
+function PayBalanceButton({ amountText, pay, className }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const go = () => {
+    setBusy(true); setErr("");
+    Promise.resolve().then(pay).then(r => {
+      if (r && r.payUrl) { window.location.assign(r.payUrl); return; }
+      setBusy(false); setErr("The payment page could not be opened. Try again.");
+    }).catch(e => {
+      setBusy(false);
+      setErr(PAY_BALANCE_ERR[(e && e.code) || ""] || "The payment page could not be opened. Try again.");
+    });
+  };
+  return (
+    <div className="pay-balance">
+      <button type="button" className={className || "btn btn-primary btn-sm"} onClick={go} disabled={busy} aria-busy={busy ? "true" : "false"}>
+        {busy ? "Opening payment…" : "Pay " + (amountText || "") + " online"}
+      </button>
+      {err && <p className="pay-balance-err" role="alert">{err}</p>}
+    </div>
+  );
+}

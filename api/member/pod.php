@@ -29,7 +29,7 @@ if ($method === 'GET') {
     $action = (string)($b['action'] ?? '');
     $op = POD_WRITES[$action] ?? null;
     if (!$op) json_error('unknown_action', 400);
-    if ($action === 'concern') rate_limit_check('safeguarding.report');
+    if ($action === 'concern') rate_limit_check_actor('safeguarding.report', (string)$s['mid']);
     $args = ['requesterId' => $s['mid'], 'ip' => client_ip()];
     foreach (POD_FIELDS as $f) if (array_key_exists($f, $b)) $args[$f] = $b[$f];
     $res = gs_call($op, $args);
@@ -38,6 +38,7 @@ if ($method === 'GET') {
 }
 if (empty($res['ok'])) {
     $e = (string)($res['error'] ?? 'failed');
-    json_error($e, in_array($e, ['not_in_pod', 'not_cleared', 'forbidden', 'not_a_mentor', 'no_mentor_record'], true) ? 403 : 400);
+    json_error($e, in_array($e, ['not_in_pod', 'not_cleared', 'forbidden', 'not_a_mentor', 'no_mentor_record'], true) ? 403 : 400,
+               isset($res['detail']) ? (string)$res['detail'] : null);
 }
 unset($res['ok']); json_ok($res);

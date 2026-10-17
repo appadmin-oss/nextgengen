@@ -1184,8 +1184,27 @@ function sg_officer(string $centre): ?array {
     return null;
 }
 
+/* Reports one person may file in 24 hours, across both paths (this one and
+ * mp_concern_file). Ten real concerns in a day is a crisis that the officer
+ * should hear about by phone; ten more is somebody flooding the queue. */
+const SG_REPORTS_PER_DAY = 10;
+
+/** Over the cap? Counted from the cases themselves, so it holds across both ops. */
+function sg_report_capped(string $reporterId): bool {
+    $n = (int)(db_row('SELECT COUNT(*) c FROM safeguarding_cases WHERE reporterId = ? AND createdAt >= ?',
+                      [$reporterId, gmdate('Y-m-d\TH:i:s', time() - 86400)])['c'] ?? 0);
+    return $n >= SG_REPORTS_PER_DAY;
+}
+function sg_report_refusal(string $reporterId, string $centre): array {
+    if (function_exists('ops_record')) ops_record('warn', 'safeguarding.cap', 'A reporter reached the daily concern cap', 'reporter=' . $reporterId . ' centre=' . $centre);
+    $o = sg_officer($centre);
+    return ['ok' => false, 'error' => 'report_limit', 'max' => SG_REPORTS_PER_DAY,
+            'detail' => 'You have sent ' . SG_REPORTS_PER_DAY . ' reports today. If a child is in danger now, call '
+                      . ($o && trim((string)($o['phone'] ?? '')) !== '' ? (string)$o['fullName'] . ' on ' . (string)$o['phone'] : 'your safeguarding officer') . '.'];
+}
+
 /**
- * Report a concern. Anyone signed in may report (a mentor who has not finished
+ * Report a concern. Mentors and staff may report (a mentor who has not finished
  * the Academy still has a duty to report); the report goes to the centre's
  * safeguarding officer only, and the reporter can neither edit nor see it
  * after sending — they get the case number and who received it.
@@ -1193,14 +1212,25 @@ function sg_officer(string $centre): ?array {
 function sg_report(array $p): array {
     $me = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['requesterId'] ?? '')]);
     if (!$me) return ['ok' => false, 'error' => 'no_requester'];
+    /* The portal's report, so the portal's people: anyone mentor_gate admits
+     * (screened or not — the duty to report does not wait for the Academy).
+     * It was any signed-in account, which let a member file a case naming
+     * any other member, with no limit. */
+    $gate = function_exists('mentor_gate') ? mentor_gate($p) : ['ok' => false];
+    if (empty($gate['ok'])) return ['ok' => false, 'error' => 'not_a_mentor'];
     $body = trim((string)($p['body'] ?? ''));
     if (mb_strlen($body) < 10) return ['ok' => false, 'error' => 'too_short'];
     $cat = (string)($p['category'] ?? '');
     if (!in_array($cat, SG_CATEGORIES, true)) $cat = 'Something else';
     $subjectId = trim((string)($p['subjectId'] ?? ''));
-    $subject = $subjectId !== '' ? db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$subjectId]) : null;
-    $gate = function_exists('mentor_gate') ? mentor_gate($p) : ['ok' => false];
+    $subject = $subjectId !== '' ? db_row('SELECT memberId, fullName, centre, track FROM members WHERE memberId = ? LIMIT 1', [$subjectId]) : null;
+    if ($subjectId !== '') {
+        // Out of reach and unknown are the same answer, as in member_mp_concern.
+        $reach = array_key_exists('reportCentres', $gate) ? ['centres' => $gate['reportCentres'], 'courses' => $gate['reportCourses']] : $gate;
+        if (!$subject || !mentor_scope_ok($reach, $subject)) return ['ok' => false, 'error' => 'not_found'];
+    }
     $centre = (string)($subject['centre'] ?? ($gate['mentor']['centre'] ?? '') ?: ($me['centre'] ?? ''));
+    if (sg_report_capped((string)$me['memberId'])) return sg_report_refusal((string)$me['memberId'], $centre);
     $officer = sg_officer($centre);
     $now = now_iso();
     $caseNo = '';
@@ -1499,12 +1529,31 @@ function member_ms_academy(array $p): array {
     }, $a['modules']);
     return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'clearance' => $o['clearance']];
 }
+/* Quiz attempts a mentor may make on one module in 24 hours, across both
+ * portals. Unlimited retries made the quiz a lookup: the pod portal says which
+ * answers were right, so a few dozen tries recovered the key. Three is room to
+ * learn from a miss and to come back the next day having read the module. */
+const MS_ACADEMY_ATTEMPTS_PER_DAY = 3;
+
+/** null when an attempt may be made now; otherwise the refusal, with when to come back. */
+function ms_academy_attempt_gate(string $mentorId, string $moduleId): ?array {
+    $since = gmdate('Y-m-d\TH:i:s', time() - 86400);
+    $rows = db_all('SELECT at FROM mentor_academy_attempts WHERE mentorId = ? AND moduleId = ? AND at >= ? ORDER BY at', [$mentorId, $moduleId, $since]);
+    if (count($rows) < MS_ACADEMY_ATTEMPTS_PER_DAY) return null;
+    $retry = gmdate('c', strtotime((string)$rows[0]['at']) + 86400);
+    return ['ok' => false, 'error' => 'retry_later', 'max' => MS_ACADEMY_ATTEMPTS_PER_DAY, 'retryAt' => $retry];
+}
+function ms_academy_attempt_log(string $mentorId, string $moduleId, int $score, bool $pass): void {
+    db_insert('mentor_academy_attempts', ['mentorId' => $mentorId, 'moduleId' => $moduleId, 'score' => $score, 'passed' => $pass ? 1 : 0, 'at' => gmdate('Y-m-d\TH:i:s')]);
+}
+
 function member_ms_academy_check(array $p): array {
     $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $mod = null; foreach (ms_academy()['modules'] as $m) if ($m['id'] === (string)($p['moduleId'] ?? '')) $mod = $m;
     if (!$mod) return ['ok' => false, 'error' => 'not_found'];
     $ans = array_values((array)($p['answers'] ?? []));
     if (count($ans) !== count($mod['quiz'])) return ['ok' => false, 'error' => 'answer_all'];
+    if ($stop = ms_academy_attempt_gate((string)$o['mentor']['mentorId'], (string)$mod['id'])) return $stop;
     $right = 0; $feedback = [];
     foreach ($mod['quiz'] as $i => $q) {
         $ok = (int)$ans[$i] === (int)$q['answer'];
@@ -1513,6 +1562,7 @@ function member_ms_academy_check(array $p): array {
     }
     $score = (int)round(100 * $right / max(1, count($mod['quiz'])));
     $pass = $score >= (int)ms_academy()['pass'];
+    ms_academy_attempt_log((string)$o['mentor']['mentorId'], (string)$mod['id'], $score, $pass);
     if ($pass) {
         db_upsert('mentor_academy', ['mentorId' => $o['mentor']['mentorId'], 'moduleId' => $mod['id'], 'score' => $score, 'passedAt' => now_iso()],
             ['mentorId', 'moduleId'], ['score' => $score, 'passedAt' => now_iso()]);

@@ -161,7 +161,11 @@ async function as(memberId, admin, viewport) {
     await mt.click('main button:has-text("During")');
     await mt.waitForFunction(() => /Assignment in/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
     const regRow = mt.locator('main li, main [role=listitem], main div').filter({ hasText: 'Mariam Yusuf' }).filter({ hasText: 'Assignment in' }).last();
-    await regRow.locator('button', { hasText: /^Away$|^Here$/ }).first().click().catch(() => {});
+    /* Mark her here only if she is not already: on a Saturday the gate's check-in
+       for today marks her here before the mentor touches anything, and a blind
+       tap toggled her to Away — which disables every duty below. */
+    const hereSw = regRow.locator('button[role=switch]').first();
+    if ((await hereSw.getAttribute('aria-checked')) !== 'true') await hereSw.click();
     await mt.waitForTimeout(300);
     await regRow.locator('button', { hasText: 'Assignment in' }).first().click();
     await mt.waitForTimeout(1600);

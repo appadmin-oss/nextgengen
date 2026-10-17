@@ -51,7 +51,7 @@ function mp15First(name) { return String(name || '').trim().split(/\s+/)[0] || '
    as themselves rather than as a reassurance. */
 const MP15_ERR = {
   not_in_caseload: 'That child isn’t in your caseload.', peer_no_family: 'Peer mentors don’t contact families. Your lead will.',
-  say_what_happened: 'Write what happened first.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
+  say_what_happened: 'Write what happened first.', reviewed_by_another: 'Another mentor already reviewed this week. Ask your lead if it needs changing.', not_a_saturday: 'The register and reviews are for a Saturday the pod met.', family_daily_limit: 'This family has had two messages today already. Send it tomorrow.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
   bad_date: 'That date isn’t right.', date_out_of_range: 'That Saturday is outside the two-week window for writing it up.',
   locked: 'This month’s scores are locked.', ten_scores: 'Score all ten skills.', answer_all_four: 'Answer all four first.',
   write_a_message: 'Write a message first.', write_a_reply: 'Write a reply first.', no_guardian_contact: 'There’s no family contact on their record. Ask your coordinator to add one.',
@@ -61,7 +61,7 @@ const MP15_ERR = {
   goals_locked_connect: 'The first weeks are for getting to know each other. Goals open in week 3.', active_needs_agreed: 'A live goal stays agreed. Pause it first.',
   progress_out_of_range: 'How close is 1 to 5.', fixed_item_missing: 'The huddle, one-to-ones and close stay on the agenda.',
   choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', not_found: 'That record wasn’t found.',
-  forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.',
+  forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.', retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
   rate_limited: 'Too many in a row. Wait a minute and try again.', network: 'You’re offline. Nothing was saved.', too_long: 'That’s too long.',
 };
 function mp15ErrText(e) { const c = (e && (e.code || e.message)) || 'failed'; return MP15_ERR[c] || ('Couldn’t save (' + c + ').'); }

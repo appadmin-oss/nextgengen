@@ -15,7 +15,7 @@ declare(strict_types=1);
  *   members checked in today — what this block is and what to bring to it;
  *   mentors — the block's mentor focus;
  *   instructors with a Saturday class — the division block, at 11:00;
- *   guardians who take check-in news (guardian_wards.notify.checkin) — the
+ *   every linked guardian (family notifications are always on) — the
  *   morning plan at 7:00, a not-arrived notice at 8:45 for a member with no
  *   check-in, and the close at 2:00 with what their child's day held.
  * Guardians are told by email only, inside 8am–8pm Lagos (the 7:00 plan waits
@@ -218,7 +218,7 @@ function sf_tick(?int $now = null): array {
     return ['saturday' => true, 'date' => $date, 'sent' => count($sent), 'items' => $sent];
 }
 
-/** Guardians who take check-in news, for every active NGG member (one grouped read). */
+/** Every linked guardian of every active NGG member (one grouped read); check-in news is always on. */
 function sf_guardians(): array {
     $out = [];
     foreach (db_all("SELECT w.memberId, g.email, w.notify, m.fullName, m.centre FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId JOIN members m ON m.memberId = w.memberId

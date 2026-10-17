@@ -1443,3 +1443,78 @@ Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
 Tests: `run.php` +71 sign-in and MFA checks; new `tests/mfa.test.js` (`test:mfa`, in
 `test:all`).
 
+## 2026-10-17 — Pay the balance online; mentor portal hardening
+
+- **Paystack for dues and fees.** The ledger never took money; only the joining
+  invoice used Paystack. A *balance invoice* (`membership_invoices.purpose =
+  'balance'`, migration 151) is made by `membership_balance_invoice()` for the
+  ledger's `payable`, paid on the existing `/pay/<token>` page, verified by the
+  existing `membership_paystack_verify()`, and settled by `membership_settle()`,
+  which posts only the payment for a balance invoice. Ops `member.fees.pay`
+  (POST `api/member/fees.php` action `pay`) and `family.fees.pay`
+  (`api/family/pay.php`). UI: `PayBalanceButton` (components.jsx) on the member
+  account card and the family portal. Not covered: conduct-ledger fines
+  (`sanctions`). The member-fees read-only guard now allows exactly these two
+  ops and proves the pay op writes nothing to the ledger.
+- **Mentor gate fails closed.** Screening per lane carried in `mentor_gate`
+  (`screened`); unscreened → no reach, but concerns still fileable; volunteer
+  lanes need cleared safeguarding; email binds only an unlinked mentor row.
+- **Attention** is centre-wide for leads/coordinators only; instructors are not
+  staff. **Peer mentors** (minors) see no family, journal, check-in or adult note.
+- **Safeguarding reports**: mentor gate required, subject in reach, 10 per
+  reporter per 24h across both paths (`SG_REPORTS_PER_DAY`).
+- **Family messages**: 2 per child per day (`MP_FAMILY_PER_DAY`).
+- **Rate limits**: `rate_limit_check_actor()` keys on the person; floors for
+  every `mentor.*` bucket.
+- Pre-existing: `tests/family-ui.test.js` fails one check (a selector timeout)
+  on the branch without these changes.
+
+
+## 2026-10-17 (later) — the rest of the mentor security list
+
+- Register and weekly review: a Saturday, today or within 14 days (`mp_saturday_ok`, `not_a_saturday`).
+- Academy quiz: 3 attempts per module per 24h across both portals (`mentor_academy_attempts`, migration 152).
+- The week view no longer writes; `mpa_tick` closes stale Saturday follow-ups (`MP_FOLLOWUP_STALE_DAYS`).
+- Relationship check asks the child at most once in 28 days; a week's review belongs to its author (leads/coords may correct, audited).
+- `mp_urgent_alert()`: crisis chats and "Need help" check-ins reach the officer by email/SMS/app, else the centre's leads and an ops error. Inactive members cannot chat, but a crisis from them still alerts.
+- Retreat booking reports real failures; CSRF docblock corrected.
+- Production CSP (dist only) by hash, no unsafe-inline/eval — `tests/prod-csp.test.js`. No source map and no `api/tests` in dist.
+- Instructors/volunteer mentors with safeguarding pending: admitted with no reach; they see their courses in Curriculum, and the class screen says why it is empty.
+- Pre-existing, not fixed: `tests/mentor-v15.test.js` fails its Saturday register step ("Assignment in" click times out) on 10bee246 too; `tests/family-ui.test.js` fails one selector timeout.
+
+## 2026-10-17 — family notifications always on
+
+The owner's rule: every guardian notification is compulsory. `family_notify_prefs()`
+returns `FAMILY_NOTIFY_DEFAULT` (all true) regardless of the stored
+`guardian_wards.notify`, which is now unread; `family.ward.notify` writes nothing and
+answers `required: true`. The family portal shows each email as *On* with no switch.
+
+## 2026-10-17 — Cloudinary storage: watched, protected, slimmer
+
+The plan neared its limit and nothing said so: `cloudinary_refresh_usage` was
+called only by tests, and the health line read "Operational" at 99%.
+`domain/media-storage.php` now reads `/usage` every 6h from web-cron
+(`media_usage_refresh`), keeps the parts in setting `media.usage`, sets a level
+(warn 70 / high 85 / critical 95, or HTTP 420), alerts once per level rise
+(intake inbox + every `settings` holder, ops event), stops AI edits from high,
+and at critical refuses to sign uploads (`media_storage_full`), hides both
+cloud paths from `/api/public/config.php` and stops `cloudinary_adopt`, so
+photos land in the local store. Every image upload now carries a signed
+incoming transformation (`media_incoming_transformation`), and the client
+prefers the signed path over the unsigned preset. Diagnostics shows the
+breakdown; `admin.media.purgeDerived` deletes derived copies (keep_original).
+Not done: re-compressing originals already stored, and finding orphaned
+originals no record points at — both need care, because deleting a photo on a
+printed card's record is unrecoverable.
+
+## 2026-10-17 — the family portal in the portals' design language
+
+No family design was in the handoff, so `/family` was rebuilt on its shared
+tokens (ink on white, gold only accent, Geist, 16px panels, 232px sidebar,
+phone tab bar) as one closed `--fx-*` set on `.fam` in styles.css. The one long
+page became five screens from one registry (`FAMILY_VIEWS`): Today (needs +
+shortcuts + four tiles + check-in + Saturday), Attendance & conduct, Fees,
+Lessons & timetable, Messages; plus Emails & connection. State in the URL
+(`?child=&view=`). Same API, no new ops. family-ui.test.js drives the new
+navigation (28/28). Also fixed: the new inbox shows "From their family account"
+on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.

@@ -9,8 +9,8 @@ declare(strict_types=1);
  * on ONE child through a device token. This is the account behind it: an
  * email address the guardian has proved they hold, several wards on one
  * dashboard, and the things a family actually needs to DO — tell the centre a
- * child will be away, appeal a charge, ask for a new card, choose which mails
- * arrive — rather than only watch.
+ * child will be away, appeal a charge, ask for a new card — rather than only
+ * watch. Every family email is always on (FAMILY_NOTIFY_DEFAULT).
  *
  * Three rules, each closing a specific hole:
  *
@@ -34,7 +34,12 @@ declare(strict_types=1);
 const FAMILY_WARDS_MAX = 8;
 const FAMILY_RELATIONSHIPS = ['parent' => 'Parent', 'guardian' => 'Guardian', 'carer' => 'Carer', 'relative' => 'Relative'];
 const FAMILY_NOTIFY_KEYS = ['checkin', 'weekly', 'alerts'];
-const FAMILY_NOTIFY_DEFAULT = ['checkin' => false, 'weekly' => true, 'alerts' => true];
+/* Every family notification is part of membership and always on: check-in
+ * and check-out, the weekly summary, and alerts. A guardian cannot switch one
+ * off — a child's attendance and safety reaching home is not a preference.
+ * Stored `guardian_wards.notify` values from before this rule are ignored,
+ * not migrated; family_notify_prefs() is the one place that decides. */
+const FAMILY_NOTIFY_DEFAULT = ['checkin' => true, 'weekly' => true, 'alerts' => true];
 /* The requests a guardian may raise for a ward. Not `payment`: an offline
    payment claim needs a verified receipt, and that path is the member's. */
 const FAMILY_REQUEST_KINDS = ['leave', 'appeal', 'idcard'];
@@ -53,10 +58,7 @@ function family_guardian_public(array $g): array {
 }
 
 function family_notify_prefs(?string $json): array {
-    $j = json_decode((string)$json, true);
-    $out = FAMILY_NOTIFY_DEFAULT;
-    if (is_array($j)) foreach (FAMILY_NOTIFY_KEYS as $k) if (array_key_exists($k, $j)) $out[$k] = (bool)$j[$k];
-    return $out;
+    return FAMILY_NOTIFY_DEFAULT;   // always on; see FAMILY_NOTIFY_DEFAULT
 }
 
 function family_link_public(array $l, ?array $m = null): array {
@@ -283,11 +285,8 @@ function family_ward_remove(array $p): array {
 function family_ward_notify(array $p): array {
     $l = family_link((string)($p['guardianId'] ?? ''), (string)($p['linkId'] ?? ''));
     if (!$l) return ['ok' => false, 'error' => 'not_found'];
-    $prefs = family_notify_prefs($l['notify'] ?? '');
-    $in = is_array($p['notify'] ?? null) ? $p['notify'] : [];
-    foreach (FAMILY_NOTIFY_KEYS as $k) if (array_key_exists($k, $in)) $prefs[$k] = (bool)$in[$k];
-    db_update('guardian_wards', ['notify' => json_encode($prefs), 'updatedAt' => now_iso()], ['id' => (int)$l['id']]);
-    return ['ok' => true, 'notify' => $prefs];
+    // Kept so an older page does not error; nothing is written, and the answer is that all are on.
+    return ['ok' => true, 'notify' => FAMILY_NOTIFY_DEFAULT, 'required' => true, 'unchanged' => true];
 }
 
 // ── One ward ────────────────────────────────────────────────────────────────
@@ -337,7 +336,7 @@ function family_ward(array $p): array {
         'fees' => $acct ? ['enabled' => true, 'outstanding' => (int)$acct['outstanding'], 'payable' => (int)$acct['payable'],
                            'currency' => (string)($acct['currency'] ?? ''),
                            'outstandingText' => fees_money_text((int)$acct['outstanding']), 'payableText' => fees_money_text((int)$acct['payable']),
-                           'recent' => array_slice($acct['entries'] ?? [], 0, 6)]
+                           'recent' => array_slice($acct['entries'] ?? [], 0, 6), 'payOnline' => !empty($acct['payOnline'])]
                         : ['enabled' => false],
         'learning' => ['total' => (int)$learn['total'], 'completed' => (int)$learn['completed'], 'overdue' => (int)$learn['overdue'], 'pct' => (int)$learn['pct'],
                        'next' => array_map(static fn($u) => ['title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'],
@@ -465,7 +464,7 @@ function family_weekly_run(?string $today = null, int $limit = FAMILY_WEEKLY_BAT
         family_mail((string)$g['email'], 'Your family\'s week at NGG', [
             'title' => 'The week at NGG', 'intro' => 'Here is last week (' . $from . ' to ' . $to . ') for the members you follow.',
             'bodyHtml' => implode('', $parts), 'ctaLabel' => 'Open the family account →', 'ctaUrl' => family_origin() . '/family',
-            'footNote' => 'Weekly summaries can be switched off per member in your family account.',
+            'footNote' => 'Family emails are part of membership and always on. Questions? Reply to this email.',
         ]);
         $sent++;
     }

@@ -1102,12 +1102,15 @@ function staff_curriculum(array $p): array {
     }
     $units = curriculum_load($where, $args, 'course, week, position');
     $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
-    if ($g['centres'] !== null) {
-        if (!$g['centres']) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
+    /* No centre in reach (an instructor whose safeguarding check is pending,
+     * or a record with no centre): the lessons are still theirs to read and
+     * prepare; no member, no answer and no progress reaches them. */
+    $noChildren = $g['centres'] !== null && !$g['centres'];
+    if ($g['centres'] !== null && !$noChildren) {
         $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
     }
     if ($courses !== null) { $mWhere .= ' AND track IN (' . implode(',', array_fill(0, count($courses), '?')) . ')'; $mArgs = array_merge($mArgs, $courses); }
-    $members = db_all("SELECT memberId, fullName, displayId, centre, track FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
     $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
     $stats = []; $pending = [];
     if ($units && $byId) {
@@ -1144,6 +1147,7 @@ function staff_curriculum(array $p): array {
             + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $stats[$id]['completed'] ?? 0]];
     }
     return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role'],
+            'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
 }

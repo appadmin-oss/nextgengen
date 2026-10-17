@@ -712,7 +712,20 @@ The fees must be switched on under Dues & arrears; with them off the member is
 still accepted and the screen says no invoice went.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
-**Money → Membership payments** lists every invoice:
+
+**Paying the balance online.** After joining, a member's account (their
+dashboard) and the family portal show **Pay ₦… online** whenever there is
+something to pay and Paystack is connected. Pressing it makes a **balance
+invoice** (`NGG-BAL-…`) for exactly what is payable that day and opens the same
+payment page as the joining invoice. Paystack's own confirmation settles it: one
+payment goes on the ledger (the dues and fines were already there), and the
+receipt is emailed. If the balance changes before they pay, the old balance
+invoice is cancelled as *superseded* and the next press makes a new one for the
+new figure. A transfer waiting to be verified blocks online payment until it is
+checked, so nobody pays twice. Policy fines on the conduct ledger are not
+included yet; dues, training fees and fines posted to the fees ledger are.
+
+**Money → Membership payments** lists every invoice, joining and balance:
 
 - **Resend link** — only while unpaid and with no offline payment waiting.
 - **Record offline payment** — for a transfer, deposit, POS or cash payment.
@@ -1070,7 +1083,13 @@ notification **and** an email with a link straight to the right screen:
 sees and decides only their own centres' children.
 
 Parents sign in at **/family** with their own email — a six-digit code, no
-password. It is a separate account, not a member account: it cannot open
+password. The account is laid out like the other portals: their children down
+the left (along the top on a phone), and five screens for the child chosen —
+**Today** (what needs them, with one-tap *will be away*, *lost ID card* and
+*question a charge*), **Attendance & conduct**, **Fees** (with *Pay online*),
+**Lessons & timetable** and **Messages to the centre** — plus *Emails &
+connection*. The address carries the child and the screen, so a shared link
+opens the same place. It is a separate account, not a member account: it cannot open
 any member page, and nothing in it can reach the Control Room. On it they see,
 for each child: today's sign-in (late, and by how much), attendance this term,
 conduct and fines, fees due, lesson progress and the weekly check-in. They
@@ -1096,8 +1115,11 @@ requests** marked *From their family account*, and your reply is emailed to
 the parent as well as the member. A parent cannot claim a payment — an
 offline payment needs a verified receipt, which is the member's path.
 
-Parents choose per child which emails they get: every sign-in and sign-out,
-the Monday weekly summary, and an alert when a fine is issued.
+Every family email is **always on** and cannot be switched off: every sign-in
+and sign-out, the Saturday plan and close, the Monday weekly summary, alerts
+(a fine issued, a child not arrived) and mentors' family updates. They are part
+of membership. The family account lists them as *On*; preferences a parent set
+before this rule are ignored.
 
 ---
 
@@ -1609,6 +1631,32 @@ Quotes**.
 Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
+
+## Image storage (Cloudinary)
+
+Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
+shared between storage, bandwidth — every time a page shows an image — and
+transformations). The site watches it for you:
+
+- **Checked every six hours.** Control Room → Settings → **Diagnostics** →
+  *Image storage* shows how much of the plan is used, part by part, and when it
+  was last checked. **Check now** reads it at once.
+- **You are told as it climbs**: at 70%, 85% and 95% the admissions inbox and
+  everyone with the `settings` permission get an email and an app alert, once
+  per level. At 85% and above it also appears first in **Home → Needs you**.
+- **What happens as it fills**: from 85% the paid AI photo edits stop. At 95%
+  (or when Cloudinary starts refusing work) **new uploads are paused** so the
+  account is not tipped over: photos are kept on the site's own storage
+  instead, and other uploads say why they can't go. Nothing already stored is
+  touched.
+- **Less is stored per upload**: every image (headshots, avatars, covers,
+  proofs, submissions, community posts) is resized and compressed by Cloudinary
+  *before* it is stored, so a 6 MB phone photo is kept at a fraction of that.
+  Documents and videos are not re-encoded.
+- **Free space…** (Diagnostics) deletes the resized copies Cloudinary made for
+  each page — every original is kept, and a copy is remade when a page next
+  needs it. Type FREE SPACE to confirm. If storage is still high afterwards,
+  the plan itself needs upgrading on cloudinary.com.
 
 ## Settings and connected services
 

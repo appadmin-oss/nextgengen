@@ -16,6 +16,56 @@ function crSyPhotoBackup(ctx) {
   document.body.appendChild(a); a.click(); a.remove();
   ctx.toast("Preparing the download — a big store can take a minute.");
 }
+/* Image storage (media-storage.php): how full the Cloudinary plan is, what that
+   is doing to uploads, and the two things an operator can do about it now. */
+const CR_SY_MEDIA_LEVEL = {
+  ok: ["ok", "Plenty of room"], warn: ["warn", "Filling up"], high: ["warn", "Nearly full — AI photo edits have stopped"],
+  critical: ["bad", "Full — new uploads are paused"],
+};
+function crSyMediaBlocks(m, ctx) {
+  const u = m.usage || {}, lv = CR_SY_MEDIA_LEVEL[u.level] || CR_SY_MEDIA_LEVEL.ok, parts = u.parts || {};
+  const name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth (people viewing images)", transformations: "Transformations" };
+  const items = Object.keys(name).filter(k => parts[k]).map(k => {
+    const p = parts[k].pct;
+    return [name[k], p == null ? "Not reported" : Math.round(p) + "% used", p == null ? "neutral" : p >= 95 ? "bad" : p >= 70 ? "warn" : "ok"];
+  });
+  items.push(["Last checked", u.checkedAt ? crAgo(u.checkedAt) + " ago" : "Not yet", "neutral"]);
+  const out = [{ type: "status", span: 3, title: "Image storage", sub: (u.plan ? u.plan + " plan · " : "") + (u.pct == null ? "" : Math.round(u.pct) + "% of the plan used"),
+                 summary: lv[1], tone: lv[0], items }];
+  const text = {
+    ok: "New images are compressed before they are stored, so the plan fills more slowly. Usage is checked every six hours and you are emailed as it climbs.",
+    warn: "Over 70% used. Free space below, and keep an eye on bandwidth — every time a page shows an image it counts.",
+    high: "Over 85% used. AI photo edits have stopped to save credits. Free space now, or upgrade the Cloudinary plan, before uploads have to pause.",
+    critical: "The plan is full. New uploads are paused: photos are kept on this site instead, and other uploads say why they can’t go. Free space or upgrade the plan, then press Check now.",
+  }[u.level] || "";
+  out.push({ type: "note", span: 3, icon: u.level === "ok" ? "info" : "warning", tone: u.level === "ok" ? undefined : lv[0], text: text + (u.error ? " " + u.error : ""),
+             act: { l: "Check now", run: () => crSyMediaCheck(ctx) } });
+  out.push({ type: "note", span: 6, icon: "broom", text: "Free space: delete the resized and reformatted copies Cloudinary made for each page. Every original is kept, and a copy is remade the next time a page needs it.",
+             sub: "Safe to do at any time. It frees storage now and uses a little of the plan later as copies are remade.",
+             act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
+  return out;
+}
+async function crSyMediaCheck(ctx) {
+  try { const r = await NGGApi.admin.media.usage(true); const u = r.usage || {}; ctx.toast("Checked: " + (u.pct == null ? "usage not reported" : Math.round(u.pct) + "% of the plan used") + "."); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t reach Cloudinary."), null, true); }
+}
+function crSyMediaPurge(ctx) {
+  ctx.form({
+    title: "Free space on Cloudinary", submit: "Free space",
+    intro: "This deletes the derived copies of every image and video. Originals are not touched. Type FREE SPACE to confirm.",
+    fields: [{ id: "confirm", l: "Type FREE SPACE", req: true, max: 20 }],
+    values: { confirm: "" },
+    onSubmit: async v => {
+      try {
+        const r = await NGGApi.admin.media.purge(String(v.confirm || "").trim());
+        const u = r.usage || {};
+        ctx.toast("Deleted " + crNum(r.deleted) + " derived " + (r.deleted === 1 ? "copy" : "copies") + (r.more ? " — more remain, press again" : "") + ". Now " + (u.pct == null ? "?" : Math.round(u.pct)) + "% used.");
+        ctx.reload();
+      } catch (e) { ctx.toast(crErr(e, "Couldn’t free space."), null, true); }
+    },
+  });
+}
+
 async function crSyPhotoSecure(ctx) {
   try {
     const r = await NGGApi.admin.photos.secure();
@@ -220,7 +270,10 @@ function crSyLight(ok, label, detail) { return [label, ok ? "OK" : (detail || "F
 Object.assign(CR_TAB_DEFS, {
   ops: {
     skeleton: ["kpis", "table"],
-    load: async () => NGGApi.admin.ops.status(),
+    load: async () => {
+      const [st, media] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null)]);
+      return Object.assign({}, st, { media: media && media.usage ? media : null });
+    },
     actions: (d, ctx) => [
       { l: "Mark all dealt with", icon: "checks", primary: true, run: () => crSyOpsClear(ctx, 0, (d.events || []).length), disabled: !(d.events || []).length, why: (d.events || []).length ? undefined : "There are no open faults." },
       { l: "Run all jobs now", icon: "play", run: () => crSyOpsRun(ctx, "all") },
@@ -286,6 +339,8 @@ Object.assign(CR_TAB_DEFS, {
         }[cl.state];
         if (fix) out.push({ type: "note", span: 3, icon: fix[0] ? "warning" : "info", tone: fix[0] || undefined, text: fix[1], sub: fix[2] || undefined });
       }
+
+      if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
 
       const jobs = Object.keys(h.cron || {});
       out.push({ type: "table", span: 6, title: "Background jobs", sub: "Driven by ordinary traffic — a quiet site runs them less often, which is not a fault. Open one to run it now.", nosel: true,

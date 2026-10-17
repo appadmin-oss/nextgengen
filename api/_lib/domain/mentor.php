@@ -226,12 +226,15 @@ function mentor_gate(array $p): array {
     }
     /* Every volunteer lane is gated on safeguarding, not only Ops. A mentor or
      * an instructor is a role somebody ticks on a public form; clearing them is
-     * the staff action that says they may be handed a child's record. */
-    if ($v && in_array((string)($v['role'] ?? ''), ['mentor', 'instructor'], true)
-        && (string)($v['safeguarding'] ?? 'pending') !== 'cleared') {
-        return ['ok' => false, 'error' => 'not_cleared'];
-    }
+     * the staff action that says they may be handed a child's record.
+     *
+     * Gated, not refused: an instructor whose check is still pending gets in
+     * and sees their own COURSES — the lessons and materials they will teach —
+     * and no child. Refusing outright left them with an empty portal and no
+     * idea why ("the instructors cannot see the courses"). Their reach is
+     * centres [] (nobody), exactly as an unscreened mentor's is. */
     if ($v && in_array((string)($v['role'] ?? ''), ['mentor', 'instructor'], true)) {
+        $volCleared = (string)($v['safeguarding'] ?? 'pending') === 'cleared';
         $isInstructor = (string)$v['role'] === 'instructor';
         $centre  = trim((string)($v['centre'] ?? ''));
         $faculty = trim((string)($v['faculty'] ?? ''));
@@ -244,7 +247,9 @@ function mentor_gate(array $p): array {
             : ($faculty !== '' ? academy_courses_for($faculty) : []);
         $volMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND volunteerId = ? LIMIT 1",
                             [(string)($v['volunteerId'] ?? '')]);
-        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor', 'screened' => true,
+        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor', 'screened' => $volCleared,
+            'clearance' => $volCleared ? 'cleared' : 'pending',
+            'reportCentres' => $centre !== '' ? [$centre] : null, 'reportCourses' => $courses ?: null,
             'mentorId' => (string)($volMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isInstructor ? implode(' · ', $courses) : $faculty, 'rank' => 'mentor'],
@@ -254,7 +259,7 @@ function mentor_gate(array $p): array {
              * curriculum. volunteers.programme speaks the mentors' vocabulary
              * (summer | ngg | both), and mentor_programmes() reads it. */
             'programmes' => mentor_programmes(['programme' => volunteer_programme($v)]),
-            'centres' => $centre !== '' ? [$centre] : null,
+            'centres' => !$volCleared ? [] : ($centre !== '' ? [$centre] : null),
             'courses' => $courses ?: null];
     }
 

@@ -254,10 +254,18 @@ async function build() {
 
   // The map name goes in the bundle's sourceMappingURL, so it has to be
   // decided before the code is written.
+  /* The source map does NOT ship. An 8 MB map served from the live site hands
+     anyone the whole un-minified client, comments included. It is written
+     beside the repo (.build/, ignored by git) for debugging a production stack
+     trace, and the bundle carries no sourceMappingURL to go looking for it. */
   const mapName = assets['app.min.js'] + '.map';
-  const code = minified.code + `\n//# sourceMappingURL=${mapName}\n`;
+  const code = minified.code + '\n';
   fs.writeFileSync(path.join(DIST, assets['app.min.js']), code);
-  if (minified.map) fs.writeFileSync(path.join(DIST, mapName), minified.map);
+  if (minified.map) {
+    fs.mkdirSync(path.join(ROOT, '.build'), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, '.build', mapName), minified.map);
+  }
+  for (const f of fs.readdirSync(DIST)) if (/\.map$/.test(f)) fs.rmSync(path.join(DIST, f), { force: true });
   /* The plain name as well, and this one matters more than the other plain
      copies. dist/ is a drop-in deploy folder that is not wiped between builds
      and root files are not pruned, so the moment this stopped being written it
@@ -357,6 +365,10 @@ async function build() {
     const p = path.join(DIST, junk);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
   }
+  /* The PHP test suite is not part of the product. Shipped, api/tests/run.php
+     is a script on the live host that builds a throwaway database and prints
+     the codebase's internals — not something a web server should hold. */
+  fs.rmSync(path.join(DIST, 'api', 'tests'), { recursive: true, force: true });
   /* Runtime data never ships: the cache, the logs, and anything in storage
      (photos, payment evidence, a database) belong to the server they were made
      on. A deploy carries only each folder's .htaccess, so unpacking it over a
@@ -405,6 +417,8 @@ async function build() {
     swept++;
   }
   if (swept) log(`swept ${swept} fingerprinted file(s) from earlier builds`);
+
+  writeProductionCsp();
 
   // Build manifest — ops visibility + a machine-readable record of the deploy.
   // `assets` is the plain→fingerprinted map, which is what an operator needs to
@@ -495,6 +509,49 @@ async function buildJournal(buildId, assets) {
  *
  * `keep` protects paths the build writes into dist/ deliberately and which
  * have no counterpart in the source tree. */
+/* The production Content-Security-Policy.
+ *
+ * The root .htaccess allows 'unsafe-inline' and 'unsafe-eval' for scripts
+ * because development compiles JSX in the browser with Babel, which needs
+ * both. Production runs no Babel, so dist/.htaccess gets a policy without
+ * either: each inline <script> in the shipped HTML is allowed by its SHA-256,
+ * and each inline event handler (the font loader's onload, a print button) by
+ * its hash under 'unsafe-hashes'. Computed from the built files, so an edit to
+ * an inline script changes its hash here in the same build, never by hand.
+ *
+ * The vendors' own eval sites (pdf.js, jszip, docx, tui) are feature-detects
+ * inside try/catch or polyfills only reached with a string argument; they fall
+ * back cleanly when eval is refused. style-src keeps 'unsafe-inline': React
+ * renders inline style attributes, and a stylesheet cannot run code. */
+const CSP_PHP_HANDLERS = ['window.print()'];   // receipt and curriculum-document pages
+function writeProductionCsp() {
+  const crypto = require('crypto');
+  const sha = (t) => "'sha256-" + crypto.createHash('sha256').update(t, 'utf8').digest('base64') + "'";
+  const scripts = new Set(), handlers = new Set(CSP_PHP_HANDLERS);
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!['api', 'vendor', 'node_modules'].includes(e.name)) walk(p); continue; }
+      if (!/\.html$/.test(e.name)) continue;
+      const html = fs.readFileSync(p, 'utf8');
+      for (const m of html.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)) {
+        const attrs = m[1] || '';
+        if (/\ssrc=/.test(attrs) || /type="application\/(ld\+)?json"/.test(attrs)) continue;
+        scripts.add(m[2]);
+      }
+      for (const m of html.matchAll(/\son[a-z]+="([^"]*)"/g)) handlers.add(m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&'));
+    }
+  };
+  walk(DIST);
+  const src = ["'self'"].concat([...scripts].map(sha), handlers.size ? ["'unsafe-hashes'"].concat([...handlers].map(sha)) : []).join(' ');
+  const file = path.join(DIST, '.htaccess');
+  const ht = fs.readFileSync(file, 'utf8');
+  const next = ht.replace(/script-src 'self' 'unsafe-inline' 'unsafe-eval';/, `script-src ${src};`);
+  if (next === ht) { console.error("[build] FAILED: dist/.htaccess has no development script-src to tighten"); process.exit(1); }
+  fs.writeFileSync(file, next);
+  log(`production CSP: ${scripts.size} inline script(s) and ${handlers.size} handler(s) allowed by hash; no unsafe-inline, no unsafe-eval`);
+}
+
 function copyDir(src, dst, keep) {
   keep = keep || new Set();
   if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });

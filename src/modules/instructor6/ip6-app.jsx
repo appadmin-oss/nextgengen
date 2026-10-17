@@ -49,7 +49,7 @@ const IP6_ERR = {
   aim_required: 'Write the lesson goal first.', question_and_two_options: 'The hinge needs a question and two options.', no_results: 'Mark at least one exit ticket.',
   summary_required: 'Write what you covered first.', roll_not_closed: 'Close the roll before filing the log.', evidence_required: 'Say what you saw for each child who moved up.',
   no_marks: 'Nothing to save.', not_found: 'That record wasn’t found.', network: 'You’re offline. It’s saved on this device and will send.', rate_limited: 'Too many in a row. Wait a minute.',
-  choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.',
+  choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.',
 };
 function ip6Err(e) { const c = (e && (e.code || e.message)) || 'failed'; return IP6_ERR[c] || ('Couldn’t save (' + c + ').'); }
 function ip6Ini(n) { const p = String(n || '').replace(/^(Dr|Mr|Mrs|Ms)\.?\s+/i, '').trim().split(/\s+/).filter(Boolean); return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
@@ -172,7 +172,7 @@ class Ip6Portal extends React.Component {
   slot() {
     const S = this.state; const need = ['today', 'cls'];
     const e = need.map(k => S.er[k]).find(Boolean);
-    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
+    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
     if (need.some(k => S.ld[k] || !S.d[k])) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div></div>;
     return null;
   }

@@ -485,13 +485,16 @@
      * happened to open the Cloudinary dashboard. The fallback stays; the silence
      * does not. */
     let why = '';
-    if (canPublic) {
-      try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
-      catch (e) { why = 'public: ' + (e && e.message || 'failed'); }
-    }
+    /* Signed first: the signer compresses the image before Cloudinary stores
+       it and refuses when storage is full. The unsigned preset does neither,
+       so it is only the fallback for a host with no signing keys. */
     if (canSigned) {
       try { return Object.assign({ inline: false }, await uploadFile(file, kind, onProgress)); }
-      catch (e) { why = (why ? why + '; ' : '') + 'signed: ' + (e && e.message || 'failed'); }
+      catch (e) { why = 'signed: ' + (e && e.message || 'failed'); }
+    }
+    if (canPublic && !canSigned) {
+      try { return Object.assign({ inline: false }, await uploadPublic(await shrinkForUpload(file, kind), onProgress)); }
+      catch (e) { why = (why ? why + '; ' : '') + 'public: ' + (e && e.message || 'failed'); }
     }
     if (onProgress) onProgress(50);
     const url = await inlineImage(file);
@@ -802,6 +805,7 @@
       momentum:     () => request('/member/momentum.php'),
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
+      feesPay:      () => request('/member/fees.php', { body: { action: 'pay' } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -1088,6 +1092,7 @@
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
     },
     admin: {
@@ -1632,6 +1637,10 @@
         review: (logId) => request('/admin/behaviour.php', { body: { action: 'review', logId } }),
       },
       /* Is it broken, and did anyone notice. */
+      media: {
+        usage:   (refresh) => request('/admin/media.php' + (refresh ? '?refresh=1' : '')),
+        purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
+      },
       ops: {
         status: () => request('/admin/ops.php'),
         clear:  (id) => request('/admin/ops.php', { body: { action: 'clear', id: id || 0 } }),

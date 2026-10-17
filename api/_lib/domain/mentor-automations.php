@@ -190,6 +190,11 @@ function mpa_tick(?int $now = null, int $max = 6): array {
     mpa_push_release($now);
     // Duty reminders: one email a day to anyone with something open (domain/duties.php), in batches.
     if (function_exists('duties_tick')) { try { duties_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'duties.tick', $e->getMessage(), ''); } }
+    // Housekeeping the week view used to do inside a GET: close follow-ups whose Saturday has passed.
+    if (defined('MP_FOLLOWUP_STALE_DAYS')) {
+        db_exec("UPDATE mentor_nudges SET status = 'done', resolvedAt = ?, resolvedBy = 'expired' WHERE status = 'open' AND rule = 'J:sessionFollowUp' AND createdAt < ?",
+                [gmdate('c', $now), gmdate('Y-m-d', $now - MP_FOLLOWUP_STALE_DAYS * 86400)]);
+    }
     /* Safety first. The tick runs at most $max jobs, in table order, and the
      * hourly concern escalation sat near the end — so a Monday-morning backlog
      * could push it into a later tick. It goes first. */

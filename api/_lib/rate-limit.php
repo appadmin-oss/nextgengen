@@ -93,6 +93,19 @@ function rate_limit_default(string $op): ?array {
            mentor pressing "Nudge all 10 outstanding" on two or three tasks in
            a sitting — not for one press. */
         'community.nudge'    => ['max' => 20, 'window' => 300],   // per mentor
+        /* The Mentor Portal's writes, PER MENTOR (rate_limit_check_actor). They
+           had no floor, so a deployment whose config predated them ran at the
+           loose default, and they were keyed by IP — one centre's WiFi shared
+           one bucket while a mentor on mobile data had a fresh one per hop.
+           Sized for a real Saturday: a register of a pod, a dozen reviews. */
+        'mentor.meeting'     => ['max' => 60, 'window' => 600],
+        'mentor.review'      => ['max' => 40, 'window' => 600],
+        'mentor.courage'     => ['max' => 40, 'window' => 600],
+        'mentor.family'      => ['max' => 10, 'window' => 3600],  // each one texts and emails a family
+        'mentor.concern'     => ['max' => 5,  'window' => 600],   // the per-day cap is sg_report_capped()
+        'mentor.write'       => ['max' => 120, 'window' => 600],  // every other portal write
+        'safeguarding.report' => ['max' => 5, 'window' => 600],
+        'media.purge'        => ['max' => 3, 'window' => 3600],   // each press may run ~20 Cloudinary deletes
         /* A typing ping. One write per 3s while actually typing is 20/minute;
            this ceiling is triple that, so a real conversation never reaches it
            and a stuck client is stopped. */
@@ -167,7 +180,15 @@ function rate_limit_default(string $op): ?array {
  *                      sign-up) the gate id belongs in the key, or the busiest
  *                      centre silently rations every other centre.
  */
-function rate_limit_check(string $op, string $scope = ''): void {
+/** The same limit, keyed on the signed-in person alone, never the IP: for a
+ *  write only an authenticated account can make, where the person is the
+ *  thing being limited. */
+function rate_limit_check_actor(string $op, string $actorId): void {
+    if ($actorId === '') { rate_limit_check($op); return; }
+    rate_limit_check($op, $actorId, true);
+}
+
+function rate_limit_check(string $op, string $scope = '', bool $actorOnly = false): void {
     global $CONFIG;
     // Config wins; then a hardcoded safety floor; then the loose default; then a
     // last-resort literal so a missing 'rate_limits' block can never fatal.
@@ -178,7 +199,7 @@ function rate_limit_check(string $op, string $scope = ''): void {
     $max = (int)$cfg['max'];
     $window = (int)$cfg['window'];
     $ip = client_ip();
-    $key = sha1($op . '|' . $ip . ($scope === '' ? '' : '|' . $scope));
+    $key = $actorOnly ? sha1($op . '|actor|' . $scope) : sha1($op . '|' . $ip . ($scope === '' ? '' : '|' . $scope));
     $dir = $CONFIG['cache_dir'] . '/_rl';
     @mkdir($dir, 0755, true);
     $path = $dir . '/' . $key;

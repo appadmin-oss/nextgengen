@@ -59,3 +59,6 @@ tests/_fixture-*
 
 # Screenshots the browser suites write on every run (regenerated; not committed)
 tests/screens/
+
+# Source maps for debugging a production stack trace — never shipped (build.js)
+.build/

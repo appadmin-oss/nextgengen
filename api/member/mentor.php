@@ -96,7 +96,7 @@ if ($method === 'GET') {
         ]);
     } elseif ((string)($b['action'] ?? '') === 'review') {
         // The twelve questions for one child for one week. Amends in place.
-        rate_limit_check('mentor.review');
+        rate_limit_check_actor('mentor.review', (string)$s['mid']);
         $res = gs_call('member.mentor.review.save', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -109,7 +109,7 @@ if ($method === 'GET') {
     } elseif ((string)($b['action'] ?? '') === 'courage') {
         // One observed instance on the 1-5 courage ladder (brief §14). The
         // domain requires the evidence; this only carries it.
-        rate_limit_check('mentor.courage');
+        rate_limit_check_actor('mentor.courage', (string)$s['mid']);
         $res = gs_call('member.mentor.courage.mark', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -140,7 +140,7 @@ if ($method === 'GET') {
         ] + array_intersect_key($b, array_flip(['stars', 'category', 'severity', 'note']))
           + ['ip' => client_ip()]);
     } elseif ((string)($b['action'] ?? '') === 'meeting') {
-        rate_limit_check('mentor.meeting');
+        rate_limit_check_actor('mentor.meeting', (string)$s['mid']);
         $res = gs_call('member.mentor.meeting.save', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -182,11 +182,11 @@ if ($method === 'GET') {
         ]);
     } elseif (isset(MENTOR_PORTAL_ACTIONS[(string)($b['action'] ?? '')])) {
         [$op, $keys, $bucket] = MENTOR_PORTAL_ACTIONS[(string)$b['action']];
-        if ($bucket !== '') rate_limit_check($bucket);
+        rate_limit_check_actor($bucket !== '' ? $bucket : 'mentor.write', (string)$s['mid']);
         $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => client_ip()] + array_intersect_key($b, array_flip(array_merge($keys, ['centre']))));
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, isset($res['detail']) ? (string)$res['detail'] : null);
 unset($res['ok']); json_ok($res);

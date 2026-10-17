@@ -144,6 +144,11 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('the child\'s code + name connects at once and opens their dashboard', /Tobi Adeyemi/.test(await fp.$eval('.fam-hero', el => el.innerText)));
     chk('…showing today\'s sign-in, late and by how much', /Signed in 09:12 · 12 min late/.test(await fp.$eval('.fam-today', el => el.innerText)));
     chk('…with attendance, conduct, fees and lessons', (await fp.$$('.fam-grid > .fam-card')).length === 4);
+    chk('Today leads with what needs the parent, and one-tap messages to the centre',
+      /Needs you|Nothing needs you/.test(await fp.innerText('#fx-needs-h')) && !!(await fp.$('button:has-text("will be away")')));
+    await fp.screenshot({ path: path.join(SHOTS, 'family-today.png'), fullPage: true });
+    chk('the sidebar holds the five screens and the emails, one marked current',
+      (await fp.$$('.fx-nav-item')).length === 6 && (await fp.getAttribute('.fx-nav-item[aria-current="page"]', 'class')) !== null);
     chk('…and the child is told', php(`echo db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-FU-KID' AND title = 'A family account is connected to you'")['c'];`) === '1');
 
     /* ── Ask for the sibling through the record ── */
@@ -153,16 +158,23 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.waitForSelector('text=Waiting for the centre', { timeout: 15000 });
     chk('asking through the record waits for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'pending');
 
-    /* ── Tell the centre; switch on sign-in mails ── */
+    /* ── Tell the centre (from Today's shortcut); the emails are always on ── */
+    await fp.click('button:has-text("will be away")');
+    await fp.waitForSelector('#fam-from', { timeout: 10000 });
+    chk('the "will be away" shortcut opens Messages with the absence form ready, and the address says so',
+      (await fp.inputValue('#fam-kind')) === 'leave' && /view=messages/.test(fp.url()));
     await fp.fill('#fam-from', '2026-11-07');
     await fp.fill('#fam-body', 'Family wedding');
     await fp.click('button:has-text("Send to the centre")');
     await fp.waitForSelector('text=Sent. The centre will reply by email.');
     chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs',
       php(`echo json_encode(db_row("SELECT kind, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID'"));`) === '{"kind":"leave","fam":1}');
-    await fp.click('.fam-switch[aria-label="Sign-in and sign-out"]');
-    await fp.waitForFunction(() => document.querySelector('.fam-switch[aria-label="Sign-in and sign-out"]').getAttribute('aria-pressed') === 'true');
-    chk('…and switching on sign-in mails is saved', /"checkin":true/.test(php(`echo db_row("SELECT notify FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['notify'];`)));
+    // Family emails are always on: listed as On, with nothing to switch.
+    await fp.click('.fx-nav-item:has-text("Emails")');
+    await fp.waitForSelector('#fam-ntf-h', { timeout: 10000 });
+    const ntf = await fp.evaluate(() => { const c = document.getElementById('fam-ntf-h'); const s = c && c.closest('section'); return s ? { text: s.innerText, switches: s.querySelectorAll('.fam-switch, [aria-pressed]').length } : null; });
+    chk('…and every family email is shown as always on, with no switch to turn one off',
+      !!ntf && ntf.switches === 0 && /Sign-in and sign-out/.test(ntf.text) && /always on/i.test(ntf.text));
     await fp.screenshot({ path: path.join(SHOTS, 'family-desktop.png'), fullPage: true });
 
     /* ── The Control Room approves the sibling ── */
@@ -207,6 +219,10 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('the emailed link signs in on a phone', (await lp.$$('.fam-tab')).length === 2);
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));
     chk('the page fits a phone without sideways scrolling', await lp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    chk('…with the five screens in a bottom tab bar, and no sidebar', await lp.evaluate(() => {
+      const bar = document.querySelector('.fx-tabbar'), nav = document.querySelector('.fx-nav');
+      return !!bar && getComputedStyle(bar).position === 'fixed' && bar.querySelectorAll('.fx-tab').length === 5 && (!nav || getComputedStyle(nav).display === 'none');
+    }));
     await lp.screenshot({ path: path.join(SHOTS, 'family-phone.png'), fullPage: true });
 
     /* ── Sign out ── */

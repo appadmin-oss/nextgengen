@@ -177,7 +177,7 @@ function membership_invoice_create(array $m, string $by, int $applicationId = 0,
     if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
     $terms = membership_fee_terms();
     if (!$terms['enabled']) return ['ok' => false, 'error' => 'fees_off'];
-    $have = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND status IN ('open','paid') ORDER BY id DESC LIMIT 1", [(string)$m['memberId']]);
+    $have = db_row("SELECT * FROM membership_invoices WHERE memberId = ? AND status IN ('open','paid') AND purpose = 'joining' ORDER BY id DESC LIMIT 1", [(string)$m['memberId']]);
     if ($have) return ['ok' => true, 'invoice' => $have, 'existed' => true];
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) $start = substr((string)($m['joinDate'] ?? ''), 0, 10);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) $start = gmdate('Y-m-d');
@@ -194,6 +194,76 @@ function membership_invoice_create(array $m, string $by, int $applicationId = 0,
     db_insert('membership_invoices', $row);
     audit('membership.invoice.create', $by, (string)$m['memberId'], ['invoiceId' => $row['invoiceId'], 'total' => $total, 'start' => $start]);
     return ['ok' => true, 'invoice' => membership_invoice_by('invoiceId', $row['invoiceId'])];
+}
+
+/* ── Paying the balance online ─────────────────────────────────────────────
+ *
+ * The ledger (fees.php) records what a member owes and never takes money. A
+ * family with dues, fines or fees outstanding paid by transfer and waited for
+ * staff to record it; there was no way to pay on the site. This is that way,
+ * and it adds no second payment path: a BALANCE invoice is an ordinary
+ * membership_invoices row (purpose 'balance') for the amount payable today,
+ * paid on the same /pay page, verified by the same Paystack check (exact
+ * amount, currency and invoice), settled by the same membership_settle — which,
+ * for a balance invoice, posts only the payment, because the charges are
+ * already on the ledger.
+ *
+ * The amount is fixed when the invoice is made. Asking again while the balance
+ * has moved voids the old open one ('superseded') and makes a new one, so a
+ * family never pays a figure that is no longer true; a checkout already paid
+ * against a voided invoice is recorded as unapplied for staff, never dropped
+ * (membership_paystack_verify). An offline claim waiting on a check blocks a
+ * new invoice, because that money may already be on its way.
+ */
+function membership_balance_invoice(array $m, string $by): array {
+    if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
+    if (!function_exists('fees_balance')) return ['ok' => false, 'error' => 'fees_off'];
+    $cfg = fees_settings();
+    if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_off'];
+    if (paystack_secret() === '') return ['ok' => false, 'error' => 'payments_unavailable'];
+    if (membership_contact($m) === '') return ['ok' => false, 'error' => 'no_email'];
+    $mid = (string)$m['memberId'];
+    // The joining invoice comes first: its charges are not on the ledger until it is paid.
+    if ($j = db_row("SELECT payToken FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$mid])) {
+        return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$j['payToken']), 'joining' => true];
+    }
+    $due = (int)(fees_balance($m, $cfg)['payable'] ?? 0);
+    if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'balance' ORDER BY id DESC", [$mid]);
+    foreach ($open as $o) {
+        if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
+    }
+    foreach ($open as $o) {
+        if ((int)$o['total'] === $due) return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $due, 'existed' => true];
+    }
+    foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: the balance changed'], ['id' => $o['id']]);
+    $terms = membership_fee_terms();
+    $row = [
+        'invoiceId' => 'NGG-BAL-' . strtoupper(rand_hex(5)), 'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
+        'items' => json_encode([['kind' => 'balance', 'label' => 'Balance due on ' . gmdate('j M Y'), 'detail' => 'Dues and fees on the account', 'amount' => $due, 'periodKey' => '']], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'total' => $due, 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
+        'status' => 'open', 'purpose' => 'balance', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
+    ];
+    db_insert('membership_invoices', $row);
+    audit('membership.balance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $due, 'superseded' => count($open)]);
+    return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $due];
+}
+
+/** member.fees.pay — the signed-in member's own balance. */
+function member_fees_pay(array $p): array {
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    return membership_balance_invoice($m, (string)$m['memberId']);
+}
+
+/** family.fees.pay — a guardian paying for one of their own, active links. */
+function family_fees_pay(array $p): array {
+    $gid = (string)($p['guardianId'] ?? '');
+    $l = function_exists('family_link') ? family_link($gid, (string)($p['linkId'] ?? '')) : null;
+    if (!$l) return ['ok' => false, 'error' => 'not_found'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    return membership_balance_invoice($m, 'guardian:' . $gid);
 }
 
 /** The invoice's lines as an email table. */
@@ -262,11 +332,13 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
         if ((string)$inv['status'] === 'paid') return ['ok' => true, 'already' => true, 'invoice' => $inv];
         if ((string)$inv['status'] !== 'open') return ['ok' => false, 'error' => 'not_open'];
         $memberId = (string)$inv['memberId'];
-        foreach (membership_items($inv) as $it) {
+        $balance = (string)($inv['purpose'] ?? 'joining') === 'balance';
+        // A balance invoice's charges are already on the ledger: only the payment is posted.
+        if (!$balance) foreach (membership_items($inv) as $it) {
             fees_post($memberId, (string)$it['kind'], (int)$it['amount'], ['periodKey' => (string)$it['periodKey'], 'note' => (string)$it['label'], 'by' => 'invoice:' . $invoiceId]);
         }
         $credit = fees_post($memberId, 'payment', (int)$inv['total'], ['periodKey' => 'minv:' . $invoiceId,
-            'note' => 'Joining invoice ' . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
+            'note' => ($balance ? 'Balance payment ' : 'Joining invoice ') . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
             'method' => $via, 'reference' => $reference, 'by' => $by]);
         if (!$credit) throw new RuntimeException('ledger_failed');
         db_update('membership_invoices', ['status' => 'paid', 'paidVia' => $via, 'paidAt' => now_iso(),
@@ -350,6 +422,7 @@ function public_membership_invoice(array $p): array {
     $terms = membership_fee_terms();
     return ['ok' => true, 'invoice' => [
         'invoiceId' => (string)$inv['invoiceId'], 'status' => (string)$inv['status'], 'total' => (int)$inv['total'],
+        'purpose' => (string)($inv['purpose'] ?? 'joining'),
         'currency' => (string)$inv['currency'], 'symbol' => $terms['symbol'], 'startDate' => (string)$inv['startDate'],
         'items' => array_map(static fn($i) => ['label' => (string)$i['label'], 'detail' => (string)($i['detail'] ?? ''), 'amount' => (int)$i['amount']], membership_items($inv)),
         'firstName' => explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?? '', 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
@@ -465,6 +538,7 @@ function membership_invoice_row(array $inv, array $members, array $pending, stri
         'invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'],
         'name' => (string)($m['fullName'] ?? ''), 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
         'total' => (int)$inv['total'], 'status' => (string)$inv['status'], 'startDate' => (string)$inv['startDate'],
+        'purpose' => (string)($inv['purpose'] ?? 'joining'),
         'items' => membership_items($inv), 'createdAt' => (string)$inv['createdAt'], 'sentTo' => $inv['sentTo'] ? mask_email((string)$inv['sentTo']) : '', 'sentAt' => (string)$inv['sentAt'],
         'paidVia' => (string)$inv['paidVia'], 'paidAt' => (string)$inv['paidAt'], 'receiptNo' => (string)$inv['receiptNo'],
         'receiptUrl' => (string)$inv['status'] === 'paid' ? membership_receipt_url($inv) : '', 'payUrl' => (string)$inv['status'] === 'open' ? membership_pay_url($inv) : '',

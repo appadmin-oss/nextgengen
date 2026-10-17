@@ -8,7 +8,7 @@
 
    What a parent sees is read from the same functions as the member's own
    dashboard, server-side; what they can DO is tell the desk something
-   (an absence, an appeal, a lost card) and choose which mails arrive.
+   (an absence, an appeal, a lost card). Every family email (check-ins, the weekly summary, alerts) is always on.
    ================================================================ */
 
 const FAMILY_ERRORS = {
@@ -70,26 +70,32 @@ function FamilyPage({ setPage }) {
     } else load();
   }, [load]);
 
+  /* A guardian's second step is their family PIN; the banner asks anyone without one. */
+  const mfa = typeof MfaHost === "function" && (mfaPending || me) ? (
+    <MfaHost family id={me ? me.guardian.guardianId : "family"} pending={mfaPending} onCleared={load}
+      onSignOut={async () => { try { await NGGApi.family.logout(); } catch (_) {} setMfaPending(""); setMe(null); }}/>
+  ) : null;
+  if (me) return <div className="fam"><FamilyHome me={me} reload={load} setPage={setPage} onSignedOut={() => setMe(null)}/>{mfa}</div>;
   return (
     <div className="fam">
       <header className="fam-top">
-        <button type="button" className="fam-brand" onClick={() => setPage("home")} aria-label="Back to the NGG site">
-          <span className="fam-brand-mark" aria-hidden="true">NGG</span>
-          <span className="fam-brand-name">Family account</span>
-        </button>
-        {me && <FamilyAccountMenu me={me} onChanged={load} onSignedOut={() => setMe(null)}/>}
+        <FamilyBrand setPage={setPage}/>
       </header>
       <main className="fam-main" id="main">
         {me === undefined && <div className="fam-loading" role="status"><div className="dash-spinner"/><span className="sr-only">Loading your family account</span></div>}
         {me === null && !mfaPending && <FamilySignIn initialError={linkErr || err} onSignedIn={load} setPage={setPage}/>}
-        {me && <FamilyHome me={me} reload={load}/>}
       </main>
-      {/* A guardian's second step is their family PIN; the banner asks anyone without one. */}
-      {typeof MfaHost === "function" && (mfaPending || me) && (
-        <MfaHost family id={me ? me.guardian.guardianId : "family"} pending={mfaPending} onCleared={load}
-          onSignOut={async () => { try { await NGGApi.family.logout(); } catch (_) {} setMfaPending(""); setMe(null); }}/>
-      )}
+      {mfa}
     </div>
+  );
+}
+
+function FamilyBrand({ setPage }) {
+  return (
+    <button type="button" className="fam-brand" onClick={() => setPage("home")} aria-label="Back to the NGG site">
+      <span className="fam-brand-mark" aria-hidden="true">NGG</span>
+      <span className="fam-brand-name">Family account</span>
+    </button>
   );
 }
 
@@ -209,60 +215,127 @@ function FamilyAccountMenu({ me, onChanged, onSignedOut }) {
   );
 }
 
-function FamilyHome({ me, reload }) {
+/* The five screens of one child's account, in the order a parent needs them.
+   One registry: the sidebar, the phone tab bar and the breadcrumb all read it. */
+const FAMILY_VIEWS = [
+  { id: "today",      label: "Today",                 short: "Today",    icon: "house" },
+  { id: "attendance", label: "Attendance & conduct",  short: "Attend",   icon: "calendar-check" },
+  { id: "fees",       label: "Fees",                  short: "Fees",     icon: "wallet" },
+  { id: "lessons",    label: "Lessons & timetable",   short: "Lessons",  icon: "book-open" },
+  { id: "messages",   label: "Messages to the centre", short: "Messages", icon: "chat-circle-text" },
+];
+const FAMILY_VIEW_IDS = FAMILY_VIEWS.map(v => v.id).concat(["emails"]);
+
+/* The URL is the state (CLAUDE.md §2): /family?child=<link>&view=<screen>, so a
+   refresh or a shared link opens the same child on the same screen. */
+function familyUrlState() {
+  try { const u = new URL(window.location.href); return { child: u.searchParams.get("child") || "", view: u.searchParams.get("view") || "" }; }
+  catch (_) { return { child: "", view: "" }; }
+}
+function familyUrlSet(child, view) {
+  try {
+    const u = new URL(window.location.href);
+    if (child) u.searchParams.set("child", child); else u.searchParams.delete("child");
+    if (view && view !== "today") u.searchParams.set("view", view); else u.searchParams.delete("view");
+    window.history.replaceState({}, "", u.toString());
+  } catch (_) {}
+}
+
+function FamilyHome({ me, reload, setPage, onSignedOut }) {
   const active = me.wards.filter(w => w.status === "active");
   const waiting = me.wards.filter(w => w.status === "pending" || w.status === "refused");
-  const [sel, setSel] = React.useState(active[0] ? active[0].linkId : "");
+  const fromUrl = familyUrlState();
+  const [sel, setSel] = React.useState(active.find(w => w.linkId === fromUrl.child) ? fromUrl.child : (active[0] ? active[0].linkId : ""));
+  const [view, setViewRaw] = React.useState(FAMILY_VIEW_IDS.includes(fromUrl.view) ? fromUrl.view : "today");
+  const [askKind, setAskKind] = React.useState("");
   const [adding, setAdding] = React.useState(!active.length);
   React.useEffect(() => { if (!active.find(w => w.linkId === sel)) setSel(active[0] ? active[0].linkId : ""); }, [me]); // eslint-disable-line
+  React.useEffect(() => { familyUrlSet(sel, view); }, [sel, view]);
+  const go = (v, kind) => { setViewRaw(v); setAskKind(kind || ""); setAdding(false); try { window.scrollTo(0, 0); } catch (_) {} };
   const current = active.find(w => w.linkId === sel);
   const first = (me.guardian.fullName || "").split(" ")[0];
+  const kidFirst = current ? (current.fullName || "").split(" ")[0] : "";
+  const viewDef = FAMILY_VIEWS.find(v => v.id === view) || (view === "emails" ? { label: "Emails & connection" } : FAMILY_VIEWS[0]);
 
   return (
-    <>
+    <div className="fx-shell">
       {typeof GuideTour === "function" && <GuideTour portal="family"/>}
-      <div className="fam-head">
+      <aside className="fx-side" aria-label="Your family account">
+        <FamilyBrand setPage={setPage}/>
         <div>
-          <p className="fam-eyebrow">Family account</p>
-          <h1 className="fam-h1">{first ? "Welcome, " + first : "Welcome"}</h1>
+          <p className="fx-side-h" id="fx-kids-h">Your children</p>
+          <div className="fx-kids" role="tablist" aria-labelledby="fx-kids-h">
+            {active.map(w => (
+              <button key={w.linkId} type="button" role="tab" aria-selected={w.linkId === sel} className={"fam-tab" + (w.linkId === sel ? " is-on" : "")}
+                onClick={() => { setSel(w.linkId); setAdding(false); }}>
+                <span className="fam-av" aria-hidden="true">{(w.fullName || "?").charAt(0)}</span>
+                <span style={{ minWidth: 0 }}>{(w.fullName || "").split(" ")[0]}<small>{w.centre || ""}</small></span>
+              </button>
+            ))}
+            <button type="button" className={"fam-btn" + (adding ? " is-on" : "")} aria-expanded={adding} aria-controls="fam-add" onClick={() => setAdding(a => !a)}>+ Add a child</button>
+          </div>
         </div>
-        <button type="button" className={"fam-btn" + (adding ? " is-on" : "")} aria-expanded={adding} aria-controls="fam-add" onClick={() => setAdding(a => !a)}>+ Add a child</button>
+        {current && (
+          <nav className="fx-nav" aria-label={kidFirst + "'s account"}>
+            {FAMILY_VIEWS.map(v => (
+              <button key={v.id} type="button" className="fx-nav-item" aria-current={view === v.id && !adding ? "page" : undefined} onClick={() => go(v.id)}>
+                <i className={"ph ph-" + v.icon} aria-hidden="true"/>{v.label}
+              </button>
+            ))}
+            <button type="button" className="fx-nav-item" aria-current={view === "emails" && !adding ? "page" : undefined} onClick={() => go("emails")}>
+              <i className="ph ph-envelope-simple" aria-hidden="true"/>Emails & connection
+            </button>
+          </nav>
+        )}
+      </aside>
+
+      <div className="fx-main">
+        <header className="fx-header">
+          <div className="fx-crumb">Family{current && <> · {kidFirst} · <b>{adding ? "Add a child" : viewDef.label}</b></>}</div>
+          <FamilyAccountMenu me={me} onChanged={reload} onSignedOut={onSignedOut}/>
+        </header>
+        <main className="fx-body" id="main">
+          {/* The page title is the screen's own name; the welcome is for an account with no child yet. */}
+          <div className="fam-head">
+            <div>
+              <p className="fam-eyebrow">{current && !adding ? kidFirst + " · " + (current.centre || "NGG") : "Family account"}</p>
+              <h1 className="fam-h1">{current && !adding ? viewDef.label : first ? "Welcome, " + first : "Welcome"}</h1>
+            </div>
+          </div>
+
+          {adding && <FamilyAddWard me={me} onDone={() => { setAdding(false); reload(); }}/>}
+
+          {waiting.length > 0 && (view === "today" || !current) && (
+            <section className="fam-card" aria-labelledby="fam-wait-h">
+              <h2 id="fam-wait-h" className="fam-h2">Waiting for the centre</h2>
+              <ul className="fam-list">
+                {waiting.map(w => (
+                  <li key={w.linkId} className="fam-list-row">
+                    <span><b>{(w.fullName || "").split(" ")[0]}</b> · {w.centre}</span>
+                    <span className={"fam-chip " + (w.status === "refused" ? "is-bad" : "is-warn")}>{w.status === "refused" ? "Not approved" : "Waiting for approval"}</span>
+                    {w.status === "refused" && w.note && <span className="fam-meta">{w.note}</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="fam-hint">The centre checks that you're the parent or guardian on the record before connecting you. You'll get an email when they decide.</p>
+            </section>
+          )}
+
+          {current ? <FamilyWard key={current.linkId} link={current} view={view} go={go} askKind={askKind} onRemoved={reload}/>
+            : !adding && !waiting.length && <EmptyState title="No children connected yet" message="Add your child with the code from their NGG app." action={<button className="fam-btn is-primary" onClick={() => setAdding(true)}>Add a child</button>}/>}
+        </main>
       </div>
 
-      {active.length > 0 && (
-        <div className="fam-tabs" role="tablist" aria-label="Your children">
-          {active.map(w => (
-            <button key={w.linkId} type="button" role="tab" aria-selected={w.linkId === sel} className={"fam-tab" + (w.linkId === sel ? " is-on" : "")} onClick={() => setSel(w.linkId)}>
-              <span className="fam-av" aria-hidden="true">{(w.fullName || "?").charAt(0)}</span>
-              <span>{(w.fullName || "").split(" ")[0]}</span>
+      {current && (
+        <nav className="fx-tabbar" aria-label={kidFirst + "'s account"}>
+          {FAMILY_VIEWS.map(v => (
+            <button key={v.id} type="button" className="fx-tab" aria-current={view === v.id ? "page" : undefined} onClick={() => go(v.id)}>
+              <i className={"ph ph-" + v.icon} aria-hidden="true"/>{v.short}
             </button>
           ))}
-        </div>
+        </nav>
       )}
-
-      {adding && <FamilyAddWard me={me} onDone={() => { setAdding(false); reload(); }}/>}
-
-      {waiting.length > 0 && (
-        <section className="fam-card" aria-labelledby="fam-wait-h">
-          <h2 id="fam-wait-h" className="fam-h2">Waiting for the centre</h2>
-          <ul className="fam-list">
-            {waiting.map(w => (
-              <li key={w.linkId} className="fam-list-row">
-                <span><b>{(w.fullName || "").split(" ")[0]}</b> · {w.centre}</span>
-                <span className={"fam-chip " + (w.status === "refused" ? "is-bad" : "is-warn")}>{w.status === "refused" ? "Not approved" : "Waiting for approval"}</span>
-                {w.status === "refused" && w.note && <span className="fam-meta">{w.note}</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="fam-hint">The centre checks that you're the parent or guardian on the record before connecting you. You'll get an email when they decide.</p>
-        </section>
-      )}
-
-      {/* What a Saturday at NGG holds, in the words families are told (the same schedule the reminders follow). */}
-      {active.length > 0 && typeof FormationDay === "function" && <FormationDay audience="parent"/>}
-      {current ? <FamilyWard key={current.linkId} link={current} onRemoved={reload}/>
-        : !adding && !waiting.length && <EmptyState title="No children connected yet" message="Add your child with the code from their NGG app." action={<button className="fam-btn is-primary" onClick={() => setAdding(true)}>Add a child</button>}/>}
-    </>
+    </div>
   );
 }
 
@@ -328,7 +401,7 @@ function FamilyAddWard({ me, onDone }) {
   );
 }
 
-function FamilyWard({ link, onRemoved }) {
+function FamilyWard({ link, view, go, askKind, onRemoved }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState(null);
   const load = React.useCallback(() => {
@@ -340,85 +413,176 @@ function FamilyWard({ link, onRemoved }) {
   if (err) return <ErrorState title="Couldn't load this dashboard" message={familyErr(err)} onRetry={load}/>;
   if (!d) return <div className="fam-loading" role="status"><div className="dash-spinner"/><span className="sr-only">Loading</span></div>;
   const m = d.member, first = (m.fullName || "").split(" ")[0];
-  const rating = d.companion && FAMILY_RATING[d.companion.rating];
   const t = d.today;
+  const late = t.status === "late" || t.status === "tardy";
+
+  const hero = (
+    <section className="fam-card fam-hero" aria-label={m.fullName}>
+      <div className="fam-av fam-av-lg" aria-hidden="true">{(m.fullName || "?").charAt(0)}</div>
+      <div className="fam-hero-main">
+        <h2 className="fam-h2">{m.fullName}</h2>
+        <p className="fam-meta">{[m.displayId, m.centre, m.track].filter(Boolean).join(" · ")}</p>
+      </div>
+      <div className={"fam-today" + (t.in ? (late ? " is-warn" : " is-good") : "")} role="status">
+        {t.in ? <>Signed in {t.in}{late ? " · " + t.lateMinutes + " min late" : ""}{t.out ? " · out " + t.out : ""}</> : "Not signed in today"}
+      </div>
+    </section>
+  );
+
+  if (view === "attendance") return <div className="fam-ward">{hero}<FamilyAttendance d={d} first={first}/></div>;
+  if (view === "fees") return <div className="fam-ward">{hero}<FamilyFees d={d} link={link} first={first} go={go}/></div>;
+  if (view === "lessons") return <div className="fam-ward">{hero}<FamilyLessons d={d} first={first}/></div>;
+  if (view === "messages") return <div className="fam-ward">{hero}<FamilyTellCentre key={askKind || "msg"} d={d} link={link} first={first} reload={load} initialKind={askKind}/></div>;
+  if (view === "emails") return <div className="fam-ward">{hero}<FamilyNotify link={link} first={first} onRemoved={onRemoved}/></div>;
+  return <div className="fam-ward">{hero}<FamilyToday d={d} link={link} first={first} go={go}/></div>;
+}
+
+/* Today: what needs the parent first, each with the one action it needs; then
+   the four numbers at a glance (each opens its screen); then the week. */
+function FamilyToday({ d, link, first, go }) {
+  const rating = d.companion && FAMILY_RATING[d.companion.rating];
+  const needs = [];
+  if (d.fees.enabled && d.fees.payable > 0) needs.push({ tone: "warn", icon: "wallet", t: d.fees.payableText + " to pay", s: "Dues and fees on " + first + "'s account",
+    act: d.fees.payOnline ? <PayBalanceButton amountText={d.fees.payableText} pay={() => NGGApi.family.pay(link.linkId)}/> : <button type="button" className="fam-btn" onClick={() => go("fees")}>How to pay</button> });
+  if (d.conduct.enabled && d.conduct.state && d.conduct.state !== "good") needs.push({ tone: "bad", icon: "warning", t: FAMILY_STATE_LABEL[d.conduct.state] || "Conduct", s: d.conduct.reason || "See attendance & conduct",
+    act: <button type="button" className="fam-btn" onClick={() => go("attendance")}>See why</button> });
+  if (d.learning.overdue > 0) needs.push({ tone: "warn", icon: "book-open", t: d.learning.overdue + " lesson" + (d.learning.overdue === 1 ? "" : "s") + " overdue", s: "Encourage " + first + " to catch up",
+    act: <button type="button" className="fam-btn" onClick={() => go("lessons")}>See lessons</button> });
+  const replied = (d.requests || []).filter(r => r.status === "approved" || r.status === "declined").slice(0, 1);
+  replied.forEach(r => needs.push({ tone: r.status === "approved" ? "ok" : "bad", icon: "chat-circle-text", t: "The centre replied: " + (FAMILY_REQUEST_STATUS[r.status] || r.status), s: r.subject + (r.decision ? " — " + r.decision : ""),
+    act: <button type="button" className="fam-btn" onClick={() => go("messages")}>Open</button> }));
 
   return (
-    <div className="fam-ward">
-      <section className="fam-card fam-hero" aria-label={m.fullName}>
-        <div className="fam-av fam-av-lg" aria-hidden="true">{(m.fullName || "?").charAt(0)}</div>
-        <div className="fam-hero-main">
-          <h2 className="fam-h2">{m.fullName}</h2>
-          <p className="fam-meta">{[m.displayId, m.centre, m.track].filter(Boolean).join(" · ")}</p>
-        </div>
-        <div className={"fam-today" + (t.in ? (t.status === "late" || t.status === "tardy" ? " is-warn" : " is-good") : "")} role="status">
-          {t.in
-            ? <>Signed in {t.in}{t.status === "late" || t.status === "tardy" ? " · " + t.lateMinutes + " min late" : ""}{t.out ? " · out " + t.out : ""}</>
-            : "Not signed in today"}
+    <>
+      <section className="fam-card" aria-labelledby="fx-needs-h">
+        <div className="fam-row"><h3 id="fx-needs-h" className="fam-h2">{needs.length ? "Needs you" : "Nothing needs you"}</h3></div>
+        {needs.length ? (
+          <ul className="fx-needs">
+            {needs.map((n, i) => (
+              <li key={i} className={"fx-need is-" + n.tone}>
+                <i className={"ph ph-" + n.icon} aria-hidden="true"/>
+                <span className="fx-need-t"><b>{n.t}</b><span>{n.s}</span></span>
+                {n.act}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="fam-hint">{first} is all caught up: nothing to pay, nothing overdue, and no warnings.</p>}
+        <div className="fam-div"/>
+        <p className="fam-label" style={{ margin: 0 }}>Tell the centre</p>
+        <div className="fx-actions" style={{ marginTop: 8 }}>
+          <button type="button" className="fam-btn" onClick={() => go("messages", "leave")}><i className="ph ph-calendar-x" aria-hidden="true"/>{first} will be away</button>
+          <button type="button" className="fam-btn" onClick={() => go("messages", "idcard")}><i className="ph ph-identification-card" aria-hidden="true"/>Lost ID card</button>
+          <button type="button" className="fam-btn" onClick={() => go("messages", "appeal")}><i className="ph ph-scales" aria-hidden="true"/>Question a charge</button>
         </div>
       </section>
 
       <div className="fam-grid">
-        <section className="fam-card" aria-labelledby="fam-att-h">
-          <h3 id="fam-att-h" className="fam-h3">Attendance this term</h3>
+        <button type="button" className="fam-card fx-tile" onClick={() => go("attendance")}>
+          <h3 className="fam-h3">Attendance this term</h3>
           <p className="fam-big">{d.attendance.rateKnown ? d.attendance.rate + "%" : "—"}</p>
-          <p className="fam-meta">{d.attendance.rateKnown ? d.attendance.present + " of " + d.attendance.daysRan + " programme days" : "The rate shows once the centre's calendar is set."}</p>
-          {d.attendance.late.length > 0 && <p className="fam-hint">Late recently: {d.attendance.late.map(l => fmtDayMonth(l.date) + " (" + l.minutes + " min)").join(", ")}</p>}
-          {d.attendance.recent.length > 0 ? (
-            <table className="fam-table">
-              <thead><tr><th scope="col">Day</th><th scope="col">In</th><th scope="col">Out</th></tr></thead>
-              <tbody>{d.attendance.recent.slice(0, 7).map(r => <tr key={r.date}><td>{fmtDayMonth(r.date)}</td><td>{r.in || "—"}</td><td>{r.out || "—"}</td></tr>)}</tbody>
-            </table>
-          ) : <p className="fam-hint">No sign-ins yet.</p>}
-        </section>
-
-        <section className="fam-card" aria-labelledby="fam-con-h">
-          <h3 id="fam-con-h" className="fam-h3">Conduct</h3>
-          {d.conduct.enabled ? <>
-            <p className="fam-big">{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
-            {d.conduct.reason && <p className="fam-meta">{d.conduct.reason}{d.conduct.until ? " · until " + fmtDate(d.conduct.until) : ""}</p>}
-            {d.conduct.fines.length > 0 ? <ul className="fam-list">{d.conduct.fines.map((f, i) => <li key={i} className="fam-list-row"><span>{f.reason || "Fine"}</span><span className="fam-meta">{fmtDate(f.issuedAt)}</span></li>)}</ul>
-              : <p className="fam-hint">No outstanding fines.</p>}
-          </> : <p className="fam-hint">The centre hasn't switched on conduct tracking.</p>}
-        </section>
-
-        <section className="fam-card" aria-labelledby="fam-fee-h">
-          <h3 id="fam-fee-h" className="fam-h3">Fees</h3>
-          {d.fees.enabled ? <>
-            <p className="fam-big">{d.fees.payableText}</p>
-            <p className="fam-meta">Due now{d.fees.outstanding !== d.fees.payable ? " · " + d.fees.outstandingText + " on the account in total" : ""}</p>
-            {d.fees.recent.length > 0 && <ul className="fam-list">{d.fees.recent.map((e, i) => (
-              <li key={i} className={"fam-list-row" + (e.void ? " is-void" : "")}><span>{e.note || e.kind}</span><span className="fam-meta">{e.direction === "credit" ? "−" : ""}{fmtNum(e.amount)} · {fmtDayMonth(e.createdAt)}</span></li>
-            ))}</ul>}
-          </> : <p className="fam-hint">No fees are recorded for {first}.</p>}
-        </section>
-
-        <section className="fam-card" aria-labelledby="fam-lrn-h">
-          <h3 id="fam-lrn-h" className="fam-h3">Lessons</h3>
-          {d.learning.total > 0 ? <>
-            <p className="fam-big">{d.learning.completed} of {d.learning.total}</p>
-            <div className="fam-bar" role="progressbar" aria-valuenow={d.learning.pct} aria-valuemin="0" aria-valuemax="100" aria-label="Lessons done"><span style={{ width: d.learning.pct + "%" }}/></div>
-            {d.learning.overdue > 0 && <p className="fam-err">{d.learning.overdue} overdue</p>}
-            <ul className="fam-list">{d.learning.next.map((u, i) => (
-              <li key={i} className="fam-list-row"><span>{u.title}</span>
-                <span className={"fam-chip" + (u.overdueDays ? " is-bad" : "")}>{u.overdueDays ? u.overdueDays + " days overdue" : u.dueDate ? "Due " + fmtDayMonth(u.dueDate) : "Week " + u.week}</span></li>
-            ))}</ul>
-          </> : <p className="fam-hint">No lessons are set for {first} yet.</p>}
-        </section>
+          <p className="fam-meta">{d.attendance.rateKnown ? d.attendance.present + " of " + d.attendance.daysRan + " days" : "Shows once the calendar is set"}</p>
+        </button>
+        <button type="button" className="fam-card fx-tile" onClick={() => go("attendance")}>
+          <h3 className="fam-h3">Conduct</h3>
+          <p className="fam-big" style={{ fontSize: 20 }}>{d.conduct.enabled ? (FAMILY_STATE_LABEL[d.conduct.state] || "In good standing") : "Not tracked"}</p>
+          <p className="fam-meta">{d.conduct.enabled ? (d.conduct.fines.length ? d.conduct.fines.length + " fine" + (d.conduct.fines.length === 1 ? "" : "s") + " outstanding" : "No outstanding fines") : "The centre hasn't switched it on"}</p>
+        </button>
+        <button type="button" className="fam-card fx-tile" onClick={() => go("fees")}>
+          <h3 className="fam-h3">Fees due</h3>
+          <p className="fam-big">{d.fees.enabled ? d.fees.payableText : "—"}</p>
+          <p className="fam-meta">{d.fees.enabled ? (d.fees.payable > 0 ? "Due now" : "Nothing to pay") : "No fees recorded"}</p>
+        </button>
+        <button type="button" className="fam-card fx-tile" onClick={() => go("lessons")}>
+          <h3 className="fam-h3">Lessons</h3>
+          <p className="fam-big">{d.learning.total > 0 ? d.learning.completed + " of " + d.learning.total : "—"}</p>
+          <p className="fam-meta">{d.learning.total > 0 ? (d.learning.overdue ? d.learning.overdue + " overdue" : "On schedule") : "None set yet"}</p>
+        </button>
       </div>
 
-      {d.companion && (
-        <section className="fam-card" aria-labelledby="fam-cmp-h">
-          <div className="fam-row"><h3 id="fam-cmp-h" className="fam-h3">This week's check-in</h3>{rating && <span className={"fam-chip " + rating.cls}>{rating.label}</span>}</div>
-          {d.companion.summary && <p>{d.companion.summary}</p>}
-          {(d.companion.strengths || []).length > 0 && <p className="fam-hint"><b>Going well:</b> {d.companion.strengths.join("; ")}</p>}
-          {(d.companion.focus || []).length > 0 && <p className="fam-hint"><b>To work on:</b> {d.companion.focus.join("; ")}</p>}
-        </section>
-      )}
+      <div className="fx-cols">
+        {d.companion ? (
+          <section className="fam-card" aria-labelledby="fam-cmp-h">
+            <div className="fam-row"><h3 id="fam-cmp-h" className="fam-h2">This week's check-in</h3>{rating && <span className={"fam-chip " + rating.cls}>{rating.label}</span>}</div>
+            {d.companion.summary && <p className="fam-hint">{d.companion.summary}</p>}
+            {(d.companion.strengths || []).length > 0 && <p className="fam-hint"><b>Going well:</b> {d.companion.strengths.join("; ")}</p>}
+            {(d.companion.focus || []).length > 0 && <p className="fam-hint"><b>To work on:</b> {d.companion.focus.join("; ")}</p>}
+          </section>
+        ) : <section className="fam-card"><h3 className="fam-h2">This week's check-in</h3><p className="fam-hint">{first} hasn't done this week's check-in yet.</p></section>}
+        {/* A Saturday at NGG, in the words families are told (the schedule the reminders follow). */}
+        {typeof FormationDay === "function" && <div><FormationDay audience="parent" compact={true}/></div>}
+      </div>
+    </>
+  );
+}
 
+function FamilyAttendance({ d, first }) {
+  return (
+    <div className="fx-cols">
+      <section className="fam-card" aria-labelledby="fam-att-h">
+        <h3 id="fam-att-h" className="fam-h2">Attendance this term</h3>
+        <p className="fam-big" style={{ marginTop: 10 }}>{d.attendance.rateKnown ? d.attendance.rate + "%" : "—"}</p>
+        <p className="fam-meta">{d.attendance.rateKnown ? d.attendance.present + " of " + d.attendance.daysRan + " programme days" : "The rate shows once the centre's calendar is set."}</p>
+        {d.attendance.late.length > 0 && <p className="fam-hint">Late recently: {d.attendance.late.map(l => fmtDayMonth(l.date) + " (" + l.minutes + " min)").join(", ")}</p>}
+        {d.attendance.recent.length > 0 ? (
+          <table className="fam-table">
+            <thead><tr><th scope="col">Day</th><th scope="col">In</th><th scope="col">Out</th></tr></thead>
+            <tbody>{d.attendance.recent.slice(0, 10).map(r => <tr key={r.date}><td>{fmtDayMonth(r.date)}</td><td>{r.in || "—"}</td><td>{r.out || "—"}</td></tr>)}</tbody>
+          </table>
+        ) : <p className="fam-hint">No sign-ins yet.</p>}
+      </section>
+      <section className="fam-card" aria-labelledby="fam-con-h">
+        <h3 id="fam-con-h" className="fam-h2">Conduct</h3>
+        {d.conduct.enabled ? <>
+          <p className="fam-big" style={{ fontSize: 22, marginTop: 10 }}>{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
+          {d.conduct.reason && <p className="fam-meta">{d.conduct.reason}{d.conduct.until ? " · until " + fmtDate(d.conduct.until) : ""}</p>}
+          {d.conduct.fines.length > 0 ? <ul className="fam-list">{d.conduct.fines.map((f, i) => <li key={i} className="fam-list-row"><span>{f.reason || "Fine"}</span><span className="fam-meta">{fmtDate(f.issuedAt)}</span></li>)}</ul>
+            : <p className="fam-hint">No outstanding fines.</p>}
+        </> : <p className="fam-hint">The centre hasn't switched on conduct tracking.</p>}
+      </section>
+    </div>
+  );
+}
+
+function FamilyFees({ d, link, first, go }) {
+  if (!d.fees.enabled) return <section className="fam-card"><h3 className="fam-h2">Fees</h3><p className="fam-hint">No fees are recorded for {first}.</p></section>;
+  return (
+    <div className="fx-cols">
+      <section className="fam-card" aria-labelledby="fam-fee-h">
+        <h3 id="fam-fee-h" className="fam-h2">Fees</h3>
+        <p className="fam-big" style={{ marginTop: 10 }}>{d.fees.payableText}</p>
+        <p className="fam-meta">Due now{d.fees.outstanding !== d.fees.payable ? " · " + d.fees.outstandingText + " on the account in total" : ""}</p>
+        {d.fees.payOnline && d.fees.payable > 0 && <PayBalanceButton amountText={d.fees.payableText} pay={() => NGGApi.family.pay(link.linkId)}/>}
+        {!d.fees.payOnline && d.fees.payable > 0 && <p className="fam-hint">Pay by bank transfer and keep the slip; the centre records it and emails you a receipt.</p>}
+        <button type="button" className="fam-link" onClick={() => go("messages", "appeal")}>Question a charge</button>
+      </section>
+      <section className="fam-card" aria-labelledby="fam-stm-h">
+        <h3 id="fam-stm-h" className="fam-h2">Recent account entries</h3>
+        {d.fees.recent.length > 0 ? <ul className="fam-list">{d.fees.recent.map((e, i) => (
+          <li key={i} className={"fam-list-row" + (e.void ? " is-void" : "")}><span>{e.note || e.kind}</span><span className="fam-meta">{e.direction === "credit" ? "−" : ""}{fmtNum(e.amount)} · {fmtDayMonth(e.createdAt)}</span></li>
+        ))}</ul> : <p className="fam-hint">Nothing recorded yet.</p>}
+      </section>
+    </div>
+  );
+}
+
+function FamilyLessons({ d, first }) {
+  return (
+    <>
+      <section className="fam-card" aria-labelledby="fam-lrn-h">
+        <h3 id="fam-lrn-h" className="fam-h2">Lessons</h3>
+        {d.learning.total > 0 ? <>
+          <p className="fam-big" style={{ marginTop: 10 }}>{d.learning.completed} of {d.learning.total}</p>
+          <div className="fam-bar" role="progressbar" aria-valuenow={d.learning.pct} aria-valuemin="0" aria-valuemax="100" aria-label="Lessons done"><span style={{ width: d.learning.pct + "%" }}/></div>
+          {d.learning.overdue > 0 && <p className="fam-err">{d.learning.overdue} overdue</p>}
+          <ul className="fam-list">{d.learning.next.map((u, i) => (
+            <li key={i} className="fam-list-row"><span>{u.title}</span>
+              <span className={"fam-chip" + (u.overdueDays ? " is-bad" : "")}>{u.overdueDays ? u.overdueDays + " days overdue" : u.dueDate ? "Due " + fmtDayMonth(u.dueDate) : "Week " + u.week}</span></li>
+          ))}</ul>
+        </> : <p className="fam-hint">No lessons are set for {first} yet.</p>}
+      </section>
       {d.timetable && (
         <section className="fam-card tt-print" aria-labelledby="fam-tt-h">
-          <div className="fam-row"><h3 id="fam-tt-h" className="fam-h3">{first}'s timetable{d.timetable.centre ? " · " + d.timetable.centre : ""}</h3>
+          <div className="fam-row"><h3 id="fam-tt-h" className="fam-h2">{first}'s timetable{d.timetable.centre ? " · " + d.timetable.centre : ""}</h3>
             <span className="tt-noprint">
               {d.timetable.slug && d.timetable.slots.length > 0 && <a className="fam-link" href={"/timetable?centre=" + encodeURIComponent(d.timetable.slug)}>Make a personal timetable</a>}
               {d.timetable.slots.length > 0 && <button type="button" className="fam-link" onClick={() => window.print()}>Print</button>}
@@ -427,16 +591,13 @@ function FamilyWard({ link, onRemoved }) {
             emptyText={d.timetable.centre ? d.timetable.centre + " has not published its timetable yet." : first + " has not been placed at a centre yet."}/>
         </section>
       )}
-
-      <FamilyTellCentre d={d} link={link} first={first} reload={load}/>
-      <FamilyNotify link={link} first={first} onRemoved={onRemoved}/>
-    </div>
+    </>
   );
 }
 
-function FamilyTellCentre({ d, link, first, reload }) {
+function FamilyTellCentre({ d, link, first, reload, initialKind }) {
   const kinds = Object.entries(d.kinds || {});
-  const [kind, setKind] = React.useState(kinds[0] ? kinds[0][0] : "leave");
+  const [kind, setKind] = React.useState(initialKind && d.kinds && d.kinds[initialKind] ? initialKind : (kinds[0] ? kinds[0][0] : "leave"));
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [ref, setRef] = React.useState("");
@@ -458,7 +619,8 @@ function FamilyTellCentre({ d, link, first, reload }) {
   };
   return (
     <section className="fam-card" aria-labelledby="fam-tell-h">
-      <h3 id="fam-tell-h" className="fam-h3">Tell the centre</h3>
+      <h3 id="fam-tell-h" className="fam-h2">Tell the centre</h3>
+      <p className="fam-hint">The centre replies by email, and you'll see the answer here.</p>
       <form className="fam-form" onSubmit={send}>
         <div className="fam-field">
           <label className="fam-label" htmlFor="fam-kind">About</label>
@@ -505,29 +667,24 @@ function FamilyTellCentre({ d, link, first, reload }) {
 }
 
 function FamilyNotify({ link, first, onRemoved }) {
-  const [prefs, setPrefs] = React.useState(link.notify || {});
   const [err, setErr] = React.useState("");
-  const toggle = async (k) => {
-    const next = Object.assign({}, prefs, { [k]: !prefs[k] });
-    setPrefs(next); setErr("");
-    try { const r = await NGGApi.family.act("ward.notify", { linkId: link.linkId, notify: { [k]: next[k] } }); setPrefs(r.notify || next); }
-    catch (x) { setPrefs(prefs); setErr(familyErr(x)); }
-  };
   const remove = async () => {
     if (!(await dialog.confirm({ title: "Disconnect from " + first + "?", body: "You'll stop seeing " + first + "'s dashboard and getting their emails. You can connect again later with their code.", cta: "Disconnect", danger: true }))) return;
     try { await NGGApi.family.act("ward.remove", { linkId: link.linkId }); onRemoved(); } catch (x) { setErr(familyErr(x)); }
   };
   return (
     <section className="fam-card" aria-labelledby="fam-ntf-h">
-      <h3 id="fam-ntf-h" className="fam-h3">Emails about {first}</h3>
+      <h3 id="fam-ntf-h" className="fam-h2">Emails about {first}</h3>
+      {/* Always on: these emails are part of membership, so there is nothing to switch. */}
       <ul className="fam-list">
         {FAMILY_NOTIFY_LABELS.map(([k, label, hint]) => (
-          <li key={k} className="fam-list-row is-switch">
+          <li key={k} className="fam-list-row">
             <span><b>{label}</b><span className="fam-meta"> · {hint}</span></span>
-            <button type="button" className={"fam-switch" + (prefs[k] ? " is-on" : "")} aria-pressed={!!prefs[k]} aria-label={label} onClick={() => toggle(k)}><span aria-hidden="true"/></button>
+            <span className="fam-meta">On</span>
           </li>
         ))}
       </ul>
+      <p className="fam-hint">These emails are part of {first}’s membership and are always on.</p>
       {err && <p className="fam-err" role="alert">{err}</p>}
       <button type="button" className="fam-link is-danger" onClick={remove}>Disconnect from {first}</button>
     </section>
