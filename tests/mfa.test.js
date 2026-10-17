@@ -203,7 +203,7 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await waitForBoot(ins);
     await ins.waitForSelector('.mfa-opt', { timeout: 60000 });
     const opts = await ins.$$eval('.mfa-opt b', els => els.map(e => e.textContent));
-    chk('the team are offered an authenticator app or an emailed code, nothing else', opts.join('|') === 'An authenticator app|A code by email');
+    chk('the team are offered an authenticator app, an emailed code or a PIN', opts.join('|') === 'An authenticator app|A code by email|A 6-digit PIN');
     chk('and it cannot be closed', !(await ins.isVisible('.signin-close')));
     await ins.click('.mfa-opt:has-text("authenticator app")');
     await ins.waitForSelector('.mfa-key', { timeout: 15000 });
@@ -213,6 +213,11 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     const secret = (await ins.innerText('.mfa-key')).replace(/Setup key:|\s/g, '');
     await typeCode(ins, '#mfa-app', totp(secret));
     await ins.click('.signin-card button[type="submit"]');
+    await ins.waitForSelector('.mfa-codes li', { timeout: 20000 });
+    const backup = await ins.$$eval('.mfa-codes li', els => els.map(e => e.textContent.trim()));
+    chk('setting it up shows eight one-time backup codes, once', backup.length === 8 && /^[A-F0-9]{4}-[A-F0-9]{4}$/.test(backup[0]));
+    await shot(ins, 'mfa-backup-codes');
+    await ins.click('button:has-text("I’ve saved them")');
     await ins.waitForSelector('#mfa-h', { state: 'detached', timeout: 20000 });
     chk('the code from the app turns it on and opens the portal', q(`mfa_enrolment('VOL-INS-26-501')['type'] ?? ''`) === 'app');
     r = await post(ins, '/auth/student-login.php', { displayId: 'VOL-INS-26-501', phone: '08031234567' });
@@ -220,6 +225,17 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     chk('the next card sign-in asks for the app', nx.mfa === 'app' || console.error('   ', JSON.stringify(nx)));
     r = await post(ins, '/auth/mfa.php', { action: 'verify', answer: totp(secret) });
     chk('and the app code passes it', r.ok());
+    // Lost phone: a backup code on the screen instead.
+    r = await post(ins, '/auth/student-login.php', { displayId: 'VOL-INS-26-501', phone: '08031234567' });
+    await ins.goto(BASE + '/community', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ins);
+    await ins.waitForSelector('#mfa-h', { timeout: 60000 });
+    await ins.click('button:has-text("Use a backup code")');
+    await ins.fill('#mfa-bk', backup[0].toLowerCase());
+    await ins.click('.signin-card button[type="submit"]');
+    await ins.waitForSelector('#mfa-h', { state: 'detached', timeout: 20000 });
+    chk('a backup code opens the portal when the phone is not to hand', (await ins.request.get(BASE + '/api/auth/me.php').then(x => x.json())).mfaPending === '');
+    chk('…and is spent', q(`mfa_backup_left('VOL-INS-26-501')`) === 7);
     chk('no page errors (instructor)', ins.errs.length === 0);
     if (ins.errs.length) console.error(ins.errs.join('\n'));
 
@@ -231,10 +247,16 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     chk('a member with no second step is shown the alert', /no second sign-in step/.test(await k3.innerText('.mfa-nudge')));
     await shot(k3, 'mfa-nudge');
     await k3.click('.mfa-nudge-go');
+    await k3.waitForSelector('.mfa-opt', { timeout: 15000 });
+    const mopts = await k3.$$eval('.mfa-opt b', els => els.map(e => e.textContent));
+    chk('a member may choose a question, a PIN, an app or an emailed code', mopts.join('|') === 'A private question|A 6-digit PIN|An authenticator app|A code by email');
+    await k3.click('.mfa-opt:has-text("private question")');
     await k3.waitForSelector('#mfa-new', { timeout: 15000 });
     await k3.fill('#mfa-new', 'Ibadan grammar');
     await k3.fill('#mfa-new2', 'ibadan  grammar');
     await k3.click('.signin-card button[type="submit"]');
+    await k3.waitForSelector('.mfa-codes li', { timeout: 15000 });
+    await k3.click('button:has-text("I’ve saved them")');
     await k3.waitForSelector('.mfa-toast', { timeout: 15000 });
     chk('setting a question from the alert turns it on', q(`mfa_enrolment('NGG-MF-K3')['type'] ?? ''`) === 'question');
     await k3.waitForSelector('.mfa-nudge', { state: 'detached', timeout: 15000 });
@@ -255,6 +277,12 @@ async function typeCode(pg, sel, code) { await pg.click(sel); await pg.keyboard.
     await desk.selectOption('.mfa-desk-filters select', 'none');
     await desk.waitForFunction(() => document.querySelectorAll('.mfa-desk tbody tr').length === 0 || !/Kemi Okoro/.test(document.querySelector('.mfa-desk').innerText), null, { timeout: 15000 });
     chk('filtering to “no second step yet” leaves out those who have one', !/Kemi Okoro/.test(await desk.innerText('.mfa-desk')));
+    await desk.click('.mfa-desk-policy summary');
+    const memKind = desk.locator('.mfa-desk-policy-kind').filter({ hasText: 'Members' });
+    await memKind.locator('.mfa-desk-method:has-text("Emailed code") input').uncheck();
+    await desk.click('button:has-text("Save the policy")');
+    await desk.waitForFunction(() => /applies from each person/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('the desk chooses which ways each kind may use', JSON.stringify(q(`mfa_methods_for('member')`)) === JSON.stringify(['question', 'pin', 'app']));
     await shot(desk, 'mfa-desk');
     chk('no page errors (desk)', desk.errs.length === 0);
     if (desk.errs.length) console.error(desk.errs.join('\n'));

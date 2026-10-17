@@ -799,9 +799,87 @@ function admin_curriculum_report(array $p): array {
 /* ══ Members ═════════════════════════════════════════════════════════════════ */
 
 /** The units a member's curriculum holds: their course's, and the Club-wide ones. */
+/**
+ * The course names a member takes, for matching lessons.
+ *
+ * WHY THIS EXISTS. Lessons are filed under a course ("Coding", "Robotics"),
+ * but a member's `track` is the roster's First_Faculty, upper-cased on import
+ * ("TECH", "MEDIA", "MUSIC"), and `disciplines` is the one or two faculties on
+ * their card. Matching lessons to `track` verbatim meant a TECH member was
+ * shown no Technology lesson at all, only the Club-wide ones — which is the
+ * "members are not seeing their curriculum" report.
+ *
+ * Each word in track and disciplines resolves, in order:
+ *   1. a course of the catalogue, by name            → that course;
+ *   2. a faculty or division (TECH, Technology…)    → every course of it;
+ *   3. otherwise kept as written, so a course somebody filed under the
+ *      member's literal track still matches, as it always did.
+ * With nothing at all on the record, the member's `division` decides.
+ */
+/** What course matching reads, built once — callers that place many members
+ *  (an assignment's audience) pass it in rather than re-reading it per member. */
+function curriculum_course_ctx(): array {
+    $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
+    $byLower = [];
+    foreach ($catalogue as $courses) foreach ($courses as $c) $byLower[mb_strtolower(trim((string)$c))] = (string)$c;
+    $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
+    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => []];
+}
+
+function curriculum_member_courses(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx();
+    $catalogue = $ctx['catalogue']; $byLower = $ctx['byLower']; $unitCourses = $ctx['unitCourses'];
+    /* A division's courses: the seeded list, plus every course of each
+     * catalogue division that is the same division under the admin's own name
+     * ("AI & Technology" is Technology; "Creative Arts" is the arts), plus
+     * every course lessons are actually filed under that reads as the division
+     * ("Media Lab" is Media): an imported programme can name a course the
+     * catalogue never listed. */
+    $divOf = function (string $name): string {
+        if (!function_exists('nggc_division_for_track')) return '';
+        $id = nggc_division_for_track($name);
+        if ($id !== '') return $id;
+        foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) { if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id; }
+        return '';
+    };
+    $divCourses = function (string $divId) use ($catalogue, $divOf, $unitCourses, &$ctx): array {
+        if (isset($ctx['div'][$divId])) return $ctx['div'][$divId];
+        $d = function_exists('nggc_division') ? nggc_division($divId) : null;
+        if (!$d) return $ctx['div'][$divId] = [];
+        $out = array_values($d['courses'] ?? []);
+        foreach ($catalogue as $name => $courses) {
+            if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
+            foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+        }
+        foreach ($unitCourses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+        return $ctx['div'][$divId] = $out;
+    };
+    $words = [];
+    foreach ([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? '')] as $field) {
+        foreach (preg_split('/\s*[,;\/|]\s*|\s+and\s+/i', trim($field)) ?: [] as $w) {
+            $w = trim($w);
+            if ($w !== '') $words[] = $w;
+        }
+    }
+    $out = [];
+    foreach ($words as $w) {
+        $lw = mb_strtolower($w);
+        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; continue; }
+        $div = function_exists('nggc_division_for_track') ? nggc_division_for_track($w) : '';
+        if ($div !== '') $out = array_merge($out, $divCourses($div));
+        $out[] = $w;
+    }
+    if (!$words && trim((string)($m['division'] ?? '')) !== '') $out = array_merge($out, $divCourses((string)$m['division']));
+    $seen = []; $uniq = [];
+    foreach ($out as $c) { $k = mb_strtolower(trim($c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = $c; } }
+    return $uniq;
+}
+
 function curriculum_member_units(array $m): array {
-    $track = trim((string)($m['track'] ?? ''));
-    return curriculum_load("status = 'published' AND (course = '' OR lower(course) = lower(?))", [$track], 'week, course, position');
+    $courses = array_map('mb_strtolower', curriculum_member_courses($m));
+    if (!$courses) return curriculum_load("status = 'published' AND course = ''", [], 'week, course, position');
+    $ph = implode(',', array_fill(0, count($courses), '?'));
+    return curriculum_load("status = 'published' AND (course = '' OR lower(course) IN ($ph))", $courses, 'week, course, position');
 }
 
 /** A member's curriculum with their progress — the portal, a mentor's view and the report share it. */
@@ -836,7 +914,7 @@ function curriculum_for_member(array $m): array {
 }
 
 function curriculum_member_row(string $memberId): ?array {
-    $m = db_row('SELECT memberId, fullName, track, centre, type, status, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, track, disciplines, division, centre, type, status, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     return ($m && member_is_ngg($m)) ? $m : null;
 }
 

@@ -10,6 +10,7 @@
  * POST action=verify        {answer}
  * POST action=start         {type}         begin setting up
  * POST action=enroll        {type, question, answer | pin | code, current}
+ * POST action=backup        {current}       a new set of backup codes
  * POST action=off           {current}
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -54,6 +55,9 @@ if ($method === 'GET') {
         $res = gs_call('mfa.enroll.finish', $base + ['pendingEnroll' => $pending === 'enroll']
             + array_intersect_key($b, array_flip(['type', 'question', 'answer', 'pin', 'code', 'current'])));
         if (!empty($res['ok']) && $pending === 'enroll') $clear();
+    } elseif ($action === 'backup') {
+        if ($pending !== '') json_error('mfa_required', 401);
+        $res = gs_call('mfa.backup.new', $base + ['current' => (string)($b['current'] ?? '')]);
     } elseif ($action === 'off') {
         if ($pending !== '') json_error('mfa_required', 401);
         $res = gs_call('mfa.off', $base + ['current' => (string)($b['current'] ?? '')]);

@@ -52,7 +52,7 @@ function MfaField({ id, kind, value, onChange, onComplete, bad, label, inputRef 
   if (kind === "pin") {
     return (
       <>
-        <label className="signin-label" htmlFor={id}>{label || "Family PIN"}</label>
+        <label className="signin-label" htmlFor={id}>{label || "PIN"}</label>
         <input id={id} ref={inputRef} className={"signin-input signin-otp" + (bad ? " is-bad" : "")} type="password" inputMode="numeric" pattern="[0-9]*" maxLength={6} autoComplete="off"
           value={value} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 6); onChange(v); if (v.length === 6 && onComplete) onComplete(v); }} aria-invalid={bad || undefined}/>
       </>
@@ -82,6 +82,10 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [note, setNote] = React.useState("");
+  // Backup codes just issued (shown once), and what to do after they are saved.
+  const [codes, setCodes] = React.useState(null);
+  const [codesNext, setCodesNext] = React.useState("saved");
+  const [useBackup, setUseBackup] = React.useState(false);
   const cardRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const closable = !!onClose && !forced;
@@ -143,7 +147,11 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     const a = String(v != null ? v : answer).trim();
     if (!a || busy) return;
     setBusy(true); setErr("");
-    try { await NGGApi.auth.mfa.verify(a, family); onDone && onDone("passed"); }
+    try {
+      const r = await NGGApi.auth.mfa.verify(a, family);
+      if (r && r.backupUsed && typeof toast !== "undefined") toast.info("Backup code used — " + r.backupLeft + " left. Make new ones under Two-step sign-in when you can.", "Signed in");
+      onDone && onDone("passed");
+    }
     catch (x) { setErr(mfaErr(x)); setAnswer(""); setBusy(false); }
   };
   const recheck = async () => {
@@ -178,7 +186,11 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     } else data.code = answer;
     if (enrolled && mode === "setup" && !forced) data.current = current;
     setBusy(true); setErr("");
-    try { await NGGApi.auth.mfa.enroll(data, family); onDone && onDone(forced ? "passed" : "saved"); }
+    try {
+      const r = await NGGApi.auth.mfa.enroll(data, family);
+      if (r && r.backupCodes && r.backupCodes.length) { setCodes(r.backupCodes); setCodesNext(forced ? "passed" : "saved"); setBusy(false); return; }
+      onDone && onDone(forced ? "passed" : "saved");
+    }
     catch (x) { setErr(mfaErr(x)); setBusy(false); }
   };
   const turnOff = async e => {
@@ -186,6 +198,24 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     setBusy(true); setErr("");
     try { await NGGApi.auth.mfa.off(current, family); onDone && onDone("off"); }
     catch (x) { setErr(mfaErr(x)); setBusy(false); }
+  };
+  const newCodes = async e => {
+    if (e) e.preventDefault();
+    setBusy(true); setErr("");
+    try { const r = await NGGApi.auth.mfa.backup(current, family); setCodes(r.backupCodes || []); setCodesNext("codes"); }
+    catch (x) { setErr(mfaErr(x)); }
+    setBusy(false);
+  };
+  const codesText = () => "NGG backup codes — each works once\n\n" + (codes || []).join("\n") + "\n";
+  const copyCodes = async () => {
+    try { await navigator.clipboard.writeText(codesText()); setNote("Copied."); } catch (_) { setNote("Copy didn’t work here — write them down instead."); }
+  };
+  const downloadCodes = () => {
+    try {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([codesText()], { type: "text/plain" }));
+      a.download = "ngg-backup-codes.txt"; document.body.appendChild(a); a.click(); a.remove();
+    } catch (_) {}
   };
   const sendCurrentCode = async () => {
     try { const c = await NGGApi.auth.mfa.challenge(family); setNote("We emailed a code" + (c.masked ? " to " + c.masked : "") + "."); } catch (x) { setErr(mfaErr(x)); }
@@ -207,7 +237,23 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
   ) : null;
 
   let title = "Two-step sign-in", sub = null, body = null;
-  if (loadErr) {
+  const pinName = status && status.kind === "guardian" ? "family PIN" : "PIN";
+  if (codes) {
+    title = "Save your backup codes";
+    sub = "Each one works once, in place of your second step — if you lose your phone or forget your answer. Keep them somewhere safe, not on this device only.";
+    body = (
+      <div className="signin-form">
+        <ol className="mfa-codes" aria-label="Backup codes">{codes.map(c => <li key={c} className="mono">{c}</li>)}</ol>
+        <div className="mfa-codes-act">
+          <button type="button" className="signin-link" onClick={copyCodes}><i className="ph ph-copy" aria-hidden="true"/> Copy</button>
+          <button type="button" className="signin-link" onClick={downloadCodes}><i className="ph ph-download-simple" aria-hidden="true"/> Download</button>
+          <button type="button" className="signin-link" onClick={() => window.print()}><i className="ph ph-printer" aria-hidden="true"/> Print</button>
+        </div>
+        {note && <p className="signin-help" role="status">{note}</p>}
+        <button type="button" className="signin-submit" onClick={() => { const next = codesNext; setCodes(null); setNote(""); if (next === "codes") { setCurrent(""); setMode("manage"); load(); } else onDone && onDone(next); }}>I’ve saved them</button>
+      </div>
+    );
+  } else if (loadErr) {
     body = (
       <div className="mfa-state" role="alert">
         <p className="signin-help">{loadErr}</p>
@@ -217,20 +263,29 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
   } else if (!status || (mode === "step" && !chal)) {
     body = <div className="mfa-state" role="status" aria-live="polite"><span className="signin-spin" aria-hidden="true"/> Loading…</div>;
   } else if (mode === "step") {
-    const t = chal.type;
-    title = t === "question" ? "One more question" : t === "pin" ? "Your family PIN" : t === "app" ? "Code from your app" : "Check your email";
-    sub = t === "question" ? "So we know it’s really you." : t === "pin" ? "The six digits you chose for this account." : t === "app" ? "Open your authenticator app and type the code it shows for NGG." : <>We sent a code{chal.masked ? <> to <b>{chal.masked}</b></> : null}. It’s good for 10 minutes.</>;
+    const t = useBackup ? "backup" : chal.type;
+    title = t === "backup" ? "Use a backup code" : t === "question" ? "One more question" : t === "pin" ? "Your " + pinName : t === "app" ? "Code from your app" : "Check your email";
+    sub = t === "backup" ? "One of the eight codes you saved when you set this up. Each works once." : t === "question" ? "So we know it’s really you." : t === "pin" ? "The six digits you chose for this account." : t === "app" ? "Open your authenticator app and type the code it shows for NGG." : <>We sent a code{chal.masked ? <> to <b>{chal.masked}</b></> : null}. It’s good for 10 minutes.</>;
     body = (
       <form onSubmit={verify} className="signin-form" noValidate>
         {t === "question" && <p className="mfa-q">{chal.question}</p>}
         {note && <p className="signin-note" role="status"><i className="ph ph-info" aria-hidden="true"/>{note}</p>}
-        <MfaField id="mfa-ans" kind={t === "question" || t === "pin" ? t : "code"} value={answer} bad={!!err} inputRef={inputRef}
-          onChange={v => { setErr(""); setAnswer(v); }} onComplete={v => verify(null, v)}/>
+        {t === "backup" ? (
+          <>
+            <label className="signin-label" htmlFor="mfa-bk">Backup code</label>
+            <input id="mfa-bk" ref={inputRef} className={"signin-input signin-otp" + (err ? " is-bad" : "")} type="text" autoComplete="off" spellCheck="false" autoCapitalize="characters"
+              placeholder="XXXX-XXXX" maxLength={9} value={answer} onChange={e => { setErr(""); setAnswer(e.target.value); }}/>
+          </>
+        ) : (
+          <MfaField id="mfa-ans" kind={t === "question" || t === "pin" ? t : "code"} value={answer} bad={!!err} inputRef={inputRef}
+            label={t === "pin" ? "Your " + pinName : undefined} onChange={v => { setErr(""); setAnswer(v); }} onComplete={v => verify(null, v)}/>
+        )}
         {fieldErr}
         {submit("Continue", !answer.trim())}
         <div className="signin-alts mfa-alts">
           {t === "email" && <button type="button" className="signin-link" onClick={resend} disabled={busy}>Send a new code</button>}
           {(t === "question" || t === "pin") && <button type="button" className="signin-link" onClick={recheck} disabled={busy}>I’ve been let in by staff</button>}
+          <button type="button" className="signin-link" onClick={() => { setUseBackup(b => !b); setAnswer(""); setErr(""); }}>{useBackup ? "Back to my usual step" : "Use a backup code"}</button>
           {onSignOut && <button type="button" className="signin-link" onClick={onSignOut}>Sign out</button>}
         </div>
         {(t === "question" || t === "pin") && <p className="signin-help mfa-help">Forgot it? A coordinator or instructor can let you in for 10 minutes from the Control Room, or reset it so you choose a new one.</p>}
@@ -250,6 +305,12 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
             <div><b>{m ? m.label : status.type}</b>{status.question ? <span>{status.question}</span> : null}</div>
           </div>
         ) : <p className="signin-help">{status.required ? "NGG requires a second step for your account." : "Add one — it takes a minute."}</p>}
+        {status.enrolled && (
+          <div className="mfa-backup-line">
+            <span><b>{status.backupLeft || 0}</b> backup code{status.backupLeft === 1 ? "" : "s"} left</span>
+            <button type="button" className="signin-link signin-link--sm" onClick={() => { setErr(""); setCurrent(""); setMode("backup"); }}>Make new ones</button>
+          </div>
+        )}
         {fieldErr}
         <button type="button" className="signin-submit" onClick={() => { setErr(""); setAnswer(""); setConfirm(""); setType((status.methods || []).length === 1 ? status.methods[0].id : ""); setMode("setup"); }}>
           {status.enrolled ? "Change it" : "Set it up"}
@@ -258,6 +319,18 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
           <div className="signin-alts"><button type="button" className="signin-link" onClick={() => { setErr(""); setCurrent(""); setMode("off"); }}>Turn it off</button></div>
         )}
       </div>
+    );
+  } else if (mode === "backup") {
+    title = "New backup codes";
+    sub = "Your old codes stop working. You’ll see eight new ones once.";
+    body = (
+      <form onSubmit={newCodes} className="signin-form" noValidate>
+        {currentField}
+        {note && <p className="signin-help" role="status">{note}</p>}
+        {fieldErr}
+        {submit("Make new codes", !current.trim())}
+        <div className="signin-alts"><button type="button" className="signin-link" onClick={() => setMode("manage")}>Back</button></div>
+      </form>
     );
   } else if (mode === "off") {
     title = "Turn off two-step sign-in?";
@@ -316,9 +389,9 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
       } else if (type === "pin") {
         fields = (
           <>
-            <MfaField id="mfa-pin" kind="pin" label="Choose a 6-digit PIN" value={answer} inputRef={inputRef} onChange={v => { setErr(""); setAnswer(v); }}/>
+            <MfaField id="mfa-pin" kind="pin" label={"Choose a 6-digit " + pinName} value={answer} inputRef={inputRef} onChange={v => { setErr(""); setAnswer(v); }}/>
             <MfaField id="mfa-pin2" kind="pin" label="Type it again" value={confirm} onChange={v => { setErr(""); setConfirm(v); }}/>
-            <p className="signin-help">Not a birthday or 123456. You’ll be asked for it after the emailed sign-in code.</p>
+            <p className="signin-help">Not a birthday or 123456. You’ll be asked for it each time you sign in.</p>
           </>
         );
         ready = answer.length === 6 && confirm.length === 6;

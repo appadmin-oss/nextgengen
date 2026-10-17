@@ -2,50 +2,154 @@
 declare(strict_types=1);
 
 /**
- * Assignments — mentor/admin-set work with per-member submissions + grading.
- * Distinct from Anchor missions (fixed XP curriculum). DB column `answerText`
- * is surfaced to the client as `text`.
+ * Assignments — work an admin, an instructor or a mentor sets for the members
+ * of a course, with per-member submissions, marking and feedback.
+ * Distinct from Anchor missions (fixed XP curriculum) and from the curriculum's
+ * own lesson checks. DB column `answerText` is surfaced to the client as `text`.
+ *
+ * Who can set and mark:
+ *   - an admin holding content, curriculum or club, within their centre scope
+ *     (the Control Room, admin route);
+ *   - an instructor or mentor, for the courses and centre on their record
+ *     (the portals, member route — mentor_gate decides the reach, exactly as
+ *     it does for the curriculum and the class).
+ * A course of '' means the whole Club; only an admin sets one of those.
+ *
+ * Who receives it: the members whose course it is, by the same resolution the
+ * curriculum uses (curriculum_member_courses — a TECH member takes Coding),
+ * at the centre named (or every centre), in the session named (or any).
+ * Membership is checked again on submission: an assignment id is not a key.
  */
 
-function assignment_matches_member(array $a, array $member, string $currentSessionId): bool {
-    $c = (string)($a['centre'] ?? '');
-    if ($c !== '' && $c !== 'All' && $c !== 'Both' && $c !== (string)$member['centre']) return false;
-    $track = (string)($a['track'] ?? '');
-    if ($track !== '' && $track !== 'All' && $track !== (string)($member['track'] ?? '')) return false;
+const ASG_PROOFS     = ['text', 'file', 'either'];
+const ASG_STATUSES   = ['draft', 'published', 'closed'];
+const ASG_POINTS_MAX = 1000;
+const ASG_TEXT_MAX   = 20000;
+const ASG_REMIND_QUIET = 86400;
+const ASG_BULK_MAX   = 500;
+
+/* ── Who gets it ─────────────────────────────────────────────────────────── */
+
+/** Does this assignment reach this member? $ctx: curriculum_course_ctx(), reused across a list. */
+function assignment_matches_member(array $a, array $member, string $currentSessionId, ?array &$ctx = null): bool {
+    if ((string)($member['status'] ?? 'active') !== 'active') return false;
+    $c = trim((string)($a['centre'] ?? ''));
+    if ($c !== '' && $c !== 'All' && $c !== 'Both' && $c !== (string)($member['centre'] ?? '')) return false;
     $sid = (string)($a['sessionId'] ?? '');
     if ($sid !== '' && $currentSessionId !== '' && $sid !== $currentSessionId) return false;
+    $track = trim((string)($a['track'] ?? ''));
+    if ($track === '' || $track === 'All') return true;
+    $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($member, $ctx) : [(string)($member['track'] ?? '')];
+    foreach ($courses as $mc) if (mb_strtolower(trim($mc)) === mb_strtolower($track)) return true;
+    return false;
+}
+
+function assignment_session_id(): string {
+    $sc = function_exists('session_current') ? session_current() : [];
+    return (string)($sc['current']['sessionId'] ?? '');
+}
+
+/** Every active member this assignment reaches. One members query, courses resolved in PHP. */
+function assignment_audience(array $a): array {
+    $sid = assignment_session_id();
+    $args = [];
+    $sql = "SELECT memberId, fullName, email, centre, track, disciplines, division, status, type, role FROM members WHERE status = 'active'";
+    $c = trim((string)($a['centre'] ?? ''));
+    if ($c !== '' && $c !== 'All' && $c !== 'Both') { $sql .= ' AND centre = ?'; $args[] = $c; }
+    $ctx = null; $out = [];
+    foreach (db_all($sql, $args) as $m) {
+        if (is_admin_role((string)($m['role'] ?? ''))) continue;   // staff are not set homework
+        if (assignment_matches_member($a, $m, $sid, $ctx)) $out[] = $m;
+    }
+    return $out;
+}
+
+function assignment_due_ts(array $a): int {
+    $d = trim((string)($a['dueAt'] ?? ''));
+    if ($d === '') return 0;
+    // A bare date is due at the end of that day, Lagos time.
+    $t = strtotime(strlen($d) === 10 ? $d . 'T23:59:59+01:00' : $d);
+    return $t ?: 0;
+}
+
+/* ── Who may set and mark ────────────────────────────────────────────────── */
+
+/**
+ * The staff side's gate. ['ok', 'who' => 'admin'|'instructor'|'mentor',
+ * 'me', 'centres' => null|list, 'courses' => null|list, 'canWhole' => bool].
+ * $p['viaAdmin'] is set by the Control Room route only (require_admin: a
+ * console session with its second factor); the portals come through the
+ * member route and mentor_gate.
+ */
+function assignment_staff_gate(array $p): array {
+    if (!empty($p['viaAdmin'])) {
+        $g = admin_cap_gate_any($p, ['content', 'curriculum', 'club']);
+        if (!$g['ok']) return $g;
+        return ['ok' => true, 'who' => 'admin', 'me' => (string)$g['requester']['memberId'], 'name' => (string)($g['requester']['fullName'] ?? ''),
+                'centres' => admin_centre_names_in_scope($g['requester']), 'courses' => null, 'canWhole' => true];
+    }
+    $g = function_exists('mentor_gate') ? mentor_gate($p) : ['ok' => false, 'error' => 'forbidden'];
+    if (empty($g['ok'])) return ['ok' => false, 'error' => (string)($g['error'] ?? 'forbidden')];
+    $role = (string)($g['role'] ?? '');
+    return ['ok' => true, 'who' => $role === 'admin' ? 'admin' : ($role === 'instructor' ? 'instructor' : 'mentor'),
+            'me' => (string)($g['member']['memberId'] ?? ''), 'name' => (string)($g['member']['fullName'] ?? ($g['mentor']['fullName'] ?? '')),
+            'centres' => $g['centres'] ?? null, 'courses' => $g['courses'] ?? null, 'canWhole' => $role === 'admin'];
+}
+
+function assignment_in_reach(array $g, array $a): bool {
+    $course = trim((string)($a['track'] ?? ''));
+    $centre = trim((string)($a['centre'] ?? ''));
+    if ($course === '' || $course === 'All') { if (empty($g['canWhole'])) return false; }
+    elseif ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return false;
+    if ($g['centres'] !== null) {
+        if ($centre === '' || $centre === 'All' || $centre === 'Both') return false;   // "every centre" is wider than a scoped reach
+        if (!in_array($centre, $g['centres'], true)) return false;
+    }
     return true;
+}
+
+/** May this marker touch this member's submission? Their centre must be in reach. */
+function assignment_member_in_reach(array $g, string $memberId): bool {
+    if ($g['centres'] === null) return true;
+    $m = db_row('SELECT centre FROM members WHERE memberId = ?', [$memberId]);
+    return $m && in_array((string)$m['centre'], $g['centres'], true);
+}
+
+/* ── The member's side ───────────────────────────────────────────────────── */
+
+function assignment_public_sub(?array $sub): ?array {
+    if (!$sub) return null;
+    return ['submissionId' => $sub['submissionId'], 'status' => $sub['status'] ?: 'submitted',
+        'text' => $sub['answerText'] ?: '', 'fileUrl' => normalize_image_url($sub['fileUrl'] ?? ''),
+        'grade' => ($sub['grade'] === null || $sub['grade'] === '') ? null : (int)$sub['grade'],
+        'feedback' => $sub['feedback'] ?: '', 'submittedAt' => $sub['submittedAt'] ?: '', 'gradedAt' => $sub['gradedAt'] ?: ''];
 }
 
 function assignment_list_for_member(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];
-
-    $sc = session_current();
-    $currentSessionId = $sc['current']['sessionId'] ?? '';
-
+    $sid = assignment_session_id();
     $subs = [];
-    foreach (db_all('SELECT * FROM assignment_submissions WHERE memberId = ?', [$memberId]) as $r) {
-        $subs[$r['assignmentId']] = $r;
-    }
-
-    $rows = db_all("SELECT * FROM assignments WHERE status='published' ORDER BY COALESCE(NULLIF(dueAt,''), createdAt)");
-    $out = [];
-    foreach ($rows as $a) {
-        if (!assignment_matches_member($a, $member, $currentSessionId)) continue;
+    foreach (db_all('SELECT * FROM assignment_submissions WHERE memberId = ?', [$memberId]) as $r) $subs[$r['assignmentId']] = $r;
+    $now = time(); $ctx = null; $out = [];
+    foreach (db_all("SELECT * FROM assignments WHERE status IN ('published','closed') ORDER BY COALESCE(NULLIF(dueAt,''), createdAt)") as $a) {
         $sub = $subs[$a['assignmentId']] ?? null;
+        // A closed assignment stays on the list only for the people who handed something in.
+        if ($a['status'] === 'closed' && !$sub) continue;
+        if (!$sub && !assignment_matches_member($a, $member, $sid, $ctx)) continue;
+        $due = assignment_due_ts($a);
+        $state = $sub ? ((string)$sub['status'] === 'graded' ? 'marked' : ((string)$sub['status'] === 'returned' ? 'returned' : 'submitted'))
+                      : ($a['status'] === 'closed' ? 'closed' : ($due && $due < $now ? 'late' : 'todo'));
         $out[] = [
-            'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'],
+            'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'] ?: '',
             'track' => $a['track'] ?: '', 'week' => (int)$a['week'], 'dueAt' => $a['dueAt'] ?: '',
-            'points' => (int)$a['points'], 'proof' => $a['proof'] ?: 'text',
+            'points' => (int)$a['points'], 'proof' => $a['proof'] ?: 'text', 'unitId' => (string)($a['unitId'] ?? ''),
             'attachmentUrl' => normalize_image_url($a['attachmentUrl'] ?? ''),
-            'submission' => $sub ? [
-                'submissionId' => $sub['submissionId'], 'status' => $sub['status'] ?: 'submitted',
-                'text' => $sub['answerText'] ?: '', 'fileUrl' => $sub['fileUrl'] ?: '',
-                'grade' => ($sub['grade'] === null || $sub['grade'] === '') ? null : (int)$sub['grade'],
-                'feedback' => $sub['feedback'] ?: '', 'submittedAt' => $sub['submittedAt'] ?: '', 'gradedAt' => $sub['gradedAt'] ?: '',
-            ] : null,
+            'state' => $state, 'dueInDays' => $due ? (int)floor(($due - $now) / 86400) : null,
+            'canSubmit' => $a['status'] === 'published' && (!$sub || in_array((string)$sub['status'], ['submitted', 'returned'], true)),
+            'late' => $sub ? ($due && strtotime((string)$sub['submittedAt']) > $due) : ($due && $due < $now),
+            'submission' => assignment_public_sub($sub),
         ];
     }
     return ['ok' => true, 'assignments' => $out];
@@ -59,16 +163,20 @@ function assignment_submit(array $p): array {
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
     if (!$a) return ['ok' => false, 'error' => 'assignment_not_found'];
     if ((string)$a['status'] !== 'published') return ['ok' => false, 'error' => 'not_open'];
-
-    $sc = session_current();
-    $sessionId = (string)($a['sessionId'] ?: ($sc['current']['sessionId'] ?? ''));
-    $text = (string)($p['text'] ?? '');
-    $fileUrl = (string)($p['fileUrl'] ?? '');
-    if ($text === '' && $fileUrl === '') return ['ok' => false, 'error' => 'empty_submission'];
-
     $existing = db_row('SELECT * FROM assignment_submissions WHERE assignmentId = ? AND memberId = ? LIMIT 1', [$assignmentId, $memberId]);
+    // Somebody else's work is not yours to hand in: the id alone is not enough.
+    if (!$existing && !assignment_matches_member($a, $member, assignment_session_id())) return ['ok' => false, 'error' => 'not_for_you'];
     if ($existing && (string)$existing['status'] === 'graded') return ['ok' => false, 'error' => 'already_graded'];
 
+    $text = mb_substr(trim((string)($p['text'] ?? '')), 0, ASG_TEXT_MAX);
+    $fileUrl = trim((string)($p['fileUrl'] ?? ''));
+    if ($fileUrl !== '' && !preg_match('#^(https://|/)#i', $fileUrl)) return ['ok' => false, 'error' => 'bad_file'];
+    $proof = (string)($a['proof'] ?: 'text');
+    if ($text === '' && $fileUrl === '') return ['ok' => false, 'error' => 'empty_submission'];
+    if ($proof === 'file' && $fileUrl === '') return ['ok' => false, 'error' => 'file_required'];
+    if ($proof === 'text' && $text === '') return ['ok' => false, 'error' => 'text_required'];
+
+    $sessionId = (string)($a['sessionId'] ?: assignment_session_id());
     if ($existing) {
         db_update('assignment_submissions', ['answerText' => $text, 'fileUrl' => $fileUrl, 'status' => 'submitted', 'submittedAt' => now_iso()], ['id' => $existing['id']]);
     } else {
@@ -79,149 +187,319 @@ function assignment_submit(array $p): array {
             'submittedAt' => now_iso(), 'createdAt' => now_iso(),
         ]);
     }
-    audit('assignment.submit', $memberId, $assignmentId, [], (string)($p['ip'] ?? ''));
+    $due = assignment_due_ts($a);
+    audit('assignment.submit', $memberId, $assignmentId, ['late' => $due && time() > $due, 'resubmit' => (bool)$existing], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'late' => $due && time() > $due];
+}
+
+/* ── The staff side ──────────────────────────────────────────────────────── */
+
+function assignment_row_public(array $a, array $counts, bool $canEdit): array {
+    $k = $counts[$a['assignmentId']] ?? [];
+    return [
+        'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'] ?: '',
+        'track' => $a['track'] ?: '', 'centre' => $a['centre'] ?: '', 'sessionId' => $a['sessionId'] ?: '',
+        'week' => (int)$a['week'], 'dueAt' => $a['dueAt'] ?: '', 'points' => (int)$a['points'],
+        'proof' => $a['proof'] ?: 'text', 'attachmentUrl' => $a['attachmentUrl'] ?: '', 'status' => $a['status'] ?: 'draft',
+        'unitId' => (string)($a['unitId'] ?? ''), 'remindedAt' => (string)($a['remindedAt'] ?? ''),
+        'submissionCount' => (int)($k['c'] ?? 0), 'gradedCount' => (int)($k['g'] ?? 0), 'toMark' => (int)($k['m'] ?? 0),
+        'canEdit' => $canEdit, 'overdue' => ($d = assignment_due_ts($a)) > 0 && $d < time(),
+    ];
+}
+
+/** staff.assignments.list — what this person may see, newest first; with counts and their courses. */
+function staff_assignments_list(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $counts = [];
+    foreach (db_all("SELECT assignmentId, COUNT(*) c, SUM(CASE WHEN status='graded' THEN 1 ELSE 0 END) g, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) m FROM assignment_submissions GROUP BY assignmentId") as $r) {
+        $counts[$r['assignmentId']] = ['c' => (int)$r['c'], 'g' => (int)$r['g'], 'm' => (int)$r['m']];
+    }
+    $status = (string)($p['status'] ?? '');
+    $rows = db_all('SELECT * FROM assignments ORDER BY CASE status WHEN \'published\' THEN 0 WHEN \'draft\' THEN 1 ELSE 2 END, COALESCE(NULLIF(dueAt,\'\'), createdAt) DESC');
+    $out = [];
+    foreach ($rows as $a) {
+        if ($status !== '' && in_array($status, ASG_STATUSES, true) && $a['status'] !== $status) continue;
+        $reach = assignment_in_reach($g, $a);
+        // An instructor also sees the whole-Club ones that land on their learners, read-only.
+        if (!$reach && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || $g['centres'] === null || in_array($a['centre'], $g['centres'] ?? [], true)))) continue;
+        $out[] = assignment_row_public($a, $counts, $reach);
+    }
+    $courses = $g['courses'] ?? (function_exists('club_courses') ? club_courses() : []);
+    $units = [];
+    if (function_exists('curriculum_load')) {
+        foreach (db_all("SELECT unitId, course, week, position, title FROM curriculum_units WHERE status = 'published' ORDER BY course, week, position") as $u) {
+            if ($g['courses'] !== null && !in_array(mb_strtolower((string)$u['course']), array_map('mb_strtolower', $g['courses']), true)) continue;
+            $units[] = ['unitId' => $u['unitId'], 'course' => $u['course'], 'label' => 'Week ' . $u['week'] . ' · ' . $u['title']];
+        }
+    }
+    return ['ok' => true, 'assignments' => $out, 'who' => $g['who'], 'courses' => array_values($courses), 'canWhole' => $g['canWhole'],
+            'centres' => $g['centres'] ?? array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name'),
+            'scopedCentres' => $g['centres'] !== null, 'units' => $units,
+            'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
+}
+
+/** Next Saturday, 23:59 Lagos — the default due date when none is given at publish. */
+function assignment_default_due(?int $now = null): string {
+    $t = ($now ?? time()) + 3600;
+    $dow = (int)gmdate('w', $t);
+    $days = (6 - $dow + 7) % 7; if ($days === 0) $days = 7;
+    return gmdate('Y-m-d', $t + $days * 86400);
+}
+
+/** staff.assignments.save — create or change one; validated whole before writing. */
+function staff_assignments_save(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $id = trim((string)($d['assignmentId'] ?? ''));
+    $existing = $id !== '' ? db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$id]) : null;
+    if ($id !== '' && !$existing) return ['ok' => false, 'error' => 'not_found'];
+    if ($existing && !assignment_in_reach($g, $existing)) return ['ok' => false, 'error' => 'out_of_scope'];
+
+    $row = [
+        'title' => mb_substr(trim((string)($d['title'] ?? ($existing['title'] ?? ''))), 0, 160),
+        'instructions' => mb_substr(trim((string)($d['instructions'] ?? ($existing['instructions'] ?? ''))), 0, 8000),
+        'track' => mb_substr(trim((string)($d['track'] ?? ($existing['track'] ?? ''))), 0, 80),
+        'centre' => mb_substr(trim((string)($d['centre'] ?? ($existing['centre'] ?? ''))), 0, 80),
+        'sessionId' => mb_substr(trim((string)($d['sessionId'] ?? ($existing['sessionId'] ?? ''))), 0, 40),
+        'dueAt' => trim((string)($d['dueAt'] ?? ($existing['dueAt'] ?? ''))),
+        'points' => (int)($d['points'] ?? ($existing['points'] ?? 10)),
+        'proof' => (string)($d['proof'] ?? ($existing['proof'] ?? 'text')),
+        'attachmentUrl' => trim((string)($d['attachmentUrl'] ?? ($existing['attachmentUrl'] ?? ''))),
+        'unitId' => trim((string)($d['unitId'] ?? ($existing['unitId'] ?? ''))),
+        'week' => (int)($d['week'] ?? ($existing['week'] ?? 0)),
+        'status' => (string)($d['status'] ?? ($existing['status'] ?? 'draft')),
+    ];
+    if ($row['track'] === 'All') $row['track'] = '';
+    if (in_array($row['centre'], ['All', 'Both'], true)) $row['centre'] = '';
+    // An instructor scoped to one centre sets work for that centre, not every centre.
+    if ($row['centre'] === '' && $g['centres'] !== null && count($g['centres']) === 1) $row['centre'] = $g['centres'][0];
+    $errors = [];
+    if (mb_strlen($row['title']) < 3) $errors['title'] = 'Give it a title of at least 3 letters.';
+    if (!in_array($row['proof'], ASG_PROOFS, true)) $errors['proof'] = 'Choose how it is handed in.';
+    if (!in_array($row['status'], ASG_STATUSES, true)) $errors['status'] = 'Unknown status.';
+    if ($row['points'] < 0 || $row['points'] > ASG_POINTS_MAX) $errors['points'] = 'Between 0 and ' . ASG_POINTS_MAX . ' points.';
+    if ($row['dueAt'] !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:?\d{2})?)?$/', $row['dueAt'])) $errors['dueAt'] = 'A date, like 2026-10-24.';
+    if ($row['attachmentUrl'] !== '' && !preg_match('#^https://#i', $row['attachmentUrl'])) $errors['attachmentUrl'] = 'A link that starts with https://';
+    if ($row['unitId'] !== '') {
+        $u = db_row('SELECT unitId, course, week FROM curriculum_units WHERE unitId = ?', [$row['unitId']]);
+        if (!$u) $errors['unitId'] = 'That lesson no longer exists.';
+        else {
+            // Linked to a lesson: the lesson's course and week, unless one was chosen.
+            if ($row['track'] === '') $row['track'] = (string)$u['course'];
+            if ($row['week'] === 0) $row['week'] = (int)$u['week'];
+        }
+    }
+    if (!assignment_in_reach($g, $row)) $errors[$row['track'] === '' ? 'track' : ($g['centres'] !== null && !in_array($row['centre'], $g['centres'] ?? [], true) ? 'centre' : 'track')] =
+        $row['track'] === '' ? 'Only an admin sets work for the whole Club. Choose your course.' : 'That is outside the courses and centre you teach.';
+    if ($row['status'] === 'published' && $row['instructions'] === '') $errors['instructions'] = 'Say what to do before you publish it.';
+    if ($errors) return ['ok' => false, 'error' => 'invalid', 'fieldErrors' => $errors];
+    if ($row['status'] === 'published' && $row['dueAt'] === '') $row['dueAt'] = assignment_default_due();
+
+    $wasPublished = $existing && (string)$existing['status'] === 'published';
+    $row['updatedAt'] = now_iso();
+    if ($existing) {
+        db_update('assignments', $row, ['id' => $existing['id']]);
+        audit('assignment.update', $g['me'], $id, ['status' => $row['status']], (string)($p['ip'] ?? ''));
+    } else {
+        $id = 'ASG-' . gmdate('Y') . '-' . rand_hex(4);
+        db_insert('assignments', $row + ['assignmentId' => $id, 'createdBy' => $g['me'], 'createdAt' => now_iso()]);
+        audit('assignment.create', $g['me'], $id, ['status' => $row['status']], (string)($p['ip'] ?? ''));
+    }
+    $reached = null;
+    if ($row['status'] === 'published' && !$wasPublished) $reached = notify_assignment_published($id, !empty($p['email']));
+    return ['ok' => true, 'assignmentId' => $id, 'dueAt' => $row['dueAt'], 'notified' => $reached];
+}
+
+/** staff.assignments.audience — who it would reach, before it is published. */
+function staff_assignments_audience(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $a = ['track' => trim((string)($p['track'] ?? '')), 'centre' => trim((string)($p['centre'] ?? '')), 'sessionId' => trim((string)($p['sessionId'] ?? ''))];
+    if ($a['centre'] === '' && $g['centres'] !== null && count($g['centres']) === 1) $a['centre'] = $g['centres'][0];
+    $aud = assignment_audience($a);
+    if ($g['centres'] !== null) $aud = array_values(array_filter($aud, fn($m) => in_array((string)$m['centre'], $g['centres'], true)));
+    return ['ok' => true, 'count' => count($aud), 'sample' => array_map(fn($m) => (string)$m['fullName'], array_slice($aud, 0, 6)),
+            'centres' => array_count_values(array_map(fn($m) => (string)$m['centre'], $aud))];
+}
+
+/** staff.assignments.submissions — what came in, and who has not handed anything in. */
+function staff_assignment_submissions(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [(string)($p['assignmentId'] ?? '')]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    $reach = assignment_in_reach($g, $a);
+    $due = assignment_due_ts($a);
+    $names = [];
+    foreach (db_all('SELECT s.*, m.fullName, m.centre FROM assignment_submissions s LEFT JOIN members m ON m.memberId = s.memberId WHERE s.assignmentId = ? ORDER BY s.submittedAt DESC', [$a['assignmentId']]) as $r) {
+        if ($g['centres'] !== null && !in_array((string)$r['centre'], $g['centres'], true)) continue;
+        $names[] = ['memberId' => $r['memberId'], 'memberName' => $r['fullName'] ?: $r['memberId'], 'centre' => (string)($r['centre'] ?? '')]
+            + assignment_public_sub($r) + ['late' => $due && strtotime((string)$r['submittedAt']) > $due];
+    }
+    $handed = array_flip(array_column($names, 'memberId'));
+    $missing = [];
+    if ($a['status'] !== 'draft') {
+        foreach (assignment_audience($a) as $m) {
+            if (isset($handed[$m['memberId']])) continue;
+            if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) continue;
+            $missing[] = ['memberId' => $m['memberId'], 'memberName' => $m['fullName'], 'centre' => $m['centre']];
+        }
+    }
+    return ['ok' => true, 'canMark' => $reach || $g['who'] === 'admin',
+            'assignment' => assignment_row_public($a, [], $reach), 'submissions' => $names, 'missing' => $missing,
+            'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
+}
+
+function staff_assignment_submission_gate(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [(string)($p['submissionId'] ?? '')]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    if (!(assignment_in_reach($g, $a) || $g['who'] === 'admin') || !assignment_member_in_reach($g, (string)$row['memberId'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    return ['ok' => true, 'g' => $g, 'row' => $row, 'a' => $a];
+}
+
+/** staff.assignment.grade — a mark and feedback, told to the member. */
+function staff_assignment_grade(array $p): array {
+    global $CONFIG;
+    $x = staff_assignment_submission_gate($p); if (!$x['ok']) return $x;
+    ['g' => $g, 'row' => $row, 'a' => $a] = $x;
+    $max = (int)$a['points'];
+    if (!isset($p['grade']) || $p['grade'] === '' || !is_numeric($p['grade'])) return ['ok' => false, 'error' => 'grade_required'];
+    $grade = (int)$p['grade'];
+    if ($grade < 0 || ($max > 0 && $grade > $max)) return ['ok' => false, 'error' => 'grade_out_of_range', 'detail' => 'Between 0 and ' . $max . '.'];
+    $feedback = mb_substr(trim((string)($p['feedback'] ?? '')), 0, 4000);
+    db_update('assignment_submissions', ['status' => 'graded', 'grade' => $grade, 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
+    push_notification((string)$row['memberId'], ['kind' => 'announcement', 'title' => 'Assignment marked: ' . $a['title'],
+        'body' => 'You scored ' . $grade . ($max ? '/' . $max : '') . '. Tap to see the feedback.', 'linkPage' => 'dashboard']);
+    if (!empty($p['email'])) {
+        $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$row['memberId']]);
+        if ($member && $member['email']) {
+            send_mail((string)$member['email'], 'Your assignment was marked · ' . $a['title'], email_template([
+                'title' => 'Assignment marked', 'intro' => $a['title'] . ' has been reviewed.',
+                'bodyHtml' => '<p style="margin:0 0 8px;font-size:20px"><strong>' . $grade . ($max ? '/' . $max : '') . '</strong></p>' . ($feedback ? '<p style="margin:0;color:#4a5170">' . nl2br(esc_html($feedback)) . '</p>' : ''),
+                'ctaLabel' => 'See your dashboard', 'ctaUrl' => ($CONFIG['app_origin'] ?? '') . '/dashboard/learn',
+            ]));
+        }
+    }
+    audit('assignment.grade', $g['me'], (string)$row['submissionId'], ['grade' => $grade, 'by' => $g['who']], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
 
-function admin_assignments_list(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
-    $counts = [];
-    foreach (db_all("SELECT assignmentId, COUNT(*) c, SUM(CASE WHEN status='graded' THEN 1 ELSE 0 END) g FROM assignment_submissions GROUP BY assignmentId") as $r) {
-        $counts[$r['assignmentId']] = ['c' => (int)$r['c'], 'g' => (int)$r['g']];
-    }
-    $rows = db_all('SELECT * FROM assignments ORDER BY createdAt DESC');
-    $out = array_map(function ($a) use ($counts) {
-        return [
-            'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'] ?: '',
-            'track' => $a['track'] ?: '', 'centre' => $a['centre'] ?: '', 'sessionId' => $a['sessionId'] ?: '',
-            'week' => (int)$a['week'], 'dueAt' => $a['dueAt'] ?: '', 'points' => (int)$a['points'],
-            'proof' => $a['proof'] ?: 'text', 'attachmentUrl' => $a['attachmentUrl'] ?: '', 'status' => $a['status'] ?: 'draft',
-            'submissionCount' => $counts[$a['assignmentId']]['c'] ?? 0, 'gradedCount' => $counts[$a['assignmentId']]['g'] ?? 0,
-        ];
-    }, $rows);
-    return ['ok' => true, 'assignments' => $out];
+/** staff.assignment.return — back to the member to revise, with what to change. */
+function staff_assignment_return(array $p): array {
+    $x = staff_assignment_submission_gate($p); if (!$x['ok']) return $x;
+    ['g' => $g, 'row' => $row, 'a' => $a] = $x;
+    $feedback = mb_substr(trim((string)($p['feedback'] ?? '')), 0, 4000);
+    if ($feedback === '') return ['ok' => false, 'error' => 'feedback_required', 'detail' => 'Say what to change, so they can.'];
+    db_update('assignment_submissions', ['status' => 'returned', 'feedback' => $feedback, 'gradedBy' => $g['me'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
+    push_notification((string)$row['memberId'], ['kind' => 'announcement', 'title' => 'Revise and resubmit: ' . $a['title'],
+        'body' => 'Feedback: ' . mb_substr($feedback, 0, 140) . ' Tap to resubmit.', 'linkPage' => 'dashboard']);
+    audit('assignment.return', $g['me'], (string)$row['submissionId'], ['by' => $g['who']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
-function admin_assignments_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
-    $data = $p['data'] ?? [];
-    $assignmentId = trim((string)($data['assignmentId'] ?? ''));
-    $cols = ['title','instructions','track','sessionId','week','dueAt','points','attachmentUrl','proof','centre','status'];
-    $existing = $assignmentId ? db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]) : null;
-    $wasPublished = $existing && (string)$existing['status'] === 'published';
-
-    $patch = db_pick($data, $cols, [], ['week','points']);
-    $patch['updatedAt'] = now_iso();
-    if ($existing) {
-        db_update('assignments', $patch, ['id' => $existing['id']]);
-        $id = $assignmentId;
-        audit('admin.assignment.update', $g['requester']['memberId'], $id, [], (string)($p['ip'] ?? ''));
-    } else {
-        $id = 'ASG-' . gmdate('Y') . '-' . rand_hex(4);
-        $patch['assignmentId'] = $id;
-        $patch['status'] = $patch['status'] ?? 'draft';
-        $patch['createdBy'] = $g['requester']['memberId'];
-        $patch['createdAt'] = now_iso();
-        db_insert('assignments', $patch);
-        audit('admin.assignment.create', $g['requester']['memberId'], $id, [], (string)($p['ip'] ?? ''));
-    }
-
-    $nowPublished = ($patch['status'] ?? ($existing['status'] ?? '')) === 'published';
-    if ($nowPublished && !$wasPublished) notify_assignment_published($id, !empty($p['email']));
-    return ['ok' => true, 'assignmentId' => $id];
+/**
+ * staff.assignment.suggest — a mark and feedback drafted by a capable model
+ * against the instructions, for the marker to accept, change or ignore. It
+ * never writes: a person marks the work.
+ */
+function staff_assignment_suggest(array $p): array {
+    $x = staff_assignment_submission_gate($p); if (!$x['ok']) return $x;
+    ['row' => $row, 'a' => $a] = $x;
+    if (!function_exists('ai_enabled') || !ai_enabled('marking')) return ['ok' => false, 'error' => 'ai_unavailable', 'detail' => 'No capable AI model is set up for marking. Add one under Settings → API keys.'];
+    $text = trim((string)$row['answerText']);
+    if ($text === '') return ['ok' => false, 'error' => 'nothing_to_read', 'detail' => 'This submission is a file only. Open it and mark it yourself.'];
+    $max = max(1, (int)$a['points']);
+    $r = ai_classify('You are an experienced, fair and kind teacher marking work by a 10–17 year old in the NGG Club, a Nigerian youth programme. '
+        . 'Mark ONLY against the assignment instructions. Be specific and encouraging: one thing done well, one thing to improve, one next step. '
+        . 'Never mention that you are an AI. Reply as JSON: {"grade": integer 0..' . $max . ', "feedback": "2–4 short sentences, speaking to the learner as you", "confidence": "high"|"low"}.',
+        json_encode(['assignment' => $a['title'], 'instructions' => (string)$a['instructions'], 'points' => $max, 'answer' => mb_substr($text, 0, 6000)], JSON_UNESCAPED_SLASHES),
+        500, 'marking');
+    if (empty($r['ok']) || !is_array($r['data'] ?? null)) return ['ok' => false, 'error' => 'ai_failed', 'detail' => 'The model did not answer. Mark it yourself.'];
+    $grade = max(0, min($max, (int)($r['data']['grade'] ?? 0)));
+    return ['ok' => true, 'grade' => $grade, 'feedback' => mb_substr(trim((string)($r['data']['feedback'] ?? '')), 0, 1200),
+            'confidence' => (string)($r['data']['confidence'] ?? 'low') === 'high' ? 'high' : 'low'];
 }
 
-function notify_assignment_published(string $assignmentId, bool $alsoEmail): void {
+/** staff.assignments.remind — those who have not handed anything in; once a day at most. */
+function staff_assignments_remind(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [(string)($p['assignmentId'] ?? '')]);
+    if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    if (!assignment_in_reach($g, $a)) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ((string)$a['status'] !== 'published') return ['ok' => false, 'error' => 'not_open'];
+    $last = strtotime((string)($a['remindedAt'] ?? '')) ?: 0;
+    if ($last > time() - ASG_REMIND_QUIET && empty($p['force'])) return ['ok' => false, 'error' => 'quiet_period', 'detail' => 'They were reminded in the last 24 hours.'];
+    $sub = sub_ids_for($a['assignmentId']);
+    $targets = array_values(array_filter(assignment_audience($a), fn($m) => !isset($sub[$m['memberId']])
+        && ($g['centres'] === null || in_array((string)$m['centre'], $g['centres'], true))));
+    $due = assignment_due_ts($a);
+    foreach ($targets as $m) push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => 'Reminder: ' . $a['title'],
+        'body' => ($due ? ($due < time() ? 'This was due ' . gmdate('D j M', $due) . '. ' : 'Due ' . gmdate('D j M', $due) . '. ') : '') . 'Open your dashboard to hand it in.', 'linkPage' => 'dashboard']);
+    db_update('assignments', ['remindedAt' => now_iso()], ['id' => $a['id']]);
+    audit('assignment.remind', $g['me'], (string)$a['assignmentId'], ['count' => count($targets)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'reminded' => count($targets)];
+}
+function sub_ids_for(string $assignmentId): array {
+    return array_flip(array_column(db_all('SELECT memberId FROM assignment_submissions WHERE assignmentId = ?', [$assignmentId]), 'memberId'));
+}
+
+/** staff.assignments.status — publish, back to draft, close, or delete one never handed in. One audit event. */
+function staff_assignments_status(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $action = (string)($p['action'] ?? '');
+    if (!in_array($action, ['publish', 'draft', 'close', 'delete'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    $ids = array_values(array_unique(array_map('strval', (array)($p['ids'] ?? []))));
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_selected'];
+    if (count($ids) > ASG_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => ASG_BULK_MAX];
+    $results = []; $done = 0;
+    foreach ($ids as $id) {
+        $a = db_row('SELECT * FROM assignments WHERE assignmentId = ?', [$id]);
+        if (!$a) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
+        if (!assignment_in_reach($g, $a)) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'out_of_scope']; continue; }
+        if ($action === 'delete') {
+            if (db_row('SELECT 1 FROM assignment_submissions WHERE assignmentId = ? LIMIT 1', [$id])) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'has_submissions']; continue; }
+            db_exec('DELETE FROM assignments WHERE id = ?', [$a['id']]); $results[] = ['id' => $id, 'ok' => true]; $done++; continue;
+        }
+        $to = ['publish' => 'published', 'draft' => 'draft', 'close' => 'closed'][$action];
+        if ($a['status'] === $to) { $results[] = ['id' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        if ($to === 'published' && trim((string)$a['instructions']) === '') { $results[] = ['id' => $id, 'ok' => false, 'error' => 'no_instructions']; continue; }
+        $patch = ['status' => $to, 'updatedAt' => now_iso()];
+        if ($to === 'published' && trim((string)$a['dueAt']) === '') $patch['dueAt'] = assignment_default_due();
+        db_update('assignments', $patch, ['id' => $a['id']]);
+        if ($to === 'published') notify_assignment_published($id, false);
+        $results[] = ['id' => $id, 'ok' => true]; $done++;
+    }
+    audit('assignment.' . $action, $g['me'], count($ids) === 1 ? $ids[0] : '', ['count' => count($ids), 'applied' => $done], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $done, 'results' => $results];
+}
+
+function notify_assignment_published(string $assignmentId, bool $alsoEmail): int {
     global $CONFIG;
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
-    if (!$a) return;
-    $sc = session_current();
-    $currentSessionId = $sc['current']['sessionId'] ?? '';
-    $members = db_all("SELECT * FROM members WHERE status='active'");
-    $targets = array_values(array_filter($members, fn($m) => assignment_matches_member($a, $m, $currentSessionId)));
-
-    $due = $a['dueAt'] ? (' Due ' . gmdate('D j M', strtotime((string)$a['dueAt']) ?: time()) . '.') : '';
+    if (!$a) return 0;
+    $targets = assignment_audience($a);
+    $due = ($t = assignment_due_ts($a)) ? (' Due ' . gmdate('D j M', $t) . '.') : '';
     foreach ($targets as $m) {
         push_notification($m['memberId'], ['kind' => 'announcement', 'title' => 'New assignment: ' . $a['title'], 'body' => 'Open your dashboard to start.' . $due, 'linkPage' => 'dashboard']);
     }
-    if ($alsoEmail) {
+    if ($alsoEmail && function_exists('email_members')) {
         email_members($targets, 'New assignment · ' . $a['title'], function ($m) use ($a, $CONFIG) {
-            $due = $a['dueAt'] ? ('<p style="margin:0;color:#b45309"><strong>Due ' . esc_html(gmdate('D j M', strtotime((string)$a['dueAt']) ?: time())) . '</strong></p>') : '';
+            $due = ($t = assignment_due_ts($a)) ? ('<p style="margin:0;color:#b45309"><strong>Due ' . esc_html(gmdate('D j M', $t)) . '</strong></p>') : '';
             return email_template([
                 'title' => 'New assignment: ' . $a['title'],
                 'intro' => 'Hi ' . (explode(' ', (string)$m['fullName'])[0] ?: 'there') . ', a new assignment is waiting for you.',
                 'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html((string)$a['instructions'])) . '</p>' . $due,
-                'ctaLabel' => 'Open your dashboard', 'ctaUrl' => ($CONFIG['app_origin'] ?? '') . '/#dashboard',
+                'ctaLabel' => 'Open your dashboard', 'ctaUrl' => ($CONFIG['app_origin'] ?? '') . '/dashboard/learn',
             ]);
         }, 300);
     }
+    return count($targets);
 }
 
-function admin_assignment_submissions(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
-    $assignmentId = (string)($p['assignmentId'] ?? '');
-    $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$assignmentId]);
-    if (!$a) return ['ok' => false, 'error' => 'not_found'];
-
-    $members = [];
-    foreach (db_all('SELECT memberId, fullName, centre FROM members') as $m) $members[$m['memberId']] = $m;
-
-    $rows = db_all('SELECT * FROM assignment_submissions WHERE assignmentId = ? ORDER BY submittedAt DESC', [$assignmentId]);
-    $subs = array_map(function ($r) use ($members) {
-        $m = $members[$r['memberId']] ?? [];
-        return [
-            'submissionId' => $r['submissionId'], 'memberId' => $r['memberId'],
-            'memberName' => $m['fullName'] ?? $r['memberId'], 'centre' => $m['centre'] ?? '',
-            'text' => $r['answerText'] ?: '', 'fileUrl' => normalize_image_url($r['fileUrl'] ?? ''),
-            'status' => $r['status'] ?: 'submitted', 'grade' => ($r['grade'] === null || $r['grade'] === '') ? null : (int)$r['grade'],
-            'feedback' => $r['feedback'] ?: '', 'submittedAt' => $r['submittedAt'] ?: '', 'gradedAt' => $r['gradedAt'] ?: '',
-        ];
-    }, $rows);
-    return ['ok' => true, 'assignment' => ['assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'points' => (int)$a['points'], 'instructions' => $a['instructions'] ?: ''], 'submissions' => $subs];
-}
-
-function assignment_grade(array $p): array {
-    global $CONFIG;
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
-    $submissionId = (string)($p['submissionId'] ?? '');
-    $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [$submissionId]);
-    if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);
-    $maxPoints = $a ? (int)$a['points'] : 0;
-
-    $grade = (int)($p['grade'] ?? 0);
-    if ($maxPoints > 0) $grade = max(0, min($maxPoints, $grade));
-    $feedback = (string)($p['feedback'] ?? '');
-
-    db_update('assignment_submissions', ['status' => 'graded', 'grade' => $grade, 'feedback' => $feedback, 'gradedBy' => $g['requester']['memberId'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
-
-    push_notification($row['memberId'], ['kind' => 'announcement', 'title' => 'Assignment graded: ' . ($a['title'] ?? ''), 'body' => 'You scored ' . $grade . ($maxPoints ? ('/' . $maxPoints) : '') . '. Tap to see feedback.', 'linkPage' => 'dashboard']);
-
-    if (!empty($p['email'])) {
-        $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$row['memberId']]);
-        if ($member && $member['email']) {
-            send_mail((string)$member['email'], 'Your assignment was graded · ' . ($a['title'] ?? ''), email_template([
-                'title' => 'Assignment graded',
-                'intro' => ($a['title'] ?? 'Your assignment') . ' has been reviewed.',
-                'bodyHtml' => '<p style="margin:0 0 8px;font-size:20px"><strong>' . $grade . ($maxPoints ? ('/' . $maxPoints) : '') . '</strong></p>' . ($feedback ? '<p style="margin:0;color:#4a5170">' . nl2br(esc_html($feedback)) . '</p>' : ''),
-                'ctaLabel' => 'See your dashboard', 'ctaUrl' => ($CONFIG['app_origin'] ?? '') . '/#dashboard',
-            ]));
-        }
-    }
-    audit('assignment.grade', $g['requester']['memberId'], $submissionId, ['grade' => $grade], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
-}
-
-/** Return a submission for revision (no lock) so the member can resubmit. */
-function assignment_return(array $p): array {
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
-    $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [(string)($p['submissionId'] ?? '')]);
-    if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    $a = db_row('SELECT title FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);
-    $feedback = (string)($p['feedback'] ?? '');
-    db_update('assignment_submissions', ['status' => 'returned', 'feedback' => $feedback, 'gradedBy' => $g['requester']['memberId'], 'gradedAt' => now_iso()], ['id' => $row['id']]);
-    push_notification($row['memberId'], ['kind' => 'announcement', 'title' => 'Revise & resubmit: ' . ($a['title'] ?? 'assignment'),
-        'body' => ($feedback !== '' ? 'Feedback: ' . $feedback : 'Your mentor asked for a revision.') . ' Tap to resubmit.', 'linkPage' => 'dashboard']);
-    audit('assignment.return', $g['requester']['memberId'], (string)$row['submissionId'], [], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
-}
+/* ── The Control Room's older op names, kept for the routes and bookmarks that call them ── */
+function admin_assignments_list(array $p): array { return staff_assignments_list($p + ['viaAdmin' => true]); }
+function admin_assignments_upsert(array $p): array { return staff_assignments_save($p + ['viaAdmin' => true]); }
+function admin_assignment_submissions(array $p): array { return staff_assignment_submissions($p + ['viaAdmin' => true]); }
+function assignment_grade(array $p): array { return staff_assignment_grade($p + ['viaAdmin' => true]); }
+function assignment_return(array $p): array { return staff_assignment_return($p + ['viaAdmin' => true]); }
