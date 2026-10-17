@@ -1765,3 +1765,25 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   audit_log, photo_assets, media_objects); unknown keeps.
 - `storage.ca_file` for a self-hosted store with a private CA (also what the
   e2e uses). Diagnostics shows *Files in the bucket*.
+
+## 2026-10-17 — Study tools at /study
+
+- `src/modules/tools/tools-core.jsx` (parser, registry `STT_TOOLS`, shell,
+  overview, flashcards) and `tools-more.jsx` (focus, typing, calculator,
+  graphs, dictionary); both in `build.js` ORDER and `index.html`. Route
+  `study` in ROUTES — NOT `/tools`, because the repository root has a real
+  `tools/` folder and a root deploy (and `php -S` in every test) serves the
+  folder instead of the SPA.
+- The calculator never evals: tokens → shunting-yard → a fixed operator and
+  function table (`sttCompile`/`sttRun`), with implied multiplication,
+  degrees/radians, `ans`, and a sentence for every error.
+- Server: migration 159 (`study_decks`, `study_cards`, `study_sessions`),
+  `domain/study-tools.php`, `api/member/tools.php` (one route, allow-listed
+  views and actions). SM-2 in `study_schedule` (pure, tested). Every op is
+  the session's own; another member's deck is `not_found`. A deck from a
+  lesson reuses the study helper's allowance (`ai.tutor.<day>`), taken first
+  and refunded on failure, and never sees the lesson's assignment.
+- The three tables are in `member_merge_policy` (MOVE) — the merge test
+  refuses any new memberId table that is not.
+- Dictionary: dictionaryapi.dev (free, no key); `.htaccess` connect-src
+  lists it. `tests/study-tools.test.js` stubs it.

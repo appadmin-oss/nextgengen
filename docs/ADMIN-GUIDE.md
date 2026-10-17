@@ -967,6 +967,26 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Study tools (/study)
+
+Members open **Learn → Study tools** in their portal (or go to `/study`). It is
+their own kit, and nothing in it is seen by staff:
+
+- **Flashcards** with spaced repetition: a card they know comes back after a
+  day, then six, then weeks; a card they miss comes back the same day. They
+  can type cards, paste many at once ("front — back", one a line), or have the
+  study helper write about twelve from one of their lessons (it uses one of the
+  day's study-helper questions, and they check the cards before saving).
+- **Focus timer**: 25-minute study blocks with breaks (or 15, 45, 50), logged,
+  so the week has a number on it and a study streak.
+- **Typing practice**: short passages on what NGG teaches, timed for speed
+  and accuracy.
+- **Scientific calculator**, **graph plotter** (up to three functions, with a
+  table of values) and **dictionary**. These three work without an account.
+
+Limits: 40 decks, 500 cards a deck. Merging two member records moves the
+study tools with everything else.
+
 ### Three years, by mastery
 
 NGG runs for three years, so a lesson's **level** carries its year: `Year 1 ·

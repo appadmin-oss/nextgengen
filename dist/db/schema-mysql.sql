@@ -3751,3 +3751,47 @@ CREATE TABLE IF NOT EXISTS media_objects (
   KEY idx_mo_status (status, createdAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (158) ON DUPLICATE KEY UPDATE version = version;
+
+-- 159: study tools — flashcard decks and cards (spaced repetition), focus and typing sessions.
+CREATE TABLE IF NOT EXISTS study_decks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  deckId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  source VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_sd_deck (deckId),
+  KEY idx_sd_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS study_cards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cardId VARCHAR(40) NOT NULL,
+  deckId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  ease DOUBLE DEFAULT 2.5,
+  intervalDays INT DEFAULT 0,
+  reps INT DEFAULT 0,
+  lapses INT DEFAULT 0,
+  dueAt VARCHAR(32) DEFAULT '',
+  reviewedAt VARCHAR(32) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_sc_card (cardId),
+  KEY idx_sc_due (memberId, deckId, dueAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS study_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  tool VARCHAR(16) NOT NULL,
+  label VARCHAR(120) DEFAULT '',
+  minutes INT DEFAULT 0,
+  wpm INT DEFAULT 0,
+  accuracy INT DEFAULT 0,
+  cards INT DEFAULT 0,
+  at VARCHAR(32) DEFAULT '',
+  day VARCHAR(10) DEFAULT '',
+  KEY idx_ss_member (memberId, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (159) ON DUPLICATE KEY UPDATE version = version;

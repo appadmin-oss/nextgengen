@@ -28767,5 +28767,80 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($keep === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keep;
 })();
 
+/* Study tools (study-tools.php): spaced repetition, decks that are mine alone, logs, and a deck from a lesson. */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-ST-A', 'fullName' => 'Study Ade', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Piano', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-ST-B', 'fullName' => 'Study Bisi', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $t = 1_800_000_000;
+    $c = ['ease' => 2.5, 'intervalDays' => 0, 'reps' => 0, 'lapses' => 0];
+    $g1 = study_schedule($c, 2, $t); $g2 = study_schedule($g1, 2, $t); $g3 = study_schedule($g2, 2, $t);
+    chk('flashcards · a card you know comes back after 1 day, then 6, then about 15 (SM-2)', $g1['intervalDays'] === 1 && $g2['intervalDays'] === 6 && $g3['intervalDays'] >= 14 && $g3['intervalDays'] <= 16);
+    $again = study_schedule($g3, 0, $t);
+    chk('flashcards · a card you miss comes back in ten minutes, starts over, and gets a little harder', $again['intervalDays'] === 0 && $again['reps'] === 0 && $again['lapses'] === 1
+        && strtotime($again['dueAt']) === $t + 600 && $again['ease'] < $g3['ease']);
+    chk('flashcards · easy goes further than good; hard less far; ease never drops below 1.3', study_schedule($g2, 3, $t)['intervalDays'] > $g3['intervalDays'] && study_schedule($g2, 1, $t)['intervalDays'] < $g3['intervalDays']
+        && study_schedule(['ease' => 1.3, 'reps' => 0, 'intervalDays' => 0, 'lapses' => 0], 0, $t)['ease'] === 1.3);
+
+    $A = ['memberId' => 'NGG-ST-A'];
+    chk('flashcards · a deck needs a name, and a half-filled card is named before anything is saved', (study_deck_save($A + ['name' => ''])['error'] ?? '') === 'name_required'
+        && (study_deck_save($A + ['name' => 'Cells', 'cards' => [['front' => 'Nucleus', 'back' => 'Holds DNA'], ['front' => 'Ribosome', 'back' => '']]])['row'] ?? -1) === 1
+        && (int)db_row("SELECT COUNT(*) n FROM study_decks WHERE memberId = 'NGG-ST-A'")['n'] === 0);
+    chk('flashcards · more than ' . STUDY_CARDS_MAX . ' cards in a deck is refused, and the cap is named', (study_deck_save($A + ['name' => 'Big', 'cards' => array_fill(0, STUDY_CARDS_MAX + 1, ['front' => 'a', 'back' => 'b'])])['max'] ?? 0) === STUDY_CARDS_MAX);
+    $s = study_deck_save($A + ['name' => 'Cells', 'cards' => [['front' => 'Nucleus', 'back' => 'Holds DNA'], ['front' => 'Mitochondria', 'back' => 'Make energy'], ['front' => '', 'back' => '']]]);
+    $deckId = $s['deckId'] ?? '';
+    chk('flashcards · a deck is saved with its filled cards (blank rows dropped), all due now', !empty($s['ok']) && $s['cards'] === 2 && study_decks($A)['decks'][0]['due'] === 2);
+    chk('flashcards · another member cannot open, review, edit or delete my deck', (study_deck(['memberId' => 'NGG-ST-B', 'deckId' => $deckId])['error'] ?? '') === 'not_found'
+        && (study_due(['memberId' => 'NGG-ST-B', 'deckId' => $deckId])['error'] ?? '') === 'not_found'
+        && (study_deck_save(['memberId' => 'NGG-ST-B', 'deckId' => $deckId, 'name' => 'Mine now'])['error'] ?? '') === 'not_found'
+        && (study_deck_delete(['memberId' => 'NGG-ST-B', 'deckId' => $deckId])['error'] ?? '') === 'not_found'
+        && study_decks(['memberId' => 'NGG-ST-B'])['decks'] === []);
+    $due = study_due($A + ['deckId' => $deckId]);
+    $card = $due['cards'][0];
+    chk('flashcards · someone else\'s card cannot be reviewed, and a grade must be 0–3', (study_review(['memberId' => 'NGG-ST-B', 'cardId' => $card['cardId'], 'grade' => 3])['error'] ?? '') === 'not_found'
+        && (study_review($A + ['cardId' => $card['cardId'], 'grade' => 7])['error'] ?? '') === 'bad_grade');
+    $rv = study_review($A + ['cardId' => $card['cardId'], 'grade' => 2]);
+    chk('flashcards · reviewed "good", a card is not due again until tomorrow', !empty($rv['ok']) && $rv['intervalDays'] === 1 && count(study_due($A + ['deckId' => $deckId])['cards']) === 1);
+    $full = study_deck($A + ['deckId' => $deckId]);
+    $kept = array_values(array_filter($full['cards'], fn($x) => $x['cardId'] === $card['cardId']))[0];
+    study_deck_save($A + ['deckId' => $deckId, 'name' => 'Cells 2', 'cards' => [['cardId' => $kept['cardId'], 'front' => 'Nucleus (edited)', 'back' => 'Holds DNA']]]);
+    $after = study_deck($A + ['deckId' => $deckId]);
+    chk('flashcards · editing keeps a card\'s progress; a card left out is removed', count($after['cards']) === 1 && $after['cards'][0]['front'] === 'Nucleus (edited)' && $after['cards'][0]['reps'] === 1 && $after['deck']['name'] === 'Cells 2');
+    chk('flashcards · pasted cards: "front — back", "front :: back", tab and "front: back" all split once', count(study_parse_lines("Cell — the unit of life\nAtom :: smallest part\nH2O\twater\nKe: a term: with colon\nno separator here")) === 4
+        && study_parse_lines("Ke: a term: with colon")[0]['back'] === 'a term: with colon');
+
+    chk('logs · a focus block and a typing run are logged; nonsense is refused', !empty(study_log($A + ['tool' => 'focus', 'minutes' => 25, 'label' => 'Maths']))
+        && !empty(study_log($A + ['tool' => 'typing', 'wpm' => 42, 'accuracy' => 97])) && (study_log($A + ['tool' => 'chess'])['error'] ?? '') === 'bad_tool'
+        && (study_log($A + ['tool' => 'focus', 'minutes' => 0])['error'] ?? '') === 'too_short');
+    $yday = gmdate('Y-m-d', time() + 3600 - 86400);
+    db_insert('study_sessions', ['memberId' => 'NGG-ST-A', 'tool' => 'focus', 'minutes' => 50, 'at' => $now, 'day' => $yday]);
+    $st = study_stats($A);
+    chk('logs · the week counts focus minutes by day, the streak counts days in a row, typing keeps the best', $st['focusWeek'] === 75 && $st['streak'] === 2 && $st['typing']['best'] === 42
+        && count($st['week']) === 7 && end($st['week'])['minutes'] === 25);
+    chk('logs · another member sees none of it', study_stats(['memberId' => 'NGG-ST-B'])['focusWeek'] === 0);
+
+    // A deck from one of my lessons, on the study helper's allowance.
+    db_insert('curriculum_units', ['unitId' => 'CU-ST-1', 'course' => 'Piano', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Intervals', 'status' => 'published', 'version' => 1,
+        'body' => "## Learn\n\nA tone is two semitones.\n\n## This week's assignment\n\nSECRET-TASK", 'objectives' => '[]', 'createdAt' => $now]);
+    $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $sys = ''; $GLOBALS['__ai_mock'] = function ($pr, $system, $turns) use (&$sys) { $sys = $system; return ['ok' => true, 'provider' => 'mock', 'text' => "Tone :: Two semitones\nSemitone :: The very next key\nnot a card"]; };
+    db_exec("DELETE FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey LIKE 'ai.tutor.%'");
+    $ai = study_cards_ai($A + ['unitId' => 'CU-ST-1']);
+    chk('flashcards · the study helper writes cards from MY lesson — not its assignment — and saves nothing yet', !empty($ai['ok']) && count($ai['cards']) === 2 && $ai['cards'][0]['back'] === 'Two semitones'
+        && str_contains($sys, 'two semitones') && !str_contains($sys, 'SECRET-TASK') && (int)db_row("SELECT COUNT(*) n FROM study_decks WHERE memberId = 'NGG-ST-A' AND name = 'Intervals'")['n'] === 0
+        && $ai['left'] === CURR_TUTOR_PER_DAY - 1);
+    $GLOBALS['__ai_mock'] = fn($pr, $system, $turns) => ['ok' => false, 'error' => 'ai_down'];
+    $before = (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'];
+    chk('flashcards · a failed attempt gives the allowance back', empty(study_cards_ai($A + ['unitId' => 'CU-ST-1'])['ok'])
+        && (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'] === $before);
+    chk('flashcards · a lesson outside my course is refused', (study_cards_ai($A + ['unitId' => 'CU-TU-X'])['error'] ?? '') === 'not_found');
+    unset($GLOBALS['__ai_mock']);
+    if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
+    chk('flashcards · deleting a deck deletes its cards', !empty(study_deck_delete($A + ['deckId' => $deckId])['ok']) && (int)db_row("SELECT COUNT(*) n FROM study_cards WHERE deckId = ?", [$deckId])['n'] === 0);
+    db_exec("DELETE FROM study_sessions WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM study_decks WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM study_cards WHERE memberId LIKE 'NGG-ST-%'");
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'CU-ST-1'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM member_state WHERE memberId LIKE 'NGG-ST-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

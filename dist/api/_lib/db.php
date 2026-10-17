@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 158;
+const NGG_SCHEMA_TARGET = 159;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4746,6 +4746,52 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_mo_key ON media_objects(storeKey);
             CREATE INDEX IF NOT EXISTS idx_mo_sha ON media_objects(sha256, status);
             CREATE INDEX IF NOT EXISTS idx_mo_status ON media_objects(status, createdAt);
+        ",
+        /* 159 — Study tools (domain/study-tools.php): a member's flashcard decks
+         * and cards, scheduled by spaced repetition, and the focus and typing
+         * sessions they log. Theirs alone: no other member sees them. */
+        159 => "
+            CREATE TABLE IF NOT EXISTS study_decks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              deckId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              name TEXT NOT NULL,
+              source TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sd_deck ON study_decks(deckId);
+            CREATE INDEX IF NOT EXISTS idx_sd_member ON study_decks(memberId);
+            CREATE TABLE IF NOT EXISTS study_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              cardId TEXT NOT NULL,
+              deckId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              front TEXT NOT NULL,
+              back TEXT NOT NULL,
+              ease REAL DEFAULT 2.5,
+              intervalDays INTEGER DEFAULT 0,
+              reps INTEGER DEFAULT 0,
+              lapses INTEGER DEFAULT 0,
+              dueAt TEXT DEFAULT '',
+              reviewedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sc_card ON study_cards(cardId);
+            CREATE INDEX IF NOT EXISTS idx_sc_due ON study_cards(memberId, deckId, dueAt);
+            CREATE TABLE IF NOT EXISTS study_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              tool TEXT NOT NULL,
+              label TEXT DEFAULT '',
+              minutes INTEGER DEFAULT 0,
+              wpm INTEGER DEFAULT 0,
+              accuracy INTEGER DEFAULT 0,
+              cards INTEGER DEFAULT 0,
+              at TEXT DEFAULT '',
+              day TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ss_member ON study_sessions(memberId, day);
         ",
     ];
 

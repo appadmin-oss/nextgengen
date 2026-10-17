@@ -869,6 +869,18 @@
       curriculumUpload:   (file) => { const fd = new FormData(); fd.append('file', file); return request('/member/curriculum.php', { body: fd, timeout: 180000 }); },
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
+      tools: {
+        decks:   () => request('/member/tools.php?view=decks'),
+        deck:    (deckId) => request('/member/tools.php' + qs({ view: 'deck', deckId })),
+        due:     (deckId) => request('/member/tools.php' + qs({ view: 'due', deckId })),
+        stats:   () => request('/member/tools.php?view=stats'),
+        lessons: () => request('/member/tools.php?view=lessons'),
+        save:    (deck) => request('/member/tools.php', { body: Object.assign({ action: 'save' }, deck) }),
+        remove:  (deckId) => request('/member/tools.php', { body: { action: 'delete', deckId } }),
+        review:  (cardId, grade) => request('/member/tools.php', { body: { action: 'review', cardId, grade } }),
+        log:     (entry) => request('/member/tools.php', { body: Object.assign({ action: 'log' }, entry) }),
+        aiCards: (unitId) => request('/member/tools.php', { body: { action: 'ai', unitId } }),
+      },
       momentum:     () => request('/member/momentum.php'),
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
