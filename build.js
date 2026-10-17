@@ -99,6 +99,7 @@ const ORDER = [
   'src/modules/dc/dc-runtime.jsx',
   'src/modules/mentor15/mp15-view.jsx',
   'src/modules/mentor15/mp15-formation.jsx',
+  'src/modules/mentor15/mp15-class.jsx',
   'src/modules/mentor15/mp15-app.jsx',
   'src/modules/instructor6/ip6-view.jsx',
   'src/modules/instructor6/ip6-app.jsx',

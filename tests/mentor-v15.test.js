@@ -36,7 +36,7 @@ function loadChromium() {
   return null;
 }
 let server, browser, passed = 0, failed = 0;
-const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+const chk = (m, c, x) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m + (x ? ' — ' + x : '')); } };
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
   try { fs.unlinkSync(CFG); } catch (_) {}
@@ -240,18 +240,33 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /SG-\d{6}/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     chk('Report a concern: a safeguarding case with the server’s SG reference', q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-MS-K1'")['c']`) === 1);
     chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
-    // Stars & results is a screen of the portal, not a page outside it
-    await mt.getByRole('button', { name: 'Me', exact: true }).first().click();
-    await mt.locator('.m15-app button', { hasText: 'Stars & results' }).first().click();
-    await mt.waitForSelector('main .m15x-classic [role="tab"]', { timeout: 30000 });
-    chk('Stars & results sits right under the portal’s tabs (no dead gap)', await mt.evaluate(() => { const t = document.querySelector('main nav[aria-label]'), p = document.querySelector('main .m15x-classic'); return !!(t && p) && p.getBoundingClientRect().top - t.getBoundingClientRect().bottom <= 32; }));
-    chk('Stars & results opens inside the portal, its nav still on screen', await mt.isVisible('main .m15x-classic') && new URL(mt.url()).pathname === '/mentor/class' && /This week/.test(await mt.innerText('.m15-app')));
+    // Class: stars, presence, school results and curriculum are the portal's own screens — no embedded portal.
+    await mt.locator('.m15-app button', { hasText: /^Class$/ }).first().click();
+    await mt.waitForSelector('main .m15c table', { timeout: 30000 });
+    chk('Class › Stars is the portal’s own screen at /mentor/class, with no embedded old portal',
+      new URL(mt.url()).pathname === '/mentor/class' && !(await mt.$('.m15x-classic')) && /This week/.test(await mt.innerText('.m15-app')) && /Stars and presence/.test(await mt.innerText('main')));
+    const starRow = mt.locator('main .m15c tr', { hasText: 'Daniel Okafor' });
+    await starRow.locator('button', { hasText: 'Give stars' }).click();
+    await mt.waitForSelector('.m15c-drawer', { timeout: 10000 });
+    await mt.click('.m15c-drawer [role="radio"]:has-text("★★")');
+    await mt.click('.m15c-drawer button:has-text("Give 2 stars")');
+    await mt.waitForSelector('.m15c-drawer', { state: 'detached', timeout: 15000 });
+    chk('Give stars: a drawer, two stars, saved on the server', Number(q(`(int)(db_row("SELECT stars FROM member_stars WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['stars'] ?? 0)`)) === 2
+      && /★★/.test(await starRow.innerText()));
+    await starRow.locator('button', { hasText: 'Rate presence' }).click();
+    await mt.waitForSelector('.m15c-drawer', { timeout: 10000 });
+    await mt.click('.m15c-drawer [aria-labelledby="m15c-verbal"] [role="radio"]:has-text("5")');
+    await mt.click('.m15c-drawer button:has-text("Save · 11 of 15")');
+    await mt.waitForSelector('.m15c-drawer', { state: 'detached', timeout: 15000 });
+    chk('Presence (verbal, vocal, visual) is saved for the week and shown as a total', /11 of 15/.test(await starRow.innerText())
+      && Number(q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`)) === 5);
+    await mt.keyboard.press('Escape');
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
-    // The old email link lands on /mentor/class with its tab, inside the portal
+    // The old email link (?tab=results) lands on Class › School results, inside the portal
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
-    await mt.waitForSelector('main .m15x-classic [role="tab"]', { timeout: 60000 });
-    chk('/mentor?tab=results lands on /mentor/class, inside the portal', new URL(mt.url()).pathname === '/mentor/class' && await mt.isVisible('.m15-app'));
-    chk('the school results tab is open', await mt.isVisible('[role="tab"][aria-selected="true"]:has-text("School results")'));
+    await mt.waitForFunction(() => /Waiting for you/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 60000 });
+    chk('/mentor?tab=results lands on Class › School results at /mentor/class, inside the portal',
+      new URL(mt.url()).pathname === '/mentor/class' && /tab=results/.test(mt.url()) && await mt.isVisible('.m15-app') && !(await mt.$('.m15x-classic')));
     await mt.goto(BASE + '/mentor/summer', { waitUntil: 'domcontentloaded' });
     await mt.waitForFunction(() => /no class|isn’t/i.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     chk('an NGG-only mentor is refused the Summer School portal', !/Peace Summer/.test(await mt.innerText('body')) && q(`backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MS-M1', 'programme' => 'summer'])['error'] ?? ''`) === 'not_this_programme');
@@ -284,11 +299,13 @@ async function as(memberId, admin, viewport) {
     await ad.click('nav >> text=Mentees');
     await ad.waitForFunction(() => /Mariam Yusuf/.test(document.querySelector('main').innerText), null, { timeout: 60000 }).catch(async e => { console.error('DEBUG ngg', ad.errs.join('\n'), (await ad.innerText('main')).slice(0, 800), JSON.stringify(q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-ADM'])`)).slice(0, 600)); throw e; });
     chk('a coordinator with no mentor record has no Academy to fail on (no tab, no request)', !(await ad.innerText('.m15-app')).includes('Academy') && !ad.bad400);
-    await ad.getByRole('button', { name: 'Me', exact: true }).first().click();
-    await ad.locator('.m15-app button', { hasText: 'Stars & results' }).first().click();
-    await ad.waitForSelector('main .m15x-classic', { timeout: 30000 });
-    await ad.waitForFunction(() => /students|Pick a centre/.test(document.querySelector('main .m15x-classic').innerText), null, { timeout: 30000 });
-    chk('a coordinator’s class tools open on the portal’s centre, not a second “Pick a centre”', !/Pick a centre/.test(await ad.innerText('main .m15x-classic')) && /Egbeda/.test(await ad.innerText('main .m15x-classic')));
+    const rosterCentre = ad.waitForRequest(r => /\/member\/mentor\.php\?centre=/.test(r.url()), { timeout: 30000 }).catch(() => null);
+    await ad.locator('.m15-app button', { hasText: /^Class$/ }).first().click();
+    await ad.waitForSelector('main .m15c .m15c-card', { timeout: 30000 });
+    await ad.waitForFunction(() => !document.querySelector('main .m15c [role="status"]'), null, { timeout: 30000 }).catch(() => {});
+    const rq = await rosterCentre;
+    chk('a coordinator’s Class screens open on the portal’s centre, with no second “Pick a centre” and no error',
+      !!rq && /centre=Egbeda/.test(rq.url()) && !/Pick a centre|Couldn't load/.test(await ad.innerText('main')), (rq ? rq.url() : 'no roster request') + ' | ' + (await ad.innerText('main')).slice(0, 300).replace(/\n/g, ' '));
     await ad.click('nav >> text=Mentees');
     chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
     // Control Room → Learning → Saturday formation: edit a block, every portal reads it
@@ -306,7 +323,7 @@ async function as(memberId, admin, viewport) {
 
     // ── A member: their dashboard carries their part of the Saturday ──
     const me = await as('NGG-MS-K1', false);
-    // Member Portal v9 keeps the Saturday on its own screen (/dashboard/saturday), not on Today.
+    // Member Portal v9 keeps the Saturday on its own screen (/dashboard/saturday).
     await me.goto(BASE + '/dashboard/saturday', { waitUntil: 'domcontentloaded' });
     await waitForBoot(me);
     await me.waitForSelector('.sf-day', { timeout: 60000 }).catch(() => {});
