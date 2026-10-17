@@ -86,7 +86,8 @@ function auth_find_member(string $identifier, string $ip, string $via, string $d
         audit('login.miss.locked', null, $identifier, ['via' => $via], $ip);
         return ['ok' => false, 'error' => 'too_many_misses'];
     }
-    $member = db_row("SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? OR (displayId <> '' AND lower(displayId) = ?) LIMIT 1", [$identifier, $identifier, $identifier]);
+    // trim() on the stored side too: a record typed with a trailing space is still that person.
+    $member = db_row("SELECT * FROM members WHERE lower(trim(memberId)) = ? OR lower(trim(email)) = ? OR (displayId <> '' AND lower(trim(displayId)) = ?) LIMIT 1", [$identifier, $identifier, $identifier]);
     if ($member) return ['ok' => true, 'member' => $member];
     /* Not a member account: the Volunteer Vanguard. Instructors, mentors and
      * coordinators hold a volunteers row (or only a mentors row), and this
@@ -100,6 +101,29 @@ function auth_find_member(string $identifier, string $ip, string $via, string $d
     $paused = ($countMiss || $honest) ? attempt_fail('auth.miss', $ip, AUTH_MISS_MAX, AUTH_MISS_LOCK) : false;
     audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier, 'via' => $via, 'told' => $honest, 'paused' => $paused], $ip);
     return ['ok' => true, 'member' => null, 'honest' => $honest];
+}
+
+/**
+ * What a person typed at the door, the way the records hold it. Phones and
+ * copy-paste bring their own characters: a trailing space, a non-breaking
+ * space, a zero-width joiner, an en dash from a card printed in Word
+ * ("VOL–INS–26–001"), spaces inside an ID ("VOL INS 26 001"), a stray full
+ * stop after an email, a mailto: prefix. Each of those once read as "no
+ * account". Lowercased, because every lookup compares lowercased.
+ */
+function auth_clean_identifier(string $raw): string {
+    $s = preg_replace('/[\x{200B}-\x{200D}\x{2060}\x{FEFF}]/u', '', $raw) ?? $raw;
+    $s = preg_replace('/[\x{00A0}\x{2007}\x{202F}]/u', ' ', $s) ?? $s;
+    $s = preg_replace('/[\x{2010}-\x{2015}\x{2212}]/u', '-', $s) ?? $s;
+    $s = trim(mb_strtolower($s));
+    $s = preg_replace('/^mailto:/', '', $s) ?? $s;
+    if (strpos($s, '@') !== false) {
+        $s = preg_replace('/\s+/', '', $s) ?? $s;
+        return rtrim($s, '.,;');
+    }
+    // An ID: spaces, underscores and full stops between its parts are dashes; repeated dashes are one.
+    $s = preg_replace('/[\s_.]+/', '-', $s) ?? $s;
+    return trim(preg_replace('/-{2,}/', '-', $s) ?? $s, '-');
 }
 
 /** Any identifier the sign-in door accepts: an email, or an ID as it is
@@ -125,13 +149,28 @@ function auth_identifier_ok(string $s): bool {
 function auth_find_volunteer(string $identifier): ?array {
     $id = strtolower(trim($identifier));
     if ($id === '') return null;
+    // Active, whatever case or spacing the status was saved with.
+    $live = "lower(trim(COALESCE(status,''))) = 'active'";
     if (strpos($id, '@') === false) {
-        $v = db_row("SELECT * FROM volunteers WHERE lower(volunteerId) = ? AND status = 'active' LIMIT 1", [$id]);
+        $v = db_row("SELECT * FROM volunteers WHERE lower(trim(volunteerId)) = ? AND $live LIMIT 1", [$id]);
         return $v ? ['kind' => 'volunteer', 'id' => (string)$v['volunteerId'], 'row' => $v] : null;
     }
-    $rows = db_all("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active' ORDER BY id LIMIT 2", [$id]);
+    $rows = db_all("SELECT * FROM volunteers WHERE lower(trim(email)) = ? AND $live ORDER BY id", [$id]);
     if (count($rows) === 1) return ['kind' => 'volunteer', 'id' => (string)$rows[0]['volunteerId'], 'row' => $rows[0]];
-    if (count($rows) > 1) return null;
+    /* Two active records on one email is nearly always one person twice — a
+     * Summer School volunteer carried into NGG keeps the old card, and the
+     * conversion leaves both rows. Answering nobody told that person "there is
+     * no account". The code goes to the address they typed either way, so
+     * pick the record they work under now: an NGG one over a Summer one, then
+     * the one with an instructor/mentor role, then the newest. */
+    if (count($rows) > 1) {
+        usort($rows, static function ($a, $b) {
+            $score = static fn($r) => (strtolower((string)($r['programme'] ?? '')) === 'ngg' ? 4 : 0)
+                + (in_array(strtolower((string)($r['role'] ?? '')), ['instructor', 'mentor', 'coordinator', 'lead'], true) ? 2 : 0);
+            return [$score($b), (string)($b['updatedAt'] ?? $b['createdAt'] ?? ''), (int)$b['id']] <=> [$score($a), (string)($a['updatedAt'] ?? $a['createdAt'] ?? ''), (int)$a['id']];
+        });
+        return ['kind' => 'volunteer', 'id' => (string)$rows[0]['volunteerId'], 'row' => $rows[0], 'shared' => count($rows)];
+    }
     $m = function_exists('mentor_rows_for_email') ? mentor_rows_for_email($id) : [];
     if (count($m) !== 1) return null;
     // Bound to a member account: that account is the door, not this one.
@@ -151,7 +190,7 @@ function auth_find_volunteer(string $identifier): ?array {
  * nor a volunteer id had no identity anything could resolve.
  */
 function auth_staff_principal(string $id): ?array {
-    $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$id]);
+    $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND lower(trim(COALESCE(status,''))) = 'active' LIMIT 1", [$id]);
     if ($v) return $v;
     $m = db_row("SELECT * FROM mentors WHERE mentorId = ? AND status = 'active' LIMIT 1", [$id]);
     if (!$m || trim((string)($m['memberId'] ?? '')) !== '') return null;
@@ -214,7 +253,7 @@ function auth_codes_last_hour(string $memberId, string $purpose): int {
 }
 
 function auth_gateway(array $p): array {
-    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $identifier = auth_clean_identifier((string)($p['identifier'] ?? ''));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
     $found = auth_find_member($identifier, (string)($p['ip'] ?? ''), 'gateway', (string)($p['device'] ?? ''), false);
     if (empty($found['ok'])) return $found;
@@ -247,7 +286,7 @@ function auth_password_only(?array $member): bool {
 }
 
 function auth_request(array $p): array {
-    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $identifier = auth_clean_identifier((string)($p['identifier'] ?? ''));
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 
@@ -322,12 +361,12 @@ function auth_request(array $p): array {
  * Session issuance + CSRF happen at the route (like auth.verify).
  */
 function auth_login(array $p): array {
-    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $identifier = auth_clean_identifier((string)($p['identifier'] ?? ''));
     $password = (string)($p['password'] ?? '');
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '' || $password === '') return ['ok' => false, 'error' => 'missing_credentials'];
 
-    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $member = db_row('SELECT * FROM members WHERE lower(trim(memberId)) = ? OR lower(trim(email)) = ? LIMIT 1', [$identifier, $identifier]);
     // Uniform failure so we never reveal which accounts exist or have passwords.
     if (!$member || empty($member['passwordHash'])) {
         // Spend a hash cycle to keep timing roughly constant.
@@ -409,7 +448,7 @@ function auth_resolve_member_id(string $idOrEmail): string {
         $st = auth_find_volunteer($v);
         return $st ? (string)$st['id'] : $v;
     }
-    $m = db_row('SELECT memberId FROM members WHERE lower(email) = ? ORDER BY id LIMIT 1', [$lv]);
+    $m = db_row('SELECT memberId FROM members WHERE lower(trim(email)) = ? ORDER BY id LIMIT 1', [$lv]);
     if ($m) return (string)$m['memberId'];
     $st = auth_find_volunteer($v);
     return $st ? (string)$st['id'] : $v;
@@ -494,7 +533,7 @@ function auth_verify(array $p): array {
  * Unknown/suspended accounts answer identically so existence never leaks.
  */
 function auth_reset_request(array $p): array {
-    $identifier = strtolower(trim((string)($p['identifier'] ?? '')));
+    $identifier = auth_clean_identifier((string)($p['identifier'] ?? ''));
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
 

@@ -12,8 +12,7 @@ if (bot_trap_tripped($body)) {
     json_error('request_failed', 400);
 }
 v_require($body, ['identifier']);
-$identifier = v_safe_text($body['identifier'], 120);
-$identifier = trim($identifier);
+$identifier = auth_clean_identifier(v_safe_text($body['identifier'], 160));
 if (strlen($identifier) < 3) json_error('identifier_too_short', 422);
 // An email, or any ID as printed on an account or a card (auth_identifier_ok).
 if (!auth_identifier_ok($identifier)) json_error('bad_identifier_format', 422);

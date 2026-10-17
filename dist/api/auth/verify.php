@@ -7,7 +7,7 @@ rate_limit_check('auth.verify');
 
 $body = read_json_body();
 $token = trim((string)($body['token'] ?? ''));
-$memberId = trim((string)($body['memberId'] ?? ''));
+$memberId = auth_clean_identifier((string)($body['memberId'] ?? ''));
 $otp = trim((string)($body['otp'] ?? ''));
 
 // Either a token (magic link) or memberId+otp must be present.

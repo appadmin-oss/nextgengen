@@ -15,7 +15,7 @@ if (bot_trap_tripped($body)) {
     audit('bot.trap', null, 'login', [], client_ip());
     json_error('request_failed', 400);
 }
-$identifier = trim((string)($body['identifier'] ?? ''));
+$identifier = auth_clean_identifier((string)($body['identifier'] ?? ''));
 $password   = (string)($body['password'] ?? '');
 if ($identifier === '' || $password === '') {
     json_error('missing_credentials', 422);

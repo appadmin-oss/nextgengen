@@ -362,7 +362,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.gateway(identifier.trim(), hp);
+      const r = await NGGApi.auth.gateway(authTidyId(identifier), hp);
       const m = r.methods || [];
       setMethods(m);
       if (m.includes("password")) { setStage("password"); }
@@ -378,7 +378,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (e) e.preventDefault();
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.login(identifier.trim(), password, remember, hp);
+      const r = await NGGApi.auth.login(authTidyId(identifier), password, remember, hp);
       onVerified(r.member, r.mfa);
     } catch (e) {
       const code = e.code || e.message;
@@ -394,7 +394,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   };
 
   const requestLinkInner = async () => {
-    const r = await NGGApi.auth.request(identifier.trim(), hp);
+    const r = await NGGApi.auth.request(authTidyId(identifier), hp);
     setMasked(r.masked || "");
     setDeliveryOk(r.delivery !== false);
     setSent(true);
@@ -425,7 +425,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (identifier.trim().length < 3) { setErr("Enter your email or member ID first."); return; }
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.resetRequest(identifier.trim(), hp);
+      const r = await NGGApi.auth.resetRequest(authTidyId(identifier), hp);
       setMasked(r.masked || "");
       setSent(true);
       setDeliveryOk(r.delivery !== false);
@@ -444,7 +444,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     try {
       const creds = resetToken
         ? { token: resetToken, password: newPw }
-        : { memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), password: newPw };
+        : { memberId: authTidyId(identifier), otp: otp.replace(/\s+/g, ""), password: newPw };
       const r = await NGGApi.auth.resetConfirm(creds);
       onVerified(r.member, r.mfa);
     } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
@@ -457,7 +457,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     if (busy) return;
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: String(code || otp).replace(/\s+/g, ""), remember });
+      const r = await NGGApi.auth.verify({ memberId: authTidyId(identifier), otp: String(code || otp).replace(/\s+/g, ""), remember });
       onVerified(r.member, r.mfa);
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
@@ -550,7 +550,9 @@ function SignInModal({ seed, onClose, onVerified }) {
             </div>
             <label className="signin-label" htmlFor="signin-idp">Email, Member ID or card ID</label>
             <input id="signin-idp" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
-              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}/>
+              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}
+              onBlur={() => { const t = authTidyId(identifier); if (t && t !== identifier.trim().toLowerCase()) setIdentifier(t); }} aria-describedby="signin-idp-hint"/>
+            <AuthIdHint value={identifier} onUse={(v) => { setErr(""); setIdentifier(v); }}/>
             {fieldErr}
             {submit("Continue", identifier.trim().length < 3)}
             <div className="signin-alts">
@@ -679,6 +681,36 @@ function SignInCode({ id, labelledBy, value, onChange, onComplete, bad, autoFocu
       ))}
     </div>
   );
+}
+
+/* What the person typed, the way the server will read it (auth_clean_identifier):
+   no invisible characters, dashes for the en dashes and spaces a printed card
+   or a phone keyboard brings, no trailing full stop on an email. */
+function authTidyId(raw) {
+  let s = String(raw || "").replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/[\u00A0\u2007\u202F]/g, " ").replace(/[\u2010-\u2015\u2212]/g, "-").trim().toLowerCase().replace(/^mailto:/, "");
+  if (s.indexOf("@") !== -1) return s.replace(/\s+/g, "").replace(/[.,;]+$/, "");
+  return s.replace(/[\s_.]+/g, "-").replace(/-{2,}/g, "-").replace(/^-+|-+$/g, "");
+}
+/* Common slips in email domains, offered as one tap — never applied silently. */
+const AUTH_DOMAIN_FIX = { "gmial.com": "gmail.com", "gmai.com": "gmail.com", "gamil.com": "gmail.com", "gmail.co": "gmail.com", "gmail.con": "gmail.com", "gmail.cm": "gmail.com",
+  "gmaill.com": "gmail.com", "gnail.com": "gmail.com", "yahoo.con": "yahoo.com", "yaho.com": "yahoo.com", "yahooo.com": "yahoo.com", "hotmial.com": "hotmail.com", "hotmail.con": "hotmail.com",
+  "outlok.com": "outlook.com", "outlook.con": "outlook.com", "icloud.con": "icloud.com", "yahoo.co": "yahoo.com" };
+function authIdIssue(raw) {
+  const v = authTidyId(raw);
+  if (v.length < 3) return null;
+  if (v.indexOf("@") !== -1) {
+    const [user, dom] = [v.slice(0, v.lastIndexOf("@")), v.slice(v.lastIndexOf("@") + 1)];
+    if (!user || !dom || dom.indexOf(".") === -1) return { msg: "An email needs a name, an @ and a domain, like ada@gmail.com." };
+    if (AUTH_DOMAIN_FIX[dom]) return { msg: "Did you mean", fix: user + "@" + AUTH_DOMAIN_FIX[dom] };
+    return null;
+  }
+  if (!/^[a-z0-9]{2,8}(-[a-z0-9]{1,8}){1,3}$/.test(v)) return { msg: "IDs look like NGG-2025-0042, 026-014 or VOL-INS-26-001 — letters and numbers with dashes." };
+  return null;
+}
+function AuthIdHint({ value, onUse }) {
+  const issue = authIdIssue(value);
+  if (!issue) return <span id="signin-idp-hint" className="signin-hint" aria-live="polite"></span>;
+  return <span id="signin-idp-hint" className="signin-hint is-warn" aria-live="polite">{issue.msg}{issue.fix ? <> <button type="button" className="signin-link" onClick={() => onUse(issue.fix)}>{issue.fix}</button>?</> : null}</span>;
 }
 
 function humanizeAuthError(code) {

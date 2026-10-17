@@ -3350,6 +3350,21 @@ chk('sms: a textbee refusal (no device, 429) falls through to Termii', (function
     return !empty($r['ok']) && $r['provider'] === 'termii';
 })());
 
+// ── The sign-in door reads what people actually type ──
+chk('sign-in: identifiers are cleaned the way phones and printed cards bring them', auth_clean_identifier(" Ada.Vol@Example.org. ") === 'ada.vol@example.org'
+    && auth_clean_identifier("VOL–INS–26–001") === 'vol-ins-26-001' && auth_clean_identifier("VOL INS 26 001") === 'vol-ins-26-001'
+    && auth_clean_identifier("\u{200B}ngg-2025-0042\u{00A0}") === 'ngg-2025-0042' && auth_clean_identifier('mailto:a@b.co') === 'a@b.co');
+(function () {
+    $now = now_iso();
+    db_conn()->exec("INSERT INTO volunteers (volunteerId, fullName, email, role, status, programme, createdAt) VALUES ('VOL-SUM-25-907','Ada Vol',' Ada.Vol9@Example.org ','facilitator','active','summer','2025-07-01T00:00:00Z')");
+    db_conn()->exec("INSERT INTO volunteers (volunteerId, fullName, email, role, status, programme, createdAt) VALUES ('VOL-INS-26-901','Ada Vol','ada.vol9@example.org','instructor','Active','ngg','2026-09-01T00:00:00Z')");
+    $f = auth_find_volunteer('ada.vol9@example.org');
+    chk('sign-in: a volunteer saved with spaces and capitals is found by their email', $f !== null);
+    chk('sign-in: one person on two records (a Summer card carried into NGG) signs in as the NGG instructor, not "no account"', ($f['id'] ?? '') === 'VOL-INS-26-901');
+    chk('sign-in: a status saved as "Active" counts as active', auth_find_volunteer('vol-ins-26-901') !== null);
+    db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-SUM-25-907','VOL-INS-26-901')");
+})();
+
 // ── Registration stack: forms → gate → parent verification → QR bound ──
 chk('form: live def seeds with locked system fields', (function () {
     $f = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099']);

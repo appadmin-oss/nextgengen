@@ -671,7 +671,8 @@ function admin_volunteer_update(array $p): array {
             : substr(trim((string)$d['photoUrl']), 0, 512);
     }
     if (array_key_exists('email', $d)) {
-        $em = trim((string)$d['email']);
+        // Stored the way the sign-in door compares it: no spaces, lower case.
+        $em = strtolower(preg_replace('/\s+/', '', (string)$d['email']) ?? '');
         if ($em === '' || !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
         $row['email'] = substr($em, 0, 160);
     }
@@ -832,7 +833,7 @@ function admin_volunteer_approve(array $p): array {
     // that resolves to a nonexistent profile (the "/q link shows no ID" bug).
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'applicationId' => $id,
-        'fullName' => (string)$a['name'], 'email' => (string)$a['email'], 'phone' => (string)($a['phone'] ?? ''),
+        'fullName' => (string)$a['name'], 'email' => strtolower(trim((string)$a['email'])), 'phone' => (string)($a['phone'] ?? ''),
         'firstName' => (string)($a['firstName'] ?? ''), 'lastName' => (string)($a['lastName'] ?? ''),
         'otherName' => (string)($a['otherName'] ?? ''), 'dob' => (string)($a['dob'] ?? ''),
         'sex' => (string)($a['sex'] ?? ''),
@@ -925,7 +926,7 @@ function admin_member_promote_ngv(array $p): array {
 
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'memberId' => $memberId, 'applicationId' => null,
-        'fullName' => (string)$m['fullName'], 'email' => (string)($m['email'] ?? ''), 'phone' => (string)($m['phone'] ?? ''),
+        'fullName' => (string)$m['fullName'], 'email' => strtolower(trim((string)($m['email'] ?? ''))), 'phone' => (string)($m['phone'] ?? ''),
         'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
         'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),

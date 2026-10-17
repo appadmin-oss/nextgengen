@@ -17,7 +17,7 @@ if (bot_trap_tripped($body)) {
     json_error('request_failed', 400);
 }
 v_require($body, ['identifier']);
-$identifier = trim(v_safe_text($body['identifier'], 120));
+$identifier = auth_clean_identifier(v_safe_text($body['identifier'], 160));
 if (strlen($identifier) < 3) json_error('identifier_too_short', 422);
 
 $res = gs_call('auth.resetRequest', [

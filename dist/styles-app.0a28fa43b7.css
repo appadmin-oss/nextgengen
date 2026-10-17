@@ -598,6 +598,10 @@ body.cm-app .fab-top { display: none; }
 .signin-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 500; color: var(--cr-text); }
 .signin-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; }
 .signin-label-row .signin-label { margin-bottom: 6px; }
+.signin-hint { display: block; min-height: 0; margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--cr-text); }
+.signin-hint:empty { margin: 0; }
+.signin-hint.is-warn { color: #7a5600; }
+.signin-hint .signin-link { font-size: 12.5px; padding: 0; }
 .signin-input {
   width: 100%; height: 44px; padding: 0 14px;
   border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); background: var(--cr-bg);

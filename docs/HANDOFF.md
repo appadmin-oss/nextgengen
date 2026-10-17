@@ -1655,3 +1655,12 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   `coach`, `CURR_TUTOR_PER_DAY` 20, counted under `ai.tutor.<date>`, a key
   `member_state_set` refuses). It is shown the lesson without its assignment,
   and distress is answered with people, not the lesson.
+- **Volunteer sign-in** (migration 156): emails saved with spaces or capitals,
+  a status saved as "Active", and one person on two active volunteer records
+  (a Summer card carried into NGG) each made the email door answer "no
+  account". Lookups now compare `lower(trim())` on both sides; duplicates
+  resolve to the NGG / instructor / newest record; 156 cleans stored emails
+  (MySQL via `NGG_MYSQL_ROW_FIXUPS`). `auth_clean_identifier` (and the client's
+  `authTidyId`) remove invisible characters, en dashes, spaces in IDs and a
+  trailing full stop; the sign-in field offers one-tap fixes for common email
+  domain slips (`AuthIdHint`).

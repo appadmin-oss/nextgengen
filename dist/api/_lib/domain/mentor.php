@@ -87,7 +87,7 @@ function mentor_admin_programmes(array $caps): array {
 function mentor_rows_for_email(string $email, string $exceptMentorId = ''): array {
     $e = mb_strtolower(trim($email));
     if ($e === '') return [];
-    $sql = "SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active'";
+    $sql = "SELECT * FROM mentors WHERE lower(trim(email)) = ? AND lower(trim(COALESCE(status,''))) = 'active'";
     $args = [$e];
     if ($exceptMentorId !== '') { $sql .= " AND mentorId <> ?"; $args[] = $exceptMentorId; }
     return db_all($sql . " ORDER BY id", $args);

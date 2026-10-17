@@ -3710,3 +3710,7 @@ ALTER TABLE assignment_submissions ADD COLUMN linkUrl VARCHAR(1000) DEFAULT '';
 ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT;
 ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT;
 INSERT INTO schema_version (version) VALUES (155) ON DUPLICATE KEY UPDATE version = version;
+
+-- 156: emails stored the way the sign-in door compares them — a data fix-up,
+-- so it lives in NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
+INSERT INTO schema_version (version) VALUES (156) ON DUPLICATE KEY UPDATE version = version;

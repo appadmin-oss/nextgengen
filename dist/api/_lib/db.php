@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 155;
+const NGG_SCHEMA_TARGET = 156;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -87,6 +87,11 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 156 — emails stored the way the sign-in door compares them (BINARY: the
+     * default collation would call 'Ada@X' and 'ada@x' equal and skip it). */
+    'volunteers.email_norm' => "UPDATE volunteers SET email = LOWER(TRIM(email)) WHERE email IS NOT NULL AND BINARY email <> BINARY LOWER(TRIM(email))",
+    'mentors.email_norm'    => "UPDATE mentors SET email = LOWER(TRIM(email)) WHERE email IS NOT NULL AND BINARY email <> BINARY LOWER(TRIM(email))",
+    'members.email_trim'    => "UPDATE members SET email = TRIM(email) WHERE email IS NOT NULL AND email <> TRIM(email)",
     /* 146 — one active mentor per child: end duplicate active pairings,
      * keeping each child's newest. Matches nothing once they are gone. */
     'mentor_assignments.one_active' => "
@@ -4684,6 +4689,15 @@ function db_migrate(PDO $db): void {
             ALTER TABLE assignment_submissions ADD COLUMN linkUrl TEXT DEFAULT '';
             ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT DEFAULT '';
             ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT DEFAULT '';
+        ",
+        /* 156 — the sign-in door compares emails trimmed and lower-cased; a
+         * volunteer or mentor saved as "Tunde@Example.org " could never match.
+         * Lookups now tolerate it too; this cleans what is already stored.
+         * Member emails are only trimmed (their case is shown back to them). */
+        156 => "
+            UPDATE volunteers SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
+            UPDATE mentors SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
+            UPDATE members SET email = trim(email) WHERE email IS NOT NULL AND email <> trim(email);
         ",
     ];
 
