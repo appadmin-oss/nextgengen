@@ -27044,9 +27044,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // Instructor Today: To do in server order.
     $t = backend_dispatch('instructor.today', $pp(['date' => '2026-10-17']));
     $keys = array_column($t['todo'] ?? [], 'key');
+    /* "Plan the session" is offered only while the session has not passed (Lagos
+       time). The date here is fixed, so once the real day has moved past it the
+       row is correctly absent — the test follows the rule, not the calendar. */
+    $planDue = '2026-10-17' >= results_today();
     chk('today (instructor): results needing attention come before preparation, and the carry-over is listed', !empty($t['ok'])
-        && array_search('results-attn', $keys, true) !== false && array_search('plan', $keys, true) !== false
-        && array_search('results-attn', $keys, true) < array_search('plan', $keys, true) && in_array('carry', $keys, true));
+        && array_search('results-attn', $keys, true) !== false && in_array('carry', $keys, true)
+        && ($planDue ? (array_search('plan', $keys, true) !== false && array_search('results-attn', $keys, true) < array_search('plan', $keys, true)) : !in_array('plan', $keys, true)));
     chk('today (instructor): rows carry icon, title, subtitle, cta, route and tone — and no internal rank', isset($t['todo'][0]['icon'], $t['todo'][0]['cta'], $t['todo'][0]['route'], $t['todo'][0]['tone']) && !isset($t['todo'][0]['rank']));
 
     // Member Today.
