@@ -1657,7 +1657,18 @@ function member_mp_retreat_book(array $p): array {
     if ($mid === '') return ['ok' => false, 'error' => 'no_mentor_record'];
     $r = db_row('SELECT * FROM mentor_retreats WHERE retreatId = ? AND onDate >= ?', [(string)($p['retreatId'] ?? ''), mp_today($p)]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
-    try { db_insert('mentor_retreat_bookings', ['retreatId' => (string)$r['retreatId'], 'mentorId' => $mid, 'createdAt' => now_iso()]); } catch (\Throwable $e) {}
+    // Booked already is an answer, not an error — and not a swallowed exception.
+    if (db_row('SELECT 1 FROM mentor_retreat_bookings WHERE retreatId = ? AND mentorId = ? LIMIT 1', [(string)$r['retreatId'], $mid])) {
+        return ['ok' => true, 'date' => (string)$r['onDate'], 'unchanged' => true];
+    }
+    try {
+        db_insert('mentor_retreat_bookings', ['retreatId' => (string)$r['retreatId'], 'mentorId' => $mid, 'createdAt' => now_iso()]);
+    } catch (\Throwable $e) {
+        // A real failure is reported as one: the mentor must not be told they have a place they do not have.
+        if (function_exists('ops_record')) ops_record('error', 'mentor.retreat.book', 'A retreat booking could not be saved', substr($e->getMessage(), 0, 200));
+        return ['ok' => false, 'error' => 'booking_failed'];
+    }
+    audit('mentor.retreat.book', $g['me'], (string)$r['retreatId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'date' => (string)$r['onDate']];
 }
 

@@ -26439,7 +26439,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (bool)db_row("SELECT 1 FROM mentor_messages WHERE kind = 'Supervision prep' AND toId = 'NGG-MPL'"));
     $rt = backend_dispatch('admin.mentor.retreat.save', ['requesterId' => $SU, 'onDate' => '2026-11-07', 'place' => 'Egbeda hall']);
     chk('portal: a mentor books the retreat once', !empty(backend_dispatch('member.mentor.retreat.book', $p('NGG-MP1', ['retreatId' => $rt['retreatId']]))['ok'])
-        && !empty(backend_dispatch('member.mentor.retreat.book', $p('NGG-MP1', ['retreatId' => $rt['retreatId']]))['ok'])
+        && !empty(backend_dispatch('member.mentor.retreat.book', $p('NGG-MP1', ['retreatId' => $rt['retreatId']]))['unchanged'])
         && (int)db_row('SELECT COUNT(*) c FROM mentor_retreat_bookings WHERE retreatId = ?', [$rt['retreatId']])['c'] === 1);
 
     // Background jobs.
@@ -27500,8 +27500,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $mem('GL-V'); db_exec("UPDATE members SET email = 'vol@gl.example' WHERE memberId = 'GL-V'");
     db_insert('volunteers', ['volunteerId' => 'GLV-1', 'fullName' => 'Vol One', 'email' => 'vol@gl.example', 'role' => 'instructor', 'status' => 'active',
         'centre' => $C, 'safeguarding' => 'pending', 'createdAt' => $now]);
-    chk('gate · an instructor whose safeguarding is not cleared is refused', (mentor_gate(['requesterId' => 'GLV-1'])['error'] ?? '') === 'not_cleared'
-        && (mentor_gate(['requesterId' => 'GL-V'])['error'] ?? '') === 'not_cleared');
+    $pend = mentor_gate(['requesterId' => 'GLV-1']);
+    chk('gate · an instructor whose safeguarding is pending gets in, reaching no child',
+        !empty($pend['ok']) && $pend['screened'] === false && $pend['clearance'] === 'pending' && $pend['centres'] === []);
+    db_exec("UPDATE volunteers SET programme = 'ngg', courses = ? WHERE volunteerId = 'GLV-1'", [json_encode(['Robotics'])]);
+    $cur = backend_dispatch('staff.curriculum', ['requesterId' => 'GLV-1']);
+    chk('gate · …sees their course\'s lessons in Curriculum, with no member and no answer',
+        !empty($cur['ok']) && ($cur['clearance'] ?? '') === 'pending' && ($cur['members'] ?? -1) === 0 && ($cur['pending'] ?? ['x']) === []);
+    $td = backend_dispatch('instructor.today', ['requesterId' => 'GLV-1']);
+    chk('gate · …and the class screen says why it is empty, and who clears it', ($td['error'] ?? '') === 'not_cleared' && str_contains((string)($td['detail'] ?? ''), 'centre admin'));
     db_exec("UPDATE volunteers SET safeguarding = 'cleared' WHERE volunteerId = 'GLV-1'");
     chk('gate · …and once cleared, opens', ($g2 = mentor_gate(['requesterId' => 'GLV-1'])) && !empty($g2['ok']) && $g2['screened'] === true);
     db_insert('volunteers', ['volunteerId' => 'GLV-2', 'fullName' => 'Vol Two', 'email' => 'vol@gl.example', 'role' => 'mentor', 'status' => 'active',

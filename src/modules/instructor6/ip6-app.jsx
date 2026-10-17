@@ -172,7 +172,7 @@ class Ip6Portal extends React.Component {
   slot() {
     const S = this.state; const need = ['today', 'cls'];
     const e = need.map(k => S.er[k]).find(Boolean);
-    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
+    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
     if (need.some(k => S.ld[k] || !S.d[k])) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div></div>;
     return null;
   }

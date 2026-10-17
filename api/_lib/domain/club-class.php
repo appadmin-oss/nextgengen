@@ -31,6 +31,13 @@ const CLUB_STEPS = ['roll', 'plan', 'teach', 'exit', 'log'];
 function club_class_gate(array $p): array {
     $g = results_instructor_gate($p);
     if (empty($g['ok'])) return $g;
+    /* A class is children. Until their check is cleared an instructor sees
+     * the courses in Curriculum, and here is told plainly why the class is
+     * empty and who clears it — not "that class isn't yours". */
+    if (($g['clearance'] ?? '') === 'pending') {
+        return ['ok' => false, 'error' => 'not_cleared', 'courses' => array_values((array)($g['reportCourses'] ?? [])),
+                'detail' => 'Your safeguarding check has not been recorded yet. Your courses and lessons are under Curriculum; your learners appear here once your centre admin marks the check as cleared.'];
+    }
     return $g;
 }
 
