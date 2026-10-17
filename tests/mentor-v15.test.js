@@ -306,7 +306,8 @@ async function as(memberId, admin, viewport) {
 
     // ── A member: their dashboard carries their part of the Saturday ──
     const me = await as('NGG-MS-K1', false);
-    await me.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    // Member Portal v9 keeps the Saturday on its own screen (/dashboard/saturday), not on Today.
+    await me.goto(BASE + '/dashboard/saturday', { waitUntil: 'domcontentloaded' });
     await waitForBoot(me);
     await me.waitForSelector('.sf-day', { timeout: 60000 }).catch(() => {});
     chk('member dashboard: the Saturday schedule, the member’s part', await me.isVisible('.sf-day') && /Saturday formation/.test(await me.innerText('.sf-day')));

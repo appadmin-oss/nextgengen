@@ -24,8 +24,8 @@
 /* Which reads a screen needs before it can draw. The core set loads at once. */
 const MP9_CORE = ["today", "dash", "mine", "chat", "notifs", "state"];
 const MP9_NEED = {
-  today: ["today", "dash", "mine", "chat", "form", "mom"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm"],
-  results: ["res"], companion: ["comp"], sat: ["form", "dash"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
+  today: ["today", "dash", "mine", "chat", "form", "mom"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
+  results: ["res"], companion: ["comp"], sat: ["form", "dash", "evals"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
   journal: [], opps: ["opps"], community: ["feed"], passport: ["rec"], me: ["circle", "sec", "rec"],
   money: ["stmt", "comp9"], records: ["rec", "reqs"], help: [], more: [],
 };
@@ -38,6 +38,8 @@ const MP9_LOADERS = {
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
   sec: () => NGGApi.member.security(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
   reqs: () => NGGApi.member.requests(),
+  // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
+  evals: () => NGGApi.member.pod.read("evals"),
 };
 const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };

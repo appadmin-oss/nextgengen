@@ -6933,6 +6933,8 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
   const shell = (ch) => embedded ? <div className="m15x-classic">{ch}</div> : (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
+      {/* First visit to the Summer School mentor portal: a short tour (guide.jsx). */}
+      {state === "ready" && programme !== "ngg" && typeof GuideTour === "function" && <GuideTour portal="summer"/>}
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);

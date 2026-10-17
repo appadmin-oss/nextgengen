@@ -28198,5 +28198,19 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
 })();
 
+// ── A child's own concern from the Member Portal (member_sg_self) ──
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'SGS-K1', 'fullName' => 'Sade Self', 'email' => 'sade.self@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SGS-K2', 'fullName' => 'Other Child', 'email' => 'other.c@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('safeguarding · a member still cannot file the mentor report', (backend_dispatch('member.ms.concern', ['requesterId' => 'SGS-K1', 'subjectId' => 'SGS-K2', 'category' => 'Bullying', 'body' => 'Somebody keeps taking my lunch.'])['error'] ?? '') === 'not_a_mentor');
+    $r = backend_dispatch('member.sg.self', ['requesterId' => 'SGS-K1', 'subjectId' => 'SGS-K2', 'category' => 'Bullying', 'body' => 'Somebody keeps taking my lunch.']);
+    $c = db_row("SELECT subjectId, centre, category FROM safeguarding_cases WHERE reporterId = 'SGS-K1' ORDER BY id DESC LIMIT 1");
+    chk('safeguarding · a member reporting about themselves reaches the queue, with a case number', !empty($r['ok']) && ($r['caseNo'] ?? '') !== '' && $c && $c['centre'] === 'Egbeda' && $c['category'] === 'Bullying');
+    chk('safeguarding · and the subject is always themselves, whatever id is sent', ($c['subjectId'] ?? '') === 'SGS-K1');
+    chk('safeguarding · a one-word report is refused', (backend_dispatch('member.sg.self', ['requesterId' => 'SGS-K1', 'body' => 'help'])['error'] ?? '') === 'too_short');
+    db_exec("DELETE FROM safeguarding_cases WHERE reporterId = 'SGS-K1'"); db_exec("DELETE FROM members WHERE memberId IN ('SGS-K1','SGS-K2')");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

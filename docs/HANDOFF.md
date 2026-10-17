@@ -1518,3 +1518,31 @@ Lessons & timetable, Messages; plus Emails & connection. State in the URL
 (`?child=&view=`). Same API, no new ops. family-ui.test.js drives the new
 navigation (28/28). Also fixed: the new inbox shows "From their family account"
 on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.
+
+
+## 2026-10-17 · Saturday evaluation; Mentor Portal v15 audit fixes
+
+- **What a mentor records.** After each Saturday, every child in the pod is evaluated on
+  eight criteria from the formation day:
+  - punctuality, assignment, participation, respect;
+  - teamwork, courage, initiative, reflection.
+
+  Each is on the member's own growth scale (Not yet · Emerging · Demonstrated · Strong),
+  with a strength the mentor saw and one next step.
+- **Storage.** The evaluation rides on the week's review row (`mentor_reviews.evalJson`,
+  **migration 153**). The worktree first used 151; origin had already taken 151 and 152.
+- **Pre-filled from the register.** On time, Assignment in, the values seen, and the
+  detail note. Pre-filled answers are labelled "From the register".
+- **Validation.** The whole evaluation is checked before anything is written. An old
+  three-rating payload still saves and keeps any existing evaluation.
+- **What the member sees.** Member Portal v9 shows the evaluations on Growth (all, newest
+  first) and Saturday (the latest), through `member.saturday.evals`. That op never returns
+  the ratings, the staff note or a concern flag.
+- **The family's 2:00 summary** carries the strength and the next step.
+- **Onboarding and reminders.** The mentor portal now mounts `GuideTour "mentor"` and
+  `DutyPopup "mentor"`; the duty button opens This week, or Saturday for the register.
+  The Summer School mentor portal mounts `GuideTour "summer"`.
+- **Audit fixes.** Ten defects fixed across the pod, lead and coordinator views: empty
+  states, the column drift, the coordinator's centre picker, and the Academy tab for
+  coordinators with no mentor record.
+

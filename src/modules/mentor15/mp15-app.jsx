@@ -857,7 +857,12 @@ class Mp15Portal extends React.Component {
     };
   }
 
-  render() { return Mp15View(this.renderVals()); }
+  /* First visit: the tour. Anything owed (the week's reviews, Saturday's
+     register): the duty reminder, whose button opens the screen that does it. */
+  render() {
+    const dutyGo = d => { const k = String(d.key || '').replace(/^mentor:/, ''); this.go(/^register/.test(k) ? 'sat' : 'week'); return true; };
+    return <>{Mp15View(this.renderVals())}{typeof GuideTour === 'function' && <GuideTour portal="mentor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="mentor" onGo={dutyGo}/>}</>;
+  }
 }
 
 /* /mentor and its three portals — one address per programme, so nobody (an

@@ -75,6 +75,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.ms.relcheck.mentee' => 'member_ms_relcheck_mentee',
             'member.ms.coord.checkin' => 'member_ms_coord_checkin',
             'member.ms.concern'       => 'member_ms_concern',
+            'member.sg.self'          => 'member_sg_self',
             'member.ms.academy'       => 'member_ms_academy',
             'member.ms.academy.check' => 'member_ms_academy_check',
             'member.ms.policy'        => 'member_ms_policy',

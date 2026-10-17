@@ -11621,3 +11621,25 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .mfa-desk-flags { display: flex; flex-wrap: wrap; gap: 4px; }
 .mfa-desk-dash { color: var(--ink-400, #6b7394); }
 .mfa-desk .admin-pager { display: flex; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 12px; font-size: 13px; }
+
+/* Member Portal v9 — the Saturday evaluations (Mp9Evals, mp9-more.jsx). */
+.m9x-ev { margin: 16px 0 0; padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e6e5e0; container-type: inline-size; }
+.m9x-ev-h { margin: 0 0 10px; font-size: 17px; font-weight: 700; color: #0b0b0c; }
+.m9x-ev-msg { margin: 0; font-size: 14px; line-height: 1.5; color: #4a4a50; }
+.m9x-ev-retry { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: #0b0b0c; text-decoration: underline; cursor: pointer; }
+.m9x-ev-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.m9x-ev-item { border: 1px solid #ecebe6; border-radius: 14px; overflow: hidden; }
+.m9x-ev-sum { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 14px; border: 0; background: #fafaf8; font: inherit; text-align: left; color: #0b0b0c; }
+button.m9x-ev-sum { cursor: pointer; }
+.m9x-ev-sum span { flex: 1; font-size: 13px; color: #4a4a50; }
+.m9x-ev-body { padding: 12px 14px 14px; }
+.m9x-ev-crit { margin: 0 0 10px; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr; gap: 6px; }
+@container (min-width: 520px) { .m9x-ev-crit { grid-template-columns: 1fr 1fr; column-gap: 18px; } }
+.m9x-ev-crit li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: #0b0b0c; }
+.m9x-ev-lvl { padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.m9x-ev-lvl.is-0 { background: #f0efea; color: #4a4a50; }
+.m9x-ev-lvl.is-1 { background: #fdf6e3; color: #6e4d00; }
+.m9x-ev-lvl.is-2 { background: #e8f3ea; color: #1d6b30; }
+.m9x-ev-lvl.is-3 { background: #0b0b0c; color: #fff; }
+.m9x-ev-note { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: #2a2a30; }
+.m9x-ev-note b { display: block; font-size: 12.5px; color: #4a4a50; font-weight: 600; margin-bottom: 2px; }

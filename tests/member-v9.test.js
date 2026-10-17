@@ -157,6 +157,16 @@ async function as(memberId, admin, viewport) {
     await mb.waitForTimeout(1200);
     chk('Growth: the member’s own scores are saved as their self-score', !!q(`db_row("SELECT scores FROM mentor_scorecards WHERE subjectId = 'NGG-MV-K1' AND byKind = 'member'")`));
     await shot(mb, 'growth');
+    // The mentor's Saturday evaluation reaches the member: criteria, strength, next step — never the ratings.
+    chk('Growth: before any evaluation, the card says when one will come', await mb.isVisible('.m9x-ev') && /evaluates you after each Saturday/.test(await mb.innerText('.m9x-ev')));
+    php(`db_insert('mentor_reviews', ['subjectId' => 'NGG-MV-K1', 'period' => '2026-W42', 'mentorId' => 'NGG-MV-M1', 'answers' => '{}', 'evalJson' => json_encode(['date' => '2026-10-17', 'by' => 'Ngozi', 'strength' => 'Led the huddle calmly', 'next' => 'Hand the assignment in at check-in',
+      'criteria' => ['punctuality' => 'Strong', 'assignment' => 'Not yet', 'participation' => 'Demonstrated', 'respect' => 'Strong', 'teamwork' => 'Demonstrated', 'courage' => 'Emerging', 'initiative' => 'Emerging', 'reflection' => 'Demonstrated'], 'staffNote' => 'SECRET-STAFF-NOTE'])]);`);
+    // Loaded once a visit, so a fresh visit picks it up.
+    await mb.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mb); await mb.waitForSelector('.m9-app main', { timeout: 60000 }); await nav(mb, 'Grow');
+    await mb.waitForFunction(() => /Led the huddle calmly/.test((document.querySelector('.m9x-ev') || {}).innerText || ''), null, { timeout: 20000 });
+    const evT = await mb.innerText('.m9x-ev');
+    chk('Growth: the evaluation shows each criterion, the strength and the next step', /Punctuality/.test(evT) && /Strong/.test(evT) && /Hand the assignment in/.test(evT));
+    chk('Growth: and never the mentor\'s staff note', !/SECRET-STAFF-NOTE/.test(evT));
     await mb.click('main [role="tab"]:has-text("This week")');
     await mb.fill('main textarea[placeholder^="e.g. builds"], main textarea[placeholder^="e.g. is brave"]', 'builds apps that help my community');
     await mb.fill('main input[aria-label="Step 1"]', 'Finish the loops lesson');

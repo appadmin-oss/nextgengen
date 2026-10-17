@@ -205,7 +205,7 @@ async function as(memberId, admin, viewport) {
 
     // ── The member's own weekly check-in ────────────────────────────────
     const mem = await as('NGG-MS-K1', false);
-    await mem.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await mem.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mem);
     await mem.waitForSelector('.dci-feel', { timeout: 60000 });
     if (process.env.SHOTS) await mem.locator('.dci').screenshot({ path: process.env.SHOTS + '/checkin.png' });
