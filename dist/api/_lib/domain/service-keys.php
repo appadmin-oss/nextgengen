@@ -72,6 +72,9 @@ const SERVICE_KEYS = [
     'resend' => ['group' => 'email', 'label' => 'Resend', 'link' => 'https://resend.com/api-keys',
         'what' => 'Email over HTTPS, for hosts that block SMTP. Used when no SMTP server is set.', 'test' => 'mail',
         'fields' => [['mail.resend_key', 'API key', 'secret', false, 'Starts “re_”.']]],
+    'telegram' => ['group' => 'sms', 'label' => 'Telegram (free messages)', 'link' => 'https://t.me/BotFather',
+        'what' => 'Free messages on any phone, Android or iPhone. Once a parent, member or volunteer connects (they open the bot and share their number), every text this site would send them goes to Telegram instead of SMS — and if Telegram cannot reach them, the SMS goes as before. Make a bot: open @BotFather in Telegram, send /newbot, and paste the token it gives you. Then press Test: that connects the bot to this site.', 'test' => 'telegram',
+        'fields' => [['telegram.bot_token', 'Bot token', 'secret', false, 'From @BotFather, e.g. 123456789:AAH…']]],
     'smsgate' => ['group' => 'sms', 'label' => 'SMS Gateway for Android (free)', 'link' => 'https://sms-gate.app',
         'what' => 'Free and open source: sends text messages from the programme\'s own Android phone and SIM, with no monthly fee and no message cap. Install the SMS Gateway app (Play Store or sms-gate.app), turn on Cloud Server, and copy the username and password it shows. Messages cost only what the SIM\'s carrier charges — put an SMS bundle on it. Used first for Nigerian numbers.', 'test' => '',
         'fields' => [['sms.smsgate.username', 'Username', 'text', false, 'From the app → Cloud Server.'], ['sms.smsgate.password', 'Password', 'secret', false, 'From the app → Cloud Server.'],
@@ -324,6 +327,8 @@ function admin_keys_test(array $p): array {
             if (function_exists('cache_delete')) cache_delete('ops.cloudinary');
             $h = ops_cloudinary_health();
             return ['ok' => true] + $done(['pass' => !empty($h['ok']) && !empty($h['configured']), 'detail' => (string)($h['detail'] ?? '')]);
+        case 'telegram':
+            return ['ok' => true] + $done(telegram_setup());
         case 'storage':
             return ['ok' => true] + $done(store_health());
         case 'paystack':

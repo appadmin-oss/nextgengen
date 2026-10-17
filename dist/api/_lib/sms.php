@@ -2,7 +2,8 @@
 declare(strict_types=1);
 
 /**
- * SMS layer — SMS Gateway for Android (sms-gate.app: free, open source, your
+ * SMS layer — Telegram first when the number is connected (free; telegram.php),
+ * then SMS Gateway for Android (sms-gate.app: free, open source, your
  * own phone's SIM), textbee (the same idea, paid past 300 a month), Termii
  * (Nigeria-first) and Twilio (everything else / fallback).
  * Entirely opt-in; with no provider configured sms_enabled() is false and
@@ -29,7 +30,7 @@ function sms_smsgate_on(): bool {
 
 function sms_enabled(): bool {
     $c = sms_config();
-    return sms_smsgate_on() || !empty($c['textbee']['api_key']) || !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
+    return (function_exists('telegram_on') && telegram_on()) || sms_smsgate_on() || !empty($c['textbee']['api_key']) || !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
 }
 
 /**
@@ -181,6 +182,16 @@ function sms_send(string $rawTo, string $text): array {
     if ($to === '') return ['ok' => false, 'error' => 'bad_number'];
     if (!sms_enabled()) return ['ok' => false, 'error' => 'sms_disabled'];
     $text = mb_substr($text, 0, 450);
+    /* Telegram first, when this number is connected to the programme's bot:
+       free for everybody (api/_lib/telegram.php). Any failure falls through
+       to the SMS providers below, so a text is never lost to it. */
+    if (function_exists('telegram_send_to_phone') && telegram_on()) {
+        $tg = telegram_send_to_phone($to, $text);
+        if (!empty($tg['ok'])) {
+            try { audit('sms.sent', null, $to, ['provider' => 'telegram', 'chars' => mb_strlen($text)] + (!empty($tg['ref']) ? ['ref' => $tg['ref']] : []), ''); } catch (Throwable $e) {}
+            return ['ok' => true, 'provider' => 'telegram', 'to' => $to];
+        }
+    }
     $last = ['ok' => false, 'error' => 'sms_disabled'];
     foreach (sms_provider_order($to) as $prov) {
         $r = $prov === 'smsgate' ? sms_send_smsgate($to, $text) : ($prov === 'textbee' ? sms_send_textbee($to, $text) : ($prov === 'termii' ? sms_send_termii($to, $text) : sms_send_twilio($to, $text)));

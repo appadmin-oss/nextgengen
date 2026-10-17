@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 156;
+const NGG_SCHEMA_TARGET = 157;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4702,6 +4702,25 @@ function db_migrate(PDO $db): void {
             UPDATE volunteers SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
             UPDATE mentors SET email = lower(trim(email)) WHERE email IS NOT NULL AND email <> lower(trim(email));
             UPDATE members SET email = trim(email) WHERE email IS NOT NULL AND email <> trim(email);
+        ",
+        /* 157 — texts by Telegram, free. A person opens the programme's bot and
+         * shares their phone number (Telegram verifies it is theirs); every
+         * text this site would send that number then goes to that chat
+         * instead (api/_lib/telegram.php). Keyed by the E.164 number, so no
+         * record type needs to know about it. */
+        157 => "
+            CREATE TABLE IF NOT EXISTS telegram_links (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              phone TEXT NOT NULL,
+              chatId TEXT NOT NULL,
+              tgUserId TEXT DEFAULT '',
+              tgName TEXT DEFAULT '',
+              linkedAt TEXT DEFAULT '',
+              lastSentAt TEXT DEFAULT '',
+              sent INTEGER DEFAULT 0
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tg_phone ON telegram_links(phone);
+            CREATE INDEX IF NOT EXISTS idx_tg_chat ON telegram_links(chatId);
         ",
     ];
 
