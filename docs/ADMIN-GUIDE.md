@@ -966,6 +966,13 @@ history, technology and business), plus *If this is new to you* and *If you
 already can* work. A JSON file that says `"allowNewCourse": true` (as the
 bundled files do) imports without switching the setting on by hand.
 
+**Export PDF** (Learning → Curriculum) opens one course, or one year of
+it, as a print-ready page. Press **Save as PDF** there, or **Download as
+Word**. The *Instructor* edition includes the answers and marking guides. The
+*Members* edition, and the copy members download from their own portal, has
+no answers and no weekly assignments, because assignments are set and dated
+on the assignments desk.
+
 ### Assignments
 
 **Learning → Assignments** in the Control Room, and **Progress →

@@ -238,6 +238,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.curriculum.upsert'  => 'admin_curriculum_upsert',
             'admin.curriculum.status'  => 'admin_curriculum_status',
             'admin.curriculum.import'  => 'admin_curriculum_import',
+            'admin.curriculum.document' => 'admin_curriculum_document',
             'admin.curriculum.seed'     => 'admin_curriculum_seed',
             'admin.curriculum.ai'      => 'admin_curriculum_ai',
             'admin.curriculum.report'  => 'admin_curriculum_report',

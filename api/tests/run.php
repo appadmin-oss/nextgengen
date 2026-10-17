@@ -24768,6 +24768,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('music: every multiple-choice answer points at one of its options (by index: "3 beats" must not read as option 3)', $mcqOk);
     $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-MU-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
     chk('music: every lesson passes the importer', ($dry['tally']['create'] ?? 0) === 144 && ($dry['tally']['failed'] ?? 1) === 0);
+    // The PDF export: the instructor edition carries the answers; the members' copy has no answers and no assignment.
+    $one = [$rows[1]];
+    $d1 = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-MU-ADM', 'rows' => $one, 'dryRun' => true, 'allowNewCourse' => true, 'publish' => true]);
+    backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-MU-ADM', 'rows' => $one, 'allowNewCourse' => true, 'publish' => true, 'digest' => $d1['digest'] ?? '']);
+    $st = backend_dispatch('admin.curriculum.document', ['requesterId' => 'NGG-MU-ADM', 'course' => 'piano', 'edition' => 'staff']);
+    $mem = backend_dispatch('admin.curriculum.document', ['requesterId' => 'NGG-MU-ADM', 'course' => 'Piano', 'edition' => 'member']);
+    $sh = curriculum_document_html($st['document'] ?? [], 'html'); $mh = curriculum_document_html($mem['document'] ?? [], 'html');
+    chk('export: the instructor edition carries the answer, the marking guide and the week\'s assignment', str_contains($sh, 'Answer:') && str_contains($sh, 'Marking guide:') && str_contains($sh, 'This week'));
+    chk('export: the members\' edition has no answers and no assignments', !str_contains($mh, 'Answer:') && !str_contains($mh, 'Marking guide') && !preg_match('/assignment/i', strip_tags(preg_replace('/<footer.*?<\/footer>/s', '', $mh))) && str_contains($mh, 'Building scales on C'));
+    chk('export: an unknown course is refused', (backend_dispatch('admin.curriculum.document', ['requesterId' => 'NGG-MU-ADM', 'course' => 'Nope'])['error'] ?? '') === 'not_found');
+    $ids = array_column(db_all("SELECT unitId FROM curriculum_units WHERE course = 'Piano' AND level = 'Year 1 · Foundation'"), 'unitId');
+    if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?')); db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MU-ADM'");
 })();
 

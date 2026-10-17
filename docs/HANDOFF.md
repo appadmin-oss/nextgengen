@@ -1616,3 +1616,8 @@ Tests: `run.php` +13; `mfa.test.js` 32 → 37.
   resubmission after a return, and the proof type respected.
 
 Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
+- **Curriculum export** (`admin.curriculum.document`, `api/admin/curriculum-doc.php`):
+  staff edition with answers and rubrics; member edition (and the member's
+  own `curriculum-doc.php`) passes through `curriculum_strip_assignments`,
+  which drops the "…assignment/homework" section and task/project/essay
+  checks.

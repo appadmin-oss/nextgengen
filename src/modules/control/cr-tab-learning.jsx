@@ -150,6 +150,34 @@ function crCurImport(ctx) {
     done: (v, r) => "Checked · " + crCurTally(r.tally),
   });
 }
+/** One course (or one year of it) as a print-ready document: the instructor edition with answers and marking
+ *  guides, or the member edition with neither the answers nor the weekly assignments (admin.curriculum.document). */
+function crCurExport(ctx) {
+  const units = (ctx.data || {}).units || [];
+  const pairs = []; const seen = {};
+  units.filter(u => u.status === "published" && u.course).forEach(u => {
+    const k = u.course + "|"; if (!seen[k]) { seen[k] = 1; pairs.push([k, u.course + " · every year"]); }
+    const kl = u.course + "|" + (u.level || ""); if (u.level && !seen[kl]) { seen[kl] = 1; pairs.push([kl, u.course + " · " + u.level]); }
+  });
+  if (!pairs.length) { ctx.toast("Publish a lesson first: only published lessons are exported.", null, true); return; }
+  ctx.form({
+    title: "Export the curriculum", submit: "Open the PDF", busyLabel: "Opening…",
+    intro: "Opens a print-ready copy in a new tab. Press Save as PDF there (or Download as Word).",
+    values: { which: pairs[0][0], edition: "staff" },
+    fields: [
+      { id: "which", l: "Course", type: "select", req: true, opts: pairs },
+      { id: "edition", l: "Edition", type: "chips", req: true, opts: [["staff", "Instructor — with answers"], ["member", "Members — no answers, no assignments"]] },
+    ],
+    onSubmit: v => {
+      const cut = String(v.which).lastIndexOf("|");
+      const course = String(v.which).slice(0, cut), level = String(v.which).slice(cut + 1);
+      const q = new URLSearchParams({ course, edition: v.edition }); if (level) q.set("level", level);
+      window.open("/api/admin/curriculum-doc.php?" + q.toString(), "_blank", "noopener");
+      return { ok: true };
+    },
+    done: () => "Opened in a new tab",
+  });
+}
 function crCurTally(t) {
   t = t || {};
   return [crNum(t.create) + " new", crNum(t.update) + " updated", crNum(t.unchanged) + " unchanged", crNum(t.failed) + " refused"].join(" · ");
@@ -198,7 +226,7 @@ Object.assign(CR_TAB_DEFS, {
       ]);
       return { units: list.units || [], canWrite: !!list.canWrite, seeds: seeds.seeds || [], plan: (ctx.data && ctx.data.plan) || null };
     },
-    actions: (d, ctx) => d.canWrite ? [
+    actions: (d, ctx) => [(d.units || []).length ? { l: "Export PDF", icon: "file-pdf", run: () => crCurExport(ctx) } : null].concat(d.canWrite ? [
       { l: "Import lessons", icon: "upload-simple", primary: true, run: () => crCurImport(ctx) },
       d.plan ? { l: "Discard the check", icon: "x", run: () => ctx.setData(x => Object.assign({}, x, { plan: null })) } : null,
       { l: "Download template", icon: "download-simple", run: () => {
@@ -207,7 +235,7 @@ Object.assign(CR_TAB_DEFS, {
         a.download = "ngg-curriculum-template.csv"; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       } },
-    ] : [],
+    ] : []).filter(Boolean),
     blocks: (d, ctx) => {
       const out = [];
       const p = d.plan;

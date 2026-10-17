@@ -1100,7 +1100,7 @@ function member_curriculum_document(array $p): array {
     }
     $weeks = []; $done = 0;
     foreach ($units as $id => $b) {
-        $u = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false);
+        $u = curriculum_strip_assignments(curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false));
         $pr = $prog[$id] ?? null;
         $u['progress'] = $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'completedAt' => (string)$pr['completedAt']] : null;
         if ($pr && $pr['status'] === 'completed') $done++;
@@ -1115,6 +1115,56 @@ function member_curriculum_document(array $p): array {
         'total' => count($units), 'completed' => $done,
         'pct' => $units ? (int)round($done / count($units) * 100) : 0,
         'weeks' => array_map(static fn($w, $list) => ['week' => $w, 'lessons' => $list], array_keys($weeks), array_values($weeks)),
+    ]];
+}
+
+/**
+ * A lesson as a member's copy carries no assignment: the weekly homework is set,
+ * dated and marked on the assignments desk, so a printed copy that also lists
+ * it would be a second, undated version of the same work. The section headed
+ * "…assignment" / "homework" goes, and so do the marked tasks that are that
+ * homework (a task, project or essay check); the quick checks stay.
+ */
+function curriculum_strip_assignments(array $u): array {
+    $u['body'] = trim((string)preg_replace('/(^|\n)#{2,4}[^\n]*(assignment|homework)[^\n]*\n.*?(?=\n#{2,4}\s|\n>|$)/isu', '$1', (string)$u['body']));
+    $u['checks'] = array_values(array_filter($u['checks'] ?? [], static fn($c) => !in_array((string)$c['kind'], ['task', 'project', 'essay'], true)
+        && !preg_match('/^\s*assignment\b/i', (string)$c['prompt'])));
+    return $u;
+}
+
+/**
+ * admin.curriculum.document — one course (optionally one level) as a printable
+ * document. `edition` 'staff' carries the answers and marking guides; 'member'
+ * is the copy a member may be handed: no answers, and no assignments.
+ */
+function admin_curriculum_document(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+    $course = trim((string)($p['course'] ?? ''));
+    $level = trim((string)($p['level'] ?? ''));
+    $staff = (string)($p['edition'] ?? 'staff') !== 'member';
+    $where = "status = 'published' AND lower(course) = ?"; $args = [mb_strtolower($course)];
+    if ($level !== '') { $where .= ' AND level = ?'; $args[] = $level; }
+    $units = curriculum_load($where, $args, 'level, week, position');
+    if (!$units) return ['ok' => false, 'error' => 'not_found', 'detail' => 'No published lessons for that course' . ($level !== '' ? ' and level' : '') . '.'];
+    $groups = [];
+    foreach ($units as $b) {
+        $u = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], $staff);
+        if (!$staff) $u = curriculum_strip_assignments($u);
+        if ($staff) foreach ($u['checks'] as &$c) {
+            if ($c['kind'] === 'mcq' && ctype_digit((string)$c['answer']) && isset($c['options'][(int)$c['answer']])) $c['answerText'] = $c['options'][(int)$c['answer']];
+            elseif ((string)$c['answer'] !== '') $c['answerText'] = (string)$c['answer'];
+        }
+        unset($c);
+        $u['progress'] = null;
+        $key = ($u['level'] !== '' ? $u['level'] . ' · ' : '') . 'Week ' . $u['week'];
+        $groups[$key][] = $u;
+    }
+    return ['ok' => true, 'document' => [
+        'edition' => $staff ? 'staff' : 'member',
+        'title' => ($units ? (string)reset($units)['unit']['course'] : $course) . ' curriculum' . ($level !== '' ? ' — ' . $level : ''),
+        'member' => ['memberId' => '', 'fullName' => $staff ? 'Instructor edition' : 'Member edition', 'track' => $course, 'centre' => ''],
+        'generatedAt' => now_iso(), 'total' => count($units), 'completed' => 0, 'pct' => 0,
+        'weeks' => array_map(static fn($k, $list) => ['label' => $k, 'week' => (int)$list[0]['week'], 'lessons' => $list], array_keys($groups), array_values($groups)),
     ]];
 }
 

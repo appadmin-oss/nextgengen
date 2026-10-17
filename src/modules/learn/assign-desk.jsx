@@ -21,8 +21,8 @@ const ASD_ERR = {
   nothing_to_read: "this one is a file — open it and mark it yourself",
 };
 function asdErr(e) { const c = (e && (e.code || e.error || e.message)) || "error"; return (e && e.detail) || ASD_ERR[c] || (typeof humanizeError === "function" ? humanizeError(c, c) : c); }
-function asdDate(s) { if (!s) return "No due date"; const d = new Date(String(s).length <= 10 ? s + "T23:59:00" : s); return isNaN(d) ? s : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }); }
-function asdWhen(s) { if (!s) return ""; const d = new Date(s); return isNaN(d) ? s : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+function asdDate(s) { if (!s) return "No due date"; const d = new Date(String(s).length <= 10 ? s + "T23:59:00" : s); return isNaN(d) ? s : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); }
+function asdWhen(s) { if (!s) return ""; const d = new Date(s); return isNaN(d) ? s : d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
 
 function AssignmentDesk({ api, title }) {
   // The door is fixed for the life of the screen; a caller passing a fresh client each render must not reload it.
