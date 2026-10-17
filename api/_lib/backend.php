@@ -251,6 +251,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.curriculum.document' => 'member_curriculum_document',
             'staff.curriculum'         => 'staff_curriculum',
             'staff.curriculum.member'  => 'staff_curriculum_member',
+            'staff.curriculum.year'    => 'staff_curriculum_year',
             'staff.curriculum.mark'    => 'staff_curriculum_mark',
             'staff.curriculum.material' => 'staff_curriculum_material',
             'staff.curriculum.file' => 'staff_curriculum_file_put',

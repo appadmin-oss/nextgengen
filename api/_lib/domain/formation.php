@@ -104,6 +104,9 @@ function nggc_division_for_track(?string $track): string {
     if ($t === '') return '';
     static $map = [
         'music' => 'arts', 'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts',
+        // Instruments are music, and music is the arts.
+        'piano' => 'arts', 'keyboard' => 'arts', 'guitar' => 'arts', 'drums' => 'arts', 'violin' => 'arts',
+        'saxophone' => 'arts', 'vocals' => 'arts', 'singing' => 'arts', 'voice' => 'arts',
         'drama' => 'arts', 'dance' => 'arts', 'fashion' => 'arts', 'craft' => 'arts',
         'media' => 'media', 'film' => 'media', 'photography' => 'media', 'design' => 'media',
         'graphics' => 'media', 'content' => 'media',
