@@ -1395,3 +1395,51 @@ Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
 - `.m15-app main` lost `container-type: inline-size`: layout containment made `<main>` the
   containing block of every `position: fixed` sheet inside it.
 - Instructor Portal v6 shipped at `/instructor`.
+
+
+## 2026-10-17 · Team sign-in fixed; two-step sign-in for every portal
+
+**Why instructors, volunteers and mentors could not sign in.** Four separate faults:
+
+- The main door's identifier pattern only took an email or `XXX-2025-0042`. A card
+  number (`VOL-INS-26-001`, `026-014`) was refused before any lookup. The pattern is now
+  `auth_identifier_ok()`, used by gateway, request and verify.
+- Email-code sign-in looked only in `members`, and volunteers live in `volunteers`.
+  `auth_find_member()` now falls back to `auth_find_volunteer()`, by card number or by an
+  email that only one active volunteer uses. The code is keyed by the volunteerId, and a
+  verified code issues the same card-holder session the ID card does.
+- A mentor with only a `mentors` row had no identity at all. After the emailed code
+  proves the address, `auth_staff_principal()` gives them a volunteers row bound to the
+  mentor row. A lookup never creates anything.
+- The card door matched `volunteerId` case-sensitively, and a record without a phone
+  could never pass it. Matching is case-blind now. A record without a phone answers
+  `no_phone_use_email`, and the door offers the emailed code.
+
+**Two-step sign-in** (`domain/mfa.php`, `src/modules/auth/mfa.jsx`):
+
+- **A step per kind of person:**
+  - members get a private question;
+  - the team gets an authenticator app or an emailed code;
+  - guardians get a family PIN;
+  - staff keep the console TOTP and are not re-asked.
+- **Storage:** `member_state` keys `mfa`, `mfa.pend`, `mfa.code`, `mfa.bypass`, `mfa.req`
+  and `mfa.nudged`. No migration. The public `member.state.get/set` refuses every `mfa*`
+  key.
+- **The session flag:** a sign-in still owing the step carries `mfaP` in the signed
+  cookie (main and family). `require_session()` and `require_family()` answer
+  `mfa_required` everywhere except the routes that call `session_allow_mfa_pending()`:
+  `auth/mfa.php` and `family/me.php`. `auth/me.php` reads the cookie itself and reports
+  `mfaPending`. Passing the step re-signs the same cookie (`session_mfa_clear()`) with the
+  same sid and expiry.
+- **The client:** while the step is owed, AuthProvider exposes no member. No screen loads
+  data only to be refused, and MfaHost shows the step. It also shows the alert for anyone
+  without a step.
+- **The desk:** Members › Sign-in security (`cr-tab-security.jsx`, `admin.mfa.*`). It has
+  a policy per kind (`settings`) and per-person actions (`people`): let in for 10
+  minutes, reset, require, back to the policy, remind. The let-in is one person at a
+  time. Every run is one audit event.
+- **Refusals:** own account, staff and out-of-scope rows are refused per row.
+
+Tests: `run.php` +71 sign-in and MFA checks; new `tests/mfa.test.js` (`test:mfa`, in
+`test:all`).
+

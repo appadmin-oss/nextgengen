@@ -47,6 +47,7 @@ const CR_PAGES = {
     { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
     { id: "idcards", label: "ID cards", desc: "Print queue for member and staff cards.", cap: "people" },
     { id: "accounts", label: "Accounts", desc: "Who cannot sign in, and why. Ending a membership is not done here.", cap: "people" },
+    { id: "security", label: "Sign-in security", desc: "Who has a second sign-in step, the policy for each kind of person, and letting someone in for ten minutes.", cap: "people" },
   ] },
   mentors: { label: "Mentors & volunteers", icon: "handshake", tabs: [
     { id: "mentors", label: "Mentors", desc: "The mentor develops the person.", cap: "people" },

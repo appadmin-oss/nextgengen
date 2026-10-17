@@ -284,7 +284,11 @@ function member_state_get(array $p): array {
     } else {
         $rows = db_all('SELECT stateKey, stateValue FROM member_state WHERE memberId = ?', [$memberId]);
     }
-    foreach ($rows as $r) $out[$r['stateKey']] = safe_json($r['stateValue']);
+    foreach ($rows as $r) {
+        // Second-step secrets are never handed back to a page (mfa.php).
+        if (function_exists('mfa_private_key') && mfa_private_key((string)$r['stateKey'])) continue;
+        $out[$r['stateKey']] = safe_json($r['stateValue']);
+    }
     return ['ok' => true, 'state' => $out];
 }
 
@@ -292,6 +296,7 @@ function member_state_set(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $key = trim((string)($p['key'] ?? ''));
     if ($key === '' || strlen($key) > 80) return ['ok' => false, 'error' => 'bad_key'];
+    if (function_exists('mfa_private_key') && mfa_private_key($key)) return ['ok' => false, 'error' => 'bad_key'];
     $value = $p['value'] ?? null;
     $json = is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_SLASHES);
     if (strlen((string)$json) > 20000) return ['ok' => false, 'error' => 'too_large'];

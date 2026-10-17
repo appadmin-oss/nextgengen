@@ -575,6 +575,13 @@ function NavAuthSlot({ setPage }) {
               <span>⚙</span> Control Room
             </button>
           )}
+          {/* Staff manage the console's authenticator in the Control Room; a
+              participant's card has no second step (mfa.jsx). */}
+          {!isAdmin && member.role !== "student" && (
+            <button className="nav-auth-menu-item" onClick={() => { setMenuOpen(false); if (window.nggMfa) window.nggMfa("manage"); }}>
+              <span>🛡</span> Two-step sign-in
+            </button>
+          )}
           <div className="nav-auth-menu-divider"/>
           <button className="nav-auth-menu-item nav-auth-menu-danger" onClick={async () => { setMenuOpen(false); await signOut(); }}>Sign out</button>
         </div>

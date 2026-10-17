@@ -1703,6 +1703,65 @@ they all behave the same way. Worth knowing once:
 
 ---
 
+## Signing in, and two-step sign-in
+
+### Who signs in where
+
+- **Members** sign in with their email, Member ID or the number on their card
+  (`026-014`), and a code we email them (or a password, if they set one).
+- **Instructors, volunteers and mentors** use the same door. They type their
+  email or the number on their Vanguard card (`VOL-INS-26-001`) and get a code
+  at the address on their volunteer record. The card door (card number plus
+  their own phone) still works. When their record has no phone, the card door
+  says so and offers the emailed code instead.
+- **A mentor who only has a mentor record** (added in Mentors, with an email
+  and no member or volunteer account) can sign in with that email. The first
+  time they do, they are given a volunteer record linked to their mentor
+  record, so the portal and their ID card both find them.
+- **Guardians** sign in on the Family page with their email and a code.
+- **Staff** sign in with a password and then the Control Room's authenticator
+  app, as before.
+
+### The second step, by kind of person
+
+| Who | Their second step |
+|---|---|
+| Members (children and young people) | A private question they choose and answer |
+| Instructors, volunteers and mentors | An authenticator app, or a code emailed to them when they sign in with their card |
+| Guardians | A six-digit family PIN, asked after the emailed code |
+| Staff | The Control Room authenticator (managed in **Access & roles**) |
+
+A team member who chose the emailed code is not asked for a second email after
+signing in with an emailed code. That would be the same thing twice.
+
+Anybody without a second step sees an alert at the bottom of the screen until
+they add one. They can change or turn it off from the account menu ("Two-step
+sign-in"), or from the palette in the Member Portal. Changing it needs the
+current answer or code first. Where it is required, it cannot be turned off.
+
+### Members › Sign-in security
+
+- **The three cards** show how many of each kind have a second step. Click
+  one to list those people.
+- **Policy per kind of person** (needs Settings):
+  - **Off.**
+  - **Optional:** people are shown the alert.
+  - **Required:** anyone without one sets it up before their portal opens.
+- **Actions** on a row, or on a selection:
+  - **Let them in without it for 10 minutes.** This is for a child at the desk
+    who has forgotten their answer. Do it only with the person in front of
+    you. It is one person at a time, never a bulk action. If they are already
+    on the question screen, they press "I've been let in by staff" and they
+    are in. Every let-in is in the audit log.
+  - **Reset.** Clears what they set, so they choose a new one.
+  - **Require it** of one person, whatever the policy. **Back to the policy**
+    undoes that.
+  - **Email a reminder** to set it up. At most one every 3 days.
+- **Five wrong answers** pause that person's second step for 15 minutes. A
+  let-in also lifts the pause.
+
+---
+
 ## Things that go wrong, and what they mean
 
 | What you see | What it means | What to do |
@@ -1724,6 +1783,9 @@ they all behave the same way. Worth knowing once:
 | A card shows the wrong details | It was printed from an older published version | Check **ID cards → One person's cards**; reprint |
 | A card's QR will not scan | Flagged at publish time if the modules are too small | Fix the QR size in the Design Studio and republish |
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
+| "Not a Member ID or email" at sign-in | Older builds refused card numbers | Card numbers (`VOL-INS-26-001`, `026-014`) are accepted now |
+| A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
+| "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
 
 ---

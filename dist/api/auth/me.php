@@ -21,6 +21,9 @@ if (empty($res['ok'])) json_ok(['member' => null, 'csrf' => $csrf]);
 
 json_ok([
     'member'  => $res['member'],
+    // The second sign-in step this session still owes ('' = none). Every other
+    // route answers mfa_required until it is passed; the app opens the step.
+    'mfaPending' => (string)($s['mfaP'] ?? ''),
     'adminOk' => (bool)($s['adminOk'] ?? false),
     'impersonating' => !empty($s['imp']) ? (string)$s['imp'] : null,
     'sessionExp' => (int)($s['exp'] ?? 0),  // unix seconds — lets the UI show a friendly expiry

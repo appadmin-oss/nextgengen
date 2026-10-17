@@ -49,11 +49,13 @@ function FamilyPage({ setPage }) {
   const [me, setMe] = React.useState(undefined);   // undefined = loading, null = signed out
   const [err, setErr] = React.useState("");
   const [linkErr, setLinkErr] = React.useState("");
+  // The family PIN still owed by this sign-in (domain/mfa.php), or ''.
+  const [mfaPending, setMfaPending] = React.useState("");
 
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.family.me()
-      .then(d => setMe(d && d.guardian ? d : null))
+      .then(d => { setMfaPending((d && d.mfaPending) || ""); setMe(d && d.guardian ? d : null); })
       .catch(e => { setErr(familyErr(e)); setMe(null); });
   }, []);
 
@@ -79,9 +81,14 @@ function FamilyPage({ setPage }) {
       </header>
       <main className="fam-main" id="main">
         {me === undefined && <div className="fam-loading" role="status"><div className="dash-spinner"/><span className="sr-only">Loading your family account</span></div>}
-        {me === null && <FamilySignIn initialError={linkErr || err} onSignedIn={load} setPage={setPage}/>}
+        {me === null && !mfaPending && <FamilySignIn initialError={linkErr || err} onSignedIn={load} setPage={setPage}/>}
         {me && <FamilyHome me={me} reload={load}/>}
       </main>
+      {/* A guardian's second step is their family PIN; the banner asks anyone without one. */}
+      {typeof MfaHost === "function" && (mfaPending || me) && (
+        <MfaHost family id={me ? me.guardian.guardianId : "family"} pending={mfaPending} onCleared={load}
+          onSignOut={async () => { try { await NGGApi.family.logout(); } catch (_) {} setMfaPending(""); setMe(null); }}/>
+      )}
     </div>
   );
 }

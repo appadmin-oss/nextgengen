@@ -27,10 +27,8 @@ if (bot_trap_tripped($body)) {
 v_require($body, ['identifier']);
 $identifier = trim(v_safe_text($body['identifier'], 120));
 if (strlen($identifier) < 3) json_error('identifier_too_short', 422);
-if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)
-    && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $identifier)) {
-    json_error('bad_identifier_format', 422);
-}
+// An email, or any ID as printed on an account or a card (auth_identifier_ok).
+if (!auth_identifier_ok($identifier)) json_error('bad_identifier_format', 422);
 
 $res = gs_call('auth.gateway', ['identifier' => $identifier, 'ip' => client_ip(), 'device' => device_trust_id()]);
 if (empty($res['ok'])) {

@@ -21,9 +21,7 @@ if ($otp !== '' && !preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $otp))) {
     json_error('bad_otp_format', 422);
 }
 // A Member ID, or the email the code was sent to (resolved in auth_verify).
-if ($memberId !== '' && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $memberId) && !filter_var($memberId, FILTER_VALIDATE_EMAIL)) {
-    json_error('bad_member_id', 422);
-}
+if ($memberId !== '' && !auth_identifier_ok($memberId)) json_error('bad_member_id', 422);
 
 $res = gs_call('auth.verify', [
     'token'    => $token,
@@ -36,8 +34,17 @@ if (empty($res['ok'])) {
     json_error($code, $code === 'rate_limited' ? 429 : 400);
 }
 
+$mfa = (string)($res['mfa'] ?? '');
+if (!empty($res['volunteer'])) {
+    // An instructor, volunteer or mentor signing in with an emailed code: the
+    // same card-holder session their ID card gives them.
+    $v = $res['volunteer'];
+    session_issue_cardholder($v, 'volunteer', !empty($body['remember']), ['mfaP' => $mfa]);
+    $csrf = csrf_issue();
+    json_ok(['member' => community_member_shape($v, 'volunteer'), 'kind' => 'volunteer', 'mfa' => $mfa, 'csrf' => $csrf]);
+}
 $member = $res['member'] ?? [];
-session_issue($member, false, '', !empty($body['remember']));
+session_issue($member, false, '', !empty($body['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
 
-json_ok(['member' => $member, 'csrf' => $csrf]);
+json_ok(['member' => $member, 'mfa' => $mfa, 'csrf' => $csrf]);

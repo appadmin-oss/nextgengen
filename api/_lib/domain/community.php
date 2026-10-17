@@ -80,17 +80,26 @@ function community_id_login(array $p): array {
          * address: eight misses lock that card's sign-in for half an hour. */
         if (attempt_locked('card.login', strtoupper($idIn))) return ['ok' => false, 'error' => 'too_many_attempts'];
         $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
-        $cand = db_row("SELECT * FROM summer_students WHERE (displayId = ? OR studentId = ?) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
+        // Case-blind: the card prints capitals, a phone keyboard types lower case.
+        $cand = db_row("SELECT * FROM summer_students WHERE (upper(displayId) = upper(?) OR upper(studentId) = upper(?)) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
         if ($cand) {
             $g = preg_replace('/\D/', '', (string)($cand['guardianPhone'] ?? ''));
             if ($g !== '' && $tail($g, $phone)) { $person = $cand; $kind = 'student'; }
         }
         if (!$person) {
             // A volunteer's printed ID *is* their volunteerId (VOL-INS-26-001).
-            $cand = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$idIn]);
+            $cand = db_row("SELECT * FROM volunteers WHERE upper(volunteerId) = upper(?) AND status = 'active' LIMIT 1", [$idIn]);
             if ($cand) {
                 $vp = preg_replace('/\D/', '', (string)($cand['phone'] ?? ''));
                 if ($vp !== '' && $tail($vp, $phone)) { $person = $cand; $kind = 'volunteer'; }
+                /* No phone on the record: this card can never pass, whatever is
+                 * typed — which is the "instructors cannot sign in" report. The
+                 * card is in their hand, so naming the other door leaks nothing:
+                 * an emailed code to the address on the record. */
+                elseif ($vp === '') {
+                    attempt_fail('card.login', strtoupper($idIn), 8, 1800);
+                    return ['ok' => false, 'error' => trim((string)($cand['email'] ?? '')) !== '' ? 'no_phone_use_email' : 'no_phone_on_file'];
+                }
             }
         }
     }
@@ -118,8 +127,31 @@ function community_id_login(array $p): array {
     try { db_update($table, ['communityAt' => now_iso()], $key); } catch (\Throwable $e) {}
 
     return ['ok' => true, 'kind' => $kind, 'person' => $person,
+            // Only the team owes a second step at the card door; a participant's card
+            // and their guardian's phone already are the two things.
+            'mfa' => $kind === 'volunteer' && function_exists('mfa_need') ? mfa_need($personId, 'volunteer', ['card']) : '',
             // Back-compat for the existing route, which reads ['student'].
             'student' => $person];
+}
+
+/** What a card or volunteer sign-in hands the app as "the member" — one shape
+ *  for the card door and the emailed-code door, so the two cannot drift. */
+function community_member_shape(array $who, string $kind): array {
+    $vol = $kind === 'volunteer';
+    $personId = (string)($vol ? ($who['volunteerId'] ?? '') : ($who['studentId'] ?? ''));
+    return [
+        'memberId' => $personId,
+        'fullName' => (string)($who['fullName'] ?? ''),
+        'type'     => $vol ? 'VOLUNTEER' : 'SUMMER',
+        'role'     => $vol ? 'volunteer' : 'student',
+        'caps'     => [],
+        'centre'   => (string)($who['centre'] ?? ''),
+        'track'    => (string)($vol ? ($who['role'] ?? '') : ($who['track'] ?? '')),
+        'photoUrl' => (string)($who['photoUrl'] ?? ''),
+        /* Which portal this person opens, answered at sign-in rather than on
+         * the next /auth/me — see auth_me. */
+        'portal'   => function_exists('mentor_portal_role') ? mentor_portal_role($personId) : '',
+    ];
 }
 
 /* ── Channels ─────────────────────────────────────────────────────────── */

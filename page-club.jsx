@@ -901,6 +901,11 @@ function CmStudentSignIn({ compact, dest, roles }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [scan, setScan] = React.useState(false);
+  const [noPhone, setNoPhone] = React.useState("");
+  const authCtx = (typeof useAuth === "function") ? useAuth() : null;
+  /* The other door for the team: a code to the email on their record, through
+     the main sign-in — it knows volunteer card numbers now. */
+  const emailDoor = () => { if (authCtx && authCtx.openSignIn) authCtx.openSignIn({ identifier: sid.trim() }); };
   const doLogin = async (creds, failMsg) => {
     setBusy(true); setErr("");
     try {
@@ -918,6 +923,12 @@ function CmStudentSignIn({ compact, dest, roles }) {
         setErr((e.data && e.data.message) || (e.code === "policy_evicted"
           ? "This ID has been evicted from the programme. Speak to the coordinator."
           : "This ID is suspended — access to the digital channels is paused."));
+      } else if (e.code === "no_phone_use_email" || e.code === "no_phone_on_file") {
+        // The card is right, but no phone is on the record, so it can never pass.
+        setNoPhone(e.code);
+        setErr(e.code === "no_phone_use_email"
+          ? "There’s no phone number on your record, so the card can’t be checked. Sign in with a code sent to your email instead."
+          : "There’s no phone number or email on your record. Ask your coordinator to add one.");
       } else {
         setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : failMsg);
       }
@@ -983,6 +994,11 @@ function CmStudentSignIn({ compact, dest, roles }) {
       )}
       <label className="cm-stu-remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Stay signed in for 30 days</span></label>
       {err && <div role="alert" className="cm-stu-err">{err}</div>}
+      {isVol && authCtx && (
+        <button type="button" className={"cm-scan-btn cm-stu-email" + (noPhone === "no_phone_use_email" ? " is-on" : "")} onClick={emailDoor}>
+          ✉ Email me a sign-in code instead
+        </button>
+      )}
     </div>
   );
 }

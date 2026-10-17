@@ -86,14 +86,87 @@ function auth_find_member(string $identifier, string $ip, string $via, string $d
         audit('login.miss.locked', null, $identifier, ['via' => $via], $ip);
         return ['ok' => false, 'error' => 'too_many_misses'];
     }
-    $member = db_row('SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1', [$identifier, $identifier]);
+    $member = db_row("SELECT * FROM members WHERE lower(memberId) = ? OR lower(email) = ? OR (displayId <> '' AND lower(displayId) = ?) LIMIT 1", [$identifier, $identifier, $identifier]);
     if ($member) return ['ok' => true, 'member' => $member];
+    /* Not a member account: the Volunteer Vanguard. Instructors, mentors and
+     * coordinators hold a volunteers row (or only a mentors row), and this
+     * door used to know nothing but `members` — so every one of them typed
+     * their own email, was told a code was on its way, and never got one. */
+    $staff = auth_find_volunteer($identifier);
+    if ($staff) return ['ok' => true, 'member' => null, 'staff' => $staff];
 
     $honest = $device !== '' && !attempt_locked('auth.honest', $device);
     if ($honest) attempt_fail('auth.honest', $device, AUTH_HONEST_PER_DAY, 86400);
     $paused = ($countMiss || $honest) ? attempt_fail('auth.miss', $ip, AUTH_MISS_MAX, AUTH_MISS_LOCK) : false;
     audit('login.fail.unknown', null, $identifier, ['identifier' => $identifier, 'via' => $via, 'told' => $honest, 'paused' => $paused], $ip);
     return ['ok' => true, 'member' => null, 'honest' => $honest];
+}
+
+/** Any identifier the sign-in door accepts: an email, or an ID as it is
+ *  printed — NGG-2025-0042 (account), 026-014 (member card), VOL-INS-26-001
+ *  (volunteer card). The old pattern took only the first, so a card's own
+ *  number was refused as "not an email or member ID" before any lookup. */
+function auth_identifier_ok(string $s): bool {
+    $s = trim($s);
+    return (bool)filter_var($s, FILTER_VALIDATE_EMAIL)
+        || (bool)preg_match('/^[A-Z0-9]{2,8}(-[A-Z0-9]{1,8}){1,3}$/i', $s);
+}
+
+/**
+ * A volunteer, instructor or mentor at the main door, by card number or email:
+ *   ['kind' => 'volunteer', 'id' => volunteerId, 'row' => volunteers row]
+ *   ['kind' => 'mentor',    'id' => mentorId,    'row' => mentors row]   — a
+ *     mentor added straight to the mentors table, bound to nobody yet; they
+ *     are given a volunteer record once the emailed code proves the address
+ *     (auth_staff_principal), never on a lookup.
+ * An email shared by two active volunteers answers nobody: the card number is
+ * unambiguous and the door says to use it, rather than picking one.
+ */
+function auth_find_volunteer(string $identifier): ?array {
+    $id = strtolower(trim($identifier));
+    if ($id === '') return null;
+    if (strpos($id, '@') === false) {
+        $v = db_row("SELECT * FROM volunteers WHERE lower(volunteerId) = ? AND status = 'active' LIMIT 1", [$id]);
+        return $v ? ['kind' => 'volunteer', 'id' => (string)$v['volunteerId'], 'row' => $v] : null;
+    }
+    $rows = db_all("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active' ORDER BY id LIMIT 2", [$id]);
+    if (count($rows) === 1) return ['kind' => 'volunteer', 'id' => (string)$rows[0]['volunteerId'], 'row' => $rows[0]];
+    if (count($rows) > 1) return null;
+    $m = function_exists('mentor_rows_for_email') ? mentor_rows_for_email($id) : [];
+    if (count($m) !== 1) return null;
+    // Bound to a member account: that account is the door, not this one.
+    if (trim((string)($m[0]['memberId'] ?? '')) !== '') return null;
+    $vid = trim((string)($m[0]['volunteerId'] ?? ''));
+    if ($vid !== '') {
+        $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$vid]);
+        return $v ? ['kind' => 'volunteer', 'id' => $vid, 'row' => $v] : null;
+    }
+    return ['kind' => 'mentor', 'id' => (string)$m[0]['mentorId'], 'row' => $m[0]];
+}
+
+/**
+ * The volunteers row a verified staff sign-in becomes. A mentor who has only
+ * a mentors row is given one here — the card-holder session, the mentor gate
+ * and the portal all key on a volunteerId, and a mentor with neither a member
+ * nor a volunteer id had no identity anything could resolve.
+ */
+function auth_staff_principal(string $id): ?array {
+    $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$id]);
+    if ($v) return $v;
+    $m = db_row("SELECT * FROM mentors WHERE mentorId = ? AND status = 'active' LIMIT 1", [$id]);
+    if (!$m || trim((string)($m['memberId'] ?? '')) !== '') return null;
+    $bound = trim((string)($m['volunteerId'] ?? ''));
+    if ($bound !== '') return db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$bound]) ?: null;
+    $tier = function_exists('vol_tier_for') ? vol_tier_for('mentor') : ['code' => 'MEN'];
+    $vid = volunteer_display_id((string)($tier['code'] ?? 'MEN'));
+    db_insert('volunteers', [
+        'volunteerId' => $vid, 'fullName' => (string)($m['fullName'] ?? ''), 'email' => (string)($m['email'] ?? ''),
+        'phone' => (string)($m['phone'] ?? ''), 'role' => 'mentor', 'centre' => (string)($m['centre'] ?? ''),
+        'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+    ]);
+    db_update('mentors', ['volunteerId' => $vid, 'updatedAt' => now_iso()], ['mentorId' => (string)$m['mentorId']]);
+    audit('volunteer.provision.mentor', $vid, (string)$m['mentorId'], ['via' => 'signin'], '');
+    return db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$vid]) ?: null;
 }
 
 /**
@@ -182,6 +255,16 @@ function auth_request(array $p): array {
     if (empty($found['ok'])) return $found;
     $member = $found['member'];
     $masked = auth_masked_for($identifier);
+    if (!$member && !empty($found['staff'])) {
+        // A volunteer/instructor/mentor: the same code, mailed to the address
+        // on their volunteer (or mentor) record, keyed by that record's id.
+        $st = $found['staff'];
+        $email = trim((string)($st['row']['email'] ?? ''));
+        // Only reachable by the card number (an email lookup found the email):
+        // the card is in their hand, so saying which door to use leaks nothing.
+        if ($email === '') return ['ok' => false, 'error' => 'no_email_use_card'];
+        $member = ['memberId' => $st['id'], 'email' => $email, 'fullName' => (string)($st['row']['fullName'] ?? ''), 'status' => 'active', 'role' => 'volunteer'];
+    }
     if (!$member) {
         if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
         auth_notify_no_account($identifier, $ip, 'request');
@@ -271,7 +354,9 @@ function auth_login(array $p): array {
     }
     auth_fail_reset($member);
     audit('login.pw.success', $member['memberId'], (string)$member['memberId'], [], $ip);
-    return ['ok' => true, 'member' => public_member($member)];
+    return ['ok' => true, 'member' => public_member($member),
+        // The second sign-in step still owed, if any (mfa.php); the route marks the session with it.
+        'mfa' => function_exists('mfa_need') ? mfa_need((string)$member['memberId'], 'member', []) : ''];
 }
 
 /**
@@ -314,9 +399,20 @@ function auth_set_password(array $p): array {
  *  exactly like a wrong code — nothing says whether the email has an account. */
 function auth_resolve_member_id(string $idOrEmail): string {
     $v = trim($idOrEmail);
-    if ($v === '' || strpos($v, '@') === false) return $v;
-    $m = db_row('SELECT memberId FROM members WHERE lower(email) = ? ORDER BY id LIMIT 1', [strtolower($v)]);
-    return $m ? (string)$m['memberId'] : $v;
+    if ($v === '') return $v;
+    $lv = strtolower($v);
+    if (strpos($v, '@') === false) {
+        /* The code was keyed by the record's own id; the person may have typed
+         * it in lower case, or typed their card's number instead. */
+        $m = db_row("SELECT memberId FROM members WHERE lower(memberId) = ? OR (displayId <> '' AND lower(displayId) = ?) ORDER BY id LIMIT 1", [$lv, $lv]);
+        if ($m) return (string)$m['memberId'];
+        $st = auth_find_volunteer($v);
+        return $st ? (string)$st['id'] : $v;
+    }
+    $m = db_row('SELECT memberId FROM members WHERE lower(email) = ? ORDER BY id LIMIT 1', [$lv]);
+    if ($m) return (string)$m['memberId'];
+    $st = auth_find_volunteer($v);
+    return $st ? (string)$st['id'] : $v;
 }
 
 function auth_verify(array $p): array {
@@ -341,6 +437,9 @@ function auth_verify(array $p): array {
             if ($m) {
                 if (auth_locked($m)) return ['ok' => false, 'error' => 'account_locked'];
                 auth_fail_bump($m, $ip);
+            } elseif (attempt_fail('auth.staff', $memberId, 8, 1800)) {
+                // A volunteer has no lock columns; the same cap lives in the attempt store.
+                return ['ok' => false, 'error' => 'account_locked'];
             }
         }
         audit('login.fail.bad_token', $memberId ?: null, '', ['ip' => $ip], $ip);
@@ -349,6 +448,7 @@ function auth_verify(array $p): array {
     if ($memberId !== '') {
         $mGuard = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
         if ($mGuard && auth_locked($mGuard)) return ['ok' => false, 'error' => 'account_locked'];
+        if (!$mGuard && attempt_locked('auth.staff', $memberId)) return ['ok' => false, 'error' => 'account_locked'];
     }
     if (strtotime((string)$ch['expiresAt']) < time()) { audit('login.fail.expired', $ch['memberId'], '', [], $ip); return ['ok' => false, 'error' => 'expired']; }
     if (!empty($ch['verifiedAt'])) { audit('login.fail.replay', $ch['memberId'], '', [], $ip); return ['ok' => false, 'error' => 'already_used']; }
@@ -359,7 +459,19 @@ function auth_verify(array $p): array {
     }
 
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
-    if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if (!$member) {
+        // A staff code: a volunteer, or a mentor about to be given a volunteer record.
+        $v = auth_staff_principal((string)$ch['memberId']);
+        if (!$v) return ['ok' => false, 'error' => 'member_gone'];
+        if (function_exists('policy_gate_checkin')) {
+            $gate = policy_gate_checkin((string)$v['volunteerId'], 'volunteer');
+            if (empty($gate['ok'])) return ['ok' => false, 'error' => (string)$gate['error'], 'message' => (string)($gate['message'] ?? '')];
+        }
+        attempt_reset('auth.staff', (string)$ch['memberId']);
+        audit('login.success', (string)$v['volunteerId'], (string)$v['volunteerId'], ['kind' => 'volunteer', 'via' => 'code'], $ip);
+        return ['ok' => true, 'volunteer' => $v,
+                'mfa' => function_exists('mfa_need') ? mfa_need((string)$v['volunteerId'], 'volunteer', ['email']) : ''];
+    }
     // Admins must complete sign-in with their password, never an emailed code or
     // magic link — enforced here too so a stale/crafted challenge can't bypass it.
     if (auth_password_only($member)) {
@@ -369,7 +481,9 @@ function auth_verify(array $p): array {
 
     auth_fail_reset($member);
     audit('login.success', $member['memberId'], (string)$member['memberId'], [], $ip);
-    return ['ok' => true, 'member' => public_member($member)];
+    return ['ok' => true, 'member' => public_member($member),
+        // The second sign-in step still owed, if any (mfa.php); the route marks the session with it.
+        'mfa' => function_exists('mfa_need') ? mfa_need((string)$member['memberId'], 'member', ['email']) : ''];
 }
 
 /**
@@ -544,7 +658,9 @@ function auth_reset_confirm(array $p): array {
     // A new password ends every session signed in with the old one.
     if (function_exists('auth_revoke_sessions')) auth_revoke_sessions((string)$member['memberId'], 'password_reset');
     audit('password.reset.success', $member['memberId'], (string)$member['memberId'], [], $ip);
-    return ['ok' => true, 'member' => public_member($member)];
+    return ['ok' => true, 'member' => public_member($member),
+        // The second sign-in step still owed, if any (mfa.php); the route marks the session with it.
+        'mfa' => function_exists('mfa_need') ? mfa_need((string)$member['memberId'], 'member', ['email']) : ''];
 }
 
 /**

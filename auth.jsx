@@ -32,6 +32,11 @@ function AuthProvider({ children }) {
   const [loading, setLoading] = React.useState(true);
   const [signinOpen, setSigninOpen] = React.useState(false);
   const [signinSeed, setSigninSeed] = React.useState(null); // { token } when coming from magic link
+  /* The second sign-in step this session still owes (domain/mfa.php): '' none,
+     'enroll', a step type, or 'ask' when a route said mfa_required first. While
+     it is owed the app treats the person as not yet signed in — no screen
+     loads their data only to be refused — and MfaHost asks for it. */
+  const [mfaPending, setMfaPending] = React.useState("");
 
   // Boot — fetch /me + consume ?signin= magic link if present.
   React.useEffect(() => {
@@ -57,6 +62,7 @@ function AuthProvider({ children }) {
           try {
             const v = await NGGApi.auth.verify({ token });
             setMember(v.member);
+            setMfaPending(v.mfa || "");
             setSigninOpen(false);
           } catch (e) {
             // Show the modal pre-filled, so they can retry with OTP
@@ -68,6 +74,7 @@ function AuthProvider({ children }) {
         } else {
           const me = await NGGApi.auth.me();
           setMember(me.member || null);
+          setMfaPending(me.mfaPending || "");
           setAdminOk(Boolean(me.adminOk));
           setSessionExp(me.sessionExp || 0);
           setIdleExp(me.idleExpiresAt || 0);
@@ -75,7 +82,7 @@ function AuthProvider({ children }) {
           // Conventional /login (or /signin) entry point: open the sign-in
           // modal for guests, send signed-in members to their dashboard.
           if (BOOT_WANTS_LOGIN) {
-            if (me.member) {
+            if (me.member && !me.mfaPending) {
               // Coordinator-only accounts land in their own portal, not the
               // dashboard. summer_admin → Summer portal, club_admin → Club.
               const caps = me.member.caps || [];
@@ -95,16 +102,18 @@ function AuthProvider({ children }) {
     })();
   }, []);
 
+  // Not signed in until the second step is passed (see mfaPending).
+  const signedIn = mfaPending ? null : member;
   const ctx = {
-    member,
+    member: signedIn,
     adminOk,
     loading,
-    isSignedIn: !!member,
+    isSignedIn: !!signedIn,
     // Any staff tier (editor/admin/super_admin) can open the console; caps
     // decide what's visible inside.
-    isAdmin: !!member && Array.isArray(member.caps) && member.caps.length > 0,
-    caps: (member && member.caps) || [],
-    hasCap: (cap) => !!member && Array.isArray(member.caps) && member.caps.indexOf(cap) !== -1,
+    isAdmin: !!signedIn && Array.isArray(signedIn.caps) && signedIn.caps.length > 0,
+    caps: (signedIn && signedIn.caps) || [],
+    hasCap: (cap) => !!signedIn && Array.isArray(signedIn.caps) && signedIn.caps.indexOf(cap) !== -1,
     openSignIn: (seed) => { setSigninSeed(seed || null); setSigninOpen(true); },
     closeSignIn: () => setSigninOpen(false),
     impersonating,
@@ -113,6 +122,7 @@ function AuthProvider({ children }) {
     refresh: async () => {
       const me = await NGGApi.auth.me();
       setMember(me.member || null);
+      setMfaPending(me.mfaPending || "");
       setAdminOk(Boolean(me.adminOk));
       setSessionExp(me.sessionExp || 0);
       setIdleExp(me.idleExpiresAt || 0);
@@ -135,6 +145,7 @@ function AuthProvider({ children }) {
         stale.forEach(k => localStorage.removeItem(k));
       } catch (_) {}
       setMember(null);
+      setMfaPending("");
       setAdminOk(false);
       // Leave any members-only page (dashboard/admin) for home on sign-out.
       if (window.__navigate) window.__navigate("home");
@@ -143,7 +154,7 @@ function AuthProvider({ children }) {
     // Lock the Control Room without signing out — re-entry needs only a fresh
     // 2FA code, not a full sign-in.
     lockAdmin: () => setAdminOk(false),
-    onVerified: (m) => { setMember(m); setSigninOpen(false); },
+    onVerified: (m, mfa) => { setMember(m); setMfaPending(mfa || ""); setSigninOpen(false); },
   };
 
   /* Keep an ACTIVE session alive.
@@ -228,7 +239,10 @@ function AuthProvider({ children }) {
       setSigninOpen(true);
     };
     window.addEventListener("ngg:session-expired", onExpired);
-    return () => window.removeEventListener("ngg:session-expired", onExpired);
+    // A route refused because the second step is owed: ask for it, wherever we are.
+    const onMfa = () => { if (memberRef.current) setMfaPending(p => p || "ask"); };
+    window.addEventListener("ngg:mfa-required", onMfa);
+    return () => { window.removeEventListener("ngg:session-expired", onExpired); window.removeEventListener("ngg:mfa-required", onMfa); };
   }, []);
 
   const staySignedIn = async () => {
@@ -263,6 +277,13 @@ function AuthProvider({ children }) {
       {signinOpen && (
         <SignInModal seed={signinSeed} onClose={ctx.closeSignIn} onVerified={ctx.onVerified}/>
       )}
+      {/* Staff answer the console's own authenticator (cr-gate.jsx), and a
+          participant's card session has no second step. */}
+      {member && member.role !== "student" && !impersonating && typeof MfaHost === "function" && (
+        <MfaHost id={member.memberId} pending={mfaPending}
+          onCleared={() => { ctx.refresh().catch(() => setMfaPending("")); }}
+          onSignOut={ctx.signOut}/>
+      )}
     </AuthCtx.Provider>
   );
 }
@@ -275,7 +296,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   // One door (W1): 'id' → gateway decides → 'password' | 'enter-otp'.
   // The gateway never reveals account types — staff look like any member.
   const [stage, setStage] = React.useState(seed && seed.resetToken ? "reset-new" : (seed && seed.token ? "enter-otp" : "id"));
-  const [identifier, setIdentifier] = React.useState("");
+  const [identifier, setIdentifier] = React.useState(seed && seed.identifier ? seed.identifier : "");
   const [password, setPassword] = React.useState("");
   const [showPw, setShowPw] = React.useState(false);
   // Which sign-in methods the gateway offered for this identifier. Admins come
@@ -358,7 +379,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     setErr(""); setBusy(true);
     try {
       const r = await NGGApi.auth.login(identifier.trim(), password, remember, hp);
-      onVerified(r.member);
+      onVerified(r.member, r.mfa);
     } catch (e) {
       const code = e.code || e.message;
       if (code === "no_password") {
@@ -425,7 +446,7 @@ function SignInModal({ seed, onClose, onVerified }) {
         ? { token: resetToken, password: newPw }
         : { memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), password: newPw };
       const r = await NGGApi.auth.resetConfirm(creds);
-      onVerified(r.member);
+      onVerified(r.member, r.mfa);
     } catch (e) { setErr(humanizeAuthError(e.code || e.message)); }
     finally { setBusy(false); }
   };
@@ -437,7 +458,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     setErr(""); setBusy(true);
     try {
       const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: String(code || otp).replace(/\s+/g, ""), remember });
-      onVerified(r.member);
+      onVerified(r.member, r.mfa);
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
     } finally {
@@ -501,7 +522,7 @@ function SignInModal({ seed, onClose, onVerified }) {
   const title = stage === "enter-otp" ? "Check your email"
     : stage === "password" ? "Welcome back"
     : (stage === "reset-request" || stage === "reset-new") ? "Set a new password" : "Sign in";
-  const sub = stage === "id" ? "Use your Member ID or email."
+  const sub = stage === "id" ? "Use your email, Member ID or the ID on your card."
     : stage === "password" ? null
     : stage === "reset-request" ? "We’ll email you a code to set a new password."
     : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : sent ? <>{ifAccount} Enter it, then choose a password.</> : "Enter the code from your email, then choose a password.")
@@ -527,7 +548,7 @@ function SignInModal({ seed, onClose, onVerified }) {
               <label htmlFor="signin-hp">Leave this empty</label>
               <input id="signin-hp" name="ngg_hp" type="text" tabIndex={-1} autoComplete="off" value={hp} onChange={(e) => setHp(e.target.value)}/>
             </div>
-            <label className="signin-label" htmlFor="signin-idp">Member ID or email</label>
+            <label className="signin-label" htmlFor="signin-idp">Email, Member ID or card ID</label>
             <input id="signin-idp" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
               placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}/>
             {fieldErr}
@@ -689,8 +710,10 @@ function humanizeAuthError(code) {
     suspended: "This account is suspended. Contact admin.",
     account_locked: "Too many failed tries — this account is paused for 15 minutes. Try again then, or use your email link.",
     identifier_too_short: "Tell us your Member ID or email.",
-    bad_identifier_format: "That doesn't look like a Member ID or email — check it and try again.",
+    bad_identifier_format: "That doesn't look like an email, a Member ID or a card ID — check it and try again.",
     unauthorized: "Sign in to continue.",
+    no_email_use_card: "There’s no email on this card’s record. Sign in with your card and phone number, or ask your coordinator to add your email.",
+    mfa_required: "Finish your second sign-in step to continue.",
     admin_2fa_required: "Admin area needs a 2FA code.",
   };
   return map[code] || "Something went wrong. Try again.";

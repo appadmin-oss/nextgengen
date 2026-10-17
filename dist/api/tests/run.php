@@ -27606,5 +27606,149 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId = 'DTY-K1'"); db_exec("DELETE FROM member_state WHERE memberId = 'DTY-K1'"); db_exec("DELETE FROM notifications WHERE memberId = 'DTY-K1'"); unset($GLOBALS['__mail_sink']);
 })();
 
+
+// ── Sign-in for the team, and two-step sign-in (auth.php, community.php, mfa.php) ──
+(function () {
+    $GLOBALS['__mail_sink'] = [];
+    $now = now_iso();
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-901', 'fullName' => 'Tunde Instructor', 'email' => 'tunde.ins@x.example', 'phone' => '', 'role' => 'instructor', 'centre' => 'Egbeda', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MEN-T-901', 'fullName' => 'Mojisola Mentor', 'email' => 'moji.men@x.example', 'phone' => '08031234567', 'centre' => 'Egbeda', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-2026-0901', 'displayId' => '026-901', 'fullName' => 'Ada Kid', 'email' => 'ada.kid@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    chk('signin · a volunteer card number is a valid identifier', auth_identifier_ok('VOL-INS-26-901') && auth_identifier_ok('vol-ins-26-901'));
+    chk('signin · a member card number is a valid identifier', auth_identifier_ok('026-014') && auth_identifier_ok('NGG-2025-0042') && auth_identifier_ok('a@b.co'));
+    chk('signin · junk is not', !auth_identifier_ok('hello world') && !auth_identifier_ok('x') && !auth_identifier_ok("1' OR 1=1"));
+
+    // An instructor by email: a code is mailed to the address on their volunteer record.
+    $n = count($GLOBALS['__mail_sink']);
+    $r = backend_dispatch('auth.request', ['identifier' => 'Tunde.Ins@x.example', 'ip' => '']);
+    $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = 'VOL-INS-26-901' ORDER BY id DESC LIMIT 1");
+    chk('signin · an instructor gets an emailed code (they used to get nothing)', !empty($r['ok']) && $ch && count(array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => $m['to'] === 'tunde.ins@x.example')) === 1);
+    $v = backend_dispatch('auth.verify', ['memberId' => 'vol-ins-26-901', 'otp' => (string)$ch['otp'], 'ip' => '']);
+    chk('signin · and the code signs them in as themselves, typed in lower case', !empty($v['ok']) && ($v['volunteer']['volunteerId'] ?? '') === 'VOL-INS-26-901');
+    chk('signin · the card-holder shape carries the volunteer kind', community_member_shape($v['volunteer'], 'volunteer')['type'] === 'VOLUNTEER');
+
+    // A mentor with only a mentors row: given a volunteer record once the code proves the address.
+    $n = count($GLOBALS['__mail_sink']);
+    $r = backend_dispatch('auth.request', ['identifier' => 'moji.men@x.example', 'ip' => '']);
+    $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = 'MEN-T-901' ORDER BY id DESC LIMIT 1");
+    chk('signin · a mentor with no account is sent a code', !empty($r['ok']) && $ch !== null);
+    chk('signin · the lookup alone creates nothing', !db_row("SELECT 1 FROM volunteers WHERE email = 'moji.men@x.example'"));
+    $v = backend_dispatch('auth.verify', ['memberId' => 'moji.men@x.example', 'otp' => (string)$ch['otp'], 'ip' => '']);
+    $bound = db_row("SELECT volunteerId FROM mentors WHERE mentorId = 'MEN-T-901'");
+    chk('signin · verifying gives the mentor a volunteer record bound to their mentor row', !empty($v['ok']) && $bound['volunteerId'] !== '' && $bound['volunteerId'] === ($v['volunteer']['volunteerId'] ?? '-'));
+    $again = auth_find_volunteer('moji.men@x.example');
+    chk('signin · and the next sign-in finds that record, not a second one', ($again['kind'] ?? '') === 'volunteer' && $again['id'] === $bound['volunteerId']
+        && (int)db_row("SELECT COUNT(*) c FROM volunteers WHERE lower(email) = 'moji.men@x.example'")['c'] === 1);
+
+    // Card door: case-blind, and a card with no phone on file says which door to use.
+    $c = community_id_login(['displayId' => 'vol-ins-26-901', 'guardianPhone' => '08030000000']);
+    chk('signin · a card with no phone on file is told to use the emailed code', ($c['error'] ?? '') === 'no_phone_use_email');
+    db_exec("UPDATE volunteers SET phone = '0803 123 4567' WHERE volunteerId = 'VOL-INS-26-901'");
+    attempt_reset('card.login', 'VOL-INS-26-901');
+    $c = community_id_login(['displayId' => 'vol-ins-26-901', 'guardianPhone' => '+2348031234567']);
+    chk('signin · the card number is matched whatever its case', !empty($c['ok']) && $c['kind'] === 'volunteer');
+    chk('signin · no second step owed while it is optional and unset', ($c['mfa'] ?? 'x') === '');
+
+    // ── Two-step: a member's private question ──
+    $kid = ['requesterId' => 'NGG-2026-0901', 'who' => 'member'];
+    $st = mfa_status($kid);
+    chk('mfa · a member is offered a private question, nothing else', $st['kind'] === 'member' && array_column($st['methods'], 'id') === ['question'] && count($st['questions']) >= 3);
+    chk('mfa · the team are offered an app or an emailed code', array_column(mfa_status(['requesterId' => 'VOL-INS-26-901', 'who' => 'volunteer'])['methods'], 'id') === ['app', 'email']);
+    chk('mfa · an answer that is your own name is refused', (mfa_enroll_finish($kid + ['type' => 'question', 'question' => 'What is my name really?', 'answer' => 'Ada'])['error'] ?? '') === 'answer_is_name');
+    $e = mfa_enroll_finish($kid + ['type' => 'question', 'question' => MFA_QUESTIONS[0], 'answer' => 'Mrs. Okafor']);
+    chk('mfa · a member sets a question', !empty($e['ok']) && mfa_status($kid)['enrolled'] === true);
+    chk('mfa · the answer is stored hashed, never as typed', !str_contains((string)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa'")['stateValue'], 'okafor'));
+    chk('mfa · and the public state op cannot read it back', !array_key_exists('mfa', member_state_get(['memberId' => 'NGG-2026-0901'])['state']));
+    chk('mfa · nor write it', (member_state_set(['memberId' => 'NGG-2026-0901', 'key' => 'mfa', 'value' => ['type' => 'question']])['error'] ?? '') === 'bad_key');
+    chk('mfa · a password sign-in now owes the question', mfa_need('NGG-2026-0901', 'member', []) === 'question');
+    chk('mfa · an emailed code does not stand in for it', mfa_need('NGG-2026-0901', 'member', ['email']) === 'question');
+    chk('mfa · the answer is compared as words: case and punctuation do not decide', !empty(mfa_verify($kid + ['answer' => '  mrs okafor '])['ok']));
+    chk('mfa · a wrong answer is refused', (mfa_verify($kid + ['answer' => 'Mr Bello'])['error'] ?? '') === 'wrong_answer');
+    for ($i = 0; $i < 5; $i++) $last = mfa_verify($kid + ['answer' => 'nope ' . $i]);
+    chk('mfa · five wrong answers pause it', ($last['error'] ?? '') === 'too_many_attempts' && (mfa_verify($kid + ['answer' => 'Mrs Okafor'])['error'] ?? '') === 'too_many_attempts');
+    chk('mfa · changing the question needs the current answer', (mfa_enroll_finish(['requesterId' => 'NGG-2026-0901', 'who' => 'member', 'type' => 'question', 'question' => MFA_QUESTIONS[1], 'answer' => 'Allen Avenue', 'current' => 'wrong'])['error'] ?? '') !== '');
+
+    // ── The desk: let a child in for ten minutes ──
+    $adm = ['requesterId' => 'NGG-2025-0099', 'ip' => ''];
+    $one = [['id' => 'NGG-2026-0901', 'who' => 'member']];
+    $b = admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one]);
+    chk('mfa · an admin lets a member in without their question for ten minutes', !empty($b['ok']) && $b['applied'] === 1 && abs(mfa_bypass_until('NGG-2026-0901') - (time() + 600)) < 5);
+    chk('mfa · while that lasts, sign-in owes nothing and the pause is lifted', mfa_need('NGG-2026-0901', 'member', []) === '' && !attempt_locked('mfa', 'NGG-2026-0901'));
+    chk('mfa · the let-in is audited', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'admin.mfa.bypass' AND subject = 'NGG-2026-0901'"));
+    chk('mfa · it is one person at a time, never a list', (admin_mfa_act($adm + ['action' => 'bypass', 'people' => [$one[0], ['id' => 'VOL-INS-26-901', 'who' => 'volunteer']]])['error'] ?? '') === 'one_at_a_time');
+    chk('mfa · and never longer than an hour', (admin_mfa_act($adm + ['action' => 'bypass', 'people' => $one, 'minutes' => 240])['error'] ?? '') === 'bad_minutes');
+    mfa_del('NGG-2026-0901', 'mfa.bypass');
+    $own = admin_mfa_act($adm + ['action' => 'reset', 'people' => [['id' => 'NGG-2025-0099', 'who' => 'member']]]);
+    chk('mfa · an admin cannot act on their own account here', ($own['results'][0]['error'] ?? '') === 'own_account');
+    $rs = admin_mfa_act($adm + ['action' => 'reset', 'people' => $one]);
+    chk('mfa · reset clears what they set', !empty($rs['ok']) && mfa_enrolment('NGG-2026-0901') === null);
+    chk('mfa · resetting again is reported unchanged, not applied', !empty(admin_mfa_act($adm + ['action' => 'reset', 'people' => $one])['results'][0]['unchanged']));
+    admin_mfa_act($adm + ['action' => 'require', 'people' => $one]);
+    chk('mfa · required of one person, sign-in sends them to set it up', mfa_need('NGG-2026-0901', 'member', []) === 'enroll');
+    admin_mfa_act($adm + ['action' => 'unrequire', 'people' => $one]);
+    chk('mfa · and back to the policy', mfa_need('NGG-2026-0901', 'member', []) === '');
+    $n = count($GLOBALS['__mail_sink']);
+    $rm = admin_mfa_act($adm + ['action' => 'remind', 'people' => $one]);
+    chk('mfa · a reminder is emailed to someone without it', !empty($rm['results'][0]['ok']) && count(array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => $m['to'] === 'ada.kid@x.example')) === 1);
+    chk('mfa · and not again inside three days', ($m2 = admin_mfa_act($adm + ['action' => 'remind', 'people' => $one]))['results'][0]['error'] === 'quiet_period');
+    chk('mfa · too many in one run is refused with the cap named', (admin_mfa_act($adm + ['action' => 'remind', 'people' => array_fill(0, MFA_BULK_MAX + 1, $one[0])])['max'] ?? 0) === MFA_BULK_MAX);
+
+    // Policy, per kind.
+    chk('mfa · a bad policy value is refused', (admin_mfa_policy_set($adm + ['policy' => ['member' => 'always']])['error'] ?? '') === 'bad_policy');
+    $ps = admin_mfa_policy_set($adm + ['policy' => ['team' => 'required']]);
+    chk('mfa · the team can be required to have it', !empty($ps['ok']) && mfa_policy()['team'] === 'required' && mfa_policy()['member'] === 'optional');
+    attempt_reset('card.login', 'VOL-INS-26-901');
+    $c = community_id_login(['displayId' => 'VOL-INS-26-901', 'guardianPhone' => '08031234567']);
+    chk('mfa · then an instructor with none set is sent to set it up at sign-in', ($c['mfa'] ?? '') === 'enroll');
+
+    // The team: authenticator app.
+    $ins = ['requesterId' => 'VOL-INS-26-901', 'who' => 'volunteer'];
+    $go = mfa_enroll_start($ins + ['type' => 'app']);
+    chk('mfa · an authenticator setup gives a secret and an otpauth link', strlen($go['secret'] ?? '') >= 16 && str_starts_with($go['otpauth'], 'otpauth://totp/'));
+    chk('mfa · a wrong first code does not set it', (mfa_enroll_finish($ins + ['type' => 'app', 'code' => '000000', 'pendingEnroll' => true])['error'] ?? '') === 'code_wrong');
+    $fin = mfa_enroll_finish($ins + ['type' => 'app', 'code' => totp_code($go['secret'], intdiv(time(), 30)), 'pendingEnroll' => true]);
+    chk('mfa · the right code sets it', !empty($fin['ok']) && mfa_enrolment('VOL-INS-26-901')['type'] === 'app');
+    chk('mfa · and card sign-in now asks for the app', mfa_need('VOL-INS-26-901', 'volunteer', ['card']) === 'app');
+    // The team: emailed code — not asked twice after an emailed sign-in code.
+    mfa_put('VOL-INS-26-901', 'mfa', ['type' => 'email', 'since' => now_iso()]);
+    chk('mfa · email as the second step is not asked again after an emailed sign-in', mfa_need('VOL-INS-26-901', 'volunteer', ['email']) === '' && mfa_need('VOL-INS-26-901', 'volunteer', ['card']) === 'email');
+    $n = count($GLOBALS['__mail_sink']);
+    $chal = mfa_challenge($ins);
+    $mail = array_values(array_filter(array_slice($GLOBALS['__mail_sink'], $n), fn($m) => $m['to'] === 'tunde.ins@x.example'))[0] ?? null;
+    // The template draws one digit per cell; read them back in order.
+    preg_match_all('/>(\d)<\/div><\/td>/', (string)($mail['html'] ?? ''), $dg); $mm = [1 => implode('', $dg[1] ?? [])];
+    if (strlen($mm[1]) !== 6) $mm = [];
+    chk('mfa · the challenge emails a code', $chal['type'] === 'email' && !empty($mm[1]));
+    chk('mfa · and that code passes the step', !empty(mfa_verify($ins + ['answer' => $mm[1] ?? ''])['ok']));
+    chk('mfa · once only', (mfa_verify($ins + ['answer' => $mm[1] ?? ''])['error'] ?? '') === 'wrong_answer');
+    chk('mfa · the team cannot turn it off while it is required', (mfa_off($ins + ['current' => 'x'])['error'] ?? '') === 'mfa_required_by_policy');
+
+    // Guardians: a family PIN.
+    db_insert('guardians', ['guardianId' => 'GDN-T901', 'email' => 'mum.t901@x.example', 'fullName' => 'Mrs Kid', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    $gd = ['requesterId' => 'GDN-T901', 'who' => 'guardian'];
+    chk('mfa · a guardian is offered a family PIN', array_column(mfa_status($gd)['methods'], 'id') === ['pin']);
+    chk('mfa · an easy PIN is refused', (mfa_enroll_finish($gd + ['type' => 'pin', 'pin' => '111111'])['error'] ?? '') === 'pin_too_easy');
+    mfa_enroll_finish($gd + ['type' => 'pin', 'pin' => '402917']);
+    chk('mfa · after the emailed sign-in code, the PIN is still asked', mfa_need('GDN-T901', 'guardian', ['email']) === 'pin' && !empty(mfa_verify($gd + ['answer' => '402917'])['ok']));
+
+    // The desk's list.
+    $ov = admin_mfa_overview($adm + ['kind' => 'team', 'state' => 'enrolled', 'q' => 'tunde']);
+    chk('mfa · the desk lists who has it, searched server-side', !empty($ov['ok']) && $ov['total'] === 1 && $ov['rows'][0]['id'] === 'VOL-INS-26-901' && $ov['rows'][0]['type'] === 'email');
+    $ov = admin_mfa_overview($adm + ['kind' => 'member', 'state' => 'none', 'q' => 'ada kid']);
+    chk('mfa · and who does not', $ov['total'] === 1 && $ov['rows'][0]['type'] === '' && isset($ov['counts']['guardian']['enrolled']));
+    chk('mfa · staff are not in the member list (their authenticator is the console\'s)', admin_mfa_overview($adm + ['kind' => 'member', 'q' => 'admin user'])['total'] === 0);
+    chk('mfa · an unknown filter falls back rather than failing', admin_mfa_overview($adm + ['kind' => 'nonsense', 'state' => 'weird'])['kind'] === 'member');
+    db_insert('members', ['memberId' => 'NGG-2026-0902', 'fullName' => 'Ed Editor', 'email' => 'ed.t902@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('mfa · a staff account is refused here', (admin_mfa_act($adm + ['action' => 'reset', 'people' => [['id' => 'NGG-2026-0902', 'who' => 'member']]])['results'][0]['error'] ?? '') === 'staff_account');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-2026-0902'");
+
+    setting_set('mfa_policy', null);
+    foreach (['VOL-INS-26-901', 'NGG-2026-0901', 'GDN-T901', (string)$bound['volunteerId']] as $x) { db_exec('DELETE FROM member_state WHERE memberId = ?', [$x]); attempt_reset('mfa', $x); }
+    db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-INS-26-901', ?)", [(string)$bound['volunteerId']]);
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-T-901'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-2026-0901'"); db_exec("DELETE FROM guardians WHERE guardianId = 'GDN-T901'");
+    unset($GLOBALS['__mail_sink']);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -155,7 +155,8 @@ function family_verify(array $p): array {
         audit('family.account.create', (string)$g['guardianId'], (string)$g['guardianId'], [], $ip);
     }
     audit('family.login', (string)$g['guardianId'], (string)$g['guardianId'], [], $ip);
-    return ['ok' => true, 'guardian' => $g];
+    return ['ok' => true, 'guardian' => $g,
+            'mfa' => function_exists('mfa_need') ? mfa_need((string)$g['guardianId'], 'guardian', ['email']) : ''];
 }
 
 /** family.signout_all — end every session this account holds. */

@@ -3865,6 +3865,9 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-scan-btn { min-height: var(--c-tap); padding: 0 14px; border-radius: var(--c-r-btn);
   border: 1px solid var(--c-border-strong); background: var(--c-card);
   font-size: 13px; font-weight: 700; cursor: pointer; }
+/* The team's other door: an emailed code (auth.jsx), when the card cannot pass. */
+.cm-stu-email { display: block; width: 100%; margin-top: 10px; }
+.cm-stu-email.is-on { border-color: var(--c-ink, #0a1130); box-shadow: 0 0 0 2px rgba(245, 176, 38, .55); }
 
 .cm-pill-ic { display: inline-grid; place-items: center; }
 

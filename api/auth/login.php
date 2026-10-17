@@ -35,7 +35,8 @@ if (empty($res['ok'])) {
 }
 
 $member = $res['member'] ?? [];
-session_issue($member, false, '', !empty($body['remember']));
+$mfa = (string)($res['mfa'] ?? '');
+session_issue($member, false, '', !empty($body['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
 
-json_ok(['member' => $member, 'csrf' => $csrf]);
+json_ok(['member' => $member, 'mfa' => $mfa, 'csrf' => $csrf]);

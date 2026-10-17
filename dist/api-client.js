@@ -32,6 +32,10 @@
       /* The record drive locked this member's account until their record is
          complete (domain/profile-drive.php): tell the app, which shows the
          form, whatever screen asked. */
+      /* A session that still owes its second sign-in step (domain/mfa.php):
+         every route but the step itself answers mfa_required, and the app
+         opens the step wherever it was asked from. */
+      if (e && e.code === 'mfa_required') { try { window.dispatchEvent(new CustomEvent('ngg:mfa-required', { detail: { path } })); } catch (_) {} }
       if (e && e.code === 'record_incomplete') { try { window.dispatchEvent(new CustomEvent('ngg:record-incomplete')); if (window.__onRecordIncomplete) window.__onRecordIncomplete(); } catch (_) {} }
       throw e;
     }
@@ -648,6 +652,15 @@
       verify:  (creds) => request('/auth/verify.php', { body: creds }),
       studentLogin: (creds) => request('/auth/student-login.php', { body: creds }),
       me:      () => request('/auth/me.php'),
+      /* Two-step sign-in, for whoever is signed in; family: true for a guardian. */
+      mfa: {
+        status:    (family) => request('/auth/mfa.php' + (family ? '?who=family' : '')),
+        challenge: (family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'challenge' } }),
+        verify:    (answer, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'verify', answer } }),
+        start:     (type, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'start', type } }),
+        enroll:    (data, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: Object.assign({ action: 'enroll' }, data) }),
+        off:       (current, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'off', current } }),
+      },
       logout:  () => request('/auth/logout.php', { method: 'POST' }),
       adminTotpSetup:  () => request('/auth/admin-totp-setup.php', { method: 'POST' }),
       adminTotpVerify: (code) => request('/auth/admin-2fa.php', { body: { code } }),
@@ -1158,6 +1171,12 @@
         save: (block) => request('/admin/formation.php', { body: Object.assign({ action: 'save' }, block || {}) }),
       },
       /* Opportunities shown to members (Learning → Opportunities). Capability: content. */
+      /* Sign-in & security (domain/mfa.php): who has a second step, the policy per kind, and the desk's actions. */
+      mfa: {
+        overview: (q) => request('/admin/mfa.php?' + new URLSearchParams(q || {}).toString()),
+        policy:   (policy) => request('/admin/mfa.php', { body: { action: 'policy', policy } }),
+        act:      (action, people, extra) => request('/admin/mfa.php', { body: Object.assign({ action, people }, extra || {}) }),
+      },
       opps: {
         list: () => request('/admin/opps.php'),
         save: (o) => request('/admin/opps.php', { body: Object.assign({ action: 'save' }, o || {}) }),
