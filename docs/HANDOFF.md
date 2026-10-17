@@ -1422,3 +1422,15 @@ Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
 - Pre-existing: `tests/family-ui.test.js` fails one check (a selector timeout)
   on the branch without these changes.
 
+
+## 2026-10-17 (later) — the rest of the mentor security list
+
+- Register and weekly review: a Saturday, today or within 14 days (`mp_saturday_ok`, `not_a_saturday`).
+- Academy quiz: 3 attempts per module per 24h across both portals (`mentor_academy_attempts`, migration 152).
+- The week view no longer writes; `mpa_tick` closes stale Saturday follow-ups (`MP_FOLLOWUP_STALE_DAYS`).
+- Relationship check asks the child at most once in 28 days; a week's review belongs to its author (leads/coords may correct, audited).
+- `mp_urgent_alert()`: crisis chats and "Need help" check-ins reach the officer by email/SMS/app, else the centre's leads and an ops error. Inactive members cannot chat, but a crisis from them still alerts.
+- Retreat booking reports real failures; CSRF docblock corrected.
+- Production CSP (dist only) by hash, no unsafe-inline/eval — `tests/prod-csp.test.js`. No source map and no `api/tests` in dist.
+- Instructors/volunteer mentors with safeguarding pending: admitted with no reach; they see their courses in Curriculum, and the class screen says why it is empty.
+- Pre-existing, not fixed: `tests/mentor-v15.test.js` fails its Saturday register step ("Assignment in" click times out) on 10bee246 too; `tests/family-ui.test.js` fails one selector timeout.
