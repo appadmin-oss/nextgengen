@@ -176,7 +176,7 @@ const CR_INBOX_SOURCES = {
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
         };
         return crItem({
-          id: "req:" + x.requestId, cat: "requests", kind: x.kindLabel || "Member request", icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
+          id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
           title: x.subject || x.kindLabel, body: x.body || "", search: [x.displayId, x.centre, x.reference].join(" "),
           facts: f, thread: x.body ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body, mine: false }] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
