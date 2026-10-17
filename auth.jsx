@@ -302,6 +302,10 @@ function SignInModal({ seed, onClose, onVerified }) {
   // Which sign-in methods the gateway offered for this identifier. Admins come
   // back password-only (no 'code'), so we hide the emailed-code fallback.
   const [methods, setMethods] = React.useState([]);
+  /* The gateway gives every unknown browser the same answer (both methods),
+     so this screen cannot know whether this person has a password at all.
+     It says so, and makes the code the obvious way in for those who don't. */
+  const [uniform, setUniform] = React.useState(false);
   const [otp, setOtp] = React.useState("");
   // Self-service password reset: a magic-link token (from ?reset=) skips the
   // code entry; otherwise the member types the emailed code + a new password.
@@ -364,7 +368,7 @@ function SignInModal({ seed, onClose, onVerified }) {
     try {
       const r = await NGGApi.auth.gateway(authTidyId(identifier), hp);
       const m = r.methods || [];
-      setMethods(m);
+      setMethods(m); setUniform(!!r.uniform);
       if (m.includes("password")) { setStage("password"); }
       else { await requestLinkInner(); }
     } catch (e) {
@@ -577,7 +581,7 @@ function SignInModal({ seed, onClose, onVerified }) {
             {submit("Sign in", !password)}
             {methods.includes("code") && (
               <div className="signin-alts">
-                <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>Email me a code instead</button>
+                <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>{uniform ? "No password? Email me a sign-in code" : "Email me a code instead"}</button>
               </div>
             )}
           </form>

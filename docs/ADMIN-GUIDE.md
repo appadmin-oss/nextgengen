@@ -1758,6 +1758,21 @@ Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
 
+## Text messages: the free way
+
+Control Room → Settings → API keys → **SMS Gateway for Android (free)**. It is
+open-source software (sms-gate.app): install the app on the programme's own
+Android phone, turn on **Cloud Server**, and paste the username and password
+the app shows. There is no monthly fee and no message cap, unlike textbee's
+300 a month on its free plan.
+
+**It does use the phone's airtime.** Every text message costs what the SIM's
+carrier charges, whichever app sends it; only the software and the relay are
+free. Put an SMS bundle on that SIM (it is far cheaper than paying per text),
+keep the phone charged, on Wi-Fi or data, and with battery saving off for the
+app. Nigerian numbers go to this phone first, then textbee, Termii and Twilio
+if they are set. Email and in-app alerts cost nothing and are always sent too.
+
 ## File storage (Cloudflare R2 or Backblaze B2)
 
 When Cloudinary's plan runs low, give the site a **storage bucket** instead.
@@ -1910,6 +1925,22 @@ they all behave the same way. Worth knowing once:
 ---
 
 ## Signing in, and two-step sign-in
+
+### The first screen is the same for everyone
+
+On a phone or computer that has not signed in here before, every email or ID
+gets the same next screen: a password box, and **No password? Email me a
+sign-in code** under it. That is deliberate. The screen used to skip straight
+to "code sent" for people without a password and go to the password box for
+staff, which told anyone who typed an address whether it belonged to a member
+of staff. Most members simply press the code button. A device somebody has
+signed in on before is told what applies, a few times a day.
+
+A wrong password and "this account has no password" give the same message.
+Asking for a code for a staff account looks like any other request, but no
+code is sent: that inbox gets a note saying staff sign in with a password.
+Signing out only works from the app's own button, not from a link or an
+image somebody posts.
 
 ### Who signs in where
 

@@ -124,7 +124,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     }, pdf);
     const got = log[log.length - 1] || {};
     chk('a member\'s PDF goes straight to the bucket, with a signature the bucket accepts', r && r.url && got.why === '' && got.len === Buffer.byteLength(pdf), JSON.stringify(r).slice(0, 200) + ' ' + JSON.stringify(got));
-    chk('…stored under our folder, as a PDF, keeping its name and extension', /^ngg\/assignments\/\d{4}\/\d{2}\/[0-9a-f]{24}-my-essay\.pdf$/.test(got.key || '') && got.type === 'application/pdf' && r.format === 'pdf');
+    chk('…stored under our folder, as a PDF, keeping its name and extension', /^ngg\/assignments\/u[0-9a-f]{16}\/\d{4}\/\d{2}\/[0-9a-f]{24}-my-essay\.pdf$/.test(got.key || '') && got.type === 'application/pdf' && r.format === 'pdf');
     chk('…and the URL handed back is the public one, which serves the same bytes', r.url === BUCKET_URL + '/pub/' + got.key
       && (await p.evaluate(async (u) => (await (await fetch(u)).text()), r.url)) === pdf);
 

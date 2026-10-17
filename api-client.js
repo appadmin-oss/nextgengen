@@ -333,6 +333,8 @@
       // Documents keep the member's own filename, so the delivered URL still
       // ends in the real extension. Signed server-side — must match exactly.
       if (sig.useFilename) { fd.append('use_filename', 'true'); fd.append('unique_filename', 'true'); }
+      // The formats this signature allows — signed server-side, so it must be sent exactly.
+      if (sig.allowedFormats) fd.append('allowed_formats', sig.allowedFormats);
       const xhr = new XMLHttpRequest();
       xhr.open('POST', sig.uploadUrl);
       if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };

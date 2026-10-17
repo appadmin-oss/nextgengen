@@ -36,4 +36,4 @@ if (empty($res['ok'])) {
     json_error($e, $e === 'too_many_misses' ? 429 : 400);
 }
 
-json_ok(['methods' => $res['methods']]);
+json_ok(['methods' => $res['methods'], 'uniform' => !empty($res['uniform'])]);

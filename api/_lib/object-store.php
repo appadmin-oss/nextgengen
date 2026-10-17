@@ -175,8 +175,9 @@ function store_ext_for(string $mediaKind, string $name, string $type): string {
 }
 
 /** A new object key: folder/sub/YYYY/MM/random[-name].ext — chosen here, never by a caller. */
-function store_new_key(string $sub, string $ext, string $name = ''): string {
+function store_new_key(string $sub, string $ext, string $name = '', string $owner = ''): string {
     $sub = preg_match('#^[a-z][a-z0-9_-]{1,30}$#', $sub) ? $sub : 'files';
+    if ($owner !== '' && preg_match('#^u[0-9a-f]{16}$#', $owner)) $sub .= '/' . $owner;
     $stem = strtolower((string)preg_replace('/[^A-Za-z0-9]+/', '-', (string)pathinfo($name, PATHINFO_FILENAME)));
     $stem = trim(substr(trim($stem, '-'), 0, 48), '-');
     return store_folder() . '/' . $sub . '/' . gmdate('Y/m') . '/' . bin2hex(random_bytes(12)) . ($stem !== '' ? '-' . $stem : '') . '.' . $ext;
@@ -187,7 +188,7 @@ function store_new_key(string $sub, string $ext, string $name = ''): string {
  * method, headers, publicUrl, key, resourceType, format, maxBytes}.
  * $sub is the folder (already sanitised by the caller's kind rules).
  */
-function store_upload_spec(string $sub, string $mediaKind, string $name, string $type, $size, int $maxBytes): array {
+function store_upload_spec(string $sub, string $mediaKind, string $name, string $type, $size, int $maxBytes, string $owner = ''): array {
     if (!store_configured()) return ['ok' => false, 'error' => 'uploads_disabled'];
     $mediaKind = isset(STORE_TYPES[$mediaKind]) ? $mediaKind : 'image';
     $ext = store_ext_for($mediaKind, $name, $type);
@@ -196,13 +197,26 @@ function store_upload_spec(string $sub, string $mediaKind, string $name, string 
     $size = (int)$size;
     if ($size > $maxBytes) return ['ok' => false, 'error' => 'too_large', 'detail' => 'The file is larger than ' . (int)round($maxBytes / 1048576) . ' MB.', 'maxBytes' => $maxBytes];
     $ctype = STORE_TYPES[$mediaKind][$ext];
-    $key = store_new_key($sub, $ext, $mediaKind === 'image' ? '' : $name);
+    $key = store_new_key($sub, $ext, $mediaKind === 'image' ? '' : $name, $owner);
     $c = store_cfg();
     $url = store_presign('PUT', store_object_url($key), ['content-type' => $ctype, 'content-length' => (string)$size], STORE_PUT_TTL,
                          (string)$c['access_key'], (string)$c['secret_key'], store_region(), time());
     return ['ok' => true, 'provider' => 's3', 'uploadUrl' => $url, 'method' => 'PUT', 'headers' => ['Content-Type' => $ctype],
             'publicUrl' => store_public_url($key), 'key' => $key, 'format' => $ext, 'size' => $size, 'maxBytes' => $maxBytes,
             'resourceType' => $mediaKind === 'video' ? 'video' : ($mediaKind === 'raw' ? 'raw' : 'image')];
+}
+
+/** The extensions a media kind may be stored as — the same list for the bucket and for Cloudinary's `allowed_formats`. */
+function store_formats(string $mediaKind): array { return array_keys(STORE_TYPES[$mediaKind] ?? STORE_TYPES['image']); }
+
+/**
+ * The folder segment for one uploader: a keyed hash, not the member id, so a
+ * file URL never carries a child's id, but every file one person uploaded is
+ * under one prefix — to audit, or to purge when their record is erased.
+ */
+function store_owner_segment(string $memberId): string {
+    if ($memberId === '') return '';
+    return 'u' . substr(hash_hmac('sha256', 'upload-owner|' . $memberId, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? '')), 0, 16);
 }
 
 /** Is this URL one of OUR bucket's objects? */

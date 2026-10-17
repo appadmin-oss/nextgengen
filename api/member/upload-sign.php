@@ -89,12 +89,15 @@ if ($useStore) {
     $mk = !$mediaAware0 && $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $sc = $CONFIG['storage'] ?? [];
     $r = store_upload_spec((string)preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$sub)), $mk, (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''),
-                           $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)));
+                           $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)), store_owner_segment((string)($s['mid'] ?? '')));
     if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
     json_ok($r);
 }
 $base = trim((string)($cfg['folder'] ?? 'ngg'), '/');
-$folder = $base . '/' . $sub;
+/* One folder per uploader (a keyed hash, never the id itself), so one
+   person's files can be found and purged together. */
+$owner = store_owner_segment((string)($s['mid'] ?? ''));
+$folder = $base . '/' . $sub . ($owner !== '' ? '/' . $owner : '');
 
 $timestamp = time();
 
@@ -150,6 +153,14 @@ if ($mediaAware) {
     }
 }
 
+/* Formats are pinned in the signature too: an image kind stores only images,
+   a hand-in only the formats its media kind allows. Without it, a signature
+   asked for "a photo" could be spent on any file at all. */
+$fmtKind = $mediaAware ? upload_media_kind((string)($body['mediaKind'] ?? 'image')) : ($resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image')));
+// Cloudinary converts a phone's HEIC on delivery, so it may take one; the bucket cannot.
+$allowedFormats = implode(',', array_merge(store_formats($fmtKind), $fmtKind === 'image' ? ['heic', 'heif', 'avif'] : []));
+$signParams['allowed_formats'] = $allowedFormats;
+
 ksort($signParams);
 $toSign = [];
 foreach ($signParams as $k => $v) {
@@ -168,6 +179,7 @@ json_ok([
     'eagerAsync'   => $eager !== '',
     'transformation' => $incoming,
     'useFilename'  => $useFilename,
+    'allowedFormats' => $allowedFormats,
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     'maxBytes'     => (int)($cfg['max_bytes'] ?? (25 * 1024 * 1024)),
 ]);

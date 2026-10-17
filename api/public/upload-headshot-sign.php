@@ -36,7 +36,9 @@ if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) { $r =
 
 // Sign folder + timestamp + the incoming compression (same scheme as member/upload-sign.php).
 $incoming = media_incoming_transformation('headshot');
-$signParams = ['folder' => $folder, 'timestamp' => $timestamp, 'transformation' => $incoming];
+// Pinned formats: a headshot signature cannot be spent on anything but an image.
+$allowedFormats = 'jpg,jpeg,png,webp,heic,heif';
+$signParams = ['folder' => $folder, 'timestamp' => $timestamp, 'transformation' => $incoming, 'allowed_formats' => $allowedFormats];
 ksort($signParams);
 $toSign = [];
 foreach ($signParams as $k => $v) $toSign[] = $k . '=' . $v;
@@ -50,6 +52,7 @@ json_ok([
     'folder'       => $folder,
     'resourceType' => $resourceType,
     'transformation' => $incoming,
+    'allowedFormats' => $allowedFormats,
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     // Headshots are small; cap tighter than the authenticated endpoint.
     'maxBytes'     => (int)($cfg['headshot_max_bytes'] ?? (8 * 1024 * 1024)),

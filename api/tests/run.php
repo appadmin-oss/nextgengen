@@ -1293,7 +1293,8 @@ chk('reply: a reply that closes the conversation archives it', !empty($rp2['ok']
 unset($GLOBALS['__mail_sink']);
 
 // ── Standard password login (opt-in) ──
-chk('login without a password → no_password', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'anything'])['error'] === 'no_password');
+chk('login without a password answers exactly like an unknown account (invalid_login)', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'anything'])['error'] === 'invalid_login'
+    && backend_dispatch('auth.login', ['identifier' => 'nobody-at-all@example.com', 'password' => 'anything'])['error'] === 'invalid_login');
 chk('set password rejects short', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'short'])['error'] === 'password_too_short');
 chk('set password ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['ok']));
 chk('member now exposes hasPassword', backend_dispatch('member.dashboard', ['memberId' => 'NGG-2025-0001'])['member']['hasPassword'] === true);
@@ -1312,14 +1313,18 @@ attempt_reset('pw.current', 'NGG-2025-0001');
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
 // ── Sign-in gateway (one door, no account-type leaks) ──
-chk('gateway: account with password offers both methods', backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com'])['methods'] === ['code', 'password']);
+chk('gateway: an unknown browser is offered both methods, for any account', backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com'])['methods'] === ['password', 'code']
+    && !empty(backend_dispatch('auth.gateway', ['identifier' => 'tunde@example.com'])['uniform']));
 chk('gateway: unknown and passwordless answer identically', (function () {
     $unknown = backend_dispatch('auth.gateway', ['identifier' => 'ghost@example.com'])['methods'];
     db_insert('members', ['memberId' => 'NGG-2025-0770', 'fullName' => 'No Pass', 'email' => 'nopass@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     $passless = backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'];
-    return $unknown === ['code'] && $passless === ['code'];
+    attempt_reset('auth.honest', 'cccccccccccccccccccccccc');
+    $known = backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com', 'device' => 'cccccccccccccccccccccccc'])['methods'];
+    attempt_reset('auth.honest', 'cccccccccccccccccccccccc');
+    return $unknown === ['password', 'code'] && $passless === ['password', 'code'] && $known === ['code'];   // a known device is told what applies
 })());
-chk('gateway: staff look like ordinary password accounts', backend_dispatch('auth.gateway', ['identifier' => 'pa@example.com'])['methods'] === (!empty(db_row("SELECT passwordHash FROM members WHERE email='pa@example.com'")['passwordHash']) ? ['code', 'password'] : ['code']));
+chk('gateway: a staff account answers exactly like a member, unknown or passwordless', backend_dispatch('auth.gateway', ['identifier' => 'pa@example.com'])['methods'] === ['password', 'code']);
 
 // ── auth.request is resilient when the mail relay hiccups ──
 // Delivered: banks an OTP row and reports delivery=true (sink captures the mail).
@@ -1353,7 +1358,12 @@ chk('a reset token cannot be replayed as a login', backend_dispatch('auth.verify
 $rc = backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'freshpass12']);
 chk('reset confirm sets the password + returns the member', !empty($rc['ok']) && ($rc['member']['memberId'] ?? '') === 'NGG-2025-0770');
 chk('password sign-in now works for the reset account', !empty(backend_dispatch('auth.login', ['identifier' => 'nopass@example.com', 'password' => 'freshpass12'])['ok']));
-chk('gateway now offers password after reset', backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'] === ['code', 'password']);
+chk('gateway now offers password after reset (to a known device)', (function () {
+    attempt_reset('auth.honest', 'dddddddddddddddddddddddd');
+    $m = backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com', 'device' => 'dddddddddddddddddddddddd'])['methods'];
+    attempt_reset('auth.honest', 'dddddddddddddddddddddddd');
+    return $m === ['code', 'password'];
+})());
 chk('reset challenge is single-use (consumed code no longer matches)', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'anotherpass12'])['error'] === 'invalid');
 chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
 (function () {
@@ -1441,7 +1451,7 @@ chk('a suspended account answers like any other and is sent nothing', (function 
     $g = backend_dispatch('auth.gateway', ['identifier' => 'suspended771@example.com']);
     $r = backend_dispatch('auth.request', ['identifier' => 'suspended771@example.com']);
     $n = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = 'NGG-2025-0771'")['n'];
-    return ($g['methods'] ?? null) === ['code'] && !empty($r['ok']) && $n === 0;
+    return ($g['methods'] ?? null) === ['password', 'code'] && !empty($r['ok']) && $n === 0;
 })());
 // ── A browser that has signed in here before is told plainly ──
 chk('known device: an unknown identifier is told no_account at the gateway and at request', (function () {
@@ -1463,7 +1473,7 @@ chk('known device: plain answers are rationed to AUTH_HONEST_PER_DAY, then it ge
     }
     $after = backend_dispatch('auth.gateway', ['identifier' => 'probe-next@example.com', 'device' => $dev]);
     attempt_reset('auth.honest', $dev);
-    return ($after['methods'] ?? null) === ['code'];
+    return ($after['methods'] ?? null) === ['password', 'code'];
 })());
 chk('unknown email, unknown browser: neutral screen, and ONE "no account" email a day to that address', (function () {
     $e = 'lastyear-parent@example.com';
@@ -28597,6 +28607,55 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && service_key_check('https', 'http://x.r2.dev') !== '' && service_key_check('https', 'https://f004.backblazeb2.com/file/ngg-media') === '');
     db_exec("DELETE FROM members WHERE memberId = 'NGG-STO-1'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-STO-1'");
     if ($keep === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keep;
+})();
+
+/* The rest of the audit: no admin oracle in sign-in, pinned upload formats, the free SMS gateway. */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-ORA-1', 'fullName' => 'Staff Oracle', 'email' => 'oracle-staff@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin',
+                          'passwordHash' => password_hash('staffpass-1234', PASSWORD_DEFAULT), 'createdAt' => $now, 'updatedAt' => $now]);
+    $GLOBALS['__mail_sink'] = [];
+    attempt_reset('auth.usepw', 'oracle-staff@example.com');
+    $r = backend_dispatch('auth.request', ['identifier' => 'oracle-staff@example.com']);
+    $ghost = backend_dispatch('auth.request', ['identifier' => 'no-such-staff@example.com']);
+    $codes = (int)db_row("SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = 'NGG-ORA-1'")['n'];
+    $mail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'oracle-staff@example.com'));
+    chk('sign-in · asking a code for a staff address looks like any other request — no "use_password" — and no code is made',
+        !empty($r['ok']) && array_keys($r) === array_keys($ghost) && $codes === 0);
+    chk('sign-in · …and the staff inbox is told to use its password, once a day', count($mail) === 1 && strpos($mail[0]['html'], 'sign in with a password') !== false
+        && (backend_dispatch('auth.request', ['identifier' => 'oracle-staff@example.com']) && count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'oracle-staff@example.com')) === 1));
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-ORA-1'");
+
+    chk('uploads · formats a kind may store are one list for bucket and Cloudinary; an image kind never takes a document', store_formats('image') === ['jpg', 'jpeg', 'png', 'webp', 'gif']
+        && in_array('pdf', store_formats('pdf'), true) && !in_array('pdf', store_formats('image'), true) && !in_array('svg', store_formats('image'), true) && !in_array('html', store_formats('raw'), true));
+    $o = store_owner_segment('NGG-2025-0042');
+    chk('uploads · each uploader gets one folder, named by a keyed hash — never their member id', (bool)preg_match('/^u[0-9a-f]{16}$/', $o) && $o === store_owner_segment('NGG-2025-0042')
+        && $o !== store_owner_segment('NGG-2025-0043') && strpos($o, '0042') === false && store_owner_segment('') === '');
+    $keep = $GLOBALS['CONFIG']['storage'] ?? null;
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://a.r2.cloudflarestorage.com', 'bucket' => 'b', 'access_key' => 'k', 'secret_key' => 's', 'public_base' => 'https://pub-z.r2.dev', 'folder' => 'ngg'];
+    chk('uploads · a bucket key carries the uploader\'s folder', strpos(store_upload_spec('assignments', 'pdf', 'x.pdf', '', 5, STORE_MAX_BYTES, $o)['key'], 'ngg/assignments/' . $o . '/') === 0);
+    if ($keep === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keep;
+
+    $keepSms = $GLOBALS['CONFIG']['sms'] ?? null;
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'smsgate' => ['username' => 'GATEUSER', 'password' => 'gatepass', 'sim' => '2'], 'textbee' => ['api_key' => 'tb'], 'twilio' => ['sid' => 's', 'token' => 't', 'from' => '+1000']];
+    chk('sms · the free SMS Gateway goes first for Nigerian numbers, before textbee; after Twilio abroad', sms_provider_order('+2348031234567') === ['smsgate', 'textbee', 'twilio']
+        && sms_provider_order('+447911123456') === ['twilio', 'smsgate', 'textbee']);
+    $seen = null;
+    $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$seen) { $seen = ['url' => $url, 'opts' => $opts]; return ['ok' => true, 'body' => '{"id":"m-1","state":"Pending"}']; };
+    $r = sms_send('08031234567', 'Your code is 123456');
+    $b = json_decode((string)$seen['opts'][CURLOPT_POSTFIELDS], true);
+    chk('sms · SMS Gateway is called as documented: /messages, basic auth, textMessage, E.164, SIM slot', !empty($r['ok']) && $r['provider'] === 'smsgate'
+        && $seen['url'] === 'https://api.sms-gate.app/3rdparty/v1/messages' && $seen['opts'][CURLOPT_USERPWD] === 'GATEUSER:gatepass'
+        && $b === ['textMessage' => ['text' => 'Your code is 123456'], 'phoneNumbers' => ['+2348031234567'], 'simNumber' => 2]);
+    $GLOBALS['__sms_http_mock'] = fn($url, $opts) => str_contains($url, 'sms-gate') ? ['ok' => true, 'body' => '{"id":"m-2","state":"Failed"}'] : ['ok' => true, 'body' => '{"data":{"success":true,"smsBatchId":"b1"}}'];
+    chk('sms · a message the phone reports Failed falls through to the next provider', (sms_send('08031234567', 'x')['provider'] ?? '') === 'textbee');
+    $GLOBALS['CONFIG']['sms'] = ['smsgate' => ['username' => 'u', 'password' => 'p', 'url' => 'http://insecure.example/api']];
+    $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$seen) { $seen = ['url' => $url]; return ['ok' => true, 'body' => '{"id":"m-3"}']; };
+    sms_send('08031234567', 'x');
+    chk('sms · a private server address must be https; anything else uses the public server', $seen['url'] === 'https://api.sms-gate.app/3rdparty/v1/messages' && sms_enabled());
+    unset($GLOBALS['__sms_http_mock']);
+    if ($keepSms === null) unset($GLOBALS['CONFIG']['sms']); else $GLOBALS['CONFIG']['sms'] = $keepSms;
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

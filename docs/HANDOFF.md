@@ -1704,3 +1704,26 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   `allowed_formats`; logout accepts GET. `node vendor-build.js --check` was
   already failing on every file before this work (it compares a 16-character
   prefix with a full hash).
+
+## 2026-10-17 (later) — the three audit leftovers; a free SMS route
+
+- **Sign-in gateway**: an unknown browser gets `['password','code']` (and
+  `uniform`) for every identifier; only a known device (`device_trust_id`,
+  inside `AUTH_HONEST_PER_DAY`) is told the real methods. `auth_login` answers
+  `invalid_login` for an account with no password (was `no_password`), and
+  `auth_request` for a password-only staff account answers like any request
+  (was `use_password`) and mails that inbox once a day
+  (`auth_notify_use_password`). The code-verify path still refuses staff.
+- **Cloudinary signatures** now sign `allowed_formats` (one list with the
+  bucket: `store_formats()`; Cloudinary also takes HEIC/HEIF/AVIF for images)
+  and a per-uploader folder `store_owner_segment()` — `u` + 16 hex of an HMAC
+  of the member id under `cookie_secret`, never the id. Bucket keys carry the
+  same segment.
+- **Logout** is POST only (`require_method`), so it passes CSRF; an
+  `<img src=/api/auth/logout.php>` no longer signs anybody out.
+- **SMS Gateway for Android** (`sms_send_smsgate`, service key `smsgate`):
+  free, Apache-2.0, the public Cloud Server is free with no fixed cap. POST
+  `https://api.sms-gate.app/3rdparty/v1/messages`, basic auth,
+  `{textMessage:{text}, phoneNumbers, deviceId?, simNumber?}`; an id and a
+  state other than Failed is a send. First for +234, before textbee. It still
+  spends the SIM's airtime — no SMS route is free of carrier charges.

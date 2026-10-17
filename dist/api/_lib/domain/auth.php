@@ -254,6 +254,19 @@ function auth_notify_no_account(string $identifier, string $ip, string $via): vo
     audit($sent ? 'login.nobody.notified' : 'login.nobody.mail_fail', null, $identifier, ['via' => $via], $ip);
 }
 
+/** A staff account asked for a code: it signs in with its password (one note a day). */
+function auth_notify_use_password(array $member, string $ip): void {
+    $to = trim((string)($member['email'] ?? ''));
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || attempt_locked('auth.usepw', $to)) return;
+    attempt_fail('auth.usepw', $to, 1, 86400);
+    $html = email_template(['eyebrow' => 'Sign-in', 'title' => 'Staff accounts sign in with a password',
+        'intro' => 'Someone, probably you, asked for a sign-in code for this staff account at Next Generation Genius. Staff accounts do not use emailed codes, so none was sent.',
+        'bodyHtml' => '<p style="margin:0">Sign in with your password. Forgotten it? Use “Forgot?” on the sign-in page to set a new one.</p>',
+        'footNote' => 'Didn’t try to sign in? Nothing has been changed, but tell the programme office if this keeps happening.']);
+    $sent = send_mail($to, 'Sign in with your password — Next Generation Genius', $html);
+    audit($sent ? 'login.usepw.notified' : 'login.usepw.mail_fail', (string)$member['memberId'], (string)$member['memberId'], [], $ip);
+}
+
 /** An email on two different people's volunteer records: sign in with the card number instead (one note a day). */
 function auth_notify_shared_email(string $identifier, string $ip): void {
     if (!filter_var($identifier, FILTER_VALIDATE_EMAIL) || attempt_locked('auth.shared', $identifier)) return;
@@ -281,6 +294,17 @@ function auth_gateway(array $p): array {
     // A known device is told plainly; anyone else cannot tell unknown,
     // suspended and passwordless apart — all answer ['code'].
     if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
+    /* Which methods an account has is itself information: "this email has a
+       password" and "this one is password-only" said which addresses were
+       staff. A browser that has not signed in here before is given the same
+       answer for every identifier — both methods, password first — and only
+       a known device (within the same daily allowance as `no_account`) is
+       told what applies. Nothing else changes for a person: a member with no
+       password presses "Email me a code" on the next screen. */
+    $device = (string)($p['device'] ?? '');
+    $tell = $device !== '' && !attempt_locked('auth.honest', $device);
+    if (!$tell) return ['ok' => true, 'methods' => ['password', 'code'], 'uniform' => true];
+    attempt_fail('auth.honest', $device, AUTH_HONEST_PER_DAY, 86400);
     $member = $found['member'];
     $methods = ['code'];
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
@@ -345,8 +369,12 @@ function auth_request(array $p): array {
     }
     // Admins must use their password — never an emailed sign-in code.
     if (auth_password_only($member)) {
+        /* No code for a staff account — but no different answer either, or
+           "use_password" names every admin address to whoever asks. The
+           account's own inbox is told why no code came. */
         audit('login.otp.blocked_admin', $member['memberId'], (string)$member['memberId'], [], $ip);
-        return ['ok' => false, 'error' => 'use_password'];
+        auth_notify_use_password($member, $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
 
     $token = rand_hex(32);
@@ -398,7 +426,8 @@ function auth_login(array $p): array {
         // Spend a hash cycle to keep timing roughly constant.
         password_verify($password, '$2y$10$usesomesillystringforsaltusesomesillystringu');
         audit('login.pw.fail', $member['memberId'] ?? null, $identifier, ['reason' => $member ? 'no_password' : 'unknown'], $ip);
-        return ['ok' => false, 'error' => $member ? 'no_password' : 'invalid_login'];
+        // The same answer either way: "no_password" said the account exists.
+        return ['ok' => false, 'error' => 'invalid_login'];
     }
     if ((string)$member['status'] === 'suspended') {
         audit('login.pw.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
