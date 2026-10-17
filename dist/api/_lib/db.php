@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 153;
+const NGG_SCHEMA_TARGET = 154;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4666,6 +4666,14 @@ function db_migrate(PDO $db): void {
          * formation day's criteria (Not yet · Emerging · Demonstrated · Strong),
          * a strength and a next step, beside the week's three ratings. */
         153 => "ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT DEFAULT '';",
+        /* 154 — assignments that work for the instructor who sets them: the
+         * lesson an assignment belongs to, and when its audience was last
+         * reminded (a quiet period, so a press cannot spam a class). */
+        154 => "
+            ALTER TABLE assignments ADD COLUMN unitId TEXT DEFAULT '';
+            ALTER TABLE assignments ADD COLUMN remindedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sub_member ON assignment_submissions(memberId);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

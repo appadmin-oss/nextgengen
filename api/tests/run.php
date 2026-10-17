@@ -314,8 +314,9 @@ chk('submit ok', !empty(backend_dispatch('assignment.submit', ['memberId' => 'NG
 $subs = backend_dispatch('admin.assignments.submissions', ['requesterId' => 'NGG-2025-0099', 'assignmentId' => $aid]);
 chk('admin sees submission text', $subs['submissions'][0]['text'] === 'My essay');
 $sid = $subs['submissions'][0]['submissionId'];
-backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 25, 'feedback' => 'Good']);
-chk('grade clamps to max', backend_dispatch('assignment.list', ['memberId' => 'NGG-2025-0001'])['assignments'][0]['submission']['grade'] === 10);
+chk('a mark above the points is refused, not quietly clamped', (backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 25, 'feedback' => 'Good'])['error'] ?? '') === 'grade_out_of_range');
+backend_dispatch('admin.assignment.grade', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'grade' => 10, 'feedback' => 'Good']);
+chk('grade is recorded', backend_dispatch('assignment.list', ['memberId' => 'NGG-2025-0001'])['assignments'][0]['submission']['grade'] === 10);
 chk('no resubmit after graded', backend_dispatch('assignment.submit', ['memberId' => 'NGG-2025-0001', 'assignmentId' => $aid, 'text' => 'x'])['error'] === 'already_graded');
 // Return-for-revision reopens resubmission.
 chk('return-for-revision unlocks the submission', !empty(backend_dispatch('admin.assignment.return', ['requesterId' => 'NGG-2025-0099', 'submissionId' => $sid, 'feedback' => 'Add a paragraph'])['ok']) && db_row('SELECT status FROM assignment_submissions WHERE submissionId=?', [$sid])['status'] === 'returned');
@@ -28258,6 +28259,59 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('curriculum · a track that is a course name stays that one course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
     setting_set('club_catalogue', $prevCat);
     db_exec("DELETE FROM members WHERE memberId LIKE 'CMC-%'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CMU-%'");
+})();
+
+// ── Assignments: the right members, the instructor's own courses, and the desk's tools ──
+(function () {
+    $now = now_iso();
+    $mk = function ($id, $track, $centre = 'Egbeda', $extra = []) use ($now) { db_insert('members', $extra + ['memberId' => $id, 'fullName' => $id . ' Name', 'email' => strtolower($id) . '@asg.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => $centre, 'track' => $track, 'createdAt' => $now, 'updatedAt' => $now]); };
+    $mk('ASG-T1', 'TECH'); $mk('ASG-T2', 'TECH'); $mk('ASG-M1', 'MUSIC'); $mk('ASG-FAR', 'TECH', 'Ayobo');
+    db_insert('volunteers', ['volunteerId' => 'VOL-INS-26-ASG', 'fullName' => 'Ife Instructor', 'email' => 'ife.ins@asg.example', 'role' => 'instructor', 'centre' => 'Egbeda', 'status' => 'active',
+        'safeguarding' => 'cleared', 'courses' => json_encode(['Coding']), 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    $ins = ['requesterId' => 'VOL-INS-26-ASG', 'ip' => ''];
+    $l = staff_assignments_list($ins);
+    chk('assignments · an instructor reaches the desk with their own course', !empty($l['ok']) && $l['who'] === 'instructor' && $l['courses'] === ['Coding']);
+    $aud = staff_assignments_audience($ins + ['track' => 'Coding']);
+    $audIds = array_column(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda']), 'memberId');
+    chk('assignments · the audience is the course’s members at their centre (a TECH member takes Coding)', in_array('ASG-T1', $audIds, true) && in_array('ASG-T2', $audIds, true) && !in_array('ASG-FAR', $audIds, true) && !in_array('ASG-M1', $audIds, true) && $aud['count'] === count($audIds));
+    chk('assignments · an instructor cannot set work for another course', (staff_assignments_save($ins + ['data' => ['title' => 'Scales', 'track' => 'Piano', 'instructions' => 'Play']])['fieldErrors']['track'] ?? '') !== '');
+    chk('assignments · nor for the whole Club', isset(staff_assignments_save($ins + ['data' => ['title' => 'Everyone', 'track' => '', 'instructions' => 'x']])['fieldErrors']));
+    chk('assignments · publishing needs instructions', isset(staff_assignments_save($ins + ['data' => ['title' => 'Empty', 'track' => 'Coding', 'status' => 'published']])['fieldErrors']['instructions']));
+    $sv = staff_assignments_save($ins + ['data' => ['title' => 'Build a page', 'track' => 'Coding', 'instructions' => 'Make a web page about yourself.', 'points' => 20, 'status' => 'published', 'proof' => 'either']]);
+    $aid = $sv['assignmentId'] ?? '';
+    chk('assignments · published without a date, it is due next Saturday', !empty($sv['ok']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $sv['dueAt']) && gmdate('w', strtotime($sv['dueAt'] . 'T12:00:00Z')) === '6');
+    chk('assignments · its centre is the instructor’s own', (string)db_row('SELECT centre FROM assignments WHERE assignmentId = ?', [$aid])['centre'] === 'Egbeda');
+    chk('assignments · the members it reaches are told', $sv['notified'] === count($audIds) && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ASG-T1' AND title LIKE 'New assignment%'"));
+    chk('assignments · a TECH member sees it', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-T1'])['assignments'], 'assignmentId'), true));
+    chk('assignments · a MUSIC member does not, and cannot hand it in by its id', !in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-M1'])['assignments'], 'assignmentId'), true)
+        && (assignment_submit(['memberId' => 'ASG-M1', 'assignmentId' => $aid, 'text' => 'mine'])['error'] ?? '') === 'not_for_you');
+    chk('assignments · a member hands it in', !empty(assignment_submit(['memberId' => 'ASG-T1', 'assignmentId' => $aid, 'text' => 'I built a page with a heading and a photo.'])['ok']));
+    $subs = staff_assignment_submissions($ins + ['assignmentId' => $aid]);
+    $missIds = array_column($subs['missing'], 'memberId');
+    chk('assignments · the desk lists what came in and who has not handed anything in', count($subs['submissions']) === 1 && in_array('ASG-T2', $missIds, true) && !in_array('ASG-T1', $missIds, true));
+    $n = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASG-T2'")['c'];
+    $rm = staff_assignments_remind($ins + ['assignmentId' => $aid]);
+    chk('assignments · a reminder goes only to those who have not handed in', ($rm['reminded'] ?? 0) === count($missIds) && !db_row("SELECT 1 FROM notifications WHERE memberId = 'ASG-T1' AND title LIKE 'Reminder:%'") && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'ASG-T2'")['c'] === $n + 1);
+    chk('assignments · and not again inside a day', (staff_assignments_remind($ins + ['assignmentId' => $aid])['error'] ?? '') === 'quiet_period');
+    $sid = $subs['submissions'][0]['submissionId'];
+    chk('assignments · sending it back needs a reason', (staff_assignment_return($ins + ['submissionId' => $sid])['error'] ?? '') === 'feedback_required');
+    staff_assignment_return($ins + ['submissionId' => $sid, 'feedback' => 'Add a second section.']);
+    $me = array_values(array_filter(assignment_list_for_member(['memberId' => 'ASG-T1'])['assignments'], fn($a) => $a['assignmentId'] === $aid))[0];
+    chk('assignments · returned work shows the feedback and can be handed in again', $me['state'] === 'returned' && $me['canSubmit'] === true && $me['submission']['feedback'] === 'Add a second section.');
+    assignment_submit(['memberId' => 'ASG-T1', 'assignmentId' => $aid, 'text' => 'Now with an About me section.']);
+    $GLOBALS['__ai_mock'] = fn($profile, $system, $turns) => ['ok' => true, 'text' => '{"grade": 17, "feedback": "Clear page. Add links next.", "confidence": "high"}', 'provider' => 'mock'];
+    $prevAi = $GLOBALS['CONFIG']['ai'] ?? null; $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $sg = staff_assignment_suggest($ins + ['submissionId' => $sid]);
+    chk('assignments · an AI suggestion drafts a mark and feedback, writing nothing', !empty($sg['ok']) && $sg['grade'] === 17 && db_row('SELECT status FROM assignment_submissions WHERE submissionId = ?', [$sid])['status'] === 'submitted');
+    unset($GLOBALS['__ai_mock']); if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
+    chk('assignments · the instructor marks it', !empty(staff_assignment_grade($ins + ['submissionId' => $sid, 'grade' => 17, 'feedback' => 'Clear page.'])['ok']));
+    chk('assignments · and the member sees the mark', (array_values(array_filter(assignment_list_for_member(['memberId' => 'ASG-T1'])['assignments'], fn($a) => $a['assignmentId'] === $aid))[0]['state'] ?? '') === 'marked');
+    chk('assignments · one with work handed in cannot be deleted', (staff_assignments_status($ins + ['action' => 'delete', 'ids' => [$aid]])['results'][0]['error'] ?? '') === 'has_submissions');
+    chk('assignments · it can be closed', !empty(staff_assignments_status($ins + ['action' => 'close', 'ids' => [$aid]])['results'][0]['ok'])
+        && (assignment_submit(['memberId' => 'ASG-T2', 'assignmentId' => $aid, 'text' => 'late'])['error'] ?? '') === 'not_open');
+    db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$aid]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'ASG-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASG'"); db_exec("DELETE FROM notifications WHERE memberId LIKE 'ASG-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

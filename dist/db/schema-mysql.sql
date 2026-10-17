@@ -3697,3 +3697,9 @@ INSERT INTO schema_version (version) VALUES (152) ON DUPLICATE KEY UPDATE versio
 -- 153: the Saturday evaluation (formation criteria, strength, next step) on the week's review.
 ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT;
 INSERT INTO schema_version (version) VALUES (153) ON DUPLICATE KEY UPDATE version = version;
+
+-- 154: an assignment's lesson, and when its audience was last reminded.
+ALTER TABLE assignments ADD COLUMN unitId VARCHAR(64) DEFAULT '';
+ALTER TABLE assignments ADD COLUMN remindedAt VARCHAR(32) DEFAULT '';
+CREATE INDEX idx_sub_member ON assignment_submissions(memberId);
+INSERT INTO schema_version (version) VALUES (154) ON DUPLICATE KEY UPDATE version = version;

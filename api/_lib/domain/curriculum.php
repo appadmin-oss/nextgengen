@@ -816,13 +816,25 @@ function admin_curriculum_report(array $p): array {
  *      member's literal track still matches, as it always did.
  * With nothing at all on the record, the member's `division` decides.
  */
-function curriculum_member_courses(array $m): array {
+/** What course matching reads, built once — callers that place many members
+ *  (an assignment's audience) pass it in rather than re-reading it per member. */
+function curriculum_course_ctx(): array {
     $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
     $byLower = [];
     foreach ($catalogue as $courses) foreach ($courses as $c) $byLower[mb_strtolower(trim((string)$c))] = (string)$c;
+    $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
+    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => []];
+}
+
+function curriculum_member_courses(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx();
+    $catalogue = $ctx['catalogue']; $byLower = $ctx['byLower']; $unitCourses = $ctx['unitCourses'];
     /* A division's courses: the seeded list, plus every course of each
      * catalogue division that is the same division under the admin's own name
-     * ("AI & Technology" is Technology; "Creative Arts" is the arts). */
+     * ("AI & Technology" is Technology; "Creative Arts" is the arts), plus
+     * every course lessons are actually filed under that reads as the division
+     * ("Media Lab" is Media): an imported programme can name a course the
+     * catalogue never listed. */
     $divOf = function (string $name): string {
         if (!function_exists('nggc_division_for_track')) return '';
         $id = nggc_division_for_track($name);
@@ -830,20 +842,17 @@ function curriculum_member_courses(array $m): array {
         foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) { if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id; }
         return '';
     };
-    /* …and every course lessons are actually filed under that reads as the
-     * division ("Media Lab" is Media, "Practical Coding" is Technology): an
-     * imported programme can name a course the catalogue never listed. */
-    $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
-    $divCourses = function (string $divId) use ($catalogue, $divOf, $unitCourses): array {
+    $divCourses = function (string $divId) use ($catalogue, $divOf, $unitCourses, &$ctx): array {
+        if (isset($ctx['div'][$divId])) return $ctx['div'][$divId];
         $d = function_exists('nggc_division') ? nggc_division($divId) : null;
-        if (!$d) return [];
+        if (!$d) return $ctx['div'][$divId] = [];
         $out = array_values($d['courses'] ?? []);
         foreach ($catalogue as $name => $courses) {
             if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
             foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
         }
         foreach ($unitCourses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
-        return $out;
+        return $ctx['div'][$divId] = $out;
     };
     $words = [];
     foreach ([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? '')] as $field) {
