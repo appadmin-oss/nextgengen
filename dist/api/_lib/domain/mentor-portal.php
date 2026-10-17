@@ -291,7 +291,9 @@ function mp_mentees(array $ids, string $role, string $today, array $o): array {
             'id' => $id, 'name' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'initials' => mp_initials((string)$m['fullName']),
             'age' => mp_age((string)$m['dob'], $today), 'school' => (string)($m['school'] ?? ''), 'centre' => (string)$m['centre'], 'photoUrl' => (string)($m['photoUrl'] ?? ''),
             'phase' => ucfirst($phase), 'week' => $week, 'mentorId' => (string)($pair[$id]['mentorId'] ?? ''), 'mentorName' => (string)($pair[$id]['fullName'] ?? ''),
-            'guardianName' => (string)($m['parentName'] ?? ''), 'guardianPhoneMasked' => mp_mask_phone((string)($m['parentPhone'] ?? '')),
+            // A peer mentor is a young person themselves: no family's name or number.
+            'guardianName' => $role === 'peer' ? '' : (string)($m['parentName'] ?? ''),
+            'guardianPhoneMasked' => $role === 'peer' ? '' : mp_mask_phone((string)($m['parentPhone'] ?? '')),
             'lastOneToOneAt' => $one[$id] ?? null,
             'wellbeing' => isset($well[$id]) ? (string)$well[$id]['wellbeing'] : 'Okay',
             'wellbeingAt' => isset($well[$id]) ? substr((string)$well[$id]['createdAt'], 0, 10) : null,
@@ -448,8 +450,13 @@ function member_mp_mentee(array $p): array {
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     $child = mentor_child(['requesterId' => $g['me'], 'subjectId' => $id]);
     $sessions = db_all("SELECT id, metOn, kind, minutes, discussed, agreed, goalId, mentorName, sharedWithLead FROM mentor_meetings WHERE subjectId = ? AND concern = 0 ORDER BY metOn DESC, id DESC LIMIT 80", [$id]);
+    /* PEER MENTORS ARE MINORS. What an adult wrote about a family, what was
+     * sent to one, and an adult's Saturday note are not theirs to read; they
+     * keep the child's goals, sessions with the child, values and courage. */
+    $peer = $g['mpRole'] === 'peer';
+    if ($peer) $sessions = array_values(array_filter($sessions, static fn($s) => !in_array($s['kind'], ['family', 'phone'], true)));
     $family = array_values(array_filter($sessions, static fn($s) => in_array($s['kind'], ['family', 'phone'], true)));
-    foreach (db_all("SELECT createdAt, body, status, sendAfter FROM mentor_messages WHERE subjectId = ? AND kind = 'Family update' ORDER BY createdAt DESC LIMIT 30", [$id]) as $m) {
+    if (!$peer) foreach (db_all("SELECT createdAt, body, status, sendAfter FROM mentor_messages WHERE subjectId = ? AND kind = 'Family update' ORDER BY createdAt DESC LIMIT 30", [$id]) as $m) {
         $family[] = ['metOn' => substr((string)$m['createdAt'], 0, 10), 'kind' => 'update', 'discussed' => (string)$m['body'], 'status' => (string)$m['status']];
     }
     usort($family, static fn($a, $b) => strcmp((string)$b['metOn'], (string)$a['metOn']));
@@ -457,7 +464,8 @@ function member_mp_mentee(array $p): array {
     foreach (array_slice($sessions, 0, 20) as $s) $timeline[] = ['at' => (string)$s['metOn'], 'icon' => $s['kind'] === 'pod' ? 'users-three' : ($s['kind'] === 'one-to-one' ? 'chats-circle' : 'house-line'),
         'text' => ($s['kind'] === 'one-to-one' ? 'One-to-one' : ($s['kind'] === 'pod' ? 'Pod session' : 'Family contact')) . ': ' . mb_substr((string)$s['discussed'], 0, 140), 'source' => (string)($s['mentorName'] ?: 'Session')];
     foreach (db_all("SELECT onDate, observed, note FROM mentor_register WHERE subjectId = ? AND (observed NOT IN ('', '[]') OR COALESCE(note, '') <> '') ORDER BY onDate DESC LIMIT 10", [$id]) as $r) {
-        $seen = json_decode((string)$r['observed'], true) ?: []; $note = trim((string)($r['note'] ?? ''));
+        $seen = json_decode((string)$r['observed'], true) ?: []; $note = $peer ? '' : trim((string)($r['note'] ?? ''));
+        if (!$seen && $note === '') continue;
         $timeline[] = ['at' => (string)$r['onDate'], 'icon' => 'binoculars', 'text' => 'Seen on Saturday: ' . ($seen ? implode(', ', $seen) : 'a note') . ($note !== '' ? '. ' . mb_substr($note, 0, 160) : ''), 'source' => 'Saturday observation'];
     }
     foreach (db_all("SELECT observedOn, score, evidence FROM courage_marks WHERE subjectId = ? ORDER BY observedOn DESC LIMIT 8", [$id]) as $c) {
@@ -928,12 +936,15 @@ function member_mp_messages(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $ids = mp_caseload_ids($g);
     $out = [];
+    // A peer mentor (a minor) gets their mentees' messages to them, never a
+    // shared journal, a wellbeing check-in or a family's reply.
+    $peer = $g['mpRole'] === 'peer';
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $read = [];
         foreach (db_all("SELECT threadId FROM mentor_messages WHERE fromId = ? AND (kind = 'read' OR kind = 'Reply')", [$g['me']]) as $r) $read[$r['threadId']] = true;
         foreach (db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
-                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $ids) as $j) {
+                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $peer ? [] : $ids) as $j) {
             $t = 'journal:' . $j['entryId'];
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
                       'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t])];
@@ -942,14 +953,15 @@ function member_mp_messages(array $p): array {
             $out[] = ['id' => 'm:' . $mm['id'], 'threadId' => (string)$mm['threadId'], 'kind' => 'Message from your mentee', 'filter' => 'chat', 'from' => (string)$mm['fromName'],
                       'subjectId' => (string)$mm['subjectId'], 'at' => (string)$mm['createdAt'], 'body' => (string)$mm['body'], 'read' => (string)$mm['readAt'] !== ''];
         }
-        foreach (db_all("SELECT c.id, c.memberId, c.wellbeing, c.note, c.createdAt, m.fullName FROM member_checkins c JOIN members m ON m.memberId = c.memberId
+        if (!$peer) foreach (db_all("SELECT c.id, c.memberId, c.wellbeing, c.note, c.createdAt, m.fullName FROM member_checkins c JOIN members m ON m.memberId = c.memberId
                          WHERE c.memberId IN ($ph) AND (c.note <> '' OR c.wellbeing <> 'Okay') ORDER BY c.createdAt DESC LIMIT 40", $ids) as $c) {
             $t = 'checkin:' . $c['id'];
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Check-in', 'filter' => 'checkin', 'from' => (string)$c['fullName'], 'subjectId' => (string)$c['memberId'],
                       'at' => (string)$c['createdAt'], 'body' => $c['wellbeing'] . ($c['note'] !== '' ? ' — “' . $c['note'] . '”' : ''), 'read' => isset($read[$t])];
         }
     }
-    foreach (db_all("SELECT * FROM mentor_messages WHERE toId = ? AND kind IN ('Family reply','From your lead','Peer session note','From your mentor','Supervision prep') ORDER BY createdAt DESC LIMIT 60", [$g['me']]) as $m) {
+    $kinds = $peer ? "'From your lead','Peer session note','From your mentor','Supervision prep'" : "'Family reply','From your lead','Peer session note','From your mentor','Supervision prep'";
+    foreach (db_all("SELECT * FROM mentor_messages WHERE toId = ? AND kind IN ($kinds) ORDER BY createdAt DESC LIMIT 60", [$g['me']]) as $m) {
         $out[] = ['id' => 'm:' . $m['id'], 'threadId' => (string)$m['threadId'], 'kind' => (string)$m['kind'], 'filter' => $m['kind'] === 'Family reply' ? 'family' : 'lead', 'fromId' => (string)$m['fromId'],
                   'from' => (string)$m['fromName'], 'subjectId' => (string)$m['subjectId'], 'at' => (string)$m['createdAt'], 'body' => (string)$m['body'], 'read' => (string)$m['readAt'] !== ''];
     }
@@ -999,7 +1011,7 @@ function member_mp_message_reply(array $p): array {
     if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
     $subject = trim((string)($p['subjectId'] ?? ''));
     if ($subject !== '' && !in_array($subject, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
-    if (str_starts_with($t, 'family:') && $g['mpRole'] === 'peer') return ['ok' => false, 'error' => 'peer_no_family'];
+    if ($g['mpRole'] === 'peer' && (str_starts_with($t, 'family:') || str_starts_with($t, 'journal:') || str_starts_with($t, 'checkin:'))) return ['ok' => false, 'error' => 'peer_no_family'];
     /* The thread must belong to the child named — the one checked against
      * the caseload above. The thread id was taken as given, so a reply could
      * be written into ANY child's chat by naming their thread and leaving

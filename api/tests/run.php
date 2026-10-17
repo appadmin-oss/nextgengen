@@ -27640,5 +27640,46 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Peer mentors are minors: no family, journal or adult note reaches them ────
+(function () {
+    $now = now_iso(); $C = 'Peerville';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_meetings' => 'subjectId', 'mentor_messages' => 'subjectId',
+                  'journal' => 'memberId', 'member_checkins' => 'memberId', 'mentor_register' => 'subjectId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'PR-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'PRT-%'");
+    };
+    $wipe();
+    db_insert('members', ['memberId' => 'PR-KID', 'fullName' => 'Kid Peer', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'dob' => '2014-02-02',
+        'parentName' => 'Mrs Guardian', 'parentPhone' => '08031234567', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['PR-PEER', '2009-05-05', 'PRT-PEER'], ['PR-ADULT', '1990-05-05', 'PRT-ADULT']] as [$mid, $dob, $tid]) {
+        db_insert('members', ['memberId' => $mid, 'fullName' => $mid, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'dob' => $dob, 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid, 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => 'mentor', 'memberId' => $mid,
+            'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    }
+    db_insert('mentor_assignments', ['memberId' => 'PR-KID', 'mentorId' => 'PRT-PEER', 'status' => 'active', 'startedAt' => $now]);
+    db_insert('mentor_meetings', ['subjectId' => 'PR-KID', 'subjectType' => 'member', 'mentorId' => 'PR-ADULT', 'metOn' => gmdate('Y-m-d'), 'kind' => 'family',
+        'discussed' => 'Spoke to mum about money at home', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('journal', ['entryId' => 'PR-J1', 'memberId' => 'PR-KID', 'week' => 1, 'mood' => 'low', 'body' => 'Private journal', 'visibility' => 'mentor', 'createdAt' => $now]);
+    db_insert('member_checkins', ['memberId' => 'PR-KID', 'week' => '2026-W41', 'wellbeing' => 'Struggling', 'note' => 'Things at home', 'createdAt' => $now]);
+    $peer = mp_gate(['requesterId' => 'PR-PEER']);
+    chk('peer · a mentor under 20 is a peer mentor', ($peer['mpRole'] ?? '') === 'peer');
+    $mt = backend_dispatch('member.mentor.mentee', ['requesterId' => 'PR-PEER', 'subjectId' => 'PR-KID']);
+    $json = json_encode($mt);
+    chk('peer · the mentee view carries no guardian, no family contact', !empty($mt['ok']) && ($mt['mentee']['guardianName'] ?? 'x') === ''
+        && ($mt['mentee']['guardianPhoneMasked'] ?? 'x') === '' && ($mt['family'] ?? ['x']) === [] && !str_contains($json, 'money at home'));
+    $ms = backend_dispatch('member.mentor.messages', ['requesterId' => 'PR-PEER']);
+    $kinds = array_column($ms['messages'] ?? [], 'filter');
+    chk('peer · the inbox carries no shared journal and no check-in', !empty($ms['ok']) && !in_array('journal', $kinds, true) && !in_array('checkin', $kinds, true));
+    chk('peer · …and a reply to a journal thread is refused',
+        (backend_dispatch('member.mentor.message.reply', ['requesterId' => 'PR-PEER', 'threadId' => 'journal:PR-J1', 'subjectId' => 'PR-KID', 'body' => 'hi'])['error'] ?? '') === 'peer_no_family');
+    // The same child, an adult mentor: everything is there.
+    db_exec("UPDATE mentor_assignments SET mentorId = 'PRT-ADULT' WHERE memberId = 'PR-KID'");
+    $am = backend_dispatch('member.mentor.mentee', ['requesterId' => 'PR-ADULT', 'subjectId' => 'PR-KID']);
+    $ak = array_column(backend_dispatch('member.mentor.messages', ['requesterId' => 'PR-ADULT'])['messages'] ?? [], 'filter');
+    chk('peer · an adult mentor of the same child keeps the family and inbox views',
+        ($am['mentee']['guardianName'] ?? '') === 'Mrs Guardian' && count($am['family'] ?? []) === 1 && in_array('journal', $ak, true) && in_array('checkin', $ak, true));
+    $wipe();
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
