@@ -27296,6 +27296,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('api fix · the reply is filed under the thread the server built', (string)(db_row("SELECT threadId FROM mentor_messages WHERE fromId = 'JOB-M1' AND kind = 'Reply' ORDER BY id DESC LIMIT 1")['threadId'] ?? '') === 'chat:JOB-K1');
     chk('api fix · a reply longer than the chat limit is refused, not truncated',
         (backend_dispatch('member.mentor.message.reply', ['requesterId' => 'JOB-M1', 'threadId' => 'chat:JOB-K1', 'subjectId' => 'JOB-K1', 'body' => str_repeat('a', MP_CHAT_MAX + 1)])['error'] ?? '') === 'too_long');
+    chk('api fix · the register and the weekly review are for a Saturday, not a Wednesday',
+        (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'today' => '2026-10-14', 'date' => '2026-10-14', 'rows' => []])['error'] ?? '') === 'not_a_saturday'
+        && (backend_dispatch('member.mentor.week.review', ['requesterId' => 'JOB-M1', 'today' => '2026-10-14', 'date' => '2026-10-13', 'subjectId' => 'JOB-K1',
+            'effort' => 'Steady', 'character' => 'Steady', 'wellbeing' => 'Steady'])['error'] ?? '') === 'not_a_saturday'
+        && !empty(backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'today' => '2026-10-14', 'date' => '2026-10-10', 'rows' => []])['ok']));
     chk('api fix · a register cannot be closed for next month or two years ago',
         (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2030-01-05', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range'
         && (backend_dispatch('member.mentor.register', ['requesterId' => 'JOB-M1', 'date' => '2024-01-06', 'rows' => [], 'close' => true])['error'] ?? '') === 'date_out_of_range');

@@ -1299,11 +1299,18 @@ function mp_recent_date(string $date, string $today, int $days = 14): bool {
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $date > $today) return false;
     return mp_days($date, $today) <= $days;
 }
+/** A Saturday the programme met on, today or within the last fortnight. The
+ *  register and the weekly review are about a Saturday: a Wednesday register,
+ *  or next Saturday's, is a record of a day nobody was there. */
+function mp_saturday_ok(string $date, string $today): bool {
+    return mp_recent_date($date, $today) && gmdate('w', strtotime($date . 'T12:00:00Z')) === '6';
+}
 function member_mp_register(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $date = (string)($p['date'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
     if (!mp_recent_date($date, mp_today($p))) return ['ok' => false, 'error' => 'date_out_of_range'];
+    if (!mp_saturday_ok($date, mp_today($p))) return ['ok' => false, 'error' => 'not_a_saturday'];
     $case = mp_caseload_ids($g); $now = now_iso(); $n = 0;
     foreach ((array)($p['rows'] ?? []) as $r) {
         $sid = (string)($r['subjectId'] ?? '');
@@ -1352,6 +1359,7 @@ function member_mp_review(array $p): array {
     foreach (['effort', 'character', 'wellbeing'] as $k) if (!in_array((string)($p[$k] ?? ''), MP_LEVELS, true)) return ['ok' => false, 'error' => 'rate_all_three'];
     $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($p['date'] ?? '')) ? (string)$p['date'] : mp_last_saturday(mp_today($p));
     if (!mp_recent_date($date, mp_today($p))) return ['ok' => false, 'error' => 'date_out_of_range'];
+    if (!mp_saturday_ok($date, mp_today($p))) return ['ok' => false, 'error' => 'not_a_saturday'];
     $period = iso_week_period(strtotime($date . 'T12:00:00Z'));
     $line = mb_substr(trim((string)($p['line'] ?? '')), 0, 600);
     $now = now_iso();
