@@ -580,19 +580,27 @@ function mentor_attention(array $p): array {
      * and staff for the centre, the mentor who wrote it, and the child's own
      * mentor. It was every mentor at the centre — peers included — reading
      * what another mentor wrote about somebody else's mentee. */
-    $who = ''; $whoArgs = [];
-    if (!in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true) && ($g['role'] ?? '') === 'mentor') {
+    /* The centre-wide view is for leads and coordinators (staff) only. An
+     * instructor — who is not a mentor — was treated as staff here and read
+     * every concern at the centre; they now get what a mentor gets. */
+    $wide = in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true);
+    $who = ''; $whoArgs = []; $goalWho = ''; $goalArgs = [];
+    if (!$wide) {
         $mine = mentoring_caseload($g);
-        $who = ' AND (mentorId = ?' . ($mine ? ' OR subjectId IN (' . implode(',', array_fill(0, count($mine), '?')) . ')' : '') . ')';
+        $minePh = $mine ? implode(',', array_fill(0, count($mine), '?')) : '';
+        $who = ' AND (mentorId = ?' . ($mine ? ' OR subjectId IN (' . $minePh . ')' : '') . ')';
         $whoArgs = array_merge([(string)$g['member']['memberId']], $mine);
+        // Overdue goals: their own mentees', not the whole centre's.
+        $goalWho = $mine ? ' AND subjectId IN (' . $minePh . ')' : ' AND 1 = 0';
+        $goalArgs = $mine;
     }
     $concerns = db_all("SELECT id, subjectId, subjectType, metOn, kind, discussed, agreed, mentorName, centre
                         FROM mentor_meetings WHERE concern = 1 AND centre IN $in AND metOn >= ?$who
                         ORDER BY metOn DESC, id DESC LIMIT 60", array_merge($use, [$since], $whoArgs));
     $today = gmdate('Y-m-d');
     $overdue = db_all("SELECT id, subjectId, goal, dueOn, setByName, centre FROM mentor_goals
-                       WHERE status = 'active' AND dueOn <> '' AND dueOn < ? AND centre IN $in
-                       ORDER BY dueOn LIMIT 60", array_merge([$today], $use));
+                       WHERE status = 'active' AND dueOn <> '' AND dueOn < ? AND centre IN $in$goalWho
+                       ORDER BY dueOn LIMIT 60", array_merge([$today], $use, $goalArgs));
 
     // Names, in one read rather than one per row.
     $ids = array_values(array_unique(array_merge(array_column($concerns, 'subjectId'), array_column($overdue, 'subjectId'))));
@@ -610,7 +618,7 @@ function mentor_attention(array $p): array {
     /* Leads and staff see every cover at the centre in the last fortnight: who
      * opened whose record, and why. That list is what makes self-service safe. */
     $covers = [];
-    if (in_array((string)($g['rank'] ?? ''), ['lead', 'admin'], true) || ($g['role'] ?? '') !== 'mentor') {
+    if ($wide) {
         $covers = db_all("SELECT c.subjectId, c.mentorName, c.reason, c.grantedAt, c.expiresAt, m.fullName
                           FROM mentor_record_cover c LEFT JOIN members m ON m.memberId = c.subjectId
                           WHERE c.centre IN $in AND c.grantedAt >= ? ORDER BY c.grantedAt DESC LIMIT 60",

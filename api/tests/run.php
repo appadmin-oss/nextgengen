@@ -27539,5 +27539,36 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec('DELETE FROM saturday_formation_sends');
 })();
 
+// ── Attention is centre-wide for leads and coordinators only (High 3) ─────────
+(function () {
+    $now = now_iso(); $C = 'Attnville'; $past = gmdate('Y-m-d', time() - 3 * 86400);
+    $wipe = function () {
+        db_exec("DELETE FROM members WHERE memberId LIKE 'AT-%'"); db_exec("DELETE FROM mentors WHERE mentorId LIKE 'ATT-%'");
+        db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'ATV-%'"); db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'AT-%'");
+        db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'AT-%'"); db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'AT-%'");
+    };
+    $wipe();
+    foreach (['AT-K1', 'AT-K2', 'AT-M1', 'AT-L1'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['ATT-M1', 'AT-M1', 'mentor'], ['ATT-L1', 'AT-L1', 'lead']] as [$tid, $mid, $rank]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid,
+        'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'AT-K1', 'mentorId' => 'ATT-M1', 'status' => 'active', 'startedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'ATV-I', 'fullName' => 'Inst', 'email' => 'ati@example.com', 'role' => 'instructor', 'status' => 'active',
+        'centre' => $C, 'safeguarding' => 'cleared', 'createdAt' => $now]);
+    foreach (['AT-K1', 'AT-K2'] as $k) {
+        db_insert('mentor_meetings', ['subjectId' => $k, 'subjectType' => 'member', 'metOn' => $past, 'kind' => 'one-to-one', 'discussed' => 'Worrying', 'agreed' => '',
+            'mentorId' => 'SOMEONE-ELSE', 'mentorName' => 'Other', 'centre' => $C, 'concern' => 1, 'createdAt' => $now]);
+        db_insert('mentor_goals', ['subjectId' => $k, 'subjectType' => 'member', 'goal' => 'Read', 'dueOn' => $past, 'setById' => 'X', 'setByName' => 'X', 'updatedAt' => $now, 'centre' => $C, 'status' => 'active', 'createdAt' => $now]);
+    }
+    $att = fn($who) => backend_dispatch('member.mentor.attention', ['requesterId' => $who]);
+    $subs = fn($r, $k) => array_values(array_unique(array_column($r[$k] ?? [], 'subjectId')));
+    $m = $att('AT-M1'); $l = $att('AT-L1'); $i = $att('ATV-I');
+    chk('attention · a mentor sees concerns and overdue goals for their own mentee only', $subs($m, 'concerns') === ['AT-K1'] && $subs($m, 'overdue') === ['AT-K1']);
+    chk('attention · a lead sees the whole centre', count($subs($l, 'concerns')) === 2 && count($subs($l, 'overdue')) === 2);
+    chk('attention · an instructor is not staff: no other child\'s concern, no cover list',
+        !empty($i['ok']) && $subs($i, 'concerns') === [] && ($i['covers'] ?? []) === []);
+    $wipe();
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
