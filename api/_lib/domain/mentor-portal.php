@@ -1113,6 +1113,49 @@ function member_mp_chat(array $p): array {
 }
 
 /** member.mentor.chat.send — a message to the member's own mentor. */
+/* ── Urgent safeguarding alerts ──────────────────────────────────────────
+ *
+ * A crisis message or a "Need help" check-in used to email the centre's
+ * officer and stop there: with no officer, or one with no email on file,
+ * nobody but the mentor heard. Now the officer is reached on every channel
+ * they have (email, SMS, the app), and if that is nobody, the centre's leads
+ * and an ops error are. The return says who was reached, so a test — and the
+ * audit — can tell "sent" from "went nowhere".
+ */
+const MP_HELPLINE_DEFAULT = '+234 903 777 6318';
+
+/** The number a child is told to call: the centre officer's, else the setting, else the programme's line. */
+function mp_helpline(string $centre): string {
+    $o = function_exists('sg_officer') ? sg_officer($centre) : null;
+    $ph = trim((string)($o['phone'] ?? ''));
+    if ($ph !== '') return $ph;
+    $set = function_exists('setting_get') ? trim((string)(setting_get('safeguardingHelpline') ?? '')) : '';
+    return $set !== '' ? $set : MP_HELPLINE_DEFAULT;
+}
+
+function mp_urgent_alert(string $centre, string $subject, string $html, string $sms, string $ref): array {
+    $reached = [];
+    $o = function_exists('sg_officer') ? sg_officer($centre) : null;
+    if ($o) {
+        if (filter_var((string)($o['email'] ?? ''), FILTER_VALIDATE_EMAIL) && function_exists('send_mail')) {
+            try { if (send_mail((string)$o['email'], $subject, $html)) $reached[] = 'officer:email'; } catch (\Throwable $e) {}
+        }
+        if (trim((string)($o['phone'] ?? '')) !== '' && function_exists('sms_send')) {
+            try { $r = sms_send((string)$o['phone'], mb_substr($sms, 0, 300)); if (!empty($r['ok'])) $reached[] = 'officer:sms'; } catch (\Throwable $e) {}
+        }
+        if (function_exists('push_notification')) { push_notification((string)$o['memberId'], ['kind' => 'safeguarding', 'title' => $subject, 'body' => mb_substr($sms, 0, 140), 'linkPage' => 'admin']); $reached[] = 'officer:app'; }
+    }
+    // The app alone is not "reached" for an emergency: fall back unless email or SMS went.
+    $outside = array_filter($reached, static fn($c) => $c !== 'officer:app');
+    if (!$outside) {
+        foreach ((function_exists('mentoring_leads') ? mentoring_leads($centre, '') : []) as $lead) {
+            if (function_exists('push_notification')) { push_notification($lead, ['kind' => 'safeguarding', 'title' => $subject, 'body' => mb_substr($sms, 0, 140), 'linkPage' => 'mentor']); $reached[] = 'lead:' . $lead; }
+        }
+        if (function_exists('ops_record')) ops_record('error', 'safeguarding.unreached', 'An urgent alert reached no safeguarding officer by email or SMS', $ref . ' at ' . $centre);
+    }
+    return $reached;
+}
+
 function member_mp_chat_send(array $p): array {
     $me = (string)($p['memberId'] ?? '');
     $m = db_row("SELECT memberId, fullName, centre, status FROM members WHERE memberId = ? LIMIT 1", [$me]);
@@ -1120,22 +1163,37 @@ function member_mp_chat_send(array $p): array {
     $body = trim((string)($p['body'] ?? ''));
     if ($body === '') return ['ok' => false, 'error' => 'write_a_message'];
     if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
+    $crisis = defined('COACH_CRISIS_RE') && preg_match(COACH_CRISIS_RE, $body) === 1;
+    $first = mp_first((string)$m['fullName']);
+    /* A suspended or inactive account does not message a mentor. But a crisis
+     * is never dropped on account status: it still reaches safeguarding, and the
+     * child is still told who to call. */
+    if ((string)($m['status'] ?? '') !== 'active') {
+        if ($crisis) {
+            mp_urgent_alert((string)$m['centre'], 'Urgent: a member may be at risk',
+                '<p>' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' (account not active) wrote a message that matched the safeguarding phrases. Contact them today.</p>',
+                'NGG safeguarding: urgent message from a member at ' . (string)$m['centre'] . '. Check the Control Room today.', 'chat:inactive:' . $me);
+            audit('safeguarding.chat', $me, $me, ['inactive' => true], (string)($p['ip'] ?? ''));
+            return ['ok' => false, 'error' => 'not_active', 'crisis' => true, 'help' => mp_crisis_help((string)$m['centre'])];
+        }
+        return ['ok' => false, 'error' => 'not_active'];
+    }
     $a = mp_chat_mentor($me);
     if (!$a) return ['ok' => false, 'error' => 'no_mentor'];
-    $crisis = defined('COACH_CRISIS_RE') && preg_match(COACH_CRISIS_RE, $body) === 1;
     $id = mp_message_put('chat:' . $me, 'From your mentee', $me, $me, (string)$m['fullName'], (string)$a['mentorMember'], $body);
-    $first = mp_first((string)$m['fullName']);
     push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => ($crisis ? 'Urgent: ' : '') . $first . ' wrote to you', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'mentor']);
     if ($crisis) {
-        $o = function_exists('sg_officer') ? sg_officer((string)$m['centre']) : null;
-        if ($o && filter_var((string)($o['email'] ?? ''), FILTER_VALIDATE_EMAIL)) {
-            try { send_mail((string)$o['email'], 'Urgent: a member may be at risk', '<p>A message ' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' sent to their mentor matched the safeguarding phrases. Their mentor has it too. Read it in the Control Room → People → Mentorship today.</p>'); } catch (\Throwable $e) {}
-        }
+        $reached = mp_urgent_alert((string)$m['centre'], 'Urgent: a member may be at risk',
+            '<p>A message ' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' sent to their mentor matched the safeguarding phrases. Their mentor has it too. Read it in the Control Room → People → Mentorship today.</p>',
+            'NGG safeguarding: an urgent message from a member at ' . (string)$m['centre'] . '. Please read it in the Control Room today.', 'chat:' . $id);
         if (function_exists('event_emit')) event_emit('behaviour.flagged', ['ref' => 'chat:' . $id, 'subject' => 'A child', 'category' => 'safeguarding', 'severity' => 'urgent', 'source' => 'member.chat']);
-        audit('safeguarding.chat', $me, $me, ['messageId' => $id], (string)($p['ip'] ?? ''));
+        audit('safeguarding.chat', $me, $me, ['messageId' => $id, 'reached' => $reached], (string)($p['ip'] ?? ''));
     }
     return ['ok' => true, 'id' => $id, 'crisis' => $crisis, 'mentor' => mp_first((string)$a['fullName']),
-        'help' => $crisis ? 'If you are in danger now, call 112. You can also call NGG safeguarding on +234 903 777 6318. You are not in trouble, and you are not alone.' : ''];
+        'help' => $crisis ? mp_crisis_help((string)$m['centre']) : ''];
+}
+function mp_crisis_help(string $centre): string {
+    return 'If you are in danger now, call 112. You can also call NGG safeguarding on ' . mp_helpline($centre) . '. You are not in trouble, and you are not alone.';
 }
 
 /* ── The member's own weekly check-in ───────────────────────────────────── */
@@ -1197,11 +1255,10 @@ function mp_job_wellbeing_alert(array $m, string $w): void {
             'centre' => (string)$m['centre'], 'title' => $first . ($w === 'Need help' ? ' asked for help' : ' said they’re struggling'), 'body' => 'This week’s check-in · talk to them before Saturday']);
         if ((string)($a['mentorMember'] ?? '') !== '' && function_exists('push_notification')) push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => $first . ' needs you', 'body' => 'Their check-in this week: ' . $w . '.', 'linkPage' => 'mentor']);
     }
-    if ($w === 'Need help' && function_exists('sg_officer')) {
-        $o = sg_officer((string)$m['centre']);
-        if ($o && filter_var((string)($o['email'] ?? ''), FILTER_VALIDATE_EMAIL)) {
-            try { send_mail((string)$o['email'], 'A member asked for help in their check-in', '<p>' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' answered “Need help” in this week’s check-in. Their mentor has been told. Open the Control Room → People → Mentorship.</p>'); } catch (\Throwable $e) {}
-        }
+    if ($w === 'Need help') {
+        mp_urgent_alert((string)$m['centre'], 'A member asked for help in their check-in',
+            '<p>' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' answered “Need help” in this week’s check-in. Their mentor has been told. Open the Control Room → People → Mentorship.</p>',
+            'NGG safeguarding: a member at ' . (string)$m['centre'] . ' asked for help in their check-in. Please follow up today.', 'checkin:' . (string)$m['memberId']);
     }
 }
 

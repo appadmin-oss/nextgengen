@@ -27847,5 +27847,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe(); db_exec("DELETE FROM audit_log WHERE event = 'mentor.review.overwrite' AND subject = 'RV-KID'");
 })();
 
+// ── Urgent alerts reach somebody; an inactive account does not chat ──────────
+(function () {
+    $now = now_iso(); $C = 'Alertville';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_messages' => 'subjectId', 'notifications' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'AL-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'ALT-%'");
+    };
+    $wipe();
+    foreach ([['AL-KID', 'active'], ['AL-OFF', 'suspended'], ['AL-M', 'active'], ['AL-LEAD', 'active']] as [$id, $st]) db_insert('members', ['memberId' => $id, 'fullName' => $id,
+        'type' => 'NGG', 'status' => $st, 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['ALT-M', 'AL-M', 'mentor'], ['ALT-L', 'AL-LEAD', 'lead']] as [$tid, $mid, $rank]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => $mid,
+        'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    foreach (['AL-KID', 'AL-OFF'] as $k) db_insert('mentor_assignments', ['memberId' => $k, 'mentorId' => 'ALT-M', 'status' => 'active', 'startedAt' => $now]);
+    $plain = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-OFF', 'body' => 'Hello, are we meeting on Saturday?']);
+    chk('chat · a suspended account cannot message their mentor', ($plain['error'] ?? '') === 'not_active'
+        && !db_row("SELECT 1 FROM mentor_messages WHERE subjectId = 'AL-OFF'"));
+    $cr = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-OFF', 'body' => 'I want to die']);
+    chk('chat · …but a crisis from that account still reaches safeguarding, and they are told who to call',
+        ($cr['error'] ?? '') === 'not_active' && !empty($cr['crisis']) && str_contains((string)($cr['help'] ?? ''), '112')
+        && db_row("SELECT 1 FROM notifications WHERE memberId = 'AL-LEAD' AND kind = 'safeguarding'"));
+    db_exec("DELETE FROM ops_events WHERE source = 'safeguarding.unreached'");
+    $reached = mp_urgent_alert('Nowhere-Centre-' . rand_hex(3), 'Test', '<p>t</p>', 't', 'test');
+    $outside = array_filter($reached, static fn($c) => str_starts_with($c, 'officer:') && $c !== 'officer:app');
+    $raised = (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'safeguarding.unreached' LIMIT 1");
+    chk('alert · an urgent alert either reaches an officer by email or SMS, or raises an ops error — never neither',
+        ($outside !== [] && !$raised) || ($outside === [] && $raised));
+    $ok = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-KID', 'body' => 'See you on Saturday']);
+    chk('chat · an active member\'s message goes to their mentor as before', !empty($ok['ok']) && empty($ok['crisis']));
+    chk('chat · the number a child is told to call is the centre officer\'s, else the setting, else the programme line', mp_helpline('Nowhere-' . rand_hex(3)) !== '');
+    $wipe();
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
