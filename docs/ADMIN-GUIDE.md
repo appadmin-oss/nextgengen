@@ -1772,12 +1772,25 @@ they all behave the same way. Worth knowing once:
 
 ### The second step, by kind of person
 
-| Who | Their second step |
+Each kind of person chooses one way. The first listed is the one suggested:
+
+| Who | Ways they may choose |
 |---|---|
-| Members (children and young people) | A private question they choose and answer |
-| Instructors, volunteers and mentors | An authenticator app, or a code emailed to them when they sign in with their card |
-| Guardians | A six-digit family PIN, asked after the emailed code |
+| Members (children and young people) | A private question · a 6-digit PIN · an authenticator app · a code by email |
+| Instructors, volunteers and mentors | An authenticator app · a code by email · a 6-digit PIN |
+| Guardians | A family PIN · an authenticator app · a private question |
 | Staff | The Control Room authenticator (managed in **Access & roles**) |
+
+Whatever they choose, they also get **eight one-time backup codes** when they
+set it up. They show once; the person saves, prints or downloads them. A
+backup code opens the portal in place of the usual step, for a lost phone or
+a forgotten answer, and each works once. New codes (from "Two-step sign-in" in
+the account menu) need the current step first, and replace the old ones.
+
+The desk can narrow the list for any kind (**Policy per kind of person →
+Ways they may choose**). It cannot leave a kind with no way. Taking a way
+away stops new set-ups with it; people already using it keep it until they
+change.
 
 A team member who chose the emailed code is not asked for a second email after
 signing in with an emailed code. That would be the same thing twice.

@@ -14,7 +14,7 @@ const MFA_DESK_KINDS = [
   ["team", "Instructors, volunteers & mentors", "An authenticator app or an emailed code"],
   ["guardian", "Guardians", "A family PIN"],
 ];
-const MFA_DESK_TYPE = { question: "Private question", app: "Authenticator app", email: "Emailed code", pin: "Family PIN" };
+const MFA_DESK_TYPE = { question: "Private question", app: "Authenticator app", email: "Emailed code", pin: "PIN" };
 const MFA_DESK_POLICY = [["off", "Off"], ["optional", "Optional — remind them"], ["required", "Required at sign-in"]];
 const MFA_DESK_PAGE = 50;
 
@@ -32,12 +32,15 @@ function AdminSignInSecurity() {
   const [err, setErr] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [policy, setPolicy] = React.useState(null);
+  // { kind: [method ids allowed] } — what each kind of person may choose.
+  const [methods, setMethods] = React.useState(null);
   const [savingPolicy, setSavingPolicy] = React.useState(false);
 
   const load = React.useCallback(() => {
     setErr(""); setLoading(true);
     return NGGApi.admin.mfa.overview({ kind, state, q: query, limit: MFA_DESK_PAGE, offset })
-      .then(r => { setD(r); setPolicy(p => p || r.policy); })
+      .then(r => { setD(r); setPolicy(p => p || r.policy);
+        setMethods(m => m || Object.fromEntries(Object.entries(r.methods || {}).map(([k, list]) => [k, list.filter(x => x.on).map(x => x.id)]))); })
       .catch(e => setErr(e.code || e.message || "load_failed"))
       .finally(() => setLoading(false));
   }, [kind, state, query, offset]);
@@ -74,7 +77,7 @@ function AdminSignInSecurity() {
 
   const savePolicy = async () => {
     setSavingPolicy(true);
-    try { const r = await NGGApi.admin.mfa.policy(policy); setPolicy(r.policy); toast.success(r.unchanged ? "Nothing changed." : "The new policy applies from each person's next sign-in.", "Sign-in policy"); load(); }
+    try { const r = await NGGApi.admin.mfa.policy(policy, methods); setPolicy(r.policy); if (r.methods) setMethods(r.methods); toast.success(r.unchanged ? "Nothing changed." : "The new policy applies from each person's next sign-in.", "Sign-in policy"); load(); }
     catch (e) { toast.error(humanizeError(e.message, e.code), "Policy not saved"); }
     finally { setSavingPolicy(false); }
   };
@@ -115,15 +118,34 @@ function AdminSignInSecurity() {
           <summary>Policy per kind of person</summary>
           <div className="mfa-desk-policy-grid">
             {MFA_DESK_KINDS.map(([k, label]) => (
-              <label key={k} className="mfa-desk-policy-row">
-                <span>{label}</span>
-                <select className="admin-select" value={policy[k]} onChange={e => setPolicy(Object.assign({}, policy, { [k]: e.target.value }))}>
-                  {MFA_DESK_POLICY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </label>
+              <div key={k} className="mfa-desk-policy-kind">
+                <label className="mfa-desk-policy-row">
+                  <span>{label}</span>
+                  <select className="admin-select" value={policy[k]} onChange={e => setPolicy(Object.assign({}, policy, { [k]: e.target.value }))}>
+                    {MFA_DESK_POLICY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </label>
+                {methods && d.methods && d.methods[k] && (
+                  <fieldset className="mfa-desk-methods">
+                    <legend>Ways they may choose</legend>
+                    {d.methods[k].map(m => {
+                      const on = (methods[k] || []).indexOf(m.id) !== -1;
+                      const last = on && (methods[k] || []).length === 1;
+                      return (
+                        <label key={m.id} className="mfa-desk-method">
+                          <input type="checkbox" checked={on} disabled={last} title={last ? "Leave at least one way" : undefined}
+                            onChange={e => setMethods(Object.assign({}, methods, { [k]: e.target.checked ? (methods[k] || []).concat(m.id) : (methods[k] || []).filter(x => x !== m.id) }))}/>
+                          <span>{MFA_DESK_TYPE[m.id] || m.label}</span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+                )}
+              </div>
             ))}
           </div>
-          <p className="admin-hint">Required: anyone without one sets it up before their portal opens. Optional: they are shown an alert until they do.</p>
+          <p className="admin-hint">Required: anyone without one sets it up before their portal opens. Optional: they are shown an alert until they do.
+            Taking a way away stops new set-ups with it; people already using it keep it until they change. Everyone also gets eight one-time backup codes.</p>
           <button type="button" className="btn btn-primary btn-sm" disabled={savingPolicy} onClick={savePolicy}>{savingPolicy ? "Saving…" : "Save the policy"}</button>
         </details>
       )}

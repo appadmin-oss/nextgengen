@@ -11643,3 +11643,15 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-ev-lvl.is-3 { background: #0b0b0c; color: #fff; }
 .m9x-ev-note { margin: 8px 0 0; font-size: 14px; line-height: 1.5; color: #2a2a30; }
 .m9x-ev-note b { display: block; font-size: 12.5px; color: #4a4a50; font-weight: 600; margin-bottom: 2px; }
+.mfa-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; padding: 14px; list-style: none; border-radius: var(--cr-r); background: var(--cr-s1); }
+.mfa-codes li { font-family: var(--cr-mono); font-size: 15px; letter-spacing: .06em; text-align: center; color: var(--cr-ink); }
+.mfa-codes-act { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; }
+.mfa-codes-act .ph { vertical-align: -2px; }
+.mfa-backup-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 0; font-size: 13.5px; color: var(--cr-muted); }
+.mfa-backup-line b { color: var(--cr-ink); }
+@media print { .mfa-scrim { position: static; background: none; backdrop-filter: none; } }
+.mfa-desk-policy-kind { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--ink-100, #e3e6f0); }
+.mfa-desk-policy-kind:last-child { border-bottom: 0; }
+.mfa-desk-methods { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; border: 0; }
+.mfa-desk-methods legend { float: left; margin-right: 10px; font-size: 12.5px; color: var(--ink-500, #4d5577); }
+.mfa-desk-method { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; min-height: 32px; cursor: pointer; }

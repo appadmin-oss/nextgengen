@@ -1546,3 +1546,18 @@ on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.
   states, the column drift, the coordinator's centre picker, and the Academy tab for
   coordinators with no mentor record.
 
+### 2026-10-17 · More second-step options per kind; backup codes
+
+- **Methods per kind.** `MFA_METHODS` is what each kind MAY choose (members: question,
+  pin, app, email; team: app, email, pin; guardians: pin, app, question). The setting
+  `mfa_methods` narrows it per kind (`mfa_methods_for()`). The desk edits it next to the
+  policy. It is refused when empty (`no_method`) or when it names a method the kind cannot
+  have (`bad_method`).
+- **Backup codes.** Every set-up or change issues `MFA_BACKUP_N` (8) one-time codes,
+  `XXXX-XXXX`, hashed in `member_state` `mfa.backup` and returned once. `mfa_verify`
+  accepts one when the step itself fails, and spends it. `mfa.backup.new` (needs the
+  current step) replaces the set. Reset and turn-off clear it.
+- **Email for members** needs an email on the record (`no_email_on_file`).
+
+Tests: `run.php` +13; `mfa.test.js` 32 → 37.
+

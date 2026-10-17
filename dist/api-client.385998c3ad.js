@@ -663,6 +663,7 @@
         start:     (type, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'start', type } }),
         enroll:    (data, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: Object.assign({ action: 'enroll' }, data) }),
         off:       (current, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'off', current } }),
+        backup:    (current, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'backup', current } }),
       },
       logout:  () => request('/auth/logout.php', { method: 'POST' }),
       adminTotpSetup:  () => request('/auth/admin-totp-setup.php', { method: 'POST' }),
@@ -1179,7 +1180,7 @@
       /* Sign-in & security (domain/mfa.php): who has a second step, the policy per kind, and the desk's actions. */
       mfa: {
         overview: (q) => request('/admin/mfa.php?' + new URLSearchParams(q || {}).toString()),
-        policy:   (policy) => request('/admin/mfa.php', { body: { action: 'policy', policy } }),
+        policy:   (policy, methods) => request('/admin/mfa.php', { body: { action: 'policy', policy, methods } }),
         act:      (action, people, extra) => request('/admin/mfa.php', { body: Object.assign({ action, people }, extra || {}) }),
       },
       opps: {

@@ -2,7 +2,7 @@
 /**
  * Admin: Sign-in & security (domain/mfa.php).
  * GET  ?kind=member|team|guardian&state=none|enrolled|all&q=&limit=&offset=   — capability: people
- * POST action=policy {policy:{member,team,guardian}}                          — capability: settings
+ * POST action=policy {policy:{member,team,guardian}, methods:{kind:[...]}}                        — capability: settings
  * POST action=bypass|reset|require|unrequire|remind {people:[{id,who}], minutes?, force?} — capability: people
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -15,7 +15,7 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'policy') {
-        $res = gs_call('admin.mfa.policy', ['requesterId' => $s['mid'], 'ip' => client_ip(), 'policy' => $b['policy'] ?? null]);
+        $res = gs_call('admin.mfa.policy', ['requesterId' => $s['mid'], 'ip' => client_ip(), 'policy' => $b['policy'] ?? null, 'methods' => $b['methods'] ?? null]);
     } else {
         $res = gs_call('admin.mfa.act', ['requesterId' => $s['mid'], 'ip' => client_ip(), 'action' => $action]
             + array_intersect_key($b, array_flip(['people', 'minutes', 'force'])));

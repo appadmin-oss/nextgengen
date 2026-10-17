@@ -33,17 +33,24 @@
 const MFA_KINDS        = ['member', 'team', 'guardian'];
 const MFA_POLICY_VALS  = ['off', 'optional', 'required'];
 const MFA_POLICY_DEFAULT = ['member' => 'optional', 'team' => 'optional', 'guardian' => 'optional'];
+/* What each kind of person MAY choose, first being the one suggested. An
+ * admin can narrow any kind's list (setting mfa_methods, Members › Sign-in
+ * security); never widen it past this. A child is offered the question first
+ * because it needs no phone; the team the app, because it needs no inbox. */
 const MFA_METHODS = [
-    'member'   => ['question'],
-    'team'     => ['app', 'email'],
-    'guardian' => ['pin'],
+    'member'   => ['question', 'pin', 'app', 'email'],
+    'team'     => ['app', 'email', 'pin'],
+    'guardian' => ['pin', 'app', 'question'],
 ];
 const MFA_METHOD_INFO = [
     'question' => ['label' => 'A private question', 'blurb' => 'Pick a question only you can answer. We ask it when you sign in.'],
+    'pin'      => ['label' => 'A 6-digit PIN', 'blurb' => 'Six digits only you know, asked each time you sign in. Not a birthday or 123456.'],
     'app'      => ['label' => 'An authenticator app', 'blurb' => 'Google Authenticator, Microsoft Authenticator or similar shows a new 6-digit code every 30 seconds.'],
-    'email'    => ['label' => 'A code by email', 'blurb' => 'We email a 6-digit code to the address on your record each time you sign in with your card.'],
-    'pin'      => ['label' => 'A family PIN', 'blurb' => 'Six digits only you know, asked after the emailed sign-in code.'],
+    'email'    => ['label' => 'A code by email', 'blurb' => 'We email a 6-digit code to the address on your record when you sign in. Not asked again if you signed in with an emailed code.'],
 ];
+/* One-time backup codes, issued whenever a step is set up: the way in when the
+ * phone is lost or the answer forgotten, without waiting for the desk. */
+const MFA_BACKUP_N = 8;
 const MFA_QUESTIONS = [
     'What was the name of your first teacher?',
     'What is the name of the street you grew up on?',
@@ -116,6 +123,46 @@ function mfa_policy(): array {
         if (in_array((string)($set[$k] ?? ''), MFA_POLICY_VALS, true)) $out[$k] = (string)$set[$k];
     }
     return $out;
+}
+
+/** The methods this kind may choose now: the admin's subset of MFA_METHODS, never empty. */
+function mfa_methods_for(string $kind): array {
+    $all = MFA_METHODS[$kind] ?? [];
+    $set = setting_get('mfa_methods');
+    $pick = is_array($set) && is_array($set[$kind] ?? null) ? array_values(array_intersect($all, $set[$kind])) : [];
+    return $pick ?: $all;
+}
+function mfa_method_rows(string $kind): array {
+    return array_map(fn($m) => ['id' => $m] + MFA_METHOD_INFO[$m], mfa_methods_for($kind));
+}
+
+/* ── Backup codes ── */
+function mfa_backup_issue(string $id): array {
+    $codes = []; $rows = [];
+    for ($i = 0; $i < MFA_BACKUP_N; $i++) {
+        $c = strtoupper(substr(bin2hex(random_bytes(4)), 0, 4) . '-' . substr(bin2hex(random_bytes(4)), 0, 4));
+        $codes[] = $c; $rows[] = ['h' => password_hash(str_replace('-', '', $c), PASSWORD_DEFAULT), 'u' => 0];
+    }
+    mfa_put($id, 'mfa.backup', $rows);
+    return $codes;
+}
+function mfa_backup_left(string $id): int {
+    $b = mfa_get($id, 'mfa.backup');
+    return is_array($b) ? count(array_filter($b, fn($r) => is_array($r) && empty($r['u']))) : 0;
+}
+/** Spend one backup code; true when it was good and unused. */
+function mfa_backup_use(string $id, string $input): bool {
+    $c = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $input) ?? '');
+    if (!preg_match('/^[A-F0-9]{8}$/', $c)) return false;
+    $b = mfa_get($id, 'mfa.backup');
+    if (!is_array($b)) return false;
+    foreach ($b as $i => $r) {
+        if (is_array($r) && empty($r['u']) && password_verify($c, (string)($r['h'] ?? ''))) {
+            $b[$i]['u'] = time(); mfa_put($id, 'mfa.backup', $b);
+            return true;
+        }
+    }
+    return false;
 }
 
 function mfa_enrolment(string $id): ?array {
@@ -227,8 +274,9 @@ function mfa_status(array $p): array {
     return ['ok' => true, 'kind' => $kind, 'policy' => $policy, 'required' => mfa_required_for($pr),
         'enrolled' => (bool)$e, 'type' => $e ? (string)$e['type'] : '', 'since' => $e ? (string)($e['since'] ?? '') : '',
         'question' => $e && $e['type'] === 'question' ? (string)($e['q'] ?? '') : '',
-        'methods' => array_map(fn($m) => ['id' => $m] + MFA_METHOD_INFO[$m], MFA_METHODS[$kind]),
-        'questions' => $kind === 'member' ? MFA_QUESTIONS : [],
+        'methods' => mfa_method_rows($kind),
+        'questions' => in_array('question', mfa_methods_for($kind), true) ? MFA_QUESTIONS : [],
+        'backupLeft' => $e ? mfa_backup_left($pr['id']) : 0,
         'email' => mfa_mask_email($pr['email']),
         'bypassUntil' => mfa_bypass_until($pr['id']),
         'locked' => attempt_locked('mfa', $pr['id'])];
@@ -239,7 +287,7 @@ function mfa_enroll_start(array $p): array {
     $pr = mfa_self($p);
     if (!$pr || !in_array($pr['kind'], MFA_KINDS, true)) return ['ok' => false, 'error' => 'not_available'];
     $type = (string)($p['type'] ?? '');
-    if (!in_array($type, MFA_METHODS[$pr['kind']], true)) return ['ok' => false, 'error' => 'bad_type'];
+    if (!in_array($type, mfa_methods_for($pr['kind']), true)) return ['ok' => false, 'error' => 'bad_type'];
     if ($type === 'app') {
         $secret = rand_base32(20);
         mfa_put($pr['id'], 'mfa.pend', ['type' => 'app', 'secret' => $secret, 'exp' => time() + 1800]);
@@ -248,6 +296,7 @@ function mfa_enroll_start(array $p): array {
                 'otpauth' => 'otpauth://totp/' . $label . '?secret=' . $secret . '&issuer=NGG&digits=6&period=30'];
     }
     if ($type === 'email') {
+        if ($pr['email'] === '') return ['ok' => false, 'error' => 'no_email_on_file'];
         $r = mfa_send_code($pr, 'enroll');
         return $r['ok'] ? $r + ['type' => 'email'] : $r;
     }
@@ -265,7 +314,7 @@ function mfa_enroll_finish(array $p): array {
     $id = $pr['id'];
     if (attempt_locked('mfa', $id)) return ['ok' => false, 'error' => 'too_many_attempts'];
     $type = (string)($p['type'] ?? '');
-    if (!in_array($type, MFA_METHODS[$pr['kind']], true)) return ['ok' => false, 'error' => 'bad_type'];
+    if (!in_array($type, mfa_methods_for($pr['kind']), true)) return ['ok' => false, 'error' => 'bad_type'];
     $have = mfa_enrolment($id);
     if ($have && empty($p['pendingEnroll'])) {
         if (!mfa_check($id, $have, trim((string)($p['current'] ?? '')))) {
@@ -305,8 +354,10 @@ function mfa_enroll_finish(array $p): array {
     }
     mfa_put($id, 'mfa', $rec);
     attempt_reset('mfa', $id);
+    // A fresh set of backup codes with every setup or change, shown once.
+    $codes = mfa_backup_issue($id);
     audit($have ? 'mfa.change' : 'mfa.enroll', $id, $id, ['type' => $type, 'kind' => $pr['kind']], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'type' => $type];
+    return ['ok' => true, 'type' => $type, 'backupCodes' => $codes];
 }
 
 /** What to show on the second-step screen; sends the email code when that is the step. */
@@ -332,7 +383,16 @@ function mfa_verify(array $p): array {
     if (attempt_locked('mfa', $id)) return ['ok' => false, 'error' => 'too_many_attempts'];
     $e = mfa_enrolment($id);
     if (!$e) return ['ok' => false, 'error' => 'not_enrolled'];
-    if (!mfa_check($id, $e, trim((string)($p['answer'] ?? '')))) {
+    $in = trim((string)($p['answer'] ?? ''));
+    // The step itself, or else one unused backup code (spent here, once).
+    $passed = mfa_check($id, $e, $in);
+    if (!$passed && mfa_backup_use($id, $in)) {
+        attempt_reset('mfa', $id);
+        $left = mfa_backup_left($id);
+        audit('mfa.pass.backup', $id, $id, ['type' => $e['type'], 'left' => $left], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'backupUsed' => true, 'backupLeft' => $left];
+    }
+    if (!$passed) {
         $locked = attempt_fail('mfa', $id, MFA_FAIL_MAX, MFA_FAIL_LOCK);
         audit('mfa.fail', $id, $id, ['type' => $e['type'], 'locked' => $locked], (string)($p['ip'] ?? ''));
         if ($locked && $pr['kind'] === 'member') mfa_tell_staff_locked($pr);
@@ -341,6 +401,22 @@ function mfa_verify(array $p): array {
     attempt_reset('mfa', $id);
     audit('mfa.pass', $id, $id, ['type' => $e['type']], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/** A new set of backup codes (the old ones stop working), with the current step first. */
+function mfa_backup_new(array $p): array {
+    $pr = mfa_self($p);
+    if (!$pr || !in_array($pr['kind'], MFA_KINDS, true)) return ['ok' => false, 'error' => 'not_available'];
+    $e = mfa_enrolment($pr['id']);
+    if (!$e) return ['ok' => false, 'error' => 'not_enrolled'];
+    if (attempt_locked('mfa', $pr['id'])) return ['ok' => false, 'error' => 'too_many_attempts'];
+    if (!mfa_check($pr['id'], $e, trim((string)($p['current'] ?? '')))) {
+        attempt_fail('mfa', $pr['id'], MFA_FAIL_MAX, MFA_FAIL_LOCK);
+        return ['ok' => false, 'error' => 'current_wrong'];
+    }
+    $codes = mfa_backup_issue($pr['id']);
+    audit('mfa.backup.new', $pr['id'], $pr['id'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'backupCodes' => $codes];
 }
 
 /** Turn it off — only where it is not required, and only with the current step. */
@@ -355,7 +431,7 @@ function mfa_off(array $p): array {
         attempt_fail('mfa', $pr['id'], MFA_FAIL_MAX, MFA_FAIL_LOCK);
         return ['ok' => false, 'error' => 'current_wrong'];
     }
-    mfa_del($pr['id'], 'mfa');
+    mfa_del($pr['id'], 'mfa'); mfa_del($pr['id'], 'mfa.backup');
     audit('mfa.off', $pr['id'], $pr['id'], ['type' => $e['type']], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -446,7 +522,8 @@ function admin_mfa_overview(array $p): array {
     return ['ok' => true, 'kind' => $kind, 'state' => $state, 'total' => $total,
         'rows' => array_map(fn($r) => mfa_admin_row($r, $kind, $who), $rows),
         'counts' => $counts, 'policy' => mfa_policy(),
-        'methods' => array_map(fn($ms) => array_map(fn($m) => ['id' => $m] + MFA_METHOD_INFO[$m], $ms), MFA_METHODS),
+        // Per kind: every method it may be given, and which the desk allows now.
+        'methods' => array_map(fn($k) => array_map(fn($m) => ['id' => $m, 'label' => MFA_METHOD_INFO[$m]['label'], 'on' => in_array($m, mfa_methods_for($k), true)], MFA_METHODS[$k]), array_combine(MFA_KINDS, MFA_KINDS)),
         'canPolicy' => in_array('settings', member_effective_caps($g['requester']), true)];
 }
 
@@ -459,10 +536,23 @@ function admin_mfa_policy_set(array $p): array {
         if (!in_array((string)$in[$k], MFA_POLICY_VALS, true)) return ['ok' => false, 'error' => 'bad_policy', 'detail' => $k];
         $next[$k] = (string)$in[$k];
     }
-    if ($next === $cur) return ['ok' => true, 'policy' => $cur, 'unchanged' => true];
-    setting_set('mfa_policy', $next, (string)$g['requester']['memberId']);
-    audit('admin.mfa.policy', (string)$g['requester']['memberId'], 'mfa_policy', ['from' => $cur, 'to' => $next], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'policy' => $next];
+    // Which methods each kind may choose: a non-empty subset of what it can be given.
+    $mIn = is_array($p['methods'] ?? null) ? $p['methods'] : [];
+    $mCur = []; foreach (MFA_KINDS as $k) $mCur[$k] = mfa_methods_for($k);
+    $mNext = $mCur;
+    foreach (MFA_KINDS as $k) {
+        if (!array_key_exists($k, $mIn)) continue;
+        $want = is_array($mIn[$k]) ? array_values(array_unique(array_map('strval', $mIn[$k]))) : [];
+        if (array_diff($want, MFA_METHODS[$k])) return ['ok' => false, 'error' => 'bad_method', 'detail' => $k];
+        if (!$want) return ['ok' => false, 'error' => 'no_method', 'detail' => 'Leave at least one way for ' . $k . '.'];
+        $mNext[$k] = array_values(array_intersect(MFA_METHODS[$k], $want));
+    }
+    if ($next === $cur && $mNext === $mCur) return ['ok' => true, 'policy' => $cur, 'methods' => $mCur, 'unchanged' => true];
+    $by = (string)$g['requester']['memberId'];
+    if ($next !== $cur) setting_set('mfa_policy', $next, $by);
+    if ($mNext !== $mCur) setting_set('mfa_methods', $mNext, $by);
+    audit('admin.mfa.policy', $by, 'mfa_policy', ['from' => $cur, 'to' => $next, 'methodsFrom' => $mCur, 'methodsTo' => $mNext], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'policy' => $next, 'methods' => $mNext];
 }
 
 /**
@@ -515,7 +605,7 @@ function admin_mfa_act(array $p): array {
                 break;
             case 'reset':
                 if (!$e) { $results[] = $res + ['ok' => true, 'unchanged' => true]; break; }
-                mfa_del($id, 'mfa'); mfa_del($id, 'mfa.pend'); attempt_reset('mfa', $id);
+                mfa_del($id, 'mfa'); mfa_del($id, 'mfa.pend'); mfa_del($id, 'mfa.backup'); attempt_reset('mfa', $id);
                 $results[] = $res + ['ok' => true];
                 break;
             case 'require':

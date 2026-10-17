@@ -27727,11 +27727,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // ── Two-step: a member's private question ──
     $kid = ['requesterId' => 'NGG-2026-0901', 'who' => 'member'];
     $st = mfa_status($kid);
-    chk('mfa · a member is offered a private question, nothing else', $st['kind'] === 'member' && array_column($st['methods'], 'id') === ['question'] && count($st['questions']) >= 3);
-    chk('mfa · the team are offered an app or an emailed code', array_column(mfa_status(['requesterId' => 'VOL-INS-26-901', 'who' => 'volunteer'])['methods'], 'id') === ['app', 'email']);
+    chk('mfa · a member is offered a question first, then a PIN, an app or an emailed code', $st['kind'] === 'member' && array_column($st['methods'], 'id') === ['question', 'pin', 'app', 'email'] && count($st['questions']) >= 3);
+    chk('mfa · the team are offered an app first, then an emailed code or a PIN', array_column(mfa_status(['requesterId' => 'VOL-INS-26-901', 'who' => 'volunteer'])['methods'], 'id') === ['app', 'email', 'pin']);
+    // The desk narrows what a kind may choose; never to nothing, never to something it cannot be given.
+    $adm0 = ['requesterId' => 'NGG-2025-0099', 'ip' => ''];
+    chk('mfa · the desk cannot leave a kind with no way in', (admin_mfa_policy_set($adm0 + ['methods' => ['member' => []]])['error'] ?? '') === 'no_method');
+    chk('mfa · nor give a kind a method it cannot have', (admin_mfa_policy_set($adm0 + ['methods' => ['team' => ['question']]])['error'] ?? '') === 'bad_method');
+    admin_mfa_policy_set($adm0 + ['methods' => ['member' => ['pin', 'question']]]);
+    chk('mfa · narrowed, a member is offered only those, in the standard order', array_column(mfa_status($kid)['methods'], 'id') === ['question', 'pin']);
+    chk('mfa · and a method taken away cannot be set up', (mfa_enroll_start($kid + ['type' => 'app'])['error'] ?? '') === 'bad_type');
+    setting_set('mfa_methods', null);
     chk('mfa · an answer that is your own name is refused', (mfa_enroll_finish($kid + ['type' => 'question', 'question' => 'What is my name really?', 'answer' => 'Ada'])['error'] ?? '') === 'answer_is_name');
     $e = mfa_enroll_finish($kid + ['type' => 'question', 'question' => MFA_QUESTIONS[0], 'answer' => 'Mrs. Okafor']);
     chk('mfa · a member sets a question', !empty($e['ok']) && mfa_status($kid)['enrolled'] === true);
+    $codes = $e['backupCodes'] ?? [];
+    chk('mfa · setting it up hands back eight one-time backup codes', count($codes) === MFA_BACKUP_N && preg_match('/^[A-F0-9]{4}-[A-F0-9]{4}$/', (string)$codes[0]) === 1 && mfa_status($kid)['backupLeft'] === 8);
+    chk('mfa · stored hashed', !str_contains((string)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa.backup'")['stateValue'], str_replace('-', '', $codes[0])));
+    $bu = mfa_verify($kid + ['answer' => strtolower($codes[0])]);
+    chk('mfa · a backup code passes the step in place of the answer', !empty($bu['ok']) && !empty($bu['backupUsed']) && $bu['backupLeft'] === 7);
+    chk('mfa · and only once', (mfa_verify($kid + ['answer' => $codes[0]])['error'] ?? '') === 'wrong_answer');
+    attempt_reset('mfa', 'NGG-2026-0901');
+    chk('mfa · new backup codes need the current answer', (mfa_backup_new($kid + ['current' => 'nope'])['error'] ?? '') === 'current_wrong');
+    $nb = mfa_backup_new($kid + ['current' => 'mrs okafor']);
+    chk('mfa · and replace the old set', count($nb['backupCodes'] ?? []) === 8 && (mfa_verify($kid + ['answer' => $codes[1]])['error'] ?? '') === 'wrong_answer');
+    attempt_reset('mfa', 'NGG-2026-0901');
     chk('mfa · the answer is stored hashed, never as typed', !str_contains((string)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-2026-0901' AND stateKey = 'mfa'")['stateValue'], 'okafor'));
     chk('mfa · and the public state op cannot read it back', !array_key_exists('mfa', member_state_get(['memberId' => 'NGG-2026-0901'])['state']));
     chk('mfa · nor write it', (member_state_set(['memberId' => 'NGG-2026-0901', 'key' => 'mfa', 'value' => ['type' => 'question']])['error'] ?? '') === 'bad_key');
@@ -27801,7 +27820,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // Guardians: a family PIN.
     db_insert('guardians', ['guardianId' => 'GDN-T901', 'email' => 'mum.t901@x.example', 'fullName' => 'Mrs Kid', 'status' => 'active', 'sessionEpoch' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
     $gd = ['requesterId' => 'GDN-T901', 'who' => 'guardian'];
-    chk('mfa · a guardian is offered a family PIN', array_column(mfa_status($gd)['methods'], 'id') === ['pin']);
+    chk('mfa · a guardian is offered a PIN first, then an app or a question', array_column(mfa_status($gd)['methods'], 'id') === ['pin', 'app', 'question']);
     chk('mfa · an easy PIN is refused', (mfa_enroll_finish($gd + ['type' => 'pin', 'pin' => '111111'])['error'] ?? '') === 'pin_too_easy');
     mfa_enroll_finish($gd + ['type' => 'pin', 'pin' => '402917']);
     chk('mfa · after the emailed sign-in code, the PIN is still asked', mfa_need('GDN-T901', 'guardian', ['email']) === 'pin' && !empty(mfa_verify($gd + ['answer' => '402917'])['ok']));

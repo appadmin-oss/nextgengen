@@ -51,6 +51,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'mfa.challenge'           => 'mfa_challenge',
             'mfa.verify'              => 'mfa_verify',
             'mfa.off'                 => 'mfa_off',
+            'mfa.backup.new'          => 'mfa_backup_new',
             'admin.mfa.overview'      => 'admin_mfa_overview',
             'admin.mfa.policy'        => 'admin_mfa_policy_set',
             'admin.mfa.act'           => 'admin_mfa_act',
