@@ -188,6 +188,11 @@ function mpa_tick(?int $now = null, int $max = 6): array {
     // The Saturday Formation Schedule's reminders and family messages (idempotent per day, block and person).
     if (function_exists('sf_tick')) { try { sf_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'formation.tick', $e->getMessage(), ''); } }
     mpa_push_release($now);
+    // Housekeeping the week view used to do inside a GET: close follow-ups whose Saturday has passed.
+    if (defined('MP_FOLLOWUP_STALE_DAYS')) {
+        db_exec("UPDATE mentor_nudges SET status = 'done', resolvedAt = ?, resolvedBy = 'expired' WHERE status = 'open' AND rule = 'J:sessionFollowUp' AND createdAt < ?",
+                [gmdate('c', $now), gmdate('Y-m-d', $now - MP_FOLLOWUP_STALE_DAYS * 86400)]);
+    }
     /* Safety first. The tick runs at most $max jobs, in table order, and the
      * hourly concern escalation sat near the end — so a Monday-morning backlog
      * could push it into a later tick. It goes first. */

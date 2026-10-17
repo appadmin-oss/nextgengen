@@ -47,6 +47,9 @@ const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
  * and assignment completion, and the 1:45 mentor check-out. */
 const MP_CHECKS = ['On time', 'Assignment in', 'Checked out'];
 const MP_NOTE_MAX = 500;
+/* A Saturday follow-up has done its job once that Saturday has passed: older
+ * than this, the week view hides it and mpa_tick closes it. A read never writes. */
+const MP_FOLLOWUP_STALE_DAYS = 9;
 const MP_SESSION_KINDS = ['One-to-one' => 'one-to-one', 'Pod session' => 'pod', 'Family' => 'family', 'Phone or message' => 'phone', 'Note' => 'note'];
 const MP_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
 const MP_REL_Q = ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'];
@@ -402,8 +405,11 @@ function member_mp_week(array $p): array {
         $rules = defined('MPA_JOBS') ? array_map(static fn($k) => 'J:' . $k, array_keys(array_filter(MPA_JOBS, static fn($j) => !empty($j['due'])))) : [];
         $rp = $rules ? implode(',', array_fill(0, count($rules), '?')) : "''";
         $leadSql = $g['mpRole'] === 'lead' ? " OR (audience = 'lead' AND (rule LIKE 'J:%' OR rule = 'R7'))" : '';
-        foreach (db_all("SELECT id, rule, title, body, memberId FROM mentor_nudges WHERE status = 'open' AND mentorId = ? AND ((audience = 'mentor' AND rule IN ($rp))$leadSql) ORDER BY createdAt DESC LIMIT 8",
-                        array_merge([$g['mentorId']], $rules)) as $n) {
+        // A Saturday follow-up older than its Saturday is not shown; mpa_tick closes it.
+        $stale = gmdate('Y-m-d', strtotime($today) - MP_FOLLOWUP_STALE_DAYS * 86400);
+        foreach (db_all("SELECT id, rule, title, body, memberId FROM mentor_nudges WHERE status = 'open' AND mentorId = ? AND ((audience = 'mentor' AND rule IN ($rp))$leadSql)
+                         AND NOT (rule = 'J:sessionFollowUp' AND createdAt < ?) ORDER BY createdAt DESC LIMIT 8",
+                        array_merge([$g['mentorId']], $rules, [$stale])) as $n) {
             $due[] = ['key' => 'job:' . $n['id'], 'icon' => str_contains((string)$n['rule'], 'scorecard') ? 'chart-bar' : (str_contains((string)$n['rule'], 'family') ? 'house-line' : (str_contains((string)$n['rule'], 'goal') ? 'target' : 'bell-simple')),
                       'tone' => 'neu', 'title' => (string)$n['title'], 'sub' => (string)$n['body'], 'nudgeId' => (int)$n['id'],
                       'go' => $n['memberId'] !== '' ? ['screen' => 'mentee', 'id' => (string)$n['memberId'], 'tab' => str_contains((string)$n['rule'], 'scorecard') ? 'scorecard' : (str_contains((string)$n['rule'], 'family') ? 'family' : (str_contains((string)$n['rule'], 'goal') ? 'goals' : 'overview'))]
@@ -411,9 +417,6 @@ function member_mp_week(array $p): array {
         }
     }
     $sat = mp_next_saturday($today);
-    // A Saturday follow-up has done its job once that Saturday has passed.
-    if (!empty($g['mentorId'])) db_exec("UPDATE mentor_nudges SET status = 'done', resolvedAt = ?, resolvedBy = 'expired' WHERE status = 'open' AND rule = 'J:sessionFollowUp' AND mentorId = ? AND createdAt < ?",
-                                        [now_iso(), $g['mentorId'], gmdate('Y-m-d', strtotime($today) - 9 * 86400)]);
     return ['ok' => true, 'me' => mp_me($g, $o), 'today' => $today, 'saturday' => $sat, 'menteeCount' => count($ms), 'due' => $due,
         'week' => mp_commitments_week($g, $today),
         'badges' => ['mentees' => count(array_filter($ms, static fn($m) => $m['urgency'] >= 2)), 'saturday' => $open, 'messages' => $unread,
