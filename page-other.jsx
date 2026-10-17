@@ -6879,7 +6879,7 @@ function MentorConcernSheet({ students, onClose }) {
 /* `programme` (ngg | summer) is which programme this portal is for: /mentor/summer
    shows Summer School participants only, /mentor/class the NGG class (instructors,
    stars and school results). The server narrows the roster; nothing here filters. */
-function MentorPortal({ programme, embedded } = {}) {
+function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
@@ -6890,7 +6890,9 @@ function MentorPortal({ programme, embedded } = {}) {
   const [bulkOpen, setBulkOpen] = React.useState(false);
   /* Which centre's class is on screen. Only ever set by someone who covers
      more than one — a mentor at a single centre never sees the control. */
-  const [centre, setCentre] = React.useState("");
+  /* Embedded in the NGG mentor portal it opens on the centre that portal has
+     on screen, rather than asking a coordinator to pick it a second time. */
+  const [centre, setCentre] = React.useState(embedded && centreIn ? centreIn : "");
   /* ?tab=results is where the "sent their results and plan" email lands. */
   const [tabState, setTabState] = React.useState(() => { try { return new URLSearchParams(location.search).get("tab") || ""; } catch (_) { return ""; } });
   /* "" lets the SERVER decide: my mentees if I have any, the centre otherwise.
@@ -6931,6 +6933,8 @@ function MentorPortal({ programme, embedded } = {}) {
   const shell = (ch) => embedded ? <div className="m15x-classic">{ch}</div> : (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
+      {/* First visit to the Summer School mentor portal: a short tour (guide.jsx). */}
+      {state === "ready" && programme !== "ngg" && typeof GuideTour === "function" && <GuideTour portal="summer"/>}
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);

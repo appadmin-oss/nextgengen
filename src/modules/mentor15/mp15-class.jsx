@@ -81,6 +81,7 @@ function Mp15CStars({ centre, say, onOpenChild }) {
   if (err) return <div className="m15c-card m15c-msg" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Couldn't load your class ({mp15cErr(err, (err && (err.code || err.message)) || "error")}).</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>;
   if (!d) return <div className="m15c-card m15c-msg" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div>;
 
+  if (d.needsCentre) return <div className="m15c-card m15c-msg" role="status"><i className="ph ph-buildings" aria-hidden="true"/><span>Choose a centre at the top of the portal to see its class.</span></div>;
   const all = d.students || [];
   const ql = q.trim().toLowerCase();
   const rows = all.filter(s => !ql || ((s.fullName || "") + " " + (s.track || "")).toLowerCase().includes(ql));
@@ -131,7 +132,7 @@ function Mp15CStars({ centre, say, onOpenChild }) {
               return (
                 <tr key={s.studentId}>
                   <td className="m15c-chk"><input type="checkbox" aria-label={"Select " + s.fullName} checked={!!sel[s.studentId]} onChange={() => setSel({ ...sel, [s.studentId]: !sel[s.studentId] })}/></td>
-                  <td><button type="button" className="m15c-name" onClick={() => onOpenChild && s.kind === "member" ? onOpenChild(s.studentId) : setOpen({ kind: "notes", s })}>
+                  <td><button type="button" className="m15c-name" aria-label={(onOpenChild && s.kind === "member" ? "Open the record for " : "Notes on ") + s.fullName} onClick={() => onOpenChild && s.kind === "member" ? onOpenChild(s.studentId) : setOpen({ kind: "notes", s })}>
                     <span className="m15c-av" aria-hidden="true">{(s.fullName || "?").split(/\s+/).map(w => w[0]).slice(0, 2).join("")}</span>
                     <span><b>{s.fullName}</b><small>{s.track || "—"}</small></span></button></td>
                   <td>{s.starredToday

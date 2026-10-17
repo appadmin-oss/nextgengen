@@ -8,10 +8,12 @@ $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 const POD_READS = ['today' => 'member.ms.today', 'case' => 'member.ms.case', 'academy' => 'member.ms.academy',
-                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer', 'mine' => 'member.mentor.mine'];
+                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer', 'mine' => 'member.mentor.mine',
+                   // The member's own Saturday evaluations (criteria, strength, next step).
+                   'evals' => 'member.saturday.evals'];
 const POD_WRITES = ['observe' => 'member.ms.observe', 'onetoone' => 'member.ms.onetoone', 'taskDone' => 'member.ms.task.done',
                     'nudgeDone' => 'member.ms.nudge.done', 'relcheck' => 'member.ms.relcheck', 'relcheckMentee' => 'member.ms.relcheck.mentee',
-                    'checkin' => 'member.ms.coord.checkin', 'concern' => 'member.ms.concern', 'academyCheck' => 'member.ms.academy.check',
+                    'checkin' => 'member.ms.coord.checkin', 'concern' => 'member.ms.concern', 'concernSelf' => 'member.sg.self', 'academyCheck' => 'member.ms.academy.check',
                     'policyAccept' => 'member.ms.policy.accept', 'choose' => 'member.ms.choose',
                     // The member's own side of the Mentor Portal (domain/mentor-portal.php).
                     'weekCheckin' => 'member.checkin.save', 'selfScore' => 'member.mentor.selfscore', 'relChild' => 'member.mentor.rel.child'];
@@ -29,7 +31,7 @@ if ($method === 'GET') {
     $action = (string)($b['action'] ?? '');
     $op = POD_WRITES[$action] ?? null;
     if (!$op) json_error('unknown_action', 400);
-    if ($action === 'concern') rate_limit_check_actor('safeguarding.report', (string)$s['mid']);
+    if ($action === 'concern' || $action === 'concernSelf') rate_limit_check_actor('safeguarding.report', (string)$s['mid']);
     $args = ['requesterId' => $s['mid'], 'ip' => client_ip()];
     foreach (POD_FIELDS as $f) if (array_key_exists($f, $b)) $args[$f] = $b[$f];
     $res = gs_call($op, $args);

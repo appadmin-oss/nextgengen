@@ -442,7 +442,7 @@ Object.assign(Mp9Portal.prototype, {
       cats: CATS.map(([c]) => ({ c, on: s.cat === c ? "true" : "false", ring: s.cat === c ? "#0b0b0c" : "#d6d4cc", bw: s.cat === c ? "2px" : "1px", pick: () => this.setState({ cat: c }) })),
       hasCat: !!s.cat && !s.concernSent, concernSent: s.concernSent, concernAsk: !s.concernSent, catText: s.cat || "", cText: s.cText, onCText: e => this.setState({ cText: e.target.value }), cRef: s.cRef,
       sendConcern: () => { const body = s.cText.trim(); if (body.length < 10) return this.toast("Say a little more first, even one sentence.");
-        NGGApi.member.pod.act("concern", { category: (CATS.find(c => c[0] === s.cat) || [0, "Something else"])[1], body: s.cat + ": " + body })
+        NGGApi.member.pod.act("concernSelf", { category: (CATS.find(c => c[0] === s.cat) || [0, "Something else"])[1], body: s.cat + ": " + body })
           .then(r => this.setState({ concernSent: true, cText: "", cRef: (r && (r.caseNo || r.ref)) || "sent" })).catch(e => this.toast(mp9Err(e))); },
       resetConcern: () => this.setState({ concernSent: false, cat: null, cRef: "" }),
     };
@@ -483,7 +483,7 @@ Object.assign(Mp9Portal.prototype, {
       }
       if (sh.k === "change") {
         const unsafe = s.sPick === "I feel uncomfortable with my mentor";
-        busy(unsafe ? NGGApi.member.pod.act("concern", { category: "Conduct of an adult", body: "About my mentor. " + (txt || "I feel uncomfortable with my mentor.") }) : NGGApi.member.raiseRequest({ kind: "mentor", subject: "Change of mentor · " + s.sPick, body: txt }))
+        busy(unsafe ? NGGApi.member.pod.act("concernSelf", { category: "Conduct of an adult", body: "About my mentor. " + (txt || "I feel uncomfortable with my mentor.") }) : NGGApi.member.raiseRequest({ kind: "mentor", subject: "Change of mentor · " + s.sPick, body: txt }))
           .then(r => { if (!r) return; this.closeSheet(); this.toast(unsafe ? "Sent privately to " + this.sgInfo().name + ". They’ll talk to you today." : "Sent to your coordinator. " + mf + " won’t see this."); });
       }
       if (sh.k === "team") {
@@ -638,7 +638,10 @@ Object.assign(Mp9Portal.prototype, {
   },
   slotEnd() {
     const s = this.state;
-    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/></div>;
+    const evals = (s.scr === "growth" || s.scr === "sat")
+      ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
+    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
+    if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },
   renderVals() {
@@ -689,3 +692,56 @@ Object.assign(Mp9Portal.prototype, {
 });
 
 function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"; }
+
+/* The member's own Saturday evaluations (member.saturday.evals): each
+   criterion on the growth scale, the strength their mentor saw and one next
+   step. The ratings and the mentor's staff note never reach this screen. */
+const MP9_EVAL_TONE = { "Not yet": "is-0", "Emerging": "is-1", "Demonstrated": "is-2", "Strong": "is-3" };
+function Mp9Evals({ data, err, busy, retry, latestOnly, mentor }) {
+  const list = (data && data.evals) || [];
+  const [open, setOpen] = React.useState(0);
+  const head = <h2 className="m9x-ev-h">{latestOnly ? "Last Saturday’s evaluation" : "Saturday evaluations"}</h2>;
+  if (err && !data) return (
+    <section className="m9x-ev" aria-label="Saturday evaluations">{head}
+      <p className="m9x-ev-msg" role="alert">We couldn’t load your evaluations. <button type="button" className="m9x-ev-retry" onClick={retry}>Try again</button></p>
+    </section>);
+  if (!data) return <section className="m9x-ev" aria-label="Saturday evaluations" aria-busy="true">{head}<p className="m9x-ev-msg" role="status">{busy ? "Loading…" : ""}</p></section>;
+  if (!list.length) return (
+    <section className="m9x-ev" aria-label="Saturday evaluations">{head}
+      <p className="m9x-ev-msg">{(mentor || "Your mentor") + " evaluates you after each Saturday. Your first one will show here."}</p>
+    </section>);
+  const shown = latestOnly ? list.slice(0, 1) : list;
+  return (
+    <section className="m9x-ev" aria-label="Saturday evaluations">
+      {head}
+      <ol className="m9x-ev-list">
+        {shown.map((e, i) => {
+          const on = latestOnly || open === i;
+          return (
+            <li key={e.date + i} className={"m9x-ev-item" + (on ? " is-open" : "")}>
+              {latestOnly ? <div className="m9x-ev-sum"><b>{mp9Date(e.date, { weekday: "short", day: "numeric", month: "short" })}</b><span>{e.mentor ? "by " + e.mentor : ""}</span></div> : (
+                <button type="button" className="m9x-ev-sum" aria-expanded={on} onClick={() => setOpen(on ? -1 : i)}>
+                  <b>{mp9Date(e.date, { weekday: "short", day: "numeric", month: "short" })}</b>
+                  <span>{e.mentor ? "by " + e.mentor : ""}</span>
+                  <i className={"ph ph-caret-" + (on ? "up" : "down")} aria-hidden="true"/>
+                </button>
+              )}
+              {on && (
+                <div className="m9x-ev-body">
+                  <ul className="m9x-ev-crit">
+                    {(e.criteria || []).map(c => (
+                      <li key={c.key}><span>{c.label}</span><span className={"m9x-ev-lvl " + (MP9_EVAL_TONE[c.level] || "")}>{c.level}</span></li>
+                    ))}
+                  </ul>
+                  {e.strength && <p className="m9x-ev-note"><b>Strength {e.mentor || "your mentor"} saw</b>{e.strength}</p>}
+                  {e.next && <p className="m9x-ev-note"><b>One next step</b>{e.next}</p>}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+

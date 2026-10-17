@@ -1209,14 +1209,23 @@ function sg_report_refusal(string $reporterId, string $centre): array {
  * safeguarding officer only, and the reporter can neither edit nor see it
  * after sending — they get the case number and who received it.
  */
-function sg_report(array $p): array {
+function sg_report(array $p, bool $self = false): array {
     $me = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['requesterId'] ?? '')]);
     if (!$me) return ['ok' => false, 'error' => 'no_requester'];
+    if ($self) {
+        /* A child telling us about themselves (member_sg_self). The subject is
+         * always the reporter — no id is taken from the request — so this can
+         * never be used to file a case about somebody else, which is what the
+         * mentor gate below exists to stop. */
+        if ((string)($me['status'] ?? '') !== 'active') return ['ok' => false, 'error' => 'no_requester'];
+        $p['subjectId'] = (string)$me['memberId'];
+        $gate = ['ok' => true, 'centres' => null, 'courses' => null, 'mentor' => ['centre' => (string)($me['centre'] ?? '')]];
+    }
     /* The portal's report, so the portal's people: anyone mentor_gate admits
      * (screened or not — the duty to report does not wait for the Academy).
      * It was any signed-in account, which let a member file a case naming
      * any other member, with no limit. */
-    $gate = function_exists('mentor_gate') ? mentor_gate($p) : ['ok' => false];
+    if (!$self) $gate = function_exists('mentor_gate') ? mentor_gate($p) : ['ok' => false];
     if (empty($gate['ok'])) return ['ok' => false, 'error' => 'not_a_mentor'];
     $body = trim((string)($p['body'] ?? ''));
     if (mb_strlen($body) < 10) return ['ok' => false, 'error' => 'too_short'];
@@ -1511,6 +1520,8 @@ function member_ms_coord_checkin(array $p): array {
 
 /** Report a concern from the portal (always available, cleared or not). */
 function member_ms_concern(array $p): array { return sg_report($p); }
+/** A member's own concern about themselves, from the Member Portal's Help: same queue, same cap, subject = the reporter. */
+function member_sg_self(array $p): array { unset($p['subjectId'], $p['subjectName']); return sg_report($p, true); }
 
 /* ── Academy and policy (the mentor's own) ──────────────────────────────── */
 

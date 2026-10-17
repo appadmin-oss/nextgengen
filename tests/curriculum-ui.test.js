@@ -199,7 +199,7 @@ async function contextFor(memberId, admin, viewport) {
     const { ctx: mctx, token: mtoken } = await contextFor('NGG-CU-M1', false, { width: 420, height: 900 });
     const mp = await mctx.newPage();
     mp.on('pageerror', e => errs.push('member: ' + String(e).slice(0, 200)));
-    await mp.goto(BASE + '/dashboard/learning', { waitUntil: 'domcontentloaded' });
+    await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mp);
     await mp.waitForSelector('.cur-item', { timeout: 40000 });
     chk('the member sees their course\'s lessons and the Club-wide one', (await mp.$$('.cur-item')).length === 3);
@@ -209,7 +209,7 @@ async function contextFor(memberId, admin, viewport) {
     chk('the lesson renders its formatting', await mp.$eval('.cur-text strong, .cur strong', el => el.textContent === 'Middle C'));
     await mp.click('.cur-mats button.cur-mat');
     chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
-    await mp.goto(BASE + '/dashboard/learning', { waitUntil: 'domcontentloaded' });
+    await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mp);
     await mp.waitForSelector('.cur-item', { timeout: 40000 });
     const mat = await get(BASE + matUrl, { Cookie: 'ngg_sess=' + mtoken });
@@ -296,7 +296,7 @@ async function contextFor(memberId, admin, viewport) {
     chk('…and saving the term start is kept', JSON.parse(php(`echo setting_raw('curriculum');`)).startDate === '2026-09-07');
 
     // The companion: the member's weekly check-in, and the staff board.
-    await mp.goto(BASE + '/dashboard/companion', { waitUntil: 'domcontentloaded' });
+    await mp.goto(BASE + '/dashboard/companion?classic=1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mp);
     await mp.waitForSelector('.comp-now', { timeout: 40000 });
     chk('the member sees their companion check-in, with next steps', (await mp.$$('.comp-list.is-focus li')).length >= 1 && (await mp.$$('.comp-tile')).length === 6);

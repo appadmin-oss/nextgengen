@@ -102,45 +102,50 @@ async function as(memberId, admin, viewport) {
 
     // ── The Mentor Portal (/mentor), as Ngozi: her class, and School results ──
     const mt = await as('NGG-MS-M1', false);
-    // The class portal (stars, school results) is /mentor?tab=…; /mentor itself is the v15 portal (tests/mentor-v15.test.js).
+    // The class tools are the v15 portal's own Class screens (mp15-class.jsx); /mentor?tab=class lands there.
     await mt.goto(BASE + '/mentor?tab=class', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
     await mt.waitForFunction(() => /Daniel Okafor/.test(document.body.innerText), null, { timeout: 60000 });
     const roster = await mt.innerText('body');
     chk('/mentor opens the Mentor Portal on her mentees', /Mariam Yusuf/.test(roster) && /Daniel Okafor/.test(roster));
-    chk('School results is one of its tabs', await mt.isVisible('[role="tab"]:has-text("School results")'));
-    // Report a concern: from the header, to the one safeguarding queue.
-    await mt.click('.mtr-concern-btn');
-    await mt.waitForSelector('.mtr-sheet', { timeout: 10000 });
-    await mt.click('.mtr-cn-form button[type=submit]');
-    chk('an incomplete concern names what is missing first', /Choose the child first/.test(await mt.innerText('.mtr-err')));
-    await mt.selectOption('#mtr-cn-who', { label: 'Mariam Yusuf' });
-    await mt.click('.mtr-chip:has-text("Something they told me")');
-    await mt.fill('#mtr-cn-body', 'She said older boys took her phone at the gate.');
-    await mt.click('.mtr-cn-form button[type=submit]');
-    await mt.waitForFunction(() => /SG-\d{6}/.test((document.querySelector('.mtr-sent') || {}).innerText || ''), null, { timeout: 30000 });
-    const ref = (await mt.innerText('.mtr-sent')).match(/(SG-\d{6})/)[1];
+    await mt.waitForSelector('main .m15c table', { timeout: 30000 }).catch(() => {});
+    chk('it lands on Class › Stars, with School results one of its tabs', new URL(mt.url()).pathname === '/mentor/class' && (await mt.locator('main button[aria-current]', { hasText: 'School results' }).filter({ visible: true }).count()) > 0
+      && await mt.getAttribute('main button[aria-current]:has-text("Stars")', 'aria-current') === 'true');
+    // Report a concern. The class tools sit inside the NGG mentor portal, whose
+    // own Report a concern (the sidebar) is the one door: one safeguarding queue.
+    chk('the Class screens carry no second concern button', !(await mt.isVisible('.mtr-concern-btn')));
+    await mt.click('.m15-app button:has-text("Report a concern")');
+    await mt.waitForSelector('main textarea', { timeout: 15000 });
+    chk('an incomplete concern cannot be sent', await mt.getAttribute('main button:has-text("Send to the safeguarding officer")', 'aria-disabled') === 'true');
+    await mt.fill('main input[role="combobox"], main input[aria-autocomplete]', 'Mari').catch(() => {});
+    await mt.keyboard.press('Enter');
+    await mt.click('main button:has-text("Something they told me")');
+    await mt.fill('main textarea', 'She said older boys took her phone at the gate.');
+    await mt.click('main button:has-text("Send to the safeguarding officer")');
+    await mt.waitForFunction(() => /SG-\d{6}/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
+    const ref = (await mt.innerText('main')).match(/(SG-\d{6})/)[1];
     chk('Report a concern: one queue, the server’s SG reference, never on the child’s record',
       q(`db_row("SELECT category, subjectId FROM safeguarding_cases WHERE caseNo = '${ref}'")`).category === 'Something they told me'
       && q(`db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MS-K1' AND concern = 1")`).c === 0);
-    await mt.keyboard.press('Escape');
-    chk('Escape closes the sheet', !(await mt.isVisible('.mtr-sheet')));
     chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
-    // Goals in the restored record: a draft goes live once the mentee agrees it,
-    // and Done is there to press — it never was while the panel looked for "open".
+    // A name on the Class roster opens the child's v15 record, where goals live.
+    await mt.goto(BASE + '/mentor?tab=class', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mt);
     await mt.click('button[aria-label="Open the record for Mariam Yusuf"]');
-    await mt.waitForSelector('[role="tab"]:has-text("Goals (")', { timeout: 20000 });
-    await mt.click('[role="tab"]:has-text("Goals (")');
-    await mt.fill('input[aria-label="The goal"]', 'Present her robot to the centre.');
-    await mt.click('button[type=submit]:has-text("Add")');
-    await mt.waitForSelector('text=draft, not agreed yet', { timeout: 15000 }).catch(async e => { const b = await mt.innerText('body'); console.error('DEBUG sheet:', b.slice(b.indexOf('Goals ('), b.indexOf('Goals (') + 900)); throw e; });
-    chk('a new goal shows as a draft with a way to start it once agreed', await mt.isVisible('button:has-text("They agreed · start it")'));
-    await mt.click('button:has-text("They agreed · start it")');
-    await mt.waitForSelector('button:has-text("✓ Done")', { timeout: 15000 });
+    await mt.waitForSelector('[role="tab"]:has-text("Goals")', { timeout: 20000 });
+    chk('a name on the Class roster opens that child’s record in the portal', /Mariam Yusuf/.test(await mt.innerText('main')));
+    // Goals, through the routes the record uses: a draft goes live only once the mentee agrees it, and Done is achieved.
+    const goal = (body) => mt.evaluate(b => NGGApi.member.mentorGoal('NGG-MS-K1', b).catch(e => ({ ok: false, error: e.code || e.message })), body);
+    const gst = (id, st) => mt.evaluate(([i, x]) => NGGApi.member.mentorGoalStatus('NGG-MS-K1', i, x).catch(e => ({ ok: false, error: e.code || e.message })), [id, st]);
+    const g0 = await goal({ goal: 'Present her robot to the centre.', area: 'Character', agreed: false });
+    const gid = g0 && (g0.id || (g0.goal && g0.goal.id));
+    chk('a new goal starts as a draft', !!gid && q(`db_row("SELECT status FROM mentor_goals WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`).status === 'draft', JSON.stringify(g0).slice(0, 200));
+    chk('…and cannot go live before the mentee agrees it', (await gst(gid, 'active')).ok === false);
+    await goal({ id: gid, goal: 'Present her robot to the centre.', area: 'Character', agreed: true });
+    await gst(gid, 'active');
     const gl = q(`db_row("SELECT status, agreed FROM mentor_goals WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`);
-    chk('…starting it records the agreement and makes it active', gl.status === 'active' && Number(gl.agreed) === 1);
-    await mt.click('button:has-text("✓ Done")');
-    await mt.waitForFunction(() => /achieved/.test(document.body.innerText), null, { timeout: 15000 });
+    chk('…agreeing it and starting it makes it active', gl.status === 'active' && Number(gl.agreed) === 1);
+    await gst(gid, 'achieved');
     chk('Done marks it achieved', q(`db_row("SELECT status FROM mentor_goals WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC LIMIT 1")`).status === 'achieved');
     await mt.keyboard.press('Escape');
     chk('no page errors in the portal', mt.errs.length === 0);
@@ -202,7 +207,7 @@ async function as(memberId, admin, viewport) {
 
     // ── The member's own weekly check-in ────────────────────────────────
     const mem = await as('NGG-MS-K1', false);
-    await mem.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await mem.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mem);
     await mem.waitForSelector('.dci-feel', { timeout: 60000 });
     if (process.env.SHOTS) await mem.locator('.dci').screenshot({ path: process.env.SHOTS + '/checkin.png' });

@@ -26340,7 +26340,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ix = backend_dispatch('member.mentor.index', $p('NGG-MP1', ['month' => '2026-10']));
     $acc = array_values(array_filter($ix['skills'], static fn($x) => $x['skill'] === 'Accountability'))[0];
     chk('portal: the Index averages each skill and its change from last month', $acc['avg'] === 8.0 && $acc['change'] === 1.0 && $ix['scored'] === 1 && $ix['of'] === 5
-        && $ix['byMentee'][0]['lowSkill'] === 'Multiplication' && $ix['byMentee'][0]['prevTotal'] === 48);
+        && ($ixSc = array_values(array_filter($ix['byMentee'], static fn($r) => $r['total'] !== null))) && $ixSc[0]['lowSkill'] === 'Multiplication' && $ixSc[0]['prevTotal'] === 48);
+    chk('portal: By mentee lists every mentee, the unscored first (total null) so nobody drops off the board', count($ix['byMentee']) === $ix['of'] && $ix['byMentee'][0]['total'] === null
+        && $ix['byMentee'][count($ix['byMentee']) - 1]['subjectId'] === 'NGG-MPK1');
 
     // Relationship check: the mentor's side, then the child's; only the coordinator reads the child's answers.
     chk('portal: the relationship check needs all four answers 1–5', (backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 5]]))['error'] ?? '') === 'answer_all_four');
@@ -26404,6 +26406,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: a weekly review saves and logs the pod session once', !empty($rv['ok']) && (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1' AND kind = 'pod' AND metOn = ?", [$T])['c'] === 1
         && !empty(backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Strong', 'wellbeing' => 'Low']))['ok'])
         && (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1' AND kind = 'pod' AND metOn = ?", [$T])['c'] === 1);
+
+    // The Saturday evaluation: the formation criteria, a strength and a next step, on the same row.
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'checks' => ['Assignment in'], 'note' => 'Led the huddle.']]]));
+    $satE = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]));
+    $pf = $satE['evalPrefill']['NGG-MPK1'] ?? [];
+    chk('evaluation: the register pre-fills it (assignment handed in, a value seen, the detail line as the strength)', ($pf['criteria']['assignment'] ?? '') === 'Demonstrated'
+        && ($pf['criteria']['courage'] ?? '') === 'Demonstrated' && ($pf['strength'] ?? '') === 'Led the huddle.' && count($satE['evalCriteria']) === 8 && $satE['evalScale'] === MP_EVAL_SCALE);
+    backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'rows' => [['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage'], 'checks' => ['On time']]]]));
+    $pf2 = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]))['evalPrefill']['NGG-MPK1'] ?? [];
+    chk('evaluation: on time pre-fills punctuality; no assignment ticked pre-fills Not yet', ($pf2['criteria']['punctuality'] ?? '') === 'Demonstrated' && ($pf2['criteria']['assignment'] ?? '') === 'Not yet');
+    $crit = ['punctuality' => 'Demonstrated', 'assignment' => 'Not yet', 'participation' => 'Strong', 'respect' => 'Demonstrated', 'teamwork' => 'Emerging', 'courage' => 'Strong', 'initiative' => 'Emerging', 'reflection' => 'Demonstrated'];
+    $base3 = ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Steady', 'line' => 'Private: mum mentioned money is tight'];
+    $evBefore = (string)(db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'] ?? '');
+    $bad1 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => array_slice($crit, 0, 7, true), 'strength' => 'x', 'next' => 'y']]));
+    $bad2 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => ['respect' => 'Brilliant'] + $crit, 'strength' => 'x', 'next' => 'y']]));
+    $bad3 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit + ['charm' => 'Strong'], 'strength' => 'x', 'next' => 'y']]));
+    $bad4 = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit, 'strength' => '', 'next' => 'y']]));
+    $evAfter = (string)(db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'] ?? '');
+    $lineAfter = (string)(db_row("SELECT line FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['line'] ?? '');
+    chk('evaluation: the whole payload is validated before any write (a missing criterion, a level off the scale, an unknown criterion, no strength)',
+        ($bad1['error'] ?? '') === 'rate_every_criterion' && ($bad1['missing'] ?? []) === ['Reflection'] && ($bad2['error'] ?? '') === 'bad_level'
+        && ($bad3['error'] ?? '') === 'unknown_criterion' && ($bad4['error'] ?? '') === 'strength_and_next' && $evAfter === $evBefore && $lineAfter !== $base3['line']);
+    $evOk = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', $base3 + ['eval' => ['criteria' => $crit, 'strength' => 'Chaired the huddle and kept everyone to time.', 'next' => 'Hand the assignment in at check-in.']]));
+    $evRow = json_decode((string)db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'], true);
+    chk('evaluation: a full evaluation saves on the week’s row with its date and the mentor’s first name', !empty($evOk['ok']) && !empty($evOk['evaluated'])
+        && $evRow['criteria'] === $crit && $evRow['date'] === $T && $evRow['strength'] === 'Chaired the huddle and kept everyone to time.' && $evRow['by'] !== '');
+    $old = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Exceptional', 'character' => 'Strong', 'wellbeing' => 'Steady']));
+    $evKeep = json_decode((string)db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MPK1' AND period = ?", [iso_week_period(strtotime($T . 'T12:00:00Z'))])['evalJson'], true);
+    chk('evaluation: an old three-rating payload is still accepted, and leaves the evaluation in place', !empty($old['ok']) && ($evKeep['criteria'] ?? null) === $crit);
+    $mine = backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MPK1']);
+    $e0 = $mine['evals'][0] ?? [];
+    chk('evaluation: the member reads their own, with only the criteria, the strength and the next step (no ratings, no staff line)',
+        !empty($mine['ok']) && count($mine['evals']) === 1 && array_keys($e0) === ['date', 'period', 'mentor', 'criteria', 'strength', 'next']
+        && count($e0['criteria']) === 8 && $e0['criteria'][0] === ['key' => 'punctuality', 'label' => 'Punctuality', 'level' => 'Demonstrated']
+        && $e0['next'] === 'Hand the assignment in at check-in.' && !str_contains(json_encode($mine), 'money is tight') && !str_contains(json_encode($mine), 'Exceptional'));
+    chk('evaluation: another member sees none of it', (backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MPK2'])['evals'] ?? null) === []);
+    $fam = implode("\n", sf_day_lines('NGG-MPK1', $T, []));
+    chk('evaluation: the family’s 2:00 summary carries the strength and the next step, never the staff line', str_contains($fam, 'Chaired the huddle') && str_contains($fam, 'Hand the assignment in') && !str_contains($fam, 'money is tight'));
+    $wkE = backend_dispatch('member.mentor.week', $p('NGG-MP1'));
+    chk('evaluation: This week counts Saturday evaluations, not three-rating reviews', !array_filter($wkE['due'] ?? [], static fn($d) => str_contains((string)$d['title'], 'weekly review')));
+    $sat2 = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]));
+    chk('evaluation: the Saturday read returns it for editing, marked evaluated', !empty($sat2['reviews']['NGG-MPK1']['evaluated']) && ($sat2['reviews']['NGG-MPK1']['eval']['criteria'] ?? null) === $crit);
 
     // Concern: one queue, the officer, nothing on the child's record.
     chk('portal: a concern needs the kind and more than ten characters', (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Neglect', 'body' => 'short']))['error'] ?? '') === 'say_what_happened'
@@ -28152,6 +28196,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__media_api_mock']);
     setting_set('media.usage', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+})();
+
+// ── A child's own concern from the Member Portal (member_sg_self) ──
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'SGS-K1', 'fullName' => 'Sade Self', 'email' => 'sade.self@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SGS-K2', 'fullName' => 'Other Child', 'email' => 'other.c@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('safeguarding · a member still cannot file the mentor report', (backend_dispatch('member.ms.concern', ['requesterId' => 'SGS-K1', 'subjectId' => 'SGS-K2', 'category' => 'Bullying', 'body' => 'Somebody keeps taking my lunch.'])['error'] ?? '') === 'not_a_mentor');
+    $r = backend_dispatch('member.sg.self', ['requesterId' => 'SGS-K1', 'subjectId' => 'SGS-K2', 'category' => 'Bullying', 'body' => 'Somebody keeps taking my lunch.']);
+    $c = db_row("SELECT subjectId, centre, category FROM safeguarding_cases WHERE reporterId = 'SGS-K1' ORDER BY id DESC LIMIT 1");
+    chk('safeguarding · a member reporting about themselves reaches the queue, with a case number', !empty($r['ok']) && ($r['caseNo'] ?? '') !== '' && $c && $c['centre'] === 'Egbeda' && $c['category'] === 'Bullying');
+    chk('safeguarding · and the subject is always themselves, whatever id is sent', ($c['subjectId'] ?? '') === 'SGS-K1');
+    chk('safeguarding · a one-word report is refused', (backend_dispatch('member.sg.self', ['requesterId' => 'SGS-K1', 'body' => 'help'])['error'] ?? '') === 'too_short');
+    db_exec("DELETE FROM safeguarding_cases WHERE reporterId = 'SGS-K1'"); db_exec("DELETE FROM members WHERE memberId IN ('SGS-K1','SGS-K2')");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
