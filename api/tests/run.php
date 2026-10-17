@@ -27772,5 +27772,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── The Academy quiz: three attempts a module a day, across both portals ──────
+(function () {
+    $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId = 'ACQ-M'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACQT'");
+    db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACQT'"); db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACQT'");
+    db_insert('members', ['memberId' => 'ACQ-M', 'fullName' => 'Quiz Taker', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Quizville',
+        'dob' => '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'ACQT', 'fullName' => 'Quiz Taker', 'status' => 'active', 'centre' => 'Quizville', 'programme' => 'ngg', 'memberId' => 'ACQ-M', 'createdAt' => $now]);
+    $mod = ms_academy()['modules'][0];
+    $wrong = array_map(static fn($q) => ((int)$q['answer'] + 1) % max(2, count($q['options'] ?? [0, 1])), $mod['quiz']);
+    $right = array_map(static fn($q) => (int)$q['answer'], $mod['quiz']);
+    $v15 = fn($a) => backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACQ-M', 'moduleId' => $mod['id'], 'answers' => $a]);
+    $pod = fn($a) => backend_dispatch('member.ms.academy.check', ['requesterId' => 'ACQ-M', 'moduleId' => $mod['id'], 'answers' => $a]);
+    $r1 = $v15($wrong); $r2 = $pod($wrong); $r3 = $v15($wrong);
+    $r4 = $pod($right);
+    chk('academy · three attempts are marked, from either portal', !empty($r1['ok']) && !empty($r2['ok']) && !empty($r3['ok']) && empty($r1['passed']));
+    chk('academy · the fourth in a day is refused with when to come back, even with the right answers',
+        ($r4['error'] ?? '') === 'retry_later' && ($r4['max'] ?? 0) === MS_ACADEMY_ATTEMPTS_PER_DAY && !empty($r4['retryAt'])
+        && !db_row("SELECT 1 FROM mentor_academy WHERE mentorId = 'ACQT' AND passedAt <> ''"));
+    db_exec("UPDATE mentor_academy_attempts SET at = ? WHERE mentorId = 'ACQT'", [gmdate('Y-m-d\TH:i:s', time() - 90000)]);
+    $r5 = $v15($right);
+    chk('academy · a day later they can try again, and a pass is recorded', !empty($r5['passed']) && db_row("SELECT 1 FROM mentor_academy WHERE mentorId = 'ACQT' AND passedAt <> ''"));
+    db_exec("DELETE FROM members WHERE memberId = 'ACQ-M'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACQT'");
+    db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACQT'"); db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACQT'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -1529,12 +1529,31 @@ function member_ms_academy(array $p): array {
     }, $a['modules']);
     return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'clearance' => $o['clearance']];
 }
+/* Quiz attempts a mentor may make on one module in 24 hours, across both
+ * portals. Unlimited retries made the quiz a lookup: the pod portal says which
+ * answers were right, so a few dozen tries recovered the key. Three is room to
+ * learn from a miss and to come back the next day having read the module. */
+const MS_ACADEMY_ATTEMPTS_PER_DAY = 3;
+
+/** null when an attempt may be made now; otherwise the refusal, with when to come back. */
+function ms_academy_attempt_gate(string $mentorId, string $moduleId): ?array {
+    $since = gmdate('Y-m-d\TH:i:s', time() - 86400);
+    $rows = db_all('SELECT at FROM mentor_academy_attempts WHERE mentorId = ? AND moduleId = ? AND at >= ? ORDER BY at', [$mentorId, $moduleId, $since]);
+    if (count($rows) < MS_ACADEMY_ATTEMPTS_PER_DAY) return null;
+    $retry = gmdate('c', strtotime((string)$rows[0]['at']) + 86400);
+    return ['ok' => false, 'error' => 'retry_later', 'max' => MS_ACADEMY_ATTEMPTS_PER_DAY, 'retryAt' => $retry];
+}
+function ms_academy_attempt_log(string $mentorId, string $moduleId, int $score, bool $pass): void {
+    db_insert('mentor_academy_attempts', ['mentorId' => $mentorId, 'moduleId' => $moduleId, 'score' => $score, 'passed' => $pass ? 1 : 0, 'at' => gmdate('Y-m-d\TH:i:s')]);
+}
+
 function member_ms_academy_check(array $p): array {
     $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $mod = null; foreach (ms_academy()['modules'] as $m) if ($m['id'] === (string)($p['moduleId'] ?? '')) $mod = $m;
     if (!$mod) return ['ok' => false, 'error' => 'not_found'];
     $ans = array_values((array)($p['answers'] ?? []));
     if (count($ans) !== count($mod['quiz'])) return ['ok' => false, 'error' => 'answer_all'];
+    if ($stop = ms_academy_attempt_gate((string)$o['mentor']['mentorId'], (string)$mod['id'])) return $stop;
     $right = 0; $feedback = [];
     foreach ($mod['quiz'] as $i => $q) {
         $ok = (int)$ans[$i] === (int)$q['answer'];
@@ -1543,6 +1562,7 @@ function member_ms_academy_check(array $p): array {
     }
     $score = (int)round(100 * $right / max(1, count($mod['quiz'])));
     $pass = $score >= (int)ms_academy()['pass'];
+    ms_academy_attempt_log((string)$o['mentor']['mentorId'], (string)$mod['id'], $score, $pass);
     if ($pass) {
         db_upsert('mentor_academy', ['mentorId' => $o['mentor']['mentorId'], 'moduleId' => $mod['id'], 'score' => $score, 'passedAt' => now_iso()],
             ['mentorId', 'moduleId'], ['score' => $score, 'passedAt' => now_iso()]);

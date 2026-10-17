@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 151;
+const NGG_SCHEMA_TARGET = 152;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4652,6 +4652,16 @@ function db_migrate(PDO $db): void {
         // What an invoice is for: 'joining' (the fee and first month, posted on
         // settlement) or 'balance' (money already on the ledger, paid online).
         151 => "ALTER TABLE membership_invoices ADD COLUMN purpose TEXT NOT NULL DEFAULT 'joining';",
+        // Every Academy quiz attempt, pass or fail: the retry limit reads it (ms_academy_attempt_gate).
+        152 => "CREATE TABLE IF NOT EXISTS mentor_academy_attempts (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  mentorId TEXT NOT NULL,
+                  moduleId TEXT NOT NULL,
+                  score INTEGER NOT NULL DEFAULT 0,
+                  passed INTEGER NOT NULL DEFAULT 0,
+                  at TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_macad_att ON mentor_academy_attempts(mentorId, moduleId, at);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

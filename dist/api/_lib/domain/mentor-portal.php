@@ -1669,9 +1669,11 @@ function member_mp_academy_result(array $p): array {
     if (!$mod) return ['ok' => false, 'error' => 'not_found'];
     $ans = array_values((array)($p['answers'] ?? []));
     if (count($ans) !== count($mod['quiz'])) return ['ok' => false, 'error' => 'answer_all'];
+    if (function_exists('ms_academy_attempt_gate') && ($stop = ms_academy_attempt_gate((string)$g['mentorId'], (string)$mod['id']))) return $stop;
     $right = 0; foreach ($mod['quiz'] as $i => $q) if ((int)$ans[$i] === (int)$q['answer']) $right++;
     $score = (int)round(100 * $right / max(1, count($mod['quiz'])));
     $pass = $score >= (int)(ms_academy()['pass'] ?? 80);
+    if (function_exists('ms_academy_attempt_log')) ms_academy_attempt_log((string)$g['mentorId'], (string)$mod['id'], $score, $pass);
     if ($pass) db_upsert('mentor_academy', ['mentorId' => (string)$g['mentorId'], 'moduleId' => $mod['id'], 'score' => $score, 'passedAt' => now_iso()], ['mentorId', 'moduleId'], ['score' => $score, 'passedAt' => now_iso()]);
     return ['ok' => true, 'score' => $score, 'passed' => $pass];
 }

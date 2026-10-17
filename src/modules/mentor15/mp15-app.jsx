@@ -61,7 +61,7 @@ const MP15_ERR = {
   goals_locked_connect: 'The first weeks are for getting to know each other. Goals open in week 3.', active_needs_agreed: 'A live goal stays agreed. Pause it first.',
   progress_out_of_range: 'How close is 1 to 5.', fixed_item_missing: 'The huddle, one-to-ones and close stay on the agenda.',
   choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', not_found: 'That record wasn’t found.',
-  forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.',
+  forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.', retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
   rate_limited: 'Too many in a row. Wait a minute and try again.', network: 'You’re offline. Nothing was saved.', too_long: 'That’s too long.',
 };
 function mp15ErrText(e) { const c = (e && (e.code || e.message)) || 'failed'; return MP15_ERR[c] || ('Couldn’t save (' + c + ').'); }
