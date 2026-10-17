@@ -379,6 +379,7 @@ function FamilyWard({ link, onRemoved }) {
           {d.fees.enabled ? <>
             <p className="fam-big">{d.fees.payableText}</p>
             <p className="fam-meta">Due now{d.fees.outstanding !== d.fees.payable ? " · " + d.fees.outstandingText + " on the account in total" : ""}</p>
+            {d.fees.payOnline && d.fees.payable > 0 && <PayBalanceButton amountText={d.fees.payableText} pay={() => NGGApi.family.pay(link.linkId)}/>}
             {d.fees.recent.length > 0 && <ul className="fam-list">{d.fees.recent.map((e, i) => (
               <li key={i} className={"fam-list-row" + (e.void ? " is-void" : "")}><span>{e.note || e.kind}</span><span className="fam-meta">{e.direction === "credit" ? "−" : ""}{fmtNum(e.amount)} · {fmtDayMonth(e.createdAt)}</span></li>
             ))}</ul>}

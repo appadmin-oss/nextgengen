@@ -1982,6 +1982,7 @@ function DashboardObligations({ account }) {
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
           <div className="dash-account-sub">to pay</div>
+          {a.payOnline && <PayBalanceButton amountText={naira(owed)} pay={() => NGGApi.member.feesPay()}/>}
         </React.Fragment>
       ) : (
         <React.Fragment>

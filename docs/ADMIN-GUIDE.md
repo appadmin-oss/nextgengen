@@ -712,7 +712,20 @@ The fees must be switched on under Dues & arrears; with them off the member is
 still accepted and the screen says no invoice went.
 
 The family pays through the link (Paystack), or by bank transfer or cash.
-**Money → Membership payments** lists every invoice:
+
+**Paying the balance online.** After joining, a member's account (their
+dashboard) and the family portal show **Pay ₦… online** whenever there is
+something to pay and Paystack is connected. Pressing it makes a **balance
+invoice** (`NGG-BAL-…`) for exactly what is payable that day and opens the same
+payment page as the joining invoice. Paystack's own confirmation settles it: one
+payment goes on the ledger (the dues and fines were already there), and the
+receipt is emailed. If the balance changes before they pay, the old balance
+invoice is cancelled as *superseded* and the next press makes a new one for the
+new figure. A transfer waiting to be verified blocks online payment until it is
+checked, so nobody pays twice. Policy fines on the conduct ledger are not
+included yet; dues, training fees and fines posted to the fees ledger are.
+
+**Money → Membership payments** lists every invoice, joining and balance:
 
 - **Resend link** — only while unpaid and with no offline payment waiting.
 - **Record offline payment** — for a transfer, deposit, POS or cash payment.

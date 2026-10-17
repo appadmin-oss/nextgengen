@@ -8150,3 +8150,8 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
   border: 1px solid var(--cream-200, #e4e2da);
   border-radius: 10px;
 }
+
+/* Pay the balance online (PayBalanceButton in components.jsx), on the member's
+   account and the family portal. The error is ink, not a red that fails 4.5:1. */
+.pay-balance { margin-top: 10px; }
+.pay-balance-err { margin: 6px 0 0; font-size: 13px; color: var(--ink-700); }

@@ -1395,3 +1395,30 @@ Tests: `run.php` +3; `ids-ask.test.js` 68 → 75.
 - `.m15-app main` lost `container-type: inline-size`: layout containment made `<main>` the
   containing block of every `position: fixed` sheet inside it.
 - Instructor Portal v6 shipped at `/instructor`.
+
+## 2026-10-17 — Pay the balance online; mentor portal hardening
+
+- **Paystack for dues and fees.** The ledger never took money; only the joining
+  invoice used Paystack. A *balance invoice* (`membership_invoices.purpose =
+  'balance'`, migration 151) is made by `membership_balance_invoice()` for the
+  ledger's `payable`, paid on the existing `/pay/<token>` page, verified by the
+  existing `membership_paystack_verify()`, and settled by `membership_settle()`,
+  which posts only the payment for a balance invoice. Ops `member.fees.pay`
+  (POST `api/member/fees.php` action `pay`) and `family.fees.pay`
+  (`api/family/pay.php`). UI: `PayBalanceButton` (components.jsx) on the member
+  account card and the family portal. Not covered: conduct-ledger fines
+  (`sanctions`). The member-fees read-only guard now allows exactly these two
+  ops and proves the pay op writes nothing to the ledger.
+- **Mentor gate fails closed.** Screening per lane carried in `mentor_gate`
+  (`screened`); unscreened → no reach, but concerns still fileable; volunteer
+  lanes need cleared safeguarding; email binds only an unlinked mentor row.
+- **Attention** is centre-wide for leads/coordinators only; instructors are not
+  staff. **Peer mentors** (minors) see no family, journal, check-in or adult note.
+- **Safeguarding reports**: mentor gate required, subject in reach, 10 per
+  reporter per 24h across both paths (`SG_REPORTS_PER_DAY`).
+- **Family messages**: 2 per child per day (`MP_FAMILY_PER_DAY`).
+- **Rate limits**: `rate_limit_check_actor()` keys on the person; floors for
+  every `mentor.*` bucket.
+- Pre-existing: `tests/family-ui.test.js` fails one check (a selector timeout)
+  on the branch without these changes.
+

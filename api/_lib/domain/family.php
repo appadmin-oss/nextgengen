@@ -336,7 +336,7 @@ function family_ward(array $p): array {
         'fees' => $acct ? ['enabled' => true, 'outstanding' => (int)$acct['outstanding'], 'payable' => (int)$acct['payable'],
                            'currency' => (string)($acct['currency'] ?? ''),
                            'outstandingText' => fees_money_text((int)$acct['outstanding']), 'payableText' => fees_money_text((int)$acct['payable']),
-                           'recent' => array_slice($acct['entries'] ?? [], 0, 6)]
+                           'recent' => array_slice($acct['entries'] ?? [], 0, 6), 'payOnline' => !empty($acct['payOnline'])]
                         : ['enabled' => false],
         'learning' => ['total' => (int)$learn['total'], 'completed' => (int)$learn['completed'], 'overdue' => (int)$learn['overdue'], 'pct' => (int)$learn['pct'],
                        'next' => array_map(static fn($u) => ['title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'],

@@ -1485,6 +1485,8 @@ function member_fees_account(array $p): array {
         'tenure' => $bal['tenure'],
         'entries' => array_reverse($entries),      // newest first for reading
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
+        // Paystack is configured: the account can offer "Pay online" (membership_balance_invoice).
+        'payOnline' => function_exists('paystack_secret') && paystack_secret() !== '',
         'currency' => (string)$cfg['currency'],
     ]];
 }

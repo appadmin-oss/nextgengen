@@ -16649,14 +16649,22 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/backend.php');
         if ($src === '') return false;
         preg_match_all("/'(member\.[a-zA-Z.]+)'\s*=>\s*'([a-z_]+)'/", $src, $m, PREG_SET_ORDER);
+        /* Two ops, and neither posts to the ledger: the read, and `pay`, which
+           makes a balance INVOICE whose payment only Paystack's own verify can
+           settle (membership_paystack_verify). Anything else is a defect. */
+        $allowed = ['member.fees' => 'member_fees_account', 'member.fees.pay' => 'member_fees_pay'];
         foreach ($m as $pair) {
             if (strpos($pair[1], 'fees') === false) continue;
-            if ($pair[1] !== 'member.fees' || $pair[2] !== 'member_fees_account') return false;
+            if (($allowed[$pair[1]] ?? '') !== $pair[2]) return false;
         }
-        // And the route has no POST branch at all.
+        // The route's one write is `pay`; it carries no amount, reference or status from the body.
         $route = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api/member/fees.php');
-        return $route !== '' && strpos($route, 'read_json_body') === false
-            && strpos($route, 'POST') === false;
+        if ($route === '' || substr_count($route, 'gs_call(') !== 2 || !str_contains($route, 'gs_call(\'member.fees.pay\', [\'memberId\' => $s[\'mid\']])')) return false;
+        // And pay itself writes nothing to the ledger.
+        $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/membership-pay.php');
+        $fn = substr($src, (int)strpos($src, 'function membership_balance_invoice'));
+        $fn = substr($fn, 0, (int)strpos($fn, '/** The invoice\'s lines as an email table. */'));
+        return $fn !== '' && !str_contains($fn, 'fees_post(') && !str_contains($fn, 'membership_settle(');
     })());
 
     chk('…and it never reaches a summer child, nor anybody when fees are off', (function () use ($setU) {
@@ -27683,6 +27691,79 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($fs['error'] ?? '') === 'family_daily_limit' && ($fs['max'] ?? 0) === MP_FAMILY_PER_DAY);
     chk('peer · an adult mentor of the same child keeps the family and inbox views',
         ($am['mentee']['guardianName'] ?? '') === 'Mrs Guardian' && count($am['family'] ?? []) === 1 && in_array('journal', $ak, true) && in_array('checkin', $ak, true));
+    $wipe();
+})();
+
+// ── Paying the balance online: a balance invoice on the existing Paystack path ─
+(function () {
+    $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'BAL-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'BALG-%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    setting_set('fees', ['enabled' => true] + fees_settings(), 'test');
+    db_insert('members', ['memberId' => 'BAL-1', 'fullName' => 'Bola Balance', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'mum.bal@example.com', 'joinDate' => gmdate('Y-m-d'), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'BAL-SUM', 'fullName' => 'Summer One', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'mum.sum@example.com', 'createdAt' => $now, 'updatedAt' => $now]);
+    unset($GLOBALS['CONFIG']['paystack']);
+    chk('balance · with no Paystack key, paying online says so', (backend_dispatch('member.fees.pay', ['memberId' => 'BAL-1'])['error'] ?? '') === 'payments_unavailable');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $m = db_row("SELECT * FROM members WHERE memberId = 'BAL-1'");
+    $base = (int)fees_balance($m)['payable'];
+    fees_post('BAL-1', 'fine', 3000, ['periodKey' => 'test:bal:1', 'note' => 'Test fine', 'by' => 'test']);
+    $due = (int)fees_balance($m)['payable'];
+    $a = backend_dispatch('member.fees.pay', ['memberId' => 'BAL-1']);
+    $inv = db_row("SELECT * FROM membership_invoices WHERE memberId = 'BAL-1' AND status = 'open'");
+    chk('balance · asking to pay makes one balance invoice for exactly what is payable', $due === $base + 3000 && !empty($a['ok']) && $inv
+        && $inv['purpose'] === 'balance' && (int)$inv['total'] === $due && $a['payUrl'] === '/pay/' . $inv['payToken']);
+    $b = backend_dispatch('member.fees.pay', ['memberId' => 'BAL-1']);
+    chk('balance · asking again while nothing changed returns the same invoice', !empty($b['existed']) && ($b['invoiceId'] ?? '') === $inv['invoiceId']);
+    fees_post('BAL-1', 'fine', 500, ['periodKey' => 'test:bal:2', 'note' => 'Another', 'by' => 'test']);
+    $c = backend_dispatch('member.fees.pay', ['memberId' => 'BAL-1']);
+    $old = db_row('SELECT status, voidReason FROM membership_invoices WHERE invoiceId = ?', [$inv['invoiceId']]);
+    $inv2 = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($c['invoiceId'] ?? '')]);
+    chk('balance · when the balance moved, the old invoice is voided as superseded and the new one is for the new figure',
+        $old['status'] === 'void' && str_starts_with($old['voidReason'], 'superseded') && $inv2 && (int)$inv2['total'] === $due + 500);
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $inv2['payToken']]);
+    chk('balance · the /pay page shows it as a balance, with one line', ($pub['invoice']['purpose'] ?? '') === 'balance' && count($pub['invoice']['items'] ?? []) === 1);
+    // Paystack: the same init and verify as a joining invoice.
+    $kobo = (int)$inv2['total'] * 100;
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$kobo, $inv2) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/b1', 'reference' => $body['reference']]];
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $kobo, 'currency' => 'NGN', 'channel' => 'card', 'metadata' => ['invoiceId' => $inv2['invoiceId']]]];
+    };
+    $init = backend_dispatch('public.membership.pay.init', ['token' => $inv2['payToken']]);
+    $charges = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'BAL-1' AND direction = 'charge'")['c'];
+    $kobo = 100;   // ₦1 paid against the balance
+    $cheap = backend_dispatch('public.membership.pay.verify', ['token' => $inv2['payToken'], 'reference' => $init['reference']]);
+    chk('balance · a payment for the wrong amount settles nothing', ($cheap['error'] ?? '') === 'payment_mismatch'
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [$inv2['invoiceId']])['status'] === 'open');
+    $kobo = (int)$inv2['total'] * 100;
+    $ok = backend_dispatch('public.membership.pay.verify', ['token' => $inv2['payToken'], 'reference' => $init['reference']]);
+    $credit = db_row("SELECT * FROM member_ledger WHERE memberId = 'BAL-1' AND direction = 'credit' AND kind = 'payment' ORDER BY id DESC LIMIT 1");
+    chk('balance · Paystack\'s verify settles it: paid, one payment credit, no new charges, nothing left to pay',
+        ($ok['invoice']['status'] ?? '') === 'paid' && $credit && (int)$credit['amount'] === (int)$inv2['total'] && str_starts_with((string)$credit['note'], 'Balance payment')
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'BAL-1' AND direction = 'charge'")['c'] === $charges
+        && (int)fees_balance($m)['payable'] === max(0, $base));
+    chk('balance · nothing to pay is said plainly', (backend_dispatch('member.fees.pay', ['memberId' => 'BAL-1'])['error'] ?? '') === 'nothing_to_pay' || $base > 0);
+    chk('balance · a Summer School account cannot be billed this way', (backend_dispatch('member.fees.pay', ['memberId' => 'BAL-SUM'])['error'] ?? '') === 'not_ngg');
+    // A guardian pays through their OWN link only.
+    db_insert('guardians', ['guardianId' => 'BALG-1', 'email' => 'mum.bal@example.com', 'fullName' => 'Mum', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'BALG-2', 'email' => 'stranger@example.com', 'fullName' => 'Stranger', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'BAL-LINK', 'guardianId' => 'BALG-1', 'memberId' => 'BAL-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    fees_post('BAL-1', 'fine', 700, ['periodKey' => 'test:bal:3', 'note' => 'Third', 'by' => 'test']);
+    chk('balance · a guardian can pay for their own child, and not through someone else\'s link',
+        !empty(backend_dispatch('family.fees.pay', ['guardianId' => 'BALG-1', 'linkId' => 'BAL-LINK'])['ok'])
+        && (backend_dispatch('family.fees.pay', ['guardianId' => 'BALG-2', 'linkId' => 'BAL-LINK'])['error'] ?? '') === 'not_found');
+    unset($GLOBALS['__paystack_mock']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
     $wipe();
 })();
 

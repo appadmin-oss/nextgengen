@@ -3677,3 +3677,7 @@ INSERT INTO schema_version (version) VALUES (149) ON DUPLICATE KEY UPDATE versio
 -- 150: the Saturday register's detail line (what the mentor saw).
 ALTER TABLE mentor_register ADD COLUMN note TEXT;
 INSERT INTO schema_version (version) VALUES (150) ON DUPLICATE KEY UPDATE version = version;
+
+-- 151: what an invoice is for — 'joining', or 'balance' (the ledger's outstanding amount, paid online).
+ALTER TABLE membership_invoices ADD COLUMN purpose VARCHAR(16) NOT NULL DEFAULT 'joining';
+INSERT INTO schema_version (version) VALUES (151) ON DUPLICATE KEY UPDATE version = version;

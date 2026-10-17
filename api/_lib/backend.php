@@ -590,6 +590,8 @@ function backend_dispatch(string $op, array $args = []): array {
             /* A member's own obligations, read-only. There is deliberately no
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
+            'member.fees.pay'             => 'member_fees_pay',
+            'family.fees.pay'             => 'family_fees_pay',
             /* Self-service. Every one of these takes its memberId from the
                SESSION, never the body — see member-self.php. */
             'member.statement'            => 'member_statement',

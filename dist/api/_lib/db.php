@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 150;
+const NGG_SCHEMA_TARGET = 151;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4649,6 +4649,9 @@ function db_migrate(PDO $db): void {
         /* 150 — the register's detail: what the mentor saw, written on the
          * Saturday itself, so the weekly review starts from evidence. */
         150 => "ALTER TABLE mentor_register ADD COLUMN note TEXT DEFAULT '';",
+        // What an invoice is for: 'joining' (the fee and first month, posted on
+        // settlement) or 'balance' (money already on the ledger, paid online).
+        151 => "ALTER TABLE membership_invoices ADD COLUMN purpose TEXT NOT NULL DEFAULT 'joining';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
