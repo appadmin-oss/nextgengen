@@ -46,6 +46,14 @@ const SERVICE_KEYS = [
     'cloudinary' => ['group' => 'photos', 'label' => 'Cloudinary', 'link' => 'https://console.cloudinary.com/settings/api-keys',
         'what' => 'Stores and edits headshots in the cloud. Without it, photos are kept on this server.', 'test' => 'cloudinary',
         'fields' => [['cloudinary.cloud_name', 'Cloud name', 'text', false, ''], ['cloudinary.api_key', 'API key', 'text', false, 'The number.'], ['cloudinary.api_secret', 'API secret', 'secret', false, '']]],
+    'storage' => ['group' => 'storage', 'label' => 'File storage (Cloudflare R2 / Backblaze B2)', 'link' => 'https://dash.cloudflare.com/?to=/:account/r2',
+        'what' => 'Where every new photo and file is kept once it is set: any S3-compatible bucket. Cloudflare R2 is recommended (10 GB free, and nobody pays for downloads); Backblaze B2 works the same way. What Cloudinary already holds stays there and keeps working. The bucket must allow uploads from this site: see docs/SETUP.md → File storage for the CORS rule.', 'test' => 'storage',
+        'fields' => [['storage.endpoint', 'S3 endpoint', 'https', false, 'R2: https://<account id>.r2.cloudflarestorage.com · B2: https://s3.<region>.backblazeb2.com'],
+                     ['storage.region', 'Region', 'text', true, 'R2: auto (or blank). B2: the region in the endpoint, e.g. us-west-004.'],
+                     ['storage.bucket', 'Bucket', 'bucket', false, 'The bucket name, e.g. ngg-media.'],
+                     ['storage.access_key', 'Access key ID', 'text', false, 'R2: Manage API tokens → Object Read & Write. B2: the keyID of an application key.'],
+                     ['storage.secret_key', 'Secret access key', 'secret', false, 'Shown once when the key is made.'],
+                     ['storage.public_base', 'Public address', 'https', false, 'Where files are read from. R2: the r2.dev URL or your custom domain. B2: https://f004.backblazeb2.com/file/<bucket>.']]],
     'paystack' => ['group' => 'payments', 'label' => 'Paystack', 'link' => 'https://dashboard.paystack.com/#/settings/developers',
         'what' => 'Card and bank payments for joining invoices and donations. Point its webhook at /api/hooks/paystack.php.', 'test' => 'paystack', 'guard' => true,
         'fields' => [['paystack.secret', 'Secret key', 'secret', false, 'sk_live_… (or sk_test_… while testing).'], ['paystack.public', 'Public key', 'text', true, 'pk_live_…']]],
@@ -84,7 +92,7 @@ const SERVICE_KEYS = [
         'what' => 'Reads the Quote of the week aloud in Hausa, Igbo and Yoruba.', 'test' => '',
         'fields' => [['tts.spitch_key', 'API key', 'secret', false, '']]],
 ];
-const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice', 'crm' => 'CACENTRE CRM'];
+const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'storage' => 'File storage', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice', 'crm' => 'CACENTRE CRM'];
 
 /** Read a dotted path out of a nested array. */
 function service_cfg_read(array $cfg, string $path) {
@@ -185,6 +193,8 @@ function service_key_check(string $kind, string $v): string {
         case 'gasurl': return preg_match('#^https://script\.google(usercontent)?\.com/(a/(macros/)?[^/\s]+/)*macros/s/[A-Za-z0-9_-]{10,}/(exec|dev)/?(\?\S*)?$#', $v)
                            || preg_match('#^https://script\.google\.com/a/macros/[^/\s]+/s/[A-Za-z0-9_-]{10,}/(exec|dev)/?(\?\S*)?$#', $v)
                            ? '' : 'The Web app URL from Deploy, e.g. https://script.google.com/macros/s/…/exec.';
+        case 'https':  return preg_match('#^https://[A-Za-z0-9.-]+(:\d{2,5})?(/[A-Za-z0-9._~/-]*)?$#', $v) ? '' : 'An https:// address, with no spaces or query.';
+        case 'bucket': return preg_match('/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/', $v) ? '' : 'A bucket name: lower-case letters, digits, dots and dashes.';
         case 'model':  return preg_match('/^[A-Za-z0-9._:\/\-]{1,100}$/', $v) ? '' : 'A model name, such as gemini-3.8-flash.';
         default:       return preg_match('/^[^\x00-\x1f]{1,300}$/u', $v) ? '' : 'Too long, or it has a line break in it.';
     }
@@ -308,6 +318,8 @@ function admin_keys_test(array $p): array {
             if (function_exists('cache_delete')) cache_delete('ops.cloudinary');
             $h = ops_cloudinary_health();
             return ['ok' => true] + $done(['pass' => !empty($h['ok']) && !empty($h['configured']), 'detail' => (string)($h['detail'] ?? '')]);
+        case 'storage':
+            return ['ok' => true] + $done(store_health());
         case 'paystack':
             if (paystack_secret() === '') return ['ok' => true, 'pass' => false, 'detail' => 'No secret key is set.'];
             $r = paystack_http('GET', '/transaction?perPage=1');

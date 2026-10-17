@@ -94,6 +94,7 @@ function auth_find_member(string $identifier, string $ip, string $via, string $d
      * door used to know nothing but `members` — so every one of them typed
      * their own email, was told a code was on its way, and never got one. */
     $staff = auth_find_volunteer($identifier);
+    if ($staff && ($staff['kind'] ?? '') === 'ambiguous') return ['ok' => true, 'member' => null, 'ambiguous' => true];
     if ($staff) return ['ok' => true, 'member' => null, 'staff' => $staff];
 
     $honest = $device !== '' && !attempt_locked('auth.honest', $device);
@@ -164,6 +165,14 @@ function auth_find_volunteer(string $identifier): ?array {
      * pick the record they work under now: an NGG one over a Summer one, then
      * the one with an instructor/mentor role, then the newest. */
     if (count($rows) > 1) {
+        /* …but only when the rows are provably ONE person — the same name, or
+         * the same member account. Two adults sharing a family inbox are two
+         * people; picking one would sign whoever reads the code in as the
+         * other, with that person's children. Those are told, at that address,
+         * to use their card number (auth_request), never resolved. */
+        $who = static fn($r) => trim((string)($r['memberId'] ?? '')) !== '' ? 'm:' . strtolower(trim((string)$r['memberId']))
+            : 'n:' . preg_replace('/\s+/', ' ', mb_strtolower(trim((string)($r['fullName'] ?? ''))));
+        if (count(array_unique(array_map($who, $rows))) > 1) return ['kind' => 'ambiguous', 'id' => '', 'row' => [], 'shared' => count($rows)];
         usort($rows, static function ($a, $b) {
             $score = static fn($r) => (strtolower((string)($r['programme'] ?? '')) === 'ngg' ? 4 : 0)
                 + (in_array(strtolower((string)($r['role'] ?? '')), ['instructor', 'mentor', 'coordinator', 'lead'], true) ? 2 : 0);
@@ -245,6 +254,18 @@ function auth_notify_no_account(string $identifier, string $ip, string $via): vo
     audit($sent ? 'login.nobody.notified' : 'login.nobody.mail_fail', null, $identifier, ['via' => $via], $ip);
 }
 
+/** An email on two different people's volunteer records: sign in with the card number instead (one note a day). */
+function auth_notify_shared_email(string $identifier, string $ip): void {
+    if (!filter_var($identifier, FILTER_VALIDATE_EMAIL) || attempt_locked('auth.shared', $identifier)) return;
+    attempt_fail('auth.shared', $identifier, 1, 86400);
+    $html = email_template(['eyebrow' => 'Sign-in', 'title' => 'Sign in with your volunteer card number',
+        'intro' => 'Someone, probably you, tried to sign in to Next Generation Genius with this email address. It is on more than one volunteer record, so we could not tell whose account to open.',
+        'bodyHtml' => '<p style="margin:0">Sign in with the ID printed on your volunteer card instead (it looks like VOL-INS-26-001). If you have no card yet, ask your centre to give each person their own email on their record.</p>',
+        'footNote' => 'Didn’t try to sign in? You can ignore this email. Nothing has been changed.']);
+    $sent = send_mail($identifier, 'Sign in with your card number — Next Generation Genius', $html);
+    audit($sent ? 'login.shared_email.notified' : 'login.shared_email.mail_fail', null, $identifier, [], $ip);
+}
+
 /** Codes of one purpose emailed to one person in the last hour. */
 function auth_codes_last_hour(string $memberId, string $purpose): int {
     $r = db_row('SELECT COUNT(*) AS n FROM auth_sessions WHERE memberId = ? AND purpose = ? AND createdAt > ?',
@@ -303,6 +324,11 @@ function auth_request(array $p): array {
         // the card is in their hand, so saying which door to use leaks nothing.
         if ($email === '') return ['ok' => false, 'error' => 'no_email_use_card'];
         $member = ['memberId' => $st['id'], 'email' => $email, 'fullName' => (string)($st['row']['fullName'] ?? ''), 'status' => 'active', 'role' => 'volunteer'];
+    }
+    if (!$member && !empty($found['ambiguous'])) {
+        // Two different people's volunteer records share this inbox: say so, to that inbox only.
+        auth_notify_shared_email($identifier, $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
     if (!$member) {
         if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
@@ -446,12 +472,12 @@ function auth_resolve_member_id(string $idOrEmail): string {
         $m = db_row("SELECT memberId FROM members WHERE lower(memberId) = ? OR (displayId <> '' AND lower(displayId) = ?) ORDER BY id LIMIT 1", [$lv, $lv]);
         if ($m) return (string)$m['memberId'];
         $st = auth_find_volunteer($v);
-        return $st ? (string)$st['id'] : $v;
+        return $st && $st['id'] !== '' ? (string)$st['id'] : $v;
     }
     $m = db_row('SELECT memberId FROM members WHERE lower(trim(email)) = ? ORDER BY id LIMIT 1', [$lv]);
     if ($m) return (string)$m['memberId'];
     $st = auth_find_volunteer($v);
-    return $st ? (string)$st['id'] : $v;
+    return $st && $st['id'] !== '' ? (string)$st['id'] : $v;
 }
 
 function auth_verify(array $p): array {

@@ -389,6 +389,75 @@
       "bytes": 4368,
       "sha256": "930853ee1daa68554d9e35c8a9175affb74f699fad9a5da6ee5ebe76379d9137",
       "note": "licence text for the Geist and Geist Mono fonts (assets/fonts)"
+    },
+    "licenses/human-LICENSE.txt": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 1067,
+      "sha256": "9a3442b79acaf4fbc7c2e07b7e2d8f84af9bb3871bf08a69d80304ab00640e9a"
+    },
+    "human/human.js": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 1583774,
+      "sha256": "5f240e5d2d60459f07aaa7df2cb129fd3f954c78dd05581cf6f8a30646779013",
+      "note": "Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/antispoof.bin": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 426602,
+      "sha256": "97a97120585dc09adb33176d4abd233e61acfa3c708a8cb3c6ff5e4343cb50b2",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/antispoof.json": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 8576,
+      "sha256": "2e4208054f3f718f26ee315094071850d1d68430c8453957fbcf14a8eea98bb2",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/blazeface.bin": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 135624,
+      "sha256": "1e33014731a6f63cf0c52883af53ff5d977de8a73bf5834f0a3b036cf8b35a32",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/blazeface.json": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 86172,
+      "sha256": "fbf0506b8ffae253299fb9f807aeefb5bffb6674fa8c1121f0eb69f2e8203563",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/faceres.bin": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 6978814,
+      "sha256": "2c7d2d62b76c97528b736527aa09d310ea71743c9e3e79fb6c62d4b2d73af79b",
+      "note": "Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/faceres.json": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 71432,
+      "sha256": "5b83d49c0385d2e68a05122441b94226313677cae9fcc40b9587ad50079eb4df",
+      "note": "Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/liveness.bin": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 148540,
+      "sha256": "fc07e275f7fdc40860423d40e5d223bf4e1ce8d5b98decc46f185b8e5f9c59e4",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
+    },
+    "human/models/liveness.json": {
+      "package": "@vladmandic/human",
+      "version": "3.3.6",
+      "bytes": 18222,
+      "sha256": "9050b959e0e238c44ed9c888a39bcdec500abd57df8cbb620cd07cdfb7ff4b13",
+      "note": "Re-quantised to uint8 (per-tensor affine) from the package's float16 weights to cut the download; verified to give the same detection, anti-spoof and liveness scores. Face check at the check-in desk (src/modules/gate/face-check.jsx). Browser only. faceres stays float16: uint8 moved a different person's similarity from 0.40 to 0.66."
     }
   }
 }

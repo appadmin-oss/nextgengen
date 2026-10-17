@@ -1275,7 +1275,50 @@ function gate_context(array $p): array {
         // When sign-out opens, per kind of person, so the desk can say so.
         'closing' => array_filter(['member' => attendance_close_time('member'), 'student' => attendance_close_time('student'),
                                    'volunteer' => attendance_close_time('volunteer')]),
-        'consentTypes' => CONSENT_TYPES];
+        'consentTypes' => CONSENT_TYPES,
+        // The face check (face-check.jsx) is an aid to the person on duty, off unless an admin turns it on.
+        'faceCheck' => gate_context_face()];
+}
+
+/* ── The face check at the desk ─────────────────────────────────────────────
+ *
+ * The camera and the comparison run in the desk's browser (vendor/human):
+ * the live face against the photo already on the person's record. No image
+ * and no face template ever reaches this server — only the verdict and its
+ * scores, for the audit trail, so "who was waved through on a borrowed card"
+ * has an answer without NGG holding anyone's biometrics. It advises; the
+ * person on duty decides, and a child is never refused entry by a camera.
+ */
+const FACE_CHECK_VERDICTS = ['match', 'unsure', 'no_match', 'not_live', 'no_face', 'no_photo', 'skipped'];
+// Similarity of the two face descriptors (0–1), and the liveness/anti-spoof floor.
+const FACE_CHECK_THRESHOLDS = ['match' => 0.60, 'unsure' => 0.45, 'live' => 0.50, 'real' => 0.50];
+
+function face_check_enabled(): bool { return setting_raw('face_check_enabled') === '1'; }
+
+/** gate.face.log — one face check's outcome, audited against the person the card belongs to. */
+/** What a desk is told about the face check: null when it is off, so the button is never drawn. */
+function gate_context_face(): ?array { return face_check_enabled() ? ['thresholds' => FACE_CHECK_THRESHOLDS] : null; }
+
+function gate_face_log(array $p): array {
+    if (!face_check_enabled()) return ['ok' => false, 'error' => 'face_check_off'];
+    $gate = gate_resolve((string)($p['gate'] ?? ''));
+    if (!$gate) return ['ok' => false, 'error' => 'gate_invalid'];
+    $verdict = (string)($p['verdict'] ?? '');
+    if (!in_array($verdict, FACE_CHECK_VERDICTS, true)) return ['ok' => false, 'error' => 'bad_verdict'];
+    $num = static fn($v) => is_numeric($v) ? round(max(0.0, min(1.0, (float)$v)), 3) : null;
+    $token = trim((string)($p['token'] ?? ''));
+    if ($token === '' || strlen($token) > 120) return ['ok' => false, 'error' => 'bad_token'];
+    $qr = db_row('SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+    $subject = $qr ? (string)$qr['studentId'] : '';
+    if ($subject === '') {
+        $m = db_row("SELECT memberId FROM members WHERE memberId = ? OR (displayId <> '' AND displayId = ?) LIMIT 1", [$token, $token]);
+        $subject = $m ? (string)$m['memberId'] : '';
+    }
+    if ($subject === '') return ['ok' => false, 'error' => 'not_found'];
+    $meta = ['verdict' => $verdict, 'similarity' => $num($p['similarity'] ?? null), 'live' => $num($p['live'] ?? null), 'real' => $num($p['real'] ?? null),
+             'gate' => substr((string)($gate['name'] ?? ''), 0, 60), 'decision' => in_array((string)($p['decision'] ?? ''), ['admitted', 'held'], true) ? (string)$p['decision'] : ''];
+    audit('gate.face', (string)($p['byId'] ?? ''), $subject, $meta, (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 function gate_register(array $p): array {

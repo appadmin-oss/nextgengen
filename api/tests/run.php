@@ -71,6 +71,7 @@ require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
+require $ROOT . '/_lib/object-store.php';
 require $ROOT . '/_lib/nudges.php';
 /* Every domain file, discovered rather than listed.
  *
@@ -3362,8 +3363,22 @@ chk('sign-in: identifiers are cleaned the way phones and printed cards bring the
     chk('sign-in: a volunteer saved with spaces and capitals is found by their email', $f !== null);
     chk('sign-in: one person on two records (a Summer card carried into NGG) signs in as the NGG instructor, not "no account"', ($f['id'] ?? '') === 'VOL-INS-26-901');
     chk('sign-in: a status saved as "Active" counts as active', auth_find_volunteer('vol-ins-26-901') !== null);
+    db_conn()->exec("INSERT INTO volunteers (volunteerId, fullName, email, role, status, programme, createdAt) VALUES ('VOL-INS-26-902','Bayo Other','ada.vol9@example.org','instructor','active','ngg','2026-09-02T00:00:00Z')");
+    chk('sign-in: two DIFFERENT people on one inbox are never resolved to either (use the card number)', (auth_find_volunteer('ada.vol9@example.org')['kind'] ?? '') === 'ambiguous'
+        && empty(auth_find_member('ada.vol9@example.org', '', 'request')['staff']));
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-902'");
     db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-SUM-25-907','VOL-INS-26-901')");
 })();
+
+// ── Audit fixes ──
+chk('member state: a mixed-case MFA / staff / ai key is refused (MySQL compares keys case-insensitively)',
+    (member_state_set(['memberId' => 'X', 'key' => 'MFA.bypass', 'value' => 1])['error'] ?? '') === 'bad_key'
+    && (member_state_set(['memberId' => 'X', 'key' => 'Staff.curriculum.year', 'value' => 3])['error'] ?? '') === 'bad_key'
+    && (member_state_set(['memberId' => 'X', 'key' => 'AI.tutor.2026-01-01', 'value' => 0])['error'] ?? '') === 'bad_key');
+chk('hand-in files: a backslash host, a same-origin API path and http are refused; https and the site file endpoint pass',
+    assignment_file_clean(['url' => '/\\evil.com/x.jpg']) === null && assignment_file_clean(['url' => '/api/auth/logout.php', 'name' => 'a.jpg']) === null
+    && assignment_file_clean(['url' => 'http://x.example/a.jpg']) === null && assignment_file_clean(['url' => 'https://res.cloudinary.com/x/a.jpg']) !== null
+    && assignment_file_clean(['url' => '/api/member/curriculum-file.php?f=0123456789abcdef.pdf']) !== null);
 
 // ── Registration stack: forms → gate → parent verification → QR bound ──
 chk('form: live def seeds with locked system fields', (function () {
@@ -28487,6 +28502,101 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ([$lk, $rc, $ph] as $x) { db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$x]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$x]); }
     db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$aid]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM members WHERE memberId LIKE 'ASG-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASG'"); db_exec("DELETE FROM notifications WHERE memberId LIKE 'ASG-%'");
+})();
+
+/* The desk's face check: off by default, and the server keeps a verdict, never a picture. */
+(function () {
+    $now = now_iso();
+    db_insert('gate_links', ['gateId' => 'GATE-FACE-T', 'name' => 'Face test desk', 'cohortId' => 'C-FACE', 'centreId' => 'Egbeda', 'status' => 'active', 'createdBy' => 'seed', 'createdAt' => $now]);
+    db_insert('qr_codes', ['token' => 'SUMQR-FACE-T1', 'batch' => 'B', 'cohortId' => 'C-FACE', 'status' => 'assigned', 'studentId' => 'STU-FACE-T1', 'assignedName' => 'Face Kid', 'createdAt' => $now, 'assignedAt' => $now]);
+    $log = fn($x) => backend_dispatch('gate.face.log', $x + ['gate' => 'GATE-FACE-T', 'token' => 'SUMQR-FACE-T1', 'byId' => 'desk']);
+    setting_set('face_check_enabled', '0', 'test');
+    chk('face check · off by default: the desk is told nothing and nothing is logged', ($log(['verdict' => 'match'])['error'] ?? '') === 'face_check_off'
+        && (gate_context_face() === null));
+    setting_set('face_check_enabled', '1', 'test');
+    chk('face check · on: the desk is handed the thresholds', is_array(gate_context_face()) && (gate_context_face()['thresholds']['match'] ?? 0) > 0);
+    chk('face check · a verdict outside the list is refused', ($log(['verdict' => 'definitely'])['error'] ?? '') === 'bad_verdict');
+    chk('face check · an unknown card is refused, not logged against nobody', ($log(['verdict' => 'match', 'token' => 'NOPE-NOPE'])['error'] ?? '') === 'not_found');
+    chk('face check · an unknown desk is refused', ($log(['verdict' => 'match', 'gate' => 'GATE-NOPE'])['error'] ?? '') === 'gate_invalid');
+    $r = $log(['verdict' => 'no_match', 'similarity' => 7, 'live' => -2, 'real' => 'x', 'decision' => 'held', 'photo' => 'data:image/jpeg;base64,AAAA']);
+    $a = db_row("SELECT * FROM audit_log WHERE event = 'gate.face' ORDER BY id DESC LIMIT 1");
+    $m = json_decode((string)($a['meta'] ?? ''), true) ?: [];
+    chk('face check · logged against the card holder: verdict, clamped scores, decision — and no image', !empty($r['ok']) && $a['subject'] === 'STU-FACE-T1'
+        && $m['verdict'] === 'no_match' && is_numeric($m['similarity']) && (float)$m['similarity'] === 1.0 && is_numeric($m['live']) && (float)$m['live'] === 0.0 && $m['real'] === null && $m['decision'] === 'held' && strpos((string)$a['meta'], 'base64') === false);
+    chk('face check · a decision outside admitted/held is kept as none', !empty($log(['verdict' => 'match', 'decision' => 'whatever'])['ok'])
+        && json_decode((string)db_row("SELECT meta FROM audit_log WHERE event = 'gate.face' ORDER BY id DESC LIMIT 1")['meta'], true)['decision'] === '');
+    setting_set('face_check_enabled', '0', 'test');
+    db_exec("DELETE FROM gate_links WHERE gateId = 'GATE-FACE-T'"); db_exec("DELETE FROM qr_codes WHERE token = 'SUMQR-FACE-T1'");
+})();
+
+/* File storage on an S3-compatible bucket (object-store.php): R2 / B2. */
+(function () {
+    // AWS's own published SigV4 examples (S3 API reference, "Authenticating Requests").
+    $t = gmmktime(0, 0, 0, 5, 24, 2013);
+    chk('storage · the presigned URL signs exactly as AWS documents (query auth example)', strpos(store_presign('GET', 'https://examplebucket.s3.amazonaws.com/test.txt', [], 86400,
+        'AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'us-east-1', $t), 'X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404') !== false);
+    $h = store_auth_headers('GET', 'https://examplebucket.s3.amazonaws.com/test.txt', '', ['range' => 'bytes=0-9'], 'AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'us-east-1', $t);
+    chk('storage · …and so does a server-side request (header auth example)', strpos(end($h), 'Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41') !== false);
+
+    $keep = $GLOBALS['CONFIG']['storage'] ?? null;
+    $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acct.r2.cloudflarestorage.com', 'region' => 'auto', 'bucket' => 'ngg-media', 'access_key' => 'AK', 'secret_key' => 'SK',
+                                     'public_base' => 'http://pub-x.r2.dev', 'folder' => 'ngg'];
+    chk('storage · not used until every field is set and both addresses are https', !store_configured());
+    $GLOBALS['CONFIG']['storage']['public_base'] = 'https://pub-x.r2.dev';
+    chk('storage · …then it is', store_configured());
+    $sp = store_upload_spec('assignments', 'pdf', 'My Essay (final).PDF', 'application/pdf', 123456, STORE_MAX_BYTES);
+    parse_str((string)parse_url($sp['uploadUrl'], PHP_URL_QUERY), $q);
+    chk('storage · an upload is a 15-minute PUT, signed for its content type and its exact length', !empty($sp['ok']) && $sp['method'] === 'PUT' && $q['X-Amz-SignedHeaders'] === 'content-length;content-type;host'
+        && $q['X-Amz-Expires'] === '900' && $sp['headers']['Content-Type'] === 'application/pdf' && $sp['size'] === 123456);
+    chk('storage · the key is chosen here: our folder, the date, a random id, a cleaned name, the real extension',
+        (bool)preg_match('#^ngg/assignments/\d{4}/\d{2}/[0-9a-f]{24}-my-essay-final\.pdf$#', $sp['key']) && strpos($sp['uploadUrl'], 'https://acct.r2.cloudflarestorage.com/ngg-media/' . $sp['key'] . '?') === 0
+        && $sp['publicUrl'] === 'https://pub-x.r2.dev/' . $sp['key']);
+    chk('storage · two uploads of the same file never share a key', store_upload_spec('assignments', 'pdf', 'a.pdf', '', 10, STORE_MAX_BYTES)['key'] !== store_upload_spec('assignments', 'pdf', 'a.pdf', '', 10, STORE_MAX_BYTES)['key']);
+    chk('storage · nothing is stored as a page: svg, html and js are refused whatever the browser says', (store_upload_spec('headshot', 'image', 'x.svg', 'image/svg+xml', 10, STORE_MAX_BYTES)['error'] ?? '') === 'bad_file_type'
+        && (store_upload_spec('community', 'raw', 'x.html', 'text/html', 10, STORE_MAX_BYTES)['error'] ?? '') === 'bad_file_type'
+        && (store_upload_spec('community', 'raw', 'x.js', 'application/javascript', 10, STORE_MAX_BYTES)['error'] ?? '') === 'bad_file_type');
+    chk('storage · the type is ours, not the browser\'s: a .png claimed as text/html is stored as image/png', store_upload_spec('headshot', 'image', 'x.png', 'text/html', 10, STORE_MAX_BYTES)['headers']['Content-Type'] === 'image/png');
+    chk('storage · an image kind takes only images (a PDF on the headshot path is refused)', (store_upload_spec('headshot', 'image', 'x.pdf', 'application/pdf', 10, STORE_MAX_BYTES)['error'] ?? '') === 'bad_file_type');
+    chk('storage · too large and empty are refused, and the cap is named', (store_upload_spec('headshot', 'image', 'x.jpg', '', STORE_HEADSHOT_MAX_BYTES + 1, STORE_HEADSHOT_MAX_BYTES)['maxBytes'] ?? 0) === STORE_HEADSHOT_MAX_BYTES
+        && (store_upload_spec('headshot', 'image', 'x.jpg', '', 0, STORE_MAX_BYTES)['error'] ?? '') === 'bad_size');
+    chk('storage · a voice note is a recording, stored as audio', store_upload_spec('assignments', 'video', 'take1.m4a', 'audio/x-m4a', 10, STORE_MAX_BYTES)['headers']['Content-Type'] === 'audio/mp4');
+    $u = $sp['publicUrl'];
+    chk('storage · our own public URL is ours; another host, or a path that climbs, is not', store_key_of($u) === $sp['key'] && store_key_of('https://pub-y.r2.dev/' . $sp['key']) === ''
+        && store_key_of('https://pub-x.r2.dev/ngg/../etc/passwd') === '' && store_key_of('https://pub-x.r2.dev.evil.org/ngg/a/b.jpg') === '');
+    chk('storage · a photo in our bucket is accepted as a photo; one elsewhere is still refused', photo_intake_url('https://pub-x.r2.dev/ngg/headshot/2026/10/abc.jpg') === 'https://pub-x.r2.dev/ngg/headshot/2026/10/abc.jpg'
+        && photo_intake_url('https://pub-y.r2.dev/ngg/headshot/2026/10/abc.jpg') === '');
+    chk('storage · the AI photo framer may fetch from our bucket (and still from nowhere else)', (photo_frame_basis('https://pub-x.r2.dev/ngg/headshot/2026/10/abc.jpg')['kind'] ?? '') === 'store'
+        && (ai_fetch_image('https://pub-y.r2.dev/a.jpg')['error'] ?? '') === 'bad_host');
+    chk('storage · a school report kept in the bucket is accepted', results_file_ok('https://pub-x.r2.dev/ngg/results/2026/10/r.pdf') && !results_file_ok('https://pub-y.r2.dev/r.pdf'));
+
+    // Replacing a photo deletes the old object from the bucket, once nothing else uses it.
+    $calls = []; $GLOBALS['__store_http_mock'] = function ($m, $k, $b = '', $x = []) use (&$calls) { $calls[] = [$m, $k]; return ['code' => 204, 'body' => '']; };
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-STO-1', 'fullName' => 'Store Kid', 'type' => 'NGG', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
+                          'photoUrl' => 'https://pub-x.r2.dev/ngg/headshot/2026/10/old0000000000000000000a.jpg']);
+    photo_set_subject('member', 'NGG-STO-1', 'https://pub-x.r2.dev/ngg/headshot/2026/10/new0000000000000000000b.jpg');
+    chk('storage · replacing a photo deletes the old one from the bucket — and only that one', $calls === [['DELETE', 'ngg/headshot/2026/10/old0000000000000000000a.jpg']]);
+    $calls = [];
+    db_insert('volunteers', ['volunteerId' => 'VOL-STO-1', 'fullName' => 'Shares Photo', 'status' => 'active', 'createdAt' => $now, 'photoUrl' => 'https://pub-x.r2.dev/ngg/headshot/2026/10/new0000000000000000000b.jpg']);
+    photo_set_subject('member', 'NGG-STO-1', 'https://pub-x.r2.dev/ngg/headshot/2026/10/new0000000000000000000c.jpg');
+    chk('storage · …but one still on somebody else\'s record is kept', $calls === []);
+
+    // The health check: write, read from the public address, delete — each failure says which.
+    $GLOBALS['__store_public_mock'] = fn($url) => 200;
+    $calls = [];
+    $ok = store_health();
+    chk('storage · the test writes a file, reads it publicly and deletes it', $ok['pass'] === true && $calls[0][0] === 'PUT' && $calls[1][0] === 'DELETE' && $calls[0][1] === $calls[1][1]);
+    $GLOBALS['__store_http_mock'] = fn($m, $k, $b = '', $x = []) => ['code' => 403, 'body' => '<Error><Code>AccessDenied</Code></Error>'];
+    chk('storage · refused keys are named as the reason', store_health()['pass'] === false && strpos(store_health()['detail'], 'keys were refused') !== false);
+    $GLOBALS['__store_http_mock'] = fn($m, $k, $b = '', $x = []) => ['code' => 200, 'body' => ''];
+    $GLOBALS['__store_public_mock'] = fn($url) => 401;
+    chk('storage · a bucket that is not public is named as the reason', strpos(store_health()['detail'], 'public address did not serve') !== false);
+    unset($GLOBALS['__store_http_mock'], $GLOBALS['__store_public_mock']);
+
+    chk('storage · on the keys screen: a bucket name and https addresses are checked before saving', service_key_check('bucket', 'NGG Media') !== '' && service_key_check('bucket', 'ngg-media') === ''
+        && service_key_check('https', 'http://x.r2.dev') !== '' && service_key_check('https', 'https://f004.backblazeb2.com/file/ngg-media') === '');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-STO-1'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-STO-1'");
+    if ($keep === null) unset($GLOBALS['CONFIG']['storage']); else $GLOBALS['CONFIG']['storage'] = $keep;
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

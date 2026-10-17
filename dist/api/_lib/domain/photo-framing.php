@@ -192,6 +192,8 @@ function photo_frame_basis(string $url): ?array {
         return ['key' => sha1($base . $rest), 'kind' => 'cloudinary',
                 'fetch' => $base . 'c_limit,w_' . PFRAME_IMG_MAX . ',h_' . PFRAME_IMG_MAX . ',f_jpg,q_auto/' . $rest];
     }
+    // Our own bucket (object-store.php): fetched as stored; the browser shrank it before upload.
+    if (store_hosted($u)) return ['key' => sha1('store:' . store_key_of($u)), 'kind' => 'store', 'fetch' => $u];
     if (preg_match('#/api/public/photo\.php\?p=([0-9a-f]{32}\.(?:jpg|png|webp))$#', $u, $m)) {
         $path = function_exists('photo_store_find') ? photo_store_find($m[1]) : '';
         return ['key' => sha1('local:' . $m[1]), 'kind' => 'local', 'path' => $path];
@@ -202,7 +204,7 @@ function photo_frame_basis(string $url): ?array {
 /** The image as the model will see it: base64, its MIME type, and (local only) downscaled when it can be. */
 function photo_frame_bytes(array $basis): array {
     if (isset($GLOBALS['__pframe_bytes']) && is_callable($GLOBALS['__pframe_bytes'])) return ($GLOBALS['__pframe_bytes'])($basis);
-    if ($basis['kind'] === 'cloudinary') return ai_fetch_image((string)$basis['fetch']);
+    if ($basis['kind'] === 'cloudinary' || $basis['kind'] === 'store') return ai_fetch_image((string)$basis['fetch']);
     $path = (string)($basis['path'] ?? '');
     if ($path === '' || !is_file($path)) return ['ok' => false, 'error' => 'photo_missing'];
     $bytes = (string)@file_get_contents($path);

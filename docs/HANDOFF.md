@@ -1664,3 +1664,43 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   `authTidyId`) remove invisible characters, en dashes, spaces in IDs and a
   trailing full stop; the sign-in field offers one-tap fixes for common email
   domain slips (`AuthIdHint`).
+
+## 2026-10-17 — Face check at the desk; storage on R2 / B2; security pass
+
+- **Face check** (`src/modules/gate/face-check.jsx`, `gate.face.log` in
+  `domain/registration.php`): off by default (`face_check_enabled`). After a
+  scan the desk compares the front camera with the record photo, in the
+  browser, with @vladmandic/human 3.3.6 (`vendor/human`, MIT): blazeface +
+  faceres (float16, kept unquantised: uint8 made different people score 0.66)
+  + antispoof + liveness (both uint8). No face mesh. 12 MB → 9.1 MB. Only the
+  verdict, scores and the desk's decision reach the server (audit
+  `gate.face`). The scan window is 7 s but continues to 30 s while a face is
+  in view and fewer than four frames have been read: on a slow device
+  (3.5 s a frame under software GL) ending on the clock alone said "no face"
+  while it was looking at one. Too few frames can never be a match.
+  `tests/face-check.test.js` feeds the fake camera from a still (ffmpeg at
+  test time; nothing large is committed).
+- **File storage** (`api/_lib/object-store.php`): any S3-compatible bucket,
+  R2 recommended. When `storage` is fully set, both upload signers return a
+  SigV4 presigned PUT (content-type and content-length signed, 15 minutes,
+  server-chosen key, extension allow-list) and `uploadFile` PUTs straight to
+  the bucket. Cloudinary keeps what it holds; `media_uploads_allowed` no longer
+  decides when a bucket is in use. The bucket's public host joins the photo
+  allowlists (`photo_intake_url`, `ai_fetch_image`, `results_file_ok`,
+  `intake_photo_accept`, `photo_frame_basis` kind `store`); photo replace
+  deletes the old object. SigV4 is pinned to AWS's two published examples;
+  `tests/storage-upload.test.js` runs a stand-in HTTPS bucket that verifies
+  every signature with its own implementation.
+- **Security**: `member_state_set` refuses mixed-case private prefixes (and
+  `NGG_MYSQL_ROW_FIXUPS` drops any already stored); mentor/volunteer centre
+  scope fails closed (no centre = `[]`, not "all"); assignment submissions
+  list is refused out of scope; hand-in file URLs must be https or our own
+  file route; the study helper's allowance is taken before the AI call and
+  refunded on failure, plus a per-member rate limit; an inbox shared by two
+  different people never resolves to either (they are told to use the card
+  number).
+- **Not fixed, recorded**: the sign-in gateway still reveals which method an
+  address uses (password vs code); Cloudinary signatures do not pin
+  `allowed_formats`; logout accepts GET. `node vendor-build.js --check` was
+  already failing on every file before this work (it compares a 16-character
+  prefix with a full hash).

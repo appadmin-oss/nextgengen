@@ -458,7 +458,8 @@ function ai_fetch_image(string $url): array {
        fetch from inside its own network. */
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
-    if ($host !== 'res.cloudinary.com' && ($own === '' || $host !== $own)) return ['ok' => false, 'error' => 'bad_host'];
+    $bucket = function_exists('store_hosted') && store_hosted($url);   // our own bucket's public address (object-store.php)
+    if ($host !== 'res.cloudinary.com' && !$bucket && ($own === '' || $host !== $own)) return ['ok' => false, 'error' => 'bad_host'];
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [

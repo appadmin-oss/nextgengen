@@ -23,7 +23,10 @@ require_method('POST');
 rate_limit_check('upload.sign');
 
 $cfg = $CONFIG['cloudinary'] ?? [];
-if (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret'])) {
+/* A bucket (R2, B2 — api/_lib/object-store.php) wins when one is set: every
+   new upload goes there and Cloudinary keeps serving what it already holds. */
+$useStore = store_configured();
+if (!$useStore && (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret']))) {
     json_error('uploads_disabled', 503);
 }
 
@@ -74,6 +77,19 @@ if ($kind === 'cover') {
 
 $resourceType = $spec['resource_type'] ?? 'auto';
 $sub = $spec['folder'] ?? $kind;
+
+if ($useStore) {
+    /* The same kinds and folders as Cloudinary's, and the same media rule: an
+       image kind takes only images; a post or a hand-in takes what it is. No
+       server-side transformation exists on a bucket, so images arrive already
+       shrunk by the browser (api-client.js shrinkForUpload). */
+    $mk = $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
+    $sc = $CONFIG['storage'] ?? [];
+    $r = store_upload_spec((string)preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$sub)), $mk, (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''),
+                           $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)));
+    if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
+    json_ok($r);
+}
 $base = trim((string)($cfg['folder'] ?? 'ngg'), '/');
 $folder = $base . '/' . $sub;
 

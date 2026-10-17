@@ -588,6 +588,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.summer'               => 'public_summer_page',
             'public.summer.signup'        => 'public_summer_signup',
             'gate.context'                => 'gate_context',
+            'gate.face.log'   => 'gate_face_log',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',
             'parent.verify.submit'        => 'parent_verify_submit',

@@ -51,6 +51,12 @@ if ($method === 'GET') {
     } elseif ($action === 'checkout') {
         if (!gate_is_desk((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
         $res = gs_call('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'scannedAt' => $b['scannedAt'] ?? null, 'ip' => $ip]);
+    } elseif ($action === 'face') {
+        // A face check's verdict and scores only — the image never leaves the desk (registration.php gate_face_log).
+        if (!gate_is_desk((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        $res = gs_call('gate.face.log', ['gate' => (string)($b['gate'] ?? ''), 'token' => (string)($b['token'] ?? ''), 'verdict' => (string)($b['verdict'] ?? ''),
+            'similarity' => $b['similarity'] ?? null, 'live' => $b['live'] ?? null, 'real' => $b['real'] ?? null, 'decision' => (string)($b['decision'] ?? ''),
+            'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'ip' => $ip]);
     } elseif ($action === 'duty_close') {
         // Close today's roll for this gate's centre — credits the on-duty
         // volunteer (points/level/awards) and returns the value-driven response.

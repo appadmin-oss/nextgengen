@@ -438,7 +438,7 @@ function results_file_ok(string $url): bool {
     if (!preg_match('#^https://#', $url) || strlen($url) > 600) return false;
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
-    return $host === 'res.cloudinary.com' || ($own !== '' && $host === $own);
+    return $host === 'res.cloudinary.com' || store_hosted($url) || ($own !== '' && $host === $own);
 }
 
 /** member.results.upload — attach (or replace) this term's report. */

@@ -493,6 +493,24 @@ return [
      * and moved across as they are read. */
     'photo_dir' => '',
 
+    /* File storage on an S3-compatible bucket — Cloudflare R2 (recommended:
+     * 10 GB free, no download charges) or Backblaze B2. When every field below
+     * is set, EVERY new upload goes here instead of Cloudinary; what Cloudinary
+     * already holds keeps working. The browser uploads straight to the bucket
+     * with a 15-minute presigned URL; the secret never leaves PHP. The bucket
+     * needs a CORS rule (docs/SETUP.md → File storage). Can also be set in
+     * Control Room → Settings → API keys → File storage. */
+    'storage' => [
+        'endpoint'    => '',               // R2: https://<account-id>.r2.cloudflarestorage.com · B2: https://s3.us-west-004.backblazeb2.com
+        'region'      => 'auto',           // R2: auto · B2: the region in the endpoint (us-west-004)
+        'bucket'      => '',               // e.g. 'ngg-media'
+        'access_key'  => '',
+        'secret_key'  => '',               // NEVER exposed to the browser
+        'public_base' => '',               // R2: https://pub-<hash>.r2.dev (or a custom domain) · B2: https://f004.backblazeb2.com/file/ngg-media
+        'folder'      => 'ngg',            // key prefix
+        'max_bytes'   => 25 * 1024 * 1024, // per file
+    ],
+
     'cloudinary' => [
         'cloud_name'  => '',               // e.g. 'ngg-afrovanguard'
         'api_key'     => '',               // numeric key

@@ -4636,12 +4636,14 @@ function GateDeskGuide() {
  * looking, big enough to read across a desk, and it shows the PHOTO — glancing
  * between the screen and the child is the only check that the card belongs to
  * the person holding it. Kind is told by word, glyph AND colour. */
-function ScanResult({ result, onDone }) {
+function ScanResult({ result, onDone, onFace }) {
+  // Offered on a check-in with a photo to compare (Settings → Face check at the check-in desk).
+  const canFace = !!(onFace && result && result.token && (result.kind === "in" || result.kind === "already"));
   React.useEffect(() => {
     if (!result || result.stop) return;
     // Long enough to read a name and compare a face; short enough not to block
     // the queue behind them. A "do not admit" never times out.
-    const t = setTimeout(onDone, result.kind === "no" ? 6000 : 3500);
+    const t = setTimeout(onDone, result.kind === "no" || canFace ? 6000 : 3500);
     return () => clearTimeout(t);
   }, [result, onDone]);
   const okRef = React.useRef(null);
@@ -4656,6 +4658,7 @@ function ScanResult({ result, onDone }) {
       <p className="gate-result-word"><span aria-hidden="true">{k.glyph}</span> {result.word || k.word}</p>
       <p className="gate-result-name">{result.name}</p>
       {result.sub && <p className="gate-result-sub">{result.sub}</p>}
+      {canFace && <button type="button" className="gate-btn is-quiet gate-face-btn" onClick={() => onFace(result)}><i className="ph ph-scan-smiley" aria-hidden="true"/> Check face</button>}
       {result.stop && <button ref={okRef} type="button" className="gate-btn is-quiet gate-stop-ok" onClick={onDone}>OK — next person</button>}
     </div>
   );
@@ -4783,6 +4786,7 @@ function GateCheckin({ g, ctx }) {
   const [pending, setPending] = React.useState(0);
   // The big outcome panel + whether the desk is allowed to make noise.
   const [scan, setScan] = React.useState(null);
+  const [faceFor, setFaceFor] = React.useState(null);   // {token, name, photo} while the face check is open
   const [muted, setMuted] = React.useState(() => { try { return localStorage.getItem("ngg.gate.mute") === "1"; } catch (_) { return false; } });
   const mutedRef = React.useRef(muted);
   React.useEffect(() => { mutedRef.current = muted; try { localStorage.setItem("ngg.gate.mute", muted ? "1" : "0"); } catch (_) {} }, [muted]);
@@ -4887,7 +4891,7 @@ function GateCheckin({ g, ctx }) {
       const st = r.student || {};
       const isVol = st.kind === "volunteer";
       announce(r.already ? "already" : "in", {
-        name: st.fullName || token,
+        name: st.fullName || token, token,
         photo: st.photoUrl || "",
         sub: [st.centre, st.track || st.role, r.status === "late" ? "Late by " + (r.lateMinutes || 0) + " min" : ""]
           .filter(Boolean).join(" · "),
@@ -4984,8 +4988,12 @@ function GateCheckin({ g, ctx }) {
     <div className="gate-grid">
       <section className="gate-scan" aria-label="Scan a card">
         <div className="gate-stage">
-          <QRScanner onToken={mark}/>
-          <ScanResult result={scan} onDone={() => setScan(null)}/>
+          {/* The face check takes the camera while it runs; the scanner comes back after. */}
+          {faceFor ? null : <QRScanner onToken={mark}/>}
+          <ScanResult result={scan} onDone={() => setScan(null)}
+            onFace={ctx && ctx.faceCheck && typeof FaceCheck === "function" ? (r) => { setScan(null); setFaceFor(r); } : null}/>
+          {faceFor ? <FaceCheck gate={g} token={faceFor.token} name={faceFor.name} photo={faceFor.photo} thresholds={ctx.faceCheck.thresholds}
+            onClose={(res, decision) => { setFaceFor(null); if (decision === "held") announce("no", { name: faceFor.name, sub: "Held at the desk after the face check — check their identity another way.", word: "Held", stop: true }); }}/> : null}
         </div>
         {mode === "out" && <p className="gate-banner is-info" role="status"><span>Signing out. Every scan now signs the person <b>out</b>{gateClosingLine(ctx)}. Switch back to Check in for arrivals.</span></p>}
         <form className="gate-manual" role="search" aria-label={mode === "out" ? "Sign out by code" : "Check in by code"}

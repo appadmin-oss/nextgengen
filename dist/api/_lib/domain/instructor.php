@@ -597,7 +597,7 @@ function admin_staff_performance(array $p): array {
     $scope = $lead ? ($lead['centres'] ?? null) : admin_centre_names_in_scope($g['requester']);
     // A lead with no centre on their record supervises nobody in particular;
     // that must not silently widen to the whole programme.
-    if ($lead && $scope === null) return ['ok' => false, 'error' => 'no_centre'];
+    if ($lead && ($scope === null || $scope === [])) return ['ok' => false, 'error' => 'no_centre'];
 
     /* The staff list is mentors and instructors together, because the question
      * "who has gone quiet" does not care which table someone lives in. */

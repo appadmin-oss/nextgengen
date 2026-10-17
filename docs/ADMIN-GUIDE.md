@@ -556,6 +556,33 @@ when you are ready.
 
 **The volunteer at the door** has a guide on the desk itself (*Volunteer guide*, under the camera) and a printable copy in `docs/VOLUNTEER-DESK-GUIDE.md`. A *Do not admit* result stays up until they press OK.
 
+**The face check (optional).** Turn it on in Control Room → Settings →
+General → *Face check at the check-in desk*. After a scan, the desk shows
+**Check face**: the front camera looks at the person for a few seconds and
+compares them with the photo on that card's record. The desk then sees one of:
+
+| Says | Means |
+|---|---|
+| *Looks like the same person* | The face matches the record photo, and it is a real, live face. |
+| *Not sure* | Close, but not clear enough (poor light, a cap, a slow phone). Check another way. |
+| *Does not look like the card's owner* | Check their identity another way before admitting. |
+| *That doesn't look like a live face* | A photo or a screen may be held up to the camera. |
+| *No clear face seen* | Ask them to face the camera in good light and try again. |
+| *No photo on the record* | Nothing to compare with; check another way. |
+
+The person on duty always decides: **Admit**, or **Hold — check another way**.
+The check is advice, never an automatic refusal.
+
+Privacy (Nigeria Data Protection Act 2023): the comparison happens **on the
+desk's own device**. No picture of the face and no face measurements are sent
+to the server or kept anywhere; the camera is switched off as soon as the check
+closes. The server records only the outcome, the scores and the decision,
+against the card holder, in the audit trail (`gate.face`). Because a face is
+biometric data, tell families in the programme's privacy notice that the desk
+may compare faces with record photos, and leave the check off at centres where
+that notice has not gone out. The first use on a device downloads the face
+models (about 9 MB, once); after that they load from the device.
+
 **One door, everyone.** The kiosk, a gate link's desk and *Mark present* on a
 profile all check in **participants, volunteers and NGG members**. Scan any
 card or type the number printed on it. A member's secure card (`MEMQR-…`),
@@ -1730,6 +1757,38 @@ Quotes**.
 Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
+
+## File storage (Cloudflare R2 or Backblaze B2)
+
+When Cloudinary's plan runs low, give the site a **storage bucket** instead.
+Once one is set in Control Room → Settings → **API keys → File storage**, every
+new upload (headshots, avatars, covers, proofs, hand-ins, community posts, school
+reports) goes to the bucket. **Nothing already on Cloudinary moves or breaks**:
+those photos keep showing from where they are.
+
+- **Which one.** **Cloudflare R2** is the recommendation: 10 GB free, and you
+  never pay for people viewing files (Cloudinary counts every view). **Backblaze
+  B2** works the same way (10 GB free, then about $6 per TB a month). Any other
+  S3-compatible store (Amazon S3, Wasabi) works too.
+- **Setting it up** takes the endpoint, the bucket name, an access key and its
+  secret, and the bucket's **public address**. `docs/SETUP.md → File storage`
+  has the steps for R2 and B2, including the one rule the bucket needs (CORS)
+  so browsers may upload to it.
+- **Test** writes a small file, reads it back from the public address, and
+  deletes it. If it fails it says which part: the keys, the bucket name, or a
+  bucket that is not public.
+- **Diagnostics** shows *File storage: new uploads go to the bucket* once it is
+  working. Cloudinary's usage warnings then stop pausing uploads.
+- **What a bucket does not do.** It stores files; it does not edit them. Images
+  are shrunk in the browser before they are sent, and the face-aware photo
+  framing still works (it is done by the AI framer). Cloudinary's one-click
+  photo edits only apply to photos still held on Cloudinary.
+- **Safety.** The browser is given a link that uploads **one** file, of **one**
+  type and **one** exact size, for 15 minutes. It cannot overwrite anyone else's
+  file. Web pages, SVGs and scripts are refused. The secret key never leaves the
+  server.
+- **Replacing a photo** deletes the old one from the bucket, unless another
+  record still uses it.
 
 ## Image storage (Cloudinary)
 

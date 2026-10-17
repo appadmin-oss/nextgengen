@@ -518,6 +518,7 @@ function intake_photo_accept(string $incoming): string {
     }
     if (preg_match('#^/api/public/photo\.php\?#', $u)) return substr($u, 0, 512);
     if (preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $u)) return substr($u, 0, 512);
+    if (store_hosted($u)) return substr($u, 0, 512);     // our own bucket (R2 / B2)
     return '';
 }
 

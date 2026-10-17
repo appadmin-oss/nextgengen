@@ -265,6 +265,67 @@ inside JSON (where the slashes are escaped, `\/api\/public\/photo.php`) or
 inside a percent-encoded link was deleted a week after upload. Every encoding
 is recognised now, and a scan that cannot be completed deletes nothing.
 
+### File storage: Cloudflare R2 or Backblaze B2
+
+Once a bucket is configured, every new upload goes to it (the browser PUTs the
+file straight to the bucket with a 15-minute presigned URL; the secret never
+leaves PHP). Cloudinary, if set, keeps serving what it already holds. Enter the
+values in **Control Room → Settings → API keys → File storage**, or in
+`api/config.php` under `storage` (see `api/config.example.php`), then press
+**Test**.
+
+**Cloudflare R2 (recommended: 10 GB free, no download charges)**
+
+1. Cloudflare dashboard → **R2** → *Create bucket* (e.g. `ngg-media`).
+2. Bucket → **Settings → Public access** → allow the **r2.dev subdomain** (or
+   connect a custom domain). Copy that address: it is the *Public address*,
+   e.g. `https://pub-1a2b3c.r2.dev`.
+3. R2 → **Manage API tokens** → *Create API token* with **Object Read & Write**
+   on this bucket. Copy the *Access Key ID* and *Secret Access Key*.
+4. *Endpoint*: `https://<account id>.r2.cloudflarestorage.com` (shown on the R2
+   overview). *Region*: `auto`.
+5. Bucket → **Settings → CORS policy** → paste:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-ngg-site.example"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["content-type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+**Backblaze B2**
+
+1. B2 → *Create a Bucket*, **Files in Bucket are: Public**.
+2. *Application Keys* → *Add a New Application Key* for this bucket, **Read and
+   Write**. The *keyID* is the access key, the *applicationKey* the secret.
+3. *Endpoint*: the bucket's S3 endpoint with `https://`, e.g.
+   `https://s3.us-west-004.backblazeb2.com`. *Region*: the middle part,
+   `us-west-004`.
+4. *Public address*: `https://f004.backblazeb2.com/file/<bucket>` (the
+   "Friendly URL" of any file, up to the bucket name).
+5. CORS: B2's web console cannot allow PUT, so set the rule with the B2 CLI:
+
+```bash
+b2 bucket update --cors-rules '[{"corsRuleName":"ngg","allowedOrigins":["https://your-ngg-site.example"],
+  "allowedOperations":["s3_put","s3_get","s3_head"],"allowedHeaders":["content-type"],
+  "exposeHeaders":["ETag"],"maxAgeSeconds":3600}]' <bucket> allPublic
+```
+
+**Content-Security-Policy.** `.htaccess` already allows
+`*.r2.cloudflarestorage.com`, `*.r2.dev` and `*.backblazeb2.com`. A bucket on a
+**custom domain** must be added to `connect-src` and `frame-src` there by hand,
+or uploads (and photos on printed cards) fail with a CSP error in the console.
+
+What the server enforces: the object key is chosen by the server (folder, date,
+random id), so nobody can overwrite another file; the content type comes from an
+allow-list by extension (no HTML, SVG or scripts); and the signature covers the
+exact byte length and type, so a signed URL cannot carry a different file.
+
 ### Photos without Cloudinary
 
 Cloudinary needs three keys, and until they are set there is nowhere to upload

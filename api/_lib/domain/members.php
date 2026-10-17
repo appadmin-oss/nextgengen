@@ -297,9 +297,15 @@ function member_state_set(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $key = trim((string)($p['key'] ?? ''));
     if ($key === '' || strlen($key) > 80) return ['ok' => false, 'error' => 'bad_key'];
-    if (function_exists('mfa_private_key') && mfa_private_key($key)) return ['ok' => false, 'error' => 'bad_key'];
+    /* The guards compare lower-cased: MySQL's default collation treats
+     * "MFA.bypass" and "mfa.bypass" as the same key, so a case-sensitive
+     * prefix check let a member write the second-step bypass (or reset an
+     * allowance, or place themselves in a year) by changing one letter's case. */
+    $lk = strtolower($key);
+    if (function_exists('mfa_private_key') && mfa_private_key($lk)) return ['ok' => false, 'error' => 'bad_key'];
     // `staff.*` keys are set by staff (a member's programme year); a member cannot place themselves.
-    if (strncmp($key, 'staff.', 6) === 0 || strncmp($key, 'ai.', 3) === 0) return ['ok' => false, 'error' => 'bad_key'];   // ai.* is an allowance the server counts
+    if (strncmp($lk, 'staff.', 6) === 0 || strncmp($lk, 'ai.', 3) === 0) return ['ok' => false, 'error' => 'bad_key'];   // ai.* is an allowance the server counts
+    if (preg_match('/[^\x20-\x7e]/', $key)) return ['ok' => false, 'error' => 'bad_key'];
     $value = $p['value'] ?? null;
     $json = is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_SLASHES);
     if (strlen((string)$json) > 20000) return ['ok' => false, 'error' => 'too_large'];

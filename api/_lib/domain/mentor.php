@@ -201,7 +201,11 @@ function mentor_gate(array $p): array {
             'mentor' => ['fullName' => (string)($mentor['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isLead ? '' : $dept, 'rank' => $isLead ? 'lead' : 'mentor'],
             'programmes' => mentor_programmes($mentor),
-            'centres' => !$screened ? [] : ($centre !== '' ? [$centre] : null),
+            /* Fail CLOSED: a mentor whose record has no centre reaches no centre
+             * (it used to read as "every centre"). An admin fixes the record. A
+             * lead mentor's null courses — every department — is by design. */
+            'centres' => !$screened ? [] : ($centre !== '' ? [$centre] : []),
+            // A mentor with no department mentors across courses (that is the role); only the centre fails closed.
             'courses' => !$screened ? [] : ((!$isLead && $dept !== '') ? [$dept] : null),
             // Their own centre, kept for one purpose: filing a concern
             // (member_mp_concern). Reporting is not reading a record.
@@ -259,8 +263,9 @@ function mentor_gate(array $p): array {
              * curriculum. volunteers.programme speaks the mentors' vocabulary
              * (summer | ngg | both), and mentor_programmes() reads it. */
             'programmes' => mentor_programmes(['programme' => volunteer_programme($v)]),
-            'centres' => !$volCleared ? [] : ($centre !== '' ? [$centre] : null),
-            'courses' => $courses ?: null];
+            // Fail closed, as above: no centre on the record is no centre; an instructor with no courses teaches none.
+            'centres' => !$volCleared ? [] : ($centre !== '' ? [$centre] : []),
+            'courses' => $courses ?: ($isInstructor ? [] : null)];
     }
 
     /* The centre Ops lane.

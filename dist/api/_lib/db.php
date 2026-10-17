@@ -87,6 +87,10 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* A member could once write "MFA.bypass" / "STAFF.…" / "AI.…" (the guard was
+     * case-sensitive, MySQL's collation is not). Server-written keys are always
+     * lower case, so any such key not in lower case was forged: remove it. */
+    'member_state.forged_case' => "DELETE FROM member_state WHERE BINARY stateKey <> BINARY LOWER(stateKey) AND (LOWER(stateKey) LIKE 'mfa%' OR LOWER(stateKey) LIKE 'staff.%' OR LOWER(stateKey) LIKE 'ai.%')",
     /* 156 — emails stored the way the sign-in door compares them (BINARY: the
      * default collation would call 'Ada@X' and 'ada@x' equal and skip it). */
     'volunteers.email_norm' => "UPDATE volunteers SET email = LOWER(TRIM(email)) WHERE email IS NOT NULL AND BINARY email <> BINARY LOWER(TRIM(email))",

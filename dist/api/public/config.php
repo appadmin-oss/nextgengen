@@ -2,7 +2,7 @@
 /**
  * Public client bootstrap config. Safe-to-expose values only — NEVER secrets.
  * The SPA fetches this once on boot to learn whether direct media uploads are
- * available (Cloudinary configured) and which cloud to target.
+ * available (a storage bucket or Cloudinary configured) and which to target.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 
@@ -23,12 +23,18 @@ $publicUpload = !empty($cld['cloud_name']) && !empty($cld['unsigned_preset']);
    unsigned preset matters most here — it is the one path no signer can stop. */
 $storageFull = function_exists('media_uploads_allowed') && !media_uploads_allowed();
 if ($storageFull) { $uploadsEnabled = false; $publicUpload = false; }
+/* A storage bucket (object-store.php) takes every signed upload once it is set,
+   and Cloudinary's plan no longer decides: uploads are on whatever it says. The
+   unsigned preset stays off then — it would put new files back on Cloudinary. */
+$bucket = store_configured();
+if ($bucket) { $uploadsEnabled = true; $storageFull = false; $publicUpload = false; }
 
 json_ok([
     'uploads' => [
         'enabled'   => $uploadsEnabled,
-        'cloudName' => $uploadsEnabled ? $cld['cloud_name'] : '',
-        'maxBytes'  => (int)($cld['max_bytes'] ?? (25 * 1024 * 1024)),
+        'cloudName' => $uploadsEnabled && !$bucket ? (string)($cld['cloud_name'] ?? '') : '',
+        'store'     => $bucket ? 'bucket' : ($uploadsEnabled ? 'cloudinary' : ''),
+        'maxBytes'  => (int)($bucket ? (($CONFIG['storage']['max_bytes'] ?? 0) ?: STORE_MAX_BYTES) : ($cld['max_bytes'] ?? (25 * 1024 * 1024))),
     ],
     'storageFull' => $storageFull,
     'publicUpload' => [

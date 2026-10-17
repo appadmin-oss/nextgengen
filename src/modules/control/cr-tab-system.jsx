@@ -340,6 +340,13 @@ Object.assign(CR_TAB_DEFS, {
         if (fix) out.push({ type: "note", span: 3, icon: fix[0] ? "warning" : "info", tone: fix[0] || undefined, text: fix[1], sub: fix[2] || undefined });
       }
 
+      /* Where a new upload goes. A bucket, once set, takes every upload, and
+         Cloudinary's plan stops deciding whether uploads may go at all. */
+      if (d.media) out.push(d.media.store
+        ? { type: "status", span: 3, title: "File storage", sub: d.media.store.bucket + " · " + d.media.store.endpointHost, summary: "New uploads go to the bucket", tone: "ok",
+            items: [["Files served from", d.media.store.host, "neutral"], ["Cloudinary", d.media.usage && d.media.usage.configured ? "Keeps serving what it already holds" : "Not used", "neutral"]] }
+        : { type: "note", span: 3, icon: "info", text: "New uploads go to " + (d.media.uploadsTo === "cloudinary" ? "Cloudinary." : "this server.") + " A storage bucket (Cloudflare R2 or Backblaze B2) takes them instead once it is set in Settings → API keys → File storage.",
+            act: { l: "Set up storage", run: () => ctx.go("settings", "keys") } });
       if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
 
       const jobs = Object.keys(h.cron || {});
@@ -641,7 +648,7 @@ const crSyGenCtx = { current: null };
 const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
-const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled"];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
 const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
@@ -662,6 +669,7 @@ function crSyGenForm(d, part) {
         tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),
+        tog("face_check_enabled", "Face check at the check-in desk", "After a card is scanned, the desk can compare the person’s face with the photo on their record, with a check that it is a live face, not a photo or a screen held up. It runs on the desk’s own device: no image or face data is sent or kept — only the result. It advises; the person on duty decides. Tell parents before turning it on."),
       ] },
       { part: "general", h: "Messages", rows: [
         tog("volunteer_sms_notify", "Text volunteers their ID by SMS", "When a phone number is on file."),

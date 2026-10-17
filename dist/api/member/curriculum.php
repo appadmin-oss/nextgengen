@@ -36,6 +36,7 @@ if ($method === 'GET') {
         $res = gs_call('staff.curriculum.mark', ['requesterId' => $mid, 'progressId' => (int)($b['progressId'] ?? 0),
             'marks' => is_array($b['marks'] ?? null) ? $b['marks'] : [], 'ip' => client_ip()]);
     } elseif ($action === 'ask') {
+        rate_limit_check_actor('member.curriculum.ask', (string)$mid);
         $res = gs_call('member.curriculum.ask', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'question' => (string)($b['question'] ?? '')]);
     } elseif ($action === 'year') {
         $res = gs_call('staff.curriculum.year', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'year' => $b['year'] ?? null, 'ip' => client_ip()]);

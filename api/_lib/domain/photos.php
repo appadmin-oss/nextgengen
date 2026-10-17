@@ -1028,7 +1028,7 @@ function photo_intake_url(string $incoming, int $max = 512): string {
     if (preg_match('#^https?://#i', $u)) {
         $host = strtolower((string)parse_url($u, PHP_URL_HOST));
         $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
-        if ($host !== 'res.cloudinary.com' && !($own !== '' && $host === $own && photo_is_stored_locally($u))) return '';
+        if ($host !== 'res.cloudinary.com' && !store_hosted($u) && !($own !== '' && $host === $own && photo_is_stored_locally($u))) return '';
     }
     return substr($u, 0, $max);
 }
@@ -1649,6 +1649,14 @@ function photo_supersede(string $subjectType, string $subjectId, string $oldUrl,
     if ($oldPid !== '' && $oldPid !== cloudinary_public_id($new)) {
         $refs = photo_store_live_refs($oldPid);
         if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid);
+        else $kept = 'in use';
+    }
+    /* And an original in OUR bucket (R2 / B2), by the same rule: not if the new
+       photo is the same object, not while anything live still points at it. */
+    $oldKey = $oldId === '' && $oldPid === '' ? store_key_of($old) : '';
+    if ($oldKey !== '' && $oldKey !== store_key_of($new)) {
+        $refs = photo_store_live_refs($oldKey);
+        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldKey . '%', '%' . $oldKey . '%'])) $deleted = store_delete($oldKey);
         else $kept = 'in use';
     }
     audit('photo.superseded', $by !== '' ? $by : null, $subjectType . ':' . $subjectId, ['deleted' => $deleted, 'keptFor' => $kept, 'hosted' => $oldId === ''], '');

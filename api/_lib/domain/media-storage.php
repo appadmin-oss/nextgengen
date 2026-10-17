@@ -160,7 +160,11 @@ function media_full_refusal(): array {
 function admin_media_usage(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $s = !empty($p['refresh']) ? media_usage_refresh(true) : media_usage_state();
-    return ['ok' => true, 'usage' => $s, 'levels' => MEDIA_LEVELS, 'uploadsAllowed' => $s['level'] !== 'critical'];
+    /* Where a NEW upload goes: the bucket when one is set (object-store.php) — then
+       Cloudinary's plan no longer decides whether uploads may go. */
+    $store = store_configured() ? ['bucket' => store_bucket(), 'host' => store_public_host(), 'endpointHost' => strtolower((string)parse_url(store_endpoint(), PHP_URL_HOST))] : null;
+    return ['ok' => true, 'usage' => $s, 'levels' => MEDIA_LEVELS, 'store' => $store, 'uploadsTo' => $store ? 'bucket' : (media_configured() ? 'cloudinary' : 'server'),
+            'uploadsAllowed' => $store ? true : $s['level'] !== 'critical'];
 }
 
 /**

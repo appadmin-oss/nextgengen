@@ -80,7 +80,7 @@ function php(snippet) {
   })();
   const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
     + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
-    + req('anchor-content.php') + req('ai.php') + req('bus.php') + req('sms.php')
+    + req('anchor-content.php') + req('ai.php') + req('bus.php') + req('sms.php') + req('object-store.php')
     + domains.map(d => `require ${JSON.stringify(ROOT + '/api/_lib/domain/' + d + '.php')};`).join('')
     + req('backend.php') + req('sheets.php') + req('webcron.php')
     + `db_conn();\n` + snippet;

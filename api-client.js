@@ -312,9 +312,13 @@
     // guardian reshoot page) where there is no session — so they sign through
     // the public headshot endpoint. Everything else uses the member endpoint.
     const mediaKind = mediaKindOf(file);
+    /* name, type and size travel too: a bucket upload (R2 / B2) is signed for
+       one content type and one exact length, so the server must know both. */
+    const about = { name: file.name || '', contentType: file.type || '', size: file.size || 0 };
     const sig = kind === 'headshot'
-      ? await request('/public/upload-headshot-sign.php', { body: {} })
-      : await request('/member/upload-sign.php', { body: { kind, mediaKind } });
+      ? await request('/public/upload-headshot-sign.php', { body: about })
+      : await request('/member/upload-sign.php', { body: Object.assign({ kind, mediaKind }, about) });
+    if (sig.provider === 's3') return await putToStore(file, sig, mediaKind, onProgress);
     return await new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('file', file);
@@ -349,6 +353,32 @@
       };
       xhr.onerror = () => reject(new Error('upload_network_error'));
       xhr.send(fd);
+    });
+  }
+
+  /* A presigned PUT straight to the bucket. The URL is good for one key, one
+     content type and one byte length: the type is the server's (from its
+     allow-list), never the browser's guess, and the length is the file's. */
+  function putToStore(file, sig, mediaKind, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(sig.method || 'PUT', sig.uploadUrl);
+      const h = sig.headers || {};
+      Object.keys(h).forEach((k) => xhr.setRequestHeader(k, h[k]));
+      if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ url: sig.publicUrl, publicId: sig.key, resourceType: sig.resourceType, format: sig.format,
+                    bytes: file.size, mediaKind: mediaKind, pages: 0, originalName: file.name || '' });
+        } else {
+          /* S3 answers in XML: <Code>SignatureDoesNotMatch</Code>, AccessDenied… */
+          const code = (String(xhr.responseText || '').match(/<Code>([^<]+)<\/Code>/) || [])[1];
+          reject(new Error(code ? 'storage_' + code : ('upload_failed_' + xhr.status)));
+        }
+      };
+      // A refused CORS preflight lands here too: the bucket's CORS rule must allow PUT from this site.
+      xhr.onerror = () => reject(new Error('upload_network_error'));
+      xhr.send(file);
     });
   }
 
@@ -1041,6 +1071,7 @@
         checkin:  (gate, token, scannedAt) => request('/public/gate.php', { body: { action: 'checkin', gate, token, scannedAt } }),
         checkout: (gate, token, scannedAt) => request('/public/gate.php', { body: { action: 'checkout', gate, token, scannedAt } }),
         dutyClose:(gate) => request('/public/gate.php', { body: { action: 'duty_close', gate } }),
+        faceLog:  (gate, token, r) => request('/public/gate.php', { body: Object.assign({ action: 'face', gate, token }, r || {}) }),
         // Kiosk unlock — mints a gate-scoped session so field staff run the
         // desk without an admin login (see /public/gate-unlock.php).
         unlock:   (gate, password) => request('/public/gate-unlock.php', { body: { gate, password } }),

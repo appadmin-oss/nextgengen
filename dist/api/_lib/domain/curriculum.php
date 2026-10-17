@@ -1242,6 +1242,9 @@ function member_curriculum_ask(array $p): array {
     // Distress is not a study question: point to people, and count nothing.
     if (preg_match('/\b(kill myself|suicide|hurt myself|self[- ]harm|abuse[ds]?|touch(ed|es) me|want to die)\b/i', $q))
         return ['ok' => true, 'answer' => 'That sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'safeguarding' => true, 'left' => CURR_TUTOR_PER_DAY - $used];
+    // Spend the allowance BEFORE the model is called, so parallel requests cannot all slip under it.
+    db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
+              ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
     $u = $units[$id]['unit'];
     $obj = implode('; ', json_decode((string)$u['objectives'], true) ?: []);
     $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n" . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
@@ -1250,9 +1253,11 @@ function member_curriculum_ask(array $p): array {
         . 'Keep it under 160 words, in plain British English. Never do their assignment or give answers to graded checks — help them think it through instead. '
         . 'If the question is not about the lesson, say kindly that you can only help with this lesson. Never ask for personal details.' . "\n\nTHE LESSON:\n" . $lesson;
     $r = ai_chat($system, [['role' => 'me', 'text' => $q]], 420, 'coach');
-    if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
-    db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
-              ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
+    if (empty($r['ok'])) {
+        // A failed answer is given back.
+        db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$used, (string)$m['memberId'], $key]);
+        return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
+    }
     return ['ok' => true, 'answer' => mb_substr(trim((string)$r['text']), 0, 2400), 'left' => CURR_TUTOR_PER_DAY - $used - 1, 'limit' => CURR_TUTOR_PER_DAY];
 }
 

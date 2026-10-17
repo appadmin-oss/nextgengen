@@ -14,6 +14,15 @@ require_method('POST');
 rate_limit_check('upload.sign');
 
 $cfg = $CONFIG['cloudinary'] ?? [];
+/* A bucket wins when one is set (object-store.php): an image, in the headshot
+   folder, at most the headshot cap — the kind is fixed here as it is below. */
+if (store_configured()) {
+    $body = read_json_body();
+    $r = store_upload_spec('headshot', 'image', (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''), $body['size'] ?? 0,
+                           (int)(($CONFIG['storage']['headshot_max_bytes'] ?? null) ?: STORE_HEADSHOT_MAX_BYTES));
+    if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
+    json_ok($r);
+}
 if (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret'])) {
     json_error('uploads_disabled', 503);
 }

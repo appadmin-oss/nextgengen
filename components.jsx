@@ -205,6 +205,9 @@ function inkIsLegible(hex, min) {
 const VENDOR_LIBS = {
   // Fabric 7.4.0 — the design canvas. UMD, defines window.fabric.
   fabric: { js: ["/vendor/fabric.min.js"], global: "fabric" },
+  /* @vladmandic/human 3.3.6 — the desk's face check (face-check.jsx). Bundles
+     its own TensorFlow.js; the models load from /vendor/human/models/. */
+  human: { js: ["/vendor/human/human.js"], global: "Human" },
   qrcode: { js: ["/vendor/qrcode.min.js"], global: "qrcode" },
   // Filerobot 5.0.0 — the photo editor. Built by vendor-build.js with React
   // aliased to our page globals, so it must load AFTER React (it always does:

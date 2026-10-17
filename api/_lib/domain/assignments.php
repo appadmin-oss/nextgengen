@@ -175,7 +175,11 @@ function assignment_file_clean($f): ?array {
     if (is_string($f)) $f = ['url' => $f];
     if (!is_array($f)) return null;
     $url = trim((string)($f['url'] ?? ''));
-    if ($url === '' || !preg_match('#^(https://|/(?!/))#i', $url)) return null;
+    /* https, or this site's own uploaded-file endpoint — never another
+     * same-origin path (an <img src="/api/auth/logout.php"> signs the marker
+     * out), and never a backslash, which browsers read as "//elsewhere". */
+    if ($url === '' || strpbrk($url, "\\ \t\r\n\"'<>") !== false) return null;
+    if (!preg_match('#^https://[a-z0-9.-]+(:\d+)?/#i', $url) && !preg_match('#^/api/member/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}$#', $url)) return null;
     $name = mb_substr(trim((string)($f['name'] ?? '')), 0, 160) ?: basename((string)parse_url($url, PHP_URL_PATH));
     $ext = strtolower(pathinfo($name !== '' ? $name : $url, PATHINFO_EXTENSION));
     $kind = in_array($ext, ASG_EXT['photo'], true) ? 'photo' : (in_array($ext, ASG_EXT['recording'], true) ? 'recording' : (string)($f['kind'] ?? 'file'));
@@ -456,6 +460,8 @@ function staff_assignment_submissions(array $p): array {
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [(string)($p['assignmentId'] ?? '')]);
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
     $reach = assignment_in_reach($g, $a);
+    // An assignment id is not a key: outside their courses and centre, nothing comes back.
+    if (!$reach && !assignment_can_mark($g, $a) && $g['who'] !== 'admin') return ['ok' => false, 'error' => 'out_of_scope'];
     $due = assignment_due_ts($a);
     $names = [];
     foreach (db_all('SELECT s.*, m.fullName, m.centre FROM assignment_submissions s LEFT JOIN members m ON m.memberId = s.memberId WHERE s.assignmentId = ? ORDER BY s.submittedAt DESC', [$a['assignmentId']]) as $r) {

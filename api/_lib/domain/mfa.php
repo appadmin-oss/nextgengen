@@ -84,7 +84,7 @@ function mfa_del(string $id, string $key): void {
 }
 /** Keys the public state op must never read or write. */
 function mfa_private_key(string $key): bool {
-    return strncmp($key, 'mfa', 3) === 0;
+    return strncasecmp($key, 'mfa', 3) === 0;   // any case: MySQL compares keys case-insensitively
 }
 
 /* ── Who is this ─────────────────────────────────────────────────────────── */
