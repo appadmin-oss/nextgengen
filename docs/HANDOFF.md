@@ -1518,3 +1518,29 @@ Lessons & timetable, Messages; plus Emails & connection. State in the URL
 (`?child=&view=`). Same API, no new ops. family-ui.test.js drives the new
 navigation (28/28). Also fixed: the new inbox shows "From their family account"
 on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.
+
+
+### Mentor Portal v15: Class area redesigned, nothing embedded
+
+The old dark MentorPortal that v15 used to embed as "Me → Stars & results" is gone from v15.
+It is replaced by `src/modules/mentor15/mp15-class.jsx`, in v15's own design (`.m15c*`
+classes in styles-app.css). A new nav area, **Class**, has three screens:
+
+- **Stars**: the roster for "My mentees" or the whole centre, with search, select-all
+  (indeterminate) and a bulk bar. The star, presence, note and bulk drawers close on
+  Escape and return focus.
+- **School results**: approve or send back, with a note.
+- **Curriculum**: marking and lessons.
+
+It uses only existing endpoints (starGive, v3Rate, bulkAward, remarks, mentorPlans/Approve/Return,
+curriculumStaff/Mark), so there are no new ops. URL: /mentor/class[?tab=results|curriculum];
+the old /mentor?tab= links forward.
+
+Other changes:
+
+- "Me" is renamed **My role**.
+- The Saturday Formation schedule now renders after the page's work (`slotEnd`), not above the title.
+- The compiled view's hard-coded sample ID "NGG-M-0142" is now `{{ meId }}` (mp15-subs.json, recompiled).
+- The register legend explains values vs duties.
+
+mentor-v15.test.js: 31/31.

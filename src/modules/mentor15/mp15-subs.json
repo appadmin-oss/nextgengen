@@ -9,5 +9,7 @@
   "Goes only to Mrs. Bisi Ogun.": "Goes only to {{ officer }}.",
   "Sent to Mrs. Bisi Ogun": "Sent to {{ officer }}",
   "commitments on track for October": "{{ cmMonthL }}",
-  "Agenda · 9:30am": "Agenda · 8:30am, musing & mentor breakout"
+  "Agenda · 9:30am": "Agenda · 8:30am, musing & mentor breakout",
+  "NGG-M-0142": "{{ meId }}",
+  "Tap a value when you see it happen, and add a line of detail while it is fresh. It is waiting in the weekly review.": "Values (Courage, Responsibility, Respect, Teamwork): tap one when you see it. Duties (On time, Assignment in, Checked out): tick each as it is done. Add a line of detail while it is fresh; it waits in the weekly review."
 }

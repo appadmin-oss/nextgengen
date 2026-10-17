@@ -1131,9 +1131,9 @@ address per programme so NGG members and Summer School participants never share 
 
 | Address | Who | What |
 |---|---|---|
-| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), My role, Academy, and **Me → Stars & results** (stars, V3, school results, growth plans) inside the portal |
+| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), **Class** (Stars, School results, Curriculum) and **My role** (role, Academy, hub). The Saturday schedule sits under each page's own work, not above it |
 | `/mentor/summer` | Summer School mentors; admins | This edition's participants only: stars, notes, reviews, concerns |
-| `/mentor/class` | An NGG mentor: Stars & results, inside the portal. Anyone else with the class tools (an admin with no pod): the stand-alone class page | Stars, V3, notes, curriculum, school results |
+| `/mentor/class` | An NGG mentor: the portal's **Class** area (`?tab=results` / `?tab=curriculum` open those tabs). Anyone else with the class tools (an admin with no pod): the stand-alone class page | Stars, V3, notes, curriculum, school results |
 | `/instructor/ngg` | NGG instructors (Instructor Portal) | Today, Roll, Plan (hinge, exit, retrieval from earlier weeks), Teach, Exit ticket, Session log, Skills board (evidence to move a child up), Marking, Curriculum, Students, Community, School results, Report a concern |
 | `/instructor/summer` | Instructors who also teach Summer School | That edition's participants only |
 

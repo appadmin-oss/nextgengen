@@ -31,6 +31,14 @@ const MP15_REL_Q = ['We talk about things that matter to them', 'They can tell m
 /* The class portal's tabs. A link that lands on one of these (the results
    email lands on ?tab=results) opens the class portal, as it always has. */
 const MP15_CLASSIC_TABS = ['session', 'class', 'skills', 'curriculum', 'results', 'attention'];
+/* The Class area's screens (mp15-class.jsx), one address: /mentor/class, with
+   ?tab=results or ?tab=curriculum for the other two — the old panel's own tab
+   names, so the "sent their results and plan" email still lands right. */
+const MP15_CLASS_SCREENS = ['stars', 'results', 'curric'];
+function mp15ClassScreenFromUrl() {
+  let t = ''; try { t = new URLSearchParams(location.search).get('tab') || ''; } catch (_) {}
+  return t === 'results' ? 'results' : t === 'curriculum' ? 'curric' : 'stars';
+}
 
 /* ── Dates: the server works in Lagos calendar dates (YYYY-MM-DD) ────────── */
 function mp15D(iso) { const s = String(iso || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00Z') : null; }
@@ -74,7 +82,7 @@ const mp15Api = {
 class Mp15Portal extends React.Component {
   rootRef = React.createRef();
   state = {
-    scr: this.props.initial || 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, rel: {}, pTpl: 'saw', pBody: null,
+    scr: (this.props.initial === 'classic' ? mp15ClassScreenFromUrl() : this.props.initial) || 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, rel: {}, pTpl: 'saw', pBody: null,
     step: 'before', agenda: null, aim: 'All', here: {}, obs: {}, rv: {}, rvDone: {}, mf: 'all', msel: '', read: {}, reply: '', sup: null,
     cKid: '', cText: '', cCat: '', more: false, w: 1200, toast: '', undo: null,
     d: {}, ld: {}, er: {}, centre: '', gEdit: {}, hidden: {},
@@ -137,8 +145,11 @@ class Mp15Portal extends React.Component {
   go(scr, extra) {
     const S = this.state; const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0;
     this.setState({ scr, more: false, hist: scr === S.scr ? S.hist : S.hist.concat([S.scr]).slice(-12), ...(scr !== S.scr ? { mOpen: false } : {}), ...(scr === 'concern' ? { cSent: null } : {}), ...(extra || {}) });
-    /* Stars & results has an address of its own (/mentor/class), so a reload or a shared link reopens it. */
-    if ((scr === 'classic') !== (S.scr === 'classic')) { try { history.replaceState({ page: 'mentor' }, '', '/mentor/' + (scr === 'classic' ? 'class' : 'ngg')); } catch (_) {} }
+    /* The Class screens have an address of their own (/mentor/class[?tab=…]), so a reload or a shared link reopens them. */
+    const inClass = MP15_CLASS_SCREENS.includes(scr);
+    if (inClass || MP15_CLASS_SCREENS.includes(S.scr)) {
+      try { history.replaceState({ page: 'mentor' }, '', inClass ? '/mentor/class' + (scr === 'results' ? '?tab=results' : scr === 'curric' ? '?tab=curriculum' : '') : '/mentor/ngg'); } catch (_) {}
+    }
     const kid = (extra && extra.kid) || (scr === 'kid' ? S.kid : null);
     if (scr === 'kid' && kid && !S.d['kid:' + kid]) this.loadKid(kid);
     if (scr === 'module' && extra && extra.mod) this.setState({ mRes: null });
@@ -298,7 +309,7 @@ class Mp15Portal extends React.Component {
     const acMods = ((D.academy || {}).modules) || [];
     const modDone = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -307,7 +318,7 @@ class Mp15Portal extends React.Component {
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? '#0b0b0c' : '#5a5a60', fw: on ? 600 : 500, bar: on ? '#0b0b0c' : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     const tabIds = ['week', 'list', 'sat', 'msg'];
     const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
@@ -363,7 +374,7 @@ class Mp15Portal extends React.Component {
     const mSel0 = mList.find(m => m.id === S.msel) || mList[0];
     const mView = m => m ? { ...m, who: m.from, when: mp15When(m.at, today), t: m.body } : {};
 
-    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern', classic: 'Stars & results' };
+    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
     const nTeam = ((D.team || {}).mentors || []).length;
     const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
       week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
@@ -380,9 +391,12 @@ class Mp15Portal extends React.Component {
       rootRef: this.rootRef, wide, narrow, narrowSub: narrow && !!subs[S.scr], mainPad: narrow ? '16px 16px 28px' : '32px 40px 56px', toastB: narrow ? '96px' : '24px',
       mainSlot: this.slot(),
       /* The class tools (stars, V3, notes, curriculum, school results and growth
-         plans) are this portal's own screen, under its title and tabs: the same
-         component /mentor/class has always run, as a panel, on the centre on screen. */
-      mainSlotEnd: S.scr === 'classic' ? <div className="m15x-slot"><MentorPortal key={'class:' + (S.centre || '')} programme="ngg" embedded={true}/></div> : null, roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+         plans) are this portal's own Class screens (mp15-class.jsx), under its title
+         and tabs, on the centre on screen. Nothing of the old portal is embedded. */
+      mainSlotEnd: MP15_CLASS_SCREENS.includes(S.scr)
+        ? <div className="m15x-slot m15x-slot-class m15c"><Mp15Class key={S.scr + ':' + (S.centre || '')} screen={S.scr} centre={S.centre || ''} say={t => this.say(t)}
+            onOpenChild={id => all.some(k => k.id === id) && this.go('kid', { kid: id, ktab: 'overview', pBody: null })}/></div>
+        : this.slotEnd(), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), meId: me.memberId || '', nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
       areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
@@ -402,7 +416,7 @@ class Mp15Portal extends React.Component {
              ['Add a note', 'ph ph-note-pencil', () => this.bulkNote(selIds), false]].map(([l, icon, go, off]) => ({ l, icon, go: off ? () => this.say('Your lead mentor contacts families') : go, off, why: off ? 'Your lead mentor contacts families' : '', op: off ? 0.4 : 1 })),
       wideCols, cols: wideCols ? '40px minmax(220px, 1.6fr) 130px 110px minmax(110px, 1fr) minmax(150px, auto)' : '40px minmax(0, 1fr) auto',
       kids: kids.map(k => { const on = !!S.sel[k.id]; return { ...k, sub: [k.age !== null && k.age !== undefined ? 'Age ' + k.age : '', k.phase, isLead ? (k.mentor || 'No mentor') : k.school].filter(Boolean).join(' · '), contact: mp15Ago(k.contact), cFg: B.contact(k) ? '#7a5600' : '#4a4a50', cFw: B.contact(k) ? 600 : 400,
-        rel: (k.relC === null ? '–' : k.relC) + ' · ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
+        rel: k.relC === null && k.relM === null ? 'Not checked yet' : 'Child ' + (k.relC === null ? '–' : k.relC) + ' · you ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
         relDot: k.relC !== null && k.relC <= 2 ? '#b0361c' : k.relC !== null && k.relM !== null && k.relM - k.relC >= 2 ? '#e0a100' : k.relC === null ? '#d6d4cc' : '#2f9e44',
         goal: k.ag ? k.ag.title : 'No goal yet', flags: flagsOf(k), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
         toggle: () => set({ sel: { ...S.sel, [k.id]: !on } }), open: () => this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }) }; }),
@@ -531,13 +545,16 @@ class Mp15Portal extends React.Component {
         <button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); if (S.scr === 'kid') this.loadKid(S.kid); }}>Retry</button></div></div>;
     }
     if (loading) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading</span></div></div>;
-    /* The Saturday Formation Schedule, the mentor's part of each block: the
-       next two blocks on This week, the whole day on Saturday. */
-    if (S.scr === 'week') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true}/></div>;
-    /* The class tools (stars, V3, notes, curriculum, school results and growth
-       plans) are this portal's own screen: the same component /mentor/class
-       has always run, in the portal's frame, on the centre on screen. */
+    return null;
+  }
+
+  /* The Saturday Formation Schedule, the mentor's part of each block, AFTER the
+     page's own work: on This week, Due now comes first; on Saturday, the
+     register does. It used to sit above the page title and push both down. */
+  slotEnd() {
+    const S = this.state;
+    if (S.scr === 'week') return <div className="m15x-slot m15x-slot-end"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className="m15x-slot m15x-slot-end"><FormationDay audience="mentor" compact={true}/></div>;
     return null;
   }
 
