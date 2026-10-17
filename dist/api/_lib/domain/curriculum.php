@@ -633,7 +633,9 @@ function admin_curriculum_import(array $p): array {
         if (!is_array($r)) { $plan[] = ['row' => $i + 1, 'verdict' => 'failed', 'error' => 'not_a_row']; continue; }
         if ($publish && !isset($r['status'])) $r['status'] = 'published';
         $v = curriculum_validate($r, $allowNew);
-        if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'verdict' => 'failed', 'error' => $v['error'], 'detail' => $v['detail'] ?? '']; continue; }
+        // A refused row still says which course and week it was, so the operator can see what to fix.
+        if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'course' => mb_substr(trim((string)($r['course'] ?? '')), 0, 120), 'week' => (int)($r['week'] ?? 0),
+                                    'verdict' => 'failed', 'error' => $v['error'], 'detail' => $v['detail'] ?? '']; continue; }
         $u = $v['unit'];
         $key = strtolower($u['course'] . '|' . $u['level'] . '|' . $u['week'] . '|' . $u['position']);
         if (isset($seen[$key])) { $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'verdict' => 'failed', 'error' => 'duplicate_in_file', 'detail' => 'same course, level, week and position as row ' . $seen[$key]]; continue; }
@@ -861,12 +863,25 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
             if ($w !== '') $words[] = $w;
         }
     }
+    /* Every course name anyone has used, with its words, for "a course that
+     * names this word" — PIANO on a card takes "Piano" and "Music: Piano". */
+    $known = array_values(array_unique(array_merge(array_values($byLower), $unitCourses)));
+    $tokens = fn(string $x): array => array_values(array_filter(preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($x)) ?: [], fn($t) => mb_strlen($t) >= 3));
+    // A faculty word that stands for a family of courses: the music faculty takes its instruments.
+    $family = ['music' => ['music', 'piano', 'keyboard', 'guitar', 'drums', 'violin', 'saxophone', 'vocal', 'vocals', 'singing', 'voice', 'instrument', 'instruments']];
     $out = [];
     foreach ($words as $w) {
         $lw = mb_strtolower($w);
-        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; continue; }
-        $div = function_exists('nggc_division_for_track') ? nggc_division_for_track($w) : '';
-        if ($div !== '') $out = array_merge($out, $divCourses($div));
+        $hit = false;
+        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; $hit = true; }
+        // A catalogue division named by this word ("Music") is taken whole.
+        foreach ($catalogue as $name => $courses) if (in_array($lw, $tokens((string)$name), true)) { $out = array_merge($out, array_values($courses)); $hit = true; }
+        $want = $family[$lw] ?? [$lw];
+        foreach ($known as $c) if (array_intersect($want, $tokens((string)$c))) { $out[] = (string)$c; $hit = true; }
+        if (!$hit) {
+            $div = function_exists('nggc_division_for_track') ? nggc_division_for_track($w) : '';
+            if ($div !== '') $out = array_merge($out, $divCourses($div));
+        }
         $out[] = $w;
     }
     if (!$words && trim((string)($m['division'] ?? '')) !== '') $out = array_merge($out, $divCourses((string)$m['division']));
@@ -875,16 +890,134 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     return $uniq;
 }
 
-function curriculum_member_units(array $m): array {
+/* ── A three-year programme that adapts to the member ───────────────────────
+ *
+ * NGG lasts three years, so a course's lessons carry their year in `level`
+ * ("Year 2 · Developing"). A lesson whose level names no year is for everyone,
+ * as before. Progress through the years follows MASTERY, not the calendar:
+ *   - a member starts at Year 1, or where staff place them (an experienced
+ *     pianist can begin at Year 2: staff.curriculum.year);
+ *   - per course, finishing CURR_ADVANCE_PCT of a year's lessons opens the
+ *     next year — a fast learner is never held to an intake's pace, and one who
+ *     needs longer is never pushed on with gaps;
+ *   - the unfinished lessons of a year they have moved past stay, as catch-up;
+ *   - a course with no lessons for a year carries on with its nearest one.
+ * Deadlines (and so fines) follow the term for the year a member is PLACED in;
+ * a year opened early by progress is self-paced. */
+const CURR_PROGRAMME_YEARS = 3;
+const CURR_ADVANCE_PCT     = 80;
+const CURR_YEAR_KEY        = 'staff.curriculum.year';
+
+/** The programme year a lesson's level names — "Year 2", "Yr 2", "Level 2" — or 0. */
+function curriculum_level_year(string $level): int {
+    return preg_match('/\b(?:year|yr|level)\s*-?\s*([1-9])\b/i', $level, $h) ? min(CURR_PROGRAMME_YEARS, (int)$h[1]) : 0;
+}
+
+/** Where staff placed a member: ['year' => 1..3, 'source' => 'set'|'default']. */
+function curriculum_member_year(array $m, ?int $override = null): array {
+    if ($override === null) $override = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], CURR_YEAR_KEY])['stateValue'] ?? 0);
+    return $override >= 1 && $override <= CURR_PROGRAMME_YEARS ? ['year' => $override, 'source' => 'set'] : ['year' => 1, 'source' => 'default'];
+}
+
+/**
+ * The adaptive filter. `$units` are rows with unitId, course, level; `$prog`
+ * is unitId → progress row. Returns unitId → stage: '' (a year-less lesson),
+ * 'current' (the year they are working in), 'catchup' (left behind in a year
+ * they moved past). A unit not in the result is not open to them yet. Also
+ * fills `$courses`: course → ['placed', 'year', 'pct'] for the screen.
+ * Pure: a sweep over every member loads each table once.
+ */
+function curriculum_adapt(array $units, int $placedYear, array $prog, ?array &$courses = null): array {
+    $byCourse = []; $names = [];
+    foreach ($units as $u) {
+        $y = curriculum_level_year((string)$u['level']);
+        if (!$y) continue;
+        $c = mb_strtolower((string)$u['course']); $names[$c] = (string)$u['course'];
+        $byCourse[$c][$y][] = (string)$u['unitId'];
+    }
+    $done = fn(string $id): bool => ($prog[$id]['status'] ?? '') === 'completed';
+    $pct = function (array $ids) use ($done): int { $n = 0; foreach ($ids as $id) if ($done($id)) $n++; return $ids ? (int)floor($n * 100 / count($ids)) : 0; };
+    $courses = []; $plan = [];
+    foreach ($byCourse as $c => $years) {
+        ksort($years);
+        $have = array_keys($years);
+        $below = array_filter($have, fn($y) => $y <= $placedYear);
+        $placed = $below ? max($below) : min($have);
+        $cur = $placed;
+        foreach ($have as $y) { if ($y < $placed) continue; $cur = $y; if ($pct($years[$y]) < CURR_ADVANCE_PCT) break; }
+        $plan[$c] = [$placed, $cur];
+        $courses[$names[$c]] = ['placed' => $placed, 'year' => $cur, 'pct' => $pct($years[$cur]), 'years' => $have, 'advancePct' => CURR_ADVANCE_PCT];
+    }
+    $out = [];
+    foreach ($units as $u) {
+        $id = (string)$u['unitId']; $y = curriculum_level_year((string)$u['level']);
+        if ($y === 0) { $out[$id] = ''; continue; }
+        [$placed, $cur] = $plan[mb_strtolower((string)$u['course'])];
+        $st = (string)($prog[$id]['status'] ?? '');
+        if ($y === $cur) $out[$id] = 'current';
+        elseif ($y < $cur && $y >= $placed && !$done($id)) $out[$id] = 'catchup';
+        elseif ($y < $placed && $st !== '' && !$done($id)) $out[$id] = 'catchup';
+    }
+    return $out;
+}
+
+/** Whether a lesson of this stage and year falls due on the term's clock. */
+function curriculum_stage_due(string $stage, int $year, int $placedYear): bool {
+    return $stage === '' || ($stage === 'current' && ($year === 0 || $year <= $placedYear));
+}
+
+/** Every published lesson of the member's courses, before the year is applied. */
+function curriculum_member_units_all(array $m): array {
     $courses = array_map('mb_strtolower', curriculum_member_courses($m));
     if (!$courses) return curriculum_load("status = 'published' AND course = ''", [], 'week, course, position');
     $ph = implode(',', array_fill(0, count($courses), '?'));
     return curriculum_load("status = 'published' AND (course = '' OR lower(course) IN ($ph))", $courses, 'week, course, position');
 }
 
+/** The member's lessons for where they are in the programme; each bundle carries its `stage`. */
+function curriculum_member_units(array $m, ?array &$placement = null): array {
+    $all = curriculum_member_units_all($m);
+    $placement = curriculum_member_year($m) + ['courses' => []];
+    if (!$all) return [];
+    $ids = array_keys($all);
+    $prog = [];
+    foreach (db_all('SELECT unitId, status FROM curriculum_progress WHERE memberId = ? AND unitId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')',
+                    array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    $stages = curriculum_adapt(array_map(fn($b) => $b['unit'], $all), (int)$placement['year'], $prog, $courses);
+    $placement['courses'] = $courses;
+    $out = [];
+    foreach ($all as $id => $b) if (array_key_exists($id, $stages)) $out[$id] = $b + ['stage' => $stages[$id]];
+    return $out;
+}
+
+/** staff.curriculum.year — place a member in a programme year (0 clears it: they start at Year 1 and progress moves them on). */
+function staff_curriculum_year(array $p): array {
+    // From the Control Room it is the `curriculum` capability within the admin's centres; from a portal, the instructor's own members.
+    if (!empty($p['viaAdmin'])) {
+        $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+        $by = (string)$g['requester']['memberId'];
+    } else {
+        $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+        $by = (string)$g['member']['memberId'];
+    }
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (!empty($p['viaAdmin']) ? !admin_centre_allowed($g['requester'], (string)$m['centre'])
+                              : ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $year = (int)($p['year'] ?? -1);
+    if (!is_numeric($p['year'] ?? null) || $year < 0 || $year > CURR_PROGRAMME_YEARS) return ['ok' => false, 'error' => 'bad_year', 'max' => CURR_PROGRAMME_YEARS];
+    $was = curriculum_member_year($m);
+    if ($year === 0) db_exec('DELETE FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], CURR_YEAR_KEY]);
+    else db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => CURR_YEAR_KEY, 'stateValue' => (string)$year, 'updatedAt' => now_iso()],
+                   ['memberId', 'stateKey'], ['stateValue' => (string)$year, 'updatedAt' => now_iso()]);
+    $now = curriculum_member_year($m);
+    audit('curriculum.year', $by, (string)$m['memberId'], ['from' => $was['year'], 'to' => $now['year'], 'source' => $now['source']]);
+    return ['ok' => true, 'placement' => $now, 'unchanged' => $was['year'] === $now['year'] && $was['source'] === $now['source']];
+}
+
 /** A member's curriculum with their progress — the portal, a mentor's view and the report share it. */
 function curriculum_for_member(array $m): array {
-    $units = curriculum_member_units($m);
+    $units = curriculum_member_units($m, $placement);
     $prog = [];
     if ($units) {
         $ids = array_keys($units);
@@ -898,10 +1031,13 @@ function curriculum_for_member(array $m): array {
     foreach ($units as $id => $b) {
         $u = $b['unit']; $pr = $prog[$id] ?? null;
         if ($pr && $pr['status'] === 'completed') $done++;
-        $due = curriculum_due_facts($start, $u, count($b['checks']), $pr, $today, $cfg);
+        // Catch-up, and a year opened early by progress, is self-paced: never overdue.
+        $due = curriculum_stage_due($b['stage'], curriculum_level_year((string)$u['level']), (int)$placement['year']) ? curriculum_due_facts($start, $u, count($b['checks']), $pr, $today, $cfg)
+             : ['dueDate' => '', 'overdueDays' => 0, 'outstanding' => false];
         if ($due['overdueDays'] > 0) $overdue++;
         $out[] = ['unitId' => $id, 'course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'],
             'position' => (int)$u['position'], 'title' => (string)$u['title'], 'summary' => (string)$u['summary'],
+            'stage' => (string)$b['stage'], 'year' => curriculum_level_year((string)$u['level']),
             'durationMins' => (int)$u['durationMins'], 'materials' => count($b['materials']), 'checks' => count($b['checks']),
             'dueDate' => $due['dueDate'], 'overdueDays' => $due['overdueDays'],
             'fineAfterDays' => (int)$cfg['fineAfterDays'], 'fineAmount' => (int)$cfg['fineAmount'],
@@ -910,11 +1046,11 @@ function curriculum_for_member(array $m): array {
                                  'stale' => (int)$pr['unitVersion'] !== (int)$u['version'] && (int)$pr['attempts'] > 0] : null];
     }
     return ['units' => $out, 'total' => count($out), 'completed' => $done, 'overdue' => $overdue,
-            'pct' => $out ? (int)round($done / count($out) * 100) : 0];
+            'pct' => $out ? (int)round($done / count($out) * 100) : 0, 'placement' => $placement];
 }
 
 function curriculum_member_row(string $memberId): ?array {
-    $m = db_row('SELECT memberId, fullName, track, disciplines, division, centre, type, status, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, track, disciplines, division, centre, type, status, cohort, displayId, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     return ($m && member_is_ngg($m)) ? $m : null;
 }
 
@@ -1437,16 +1573,19 @@ function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH):
     $out = ['reminded' => 0, 'fined' => 0, 'members' => 0];
     if (empty($cfg['enabled']) || $cfg['startDate'] === '') return $out + ['skipped' => 'no_term'];
     $today = $today ?? attendance_today();
-    $units = db_all("SELECT u.unitId, u.course, u.week, u.title, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks
+    $units = db_all("SELECT u.unitId, u.course, u.level, u.week, u.title, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks
                      FROM curriculum_units u WHERE u.status = 'published'");
     $units = array_values(array_filter($units, static fn($u) => (int)$u['checks'] > 0));
     if (!$units) return $out + ['skipped' => 'no_assessments'];
     $byCourse = [];
     foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
-    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, centre, joinDate, createdAt, type FROM members
+    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, disciplines, division, cohort, displayId, centre, joinDate, createdAt, type FROM members
                        WHERE COALESCE(type,'NGG') <> 'Summer' AND status = 'active'");
     $prog = [];
     foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    $ctx = curriculum_course_ctx();
     $every = max(1, (int)$cfg['remindEveryDays']);
     $period = intdiv((int)(strtotime($today . ' UTC') / 86400), $every);
     $fineAfter = max(1, (int)$cfg['fineAfterDays']);
@@ -1457,7 +1596,13 @@ function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH):
         if ($out['reminded'] >= $limit) break;
         $start = curriculum_member_start($m, $cfg);
         if ($start === '' || $start > $today) continue;
-        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        // The same courses and the same year the member's own page shows — not a bare track match.
+        $mine = $byCourse[''] ?? [];
+        foreach (curriculum_member_courses($m, $ctx) as $c) $mine = array_merge($mine, $byCourse[mb_strtolower($c)] ?? []);
+        $mine = array_values(array_column($mine, null, 'unitId'));
+        $py = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $stages = curriculum_adapt($mine, $py, $prog[(string)$m['memberId']] ?? []);
+        $mine = array_values(array_filter($mine, fn($u) => isset($stages[(string)$u['unitId']]) && curriculum_stage_due($stages[(string)$u['unitId']], curriculum_level_year((string)$u['level']), $py)));
         $due = []; $finedNow = [];
         foreach ($mine as $u) {
             $f = curriculum_due_facts($start, $u, (int)$u['checks'], $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);
@@ -1564,7 +1709,13 @@ function curriculum_overdue_board(string $mWhere, array $mArgs, string $course =
     foreach ($members as $m) {
         $start = curriculum_member_start($m, $cfg);
         if ($start === '') continue;
-        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        // The same courses and the same year the member's own page shows — not a bare track match.
+        $mine = $byCourse[''] ?? [];
+        foreach (curriculum_member_courses($m, $ctx) as $c) $mine = array_merge($mine, $byCourse[mb_strtolower($c)] ?? []);
+        $mine = array_values(array_column($mine, null, 'unitId'));
+        $py = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $stages = curriculum_adapt($mine, $py, $prog[(string)$m['memberId']] ?? []);
+        $mine = array_values(array_filter($mine, fn($u) => isset($stages[(string)$u['unitId']]) && curriculum_stage_due($stages[(string)$u['unitId']], curriculum_level_year((string)$u['level']), $py)));
         $n = 0; $worst = 0; $titles = [];
         foreach ($mine as $u) {
             $f = curriculum_due_facts($start, $u, 1, $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);

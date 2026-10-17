@@ -1561,3 +1561,33 @@ on the row; mentor-v15.test.js no longer toggles a child Away on Saturdays.
 
 Tests: `run.php` +13; `mfa.test.js` 32 → 37.
 
+
+
+## 2026-10-17 — Three-year adaptive curriculum, the music programme, assignments desk
+
+- **Curriculum by mastery** (`domain/curriculum.php`): a lesson's level carries
+  its programme year (`curriculum_level_year`). `curriculum_adapt()` is pure
+  (it takes units, the placement year and progress) and places each member
+  per course: start at Year 1 or the staff placement
+  (`member_state` `staff.curriculum.year`, op `staff.curriculum.year`).
+  Finishing 80% of a year opens the next; leftovers become `catchup`; only the
+  placed year falls due (`curriculum_stage_due`). The due sweep now uses the
+  member page's resolver and year, not a bare track match, so a MUSIC member
+  is reminded about Piano lessons. `member_state_set` refuses `staff.*` keys.
+- **Seed `music-piano-guitar-2026`**: 144 lessons, Piano and Guitar,
+  Years 1–3. Multiple-choice answers are option **indexes**, because the
+  validator reads a bare digit as an index ("3 beats" → option 3).
+- **Import**: the screen honours a JSON file's own `allowNewCourse`, and a
+  refused row now carries its course and week.
+- **Assignments desk** (`src/modules/learn/assign-desk.jsx`): one component
+  for the Control Room and the instructor portal, replacing
+  `AdminAssignments` and its editor and graders in page-admin.jsx. New op
+  `staff.assignments.draft` lifts a lesson's weekly assignment, objectives
+  and rubric (AI optional). `assignment_can_mark` lets an instructor mark an
+  every-centre assignment for their course, per hand-in within their centre.
+  An admin's course list includes courses that have published lessons but
+  are not in the catalogue.
+- **Member v9**: assignment state from the server (`mp9AsgState`),
+  resubmission after a return, and the proof type respected.
+
+Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).

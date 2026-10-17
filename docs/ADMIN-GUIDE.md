@@ -940,6 +940,58 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Three years, by mastery
+
+NGG runs for three years, so a lesson's **level** carries its year: `Year 1 ·
+Foundation`, `Year 2 · Developing`, `Year 3 · Advanced` (any level that says
+"Year 2", "Yr 2" or "Level 2" counts). A lesson whose level names no year is
+for everyone, as before.
+
+- A member starts at **Year 1**. Finishing **80%** of a year's lessons in a
+  course opens that course's next year. A quick learner moves on early, and
+  one who needs longer is not pushed on with gaps.
+- Unfinished lessons from a year they have moved past stay on their list,
+  marked **catch-up**.
+- Staff can **place** a member in a year, for example an experienced pianist
+  starting at Year 2: `action=year` on the curriculum route, with the
+  `curriculum` permission in the Control Room, or as their instructor in the
+  portal. A member cannot place themselves.
+- **Deadlines and fines** follow the term for the year a member is *placed*
+  in. Catch-up work, and a year opened early by progress, never falls due.
+
+The bundled **Music — Piano and Guitar** course is built this way: 24 lessons
+per year per instrument. Every lesson has an *Essentials* strand (theory,
+reading, ear, instrument care, practice habits, performance, Nigerian music
+history, technology and business), plus *If this is new to you* and *If you
+already can* work. A JSON file that says `"allowNewCourse": true` (as the
+bundled files do) imports without switching the setting on by hand.
+
+### Assignments
+
+**Learning → Assignments** in the Control Room, and **Progress →
+Assignments** in the instructor portal. It is the same desk in both places.
+
+- **New assignment**: choose the course (an admin can also choose the whole
+  Club), optionally the centre, and optionally a lesson. **Draft from the
+  lesson** fills in the lesson's own weekly assignment, its objectives and its
+  marking guide. **Write it with AI** appears only when an AI model is set up
+  for marking. Before you publish, the editor shows how many members it
+  reaches and names a few of them. Leave the due date blank and it is due
+  next Saturday.
+- **Hand-ins** shows what came in, what is waiting to be marked, and who has
+  not handed anything in. **Remind** notifies the people who have not handed
+  in, at most once a day.
+- **Mark** gives a mark out of the points and some feedback. **Return for
+  changes** needs feedback, and the member can then hand it in again.
+  **Suggest a mark** (with AI) only fills in the form; a person still saves
+  the mark.
+- **Bulk**: Publish, Move to draft, Close and Delete. Each asks first and
+  reports each row's result. An assignment someone has handed in cannot be
+  deleted, only closed.
+- An instructor sets work for their own courses and centre. They can also
+  mark an every-centre assignment for their course, but only their own
+  centre's hand-ins. Whole-Club work is admin-only.
+
 ### Watching the training fee
 
 **Dues & fees → Training fees** (needs `fees`; a centre-scoped admin sees their

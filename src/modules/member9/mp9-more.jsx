@@ -13,7 +13,7 @@ Object.assign(Mp9Portal.prototype, {
     const lessons = pick.map(u => {
       const pr = u.progress, done = pr && pr.status === "completed";
       const p = done ? 100 : pr ? (pr.pending ? 80 : pr.attempts ? 60 : 30) : 0;
-      return { div: u.course + (u.overdueDays > 0 ? " · " + u.overdueDays + (u.overdueDays === 1 ? " day" : " days") + " late" : ""), t: "Week " + u.week + " · " + u.title, p, w: p + "%", c: done ? "#1d6b30" : "#0b0b0c",
+      return { div: mp9CourseLine(u) + (u.overdueDays > 0 ? " · " + u.overdueDays + (u.overdueDays === 1 ? " day" : " days") + " late" : ""), t: "Week " + u.week + " · " + u.title, p, w: p + "%", c: done ? "#1d6b30" : "#0b0b0c",
         next: done ? "Done · " + pr.bestPct + "%" : pr && pr.pending ? "Waiting for your instructor to mark it" : pr ? "Carry on · " + (u.checks ? u.checks + (u.checks === 1 ? " question" : " questions") : "read it") : "Start · about " + (u.durationMins || 20) + " minutes",
         open: () => this.openLesson(u.unitId) };
     });
@@ -25,9 +25,9 @@ Object.assign(Mp9Portal.prototype, {
       next: curErr ? "Tap to try again" : "Your instructor publishes the term’s lessons here",
       open: () => { if (curErr) this.load("cur"); else this.toast("Nothing to open yet."); } });
     const asg = (d.assignments || []).map(a => {
-      const sub = a.submission, st = sub ? (sub.mark !== undefined && sub.mark !== null && sub.mark !== "" ? "Marked · " + sub.mark + (a.points ? "/" + a.points : "") : "Submitted") : "Not started";
+      const st = mp9AsgState(a);
       return { t: a.title, div: a.track || me.track || "Club", due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,
-        fg: st.startsWith("Marked") || st === "Submitted" ? "#1d6b30" : "#b0361c", open: () => this.openSheet({ k: "assign", id: a.assignmentId }) };
+        fg: ["marked", "submitted"].includes(a.state) ? "#1d6b30" : a.state === "todo" ? "#7a5600" : "#b0361c", open: () => this.openSheet({ k: "assign", id: a.assignmentId }) };
     });
     if (!asg.length) asg.push({ t: "No assignments right now", div: "", due: "–", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
     const ev = (d.events || []).map(e => { const r = (s.rsvp || {})[e.eventId] !== undefined ? s.rsvp[e.eventId] : e.myRsvp; const going = r === "going";
@@ -49,8 +49,8 @@ Object.assign(Mp9Portal.prototype, {
     const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
     const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
       .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: me.track && new RegExp(me.track.split(/\s+/)[0], "i").test(a) })) }));
-    const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.week > wk ? "Opens week " + u.week : "Not started";
-      return { w: u.week, t: u.title, div: u.course, s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
+    const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : "Not started";
+      return { w: u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
     return { lessons, assignments: asg, events: ev, division, ttDays, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
       oppsTop: oppsTop.length ? oppsTop : [{ t: "Nothing picked for you yet", why: "Staff add bootcamps and competitions here", close: "check back soon" }],
@@ -460,7 +460,8 @@ Object.assign(Mp9Portal.prototype, {
     const txt = s.sText.trim();
     const chips = list => list.map(t => ({ t, on: s.sPick === t ? "true" : "false", ring: s.sPick === t ? "#0b0b0c" : "#d6d4cc", bw: s.sPick === t ? "2px" : "1px", pick: () => set({ sPick: t }) }));
     const A = sh.k === "assign" ? (d.assignments || []).find(a => a.assignmentId === sh.id) : null;
-    const aDone = !!(A && A.submission);
+    // Done means it cannot be handed in (again): marked, closed. Returned work, and work not yet marked, can be.
+    const aDone = !!(A && !A.canSubmit);
     const L = sh.k === "lesson" ? s.lesson : null, U = L && L.unit;
     const parts = U ? ["Read the lesson"].concat((U.materials || []).length ? ["Open the materials"] : []).concat((U.checks || []).length ? ["Check your understanding"] : []) : [];
     const prog = L && L.progress;
@@ -472,7 +473,7 @@ Object.assign(Mp9Portal.prototype, {
       team: P ? "Update for your team" : "Start a team project", portfolio: "Add to my portfolio", profile: "Edit profile", proof: "Add proof" };
     const proofText = s.sPick === "text", proofLink = s.sPick === "link";
     const sendable = !s.sBusy && { proof: !!s.sPick && (proofText ? txt.length > 5 : proofLink ? /^https?:\/\//i.test(txt) : !!s.sFile), idea: !!s.sPick && txt.length > 3, request: !!s.sPick, change: !!s.sPick,
-      team: txt.length > 3, portfolio: !!s.sPick && txt.length > 1, assign: txt.length > 10 || !!s.sFile }[sh.k];
+      team: txt.length > 3, portfolio: !!s.sPick && txt.length > 1, assign: A && A.proof === "file" ? !!s.sFile : A && A.proof === "text" ? txt.length > 10 : txt.length > 10 || !!s.sFile }[sh.k];
     const busy = p => { set({ sBusy: true }); return p.then(r => { set({ sBusy: false }); return r; }, e => { set({ sBusy: false }); this.toast(mp9Err(e)); return null; }); };
     const send = () => {
       if (!sendable) return;
@@ -503,7 +504,7 @@ Object.assign(Mp9Portal.prototype, {
         busy(this.saveSt("mp9.portfolio", [{ t: txt, k: s.sPick, url: s.sFile ? s.sFile.url : "", at: new Date().toISOString() }].concat(PF).slice(0, 60))).then(() => { this.closeSheet(); this.toast("Added to your portfolio"); });
       }
       if (sh.k === "assign") busy(NGGApi.member.submitAssignment({ assignmentId: sh.id, text: txt, fileUrl: s.sFile ? s.sFile.url : "" }))
-        .then(r => { if (!r) return; this.closeSheet(); this.refresh(["dash", "today"]); this.toast("Submitted. Your instructor will mark it this week."); });
+        .then(r => { if (!r) return; this.closeSheet(); this.refresh(["dash", "today"]); this.toast(r.late ? "Handed in — after the due date, so it is marked as late." : "Handed in. Your instructor will mark it this week."); });
     };
     const upload = (file, kind) => { set({ sBusy: true }); (/^image\//.test(file.type || "") ? NGGApi.uploadOrInline(file, kind) : NGGApi.uploadFile(file, kind))
       .then(u => set({ sBusy: false, sFile: { name: file.name, url: mp9Abs(u.url) } })).catch(e => { set({ sBusy: false }); this.toast(mp9Err(e)); }); };
@@ -557,8 +558,8 @@ Object.assign(Mp9Portal.prototype, {
       lcRetry: () => set({ lq: {}, lqText: {}, lqRes: null }),
       lcFinish: () => { this.refresh(["cur", "today"]); this.closeSheet(); this.toast("Lesson complete · " + (res ? res.pct : "") + "%"); },
       doPart: () => { const n = lPart + 1; set({ lPart: n }); if (n === checkAt) this.toast("Now check your understanding"); },
-      sAssign: A ? { div: A.track || me.track || "Club", due: A.dueAt ? mp9Date(A.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: aDone ? (A.submission.mark ? "Marked · " + A.submission.mark : "Submitted") : "Not started",
-        brief: A.instructions || A.brief || "", tips: [], hasTips: false, done: aDone, open: !aDone } : {},
+      sAssign: A ? { div: (A.track || me.track || "Club") + (A.points ? " · " + A.points + " points" : ""), due: A.dueAt ? mp9Date(A.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: mp9AsgState(A),
+        brief: A.instructions || A.brief || "", tips: mp9AsgTips(A), hasTips: mp9AsgTips(A).length > 0, done: aDone, open: !aDone } : {},
       ideaChips: chips(["An activity idea", "Something NGG should change", "Something I love", "Something that makes me uncomfortable"]),
       reqChips: chips(["Change my ID card photo", "Correct my details", "Ask about a fine", "Ask about dues", "Something else"]),
       changeChips: chips(["We don't really get on", "I want help with different things", "Meeting times don't work for me", "I feel uncomfortable with my mentor", "Something else"]),
@@ -751,3 +752,30 @@ function Mp9Evals({ data, err, busy, retry, latestOnly, mentor }) {
   );
 }
 
+
+/* A lesson's course line: its programme year, and whether it is catch-up from a year moved past (domain/curriculum.php curriculum_adapt). */
+function mp9CourseLine(u) {
+  return u.course + (u.year ? " · Year " + u.year : "") + (u.stage === "catchup" ? " · catch-up" : "");
+}
+
+/* An assignment's state in words (domain/assignments.php assignment_list_for_member). */
+function mp9AsgState(a) {
+  const sub = a.submission || {};
+  switch (a.state) {
+    case "marked": return "Marked · " + sub.grade + (a.points ? "/" + a.points : "");
+    case "returned": return "Returned — change it and hand in again";
+    case "submitted": return "Handed in" + (a.late ? " late" : "") + " · waiting to be marked";
+    case "late": return "Late — hand it in now";
+    case "closed": return "Closed";
+    default: return a.dueInDays === 0 ? "Due today" : a.dueInDays === 1 ? "Due tomorrow" : a.dueInDays > 1 ? "Due in " + a.dueInDays + " days" : "To do";
+  }
+}
+function mp9AsgTips(a) {
+  const sub = a.submission || {}, out = [];
+  if (sub.feedback) out.push("From your instructor: " + sub.feedback);
+  if (a.proof === "file") out.push("Hand this in as a file or photo.");
+  else if (a.proof === "text") out.push("Hand this in as writing.");
+  if (a.attachmentUrl) out.push("Worksheet: " + a.attachmentUrl);
+  if (a.state === "submitted" && a.canSubmit) out.push("You can still change it until it is marked.");
+  return out;
+}

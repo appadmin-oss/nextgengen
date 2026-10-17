@@ -108,7 +108,12 @@ async function crCurReadFile(file) {
   if (/\.json$/i.test(file.name) || /^\s*[\[{]/.test(text)) {
     let j;
     try { j = JSON.parse(text); } catch (_) { throw Object.assign(new Error("bad_json"), { data: { message: "That JSON file could not be read. Check it opens in a text editor." } }); }
-    return Array.isArray(j) ? j : (j.units || j.lessons || []);
+    const rows = Array.isArray(j) ? j : (j.units || j.lessons || []);
+    /* A programme file that says its courses are new (a bundled course's own
+       shape: { allowNewCourse: true, lessons: [...] }) is believed, as a
+       bundled course is — otherwise every row of it is refused. */
+    if (!Array.isArray(j) && j && j.allowNewCourse) rows.allowNewCourse = true;
+    return rows;
   }
   return crCurParseCsv(text).map(crCurRowFromSheet);
 }
@@ -134,6 +139,7 @@ function crCurImport(ctx) {
         if (r.allowNewCourse) allowNew = true;
       } else {
         rows = await crCurReadFile(v.file); name = v.file.name;
+        if (rows.allowNewCourse) allowNew = true;
       }
       if (!rows.length) return { fieldErrors: { [v.source === "seed" ? "seed" : "file"]: "No lessons found in that " + (v.source === "seed" ? "course." : "file.") } };
       const opts = { publish: !!v.publish, allowNewCourse: allowNew };
@@ -253,7 +259,7 @@ Object.assign(CR_TAB_DEFS, {
 Object.assign(CR_TAB_DEFS, {
   sessions: crPanel(() => <AdminSessions/>),
   missions: crPanel(() => <AdminMissions/>),
-  assignments: crPanel(() => <AdminAssignments/>),
+  assignments: crPanel(() => <AssignmentDesk api={NGGApi.admin.assignments.desk()}/>),
   anchor: crPanel(() => <AdminAnchor/>),
   timetable: crPanel(() => <AdminTimetable/>),
   /* The Saturday Formation Schedule (domain/saturday-formation.php): one

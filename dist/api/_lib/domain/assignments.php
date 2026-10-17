@@ -108,6 +108,15 @@ function assignment_in_reach(array $g, array $a): bool {
     return true;
 }
 
+/** May they mark it? Their course, set for their centre or for every centre — each hand-in is then checked against their centre. */
+function assignment_can_mark(array $g, array $a): bool {
+    if (assignment_in_reach($g, $a)) return true;
+    $course = trim((string)($a['track'] ?? ''));
+    if ($course === '' || $course === 'All') return false;
+    if ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return false;
+    return in_array(trim((string)($a['centre'] ?? '')), ['', 'All', 'Both'], true);
+}
+
 /** May this marker touch this member's submission? Their centre must be in reach. */
 function assignment_member_in_reach(array $g, string $memberId): bool {
     if ($g['centres'] === null) return true;
@@ -221,10 +230,16 @@ function staff_assignments_list(array $p): array {
         if ($status !== '' && in_array($status, ASG_STATUSES, true) && $a['status'] !== $status) continue;
         $reach = assignment_in_reach($g, $a);
         // An instructor also sees the whole-Club ones that land on their learners, read-only.
-        if (!$reach && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || $g['centres'] === null || in_array($a['centre'], $g['centres'] ?? [], true)))) continue;
+        if (!$reach && !assignment_can_mark($g, $a) && !($g['who'] !== 'admin' && trim((string)$a['track']) === '' && (trim((string)$a['centre']) === '' || $g['centres'] === null || in_array($a['centre'], $g['centres'] ?? [], true)))) continue;
         $out[] = assignment_row_public($a, $counts, $reach);
     }
     $courses = $g['courses'] ?? (function_exists('club_courses') ? club_courses() : []);
+    // An admin also sets work for a course that has lessons but is not in the catalogue (an imported programme's "Piano").
+    if ($g['courses'] === null) {
+        $lower = array_map('mb_strtolower', $courses);
+        foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE status = 'published' AND course <> '' ORDER BY course") as $r)
+            if (!in_array(mb_strtolower((string)$r['course']), $lower, true)) { $courses[] = (string)$r['course']; $lower[] = mb_strtolower((string)$r['course']); }
+    }
     $units = [];
     if (function_exists('curriculum_load')) {
         foreach (db_all("SELECT unitId, course, week, position, title FROM curriculum_units WHERE status = 'published' ORDER BY course, week, position") as $u) {
@@ -343,7 +358,7 @@ function staff_assignment_submissions(array $p): array {
             $missing[] = ['memberId' => $m['memberId'], 'memberName' => $m['fullName'], 'centre' => $m['centre']];
         }
     }
-    return ['ok' => true, 'canMark' => $reach || $g['who'] === 'admin',
+    return ['ok' => true, 'canMark' => $reach || $g['who'] === 'admin' || assignment_can_mark($g, $a),
             'assignment' => assignment_row_public($a, [], $reach), 'submissions' => $names, 'missing' => $missing,
             'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
@@ -354,7 +369,7 @@ function staff_assignment_submission_gate(array $p): array {
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     $a = db_row('SELECT * FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
-    if (!(assignment_in_reach($g, $a) || $g['who'] === 'admin') || !assignment_member_in_reach($g, (string)$row['memberId'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (!(assignment_can_mark($g, $a) || $g['who'] === 'admin') || !assignment_member_in_reach($g, (string)$row['memberId'])) return ['ok' => false, 'error' => 'out_of_scope'];
     return ['ok' => true, 'g' => $g, 'row' => $row, 'a' => $a];
 }
 
@@ -419,6 +434,48 @@ function staff_assignment_suggest(array $p): array {
     $grade = max(0, min($max, (int)($r['data']['grade'] ?? 0)));
     return ['ok' => true, 'grade' => $grade, 'feedback' => mb_substr(trim((string)($r['data']['feedback'] ?? '')), 0, 1200),
             'confidence' => (string)($r['data']['confidence'] ?? 'low') === 'high' ? 'high' : 'low'];
+}
+
+/**
+ * staff.assignments.draft — an assignment drafted from a curriculum lesson, for
+ * the staff member to read and save. The lesson's own "This week's assignment",
+ * objectives and marked task are lifted as they are (works with no AI at all);
+ * with a capable model the instructions are rewritten as clear steps with
+ * success criteria. It never writes.
+ */
+function staff_assignments_draft(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    $u = db_row("SELECT * FROM curriculum_units WHERE unitId = ? AND status = 'published'", [(string)($p['unitId'] ?? '')]);
+    if (!$u) return ['ok' => false, 'error' => 'not_found', 'detail' => 'Choose a published lesson.'];
+    if ($g['courses'] !== null && !in_array(mb_strtolower((string)$u['course']), array_map('mb_strtolower', $g['courses']), true))
+        return ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'That lesson is outside the courses you teach.'];
+    $body = (string)$u['body'];
+    $task = '';
+    if (preg_match("/##\s*This week(?:'|’)s assignment\s*\n+(.+?)(?:\n##|\n>|$)/su", $body, $h)) $task = trim($h[1]);
+    $objectives = array_values(array_filter(array_map('strval', json_decode((string)($u['objectives'] ?? '[]'), true) ?: [])));
+    $rubric = (string)(db_row("SELECT rubric FROM curriculum_checks WHERE unitId = ? AND kind IN ('task','project','essay','code') AND rubric <> '' ORDER BY position LIMIT 1", [(string)$u['unitId']])['rubric'] ?? '');
+    $lines = [$task !== '' ? $task : ('Show what you learned in "' . $u['title'] . '".')];
+    if ($objectives) $lines[] = "\nBy the end you should be able to:\n" . implode("\n", array_map(fn($o) => '- ' . preg_replace('/^You will /i', '', $o), $objectives));
+    $lines[] = "\nHand in: a short note of what you practised, on how many days, and what is still hard — with a recording or photo link if you can.";
+    if ($rubric !== '') $lines[] = "\nHow it is marked: " . $rubric;
+    $draft = ['title' => mb_substr('Week ' . (int)$u['week'] . ': ' . ($task !== '' ? preg_replace('/[.:].*$/su', '', $task) : $u['title']), 0, 120),
+              'instructions' => trim(implode("\n", $lines)), 'track' => (string)$u['course'], 'week' => (int)$u['week'], 'unitId' => (string)$u['unitId'],
+              'points' => 10, 'proof' => 'either', 'dueAt' => assignment_default_due()];
+    $via = 'lesson';
+    if (!empty($p['ai']) && function_exists('ai_enabled') && ai_enabled('marking')) {
+        $r = ai_classify('You write homework for 10–17 year olds in the NGG Club, a Nigerian youth programme. From the lesson given, write ONE assignment that '
+            . 'practises the lesson, can be done at home in under an hour a day, and can be evidenced (a note, a photo or a recording). '
+            . 'Reply as JSON: {"title": "under 70 characters", "instructions": "3–6 numbered steps, then a line starting \"Success looks like:\" with 2–3 criteria", "proof": "text"|"file"|"either"}.',
+            json_encode(['course' => $u['course'], 'level' => $u['level'], 'week' => (int)$u['week'], 'title' => $u['title'], 'objectives' => $objectives,
+                         'lessonAssignment' => $task, 'rubric' => $rubric, 'lesson' => mb_substr($body, 0, 5000)], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 700, 'marking');
+        if (!empty($r['ok']) && is_array($r['data'] ?? null) && trim((string)($r['data']['instructions'] ?? '')) !== '') {
+            $draft['title'] = mb_substr(trim((string)($r['data']['title'] ?? $draft['title'])) ?: $draft['title'], 0, 120);
+            $draft['instructions'] = mb_substr(trim((string)$r['data']['instructions']), 0, 4000);
+            if (in_array($r['data']['proof'] ?? '', ASG_PROOFS, true)) $draft['proof'] = (string)$r['data']['proof'];
+            $via = 'ai';
+        }
+    }
+    return ['ok' => true, 'draft' => $draft, 'via' => $via, 'aiAvailable' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
 
 /** staff.assignments.remind — those who have not handed anything in; once a day at most. */

@@ -788,6 +788,8 @@
       markRead:      (notifId) => request('/member/notifications.php', { body: { notifId } }),
       updateProfile: (data) => request('/member/profile.php', { body: data }),
       assignments:      () => request('/member/assignments.php'),
+      /* An instructor's assignments desk — the same calls as the Control Room's, through the member door. */
+      assignDesk:       () => assignDesk('/member/assign-desk.php'),
       submitAssignment: (data) => request('/member/assignments.php', { body: data }),
       /* The NGG Club curriculum (domain/curriculum.php). The member reads and
          sits lessons; an instructor or mentor reads their view and marks the
@@ -797,6 +799,7 @@
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
       curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
+      curriculumYear:    (memberId, year) => request('/member/curriculum.php', { body: { action: 'year', memberId, year } }),
       curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
       // An instructor's material for a lesson — a link, or a file uploaded first.
       curriculumMaterial: (data) => request('/member/curriculum.php', { body: Object.assign({ action: 'material' }, data) }),
@@ -1284,6 +1287,7 @@
         list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),
         get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
         report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),
+        year:    (memberId, year) => request('/admin/curriculum.php', { body: { action: 'year', memberId, year } }),
         submissions: (status) => request('/admin/curriculum.php' + qs({ view: 'submissions', status: status || 'pending' })),
         review:  (decision, materialIds, note) => request('/admin/curriculum.php', { body: { action: 'review', decision, materialIds, note: note || '' } }),
         schedule: () => request('/admin/curriculum.php' + qs({ view: 'schedule' })),
@@ -1317,6 +1321,7 @@
         upload:  (file) => { const fd = new FormData(); fd.append('file', file); return request('/admin/curriculum.php', { body: fd, timeout: 180000 }); },
       },
       assignments: {
+        desk:        () => assignDesk('/admin/assignments.php'),
         list:        () => request('/admin/assignments.php'),
         submissions: (assignmentId) => request('/admin/assignments.php' + qs({ assignmentId })),
         upsert:      (data) => request('/admin/assignments.php', { body: data }),
@@ -1873,6 +1878,21 @@
     },
   };
 
+  /* The assignments desk (api/_lib/assign-desk-route.php) behind either door. */
+  function assignDesk(path) {
+    return {
+      list:        (status) => request(path + qs({ status: status || '' })),
+      submissions: (assignmentId) => request(path + qs({ assignmentId })),
+      audience:    (a) => request(path + qs({ audience: 1, track: a.track || '', centre: a.centre || '', sessionId: a.sessionId || '' })),
+      save:        (data, notify) => request(path, { body: { action: 'save', data, notify: !!notify } }),
+      status:      (to, ids) => request(path, { body: { action: 'status', to, ids } }),
+      remind:      (assignmentId, force) => request(path, { body: { action: 'remind', assignmentId, force: !!force } }),
+      grade:       (submissionId, grade, feedback, email) => request(path, { body: { action: 'grade', submissionId, grade, feedback: feedback || '', email: !!email } }),
+      giveBack:    (submissionId, feedback) => request(path, { body: { action: 'return', submissionId, feedback } }),
+      suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
+      draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
+    };
+  }
   function qs(obj) {
     const parts = [];
     for (const k in obj) {
