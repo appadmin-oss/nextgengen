@@ -4,7 +4,7 @@
  *   GET               their lessons, with progress
  *   GET ?unit=ID      one lesson (starts it)
  *   GET ?view=staff   an instructor's or mentor's view; &memberId= one member's
- *   POST action=submit | mark | material   (multipart `file` → an instructor's upload)
+ *   POST action=submit | mark | year | material   (multipart `file` → an instructor's upload)
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
@@ -35,6 +35,8 @@ if ($method === 'GET') {
     } elseif ($action === 'mark') {
         $res = gs_call('staff.curriculum.mark', ['requesterId' => $mid, 'progressId' => (int)($b['progressId'] ?? 0),
             'marks' => is_array($b['marks'] ?? null) ? $b['marks'] : [], 'ip' => client_ip()]);
+    } elseif ($action === 'year') {
+        $res = gs_call('staff.curriculum.year', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'year' => $b['year'] ?? null, 'ip' => client_ip()]);
     } elseif ($action === 'material') {
         $res = gs_call('staff.curriculum.material', ['requesterId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'title' => (string)($b['title'] ?? ''),
             'url' => (string)($b['url'] ?? ''), 'kind' => (string)($b['kind'] ?? ''), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);

@@ -24752,6 +24752,25 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-ML-ADM'");
 })();
 
+/* ── The bundled three-year Music programme: Piano and Guitar, Years 1–3, through the real import ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-MU-ADM', 'fullName' => 'Music Admin', 'email' => 'mu-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-MU-ADM', 'key' => 'music-piano-guitar-2026']);
+    $rows = $s['rows'] ?? [];
+    $years = []; foreach ($rows as $r) $years[$r['course'] . '|' . curriculum_level_year($r['level'])] = ($years[$r['course'] . '|' . curriculum_level_year($r['level'])] ?? 0) + 1;
+    chk('music: Piano and Guitar, 24 lessons in each of three years', count($rows) === 144 && count($years) === 6 && !array_filter($years, fn($n) => $n !== 24));
+    chk('music: every lesson has an Essentials strand, support and stretch work, and an assignment', !array_filter($rows, fn($r) => !str_contains($r['body'], '## Essentials')
+        || !str_contains($r['body'], 'If this is new to you') || !str_contains($r['body'], 'If you already can') || !str_contains($r['body'], "This week's assignment")));
+    chk('music: the programme team\'s Year 1 order is kept (week 7 is the fakebook song, 9 revision, 10 the test)',
+        !array_filter($rows, fn($r) => curriculum_level_year($r['level']) === 1 && (($r['week'] === 7 && !str_contains($r['title'], 'Holy Are You Lord')) || ($r['week'] === 9 && $r['title'] !== 'Revision') || ($r['week'] === 10 && !str_contains($r['title'], 'test')))));
+    $mcqOk = true; foreach ($rows as $r) foreach ($r['checks'] as $c) if ($c['kind'] === 'mcq' && !isset($c['options'][(int)$c['answer']])) $mcqOk = false;
+    chk('music: every multiple-choice answer points at one of its options (by index: "3 beats" must not read as option 3)', $mcqOk);
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-MU-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
+    chk('music: every lesson passes the importer', ($dry['tally']['create'] ?? 0) === 144 && ($dry['tally']['failed'] ?? 1) === 0);
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MU-ADM'");
+})();
+
 /* ── The bundled Practical Coding course: loads through the real import, cleanly ── */
 (function () {
     $now = now_iso();
@@ -28256,6 +28275,29 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('curriculum · a member with only a division gets that division’s lessons', in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
     $u('CMU-ML', 'Media Lab');
     chk('curriculum · a lesson filed under a course the catalogue never listed still reaches its division', in_array('CMU-ML', $ids('CMC-2'), true) && !in_array('CMU-ML', $ids('CMC-T'), true));
+    $u('CMU-PIANO', 'Piano'); $u('CMU-GUIT', 'Guitar'); $mk('CMC-P', 'MUSIC', 'PIANO');
+    chk('curriculum · a MUSIC member takes the instrument courses', in_array('CMU-PIANO', $ids('CMC-M'), true) && in_array('CMU-GUIT', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
+    chk('curriculum · and still no other arts course', !in_array('CMU-VID', $ids('CMC-M'), true));
+    // Three years, by mastery: Year 1 first; 80% of it opens Year 2; what is left of Year 1 stays as catch-up.
+    $y = function ($id, $lv, $wk) use ($now) { db_insert('curriculum_units', ['unitId' => $id, 'course' => 'Piano', 'level' => $lv, 'week' => $wk, 'position' => 1, 'title' => $id,
+        'summary' => '', 'status' => 'published', 'version' => 1, 'createdAt' => $now, 'updatedAt' => $now]); };
+    foreach (range(1, 5) as $w) $y('CMY1-' . $w, 'Year 1 · Foundation', $w);
+    $y('CMY2-1', 'Year 2 · Developing', 1); $y('CMY3-1', 'Year 3 · Advanced', 1);
+    $t = $ids('CMC-P');
+    chk('curriculum · a new member takes Year 1, not Year 2 or 3', in_array('CMY1-1', $t, true) && !in_array('CMY2-1', $t, true) && !in_array('CMY3-1', $t, true));
+    chk('curriculum · a lesson with no year still reaches everyone', in_array('CMU-PIANO', $t, true));
+    foreach (range(1, 4) as $w) db_insert('curriculum_progress', ['unitId' => 'CMY1-' . $w, 'memberId' => 'CMC-P', 'status' => 'completed', 'unitVersion' => 1, 'startedAt' => $now, 'updatedAt' => $now]);
+    $l = member_curriculum_list(['memberId' => 'CMC-P']); $st = array_column($l['units'], 'stage', 'unitId');
+    chk('curriculum · 80% of Year 1 opens Year 2 (mastery, not the calendar)', ($st['CMY2-1'] ?? '') === 'current' && !isset($st['CMY3-1']));
+    chk('curriculum · the unfinished Year 1 lesson stays as catch-up, and is never overdue', ($st['CMY1-5'] ?? '') === 'catchup' && !isset($st['CMY1-1']));
+    chk('curriculum · the placement is reported per course', (($l['placement']['courses']['Piano']['year'] ?? 0) === 2) && ($l['placement']['source'] ?? '') === 'default');
+    chk('curriculum · a member cannot place themselves', (member_state_set(['memberId' => 'CMC-P', 'key' => 'staff.curriculum.year', 'value' => 3])['error'] ?? '') === 'bad_key');
+    db_upsert('member_state', ['memberId' => 'CMC-P', 'stateKey' => CURR_YEAR_KEY, 'stateValue' => '3', 'updatedAt' => $now], ['memberId', 'stateKey'], ['stateValue' => '3']);
+    $st = array_column(member_curriculum_list(['memberId' => 'CMC-P'])['units'], 'stage', 'unitId');
+    chk('curriculum · staff placement in Year 3 opens Year 3; earlier unstarted lessons do not flood in', ($st['CMY3-1'] ?? '') === 'current' && !isset($st['CMY2-1']) && !isset($st['CMY1-5']));
+    chk('curriculum · year names parse', curriculum_level_year('Year 2 · Developing') === 2 && curriculum_level_year('Level 3') === 3 && curriculum_level_year('Foundation 2026') === 0);
+    chk('curriculum · staff year: a bad value is refused', (staff_curriculum_year(['requesterId' => 'nobody', 'memberId' => 'CMC-P', 'year' => 9])['ok'] ?? true) === false);
+    db_exec("DELETE FROM curriculum_progress WHERE memberId = 'CMC-P'"); db_exec("DELETE FROM member_state WHERE memberId = 'CMC-P'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CMY%'");
     chk('curriculum · a track that is a course name stays that one course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
     setting_set('club_catalogue', $prevCat);
     db_exec("DELETE FROM members WHERE memberId LIKE 'CMC-%'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CMU-%'");

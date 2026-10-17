@@ -50,6 +50,8 @@ if ($method === 'GET') {
             'review' => gs_call('admin.curriculum.review', ['requesterId' => $mid, 'decision' => (string)($b['decision'] ?? ''),
                          'materialIds' => is_array($b['materialIds'] ?? null) ? $b['materialIds'] : [], 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]),
             'schedule' => gs_call('admin.curriculum.schedule', ['requesterId' => $mid, 'data' => is_array($b['data'] ?? null) ? $b['data'] : [], 'ip' => client_ip()]),
+            'year'   => gs_call('staff.curriculum.year', ['requesterId' => $mid, 'viaAdmin' => true, 'memberId' => (string)($b['memberId'] ?? ''),
+                         'year' => $b['year'] ?? null, 'ip' => client_ip()]),
             'courses' => gs_call('admin.club.catalogue.set', ['requesterId' => $mid, 'catalogue' => $b['catalogue'] ?? null, 'reset' => !empty($b['reset']), 'ip' => client_ip()]),
             default  => ['ok' => false, 'error' => 'unknown_action'],
         };
