@@ -116,15 +116,29 @@ async function as(memberId, admin, viewport) {
     const wk = await mt.innerText('main');
     chk('/mentor opens the v15 portal on This week', /This week/.test(await mt.innerText('.m15-app')) && /2 mentees/.test(wk));
     chk('the Saturday formation schedule comes from the server (mentor part)', await mt.isVisible('.sf-day'));
+    chk('This week: the formation schedule sits under the page title, never above it', await mt.evaluate(() => { const h = document.querySelector('main h1'), f = document.querySelector('main .sf-day'); return !!(h && f) && !!(h.compareDocumentPosition(f) & Node.DOCUMENT_POSITION_FOLLOWING); }));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/week.png' : path.join(TMP, 'week.png') });
     // Mentees
     await mt.click('nav >> text=Mentees');
     await mt.waitForFunction(() => /Mariam Yusuf/.test(document.querySelector('main').innerText) && /Daniel Okafor/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
     chk('Mentees lists exactly her caseload', !/Kemi Adewale/.test(await mt.innerText('main')));
+    chk('Mentees: each row’s columns line up with the header', await mt.evaluate(() => {
+      const hd = Array.from(document.querySelectorAll('main span')).find(e => e.textContent === 'Last one-to-one'); const cell = Array.from(document.querySelectorAll('main span')).find(e => e.textContent === 'Never');
+      return !!(hd && cell) && Math.abs(hd.getBoundingClientRect().left - cell.getBoundingClientRect().left) < 2; }));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/list.png' : path.join(TMP, 'list.png') });
     // Open Mariam, score her month
     await mt.click('main >> text=Mariam Yusuf');
     await mt.waitForFunction(() => /Overview/.test(document.querySelector('main').innerText) && !document.querySelector('.m15x-load'), null, { timeout: 30000 });
+    await mt.waitForFunction(() => /record yet|·/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('Overview: an empty record says so and offers the next step, never a blank panel', /Nothing on Mariam’s record yet/.test(await mt.innerText('main')) && await mt.isVisible('main button:has-text("Log a session") >> nth=1'));
+    await mt.click('main [role="tab"]:has-text("Relationship")');
+    await mt.waitForFunction(() => /rates it/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    const relTxt = await mt.innerText('main');
+    chk('Relationship: an unasked check reads “Not yet”, never a bare “/ 5”', /Not yet/.test(relTxt) && !/(^|\n)\s*\/ 5/.test(relTxt));
+    await mt.click('main [role="tab"]:has-text("Family")');
+    await mt.waitForFunction(() => /SMS and the family app/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    const famTxt = await mt.innerText('main');
+    chk('Family: with no guardian named, no “their family” and no “last update days ago”', !/their family|update\s+days ago/i.test(famTxt) && /no update yet/.test(famTxt) && /Good afternoon\. On Saturday/.test(await mt.inputValue('main textarea')));
     await mt.click('main >> text=Scorecard');
     await mt.waitForFunction(() => /Communication/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
     const up = await mt.$$('main button[aria-label^="Raise"], main button[aria-label*="up" i]');
@@ -149,6 +163,7 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /Communication|Leadership/.test(document.querySelector('main').innerText) && !document.querySelector('.m15x-load'), null, { timeout: 30000 });
     await mt.waitForTimeout(600);
     chk('Pod growth shows the Leadership Index from the server', /of 1 scored|1 of 2 scored/.test(await mt.innerText('main')));
+    chk('Pod growth: By mentee lists every mentee, the unscored one marked as not scored yet', /Daniel Okafor/.test(await mt.innerText('main')) && /Not scored for/.test(await mt.innerText('main')));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/growth.png' : path.join(TMP, 'growth.png'), fullPage: true });
     // Saturday: Before shows the formation day and the 8:30 breakout agenda
     await mt.click('nav >> text=Saturday');
@@ -184,6 +199,31 @@ async function as(memberId, admin, viewport) {
     await mt.click('main button:has-text("Go to the weekly review")');
     await mt.waitForTimeout(400);
     chk('After: the weekly review starts from the detail', /Noted: “Offered to present first/.test(await mt.innerText('main')));
+    // The Saturday evaluation: Mariam's card is open (the first not yet evaluated); rate everything, by keyboard-reachable radios.
+    chk('After: progress counts evaluations, due Monday', /0 of 1 evaluated · due Monday/.test(await mt.innerText('main')));
+    const card = mt.locator('main section[aria-label="Saturday evaluation for Mariam Yusuf"]');
+    chk('After: the register pre-fills the evaluation (assignment handed in, the detail as the strength)',
+      await card.getByRole('radiogroup', { name: 'Assignment for Mariam Yusuf' }).getByRole('radio', { name: 'Demonstrated' }).getAttribute('aria-checked') === 'true'
+      && /Offered to present first/.test(await card.locator('textarea').first().inputValue()));
+    for (const [g, o] of [['Effort', 'Strong'], ['Character', 'Steady'], ['Wellbeing', 'Steady']]) await card.getByRole('radiogroup', { name: g + ' for Mariam Yusuf' }).getByRole('radio', { name: o, exact: true }).click();
+    await card.locator('button:has-text("Save evaluation")').click({ force: true });
+    chk('After: an incomplete evaluation names what is left, and saves nothing', /Still to do:/.test(await card.innerText()) && !q(`db_row("SELECT 1 FROM mentor_reviews WHERE subjectId = 'NGG-MS-K1' AND evalJson <> ''")`));
+    for (const [c, o] of [['Punctuality', 'Demonstrated'], ['Participation', 'Strong'], ['Respect', 'Demonstrated'], ['Teamwork', 'Emerging'], ['Courage', 'Strong'], ['Initiative', 'Emerging'], ['Reflection', 'Demonstrated']]) {
+      const r = card.getByRole('radiogroup', { name: c + ' for Mariam Yusuf' }).getByRole('radio', { name: o, exact: true });
+      await r.focus(); await mt.keyboard.press('Enter');
+    }
+    await card.locator('textarea').nth(1).fill('Practise the two-minute talk once at home.');
+    await card.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/after-evaluating.png' : path.join(TMP, 'after-evaluating.png') });
+    await card.locator('button:has-text("Save evaluation")').click();
+    await mt.waitForFunction(() => /Evaluation saved for Mariam/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    await mt.waitForTimeout(800);
+    const evRow = JSON.parse((q(`db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = 'NGG-MS-K1' AND evalJson <> ''")`) || {}).evalJson || '{}');
+    chk('After: a full Saturday evaluation is on her row (8 criteria, strength from the register, the next step)',
+      Object.keys(evRow.criteria || {}).length === 8 && evRow.criteria.participation === 'Strong' && evRow.criteria.assignment === 'Demonstrated'
+      && /Offered to present first/.test(evRow.strength || '') && evRow.next === 'Practise the two-minute talk once at home.');
+    chk('After: the card reads Evaluated and the count moves', /1 of 1 evaluated/.test(await mt.innerText('main')) && /Evaluated/.test(await card.innerText()));
+    chk('her own read returns it, without the staff fields', (() => { const r = q(`backend_dispatch('member.saturday.evals', ['requesterId' => 'NGG-MS-K1'])`); return r.evals.length === 1 && r.evals[0].next === 'Practise the two-minute talk once at home.' && !('line' in r.evals[0]); })());
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/after-evaluated.png' : path.join(TMP, 'after-evaluated.png'), fullPage: true });
     // The child's name opens their profile
     await mt.click('main button:has-text("During")');
     await mt.click('main button[aria-label="Open Mariam Yusuf’s profile"]');
@@ -204,6 +244,7 @@ async function as(memberId, admin, viewport) {
     await mt.getByRole('button', { name: 'Me', exact: true }).first().click();
     await mt.locator('.m15-app button', { hasText: 'Stars & results' }).first().click();
     await mt.waitForSelector('main .m15x-classic [role="tab"]', { timeout: 30000 });
+    chk('Stars & results sits right under the portal’s tabs (no dead gap)', await mt.evaluate(() => { const t = document.querySelector('main nav[aria-label]'), p = document.querySelector('main .m15x-classic'); return !!(t && p) && p.getBoundingClientRect().top - t.getBoundingClientRect().bottom <= 32; }));
     chk('Stars & results opens inside the portal, its nav still on screen', await mt.isVisible('main .m15x-classic') && new URL(mt.url()).pathname === '/mentor/class' && /This week/.test(await mt.innerText('.m15-app')));
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
     // The old email link lands on /mentor/class with its tab, inside the portal
@@ -219,6 +260,7 @@ async function as(memberId, admin, viewport) {
 
     // ── An admin covers both programmes: a chooser, and the two never mix ──
     const ad = await as('NGG-MS-ADM', true);
+    ad.on('response', r => { if (/\/api\/member\/mentor\.php/.test(r.url()) && r.status() >= 400) ad.bad400 = (ad.bad400 || '') + r.url(); });
     await ad.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ad);
     await ad.waitForSelector('.m15x-cards', { timeout: 60000 });
@@ -241,6 +283,13 @@ async function as(memberId, admin, viewport) {
     chk('a coordinator over two NGG centres gets a centre switcher, NGG centres only', !!cs && JSON.stringify(await cs.evaluate(el => Array.from(el.options).map(o => o.value))) === JSON.stringify(['Egbeda', 'Ikeja']));
     await ad.click('nav >> text=Mentees');
     await ad.waitForFunction(() => /Mariam Yusuf/.test(document.querySelector('main').innerText), null, { timeout: 60000 }).catch(async e => { console.error('DEBUG ngg', ad.errs.join('\n'), (await ad.innerText('main')).slice(0, 800), JSON.stringify(q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-ADM'])`)).slice(0, 600)); throw e; });
+    chk('a coordinator with no mentor record has no Academy to fail on (no tab, no request)', !(await ad.innerText('.m15-app')).includes('Academy') && !ad.bad400);
+    await ad.getByRole('button', { name: 'Me', exact: true }).first().click();
+    await ad.locator('.m15-app button', { hasText: 'Stars & results' }).first().click();
+    await ad.waitForSelector('main .m15x-classic', { timeout: 30000 });
+    await ad.waitForFunction(() => /students|Pick a centre/.test(document.querySelector('main .m15x-classic').innerText), null, { timeout: 30000 });
+    chk('a coordinator’s class tools open on the portal’s centre, not a second “Pick a centre”', !/Pick a centre/.test(await ad.innerText('main .m15x-classic')) && /Egbeda/.test(await ad.innerText('main .m15x-classic')));
+    await ad.click('nav >> text=Mentees');
     chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
     // Control Room → Learning → Saturday formation: edit a block, every portal reads it
     await ad.goto(BASE + '/control/learning/formation', { waitUntil: 'domcontentloaded' });

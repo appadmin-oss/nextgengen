@@ -20,6 +20,12 @@
  * its sign-in doors and its not-cleared / no-centre answers still apply.
  */
 
+/* The Saturday evaluation's scale and criteria, as the server sends them (mentor-portal.php MP_EVAL_*); this copy is only the fallback before the read lands. */
+const MP15_EVAL_SCALE = ['Not yet', 'Emerging', 'Demonstrated', 'Strong'];
+const MP15_EVAL_CRITERIA = [['punctuality', 'Punctuality', 'Here and checked in by 8:00am'], ['assignment', 'Assignment', 'The week’s assignment handed in at check-in'],
+  ['participation', 'Participation', 'Took part in the huddle, the breakout and the class'], ['respect', 'Respect', 'To peers, mentors and instructors'],
+  ['teamwork', 'Teamwork', 'Worked with others and helped them'], ['courage', 'Courage', 'Tried something hard or spoke up'],
+  ['initiative', 'Initiative', 'Started things without being asked'], ['reflection', 'Reflection', 'Named what they learned and what is next']].map(([key, label, hint]) => ({ key, label, hint }));
 const MP15_ROLES = { pod: 'Pod mentor', peer: 'Peer mentor', instructor: 'Instructor mentor', lead: 'Lead mentor', coord: 'Centre coordinator' };
 const MP15_TONE = { bad: ['#fdeeea', '#b0361c'], warn: ['#fdf6e3', '#7a5600'], ok: ['#f3faf4', '#1d6b30'], neu: ['#f0efea', '#4a4a50'] };
 const MP15_KIND_TYPE = { 'one-to-one': 'One-to-one', one_to_one: 'One-to-one', pod: 'Pod session', family: 'Family', phone: 'Phone or message', note: 'Note' };
@@ -112,7 +118,7 @@ class Mp15Portal extends React.Component {
     this.load('week', 'week'); this.load('case', 'caseload'); this.load('goals', 'goals'); this.load('sess', 'sessions');
     this.load('satNext', 'saturday', { date: this.satNextDate() });
     if (this.satLastDate() !== this.satNextDate()) this.load('satLast', 'saturday', { date: this.satLastDate() });
-    this.load('msgs', 'messages'); this.load('index', 'index'); this.load('role', 'commitments'); this.load('academy', 'academy');
+    this.load('msgs', 'messages'); this.load('index', 'index'); this.load('role', 'commitments'); if (this.me().mentorId) this.load('academy', 'academy');
     if (this.isLead()) this.load('team', 'team');
   }
   loadKid(id) { if (id) return this.load('kid:' + id, 'mentee', { subjectId: id }); }
@@ -164,7 +170,7 @@ class Mp15Portal extends React.Component {
     return (this._k = c.mentees.map(r => ({
       id: r.id, first: r.first, name: r.name, ini: r.initials, age: r.age, school: r.school || '', phase: r.phase || 'Grow', week: r.week,
       contact: r.flags ? r.flags.contactDays : null, wb: r.wellbeing || 'Okay', relM: r.rel ? r.rel.mentor : null, relC: r.rel ? r.rel.child : null,
-      relDue: !!(r.rel && r.rel.due), mentor: r.mentorName || '', guardian: r.guardianName || 'their family', flags: r.flags || {}, urgency: r.urgency || 0,
+      relDue: !!(r.rel && r.rel.due), mentor: r.mentorName || '', guardian: r.guardianName || '', flags: r.flags || {}, urgency: r.urgency || 0,
       ag: r.activeGoal, famDays: r.lastFamilyUpdateAt ? mp15Days(r.lastFamilyUpdateAt, today) : null, pills: r.pills || [],
     })));
   }
@@ -265,7 +271,7 @@ class Mp15Portal extends React.Component {
       (ix.skills || []).forEach(s => line(s.skill + ': ' + (s.avg === null ? '—' : s.avg.toFixed(1)) + (s.change !== null && s.change !== undefined ? '  (' + (s.change >= 0 ? '+' : '') + s.change.toFixed(1) + ')' : ''), 10));
       rule(); line('The last 8 Saturdays', 12.5, true); series(((ix.outcomes || {}).items) || []);
       rule(); line('By mentee, lowest total first', 12.5, true);
-      (ix.byMentee || []).forEach(b => line(b.name + ': ' + b.total + (b.prevTotal !== null && b.prevTotal !== undefined ? ' (' + (b.total - b.prevTotal >= 0 ? '+' : '') + (b.total - b.prevTotal) + ')' : '') + ' · lowest: ' + b.lowSkill, 10));
+      (ix.byMentee || []).filter(b => b.total !== null && b.total !== undefined).forEach(b => line(b.name + ': ' + b.total + (b.prevTotal !== null && b.prevTotal !== undefined ? ' (' + (b.total - b.prevTotal >= 0 ? '+' : '') + (b.total - b.prevTotal) + ')' : '') + ' · lowest: ' + b.lowSkill, 10));
       doc.save('NGG-pod-report-' + today + '.pdf');
       this.say('Pod report saved as a PDF');
     } catch (e) { this.say('Couldn’t build the PDF. Check your connection and try again.'); }
@@ -289,7 +295,8 @@ class Mp15Portal extends React.Component {
     /* Saturday: Before plans the next one; During and After are the one just gone (or today). */
     const satN = D.satNext || {}, satL = this.satDuring() || {};
     const satKidsAll = all;
-    const reviewed = id => !!(S.rvDone[id] !== undefined ? S.rvDone[id] : (satL.reviews || {})[id]);
+    /* Done means evaluated: the Saturday's criteria, a strength and a next step, not only the three ratings. */
+    const reviewed = id => !!(S.rvDone[id] !== undefined ? S.rvDone[id] : ((satL.reviews || {})[id] || {}).evaluated);
     const hereIds = satKidsAll.filter(k => this.hereOf(k.id)).map(k => k.id);
     const revKids = hereIds.length ? satKidsAll.filter(k => hereIds.includes(k.id)) : [];
     const revTotal = revKids.length, revDoneN = revKids.filter(k => reviewed(k.id)).length;
@@ -298,7 +305,8 @@ class Mp15Portal extends React.Component {
     const acMods = ((D.academy || {}).modules) || [];
     const modDone = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy'], ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+    /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ...(me.mentorId ? [['academy', 'Academy']] : []), ['classic', 'Stars & results']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -307,12 +315,12 @@ class Mp15Portal extends React.Component {
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? '#0b0b0c' : '#5a5a60', fw: on ? 600 : 500, bar: on ? '#0b0b0c' : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['classic', 'Stars & results', 'ph ph-star']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     const tabIds = ['week', 'list', 'sat', 'msg'];
     const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
 
-    const ck0 = all.find(k => k.id === S.kid) || all[0] || { id: '', first: '', name: '', ini: '', age: null, school: '', phase: '', contact: null, wb: 'Okay', relM: null, relC: null, relDue: false, guardian: 'their family', flags: {}, famDays: null };
+    const ck0 = all.find(k => k.id === S.kid) || all[0] || { id: '', first: '', name: '', ini: '', age: null, school: '', phase: '', contact: null, wb: 'Okay', relM: null, relC: null, relDue: false, guardian: '', flags: {}, famDays: null };
     const kd = D['kid:' + ck0.id] || null;
     const q = S.q.trim().toLowerCase();
     let kids = all.filter(k => (S.filter === 'all' || (B[S.filter] && B[S.filter](k))) && (!q || (k.name + ' ' + k.school).toLowerCase().includes(q)));
@@ -324,9 +332,11 @@ class Mp15Portal extends React.Component {
     const due = (wk.due || []).map(x => { const t = MP15_TONE[x.tone] || MP15_TONE.neu; return { icon: 'ph ph-' + x.icon, bg: t[0], fg: t[1], t: x.title, s: x.sub, go: () => this.goDue(x.go) }; });
 
     const firstMe = mp15First(me.name);
-    const PT = { saw: ['Something I saw', 'Good afternoon ' + ck0.guardian + '. On Saturday I saw ' + ck0.first + ' [what you saw]. What have you noticed at home this month? – ' + firstMe],
-                 plan: ['Their growth plan', 'Good afternoon ' + ck0.guardian + '. ' + ck0.first + ' and I agreed a plan' + (ck0.ag ? ': ' + ck0.ag.title : '') + '. You can help by asking how it went after school. – ' + firstMe],
-                 meet: ['Ask to meet', 'Good afternoon ' + ck0.guardian + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck0.first + ' is growing? – ' + firstMe] };
+    /* No guardian on record: greet without a name, never "Good afternoon their family". */
+    const hello = 'Good afternoon' + (ck0.guardian ? ' ' + ck0.guardian : '');
+    const PT = { saw: ['Something I saw', hello + '. On Saturday I saw ' + ck0.first + ' [what you saw]. What have you noticed at home this month? – ' + firstMe],
+                 plan: ['Their growth plan', hello + '. ' + ck0.first + ' and I agreed a plan' + (ck0.ag ? ': ' + ck0.ag.title : '') + '. You can help by asking how it went after school. – ' + firstMe],
+                 meet: ['Ask to meet', hello + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck0.first + ' is growing? – ' + firstMe] };
     const draft = kd && kd.familyDraft;
     const pBody = S.pBody != null ? S.pBody : (draft && S.pTpl === 'saw' ? draft.body : PT[S.pTpl][1]);
 
@@ -382,12 +392,12 @@ class Mp15Portal extends React.Component {
       /* The class tools (stars, V3, notes, curriculum, school results and growth
          plans) are this portal's own screen, under its title and tabs: the same
          component /mentor/class has always run, as a panel, on the centre on screen. */
-      mainSlotEnd: S.scr === 'classic' ? <div className="m15x-slot"><MentorPortal key={'class:' + (S.centre || '')} programme="ngg" embedded={true}/></div> : null, roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+      mainSlotEnd: this.slotEnd(narrow), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
       areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
                ['Struggling this week', String(struggling.length), struggling.length ? 'Talk before Saturday' : 'Nobody flagged', struggling.length ? '#b0361c' : '#1d6b30', () => this.go('list', { filter: 'wellbeing' })],
-               ['Weekly reviews', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
+               ['Saturday evaluations', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
       title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: inDetail, back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
       goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
       onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: S.scr === 'msg', onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
@@ -400,19 +410,22 @@ class Mp15Portal extends React.Component {
       bulk: [['Add to Saturday one-to-ones', 'ph ph-calendar-plus', () => this.act('oneToOnesAdd', { subjectIds: selIds }, r => (r.added || 0) + ' added to ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + '’s one-to-ones').then(r => { if (r) { set({ sel: {} }); this.refresh(['sat']); } }), false],
              ['Family update', 'ph ph-house-line', () => this.act('familyDrafts', { subjectIds: selIds }, r => 'Drafts ready for ' + r.drafted + ' families. Review each before sending.').then(r => { if (r) set({ sel: {} }); }), isPeer],
              ['Add a note', 'ph ph-note-pencil', () => this.bulkNote(selIds), false]].map(([l, icon, go, off]) => ({ l, icon, go: off ? () => this.say('Your lead mentor contacts families') : go, off, why: off ? 'Your lead mentor contacts families' : '', op: off ? 0.4 : 1 })),
-      wideCols, cols: wideCols ? '40px minmax(220px, 1.6fr) 130px 110px minmax(110px, 1fr) minmax(150px, auto)' : '40px minmax(0, 1fr) auto',
+      wideCols, cols: wideCols ? '40px minmax(200px, 1.5fr) 120px 110px minmax(110px, 1fr) 250px' : '40px minmax(0, 1fr) minmax(0, max-content)',
       kids: kids.map(k => { const on = !!S.sel[k.id]; return { ...k, sub: [k.age !== null && k.age !== undefined ? 'Age ' + k.age : '', k.phase, isLead ? (k.mentor || 'No mentor') : k.school].filter(Boolean).join(' · '), contact: mp15Ago(k.contact), cFg: B.contact(k) ? '#7a5600' : '#4a4a50', cFw: B.contact(k) ? 600 : 400,
-        rel: (k.relC === null ? '–' : k.relC) + ' · ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
+        rel: k.relC === null && k.relM === null ? 'Not asked' : (k.relC === null ? '–' : k.relC) + ' · ' + (k.relM === null ? '–' : k.relM), relTip: k.relC === null && k.relM === null ? 'No relationship check yet' : k.first + ' rates ' + (k.relC === null ? 'not yet' : k.relC) + ', you rate ' + (k.relM === null ? 'not yet' : k.relM),
         relDot: k.relC !== null && k.relC <= 2 ? '#b0361c' : k.relC !== null && k.relM !== null && k.relM - k.relC >= 2 ? '#e0a100' : k.relC === null ? '#d6d4cc' : '#2f9e44',
-        goal: k.ag ? k.ag.title : 'No goal yet', flags: flagsOf(k), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
+        goal: k.ag ? k.ag.title : 'No goal yet', flags: wideCols ? flagsOf(k) : flagsOf(k).slice(0, 1), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name,
         toggle: () => set({ sel: { ...S.sel, [k.id]: !on } }), open: () => this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }) }; }),
       noKids: kids.length === 0 && !!D.case, emptyT: !N ? 'Nobody is paired with you yet. Your coordinator makes the match.' : S.filter === 'all' ? 'Nobody matches that search.' : 'Nobody in this group right now.', resetF: () => set({ filter: 'all', q: '' }),
-      ck: { ...ck0, sub: [ck0.age !== null && ck0.age !== undefined ? 'Age ' + ck0.age : '', ck0.phase ? ck0.phase + ' phase' : '', ck0.school, ck0.guardian].filter(Boolean).join(' · '), relGap: ck0.relM !== null && ck0.relC !== null && ck0.relM - ck0.relC >= 2 },
+      ck: { ...ck0, sub: [ck0.age !== null && ck0.age !== undefined ? 'Age ' + ck0.age : '', ck0.phase ? ck0.phase + ' phase' : '', ck0.school, ck0.guardian ? 'Family: ' + ck0.guardian : ''].filter(Boolean).join(' · '),
+        relCT: ck0.relC === null || ck0.relC === undefined ? 'Not yet' : ck0.relC + ' / 5', relMT: ck0.relM === null || ck0.relM === undefined ? 'Not yet' : ck0.relM + ' / 5',
+        famWho: ck0.guardian || 'No family contact named', famT: ck0.famDays === null || ck0.famDays === undefined ? 'no update yet' : ck0.famDays <= 0 ? 'last update today' : 'last update ' + ck0.famDays + (ck0.famDays === 1 ? ' day ago' : ' days ago'), relGap: ck0.relM !== null && ck0.relC !== null && ck0.relM - ck0.relC >= 2 },
       facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
               ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
               ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
       kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Progress']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
       kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
+      noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
       timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
       relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
       saveRel: () => { const a = S.rel[ck0.id] || {}; if ([0, 1, 2, 3].some(i => !a[i])) return this.say('Answer all four first'); this.act('relCheck', { subjectId: ck0.id, answers: [a[0], a[1], a[2], a[3]] }, 'Saved. ' + ck0.first + ' answers their side this week.').then(r => r && this.refresh(['case'], ck0.id)); },
@@ -420,7 +433,7 @@ class Mp15Portal extends React.Component {
       pTpls: Object.keys(PT).map(id => ({ l: PT[id][0], on: S.pTpl === id, ...pill(S.pTpl === id), go: () => set({ pTpl: id, pBody: null }) })), pBody, onPBody: e => set({ pBody: e.target.value }),
       outcomes: (((kd && kd.progress) || {}).items || []).map(it => mkOut(it, ((kd.progress || {}).saturdays || [])[0])),
       makeReport: () => this.report('kid'),
-      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', hereIds.length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' reviewed']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => { if (S.step === 'during' && id !== 'during') this.flushRegister(); set({ step: id }); } })),
+      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', hereIds.length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' evaluated']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => { if (S.step === 'during' && id !== 'during') this.flushRegister(); set({ step: id }); } })),
       sBefore: S.step === 'before', sDuring: S.step === 'during', sAfter: S.step === 'after',
       agenda: agenda.map((a, i) => { const at = t0; t0 += a.m; return { ...a, at: Math.floor(at / 60) + ':' + String(at % 60).padStart(2, '0'), first: i === 0, upOp: i ? 1 : 0.3, rmOp: a.fixed ? 0.3 : 1,
         up: () => { if (!i) return; const n = agenda.slice(); [n[i - 1], n[i]] = [n[i], n[i - 1]]; this.setAgenda(n); }, rm: () => { if (a.fixed) return this.say('The huddle, one-to-ones and close stay on the agenda'); this.setAgenda(agenda.filter((_, j) => j !== i)); } }; }),
@@ -446,16 +459,8 @@ class Mp15Portal extends React.Component {
           vals: VALS.map(v => { const on = o.includes(v); return { l: v, on, ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; o.forEach(x => { m[x] = true; }); m[v] = !on; set({ obs: { ...this.state.obs, [k.id]: m } }); this.queueRegister(k.id); } }; })
             .concat((satL.checks || ['On time', 'Assignment in', 'Checked out']).map(v => { const cs = this.chkOf(k.id); const on = cs.includes(v); const arr = (((satL.register || {})[k.id]) || {}).arrivedAt;
               return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
-      revText: revDoneN + ' of ' + revTotal + ' reviews done · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%',
-      reviews: revKids.map(k => { const srv = (satL.reviews || {})[k.id]; const v = S.rv[k.id] || (srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {}); const done = reviewed(k.id); const ok = v.Effort && v.Character && v.Wellbeing; const obs = this.obsOf(k.id);
-        return { name: k.name, done, open: !done, seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (this.noteOf(k.id) ? '. Noted: “' + this.noteOf(k.id) + '”' : ''), line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }),
-          scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o, ...pill(v[l] === o), go: () => set({ rv: { ...S.rv, [k.id]: { ...v, [l]: o } } }) })) })),
-          cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
-          submit: () => { if (!ok) return this.say('Rate effort, character and wellbeing first');
-            this.act('weekReview', { subjectId: k.id, date: this.satLastDate(), effort: v.Effort, character: v.Character, wellbeing: v.Wellbeing, line: v.line || '' }).then(r => { if (!r) return;
-              set({ rvDone: { ...this.state.rvDone, [k.id]: true } });
-              this.say('Review saved for ' + k.first, () => this.act('weekReviewUndo', { subjectId: k.id, period: r.period }).then(u => { if (u) { set({ rvDone: { ...this.state.rvDone, [k.id]: false } }); this.refresh(['sat', 'sess']); } }));
-              this.refresh(['sess', 'week']); }); } }; }),
+      revText: revDoneN + ' of ' + revTotal + ' evaluated · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%', noReviews: revTotal === 0 && !!satL.date,
+      reviews: revKids.map((k, ki) => this.evalCard(k, ki, revKids, satL, reviewed, pill)),
       mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins'], ['chat', 'Mentees']].concat(isPeer ? [] : [['family', 'Families']]).concat([['lead', isLead ? 'Mentors' : 'From ' + lead]]).filter(([id]) => id === 'all' || msgRows.some(m => m.filter === id)).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
       mCols: S.w >= 1000 ? 'minmax(0, 1fr) minmax(0, 1.2fr)' : 'minmax(0, 1fr)',
       hasMsg: !!mSel0, mSel: mView(mSel0), reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel0 && /Journal/.test(mSel0.kind) ? 'Name what you noticed. One line is enough.' : 'Write a reply',
@@ -520,6 +525,82 @@ class Mp15Portal extends React.Component {
           {cs.map(c => <option key={c} value={c}>{c}</option>)}</select></label></div>
       {inner}</>;
   }
+  /* One child's Saturday evaluation on After: the week's three ratings, the
+     formation criteria (pre-filled from the register, confirmed by the mentor),
+     a strength and a next step the child and family read, and a staff-only line.
+     One card open at a time; "Save and next child" walks the pod. */
+  evalPrefill(id, satL) {
+    if (!this.hereOf(id)) return { criteria: {}, strength: '' };
+    const chk = this.chkOf(id), obs = this.obsOf(id), arr = (((satL.register || {})[id]) || {}).arrivedAt || '';
+    const c = { assignment: chk.includes('Assignment in') ? 'Demonstrated' : 'Not yet' };
+    if (chk.includes('On time')) c.punctuality = 'Demonstrated'; else if (arr) c.punctuality = 'Emerging';
+    [['Respect', 'respect'], ['Teamwork', 'teamwork'], ['Courage', 'courage']].forEach(([v, key]) => { if (obs.includes(v)) c[key] = 'Demonstrated'; });
+    return { criteria: c, strength: (this.noteOf(id) || '').trim() };
+  }
+  evalCard(k, ki, kids, satL, reviewed, pill) {
+    const S = this.state, set = o => this.setState(o);
+    const CR = satL.evalCriteria || MP15_EVAL_CRITERIA, SCALE = satL.evalScale || MP15_EVAL_SCALE;
+    /* The pre-fill mirrors mp_eval_prefill on the server, from the register as it stands on this screen
+       (taps on During this morning included), so After never starts from a stale read. */
+    const srv = (satL.reviews || {})[k.id], pre = this.evalPrefill(k.id, satL);
+    const base = srv ? { Effort: srv.effort, Character: srv.characterLevel, Wellbeing: srv.wellbeing, line: srv.line || '' } : {};
+    const sev = srv && srv.eval ? srv.eval : null;
+    const v = S.rv[k.id] || { ...base, crit: sev ? { ...sev.criteria } : { ...pre.criteria }, strength: sev ? sev.strength : (pre.strength || ''), next: sev ? sev.next : '' };
+    const put = p => set({ rv: { ...this.state.rv, [k.id]: { ...v, ...p } }, evErr: { ...(this.state.evErr || {}), [k.id]: '' } });
+    const done = reviewed(k.id);
+    const firstOpen = kids.find(x => !reviewed(x.id));
+    const openId = S.evOpen !== undefined ? S.evOpen : (firstOpen ? firstOpen.id : null);
+    const open = openId === k.id;
+    const crit = v.crit || {};
+    const ratedN = CR.filter(c => crit[c.key]).length;
+    const ok3 = v.Effort && v.Character && v.Wellbeing;
+    const ok = ok3 && ratedN === CR.length && (v.strength || '').trim() && (v.next || '').trim();
+    const obs = this.obsOf(k.id), note = this.noteOf(k.id);
+    const next = kids.slice(ki + 1).find(x => !reviewed(x.id)) || kids.find((x, i) => i !== ki && !reviewed(x.id));
+    const err = (S.evErr || {})[k.id] || '';
+    const missing = () => [!ok3 ? 'effort, character and wellbeing' : '', ratedN < CR.length ? (CR.length - ratedN) + ' of the Saturday criteria' : '', !(v.strength || '').trim() ? 'a strength' : '', !(v.next || '').trim() ? 'a next step' : ''].filter(Boolean);
+    const save = goNext => {
+      if (!ok) { const m = missing(); return set({ evErr: { ...(this.state.evErr || {}), [k.id]: 'Still to do: ' + m.join(', ') + '.' } }); }
+      const body = { subjectId: k.id, date: this.satLastDate(), effort: v.Effort, character: v.Character, wellbeing: v.Wellbeing, line: v.line || '',
+        eval: { criteria: crit, strength: (v.strength || '').trim(), next: (v.next || '').trim() } };
+      mp15Api.act('weekReview', Object.assign({ centre: this.state.centre || '' }, body)).then(r => {
+        set({ rvDone: { ...this.state.rvDone, [k.id]: true }, evOpen: goNext && next ? next.id : null });
+        this.say('Evaluation saved for ' + k.first, () => this.act('weekReviewUndo', { subjectId: k.id, period: r.period }).then(u => { if (u) { const rv = { ...this.state.rvDone }; delete rv[k.id]; set({ rvDone: rv, evOpen: k.id }); this.refresh(['sat', 'sess', 'week']); } }));
+        this.refresh(['sat', 'sess', 'week']);
+      }).catch(e => { const c = e.code || e.message || ''; set({ evErr: { ...(this.state.evErr || {}), [k.id]: c === 'rate_every_criterion' ? 'Rate every Saturday criterion first.' : c === 'strength_and_next' ? 'Write a strength and a next step first.' : mp15ErrText(e) } }); });
+    };
+    const sumLine = done && sev ? 'Strength: ' + sev.strength + ' · Next: ' + sev.next : done ? 'Evaluated' : '';
+    return { name: k.name, first: k.first, done, open, openA: open ? 'true' : 'false', panelId: 'm15-ev-' + k.id, chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down',
+      toggleL: open ? 'Close' : done ? 'Edit' : 'Evaluate', toggle: () => set({ evOpen: open ? null : k.id }),
+      bd: open ? '#0b0b0c' : '#e8e5dd', stL: done ? 'Evaluated' : 'To do', stBg: done ? '#f3faf4' : '#fdf6e3', stFg: done ? '#1d6b30' : '#7a5600',
+      seen: (obs.length ? 'Observed: ' + obs.join(', ') : 'Here on Saturday') + (note ? '. Noted: “' + note + '”' : ''),
+      hasSum: !open && !!sumLine, sum: sumLine,
+      scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: MP15_LEVELS.map(o => ({ l: o, on: v[l] === o ? 'true' : 'false', ...pill(v[l] === o), go: () => put({ [l]: o }) })) })),
+      critMeta: ratedN + ' of ' + CR.length + ' rated',
+      crit: CR.map(c => { const cur = crit[c.key]; const fromReg = !sev && !(S.rv[k.id]) && pre.criteria[c.key] && pre.criteria[c.key] === cur;
+        return { l: c.label, h: c.hint, pre: !!fromReg, preL: 'From the register',
+          opts: SCALE.map(o => { const on = cur === o; return { l: o, on: on ? 'true' : 'false', ...pill(on), bg: on ? '#f3faf4' : '#fff', go: () => put({ crit: { ...crit, [c.key]: o } }) }; }) }; }),
+      strength: v.strength || '', onStrength: e => put({ strength: e.target.value.slice(0, 400) }), strBd: err && !(v.strength || '').trim() ? '#b0361c' : '#d6d4cc',
+      next: v.next || '', onNext: e => put({ next: e.target.value.slice(0, 400) }), nextBd: err && !(v.next || '').trim() ? '#b0361c' : '#d6d4cc',
+      line: v.line || '', onLine: e => put({ line: e.target.value }),
+      hasErr: !!err, err, cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72',
+      hasNext: !!next, submit: () => save(false), submitNext: () => save(true) };
+  }
+  /* After the screen's own title and content (v.mainSlotEnd): the Saturday
+     Formation Schedule, the mentor's part of each block (the next blocks on
+     This week, the whole day on Saturday), and the class tools (stars, V3,
+     notes, curriculum, school results and growth plans) as this portal's own
+     screen, on the centre on screen. Below the title, never above it. */
+  slotEnd(narrow) {
+    const S = this.state; const cls = 'm15x-slot m15x-end' + (narrow ? ' is-narrow' : '');
+    const need = { week: ['week'], sat: ['satNext'] }[S.scr];
+    if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
+    if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
+    if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'classic') { const cs = this.me().centres || []; const ce = this.state.centre || this.me().centreOnScreen || (cs.length === 1 ? cs[0] : '');
+      return <div className={cls}><MentorPortal key={'class:' + ce} programme="ngg" embedded={true} centre={ce}/></div>; }
+    return null;
+  }
   slotInner() {
     const S = this.state;
     const need = { week: ['week', 'case'], list: ['case'], goals: ['goals', 'case'], sess: ['sess', 'case'], sat: ['satNext', 'case'].concat(this.satLastDate() !== this.satNextDate() ? ['satLast'] : []),
@@ -531,10 +612,6 @@ class Mp15Portal extends React.Component {
         <button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); if (S.scr === 'kid') this.loadKid(S.kid); }}>Retry</button></div></div>;
     }
     if (loading) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading</span></div></div>;
-    /* The Saturday Formation Schedule, the mentor's part of each block: the
-       next two blocks on This week, the whole day on Saturday. */
-    if (S.scr === 'week') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
-    if (S.scr === 'sat') return <div className="m15x-slot"><FormationDay audience="mentor" compact={true}/></div>;
     /* The class tools (stars, V3, notes, curriculum, school results and growth
        plans) are this portal's own screen: the same component /mentor/class
        has always run, in the portal's frame, on the centre on screen. */
@@ -718,7 +795,7 @@ class Mp15Portal extends React.Component {
     const cOk = !!S.cKid && !!S.cCat && S.cText.trim().length > 10;
     const cHint = !S.cKid ? 'Choose the child first.' : !S.cCat ? 'Choose what kind of concern.' : S.cText.trim().length <= 10 ? 'Write what happened, in a sentence or two.' : '';
     const mtAll = (c.isLead ? ((S.d.team || {}).mentors || []) : []).map(m => { const pct = m.seenPct; const tone = m.commitments === 'On track' ? 'ok' : m.commitments === 'Below 5 mentees' ? 'bad' : 'warn'; const booked = m.booked || !!(S.supBooked || {})[m.mentorId];
-      return { name: m.name, kind: m.kind, n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
+      return { name: m.name, kind: m.kind + (m.evalOf ? ' · ' + (m.evalDone || 0) + ' of ' + m.evalOf + ' evaluated Saturday' : ''), n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
         commit: m.commitments, cBg: MP15_TONE[tone][0], cFg: MP15_TONE[tone][1], need: !!m.needSupport, supL: booked ? 'Booked' : 'Book supervision', supOp: booked ? 0.55 : 1,
         sup: () => { if (booked) return; this.act('supervisionBook', { mentorId: m.mentorId }, r => 'Supervision booked with ' + m.first + ' for ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ' after STS').then(r => { if (r) { set({ supBooked: { ...(S.supBooked || {}), [m.mentorId]: true } }); this.refresh(['team']); } }); } }; });
     const mq = (S.mtQ || '').trim().toLowerCase(), mf = S.mtF || 'all';
@@ -737,7 +814,7 @@ class Mp15Portal extends React.Component {
       msgs: c.mList.map(m => ({ ...m, who: m.from, when: mp15When(m.at, today), t: m.body, unread: !m.read && !S.read[m.id] && m.kind !== 'From your lead', cur: c.mSel && m.id === c.mSel.id ? 'true' : undefined, bg: wideMsg && c.mSel && m.id === c.mSel.id ? '#fafaf8' : '#fff',
         go: () => { set({ msel: m.id, mOpen: true, read: { ...S.read, [m.id]: true }, reply: '' }); if (!m.read) mp15Api.act('messageRead', { threadId: m.id.indexOf('m:') === 0 ? m.id : m.threadId }).catch(() => {}); } })),
       bmCols: c.wideCols ? 'minmax(0, 1.4fr) minmax(0, 1fr) 96px 56px' : 'minmax(0, 1fr) 96px 48px',
-      bmRows: bmShow.map(r => { const d = r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, low: r.lowSkill, tot: r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
+      bmRows: bmShow.map(r => { const un = r.total === null || r.total === undefined; const d = un || r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, lowT: un ? 'Not scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet' : 'Lowest: ' + r.lowSkill, tot: un ? '—' : r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
       bmMore: bm.length > 8 && !S.bmAll, bmMoreL: 'Show all ' + bm.length, bmShowAll: () => set({ bmAll: true }),
       liMeta: (ix.scored ? 'out of 10 · ' + ix.scored + ' of ' + ix.of + ' scored for ' + mp15Month(ix.month) + ((ix.skills || []).some(x => x.change !== null && x.change !== undefined) ? ' · change since ' + mp15Month(ix.prevMonth) : ' · no earlier month to compare') : 'Nobody scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet'), liRows,
       md,

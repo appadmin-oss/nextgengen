@@ -3693,3 +3693,7 @@ CREATE TABLE IF NOT EXISTS mentor_academy_attempts (
   INDEX idx_macad_att (mentorId, moduleId, at)
 );
 INSERT INTO schema_version (version) VALUES (152) ON DUPLICATE KEY UPDATE version = version;
+
+-- 153: the Saturday evaluation (formation criteria, strength, next step) on the week's review.
+ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT;
+INSERT INTO schema_version (version) VALUES (153) ON DUPLICATE KEY UPDATE version = version;

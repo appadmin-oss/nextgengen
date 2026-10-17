@@ -8,7 +8,9 @@ $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 const POD_READS = ['today' => 'member.ms.today', 'case' => 'member.ms.case', 'academy' => 'member.ms.academy',
-                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer', 'mine' => 'member.mentor.mine'];
+                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer', 'mine' => 'member.mentor.mine',
+                   // The member's own Saturday evaluations (criteria, strength, next step).
+                   'evals' => 'member.saturday.evals'];
 const POD_WRITES = ['observe' => 'member.ms.observe', 'onetoone' => 'member.ms.onetoone', 'taskDone' => 'member.ms.task.done',
                     'nudgeDone' => 'member.ms.nudge.done', 'relcheck' => 'member.ms.relcheck', 'relcheckMentee' => 'member.ms.relcheck.mentee',
                     'checkin' => 'member.ms.coord.checkin', 'concern' => 'member.ms.concern', 'academyCheck' => 'member.ms.academy.check',

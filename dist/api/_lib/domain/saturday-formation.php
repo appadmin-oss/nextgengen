@@ -277,6 +277,11 @@ function sf_day_lines(string $mid, string $date, array $blocks): array {
     $lines[] = 'Musing & mentor breakout' . ($mentor ? ' with ' . (string)$mentor['fullName'] : '') . ($obs ? ': their mentor saw ' . strtolower(implode(', ', $obs)) . '.' : '.');
     $rev = db_row('SELECT line FROM mentor_reviews WHERE subjectId = ? AND period = ?', [$mid, iso_week_period(strtotime($date . 'T12:00:00Z'))]);
     if ($rev && trim((string)$rev['line']) !== '') $lines[] = 'From their mentor: “' . mb_substr(trim((string)$rev['line']), 0, 200) . '”';
+    /* The latest Saturday evaluation: the strength their mentor saw and the one next step (never the ratings). */
+    $ev = db_row("SELECT evalJson FROM mentor_reviews WHERE subjectId = ? AND evalJson IS NOT NULL AND evalJson <> '' ORDER BY period DESC LIMIT 1", [$mid]);
+    $e = $ev ? json_decode((string)$ev['evalJson'], true) : null;
+    if (is_array($e) && trim((string)($e['strength'] ?? '')) !== '') $lines[] = 'A strength their mentor saw: ' . mb_substr(trim((string)$e['strength']), 0, 200);
+    if (is_array($e) && trim((string)($e['next'] ?? '')) !== '') $lines[] = 'Their next step: ' . mb_substr(trim((string)$e['next']), 0, 200);
     foreach ($blocks as $b) if (in_array($b['key'], ['vanboja', 'special', 'division', 'chess'], true)) $lines[] = $b['title'] . ($b['for']['parent'] ? ': ' . $b['for']['parent'] : '');
     $lines[] = 'Next week: this week’s assignment is due at check-in, 8:00am.';
     return $lines;
