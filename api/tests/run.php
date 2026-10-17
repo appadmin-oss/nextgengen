@@ -28231,5 +28231,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM safeguarding_cases WHERE reporterId = 'SGS-K1'"); db_exec("DELETE FROM members WHERE memberId IN ('SGS-K1','SGS-K2')");
 })();
 
+// ── A member's lessons follow their faculty, not a string match (curriculum_member_courses) ──
+(function () {
+    $now = now_iso();
+    $mk = function ($id, $track, $disc = '', $div = '') use ($now) { db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'track' => $track, 'disciplines' => $disc, 'division' => $div, 'createdAt' => $now, 'updatedAt' => $now]); };
+    $mk('CMC-T', 'TECH'); $mk('CMC-M', 'MUSIC'); $mk('CMC-2', 'TECH', 'TECH, MEDIA'); $mk('CMC-D', '', '', 'business'); $mk('CMC-X', 'Coding');
+    $pos = 900;
+    $u = function ($id, $course, $status = 'published') use ($now, &$pos) { db_insert('curriculum_units', ['unitId' => $id, 'course' => $course, 'level' => '', 'week' => 1, 'position' => ++$pos, 'title' => $id,
+        'summary' => '', 'status' => $status, 'version' => 1, 'createdAt' => $now, 'updatedAt' => $now]); };
+    $u('CMU-CODE', 'Coding'); $u('CMU-ROBO', 'Robotics'); $u('CMU-MUS', 'Music'); $u('CMU-VID', 'Video Production'); $u('CMU-FIN', 'Finance'); $u('CMU-ALL', ''); $u('CMU-DRAFT', 'Coding', 'draft');
+    $ids = fn($id) => array_column(member_curriculum_list(['memberId' => $id])['units'] ?? [], 'unitId');
+    // The admin's own catalogue, with its own division names: still the same divisions.
+    $u('CMU-PC', 'Practical Coding');
+    $prevCat = setting_get('club_catalogue');
+    setting_set('club_catalogue', ['AI & Technology' => ['Practical Coding', 'Coding', 'Robotics'], 'Music' => ['Piano', 'Music'], 'Media' => ['Video Production'], 'Business' => ['Finance']]);
+    chk('curriculum · a TECH member sees a course the admin added under their own division name', in_array('CMU-PC', $ids('CMC-T'), true));
+    $t = $ids('CMC-T');
+    chk('curriculum · a TECH member sees the Technology courses’ lessons (was: none)', in_array('CMU-CODE', $t, true) && in_array('CMU-ROBO', $t, true) && in_array('CMU-ALL', $t, true));
+    chk('curriculum · and not another division’s, nor a draft', !in_array('CMU-MUS', $t, true) && !in_array('CMU-VID', $t, true) && !in_array('CMU-DRAFT', $t, true));
+    chk('curriculum · a MUSIC member sees Music, not every arts course’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
+    chk('curriculum · two faculties on the card bring both divisions', in_array('CMU-CODE', $ids('CMC-2'), true) && in_array('CMU-VID', $ids('CMC-2'), true));
+    chk('curriculum · a member with only a division gets that division’s lessons', in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
+    chk('curriculum · a track that is a course name stays that one course', in_array('CMU-CODE', $ids('CMC-X'), true) && !in_array('CMU-ROBO', $ids('CMC-X'), true));
+    setting_set('club_catalogue', $prevCat);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'CMC-%'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CMU-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
