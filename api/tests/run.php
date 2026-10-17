@@ -24783,6 +24783,30 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MU-ADM'");
 })();
 
+/* ── The bundled Business Division course: 72 Saturdays, tool-first, through the real import ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-BZ-ADM', 'fullName' => 'Biz Admin', 'email' => 'bz-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'business-tool-first-2026']);
+    $rows = $s['rows'] ?? [];
+    $mods = array_count_values(array_map(fn($r) => $r['level'], $rows));
+    $years = array_count_values(array_map(fn($r) => curriculum_level_year($r['level']), $rows));
+    chk('business: six modules of 12 Saturdays, two modules a programme year', count($rows) === 72 && count($mods) === 6 && !array_filter($mods, fn($n) => $n !== 12) && ($years[1] ?? 0) === 24 && ($years[2] ?? 0) === 24 && ($years[3] ?? 0) === 24);
+    chk('business: every Saturday follows the standard — demonstration, guided practice, independent assignment, feedback — with a deliverable and AI used well',
+        !array_filter($rows, fn($r) => !str_contains($r['body'], 'Demonstration (20 minutes)') || !str_contains($r['body'], 'Guided hands-on practice (60 minutes)')
+            || !str_contains($r['body'], 'Independent assignment (25 minutes)') || !str_contains($r['body'], 'feedback and submission (15 minutes)')
+            || !str_contains($r['body'], '**Deliverable:**') || !str_contains($r['body'], '## AI, used well') || (int)$r['durationMins'] !== 120));
+    chk('business: the programme team\'s weeks are kept (week 1 Drive, week 27 ChatGPT, week 72 the defence)', str_starts_with($rows[0]['title'], 'Google Drive')
+        && str_starts_with($rows[26]['title'], 'ChatGPT') && str_contains($rows[71]['title'], 'defend the final project'));
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-BZ-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
+    chk('business: every lesson passes the importer', ($dry['tally']['create'] ?? 0) === 72 && ($dry['tally']['failed'] ?? 1) === 0);
+    $all = array_merge(backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'practical-coding-2026'])['rows'] ?? [],
+                       backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'media-lab-2026'])['rows'] ?? []);
+    chk('the Tech and Media courses now carry AI used well and support and stretch in every lesson', count($all) === 120
+        && !array_filter($all, fn($r) => !str_contains($r['body'], '## AI, used well') || !str_contains($r['body'], 'If you already can')));
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-BZ-ADM'");
+})();
+
 /* ── The bundled Practical Coding course: loads through the real import, cleanly ── */
 (function () {
     $now = now_iso();

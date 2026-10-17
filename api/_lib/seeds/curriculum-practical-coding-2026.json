@@ -1,7 +1,7 @@
 {
  "key": "practical-coding-2026",
  "title": "Practical Coding — Full Stack Web Developer (2026)",
- "description": "24 weeks, three 90-minute lessons a week: HTML, CSS, JavaScript, Node/Express/MongoDB and a full-stack capstone. Built on the freeCodeCamp Full Stack Developer curriculum, with Git, early deployment, mobile-first CSS and a real back end added, and a check on every lesson.",
+ "description": "24 weeks, three 90-minute lessons a week: HTML, CSS, JavaScript, Node/Express/MongoDB and a full-stack capstone. Built on the freeCodeCamp Full Stack Developer curriculum, with Git, early deployment, mobile-first CSS and a real back end added, and a check on every lesson. Every lesson now carries an 'AI, used well' strand (AI explains, suggests and checks; the learner does the work and verifies it) and support and stretch work for mixed abilities.",
  "source": "freeCodeCamp Full Stack Developer curriculum (https://www.freecodecamp.org/learn/full-stack-developer/)",
  "lessons": [
   {
@@ -16,7 +16,7 @@
     "You will open the developer tools and inspect a page",
     "You will create, save and open your first .html file"
    ],
-   "body": "## What to do\n\n- Install a code editor (VS Code, or an online editor if you are on a phone)\n- Open any website, right-click, choose **Inspect**, and change some text in the Elements panel\n- Create `index.html`, type a sentence into it, save it and open it in your browser\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Install a code editor (VS Code, or an online editor if you are on a phone)\n- Open any website, right-click, choose **Inspect**, and change some text in the Elements panel\n- Create `index.html`, type a sentence into it, save it and open it in your browser\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -65,7 +65,7 @@
     "You will use h1–h6 and p correctly",
     "You will link to another page with an a element"
    ],
-   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through the first Basic HTML workshop on freeCodeCamp\n- Build a page about yourself with one h1, two h2 sections and a link to a site you like\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through the first Basic HTML workshop on freeCodeCamp\n- Build a page about yourself with one h1, two h2 sections and a link to a site you like\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -121,7 +121,7 @@
     "You will add an image with alt text",
     "You will nest elements without overlapping tags"
    ],
-   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Continue the Basic HTML workshop on freeCodeCamp\n- Add a list of three things you want to build, and a picture with a sensible alt text, to your page\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Continue the Basic HTML workshop on freeCodeCamp\n- Add a list of three things you want to build, and a picture with a sensible alt text, to your page\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -170,7 +170,7 @@
     "You will explain what belongs in head and in body",
     "You will set the page title and character set"
    ],
-   "body": "This lesson is about **24 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Basic HTML workshop on freeCodeCamp\n- Rewrite your page with `<!DOCTYPE html>`, `<html lang=\"en\">`, a head with charset and title, and a body\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **24 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Basic HTML workshop on freeCodeCamp\n- Rewrite your page with `<!DOCTYPE html>`, `<html lang=\"en\">`, a head with charset and title, and a body\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -214,7 +214,7 @@
     "You will lay out a page with header, nav, main and footer",
     "You will explain why semantic HTML helps accessibility"
    ],
-   "body": "This lesson is about **39 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Semantic HTML workshop on freeCodeCamp\n- Restructure your page so it has header, nav, main and footer\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **39 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Semantic HTML workshop on freeCodeCamp\n- Restructure your page so it has header, nav, main and footer\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -263,7 +263,7 @@
     "You will commit and push your page",
     "You will read a commit history"
    ],
-   "body": "## What to do\n\n- Create a GitHub account (with a parent's permission if you are under 13 — GitHub's minimum age is 13)\n- Make a repository called `my-first-site` and upload your index.html\n- Change one line, commit it with a clear message, and look at the history\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Create a GitHub account (with a parent's permission if you are under 13 — GitHub's minimum age is 13)\n- Make a repository called `my-first-site` and upload your index.html\n- Change one line, commit it with a clear message, and look at the history\n\n## AI, used well\n\nAsk an AI assistant to explain a git command before you run it. Never paste passwords, tokens or keys into any AI tool or into a public repository.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -307,7 +307,7 @@
     "You will connect every input to a label",
     "You will use select, radio buttons, checkboxes and textarea"
    ],
-   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Forms and Tables workshop on freeCodeCamp\n- Build a sign-up form for a club, with a label for every field\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Forms and Tables workshop on freeCodeCamp\n- Build a sign-up form for a club, with a label for every field\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -356,7 +356,7 @@
     "You will build a table with a header row",
     "You will explain when a table is the right choice"
    ],
-   "body": "This lesson is about **29 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Forms and Tables workshops on freeCodeCamp\n- Add a weekly timetable table to your page, with th scope=\"col\" on the header row\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **29 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Forms and Tables workshops on freeCodeCamp\n- Add a weekly timetable table to your page, with th scope=\"col\" on the header row\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -405,7 +405,7 @@
     "You will use headings in order and give images alt text",
     "You will explain when ARIA is and is not needed"
    ],
-   "body": "This lesson is about **28 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the HTML accessibility workshop on freeCodeCamp\n- Use Tab to move through your page — can you reach and use everything?\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **28 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the HTML accessibility workshop on freeCodeCamp\n- Use Tab to move through your page — can you reach and use everything?\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -454,7 +454,7 @@
     "You will fix problems a real browser shows you",
     "You will share a working link"
    ],
-   "body": "## What to do\n\n- Turn on GitHub Pages for `my-first-site`\n- Check it on your phone and on a computer\n- Send the link to your instructor\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Turn on GitHub Pages for `my-first-site`\n- Check it on your phone and on a computer\n- Send the link to your instructor\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -486,7 +486,7 @@
     "You will style elements by type, class and id",
     "You will explain which rule wins when two rules disagree"
    ],
-   "body": "This lesson is about **16 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS introduction on freeCodeCamp\n- Create `styles.css`, link it from your page and change the colours and font\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **16 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS introduction on freeCodeCamp\n- Create `styles.css`, link it from your page and change the colours and font\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -535,7 +535,7 @@
     "You will use margin and padding",
     "You will use rem units for sizes"
    ],
-   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through Basic CSS on freeCodeCamp (first half)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through Basic CSS on freeCodeCamp (first half)\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -579,7 +579,7 @@
     "You will switch elements between block and inline",
     "You will predict which of two rules applies"
    ],
-   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish Basic CSS on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish Basic CSS on freeCodeCamp\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -628,7 +628,7 @@
     "You will use box-sizing: border-box",
     "You will debug spacing with the developer tools"
    ],
-   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the box model lessons on freeCodeCamp\n- In the developer tools, hover over an element and read its box model diagram\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the box model lessons on freeCodeCamp\n- In the developer tools, hover over an element and read its box model diagram\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -677,7 +677,7 @@
     "You will build a small palette",
     "You will check text contrast is at least 4.5:1"
    ],
-   "body": "This lesson is about **49 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Colors workshop on freeCodeCamp\n- Pick a palette of four colours for your site and check text contrast with a contrast checker\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **49 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Colors workshop on freeCodeCamp\n- Pick a palette of four colours for your site and check text contrast with a contrast checker\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -726,7 +726,7 @@
     "You will write mobile-first media queries",
     "You will test a page at phone width in the developer tools"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Responsive Design lessons on freeCodeCamp\n- Make your page work at 360px wide, then add a min-width media query for larger screens\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Responsive Design lessons on freeCodeCamp\n- Make your page work at 360px wide, then add a min-width media query for larger screens\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -770,7 +770,7 @@
     "You will align with justify-content and align-items",
     "You will let items wrap with flex-wrap"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Flexbox workshop on freeCodeCamp\n- Lay out your nav links in a row with even spacing\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Flexbox workshop on freeCodeCamp\n- Lay out your nav links in a row with even spacing\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -819,7 +819,7 @@
     "You will choose a comfortable line height and line length",
     "You will load a web font responsibly"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Typography workshop on freeCodeCamp\n- Set your body text to 1rem with a line-height of about 1.5\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Typography workshop on freeCodeCamp\n- Set your body text to 1rem with a line-height of about 1.5\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -868,7 +868,7 @@
     "You will make focus clearly visible",
     "You will size tap targets for fingers (at least 44px)"
    ],
-   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Styling Forms workshop on freeCodeCamp\n- Style your sign-up form so it is easy to use on a phone\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Styling Forms workshop on freeCodeCamp\n- Style your sign-up form so it is easy to use on a phone\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -917,7 +917,7 @@
     "You will place an element relative to its parent",
     "You will make a sticky header"
    ],
-   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the positioning lessons on freeCodeCamp\n- Make your page header stick to the top as you scroll\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the positioning lessons on freeCodeCamp\n- Make your page header stick to the top as you scroll\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -966,7 +966,7 @@
     "You will add content with ::before",
     "You will select elements by attribute"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the pseudo-classes and attribute selectors lessons on freeCodeCamp\n- Style external links differently using a[href^=\"https\"]\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the pseudo-classes and attribute selectors lessons on freeCodeCamp\n- Style external links differently using a[href^=\"https\"]\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1015,7 +1015,7 @@
     "You will use var() with a fallback",
     "You will theme a page by changing variables"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS Variables workshop on freeCodeCamp\n- Move your palette into variables on :root\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS Variables workshop on freeCodeCamp\n- Move your palette into variables on :root\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1059,7 +1059,7 @@
     "You will use fr units and gap",
     "You will place items across columns"
    ],
-   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Grid workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Grid workshop on freeCodeCamp\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1108,7 +1108,7 @@
     "You will lay out a page with grid-template-areas",
     "You will choose between Grid and Flexbox"
    ],
-   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Grid workshops on freeCodeCamp\n- Build a photo gallery that goes from one column on a phone to four on a laptop\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Grid workshops on freeCodeCamp\n- Build a photo gallery that goes from one column on a phone to four on a laptop\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1152,7 +1152,7 @@
     "You will respect prefers-reduced-motion",
     "You will review a page against simple design principles"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS accessibility and design lessons on freeCodeCamp\n- Review your site: is it obvious what matters most on each page?\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS accessibility and design lessons on freeCodeCamp\n- Review your site: is it obvious what matters most on each page?\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1196,7 +1196,7 @@
     "You will write a @keyframes animation",
     "You will keep motion short and purposeful"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Animation workshop on freeCodeCamp (to about step 45)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Animation workshop on freeCodeCamp (to about step 45)\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1245,7 +1245,7 @@
     "You will chain several animations",
     "You will turn animation off for reduced motion"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Animation workshops on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Animation workshops on freeCodeCamp\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1277,7 +1277,7 @@
     "You will build the layout mobile first",
     "You will commit as you go"
    ],
-   "body": "## What to do\n\n- Sketch the pages on paper\n- Build the header, footer and main layout\n- Commit at least three times with clear messages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Sketch the pages on paper\n- Build the header, footer and main layout\n- Commit at least three times with clear messages\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1309,7 +1309,7 @@
     "You will test on a real phone",
     "You will publish and share it"
    ],
-   "body": "## What to do\n\n- Finish the pages and styling\n- Test at 360px and on a real phone\n- Publish with GitHub Pages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Finish the pages and styling\n- Test at 360px and on a real phone\n- Publish with GitHub Pages\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1340,7 +1340,7 @@
     "You will finish any overdue lessons",
     "You will improve one thing on your project"
    ],
-   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a dark mode to your site with CSS variables\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a dark mode to your site with CSS variables\n\n## AI, used well\n\nAsk an AI assistant why a layout is not doing what you expect, paste only your own small snippet, and test each suggestion one change at a time in the browser.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1372,7 +1372,7 @@
     "You will join and change strings",
     "You will print to the console"
    ],
-   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first part of the JavaScript fundamentals (variables and strings) on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first part of the JavaScript fundamentals (variables and strings) on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1416,7 +1416,7 @@
     "You will compare with === and !==",
     "You will write if / else if / else"
    ],
-   "body": "This lesson is about **54 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the numbers, booleans and conditionals part of JavaScript fundamentals on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **54 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the numbers, booleans and conditionals part of JavaScript fundamentals on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1465,7 +1465,7 @@
     "You will return values",
     "You will write arrow functions"
    ],
-   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functions lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functions lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1509,7 +1509,7 @@
     "You will use push, pop and includes",
     "You will find an array's length"
    ],
-   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Arrays lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Arrays lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1558,7 +1558,7 @@
     "You will read and update properties",
     "You will store objects in arrays"
    ],
-   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Objects lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Objects lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1590,7 +1590,7 @@
     "You will loop over an array with for…of",
     "You will avoid infinite loops"
    ],
-   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Loops lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Loops lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1634,7 +1634,7 @@
     "You will pass a function as an argument",
     "You will choose the right array method"
    ],
-   "body": "This lesson is about **37 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the JavaScript fundamentals review and higher-order functions lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **37 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the JavaScript fundamentals review and higher-order functions lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1678,7 +1678,7 @@
     "You will change textContent",
     "You will add and remove classes"
    ],
-   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first DOM Manipulation workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first DOM Manipulation workshop on freeCodeCamp\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1727,7 +1727,7 @@
     "You will read input values",
     "You will stop a form reloading the page"
    ],
-   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the DOM Manipulation and Events workshop on freeCodeCamp\n- Make a button that counts how many times it is pressed\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the DOM Manipulation and Events workshop on freeCodeCamp\n- Make a button that counts how many times it is pressed\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1771,7 +1771,7 @@
     "You will use console.log and breakpoints",
     "You will fix a bug methodically"
    ],
-   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Debugging lessons on freeCodeCamp\n- Set a breakpoint in your counter and step through it\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Debugging lessons on freeCodeCamp\n- Set a breakpoint in your counter and step through it\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1815,7 +1815,7 @@
     "You will test a string with .test()",
     "You will use flags such as i and g"
    ],
-   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Regular Expressions basics on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Regular Expressions basics on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1864,7 +1864,7 @@
     "You will validate with JavaScript",
     "You will write helpful error messages"
    ],
-   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Form Validation workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Form Validation workshop on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1908,7 +1908,7 @@
     "You will show errors next to the field",
     "You will explain why browser checks are not enough"
    ],
-   "body": "This lesson is about **53 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Form Validation workshops on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **53 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Form Validation workshops on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1945,7 +1945,7 @@
     "You will format a date for display",
     "You will work out the days between two dates"
    ],
-   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Dates lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Dates lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -1982,7 +1982,7 @@
     "You will listen for media events",
     "You will add captions with a track element"
    ],
-   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Audio and Video events lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Audio and Video events lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2019,7 +2019,7 @@
     "You will store and look up values in a Map",
     "You will choose between an object and a Map"
    ],
-   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Maps and Sets lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Maps and Sets lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2063,7 +2063,7 @@
     "You will convert data with JSON.stringify and JSON.parse",
     "You will build create, read, update and delete"
    ],
-   "body": "This lesson is about **65 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the localStorage and CRUD workshop on freeCodeCamp\n- Build a to-do list that keeps its items after a refresh\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **65 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the localStorage and CRUD workshop on freeCodeCamp\n- Build a to-do list that keeps its items after a refresh\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2112,7 +2112,7 @@
     "You will add methods",
     "You will create objects with new"
    ],
-   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Classes lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Classes lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2144,7 +2144,7 @@
     "You will avoid changing data you were given",
     "You will combine small functions"
    ],
-   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functional Programming lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functional Programming lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2181,7 +2181,7 @@
     "You will trace a recursive call by hand",
     "You will recognise when recursion fits"
    ],
-   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Recursion lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Recursion lessons on freeCodeCamp\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2225,7 +2225,7 @@
     "You will use fetch with async/await",
     "You will handle errors with try/catch"
    ],
-   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Asynchronous JavaScript lessons on freeCodeCamp\n- Fetch data from a free public API and show it on your page\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Asynchronous JavaScript lessons on freeCodeCamp\n- Fetch data from a free public API and show it on your page\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2269,7 +2269,7 @@
     "You will build the core with the DOM and events",
     "You will commit as you go"
    ],
-   "body": "## What to do\n\n- Write down the three things your app must do\n- Build the core feature first\n- Commit at least three times\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Write down the three things your app must do\n- Build the core feature first\n- Commit at least three times\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2301,7 +2301,7 @@
     "You will save data between visits",
     "You will publish and share it"
    ],
-   "body": "## What to do\n\n- Add saving with localStorage\n- Test with the keyboard and on a phone\n- Publish with GitHub Pages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Add saving with localStorage\n- Test with the keyboard and on a phone\n- Publish with GitHub Pages\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2332,7 +2332,7 @@
     "You will finish any overdue lessons",
     "You will improve your app"
    ],
-   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add data from a public API to your app\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add data from a public API to your app\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2364,7 +2364,7 @@
     "You will explain common status codes",
     "You will read and write JSON"
    ],
-   "body": "## What to do\n\n- Read the MDN overview of HTTP\n- Open the Network tab in the developer tools and watch a page load\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Read the MDN overview of HTTP\n- Open the Network tab in the developer tools and watch a page load\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2413,7 +2413,7 @@
     "You will start a project with npm init",
     "You will install a package"
    ],
-   "body": "## What to do\n\n- Install Node.js (LTS), or use an online environment\n- Run a script that prints today's date\n- Create a project with npm init -y\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Install Node.js (LTS), or use an online environment\n- Run a script that prints today's date\n- Create a project with npm init -y\n\n## AI, used well\n\nUse an AI assistant as a tutor: ask it to explain an error message line by line, then fix the bug yourself. Ask \"why\" until you could explain it to a classmate.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2450,7 +2450,7 @@
     "You will add GET routes",
     "You will send text and JSON"
    ],
-   "body": "## What to do\n\n- Follow the Express Hello World guide\n- Add a /about route that returns JSON\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Follow the Express Hello World guide\n- Add a /about route that returns JSON\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2482,7 +2482,7 @@
     "You will read JSON request bodies with express.json()",
     "You will serve static files"
    ],
-   "body": "## What to do\n\n- Add express.json() and a logging middleware\n- Serve your JavaScript project's files with express.static\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Add express.json() and a logging middleware\n- Serve your JavaScript project's files with express.static\n\n## AI, used well\n\nAsk an AI assistant to *explain* a tag you are unsure of, then check it on MDN (developer.mozilla.org). Type the code yourself — copying code you cannot explain is not learning.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2519,7 +2519,7 @@
     "You will use GET, POST, PUT and DELETE",
     "You will return correct status codes"
    ],
-   "body": "## What to do\n\n- Build an API for your to-do items: list, add, update and delete (keep data in an array for now)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Build an API for your to-do items: list, add, update and delete (keep data in an array for now)\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2568,7 +2568,7 @@
     "You will return 400 and 404 when something is wrong",
     "You will never crash on bad input"
    ],
-   "body": "## What to do\n\n- Test every route, including with bad input\n- Return 400 for invalid data and 404 for missing items\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Test every route, including with bad input\n- Return 400 for invalid data and 404 for missing items\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2600,7 +2600,7 @@
     "You will create a free MongoDB Atlas database",
     "You will design documents for your data"
    ],
-   "body": "## What to do\n\n- Create a free MongoDB Atlas cluster\n- Insert and find a few documents in the Atlas interface\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Create a free MongoDB Atlas cluster\n- Insert and find a few documents in the Atlas interface\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2637,7 +2637,7 @@
     "You will create and find documents",
     "You will validate data in the schema"
    ],
-   "body": "## What to do\n\n- Follow the Mongoose quick start\n- Make a Task model with a required title\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Follow the Mongoose quick start\n- Make a Task model with a required title\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2669,7 +2669,7 @@
     "You will use your model in each route",
     "You will handle database errors"
    ],
-   "body": "## What to do\n\n- Connect with mongoose.connect\n- Change each route to use the Task model\n- Restart the server and check your data is still there\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Connect with mongoose.connect\n- Change each route to use the Task model\n- Restart the server and check your data is still there\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2706,7 +2706,7 @@
     "You will validate input on the server",
     "You will explain password hashing"
    ],
-   "body": "## What to do\n\n- Move your database connection string into a .env file and add .env to .gitignore\n- Add server-side validation to your create route\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Move your database connection string into a .env file and add .env to .gitignore\n- Add server-side validation to your create route\n\n## AI, used well\n\nAsk an AI assistant to explain a git command before you run it. Never paste passwords, tokens or keys into any AI tool or into a public repository.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2755,7 +2755,7 @@
     "You will set environment variables on the host",
     "You will connect your front end to the live API"
    ],
-   "body": "## What to do\n\n- Deploy your API to a free Node host (for example Render)\n- Set your environment variables there\n- Point your front end at the live API\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Deploy your API to a free Node host (for example Render)\n- Set your environment variables there\n- Point your front end at the live API\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2786,7 +2786,7 @@
     "You will finish any overdue lessons",
     "You will strengthen your API"
    ],
-   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a search route to your API\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a search route to your API\n\n## AI, used well\n\nAsk an AI assistant to describe what a request or query does, then test it with sample data first. AI can invent functions that do not exist — check the official docs.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2818,7 +2818,7 @@
     "You will sketch the screens",
     "You will design the data and the routes"
    ],
-   "body": "## What to do\n\n- Write the brief: who it is for and what it does\n- Sketch the screens\n- List the data and the API routes\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Write the brief: who it is for and what it does\n- Sketch the screens\n- List the data and the API routes\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2849,7 +2849,7 @@
     "You will build the back end of your capstone",
     "You will test every route"
    ],
-   "body": "## What to do\n\n- Build the model and the routes\n- Test them before starting the front end\n- Commit as you go\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Build the model and the routes\n- Test them before starting the front end\n- Commit as you go\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2880,7 +2880,7 @@
     "You will build the front end of your capstone",
     "You will connect it to your API"
    ],
-   "body": "## What to do\n\n- Build the screens\n- Connect them with fetch\n- Commit as you go\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Build the screens\n- Connect them with fetch\n- Commit as you go\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2911,7 +2911,7 @@
     "You will deploy a full-stack app",
     "You will fix what testing shows"
    ],
-   "body": "## What to do\n\n- Test everything, including bad input\n- Deploy the API and the front end\n- Write a README explaining what it does and how to run it\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Test everything, including bad input\n- Deploy the API and the front end\n- Write a README explaining what it does and how to run it\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2942,7 +2942,7 @@
     "You will build a portfolio page linking your projects",
     "You will describe your work clearly"
    ],
-   "body": "## What to do\n\n- Make a portfolio page linking your three projects and capstone\n- Write two or three sentences about each\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Make a portfolio page linking your three projects and capstone\n- Write two or three sentences about each\n\n## AI, used well\n\nUse an AI assistant to review your code for readability (names, comments, repetition). Decide which suggestions to keep and note why; the work must stay yours.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [
@@ -2973,7 +2973,7 @@
     "You will present your work",
     "You will give and receive useful feedback"
    ],
-   "body": "## What to do\n\n- Prepare a three-minute demo\n- Present, and give feedback to two others\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "body": "## What to do\n\n- Prepare a three-minute demo\n- Present, and give feedback to two others\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** add one feature that was not asked for, write a short README explaining it, and help a classmate debug theirs.\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
    "durationMins": 90,
    "passMark": 60,
    "materials": [

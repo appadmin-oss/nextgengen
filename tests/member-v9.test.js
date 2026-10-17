@@ -183,7 +183,7 @@ async function as(memberId, admin, viewport) {
 
     // ── Learn: a lesson and its check ──
     await nav(mb, 'Learn');
-    await mb.waitForFunction(() => /Web pages, part/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
+    await mb.waitForFunction(() => /Web pages, part/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(async e => { console.error('DEBUG', mb.errs && mb.errs.join('\n'), (await mb.innerText('main')).slice(0, 1200)); throw e; });
     await mb.click('main button:has-text("Web pages, part")');
     await mb.waitForSelector('[role="dialog"] button:has-text("I\'ve done")', { timeout: 20000 });
     await mb.click('[role="dialog"] button:has-text("I\'ve done")');

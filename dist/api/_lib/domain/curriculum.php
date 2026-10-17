@@ -872,12 +872,16 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     $out = [];
     foreach ($words as $w) {
         $lw = mb_strtolower($w);
+        /* A STRONG hit (the word is a course, or names a division) answers it.
+         * A course that merely contains the word ("Tech Product Design" for
+         * TECH) is a weak hit: it is added, but the division the word stands
+         * for still is too — or TECH would get one course and no Coding. */
         $hit = false;
         if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; $hit = true; }
         // A catalogue division named by this word ("Music") is taken whole.
         foreach ($catalogue as $name => $courses) if (in_array($lw, $tokens((string)$name), true)) { $out = array_merge($out, array_values($courses)); $hit = true; }
         $want = $family[$lw] ?? [$lw];
-        foreach ($known as $c) if (array_intersect($want, $tokens((string)$c))) { $out[] = (string)$c; $hit = true; }
+        foreach ($known as $c) if (array_intersect($want, $tokens((string)$c))) { $out[] = (string)$c; if (isset($family[$lw])) $hit = true; }
         if (!$hit) {
             $div = function_exists('nggc_division_for_track') ? nggc_division_for_track($w) : '';
             if ($div !== '') $out = array_merge($out, $divCourses($div));

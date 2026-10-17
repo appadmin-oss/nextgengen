@@ -1621,3 +1621,11 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   own `curriculum-doc.php`) passes through `curriculum_strip_assignments`,
   which drops the "…assignment/homework" section and task/project/essay
   checks.
+- **Seed `business-tool-first-2026`**: the Business Division's 72 Saturdays (six
+  modules of 12; Modules 1–2 Year 1, 3–4 Year 2, 5–6 Year 3), each a
+  120-minute lesson in the 20/60/25/15 Saturday standard, with an "AI, used
+  well" strand. Practical Coding and Media Lab gain the same strand and
+  support/stretch work; their levels are unchanged, so re-import updates them.
+- **Resolver fix**: a course that only *contains* the word (TECH → "Tech
+  Product Design") is a weak hit and no longer suppresses the division
+  mapping, so TECH members get Coding again (member-v9 caught it).
