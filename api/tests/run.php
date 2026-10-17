@@ -3325,6 +3325,31 @@ chk('sms: falls through to second provider on failure', (function () {
     return !empty($r['ok']) && $r['provider'] === 'twilio' && count($tried) === 2;
 })());
 
+chk('sms: textbee goes first for Nigerian numbers (the programme phone), after Twilio for others', (function () {
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'textbee' => ['api_key' => 'tb'], 'termii' => ['api_key' => 'tk'], 'twilio' => ['sid' => 's', 'token' => 't', 'from' => '+1000']];
+    $ok = sms_provider_order('+2348031234567') === ['textbee', 'termii', 'twilio'] && sms_provider_order('+447911123456') === ['twilio', 'textbee', 'termii'];
+    $GLOBALS['CONFIG']['sms'] = ['textbee' => ['api_key' => 'tb']]; $ok = $ok && sms_enabled();
+    $GLOBALS['CONFIG']['sms'] = null;
+    return $ok;
+})());
+chk('sms: textbee is called as documented — x-api-key, E.164 recipients, deviceId — and a queued batch is a send', (function () {
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'textbee' => ['api_key' => 'tb-key', 'device_id' => 'dev123']];
+    $seen = null;
+    $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$seen) { $seen = ['url' => $url, 'body' => json_decode($opts[CURLOPT_POSTFIELDS], true), 'h' => $opts[CURLOPT_HTTPHEADER]];
+        return ['ok' => true, 'body' => '{"data":{"success":true,"message":"SMS added to queue for processing","smsBatchId":"b1","recipientCount":1}}']; };
+    $r = sms_send('08031234567', 'Your code is 123456');
+    unset($GLOBALS['__sms_http_mock']); $GLOBALS['CONFIG']['sms'] = null;
+    return !empty($r['ok']) && $r['provider'] === 'textbee' && $seen['url'] === 'https://api.textbee.dev/api/v1/gateway/send-sms'
+        && $seen['body']['recipients'] === ['+2348031234567'] && $seen['body']['deviceId'] === 'dev123' && in_array('x-api-key: tb-key', $seen['h'], true);
+})());
+chk('sms: a textbee refusal (no device, 429) falls through to Termii', (function () {
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'textbee' => ['api_key' => 'tb'], 'termii' => ['api_key' => 'tk']];
+    $GLOBALS['__sms_http_mock'] = fn($url, $opts) => str_contains($url, 'textbee') ? ['ok' => false, 'error' => 'http_429'] : ['ok' => true, 'body' => '{}'];
+    $r = sms_send('08031234567', 'Hi');
+    unset($GLOBALS['__sms_http_mock']); $GLOBALS['CONFIG']['sms'] = null;
+    return !empty($r['ok']) && $r['provider'] === 'termii';
+})());
+
 // ── Registration stack: forms → gate → parent verification → QR bound ──
 chk('form: live def seeds with locked system fields', (function () {
     $f = backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099']);
@@ -24783,6 +24808,38 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MU-ADM'");
 })();
 
+/* ── The study helper and the lesson writer (AI, with a mock provider) ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-TU-1', 'fullName' => 'Tutee', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Piano', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-TU-ADM', 'fullName' => 'Tutor Admin', 'email' => 'tu-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('curriculum_units', ['unitId' => 'CU-TU-1', 'course' => 'Piano', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Scales', 'status' => 'published', 'version' => 1,
+        'body' => "## Learn\n\nTone tone semitone.\n\n## This week's assignment\n\nPlay D major.", 'objectives' => '[]', 'createdAt' => $now]);
+    db_insert('curriculum_units', ['unitId' => 'CU-TU-X', 'course' => 'Coding', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Not theirs', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+    $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $sys = '';
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$sys) { $sys = $system;
+        if (str_contains($system, 'Return JSON')) return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['body' => "## Why it matters\n\nBecause.\n\n## Success criteria\n\n- One", 'summary' => 'A lesson.', 'objectives' => ['You will play'], 'checks' => []])];
+        return ['ok' => true, 'provider' => 'mock', 'text' => 'A semitone is the very next key. Which key is a semitone above E?']; };
+    $a = member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'What is a semitone?']);
+    chk('study helper: a member asks about their own lesson and gets an answer, with what is left today', !empty($a['ok']) && str_contains($a['answer'] ?? '', 'semitone') && ($a['left'] ?? 0) === CURR_TUTOR_PER_DAY - 1);
+    chk('study helper: the AI is given the lesson but not its assignment', str_contains($sys, 'Tone tone semitone') && !str_contains($sys, 'Play D major'));
+    chk('study helper: not for a lesson outside their course', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-X', 'question' => 'What is a tag?'])['error'] ?? '') === 'not_found');
+    $sg = member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'I want to hurt myself']);
+    chk('study helper: distress is answered with people to talk to, not a lesson', !empty($sg['safeguarding']) && str_contains($sg['answer'], 'Report a concern'));
+    chk('study helper: a member cannot reset their own allowance', (member_state_set(['memberId' => 'NGG-TU-1', 'key' => 'ai.tutor.' . gmdate('Y-m-d'), 'value' => 0])['error'] ?? '') === 'bad_key');
+    db_upsert('member_state', ['memberId' => 'NGG-TU-1', 'stateKey' => 'ai.tutor.' . gmdate('Y-m-d'), 'stateValue' => (string)CURR_TUTOR_PER_DAY, 'updatedAt' => $now], ['memberId', 'stateKey'], ['stateValue' => (string)CURR_TUTOR_PER_DAY]);
+    chk('study helper: the daily allowance is a refusal once used', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'And a tone?'])['error'] ?? '') === 'daily_limit');
+    $w = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords on G', 'text' => '', 'course' => 'Piano', 'checks' => 3]);
+    chk('lesson writer: with only a title, AI writes the whole lesson in the NGG Saturday standard', !empty($w['ok']) && str_starts_with($w['draft']['body'] ?? '', '## Why it matters')
+        && str_contains($sys, 'Guided hands-on practice (60 minutes)') && str_contains($sys, 'AI, used well'));
+    $n = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords', 'text' => str_repeat('Real notes from the instructor about chords. ', 4), 'course' => 'Piano', 'checks' => 3]);
+    chk('lesson writer: with real notes, the notes are never rewritten', !empty($n['ok']) && ($n['draft']['body'] ?? '') === '');
+    unset($GLOBALS['__ai_mock']); if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
+    db_exec("DELETE FROM member_state WHERE memberId = 'NGG-TU-1'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CU-TU-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TU-%'");
+})();
+
 /* ── The bundled Business Division course: 72 Saturdays, tool-first, through the real import ── */
 (function () {
     $now = now_iso();
@@ -28388,6 +28445,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('assignments · one with work handed in cannot be deleted', (staff_assignments_status($ins + ['action' => 'delete', 'ids' => [$aid]])['results'][0]['error'] ?? '') === 'has_submissions');
     chk('assignments · it can be closed', !empty(staff_assignments_status($ins + ['action' => 'close', 'ids' => [$aid]])['results'][0]['ok'])
         && (assignment_submit(['memberId' => 'ASG-T2', 'assignmentId' => $aid, 'text' => 'late'])['error'] ?? '') === 'not_open');
+    // Different kinds of hand-in, each refused for what it lacks, and success-criteria steps the member ticks.
+    $kind = function ($proof, $steps = []) use ($ins) { $r = staff_assignments_save($ins + ['data' => ['title' => 'Kind ' . $proof, 'instructions' => 'Do it.', 'track' => 'Coding', 'proof' => $proof, 'steps' => $steps, 'status' => 'published']]); return $r['assignmentId'] ?? ''; };
+    $sub = fn($id, $x) => assignment_submit(['memberId' => 'ASG-T2', 'assignmentId' => $id] + $x);
+    $lk = $kind('link', "- Shared as Viewer\n- Named properly");
+    chk('hand-in · a link assignment refuses writing alone', ($sub($lk, ['text' => 'here it is'])['error'] ?? '') === 'link_required');
+    chk('hand-in · and refuses a link that is not https', ($sub($lk, ['linkUrl' => 'http://docs.google.com/x'])['error'] ?? '') === 'bad_link');
+    chk('hand-in · its success-criteria steps must all be ticked', ($sub($lk, ['linkUrl' => 'https://docs.google.com/spreadsheets/d/abc/edit', 'steps' => [0]])['error'] ?? '') === 'steps_incomplete');
+    chk('hand-in · with both ticked it goes in', !empty($sub($lk, ['linkUrl' => 'https://docs.google.com/spreadsheets/d/abc/edit', 'steps' => [0, 1]])['ok']));
+    $mine = array_values(array_filter(assignment_list_for_member(['memberId' => 'ASG-T2'])['assignments'], fn($a) => $a['assignmentId'] === $lk))[0] ?? [];
+    chk('hand-in · the link is recognised as a Google Sheet, and the ticks are kept', ($mine['submission']['linkKind'] ?? '') === 'Google Sheet' && ($mine['submission']['steps'] ?? []) === [0, 1] && ($mine['proof'] ?? '') === 'link' && count($mine['steps'] ?? []) === 2);
+    $rc = $kind('recording');
+    chk('hand-in · a recording needs an audio or video file, not a PDF', ($sub($rc, ['files' => [['url' => 'https://res.cloudinary.com/x/raw/upload/a.pdf', 'name' => 'a.pdf']]])['error'] ?? '') === 'recording_required');
+    chk('hand-in · an mp3 is a recording', !empty($sub($rc, ['files' => [['url' => 'https://res.cloudinary.com/x/video/upload/scale.mp3', 'name' => 'scale.mp3']]])['ok']));
+    $ph = $kind('photo');
+    chk('hand-in · several photos go in together, the first kept as fileUrl for older readers', !empty($sub($ph, ['files' => [['url' => 'https://x.example/a.jpg', 'name' => 'a.jpg'], ['url' => 'https://x.example/b.png', 'name' => 'b.png']]])['ok'])
+        && db_row("SELECT fileUrl FROM assignment_submissions WHERE assignmentId = ? AND memberId = 'ASG-T2'", [$ph])['fileUrl'] === 'https://x.example/a.jpg');
+    chk('hand-in · more than five files are refused', ($sub($ph, ['files' => array_fill(0, 6, ['url' => 'https://x.example/a.jpg'])])['error'] ?? '') === 'too_many_files');
+    $ck = $kind('checklist');
+    chk('hand-in · a checklist with no steps is refused at save', $ck === '' && (staff_assignments_save($ins + ['data' => ['title' => 'Empty list', 'track' => 'Coding', 'proof' => 'checklist']])['fieldErrors']['steps'] ?? '') !== '');
+    chk('the learning path · Y1·T2·W3 from a Business module, a music year and a plain week', curriculum_path('Year 1 · Module 2: Spreadsheets', 15)['code'] === 'Y1·T2·W3'
+        && curriculum_path('Year 1 · Module 2: Spreadsheets', 15)['termName'] === 'Spreadsheets' && curriculum_path('Year 2 · Developing', 4)['code'] === 'Y2·T1·W4' && curriculum_path('', 14)['code'] === 'T2·W2');
+    $inf = assignment_infer_from_unit(['course' => 'Business', 'title' => 'Google Sheets: Build a tracker', 'body' => "## Success criteria\n\n- Totals by formula\n- Header frozen\n\n## AI"]);
+    chk('a lesson suggests its hand-in: a Sheets lesson hands in a link, with its success criteria as steps', $inf['proof'] === 'link' && $inf['steps'] === ['Totals by formula', 'Header frozen']);
+    chk('…and a piano lesson a recording', assignment_infer_from_unit(['course' => 'Piano', 'title' => 'Scales', 'body' => ''])['proof'] === 'recording');
+    foreach ([$lk, $rc, $ph] as $x) { db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$x]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$x]); }
     db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$aid]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM members WHERE memberId LIKE 'ASG-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASG'"); db_exec("DELETE FROM notifications WHERE memberId LIKE 'ASG-%'");
 })();

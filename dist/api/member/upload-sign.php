@@ -38,7 +38,7 @@ $kinds = $cfg['kinds'] ?? [];
 // The kind is strictly sanitised first so it can never escape the base folder.
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
-} elseif ($kind === 'post') {
+} elseif ($kind === 'post' || $kind === 'assignment') {
     /* Community feed media. FOUR kinds, not two.
      *
      * This used to be image-or-video, and everything that was not a video was
@@ -60,7 +60,7 @@ if (isset($kinds[$kind])) {
      */
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $spec = ['resource_type' => $mk === 'raw' ? 'raw' : ($mk === 'video' ? 'video' : 'image'),
-             'folder' => 'community'];
+             'folder' => $kind === 'assignment' ? 'assignments' : 'community'];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {
@@ -108,11 +108,14 @@ if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) { $r =
    posts: headshots, avatars, covers and any image kind. A document, a video
    or an `auto` upload whose client did not say it is an image is left alone. */
 $isImage = $resourceType === 'image' || ($resourceType === 'auto' && upload_media_kind((string)($body['mediaKind'] ?? '')) === 'image' && isset($body['mediaKind']));
-if ($kind !== 'post' && $isImage) {
+/* A hand-in is media-aware like a post: a PDF stays a PDF, a recording is
+   stored as audio/video, a photo is compressed. */
+$mediaAware = $kind === 'post' || $kind === 'assignment';
+if (!$mediaAware && $isImage) {
     $incoming = media_incoming_transformation($kind);
     $signParams['transformation'] = $incoming;
 }
-if ($kind === 'post') {
+if ($mediaAware) {
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     if ($mk === 'video') {
         $eager = 'f_auto,q_auto:eco,w_1280,c_limit';

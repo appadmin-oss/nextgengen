@@ -21,7 +21,25 @@ declare(strict_types=1);
  * Membership is checked again on submission: an assignment id is not a key.
  */
 
-const ASG_PROOFS     = ['text', 'file', 'either'];
+/* How work is handed in. `either` is the original "writing or a file" and
+ * stays valid; `any` is its broader successor (writing, files or a link). */
+const ASG_PROOFS     = ['text', 'file', 'photo', 'recording', 'link', 'checklist', 'either', 'any'];
+const ASG_PROOF_META = [
+    'text'      => ['label' => 'Writing',             'hint' => 'A written answer, typed in the portal.'],
+    'file'      => ['label' => 'A document or file',  'hint' => 'A PDF, Word, Excel, PowerPoint, image or zip.'],
+    'photo'     => ['label' => 'A photo',             'hint' => 'A photo of the work — taken now or chosen from the phone.'],
+    'recording' => ['label' => 'A recording',         'hint' => 'Audio or video — recorded in the portal or uploaded.'],
+    'link'      => ['label' => 'A link',              'hint' => 'A Google Doc, Sheet or Slides, a Canva design, a GitHub repo, a video…'],
+    'checklist' => ['label' => 'A checklist',         'hint' => 'Tick each step as it is done, with a short note.'],
+    'either'    => ['label' => 'Writing or a file',   'hint' => 'Either a written answer or a file.'],
+    'any'       => ['label' => 'Anything that shows it', 'hint' => 'Writing, files or a link — whatever shows the work best.'],
+];
+const ASG_FILES_MAX  = 5;
+const ASG_STEPS_MAX  = 12;
+const ASG_EXT = [
+    'photo'     => ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif', 'gif'],
+    'recording' => ['mp3', 'm4a', 'wav', 'ogg', 'oga', 'aac', 'weba', 'webm', 'mp4', 'mov', 'm4v', '3gp'],
+];
 const ASG_STATUSES   = ['draft', 'published', 'closed'];
 const ASG_POINTS_MAX = 1000;
 const ASG_TEXT_MAX   = 20000;
@@ -124,12 +142,84 @@ function assignment_member_in_reach(array $g, string $memberId): bool {
     return $m && in_array((string)$m['centre'], $g['centres'], true);
 }
 
+
+/* ── What a hand-in may carry ────────────────────────────────────────────── */
+
+/** The success-criteria steps, cleaned: at most ASG_STEPS_MAX short lines. */
+function assignment_steps_clean($v): array {
+    $list = is_array($v) ? $v : preg_split('/\r?\n/', (string)$v);
+    $out = [];
+    foreach ($list ?: [] as $x) { $x = trim(preg_replace('/^\s*(?:[-*•]|\d+[.)])\s*/u', '', (string)$x)); if ($x !== '') $out[] = mb_substr($x, 0, 200); }
+    return array_slice(array_values(array_unique($out)), 0, ASG_STEPS_MAX);
+}
+
+/** What a link points at, in words a member recognises ('' when it is just a website). */
+function assignment_link_kind(string $url): string {
+    $h = strtolower((string)parse_url($url, PHP_URL_HOST)); $path = (string)parse_url($url, PHP_URL_PATH);
+    if ($h === 'docs.google.com') {
+        foreach (['/document/' => 'Google Doc', '/spreadsheets/' => 'Google Sheet', '/presentation/' => 'Google Slides', '/forms/' => 'Google Form', '/drawings/' => 'Google Drawing'] as $k => $l) if (str_contains($path, $k)) return $l;
+        return 'Google Docs';
+    }
+    $map = ['drive.google.com' => 'Google Drive', 'forms.gle' => 'Google Form', 'lookerstudio.google.com' => 'Looker Studio', 'datastudio.google.com' => 'Looker Studio',
+            'canva.com' => 'Canva design', 'github.com' => 'GitHub', 'youtube.com' => 'YouTube video', 'youtu.be' => 'YouTube video', 'trello.com' => 'Trello board',
+            'figma.com' => 'Figma', 'airtable.com' => 'Airtable', 'replit.com' => 'Replit', 'codepen.io' => 'CodePen', 'scratch.mit.edu' => 'Scratch project',
+            'app.diagrams.net' => 'draw.io diagram', 'drawio.com' => 'draw.io diagram', 'soundcloud.com' => 'SoundCloud', 'vimeo.com' => 'Vimeo video',
+            'tiktok.com' => 'TikTok', 'instagram.com' => 'Instagram', 'notion.so' => 'Notion', 'bandlab.com' => 'BandLab', 'musescore.com' => 'MuseScore',
+            'make.com' => 'Make scenario', 'onedrive.live.com' => 'OneDrive', 'dropbox.com' => 'Dropbox', 'netlify.app' => 'Website', 'github.io' => 'Website', 'vercel.app' => 'Website'];
+    foreach ($map as $d => $l) if ($h === $d || str_ends_with($h, '.' . $d)) return $l;
+    return '';
+}
+
+/** A file on a hand-in: an https (or this site's own /) link, its name, and what sort of thing it is. */
+function assignment_file_clean($f): ?array {
+    if (is_string($f)) $f = ['url' => $f];
+    if (!is_array($f)) return null;
+    $url = trim((string)($f['url'] ?? ''));
+    if ($url === '' || !preg_match('#^(https://|/(?!/))#i', $url)) return null;
+    $name = mb_substr(trim((string)($f['name'] ?? '')), 0, 160) ?: basename((string)parse_url($url, PHP_URL_PATH));
+    $ext = strtolower(pathinfo($name !== '' ? $name : $url, PATHINFO_EXTENSION));
+    $kind = in_array($ext, ASG_EXT['photo'], true) ? 'photo' : (in_array($ext, ASG_EXT['recording'], true) ? 'recording' : (string)($f['kind'] ?? 'file'));
+    if (!in_array($kind, ['photo', 'recording', 'file'], true)) $kind = 'file';
+    if ($kind === 'file' && in_array((string)($f['kind'] ?? ''), ['photo', 'recording'], true)) $kind = (string)$f['kind'];
+    return ['url' => $url, 'name' => $name, 'kind' => $kind];
+}
+
+/** The assignment's hand-in rules, for both screens. */
+function assignment_proof_public(array $a): array {
+    $proof = in_array((string)($a['proof'] ?? ''), ASG_PROOFS, true) ? (string)$a['proof'] : 'text';
+    return ['proof' => $proof, 'proofLabel' => ASG_PROOF_META[$proof]['label'], 'proofHint' => ASG_PROOF_META[$proof]['hint'],
+            'steps' => assignment_steps_clean(json_decode((string)($a['steps'] ?? ''), true) ?: [])];
+}
+
+/**
+ * The kind of hand-in a lesson calls for, read from the lesson itself: a
+ * Sheets or Docs lesson hands in a link, a music lesson a recording, a design
+ * or photo lesson a photo. The steps are the lesson's own success criteria.
+ */
+function assignment_infer_from_unit(array $u): array {
+    $t = mb_strtolower((string)$u['course'] . ' ' . (string)$u['title'] . ' ' . mb_substr((string)$u['body'], 0, 1500));
+    $proof = 'any';
+    if (preg_match('/google (docs|sheets|slides|forms|drive|calendar)|looker|trello|canva|github|airtable|draw\.io|figma|replit|codepen|scratch|make\b/u', $t)) $proof = 'link';
+    elseif (preg_match('/piano|guitar|keyboard|drum|violin|sing|vocal|recording|record it|perform|podcast|voice/u', $t)) $proof = 'recording';
+    elseif (preg_match('/photo|poster|drawing|sketch|craft|adire|design|portrait/u', $t)) $proof = 'photo';
+    $steps = [];
+    if (preg_match('/##\s*Success criteria\s*\n+(.+?)(?:\n##|$)/su', (string)$u['body'], $h)) $steps = assignment_steps_clean($h[1]);
+    return ['proof' => $proof, 'steps' => $steps];
+}
+
 /* ── The member's side ───────────────────────────────────────────────────── */
 
 function assignment_public_sub(?array $sub): ?array {
     if (!$sub) return null;
+    $files = array_values(array_filter(array_map('assignment_file_clean', json_decode((string)($sub['filesJson'] ?? ''), true) ?: [])));
+    if (!$files && trim((string)($sub['fileUrl'] ?? '')) !== '') $files = array_values(array_filter([assignment_file_clean(['url' => (string)$sub['fileUrl']])]));
+    foreach ($files as &$f) $f['url'] = normalize_image_url($f['url']);
+    unset($f);
+    $link = (string)($sub['linkUrl'] ?? '');
     return ['submissionId' => $sub['submissionId'], 'status' => $sub['status'] ?: 'submitted',
         'text' => $sub['answerText'] ?: '', 'fileUrl' => normalize_image_url($sub['fileUrl'] ?? ''),
+        'files' => $files, 'linkUrl' => $link, 'linkKind' => $link !== '' ? assignment_link_kind($link) : '',
+        'steps' => array_values(array_map('intval', json_decode((string)($sub['stepsJson'] ?? ''), true) ?: [])),
         'grade' => ($sub['grade'] === null || $sub['grade'] === '') ? null : (int)$sub['grade'],
         'feedback' => $sub['feedback'] ?: '', 'submittedAt' => $sub['submittedAt'] ?: '', 'gradedAt' => $sub['gradedAt'] ?: ''];
 }
@@ -153,15 +243,15 @@ function assignment_list_for_member(array $p): array {
         $out[] = [
             'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'] ?: '',
             'track' => $a['track'] ?: '', 'week' => (int)$a['week'], 'dueAt' => $a['dueAt'] ?: '',
-            'points' => (int)$a['points'], 'proof' => $a['proof'] ?: 'text', 'unitId' => (string)($a['unitId'] ?? ''),
+            'points' => (int)$a['points'], 'unitId' => (string)($a['unitId'] ?? ''),
             'attachmentUrl' => normalize_image_url($a['attachmentUrl'] ?? ''),
             'state' => $state, 'dueInDays' => $due ? (int)floor(($due - $now) / 86400) : null,
             'canSubmit' => $a['status'] === 'published' && (!$sub || in_array((string)$sub['status'], ['submitted', 'returned'], true)),
             'late' => $sub ? ($due && strtotime((string)$sub['submittedAt']) > $due) : ($due && $due < $now),
             'submission' => assignment_public_sub($sub),
-        ];
+        ] + assignment_proof_public($a);
     }
-    return ['ok' => true, 'assignments' => $out];
+    return ['ok' => true, 'assignments' => $out, 'filesMax' => ASG_FILES_MAX];
 }
 
 function assignment_submit(array $p): array {
@@ -178,22 +268,42 @@ function assignment_submit(array $p): array {
     if ($existing && (string)$existing['status'] === 'graded') return ['ok' => false, 'error' => 'already_graded'];
 
     $text = mb_substr(trim((string)($p['text'] ?? '')), 0, ASG_TEXT_MAX);
-    $fileUrl = trim((string)($p['fileUrl'] ?? ''));
-    if ($fileUrl !== '' && !preg_match('#^(https://|/)#i', $fileUrl)) return ['ok' => false, 'error' => 'bad_file'];
-    $proof = (string)($a['proof'] ?: 'text');
-    if ($text === '' && $fileUrl === '') return ['ok' => false, 'error' => 'empty_submission'];
-    if ($proof === 'file' && $fileUrl === '') return ['ok' => false, 'error' => 'file_required'];
-    if ($proof === 'text' && $text === '') return ['ok' => false, 'error' => 'text_required'];
+    $rawFiles = is_array($p['files'] ?? null) ? $p['files'] : [];
+    if (trim((string)($p['fileUrl'] ?? '')) !== '') $rawFiles[] = ['url' => (string)$p['fileUrl'], 'name' => (string)($p['fileName'] ?? '')];
+    if (count($rawFiles) > ASG_FILES_MAX) return ['ok' => false, 'error' => 'too_many_files', 'max' => ASG_FILES_MAX];
+    $files = [];
+    foreach ($rawFiles as $f) { $c = assignment_file_clean($f); if (!$c) return ['ok' => false, 'error' => 'bad_file']; $files[] = $c; }
+    $link = trim((string)($p['linkUrl'] ?? ''));
+    if ($link !== '' && (!preg_match('#^https://[^\s/$.?\#].[^\s]*$#i', $link) || mb_strlen($link) > 1000)) return ['ok' => false, 'error' => 'bad_link', 'detail' => 'A link that starts with https://'];
+    $rules = assignment_proof_public($a);
+    $proof = $rules['proof'];
+    $ticked = array_values(array_unique(array_filter(array_map('intval', is_array($p['steps'] ?? null) ? $p['steps'] : []), fn($i) => $i >= 0 && $i < count($rules['steps']))));
+    sort($ticked);
+    $has = ['text' => $text !== '', 'file' => (bool)$files, 'link' => $link !== ''];
+    $kinds = array_column($files, 'kind');
+    $err = null;
+    if (!$has['text'] && !$has['file'] && !$has['link'] && !($proof === 'checklist' && $ticked)) $err = 'empty_submission';
+    elseif ($proof === 'text' && !$has['text']) $err = 'text_required';
+    elseif ($proof === 'file' && !$has['file']) $err = 'file_required';
+    elseif ($proof === 'photo' && !in_array('photo', $kinds, true)) $err = 'photo_required';
+    elseif ($proof === 'recording' && !in_array('recording', $kinds, true)) $err = 'recording_required';
+    elseif ($proof === 'link' && !$has['link']) $err = 'link_required';
+    elseif ($proof === 'either' && !$has['text'] && !$has['file']) $err = 'text_or_file_required';
+    // The success criteria are the member's own check: every step ticked before it goes in.
+    if (!$err && $rules['steps'] && count($ticked) < count($rules['steps'])) $err = 'steps_incomplete';
+    if ($err) return ['ok' => false, 'error' => $err, 'steps' => count($rules['steps']), 'ticked' => count($ticked)];
+    $fileUrl = $files[0]['url'] ?? '';
+    $row = ['answerText' => $text, 'fileUrl' => $fileUrl, 'linkUrl' => $link, 'filesJson' => $files ? json_encode($files, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : '',
+            'stepsJson' => $ticked ? json_encode($ticked) : '', 'status' => 'submitted', 'submittedAt' => now_iso()];
 
     $sessionId = (string)($a['sessionId'] ?: assignment_session_id());
     if ($existing) {
-        db_update('assignment_submissions', ['answerText' => $text, 'fileUrl' => $fileUrl, 'status' => 'submitted', 'submittedAt' => now_iso()], ['id' => $existing['id']]);
+        db_update('assignment_submissions', $row, ['id' => $existing['id']]);
     } else {
-        db_insert('assignment_submissions', [
+        db_insert('assignment_submissions', $row + [
             'submissionId' => 'SUB-' . gmdate('Y') . '-' . rand_hex(4), 'assignmentId' => $assignmentId,
-            'memberId' => $memberId, 'sessionId' => $sessionId, 'answerText' => $text, 'fileUrl' => $fileUrl,
-            'status' => 'submitted', 'grade' => null, 'feedback' => '', 'gradedBy' => '', 'gradedAt' => '',
-            'submittedAt' => now_iso(), 'createdAt' => now_iso(),
+            'memberId' => $memberId, 'sessionId' => $sessionId,
+            'grade' => null, 'feedback' => '', 'gradedBy' => '', 'gradedAt' => '', 'createdAt' => now_iso(),
         ]);
     }
     $due = assignment_due_ts($a);
@@ -209,11 +319,11 @@ function assignment_row_public(array $a, array $counts, bool $canEdit): array {
         'assignmentId' => $a['assignmentId'], 'title' => $a['title'], 'instructions' => $a['instructions'] ?: '',
         'track' => $a['track'] ?: '', 'centre' => $a['centre'] ?: '', 'sessionId' => $a['sessionId'] ?: '',
         'week' => (int)$a['week'], 'dueAt' => $a['dueAt'] ?: '', 'points' => (int)$a['points'],
-        'proof' => $a['proof'] ?: 'text', 'attachmentUrl' => $a['attachmentUrl'] ?: '', 'status' => $a['status'] ?: 'draft',
+        'attachmentUrl' => $a['attachmentUrl'] ?: '', 'status' => $a['status'] ?: 'draft',
         'unitId' => (string)($a['unitId'] ?? ''), 'remindedAt' => (string)($a['remindedAt'] ?? ''),
         'submissionCount' => (int)($k['c'] ?? 0), 'gradedCount' => (int)($k['g'] ?? 0), 'toMark' => (int)($k['m'] ?? 0),
         'canEdit' => $canEdit, 'overdue' => ($d = assignment_due_ts($a)) > 0 && $d < time(),
-    ];
+    ] + assignment_proof_public($a);
 }
 
 /** staff.assignments.list — what this person may see, newest first; with counts and their courses. */
@@ -242,15 +352,16 @@ function staff_assignments_list(array $p): array {
     }
     $units = [];
     if (function_exists('curriculum_load')) {
-        foreach (db_all("SELECT unitId, course, week, position, title FROM curriculum_units WHERE status = 'published' ORDER BY course, week, position") as $u) {
+        foreach (db_all("SELECT unitId, course, level, week, position, title FROM curriculum_units WHERE status = 'published' ORDER BY course, level, week, position") as $u) {
             if ($g['courses'] !== null && !in_array(mb_strtolower((string)$u['course']), array_map('mb_strtolower', $g['courses']), true)) continue;
-            $units[] = ['unitId' => $u['unitId'], 'course' => $u['course'], 'label' => 'Week ' . $u['week'] . ' · ' . $u['title']];
+            $units[] = ['unitId' => $u['unitId'], 'course' => $u['course'], 'label' => curriculum_path((string)$u['level'], (int)$u['week'])['code'] . ' · ' . $u['title']];
         }
     }
     return ['ok' => true, 'assignments' => $out, 'who' => $g['who'], 'courses' => array_values($courses), 'canWhole' => $g['canWhole'],
             'centres' => $g['centres'] ?? array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name'),
             'scopedCentres' => $g['centres'] !== null, 'units' => $units,
-            'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
+            'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking'),
+            'proofs' => array_map(fn($k) => ['id' => $k] + ASG_PROOF_META[$k], array_values(array_diff(ASG_PROOFS, ['either'])))];
 }
 
 /** Next Saturday, 23:59 Lagos — the default due date when none is given at publish. */
@@ -282,6 +393,7 @@ function staff_assignments_save(array $p): array {
         'attachmentUrl' => trim((string)($d['attachmentUrl'] ?? ($existing['attachmentUrl'] ?? ''))),
         'unitId' => trim((string)($d['unitId'] ?? ($existing['unitId'] ?? ''))),
         'week' => (int)($d['week'] ?? ($existing['week'] ?? 0)),
+        'steps' => json_encode(assignment_steps_clean(array_key_exists('steps', $d) ? $d['steps'] : (json_decode((string)($existing['steps'] ?? ''), true) ?: [])), JSON_UNESCAPED_UNICODE),
         'status' => (string)($d['status'] ?? ($existing['status'] ?? 'draft')),
     ];
     if ($row['track'] === 'All') $row['track'] = '';
@@ -290,7 +402,9 @@ function staff_assignments_save(array $p): array {
     if ($row['centre'] === '' && $g['centres'] !== null && count($g['centres']) === 1) $row['centre'] = $g['centres'][0];
     $errors = [];
     if (mb_strlen($row['title']) < 3) $errors['title'] = 'Give it a title of at least 3 letters.';
+    if ($row['steps'] === '[]') $row['steps'] = '';
     if (!in_array($row['proof'], ASG_PROOFS, true)) $errors['proof'] = 'Choose how it is handed in.';
+    if ($row['proof'] === 'checklist' && $row['steps'] === '') $errors['steps'] = 'A checklist needs at least one step.';
     if (!in_array($row['status'], ASG_STATUSES, true)) $errors['status'] = 'Unknown status.';
     if ($row['points'] < 0 || $row['points'] > ASG_POINTS_MAX) $errors['points'] = 'Between 0 and ' . ASG_POINTS_MAX . ' points.';
     if ($row['dueAt'] !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:?\d{2})?)?$/', $row['dueAt'])) $errors['dueAt'] = 'A date, like 2026-10-24.';
@@ -456,11 +570,11 @@ function staff_assignments_draft(array $p): array {
     $rubric = (string)(db_row("SELECT rubric FROM curriculum_checks WHERE unitId = ? AND kind IN ('task','project','essay','code') AND rubric <> '' ORDER BY position LIMIT 1", [(string)$u['unitId']])['rubric'] ?? '');
     $lines = [$task !== '' ? $task : ('Show what you learned in "' . $u['title'] . '".')];
     if ($objectives) $lines[] = "\nBy the end you should be able to:\n" . implode("\n", array_map(fn($o) => '- ' . preg_replace('/^You will /i', '', $o), $objectives));
-    $lines[] = "\nHand in: a short note of what you practised, on how many days, and what is still hard — with a recording or photo link if you can.";
+    $lines[] = "\nHand in: what you made or practised, and one thing that is still hard.";
     if ($rubric !== '') $lines[] = "\nHow it is marked: " . $rubric;
     $draft = ['title' => mb_substr('Week ' . (int)$u['week'] . ': ' . ($task !== '' ? preg_replace('/[.:].*$/su', '', $task) : $u['title']), 0, 120),
               'instructions' => trim(implode("\n", $lines)), 'track' => (string)$u['course'], 'week' => (int)$u['week'], 'unitId' => (string)$u['unitId'],
-              'points' => 10, 'proof' => 'either', 'dueAt' => assignment_default_due()];
+              'points' => 10, 'dueAt' => assignment_default_due()] + assignment_infer_from_unit($u);
     $via = 'lesson';
     if (!empty($p['ai']) && function_exists('ai_enabled') && ai_enabled('marking')) {
         $r = ai_classify('You write homework for 10–17 year olds in the NGG Club, a Nigerian youth programme. From the lesson given, write ONE assignment that '

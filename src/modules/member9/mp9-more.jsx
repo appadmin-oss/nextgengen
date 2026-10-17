@@ -13,7 +13,7 @@ Object.assign(Mp9Portal.prototype, {
     const lessons = pick.map(u => {
       const pr = u.progress, done = pr && pr.status === "completed";
       const p = done ? 100 : pr ? (pr.pending ? 80 : pr.attempts ? 60 : 30) : 0;
-      return { div: mp9CourseLine(u) + (u.overdueDays > 0 ? " · " + u.overdueDays + (u.overdueDays === 1 ? " day" : " days") + " late" : ""), t: "Week " + u.week + " · " + u.title, p, w: p + "%", c: done ? "#1d6b30" : "#0b0b0c",
+      return { div: mp9CourseLine(u) + (u.overdueDays > 0 ? " · " + u.overdueDays + (u.overdueDays === 1 ? " day" : " days") + " late" : ""), t: (u.path ? u.path.code : "Week " + u.week) + " · " + u.title, p, w: p + "%", c: done ? "#1d6b30" : "#0b0b0c",
         next: done ? "Done · " + pr.bestPct + "%" : pr && pr.pending ? "Waiting for your instructor to mark it" : pr ? "Carry on · " + (u.checks ? u.checks + (u.checks === 1 ? " question" : " questions") : "read it") : "Start · about " + (u.durationMins || 20) + " minutes",
         open: () => this.openLesson(u.unitId) };
     });
@@ -26,8 +26,8 @@ Object.assign(Mp9Portal.prototype, {
       open: () => { if (curErr) this.load("cur"); else this.toast("Nothing to open yet."); } });
     const asg = (d.assignments || []).map(a => {
       const st = mp9AsgState(a);
-      return { t: a.title, div: a.track || me.track || "Club", due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,
-        fg: ["marked", "submitted"].includes(a.state) ? "#1d6b30" : a.state === "todo" ? "#7a5600" : "#b0361c", open: () => this.openSheet({ k: "assign", id: a.assignmentId }) };
+      return { t: a.title, div: (a.track || me.track || "Club") + (a.proofLabel ? " · " + a.proofLabel : ""), due: a.dueAt ? mp9Date(a.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: st,
+        fg: ["marked", "submitted"].includes(a.state) ? "#1d6b30" : a.state === "todo" ? "#7a5600" : "#b0361c", open: () => this.setState({ handIn: a.assignmentId }) };
     });
     if (!asg.length) asg.push({ t: "No assignments right now", div: "", due: "–", s: "All clear", fg: "#1d6b30", open: () => this.toast("Nothing is waiting for you.") });
     const ev = (d.events || []).map(e => { const r = (s.rsvp || {})[e.eventId] !== undefined ? s.rsvp[e.eventId] : e.myRsvp; const going = r === "going";
@@ -50,7 +50,7 @@ Object.assign(Mp9Portal.prototype, {
     const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
       .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: me.track && new RegExp(me.track.split(/\s+/)[0], "i").test(a) })) }));
     const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : "Not started";
-      return { w: u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
+      return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
     return { lessons, assignments: asg, events: ev, division, ttDays, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
       oppsTop: oppsTop.length ? oppsTop : [{ t: "Nothing picked for you yet", why: "Staff add bootcamps and competitions here", close: "check back soon" }],
@@ -645,6 +645,19 @@ Object.assign(Mp9Portal.prototype, {
   },
   slotEnd() {
     const s = this.state;
+    /* The hand-in is its own panel (assign-desk.jsx AsdHandIn): every kind of
+       work — writing, files, photos, recordings, links, checklists. */
+    const hand = s.handIn ? ((this.dd("dash") || {}).assignments || []).find(a => a.assignmentId === s.handIn) : null;
+    const handEl = hand && typeof AsdHandIn === "function" ? <AsdHandIn key={hand.assignmentId} a={hand} filesMax={(this.dd("dash") || {}).assignmentFilesMax || 5}
+      onClose={() => this.setState({ handIn: null })}
+      onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
+    const rest = this.slotEndInner();
+    return handEl ? <>{rest}{handEl}</> : rest;
+  },
+  slotEndInner() {
+    const s = this.state;
+    if (s.scr === "learn" && typeof CurStudyHelper === "function" && ((this.dd("cur") || {}).units || []).length)
+      return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
     if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
@@ -755,7 +768,10 @@ function Mp9Evals({ data, err, busy, retry, latestOnly, mentor }) {
 
 /* A lesson's course line: its programme year, and whether it is catch-up from a year moved past (domain/curriculum.php curriculum_adapt). */
 function mp9CourseLine(u) {
-  return u.course + (u.year ? " · Year " + u.year : "") + (u.stage === "catchup" ? " · catch-up" : "");
+  // The NGG Learning Path: Year → Term (with its name when the course gives one) → the course.
+  const p = u.path || null;
+  const where = p ? (p.year ? "Year " + p.year + " · " : "") + "Term " + p.term + (p.termName ? ": " + p.termName : "") : (u.year ? "Year " + u.year : "");
+  return u.course + (where ? " · " + where : "") + (u.stage === "catchup" ? " · catch-up" : "");
 }
 
 /* An assignment's state in words (domain/assignments.php assignment_list_for_member). */

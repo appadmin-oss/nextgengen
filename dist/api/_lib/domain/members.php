@@ -111,6 +111,7 @@ function member_dashboard(array $p): array {
         // Assignments surfaced inline so the dashboard card renders without a
         // second round-trip.
         'assignments' => assignment_list_for_member(['memberId' => $memberId])['assignments'] ?? [],
+        'assignmentFilesMax' => defined('ASG_FILES_MAX') ? ASG_FILES_MAX : 5,
     ];
 }
 
@@ -298,7 +299,7 @@ function member_state_set(array $p): array {
     if ($key === '' || strlen($key) > 80) return ['ok' => false, 'error' => 'bad_key'];
     if (function_exists('mfa_private_key') && mfa_private_key($key)) return ['ok' => false, 'error' => 'bad_key'];
     // `staff.*` keys are set by staff (a member's programme year); a member cannot place themselves.
-    if (strncmp($key, 'staff.', 6) === 0) return ['ok' => false, 'error' => 'bad_key'];
+    if (strncmp($key, 'staff.', 6) === 0 || strncmp($key, 'ai.', 3) === 0) return ['ok' => false, 'error' => 'bad_key'];   // ai.* is an allowance the server counts
     $value = $p['value'] ?? null;
     $json = is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_SLASHES);
     if (strlen((string)$json) > 20000) return ['ok' => false, 'error' => 'too_large'];

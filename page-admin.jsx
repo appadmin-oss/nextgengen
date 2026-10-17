@@ -2042,9 +2042,10 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
     setBusy("ai");
     try {
       const r = await NGGApi.admin.curriculum.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
-      setF(x => ({ ...x, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
+      // With only a title the AI writes the whole lesson in the NGG Saturday standard; real notes are never replaced.
+      setF(x => ({ ...x, body: x.body.trim().length < 80 && r.draft.body ? r.draft.body : x.body, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
         checks: x.checks.concat(r.draft.checks.map(c => ({ ...c, answer: String(c.answer), options: c.options && c.options.length ? c.options : ["", ""] }))) }));
-      toast.success("Draft added — read it before saving. AI checks are marked AI." + (r.note ? " " + r.note : ""), "AI draft");
+      toast.success((r.draft.body && f.body.trim().length < 80 ? "Lesson written in the NGG Saturday standard" : "Draft added") + " — read it before saving. AI checks are marked AI." + (r.note ? " " + r.note : ""), "AI draft");
     } catch (e) { toast.error(e.message && e.code === "ai_disabled" ? "No AI provider is configured (Settings → AI)." : humanizeError(e.code, e.code), "No draft"); }
     finally { setBusy(""); }
   };
@@ -2119,7 +2120,7 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
           <h3 className="admin-h3">Checks</h3>
           {!ro && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
             title={aiEnabled ? "Drafts a summary, objectives and five checks from the title and lesson text" : "No AI provider is configured (Settings → AI)"}>
-            {busy === "ai" ? "Drafting…" : "✦ Draft with AI"}</button>}
+            {busy === "ai" ? "Writing…" : f.body.trim().length < 80 ? "✦ Write the lesson with AI" : "✦ Draft checks with AI"}</button>}
         </div>
         {!f.checks.length && <p className="admin-hint">No checks — the lesson completes when it is opened and submitted. Add questions, or draft them with the AI.</p>}
         {f.checks.map((c, i) => (

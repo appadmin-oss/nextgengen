@@ -973,6 +973,36 @@ Word**. The *Instructor* edition includes the answers and marking guides. The
 no answers and no weekly assignments, because assignments are set and dated
 on the assignments desk.
 
+### The NGG Learning Path: Year → Term → Week
+
+Every course is arranged the same way. There are three programme **years**,
+each of two **terms** of twelve Saturdays. A lesson is coded `Y1·T2·W3`
+(Year 1, Term 2, week 3 of that term). The lesson list sorts and filters by
+these codes, members see them on Learn, and the PDF export groups lessons
+under them.
+
+- The **year** comes from the level ("Year 2 · Developing").
+- The **term** comes from the level ("Term 2", or "Module 3", where two
+  modules make a year), or else from the week: weeks 13–24 are Term 2.
+- A term takes its **name** from the level when the level gives one
+  ("Year 1 · Module 2: Spreadsheets, Finance…").
+
+To keep a new course in line, write its levels as `Year N · Term T: Name`.
+Use weeks 1–24 within each year.
+
+### AI in the curriculum
+
+- In the lesson editor, give a lesson only a title and press **✦ Write the
+  lesson with AI**. The AI writes the whole lesson in the NGG Saturday
+  standard, with demonstration, guided practice, independent assignment,
+  feedback, success criteria, AI used well, and support and stretch work. If
+  you have written notes, the AI drafts the summary, objectives and checks
+  instead, and never rewrites your notes. Read every draft before saving.
+- Members have a **Study helper** on Learn. They choose a lesson and ask a
+  question; it explains, gives an example and asks them a question back. It
+  never does their assignment. It allows 20 questions a day, and needs an AI
+  provider under Settings → API keys.
+
 ### Assignments
 
 **Learning → Assignments** in the Control Room, and **Progress →
@@ -985,6 +1015,16 @@ Assignments** in the instructor portal. It is the same desk in both places.
   for marking. Before you publish, the editor shows how many members it
   reaches and names a few of them. Leave the due date blank and it is due
   next Saturday.
+- **How it is handed in**: *Writing*, *A document or file*, *A photo*
+  (members can take it with the camera), *A recording* (members can record
+  audio or video in the portal, or upload one), *A link* (recognised as a
+  Google Doc, Sheet, Slides or Form, Canva, GitHub, YouTube, Trello and
+  others; members are reminded to share Google links as *Anyone with the link
+  · Viewer*), *A checklist*, or *Anything that shows it*. Up to five files.
+  **Draft from the lesson** suggests the type: a Sheets lesson asks for a
+  link, a piano lesson for a recording.
+- **Success criteria**: one per line. Members tick every one before they can
+  hand in, and the marker sees which were ticked.
 - **Hand-ins** shows what came in, what is waiting to be marked, and who has
   not handed anything in. **Remind** notifies the people who have not handed
   in, at most once a day.

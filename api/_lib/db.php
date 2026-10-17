@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 154;
+const NGG_SCHEMA_TARGET = 155;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4673,6 +4673,17 @@ function db_migrate(PDO $db): void {
             ALTER TABLE assignments ADD COLUMN unitId TEXT DEFAULT '';
             ALTER TABLE assignments ADD COLUMN remindedAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_sub_member ON assignment_submissions(memberId);
+        ",
+        /* 155 — assignments collect more than a paragraph: the success-criteria
+         * steps a member ticks before handing in, and on a hand-in, a link
+         * (a Google Doc, a Canva design, a GitHub repo), several files, and
+         * which steps were ticked. `fileUrl` stays the first file, so every
+         * older reader keeps working. */
+        155 => "
+            ALTER TABLE assignments ADD COLUMN steps TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN linkUrl TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT DEFAULT '';
+            ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT DEFAULT '';
         ",
     ];
 

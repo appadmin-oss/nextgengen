@@ -116,6 +116,7 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
     return [
         'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
         'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'path' => curriculum_path((string)$u['level'], (int)$u['week']),
         'summary' => (string)$u['summary'], 'objectives' => json_decode((string)$u['objectives'], true) ?: [],
         'body' => (string)$u['body'], 'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
@@ -526,6 +527,7 @@ function admin_curriculum_list(array $p): array {
     $out = array_map(static fn($u) => [
         'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
         'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'path' => curriculum_path((string)$u['level'], (int)$u['week']),
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
         'materials' => $counts['m'][$u['unitId']] ?? 0, 'checks' => $counts['c'][$u['unitId']] ?? 0,
         'progress' => $counts['p'][$u['unitId']] ?? ['completed' => 0, 'started' => 0, 'pending' => 0, 'avgPct' => null],
@@ -718,14 +720,25 @@ function admin_curriculum_ai(array $p): array {
     $course = curriculum_clean_text($p['course'] ?? '', 120);
     $level = curriculum_clean_text($p['level'] ?? '', 60);
     $n = max(1, min(10, (int)($p['checks'] ?? 5)));
+    /* With only a title (or a line or two of notes) the AI WRITES the lesson,
+       in the NGG Saturday standard every bundled course uses, so a lesson
+       written in the editor reads like the rest of the programme. */
+    $write = mb_strlen($text) < 80;
+    $bodySpec = $write ? "body (the lesson in Markdown, using exactly these '## ' sections in this order: 'Why it matters', 'Demonstration (20 minutes)', "
+        . "'Guided hands-on practice (60 minutes)', 'Independent assignment (25 minutes)', 'Demonstration, feedback and submission (15 minutes)', "
+        . "'Success criteria' (3 bullet points a learner can check themselves), 'AI, used well' (one way to use an AI assistant to explain or check, and how to verify it; "
+        . "never to do the work), 'Make it fit you' (a bullet starting '**If this is new to you:**' and one starting '**If you already can:**'), "
+        . "and 'This week's assignment' (one sentence naming the deliverable). Use bullets, short sentences, Nigerian examples where natural), " : "";
     $instructions = "You help instructors at Next Generation Genius, a youth programme for 10–17 year olds in Nigeria, "
-        . "turn lesson notes into a clear lesson. Write for the learner, in plain British English, without inventing facts "
-        . "the notes do not support. Return JSON with keys: summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
+        . ($write ? "write a complete 120-minute Saturday lesson from its title. " : "turn lesson notes into a clear lesson. ")
+        . "Write for the learner, in plain British English, without inventing facts "
+        . ($write ? "you are not sure of. " : "the notes do not support. ")
+        . "Return JSON with keys: " . $bodySpec . "summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
         . "checks (exactly $n items; each {kind:'mcq'|'short', prompt, options (4 strings, mcq only), answer (mcq: the "
         . "0-based index of the correct option; short: a model answer), rubric (short only: what a full-mark answer includes)}). "
         . "Mix recall with understanding; no trick questions.";
     $input = "Course: " . ($course ?: 'General') . ($level ? "\nLevel: $level" : '') . "\nLesson title: $title\n\nLesson notes:\n$text";
-    $r = ai_classify($instructions, $input, 1800, 'default');
+    $r = ai_classify($instructions, $input, $write ? 3600 : 1800, 'default');
     if (empty($r['ok'])) {
         $err = (string)($r['error'] ?? 'ai_failed');
         return ['ok' => false, 'error' => $err, 'message' => $err === 'ai_disabled'
@@ -747,7 +760,10 @@ function admin_curriculum_ai(array $p): array {
                 'answer' => $c['answer'], 'rubric' => $c['rubric'], 'points' => $c['points'], 'source' => 'ai'];
     }, $probe['checks']) : [];
     audit('curriculum.ai_draft', (string)$g['requester']['memberId'], '', ['course' => $course, 'checks' => count($valid), 'provider' => $r['provider'] ?? ''], (string)($p['ip'] ?? ''));
+    $body = $write ? trim((string)($d['body'] ?? '')) : '';
+    if ($body !== '' && !preg_match('/^##\s/m', $body)) $body = '';   // not the standard shape: leave the notes alone
     return ['ok' => true, 'draft' => [
+        'body' => mb_substr($body, 0, 12000),
         'summary' => curriculum_clean_text($d['summary'] ?? '', 1200),
         'objectives' => curriculum_list($d['objectives'] ?? []),
         'checks' => $valid,
@@ -917,6 +933,32 @@ function curriculum_level_year(string $level): int {
     return preg_match('/\b(?:year|yr|level)\s*-?\s*([1-9])\b/i', $level, $h) ? min(CURR_PROGRAMME_YEARS, (int)$h[1]) : 0;
 }
 
+/* ── The NGG Learning Path: Year → Term → Week ──────────────────────────────
+ *
+ * One way of naming where a lesson sits, the same in every course: three
+ * programme YEARS, each of two TERMS of twelve WEEKS (a Saturday each). A
+ * lesson is coded `Y1·T2·W3` — Year 1, Term 2, week 3 of that term — and its
+ * term carries a name when the level gives one ("Year 1 · Module 2:
+ * Spreadsheets…" → "Spreadsheets…"). The year comes from the level; the term
+ * from the level ("Term 2", or "Module N", two modules a year), or else from
+ * the week (weeks 13–24 are Term 2). A lesson with no year is "Club-wide".
+ */
+const CURR_TERM_WEEKS = 12;
+function curriculum_path(string $level, int $week): array {
+    $year = curriculum_level_year($level);
+    $term = 0;
+    if (preg_match('/\bterm\s*([1-9])\b/i', $level, $h)) $term = (int)$h[1];
+    elseif (preg_match('/\bmodule\s*([1-9]\d?)\b/i', $level, $h)) $term = (((int)$h[1] - 1) % 2) + 1;
+    if ($term === 0) $term = $week > CURR_TERM_WEEKS ? 2 : 1;
+    $wk = $week > CURR_TERM_WEEKS ? (($week - 1) % CURR_TERM_WEEKS) + 1 : max(1, $week);
+    $name = '';
+    if (preg_match('/(?:module|term)\s*\d+\s*[:—–-]\s*(.+)$/iu', $level, $h)) $name = trim($h[1]);
+    elseif (preg_match('/^year\s*\d+\s*[·:—–-]\s*(.+)$/iu', trim($level), $h)) $name = trim($h[1]);
+    return ['year' => $year, 'term' => $term, 'week' => $wk, 'termName' => $name,
+            'code' => ($year ? 'Y' . $year . '·' : '') . 'T' . $term . '·W' . $wk,
+            'label' => ($year ? 'Year ' . $year . ' · ' : '') . 'Term ' . $term . ($name !== '' ? ': ' . $name : '') . ' · Week ' . $wk];
+}
+
 /** Where staff placed a member: ['year' => 1..3, 'source' => 'set'|'default']. */
 function curriculum_member_year(array $m, ?int $override = null): array {
     if ($override === null) $override = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], CURR_YEAR_KEY])['stateValue'] ?? 0);
@@ -1041,7 +1083,7 @@ function curriculum_for_member(array $m): array {
         if ($due['overdueDays'] > 0) $overdue++;
         $out[] = ['unitId' => $id, 'course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'],
             'position' => (int)$u['position'], 'title' => (string)$u['title'], 'summary' => (string)$u['summary'],
-            'stage' => (string)$b['stage'], 'year' => curriculum_level_year((string)$u['level']),
+            'stage' => (string)$b['stage'], 'year' => curriculum_level_year((string)$u['level']), 'path' => curriculum_path((string)$u['level'], (int)$u['week']),
             'durationMins' => (int)$u['durationMins'], 'materials' => count($b['materials']), 'checks' => count($b['checks']),
             'dueDate' => $due['dueDate'], 'overdueDays' => $due['overdueDays'],
             'fineAfterDays' => (int)$cfg['fineAfterDays'], 'fineAmount' => (int)$cfg['fineAmount'],
@@ -1160,7 +1202,7 @@ function admin_curriculum_document(array $p): array {
         }
         unset($c);
         $u['progress'] = null;
-        $key = ($u['level'] !== '' ? $u['level'] . ' · ' : '') . 'Week ' . $u['week'];
+        $key = $u['path']['label'];
         $groups[$key][] = $u;
     }
     return ['ok' => true, 'document' => [
@@ -1170,6 +1212,48 @@ function admin_curriculum_document(array $p): array {
         'generatedAt' => now_iso(), 'total' => count($units), 'completed' => 0, 'pct' => 0,
         'weeks' => array_map(static fn($k, $list) => ['label' => $k, 'week' => (int)$list[0]['week'], 'lessons' => $list], array_keys($groups), array_values($groups)),
     ]];
+}
+
+/* ── The study helper: a member asks about a lesson they are taking ──────────
+ *
+ * The AI answers from the lesson itself (its text, objectives and materials),
+ * as a patient tutor: it explains, gives a worked example, asks a question
+ * back — and never hands over the answers to the lesson's checks, which it is
+ * not shown. A daily allowance per member keeps it a study aid, and the count
+ * lives under an `ai.` key that member_state_set refuses, so a member cannot
+ * reset their own. Distress in a question is answered with a trusted adult,
+ * not a lesson.
+ */
+const CURR_TUTOR_PER_DAY = 20;
+const CURR_TUTOR_Q_MAX   = 600;
+
+function member_curriculum_ask(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $q = trim(mb_substr((string)($p['question'] ?? ''), 0, CURR_TUTOR_Q_MAX));
+    if (mb_strlen($q) < 4) return ['ok' => false, 'error' => 'question_too_short'];
+    $units = curriculum_member_units($m);
+    $id = (string)($p['unitId'] ?? '');
+    if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    $key = 'ai.tutor.' . gmdate('Y-m-d');
+    $used = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [(string)$m['memberId'], $key])['stateValue'] ?? 0);
+    if ($used >= CURR_TUTOR_PER_DAY) return ['ok' => false, 'error' => 'daily_limit', 'limit' => CURR_TUTOR_PER_DAY, 'left' => 0];
+    if (!function_exists('ai_enabled') || !ai_enabled('coach')) return ['ok' => false, 'error' => 'ai_disabled'];
+    // Distress is not a study question: point to people, and count nothing.
+    if (preg_match('/\b(kill myself|suicide|hurt myself|self[- ]harm|abuse[ds]?|touch(ed|es) me|want to die)\b/i', $q))
+        return ['ok' => true, 'answer' => 'That sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'safeguarding' => true, 'left' => CURR_TUTOR_PER_DAY - $used];
+    $u = $units[$id]['unit'];
+    $obj = implode('; ', json_decode((string)$u['objectives'], true) ?: []);
+    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n" . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
+    $system = 'You are the NGG study helper: a patient, encouraging tutor for a 10–17 year old member of Next Generation Genius in Nigeria. '
+        . 'Answer ONLY about the lesson below. Explain simply, give one short worked example, and end with one quick question that checks understanding. '
+        . 'Keep it under 160 words, in plain British English. Never do their assignment or give answers to graded checks — help them think it through instead. '
+        . 'If the question is not about the lesson, say kindly that you can only help with this lesson. Never ask for personal details.' . "\n\nTHE LESSON:\n" . $lesson;
+    $r = ai_chat($system, [['role' => 'me', 'text' => $q]], 420, 'coach');
+    if (empty($r['ok'])) return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
+    db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
+              ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
+    return ['ok' => true, 'answer' => mb_substr(trim((string)$r['text']), 0, 2400), 'left' => CURR_TUTOR_PER_DAY - $used - 1, 'limit' => CURR_TUTOR_PER_DAY];
 }
 
 /** Render the curriculum document through its template (api/_lib/templates). */

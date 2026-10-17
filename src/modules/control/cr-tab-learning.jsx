@@ -259,16 +259,18 @@ Object.assign(CR_TAB_DEFS, {
       }
       const st = s => CR_CUR_STATUS[s] || [s, "neutral"];
       out.push({ type: "table", span: 6, title: "Lessons", sub: crPlural(d.units.length, "lesson") + " · retired lessons are hidden",
-        cols: ["Lesson", "Course", { l: "Week", num: true }, "Status", { l: "Checks", num: true }, { l: "Completed", num: true }],
-        rows: d.units.map(u => ({ key: u.unitId, cells: [
+        /* The NGG Learning Path (curriculum_path): Year → Term → Week, coded Y1·T2·W3, so every course groups and sorts the same way. */
+        cols: ["Lesson", "Course", "Term", { l: "Path", num: true }, "Status", { l: "Checks", num: true }, { l: "Completed", num: true }],
+        rows: d.units.map(u => { const p = u.path || { year: 0, term: 1, week: u.week, code: "W" + u.week }; return { key: u.unitId, cells: [
           { k: "strong", t: u.title || "(no title)", s: u.level || "" },
           { k: "text", t: u.course || "—" },
-          { k: "num", t: crNum(u.week) + "." + u.position, v: u.week * 100 + u.position },
+          { k: "text", t: (p.year ? "Year " + p.year + " · " : "") + "Term " + p.term },
+          { k: "num", t: p.code + (u.position > 1 ? "·" + u.position : ""), v: (p.year || 0) * 100000 + p.term * 1000 + p.week * 10 + u.position },
           { k: "status", t: st(u.status)[0], tone: st(u.status)[1] },
           { k: "num", t: crNum(u.checks), v: u.checks },
           { k: "num", t: crNum(u.progress && u.progress.completed), v: (u.progress && u.progress.completed) || 0 },
-        ] })),
-        search: "Search lessons", filters: ["Course", "Status"],
+        ] }; }),
+        search: "Search lessons", filters: ["Course", "Term", "Status"],
         nosel: !d.canWrite,
         bulk: d.canWrite ? [
           { l: "Publish", max: 500, run: crCurBulk(ctx, "publish", "published") },

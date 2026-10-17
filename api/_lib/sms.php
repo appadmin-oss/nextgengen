@@ -2,7 +2,8 @@
 declare(strict_types=1);
 
 /**
- * SMS layer — Termii (Nigeria-first) + Twilio (everything else / fallback).
+ * SMS layer — textbee (your own Android phone's SIM, via textbee.dev), Termii
+ * (Nigeria-first) and Twilio (everything else / fallback).
  * Entirely opt-in; with no provider configured sms_enabled() is false and
  * callers fall back to email-only. Never throws into a request path.
  *
@@ -21,7 +22,7 @@ function sms_config(): array {
 
 function sms_enabled(): bool {
     $c = sms_config();
-    return !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
+    return !empty($c['textbee']['api_key']) || !empty($c['termii']['api_key']) || (!empty($c['twilio']['sid']) && !empty($c['twilio']['token']));
 }
 
 /**
@@ -45,14 +46,20 @@ function sms_normalize(string $raw, string $defaultCountry = ''): string {
     return (strlen($n) >= 8 && strlen($n) <= 15) ? '+' . $n : '';
 }
 
-/** Provider order for a number: Termii first for +234, Twilio first else. */
+/**
+ * Provider order for a number. A Nigerian number goes out on textbee first —
+ * the programme's own phone and SIM, at local rates and from a number parents
+ * recognise — then Termii, then Twilio. Anything else goes Twilio first; the
+ * phone's SIM (international rates) and Termii are the fallbacks.
+ */
 function sms_provider_order(string $e164): array {
     $c = sms_config();
+    $textbee = !empty($c['textbee']['api_key']);
     $termii = !empty($c['termii']['api_key']);
     $twilio = !empty($c['twilio']['sid']) && !empty($c['twilio']['token']);
     $order = [];
-    if (strpos($e164, '+234') === 0) { if ($termii) $order[] = 'termii'; if ($twilio) $order[] = 'twilio'; }
-    else { if ($twilio) $order[] = 'twilio'; if ($termii) $order[] = 'termii'; }
+    if (strpos($e164, '+234') === 0) { if ($textbee) $order[] = 'textbee'; if ($termii) $order[] = 'termii'; if ($twilio) $order[] = 'twilio'; }
+    else { if ($twilio) $order[] = 'twilio'; if ($textbee) $order[] = 'textbee'; if ($termii) $order[] = 'termii'; }
     return $order;
 }
 
@@ -91,6 +98,28 @@ function sms_send_termii(string $to, string $text): array {
     ]);
 }
 
+/**
+ * textbee.dev — POST https://api.textbee.dev/api/v1/gateway/send-sms with the
+ * `x-api-key` header and {recipients: [E.164], message, deviceId?,
+ * simSubscriptionId?}. A 200 means QUEUED on the phone, not delivered
+ * (`data.success`, `data.smsBatchId`); 400 is no enabled device, 401 a bad
+ * key, 429 a plan limit — each falls through to the next provider.
+ */
+function sms_send_textbee(string $to, string $text): array {
+    $c = sms_config()['textbee'] ?? [];
+    $body = ['recipients' => [$to], 'message' => $text];
+    if (trim((string)($c['device_id'] ?? '')) !== '') $body['deviceId'] = trim((string)$c['device_id']);
+    if (trim((string)($c['sim'] ?? '')) !== '' && ctype_digit(trim((string)$c['sim']))) $body['simSubscriptionId'] = (int)$c['sim'];
+    $r = sms_http('https://api.textbee.dev/api/v1/gateway/send-sms', [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-api-key: ' . (string)($c['api_key'] ?? '')],
+    ]);
+    if (empty($r['ok'])) return $r;
+    $j = json_decode((string)($r['body'] ?? ''), true);
+    if (!is_array($j) || empty($j['data']['success'])) return ['ok' => false, 'error' => 'textbee_not_queued', 'detail' => substr((string)($r['body'] ?? ''), 0, 200)];
+    return ['ok' => true, 'body' => (string)$r['body'], 'ref' => (string)($j['data']['smsBatchId'] ?? '')];
+}
+
 function sms_send_twilio(string $to, string $text): array {
     $c = sms_config()['twilio'] ?? [];
     $sid = (string)($c['sid'] ?? '');
@@ -114,9 +143,9 @@ function sms_send(string $rawTo, string $text): array {
     $text = mb_substr($text, 0, 450);
     $last = ['ok' => false, 'error' => 'sms_disabled'];
     foreach (sms_provider_order($to) as $prov) {
-        $r = $prov === 'termii' ? sms_send_termii($to, $text) : sms_send_twilio($to, $text);
+        $r = $prov === 'textbee' ? sms_send_textbee($to, $text) : ($prov === 'termii' ? sms_send_termii($to, $text) : sms_send_twilio($to, $text));
         if (!empty($r['ok'])) {
-            try { audit('sms.sent', null, $to, ['provider' => $prov, 'chars' => mb_strlen($text)], ''); } catch (Throwable $e) {}
+            try { audit('sms.sent', null, $to, ['provider' => $prov, 'chars' => mb_strlen($text)] + (!empty($r['ref']) ? ['ref' => $r['ref']] : []), ''); } catch (Throwable $e) {}
             return ['ok' => true, 'provider' => $prov, 'to' => $to];
         }
         $last = $r;

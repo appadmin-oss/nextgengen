@@ -8,7 +8,8 @@
  *   marks  — what came in, who has not handed anything in, marking and return
  */
 const ASD_STATUS = { published: "Open", draft: "Draft", closed: "Closed" };
-const ASD_PROOF = [["either", "Writing or a file"], ["text", "Writing"], ["file", "A file (photo, recording, document)"]];
+/* How work is handed in — the server's list (staff list `proofs`) wins; this is the fallback. */
+const ASD_PROOF = [["any", "Anything that shows it"], ["text", "Writing"], ["file", "A document or file"], ["photo", "A photo"], ["recording", "A recording"], ["link", "A link"], ["checklist", "A checklist"]];
 const ASD_ERR = {
   has_submissions: "work has been handed in — close it instead",
   no_instructions: "it has no instructions yet",
@@ -86,7 +87,7 @@ function AssignmentDesk({ api, title }) {
                   <button type="button" className="asd-link" onClick={() => setView({ kind: "marks", id: a.assignmentId })}>{a.title}</button>
                   <span className="asd-meta">
                     <span className={"asd-chip is-" + a.status}>{ASD_STATUS[a.status] || a.status}</span>
-                    {a.track || "Whole Club"}{a.centre ? " · " + a.centre : ""}{a.week ? " · week " + a.week : ""}{a.unitId ? " · linked to a lesson" : ""}{a.canEdit ? "" : " · read-only"}
+                    {a.track || "Whole Club"}{a.centre ? " · " + a.centre : ""}{a.proofLabel ? " · " + a.proofLabel : ""}{a.unitId ? " · from a lesson" : ""}{a.canEdit ? "" : " · read-only"}
                   </span>
                 </span>
                 <span role="cell" className={a.overdue && a.status === "published" ? "asd-due is-late" : "asd-due"}>{asdDate(a.dueAt)}</span>
@@ -102,7 +103,10 @@ function AssignmentDesk({ api, title }) {
 function AsdEditor({ desk, meta, start, onDone }) {
   const s0 = start || {};
   const [f, setF] = React.useState({ assignmentId: s0.assignmentId || "", title: s0.title || "", instructions: s0.instructions || "", track: s0.track || ((meta.courses || []).length === 1 ? meta.courses[0] : ""),
-    centre: s0.centre || "", unitId: s0.unitId || "", dueAt: (s0.dueAt || "").slice(0, 10), points: s0.points != null ? s0.points : 10, proof: s0.proof || "either", attachmentUrl: s0.attachmentUrl || "", week: s0.week || 0, status: s0.status || "draft" });
+    centre: s0.centre || "", unitId: s0.unitId || "", dueAt: (s0.dueAt || "").slice(0, 10), points: s0.points != null ? s0.points : 10, proof: s0.proof || "any", attachmentUrl: s0.attachmentUrl || "", week: s0.week || 0, status: s0.status || "draft",
+    steps: (s0.steps || []).join("\n") });
+  const proofs = (meta.proofs || []).length ? meta.proofs.map(p => [p.id, p.label, p.hint]) : ASD_PROOF;
+  const proofHint = (proofs.find(p => p[0] === f.proof) || [])[2] || "";
   const [errs, setErrs] = React.useState({});
   const [busy, setBusy] = React.useState("");
   const [aud, setAud] = React.useState(null);
@@ -121,7 +125,8 @@ function AsdEditor({ desk, meta, start, onDone }) {
     try {
       const r = await desk.draft(f.unitId, ai);
       const d = r.draft || {};
-      setF(x => Object.assign({}, x, { title: d.title || x.title, instructions: d.instructions || x.instructions, track: d.track || x.track, week: d.week || x.week, proof: d.proof || x.proof, dueAt: x.dueAt || d.dueAt || "" }));
+      setF(x => Object.assign({}, x, { title: d.title || x.title, instructions: d.instructions || x.instructions, track: d.track || x.track, week: d.week || x.week, proof: d.proof || x.proof, dueAt: x.dueAt || d.dueAt || "",
+        steps: (d.steps || []).length ? d.steps.join("\n") : x.steps }));
       toast.info(r.via === "ai" ? "Drafted with AI from the lesson. Read it before you publish." : "Drafted from the lesson's own weekly assignment.", "Assignments");
     } catch (e) { toast.error(asdErr(e), "Couldn't draft it"); }
     finally { setBusy(""); }
@@ -129,7 +134,8 @@ function AsdEditor({ desk, meta, start, onDone }) {
   const save = async (publish) => {
     setBusy(publish ? "publish" : "save"); setErrs({});
     try {
-      const data = Object.assign({}, f, { status: publish ? "published" : f.status === "published" ? "published" : "draft", points: Number(f.points) });
+      const data = Object.assign({}, f, { status: publish ? "published" : f.status === "published" ? "published" : "draft", points: Number(f.points),
+        steps: String(f.steps || "").split("\n").map(x => x.trim()).filter(Boolean) });
       const r = await desk.save(data, publish && notify);
       toast.success(publish ? "Published" + (typeof r.notified === "number" ? " — sent to " + r.notified + " member" + (r.notified === 1 ? "" : "s") : "") + "." : "Saved.", f.title);
       onDone({ assignmentId: r.assignmentId });
@@ -181,9 +187,13 @@ function AsdEditor({ desk, meta, start, onDone }) {
           <div className="asd-row3">
             <label className="asd-field"><span>Due</span><input type="date" className="asd-input" value={f.dueAt} onChange={e => set("dueAt", e.target.value)} aria-invalid={!!errs.dueAt}/>{fe("dueAt")}<em className="asd-hint">Blank: next Saturday</em></label>
             <label className="asd-field"><span>Points</span><input type="number" min="0" max="1000" className="asd-input" value={f.points} onChange={e => set("points", e.target.value)} aria-invalid={!!errs.points}/>{fe("points")}</label>
-            <label className="asd-field"><span>Handed in as</span>
-              <select className="asd-input" value={f.proof} onChange={e => set("proof", e.target.value)}>{ASD_PROOF.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           </div>
+          <div className="asd-field" role="radiogroup" aria-label="How it is handed in"><span>How it is handed in</span>
+            <div className="asd-kinds">{proofs.map(([k, l]) => <button key={k} type="button" role="radio" aria-checked={f.proof === k} className={"asd-kind" + (f.proof === k ? " is-on" : "")} onClick={() => set("proof", k)}>
+              <i className={"ph " + ({ any: "ph-squares-four", text: "ph-text-aa", file: "ph-file-text", photo: "ph-camera", recording: "ph-microphone", link: "ph-link", checklist: "ph-list-checks", either: "ph-files" }[k] || "ph-file")} aria-hidden="true"/>{l}</button>)}</div>
+            {proofHint ? <em className="asd-hint">{proofHint}</em> : null}{fe("proof")}</div>
+          <label className="asd-field"><span>Success criteria <em>(one per line — members tick each before they hand in{f.proof === "checklist" ? "; required for a checklist" : ""})</em></span>
+            <textarea className="asd-input is-area" rows={4} value={f.steps} onChange={e => set("steps", e.target.value)} placeholder={"Totals worked out by formula\nHeader row frozen\nShared as Viewer"} aria-invalid={!!errs.steps}/>{fe("steps")}</label>
           <label className="asd-field"><span>Worksheet or link <em>(optional)</em></span>
             <input className="asd-input" type="url" placeholder="https://" value={f.attachmentUrl} onChange={e => set("attachmentUrl", e.target.value)} aria-invalid={!!errs.attachmentUrl}/>{fe("attachmentUrl")}</label>
           {!live ? <label className="asd-check"><input type="checkbox" checked={notify} onChange={e => setNotify(e.target.checked)}/> Also email them when it is published</label> : null}
@@ -274,8 +284,15 @@ function AsdMark({ desk, s, a, canMark, ai, onDone }) {
   return (
     <div className="asd-markbox">
       {s.text ? <div className="asd-work">{s.text}</div> : null}
-      {s.fileUrl ? <a className="asd-btn is-sm" href={s.fileUrl} target="_blank" rel="noopener noreferrer"><i className="ph ph-paperclip" aria-hidden="true"/> Open the file</a> : null}
-      {!s.text && !s.fileUrl ? <p className="asd-meta">Nothing was written.</p> : null}
+      {s.linkUrl ? <a className="asd-btn is-sm asd-golink" href={s.linkUrl} target="_blank" rel="noopener noreferrer"><i className="ph ph-link" aria-hidden="true"/> Open the {s.linkKind || "link"}</a> : null}
+      {(s.files || []).length ? <div className="asd-media">{s.files.map((f, i) => f.kind === "photo"
+          ? <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="asd-thumb"><img src={f.url} alt={f.name || ("Photo " + (i + 1))} loading="lazy"/></a>
+          : f.kind === "recording" ? (/\.(mp4|mov|m4v|webm)(\?|$)/i.test(f.url) && !/audio|recording-/i.test(f.name || "") ? <video key={i} src={f.url} controls className="asd-player" aria-label={f.name}/> : <audio key={i} src={f.url} controls className="asd-player" aria-label={f.name}/>)
+          : <a key={i} className="asd-btn is-sm" href={f.url} target="_blank" rel="noopener noreferrer"><i className="ph ph-file-text" aria-hidden="true"/> {f.name || "Open the file"}</a>)}</div>
+       : s.fileUrl ? <a className="asd-btn is-sm" href={s.fileUrl} target="_blank" rel="noopener noreferrer"><i className="ph ph-paperclip" aria-hidden="true"/> Open the file</a> : null}
+      {(a.steps || []).length ? <ul className="asd-ticks" aria-label="Success criteria the member ticked">{a.steps.map((st, i) => { const on = (s.steps || []).includes(i);
+          return <li key={i} className={on ? "is-on" : ""}><i className={"ph " + (on ? "ph-check-square" : "ph-square")} aria-hidden="true"/> {st}<span className="asd-sr">{on ? " — ticked" : " — not ticked"}</span></li>; })}</ul> : null}
+      {!s.text && !s.fileUrl && !s.linkUrl && !(s.files || []).length ? <p className="asd-meta">Nothing was written.</p> : null}
       {canMark ? <>
         <div className="asd-row3">
           <label className="asd-field"><span>Mark (out of {a.points})</span><input className="asd-input" type="number" min="0" max={a.points} value={grade} onChange={e => setGrade(e.target.value)}/></label>
@@ -289,5 +306,243 @@ function AsdMark({ desk, s, a, canMark, ai, onDone }) {
         </div>
       </> : <p className="asd-meta">You can read this one; its course's instructors mark it.</p>}
     </div>
+  );
+}
+
+/* ── The member's hand-in ────────────────────────────────────────────────────
+ * One panel for every kind of assignment (domain/assignments.php ASG_PROOFS):
+ * writing, a document, a photo (straight from the camera), a recording (made
+ * here, in the browser, or uploaded), a link it recognises, or a checklist —
+ * and the success-criteria steps the member ticks before it goes in. The
+ * server checks all of it again; this screen only says early what is missing.
+ */
+const AHI_ACCEPT = {
+  photo: "image/*",
+  recording: "audio/*,video/*",
+  file: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,image/*",
+  any: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,image/*,audio/*,video/*",
+};
+const AHI_ERR = {
+  link_required: "Paste the link to your work.", bad_link: "That link does not look right — it should start with https://",
+  photo_required: "Add a photo of your work.", recording_required: "Add a recording — record one here or choose a file.",
+  file_required: "Attach your file.", text_required: "Write your answer.", text_or_file_required: "Write your answer or attach a file.",
+  steps_incomplete: "Tick every step first — they are how you check your own work.", empty_submission: "Add your work before you hand it in.",
+  too_many_files: "Five files at most.", bad_file: "One of the files did not upload properly. Remove it and add it again.",
+  not_open: "This assignment is closed.", already_graded: "This one has been marked already.", not_for_you: "This assignment is not for your course.",
+  uploads_disabled: "File uploads are not set up yet. Paste a link instead (Google Drive works).",
+};
+/** The client's reading of a link — the same names the server gives (assignment_link_kind). */
+function ahiLinkKind(url) {
+  let u; try { u = new URL(url); } catch (_) { return ""; }
+  const h = u.hostname.toLowerCase(), p = u.pathname;
+  if (h === "docs.google.com") return /\/document\//.test(p) ? "Google Doc" : /\/spreadsheets\//.test(p) ? "Google Sheet" : /\/presentation\//.test(p) ? "Google Slides" : /\/forms\//.test(p) ? "Google Form" : "Google Docs";
+  const m = [["drive.google.com", "Google Drive"], ["forms.gle", "Google Form"], ["lookerstudio.google.com", "Looker Studio"], ["canva.com", "Canva design"], ["github.com", "GitHub"],
+    ["youtube.com", "YouTube video"], ["youtu.be", "YouTube video"], ["trello.com", "Trello board"], ["figma.com", "Figma"], ["airtable.com", "Airtable"], ["replit.com", "Replit"],
+    ["codepen.io", "CodePen"], ["scratch.mit.edu", "Scratch project"], ["app.diagrams.net", "draw.io diagram"], ["soundcloud.com", "SoundCloud"], ["bandlab.com", "BandLab"], ["musescore.com", "MuseScore"]];
+  for (const [d, l] of m) if (h === d || h.endsWith("." + d)) return l;
+  return "";
+}
+function ahiFileKind(f) {
+  const n = (f.name || "").toLowerCase(), t = f.type || "";
+  if (/^image\//.test(t) || /\.(jpe?g|png|webp|heic|heif|gif)$/.test(n)) return "photo";
+  if (/^(audio|video)\//.test(t) || /\.(mp3|m4a|wav|ogg|oga|aac|weba|webm|mp4|mov|m4v|3gp)$/.test(n)) return "recording";
+  return "file";
+}
+
+function AsdHandIn({ a, filesMax, onClose, onDone }) {
+  const sub = a.submission || {};
+  const proof = a.proof || "text";
+  const steps = a.steps || [];
+  const [text, setText] = React.useState(a.state === "returned" || a.state === "submitted" ? sub.text || "" : "");
+  const [link, setLink] = React.useState(a.state === "returned" || a.state === "submitted" ? sub.linkUrl || "" : "");
+  const [files, setFiles] = React.useState(a.state === "returned" || a.state === "submitted" ? (sub.files || []) : []);
+  const [ticks, setTicks] = React.useState(() => new Set(a.state === "submitted" ? sub.steps || [] : []));
+  const [up, setUp] = React.useState(null);        // {name, pct}
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [rec, setRec] = React.useState(null);      // {state:'on'|'done', secs, url, blob, video}
+  const recRef = React.useRef(null);
+  const boxRef = React.useRef(null);
+  const from = React.useRef(document.activeElement);
+  const max = filesMax || 5;
+  const wants = { text: ["text", "either", "any", "checklist"].includes(proof), link: ["link", "any"].includes(proof),
+                  files: ["file", "photo", "recording", "either", "any"].includes(proof), record: ["recording", "any"].includes(proof) };
+  const canSubmit = a.canSubmit;
+  React.useEffect(() => {
+    const el = boxRef.current; if (el) el.focus();
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); stopTracks(); };
+    // eslint-disable-next-line
+  }, []);
+  const close = () => { stopTracks(); onClose(); try { from.current && from.current.focus(); } catch (_) {} };
+  const stopTracks = () => { const r = recRef.current; if (r && r.stream) r.stream.getTracks().forEach(t => t.stop()); if (r && r.timer) clearInterval(r.timer); };
+
+  const addFiles = async (list) => {
+    setErr("");
+    for (const f of Array.from(list || [])) {
+      if (files.length >= max) { setErr(AHI_ERR.too_many_files); break; }
+      if (f.size > 100 * 1024 * 1024) { setErr(f.name + " is over 100 MB. Share it as a Google Drive link instead."); continue; }
+      setUp({ name: f.name, pct: 0 });
+      try {
+        const r = await NGGApi.uploadFile(f, "assignment", pct => setUp({ name: f.name, pct }));
+        setFiles(x => x.concat([{ url: r.url, name: r.originalName || f.name, kind: ahiFileKind(f) }]));
+      } catch (e) { setErr(AHI_ERR[e && e.code] || ("Couldn't upload " + f.name + ". Try again, or paste a Google Drive link.")); }
+      finally { setUp(null); }
+    }
+  };
+  const startRec = async (video) => {
+    setErr("");
+    if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") { setErr("This browser cannot record here. Record on your phone and choose the file instead."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(video ? { audio: true, video: { facingMode: "user" } } : { audio: true });
+      const mr = new MediaRecorder(stream); const chunks = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        const type = mr.mimeType || (video ? "video/webm" : "audio/webm");
+        const blob = new Blob(chunks, { type });
+        setRec(r => Object.assign({}, r, { state: "done", blob, url: URL.createObjectURL(blob), type }));
+        stream.getTracks().forEach(t => t.stop());
+        if (recRef.current && recRef.current.timer) clearInterval(recRef.current.timer);
+      };
+      const timer = setInterval(() => setRec(r => r && r.state === "on" ? Object.assign({}, r, { secs: r.secs + 1 }) : r), 1000);
+      recRef.current = { mr, stream, timer };
+      mr.start();
+      setRec({ state: "on", secs: 0, video: !!video });
+    } catch (_) { setErr("The microphone (or camera) was not allowed. Allow it in the browser, or choose a file you recorded."); }
+  };
+  const stopRec = () => { const r = recRef.current; if (r && r.mr && r.mr.state !== "inactive") r.mr.stop(); };
+  const useRec = async () => {
+    if (!rec || !rec.blob) return;
+    const ext = /mp4/.test(rec.type) ? "mp4" : /ogg/.test(rec.type) ? "ogg" : "webm";
+    const f = new File([rec.blob], (rec.video ? "video-" : "recording-") + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + "." + ext, { type: rec.type });
+    setRec(null); await addFiles([f]);
+  };
+  const lk = ahiLinkKind(link.trim());
+  const isGoogle = /^Google/.test(lk);
+  const need = (() => {
+    if (steps.length && ticks.size < steps.length) return "steps";
+    const has = { text: text.trim() !== "", file: files.length > 0, link: /^https:\/\/\S+\.\S+/.test(link.trim()) };
+    if (proof === "text") return has.text ? "" : "text";
+    if (proof === "link") return has.link ? "" : "link";
+    if (proof === "file") return has.file ? "" : "file";
+    if (proof === "photo") return files.some(f => f.kind === "photo") ? "" : "photo";
+    if (proof === "recording") return files.some(f => f.kind === "recording") ? "" : "recording";
+    if (proof === "either") return has.text || has.file ? "" : "either";
+    if (proof === "checklist") return ticks.size || has.text ? "" : "steps";
+    return has.text || has.file || has.link ? "" : "any";
+  })();
+  const needWords = { steps: "Tick every step", text: "Write your answer", link: "Paste your link", file: "Attach your file", photo: "Add a photo", recording: "Add a recording", either: "Write or attach your work", any: "Add your work" };
+  const send = async () => {
+    setErr(""); setBusy(true);
+    try {
+      const r = await NGGApi.member.submitAssignment({ assignmentId: a.assignmentId, text: text.trim(), linkUrl: link.trim(), files, steps: Array.from(ticks) });
+      onDone(r && r.late ? "Handed in — after the due date, so it is marked as late." : "Handed in. Your instructor will mark it this week.");
+    } catch (e) { setErr(AHI_ERR[e && e.code] || asdErr(e)); } finally { setBusy(false); }
+  };
+  const due = a.dueAt ? asdDate(a.dueAt) : "";
+  const stateWord = typeof mp9AsgState === "function" ? mp9AsgState(a) : a.state;
+  return (
+    <div className="ahi-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="ahi" role="dialog" aria-modal="true" aria-labelledby="ahi-title" tabIndex={-1} ref={boxRef}>
+        <header className="ahi-head">
+          <div className="ahi-kicker">{(a.track || "Club")}{a.points ? " · " + a.points + " points" : ""}{due ? " · due " + due : ""}</div>
+          <h2 id="ahi-title">{a.title}</h2>
+          <span className={"ahi-state is-" + a.state}>{stateWord}</span>
+          <button type="button" className="ahi-x" aria-label="Close" onClick={close}><i className="ph ph-x" aria-hidden="true"/></button>
+        </header>
+        <div className="ahi-body">
+          {sub.feedback && (a.state === "returned" || a.state === "marked") ? <div className={"ahi-fb" + (a.state === "returned" ? " is-ret" : "")}>
+            <b>{a.state === "marked" ? "Marked " + sub.grade + (a.points ? " / " + a.points : "") : "Returned for changes"}</b><p>{sub.feedback}</p></div> : null}
+          {a.instructions ? <section className="ahi-sec"><h3>What to do</h3><p className="ahi-brief">{a.instructions}</p>
+            {a.attachmentUrl ? <a className="ahi-link" href={a.attachmentUrl} target="_blank" rel="noopener noreferrer"><i className="ph ph-file-arrow-down" aria-hidden="true"/> Open the worksheet</a> : null}</section> : null}
+          {!canSubmit ? <p className="ahi-note">{a.state === "marked" ? "This one is marked — well done for handing it in." : a.state === "closed" ? "This assignment is closed." : "It can't be handed in now."}</p> : <>
+          <section className="ahi-sec"><h3>Hand in: {a.proofLabel || "your work"}</h3><p className="ahi-hint">{a.proofHint}</p></section>
+          {steps.length ? <fieldset className="ahi-steps"><legend>Check your work — tick each one</legend>
+            {steps.map((st, i) => <label key={i} className={"ahi-step" + (ticks.has(i) ? " is-on" : "")}>
+              <input type="checkbox" checked={ticks.has(i)} onChange={() => setTicks(t => { const n = new Set(t); n.has(i) ? n.delete(i) : n.add(i); return n; })}/><span>{st}</span></label>)}
+            <p className="ahi-count" aria-live="polite">{ticks.size} of {steps.length} done</p></fieldset> : null}
+          {wants.link ? <label className="ahi-field"><span>Link to your work</span>
+            <input className="ahi-input" type="url" inputMode="url" placeholder="https://docs.google.com/…" value={link} onChange={e => setLink(e.target.value)}/>
+            {link.trim() ? <span className={"ahi-lk" + (lk ? " is-ok" : "")}>{lk ? <><i className="ph ph-check-circle" aria-hidden="true"/> {lk}</> : /^https:\/\//.test(link.trim()) ? "A website link" : "Links start with https://"}</span> : null}
+            {isGoogle ? <span className="ahi-hint">Set sharing to <b>Anyone with the link · Viewer</b>, or your instructor will not be able to open it.</span> : null}</label> : null}
+          {wants.files ? <div className="ahi-field"><span>{proof === "photo" ? "Photos" : proof === "recording" ? "Recordings" : "Files"} <em>({files.length} of {max})</em></span>
+            {files.length ? <ul className="ahi-files">{files.map((f, i) => <li key={f.url + i}>
+              <i className={"ph " + (f.kind === "photo" ? "ph-image" : f.kind === "recording" ? "ph-waveform" : "ph-file")} aria-hidden="true"/><a href={f.url} target="_blank" rel="noopener noreferrer">{f.name || "File " + (i + 1)}</a>
+              <button type="button" className="ahi-rm" aria-label={"Remove " + (f.name || "file")} onClick={() => setFiles(x => x.filter((_, j) => j !== i))}><i className="ph ph-trash" aria-hidden="true"/></button></li>)}</ul> : null}
+            {up ? <div className="ahi-up" role="status" aria-live="polite"><span>Uploading {up.name}…</span><span className="ahi-bar"><span style={{ width: (up.pct || 3) + "%" }}/></span></div> : null}
+            <div className="ahi-pick">
+              {proof === "photo" || proof === "any" || proof === "either" ? <label className="ahi-btn"><i className="ph ph-camera" aria-hidden="true"/> Take a photo<input type="file" accept="image/*" capture="environment" onChange={e => { addFiles(e.target.files); e.target.value = ""; }} hidden/></label> : null}
+              <label className="ahi-btn"><i className="ph ph-paperclip" aria-hidden="true"/> {proof === "photo" ? "Choose photos" : proof === "recording" ? "Choose a recording" : "Choose files"}
+                <input type="file" multiple accept={AHI_ACCEPT[proof] || AHI_ACCEPT.any} onChange={e => { addFiles(e.target.files); e.target.value = ""; }} hidden/></label>
+              {wants.record && !rec ? <><button type="button" className="ahi-btn" onClick={() => startRec(false)}><i className="ph ph-microphone" aria-hidden="true"/> Record audio</button>
+                <button type="button" className="ahi-btn" onClick={() => startRec(true)}><i className="ph ph-video-camera" aria-hidden="true"/> Record video</button></> : null}
+            </div>
+            {rec ? <div className="ahi-rec" role="status" aria-live="polite">
+              {rec.state === "on" ? <><span className="ahi-dot" aria-hidden="true"/><b>Recording {Math.floor(rec.secs / 60)}:{String(rec.secs % 60).padStart(2, "0")}</b>
+                <button type="button" className="ahi-btn is-dark" onClick={stopRec}><i className="ph ph-stop" aria-hidden="true"/> Stop</button></>
+               : <>{rec.video ? <video src={rec.url} controls className="ahi-media"/> : <audio src={rec.url} controls className="ahi-media"/>}
+                <div className="ahi-inline"><button type="button" className="ahi-btn is-dark" onClick={useRec}>Use this recording</button>
+                  <button type="button" className="ahi-btn" onClick={() => setRec(null)}>Record again</button></div></>}
+            </div> : null}
+          </div> : null}
+          {wants.text ? <label className="ahi-field"><span>{proof === "text" || proof === "either" ? "Your answer" : "A note for your instructor"} {proof === "text" ? null : <em>(optional)</em>}</span>
+            <textarea className="ahi-input is-area" rows={proof === "text" ? 7 : 3} maxLength={20000} value={text} onChange={e => setText(e.target.value)}
+              placeholder={proof === "text" ? "Write your answer here." : "What you did, and one thing that is still hard."}/></label> : null}
+          {err ? <p className="ahi-err" role="alert">{err}</p> : null}
+          </>}
+        </div>
+        {canSubmit ? <footer className="ahi-foot">
+          <span className="ahi-need" aria-live="polite">{need ? needWords[need] : a.state === "late" ? "It's late — hand it in now." : "Ready to hand in"}</span>
+          <button type="button" className="ahi-btn is-dark is-go" disabled={!!need || busy || !!up || (rec && rec.state === "on")} onClick={send}>
+            {busy ? "Handing in…" : a.state === "returned" || a.state === "submitted" ? "Hand in again" : "Hand in"}</button>
+        </footer> : null}
+      </div>
+    </div>
+  );
+}
+
+/* ── The study helper (member_curriculum_ask) ────────────────────────────────
+ * A member picks a lesson they are taking and asks about it. The AI answers
+ * from the lesson only, as a tutor, within a daily allowance the server
+ * counts; it never gives answers to the lesson's checks.
+ */
+function CurStudyHelper({ units }) {
+  const open = (units || []).filter(u => !u.progress || u.progress.status !== "completed");
+  const list = open.length ? open : (units || []);
+  const [unitId, setUnitId] = React.useState(list[0] ? list[0].unitId : "");
+  const [q, setQ] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [res, setRes] = React.useState(null);   // {answer, left} | {error}
+  if (!list.length) return null;
+  const ask = async (e) => {
+    e.preventDefault();
+    if (q.trim().length < 4 || busy) return;
+    setBusy(true); setRes(null);
+    try { const r = await NGGApi.member.curriculumAsk(unitId, q.trim()); setRes(r); }
+    catch (err) {
+      const c = err && err.code;
+      setRes({ error: c === "daily_limit" ? "You've used today's questions. Ask your instructor, or come back tomorrow."
+        : c === "ai_disabled" ? "The study helper isn't switched on yet. Ask your instructor or mentor."
+        : c === "question_too_short" ? "Ask a little more — a full question gets a better answer."
+        : "The study helper couldn't answer just now. Try again in a minute." });
+    } finally { setBusy(false); }
+  };
+  const label = u => (u.path ? u.path.code + " · " : "") + u.title;
+  return (
+    <section className="sth" aria-labelledby="sth-h">
+      <div className="sth-head"><i className="ph ph-sparkle" aria-hidden="true"/><div><h3 id="sth-h">Study helper</h3>
+        <p>Stuck on a lesson? Ask about it. It explains and asks you a question back — it won't do your assignment for you.</p></div></div>
+      <form className="sth-form" onSubmit={ask}>
+        <label className="sth-field"><span>Lesson</span>
+          <select className="sth-input" value={unitId} onChange={e => { setUnitId(e.target.value); setRes(null); }}>
+            {list.map(u => <option key={u.unitId} value={u.unitId}>{label(u)}</option>)}</select></label>
+        <label className="sth-field"><span>Your question</span>
+          <textarea className="sth-input is-area" rows={3} maxLength={600} value={q} onChange={e => setQ(e.target.value)} placeholder="e.g. Why does F major have a B flat?"/></label>
+        <div className="sth-row"><span className="sth-left" aria-live="polite">{res && typeof res.left === "number" ? res.left + " questions left today" : ""}</span>
+          <button type="submit" className="sth-btn" disabled={busy || q.trim().length < 4}>{busy ? "Thinking…" : "Ask"}</button></div>
+      </form>
+      {res ? <div className={"sth-ans" + (res.error ? " is-err" : res.safeguarding ? " is-care" : "")} role="status" aria-live="polite">{res.error || res.answer}</div> : null}
+    </section>
   );
 }

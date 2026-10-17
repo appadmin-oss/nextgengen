@@ -296,7 +296,8 @@
   function mediaKindOf(file) {
     const type = (file && file.type) || '';
     const name = (file && file.name) || '';
-    if (/^video\//.test(type)) return 'video';
+    // Cloudinary stores audio as a `video` resource: a voice note is a recording, not a document.
+    if (/^(video|audio)\//.test(type) || /\.(mp3|m4a|wav|ogg|oga|aac|weba)$/i.test(name)) return 'video';
     if (type === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
     if (/^image\//.test(type)) return 'image';
     if (DOC_EXT.test(name) || /^(application|text)\//.test(type)) return 'raw';
@@ -799,6 +800,7 @@
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
       curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
+      curriculumAsk:     (unitId, question) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question }, timeout: 60000 }),
       curriculumYear:    (memberId, year) => request('/member/curriculum.php', { body: { action: 'year', memberId, year } }),
       curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
       // An instructor's material for a lesson — a link, or a file uploaded first.

@@ -3703,3 +3703,10 @@ ALTER TABLE assignments ADD COLUMN unitId VARCHAR(64) DEFAULT '';
 ALTER TABLE assignments ADD COLUMN remindedAt VARCHAR(32) DEFAULT '';
 CREATE INDEX idx_sub_member ON assignment_submissions(memberId);
 INSERT INTO schema_version (version) VALUES (154) ON DUPLICATE KEY UPDATE version = version;
+
+-- 155: assignment hand-ins collect links, several files and ticked success-criteria steps.
+ALTER TABLE assignments ADD COLUMN steps TEXT;
+ALTER TABLE assignment_submissions ADD COLUMN linkUrl VARCHAR(1000) DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT;
+ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT;
+INSERT INTO schema_version (version) VALUES (155) ON DUPLICATE KEY UPDATE version = version;

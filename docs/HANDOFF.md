@@ -1629,3 +1629,29 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
 - **Resolver fix**: a course that only *contains* the word (TECH → "Tech
   Product Design") is a weak hit and no longer suppresses the division
   mapping, so TECH members get Coding again (member-v9 caught it).
+- **Hand-in kinds** (migration 155): `ASG_PROOFS` text | file | photo | recording |
+  link | checklist | either | any; `assignments.steps` (success criteria the
+  member ticks, enforced as `steps_incomplete`); submissions carry `linkUrl`
+  (named by `assignment_link_kind`), `filesJson` (≤ `ASG_FILES_MAX` 5; `fileUrl`
+  stays the first, for older readers) and `stepsJson`. `assignment_infer_from_unit`
+  suggests the kind and lifts the lesson's "Success criteria" as steps.
+  Upload kind `assignment` is now media-aware like `post` (a PDF stays a PDF,
+  audio and video are stored as video); `mediaKindOf` treats audio as video.
+- **AsdHandIn** (assign-desk.jsx): the member's hand-in panel, opened from
+  member v9 via `slotEnd`. Camera capture, MediaRecorder audio and video,
+  link recognition, the steps to tick, upload progress. It replaces the
+  generated sheet for assignments.
+- **NGG Learning Path** (`curriculum_path`): Y·T·W codes on unit payloads, the
+  member list, the Control Room lesson list (Term filter, Path sort), desk
+  lesson labels and the PDF export groups.
+- **textbee** (`sms_send_textbee`, service key `textbee`): SMS from the
+  programme's own Android phone via textbee.dev — `POST /api/v1/gateway/send-sms`,
+  `x-api-key`, `{recipients, message, deviceId?, simSubscriptionId?}`; a 200 is
+  queued, not delivered. First for +234, after Twilio for others; any refusal
+  falls through.
+- **AI in the curriculum**: the editor's AI writes a whole lesson in the
+  Saturday standard when given only a title (notes are never rewritten);
+  members get a **Study helper** on Learn (`member.curriculum.ask`, profile
+  `coach`, `CURR_TUTOR_PER_DAY` 20, counted under `ai.tutor.<date>`, a key
+  `member_state_set` refuses). It is shown the lesson without its assignment,
+  and distress is answered with people, not the lesson.

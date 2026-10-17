@@ -116,6 +116,10 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     const title = await ap.$eval('.asd-edit input.asd-input', el => el.value);
     chk('drafting from the lesson lifts its own weekly assignment, objectives included, with no AI', /^Week 2: /.test(title)
       && /play C major one octave/.test(await ap.$eval('.asd-edit textarea', el => el.value)));
+    chk('…and suggests the hand-in a Piano lesson calls for: a recording', await ap.$eval('.asd-kind[aria-checked="true"]', el => /recording/i.test(el.innerText)));
+    // This class hands it in as writing, with two success criteria to tick.
+    await ap.click('.asd-kind:has-text("Writing")');
+    await ap.fill('.asd-edit textarea[placeholder^="Totals"]', 'All three scales written out\nFingering marked');
     // Publishing with no instructions is refused field by field.
     await ap.fill('.asd-edit textarea', '');
     await ap.click('.asd-foot button:has-text("Publish")');
@@ -123,10 +127,13 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     chk('publishing without instructions is refused at the field, and nothing is written', /Say what to do/.test(await ap.innerText('#asd-e-instructions')) && q(`(int)db_row("SELECT COUNT(*) c FROM assignments")['c']`) === 0);
     await ap.click('button:has-text("Draft from the lesson")');
     await ap.waitForFunction(() => /scales on D, G and F/.test(document.querySelector('.asd-edit textarea')?.value || ''), null, { timeout: 15000 });
+    await ap.click('.asd-kind:has-text("Writing")');
+    await ap.fill('.asd-edit textarea[placeholder^="Totals"]', 'All three scales written out\nFingering marked');
     await ap.click('.asd-foot button:has-text("Publish")');
     await ap.waitForSelector('.asd-marks', { timeout: 15000 }).catch(() => ap.waitForSelector('.asd-list', { timeout: 15000 }));
     const A = q(`db_row("SELECT * FROM assignments LIMIT 1")`);
-    chk('it publishes: the lesson link, its course and week, and a due date (next Saturday)', A && A.status === 'published' && A.unitId === 'CU-AD-1' && A.track === 'Piano' && +A.week === 2 && /^\d{4}-\d{2}-\d{2}/.test(A.dueAt));
+    chk('it publishes: the lesson link, its course and week, a due date (next Saturday), the kind and the steps', A && A.status === 'published' && A.unitId === 'CU-AD-1' && A.track === 'Piano' && +A.week === 2 && /^\d{4}-\d{2}-\d{2}/.test(A.dueAt)
+      && A.proof === 'text' && JSON.parse(A.steps || '[]').length === 2);
     chk('…and the member it is for is told', q(`(int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-AD-M1'")['c']`) >= 1
       && q(`(int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-AD-M2'")['c']`) === 0);
 
@@ -136,9 +143,18 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     await waitForBoot(mp);
     await mp.waitForFunction(() => /Week 2: Construct/.test(document.body.innerText), null, { timeout: 60000 }).catch(async e => { console.error('DEBUG', mp.errs.join('\n'), (await mp.innerText('body')).slice(0, 1500)); throw e; });
     chk('the member sees it with when it is due', /Due (in \d+ days|today|tomorrow)/.test(await mp.innerText('body')));
-    const sub1 = await mp.evaluate(id => NGGApi.member.submitAssignment({ assignmentId: id, text: 'I played D major with F# and C#, then G and F. F is hardest.' }), A.assignmentId);
-    chk('the member hands it in (on time)', sub1 && sub1.late === false && q(`db_row("SELECT status FROM assignment_submissions LIMIT 1")['status']`) === 'submitted');
-    const other = await (await as('NGG-AD-M2', false)).evaluate(() => 1).catch(() => 0);
+    // The hand-in panel: the kind, the steps to tick, and the answer.
+    await mp.click('main button:has-text("Week 2: Construct")').catch(() => mp.click('text=Week 2: Construct'));
+    await mp.waitForSelector('.ahi[role="dialog"]', { timeout: 15000 });
+    const panel = await mp.innerText('.ahi');
+    chk('the hand-in panel says how to hand it in and lists the steps to tick', /Hand in: Writing/.test(panel) && /All three scales written out/.test(panel) && /Fingering marked/.test(panel));
+    await mp.fill('.ahi textarea', 'I played D major with F# and C#, then G and F. F is hardest.');
+    chk('Hand in waits for the steps to be ticked', await mp.$eval('.ahi-foot .is-go', b => b.disabled) && /Tick every step/.test(await mp.innerText('.ahi-need')));
+    await mp.click('.ahi-step >> nth=0'); await mp.click('.ahi-step >> nth=1');
+    await mp.click('.ahi-foot .is-go');
+    await mp.waitForSelector('.ahi', { state: 'detached', timeout: 15000 });
+    const S1 = q(`db_row("SELECT status, stepsJson FROM assignment_submissions LIMIT 1")`);
+    chk('the member hands it in through the panel, with both steps ticked', S1 && S1.status === 'submitted' && S1.stepsJson === '[0,1]');
     chk('a member it is not for cannot hand it in by id', php(`echo assignment_submit(['memberId' => 'NGG-AD-M2', 'assignmentId' => '${A.assignmentId}', 'text' => 'not mine at all here'])['error'] ?? '';`) === 'not_for_you');
 
     /* ── The instructor: the same desk under Progress ── */
@@ -166,7 +182,7 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     await waitForBoot(mp);
     await mp.waitForFunction(() => /Returned/.test(document.body.innerText), null, { timeout: 60000 });
     chk('the member sees it was returned, to hand in again', /Returned — change it and hand in again/.test(await mp.innerText('body')));
-    const sub2 = await mp.evaluate(id => NGGApi.member.submitAssignment({ assignmentId: id, text: 'F major: thumb turns under after finger 4. Played it 5 days.' }), A.assignmentId);
+    const sub2 = await mp.evaluate(id => NGGApi.member.submitAssignment({ assignmentId: id, text: 'F major: thumb turns under after finger 4. Played it 5 days.', steps: [0, 1] }), A.assignmentId);
     chk('…and hands it in again', sub2 && q(`db_row("SELECT status FROM assignment_submissions LIMIT 1")['status']`) === 'submitted');
 
     /* ── The admin marks it ── */
