@@ -1787,3 +1787,26 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   refuses any new memberId table that is not.
 - Dictionary: dictionaryapi.dev (free, no key); `.htaccess` connect-src
   lists it. `tests/study-tools.test.js` stubs it.
+
+## 2026-10-17 — Study tools: course labs, the study helper, and similar tools merged
+
+- Nine tabs became five (`STT_TOOLS`, each with `subs`): Today (focus + the
+  week), Revise (flashcards, quiz, notes), Maths (calculator, graphs, number
+  bases), Words (dictionary, typing), Course labs. `STT_ALIASES` forwards the
+  old `/study/<tool>` addresses; `/study/<tab>/<sub>` is the address, and
+  app.jsx's `inStudySubtree` stops the router rewriting it back to `/study`
+  (it did, on a deep link).
+- Hand-offs between merged tools: `sttGo(tool, sub, data)` + `sttTakeHandoff`
+  (a sum with x → its graph); a dictionary word → the "My words" deck
+  (`sttAddToMyWords`, no duplicates); missed quiz questions → a deck.
+- `tools-labs.jsx`: one lab per division (`STT_LABS`), the member's division
+  first (`study_lessons` now returns `division`). The code playground runs in
+  `assets/sandbox/code-sandbox.html` — its own CSP via `.htaccess` `<Files>`
+  (inline scripts, `default-src 'none'`, `sandbox allow-scripts`), framed with
+  `sandbox="allow-scripts"`; messages are believed only from that frame's
+  window. An srcdoc/blob frame would inherit the production CSP and block the
+  member's scripts.
+- `study_quiz_ai` (ai_classify JSON; a question without 4 distinct options and
+  one in-range answer is dropped; fewer than 3 is a refusal and a refund) and
+  `study_notes_ai` (distress → people to talk to, nothing spent), both on
+  `study_ai_take` / `study_ai_refund`. `study_log` accepts `quiz`.

@@ -170,7 +170,7 @@ function study_review(array $p): array {
 function study_log(array $p): array {
     $m = study_member($p); if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $tool = (string)($p['tool'] ?? '');
-    if (!in_array($tool, ['focus', 'typing', 'cards'], true)) return ['ok' => false, 'error' => 'bad_tool'];
+    if (!in_array($tool, ['focus', 'typing', 'cards', 'quiz'], true)) return ['ok' => false, 'error' => 'bad_tool'];
     $num = static fn($k, $max) => max(0, min($max, (int)($p[$k] ?? 0)));
     $row = ['memberId' => (string)$m['memberId'], 'tool' => $tool, 'label' => mb_substr(trim((string)($p['label'] ?? '')), 0, 120),
             'minutes' => $num('minutes', 180), 'wpm' => $num('wpm', 250), 'accuracy' => $num('accuracy', 100), 'cards' => $num('cards', 500), 'at' => now_iso(), 'day' => gmdate('Y-m-d', time() + 3600)];
@@ -250,11 +250,94 @@ function study_cards_ai(array $p): array {
             'left' => CURR_TUTOR_PER_DAY - $used - 1];
 }
 
-/** member.tools.lessons — the member's lessons a deck can be made from (id and title only). */
+/** member.tools.lessons — the member's lessons (id and title only), their course and its division, so the course labs can lead with theirs. */
 function study_lessons(array $p): array {
     $m = function_exists('curriculum_member_row') ? curriculum_member_row((string)($p['memberId'] ?? '')) : null;
-    if (!$m) return ['ok' => true, 'lessons' => []];
+    if (!$m) return ['ok' => true, 'lessons' => [], 'track' => '', 'division' => '', 'ai' => false];
     $out = [];
     foreach (curriculum_member_units($m) as $id => $x) $out[] = ['unitId' => (string)$id, 'title' => (string)$x['unit']['title'], 'course' => (string)$x['unit']['course']];
-    return ['ok' => true, 'lessons' => array_slice($out, 0, 200), 'ai' => function_exists('ai_enabled') && ai_enabled('coach')];
+    $track = (string)($m['track'] ?? '');
+    $div = (string)($m['division'] ?? '') ?: (function_exists('club_division_of') && $track !== '' ? club_division_of($track) : '');
+    return ['ok' => true, 'lessons' => array_slice($out, 0, 200), 'track' => $track, 'division' => $div, 'ai' => function_exists('ai_enabled') && ai_enabled('coach')];
+}
+
+/* ── The study helper, two more ways ─────────────────────────────────────
+ * Both spend the same daily allowance as the helper on a lesson page
+ * (ai.tutor.<day>, CURR_TUTOR_PER_DAY), taken before the model is called and
+ * given back when it fails, so parallel presses cannot slip under it. */
+
+/** Spend one of today's study-helper questions. ['ok'=>true,'used'=>n] or a refusal. */
+function study_ai_take(string $mid): array {
+    if (!function_exists('ai_enabled') || !ai_enabled('coach')) return ['ok' => false, 'error' => 'ai_disabled'];
+    $key = 'ai.tutor.' . gmdate('Y-m-d');
+    $used = (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [$mid, $key])['stateValue'] ?? 0);
+    if ($used >= CURR_TUTOR_PER_DAY) return ['ok' => false, 'error' => 'daily_limit', 'limit' => CURR_TUTOR_PER_DAY, 'left' => 0];
+    db_upsert('member_state', ['memberId' => $mid, 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
+              ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
+    return ['ok' => true, 'used' => $used, 'key' => $key];
+}
+function study_ai_refund(string $mid, array $t): void {
+    db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$t['used'], $mid, $t['key']]);
+}
+const STUDY_DISTRESS = '/\b(kill myself|suicide|hurt myself|self[- ]harm|abuse[ds]?|touch(ed|es) me|want to die)\b/i';
+const STUDY_QUIZ_N = 5;
+const STUDY_NOTES_MAX = 6000;
+
+/**
+ * member.tools.quiz.ai — {unitId}: five multiple-choice questions on one of MY
+ * lessons (never its assignment), each with the right option and why. Checked
+ * here for shape — four options, one right answer — before it reaches the
+ * member; a malformed question is dropped, not shown.
+ */
+function study_quiz_ai(array $p): array {
+    $m = function_exists('curriculum_member_row') ? curriculum_member_row((string)($p['memberId'] ?? '')) : null;
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $units = curriculum_member_units($m);
+    $id = (string)($p['unitId'] ?? '');
+    if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    $mid = (string)$m['memberId'];
+    $t = study_ai_take($mid); if (empty($t['ok'])) return $t;
+    $u = $units[$id]['unit'];
+    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\n\n" . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
+    $r = ai_classify('Write ' . STUDY_QUIZ_N . ' multiple-choice questions for a 10–17 year old member of Next Generation Genius in Nigeria, testing understanding of ONE lesson (below) — not memory of exact wording, and nothing outside the lesson. '
+        . 'Each question has exactly 4 short options, one of them right. Plain British English. '
+        . 'JSON: {"questions":[{"q":"…","options":["…","…","…","…"],"answer":0,"why":"one sentence on why that is right"}]}', $lesson, 1400, 'coach');
+    $qs = [];
+    foreach ((array)($r['data']['questions'] ?? []) as $q) {
+        $opts = array_values(array_filter(array_map(static fn($o) => mb_substr(trim((string)$o), 0, 160), (array)($q['options'] ?? [])), 'strlen'));
+        $ans = $q['answer'] ?? null; $text = mb_substr(trim((string)($q['q'] ?? '')), 0, 300);
+        if ($text === '' || count($opts) !== 4 || !is_numeric($ans) || (int)$ans < 0 || (int)$ans > 3 || count(array_unique($opts)) !== 4) continue;
+        $qs[] = ['q' => $text, 'options' => $opts, 'answer' => (int)$ans, 'why' => mb_substr(trim((string)($q['why'] ?? '')), 0, 300)];
+        if (count($qs) === STUDY_QUIZ_N) break;
+    }
+    if (count($qs) < 3) { study_ai_refund($mid, $t); return ['ok' => false, 'error' => !empty($r['ok']) ? 'ai_no_quiz' : (string)($r['error'] ?? 'ai_failed')]; }
+    return ['ok' => true, 'title' => (string)$u['title'], 'course' => (string)$u['course'], 'questions' => $qs, 'left' => CURR_TUTOR_PER_DAY - $t['used'] - 1];
+}
+
+/**
+ * member.tools.notes.ai — {text}: the member's own notes, summarised in a few
+ * sentences, with the key terms and what each means (ready to become a
+ * deck). Notes that talk about being hurt are not summarised: they are
+ * answered with people to talk to, and nothing is spent.
+ */
+function study_notes_ai(array $p): array {
+    $m = study_member($p); if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $text = trim(mb_substr((string)($p['text'] ?? ''), 0, STUDY_NOTES_MAX));
+    if (mb_strlen($text) < 80) return ['ok' => false, 'error' => 'notes_too_short', 'detail' => 'Paste a little more — at least a few sentences.'];
+    if (preg_match(STUDY_DISTRESS, $text)) return ['ok' => true, 'safeguarding' => true, 'summary' => 'Some of what you wrote sounds really important, and it is not something to work out alone. Please talk to your mentor, your instructor or a parent today — or use "Report a concern" in your portal, which goes straight to the safeguarding team.', 'terms' => []];
+    $mid = (string)$m['memberId'];
+    $t = study_ai_take($mid); if (empty($t['ok'])) return $t;
+    $r = ai_classify('You help a 10–17 year old member of Next Generation Genius in Nigeria revise from their OWN study notes (below). '
+        . 'Write a summary of the notes in 3 to 5 plain sentences, using only what the notes say, and pick up to 10 key terms with a one-line meaning each, taken from the notes. '
+        . 'If the notes are not study notes, say so in the summary and give no terms. Never ask for personal details. '
+        . 'JSON: {"summary":"…","terms":[{"term":"…","meaning":"…"}]}', $text, 900, 'coach');
+    $summary = mb_substr(trim((string)($r['data']['summary'] ?? '')), 0, 1200);
+    if ($summary === '') { study_ai_refund($mid, $t); return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')]; }
+    $terms = [];
+    foreach ((array)($r['data']['terms'] ?? []) as $x) {
+        $tm = study_clean_side((string)($x['term'] ?? '')); $mn = study_clean_side((string)($x['meaning'] ?? ''));
+        if ($tm !== '' && $mn !== '') $terms[] = ['front' => $tm, 'back' => $mn];
+        if (count($terms) === 10) break;
+    }
+    return ['ok' => true, 'summary' => $summary, 'terms' => $terms, 'left' => CURR_TUTOR_PER_DAY - $t['used'] - 1];
 }

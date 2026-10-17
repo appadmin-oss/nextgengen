@@ -340,8 +340,10 @@ function App() {
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
     /* The mentor portals own /mentor/ngg, /mentor/summer and /mentor/class (MentorHome). */
     const inMentorSubtree = (page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "")) || (page === "instructor" && /^\/instructor(\/|$)/.test(window.location.pathname || ""));
+    /* Study tools own /study/<tab>/<tool> (src/modules/tools/tools-core.jsx), and forward the old /study/cards-style addresses themselves. */
+    const inStudySubtree = page === "study" && /^\/study(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && !inStudySubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.

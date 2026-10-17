@@ -970,22 +970,39 @@ marked beside the model answer and rubric.
 ### Study tools (/study)
 
 Members open **Learn → Study tools** in their portal (or go to `/study`). It is
-their own kit, and nothing in it is seen by staff:
+their own kit, and nothing in it is seen by staff. Five tabs, with similar
+tools together and handing work to each other:
 
-- **Flashcards** with spaced repetition: a card they know comes back after a
-  day, then six, then weeks; a card they miss comes back the same day. They
-  can type cards, paste many at once ("front — back", one a line), or have the
-  study helper write about twelve from one of their lessons (it uses one of the
-  day's study-helper questions, and they check the cards before saving).
-- **Focus timer**: 25-minute study blocks with breaks (or 15, 45, 50), logged,
-  so the week has a number on it and a study streak.
-- **Typing practice**: short passages on what NGG teaches, timed for speed
-  and accuracy.
-- **Scientific calculator**, **graph plotter** (up to three functions, with a
-  table of values) and **dictionary**. These three work without an account.
+- **Today** — the focus timer (25-minute blocks with breaks, or 15, 45, 50),
+  beside the week: focus minutes by day, the study streak, cards due and the
+  best typing speed.
+- **Revise** — **Flashcards** with spaced repetition (a card they know comes
+  back after a day, then six, then weeks; one they miss comes back the same
+  day; typed, pasted "front — back", or written by the study helper from a
+  lesson); **Quiz me** (five multiple-choice questions on one of their lessons,
+  and the ones they miss become flashcards with one press); **Summarise notes**
+  (their own class notes summarised, with key terms that become flashcards).
+- **Maths** — a scientific **calculator** (a sum with x in it is one press from
+  its graph), a **graph plotter** with a table of values, and **number bases**.
+- **Words** — a **dictionary** (any word looked up can be added to a "My words"
+  deck) and **typing practice**.
+- **Course labs** — one per division, the member's own first:
+  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
+  checker), Creative (metronome with tap tempo; piano with scales and chords),
+  Media (colour contrast to the accessibility standard; palette maker),
+  Business (break-even and profit, budget planner, savings and interest).
 
-Limits: 40 decks, 500 cards a deck. Merging two member records moves the
-study tools with everything else.
+The study helper (flashcards from a lesson, quizzes, note summaries) uses the
+same daily allowance as the helper on a lesson page, and refuses to summarise
+notes that talk about being hurt — it points to people instead. Without an
+account, Today's timer, Maths, Words and the labs still work. Limits: 40 decks,
+500 cards a deck. Old addresses (`/study/cards`, `/study/calc` …) forward to
+the tab that holds them now.
+
+The code playground runs a member's code in `assets/sandbox/code-sandbox.html`,
+which `.htaccess` serves with its own policy: no network, and a sandbox that
+cannot read the site's cookies, storage or pages. Keep that `<Files>` block
+when editing `.htaccess`, or the playground's scripts will not run.
 
 ### Three years, by mastery
 

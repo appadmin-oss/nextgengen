@@ -28837,6 +28837,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('flashcards · a lesson outside my course is refused', (study_cards_ai($A + ['unitId' => 'CU-TU-X'])['error'] ?? '') === 'not_found');
     unset($GLOBALS['__ai_mock']);
     if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
+    // Quiz me and Summarise my notes, on the same allowance.
+    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $sys = ''; $GLOBALS['__ai_mock'] = function ($pr, $system, $turns) use (&$sys) { $sys = $system . "\n" . ($turns[0]['text'] ?? ''); return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['questions' => [
+        ['q' => 'How many semitones in a tone?', 'options' => ['One', 'Two', 'Three', 'Four'], 'answer' => 1, 'why' => 'A tone is two semitones.'],
+        ['q' => 'Broken: three options', 'options' => ['a', 'b', 'c'], 'answer' => 0],
+        ['q' => 'Broken: answer out of range', 'options' => ['a', 'b', 'c', 'd'], 'answer' => 7],
+        ['q' => 'Broken: repeated options', 'options' => ['a', 'a', 'b', 'c'], 'answer' => 0],
+        ['q' => 'Q2', 'options' => ['w', 'x', 'y', 'z'], 'answer' => 3, 'why' => ''],
+        ['q' => 'Q3', 'options' => ['1', '2', '3', '4'], 'answer' => 0, 'why' => ''],
+    ]])]; };
+    $qz = study_quiz_ai($A + ['unitId' => 'CU-ST-1']);
+    chk('quiz · five questions on MY lesson — never its assignment — and a malformed question is dropped, not shown', !empty($qz['ok']) && count($qz['questions']) === 3
+        && $qz['questions'][0]['answer'] === 1 && str_contains($sys, 'two semitones') && !str_contains($sys, 'SECRET-TASK'));
+    $GLOBALS['__ai_mock'] = fn($pr, $system, $turns) => ['ok' => true, 'provider' => 'mock', 'text' => '{"questions":[{"q":"only one","options":["a","b","c","d"],"answer":0}]}'];
+    $u0 = (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'];
+    chk('quiz · too few good questions is a refusal, and the allowance is given back', (study_quiz_ai($A + ['unitId' => 'CU-ST-1'])['error'] ?? '') === 'ai_no_quiz'
+        && (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'] === $u0);
+    chk('quiz · a quiz score is logged as a study session', !empty(study_log($A + ['tool' => 'quiz', 'accuracy' => 80, 'cards' => 5, 'label' => 'Intervals'])));
+    $GLOBALS['__ai_mock'] = function ($pr, $system, $turns) use (&$sys) { $sys = $turns[0]['text'] ?? ''; return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['summary' => 'Cells are the units of life.', 'terms' => [['term' => 'Cell', 'meaning' => 'The smallest unit of life'], ['term' => '', 'meaning' => 'dropped']]])]; };
+    $notes = str_repeat('Cells are the smallest unit of life. The nucleus holds DNA. ', 3);
+    $nr = study_notes_ai($A + ['text' => $notes]);
+    chk('notes · my own notes are summarised, with key terms ready to become cards (empty ones dropped)', !empty($nr['ok']) && $nr['summary'] === 'Cells are the units of life.' && $nr['terms'] === [['front' => 'Cell', 'back' => 'The smallest unit of life']] && str_contains($sys, 'nucleus holds DNA'));
+    chk('notes · a few words are not notes', (study_notes_ai($A + ['text' => 'too short'])['error'] ?? '') === 'notes_too_short');
+    $u1 = (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'];
+    $sg = study_notes_ai($A + ['text' => $notes . ' Sometimes I want to hurt myself after school.']);
+    chk('notes · notes that talk about being hurt get people to talk to, not a summary — and nothing is spent', !empty($sg['safeguarding']) && str_contains($sg['summary'], 'safeguarding')
+        && (int)db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey = ?", ['ai.tutor.' . gmdate('Y-m-d')])['stateValue'] === $u1);
+    chk('lessons · the member\'s division is given, so their course lab comes first', study_lessons($A)['division'] === 'Creative & Performing Arts' || study_lessons($A)['track'] === 'Piano');
+    unset($GLOBALS['__ai_mock']);
     chk('flashcards · deleting a deck deletes its cards', !empty(study_deck_delete($A + ['deckId' => $deckId])['ok']) && (int)db_row("SELECT COUNT(*) n FROM study_cards WHERE deckId = ?", [$deckId])['n'] === 0);
     db_exec("DELETE FROM study_sessions WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM study_decks WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM study_cards WHERE memberId LIKE 'NGG-ST-%'");
     db_exec("DELETE FROM curriculum_units WHERE unitId = 'CU-ST-1'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM member_state WHERE memberId LIKE 'NGG-ST-%'");

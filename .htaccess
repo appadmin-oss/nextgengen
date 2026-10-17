@@ -133,6 +133,17 @@ base-uri 'self'; \
 form-action 'self'; \
 object-src 'none'"
 
+  # The Study tools' code playground runs a member's own HTML/CSS/JS in this
+  # one page, under its own policy: inline scripts allowed (they are the
+  # member's code), NO network (default-src 'none'), and a sandbox without
+  # allow-same-origin, so it is an opaque origin that cannot read this site's
+  # cookies, storage or pages. Only this site may frame it.
+  <Files "code-sandbox.html">
+    Header always set Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; frame-ancestors 'self'; sandbox allow-scripts allow-modals"
+    Header always unset X-Frame-Options
+    Header set Cache-Control "no-cache, must-revalidate"
+  </Files>
+
   # JSX files: treated as scripts (text/babel) in the dev/root deploy. They
   # keep the SAME name across deploys, so they must revalidate every load or a
   # source edit wouldn't show for days. Cheap 304s when unchanged.

@@ -15,7 +15,7 @@ function sttTone() {
     o.start(); o.stop(c.currentTime + 1.3); setTimeout(() => c.close && c.close(), 1600);
   } catch (_) {}
 }
-function SttFocus({ signedIn }) {
+function SttFocus({ signedIn, onLogged }) {
   const [preset, setPreset] = React.useState(0);
   const [phase, setPhase] = React.useState("work");          // work | break
   const [endAt, setEndAt] = React.useState(0);                // running when > 0
@@ -35,7 +35,7 @@ function SttFocus({ signedIn }) {
         if (phase === "work") {
           const mins = STT_FOCUS_PRESETS[preset][0];
           setDone(n => n + 1);
-          if (signedIn) NGGApi.member.tools.log({ tool: "focus", minutes: mins, label }).then(() => setNote("Logged " + mins + " minutes."), () => setNote("Couldn’t log that block — you’re probably offline."));
+          if (signedIn) NGGApi.member.tools.log({ tool: "focus", minutes: mins, label }).then(() => { setNote("Logged " + mins + " minutes."); if (onLogged) onLogged(); }, () => setNote("Couldn’t log that block — you’re probably offline."));
           setPhase("break"); setLeft(STT_FOCUS_PRESETS[preset][1] * 60);
         } else { setPhase("work"); setLeft(STT_FOCUS_PRESETS[preset][0] * 60); }
       }
@@ -178,6 +178,7 @@ function SttCalc() {
         <label className="stt-label" htmlFor="stt-calc-in">Sum</label>
         <input id="stt-calc-in" ref={ref} className="stt-input stt-calc-in" value={expr} onChange={e => { setErr(""); setExpr(e.target.value); }}
           placeholder="e.g. 2 × (3 + 4)^2 or sin(30)" autoComplete="off" spellCheck="false" inputMode="text" aria-describedby="stt-calc-out"/>
+        {/x/i.test(expr.replace(/max|exp/gi, "")) ? <button type="button" className="stt-link" onClick={() => sttGo("maths", "graph", { fn: expr })}><i className="ph ph-chart-line" aria-hidden="true"/>This has x in it — plot it as a graph</button> : null}
         <p id="stt-calc-out" className={"stt-calc-out" + (err ? " is-err" : "")} aria-live="polite">
           {err ? err : live && live.ok ? "= " + sttFormat(live.value) : ans != null ? "ans = " + sttFormat(ans) : " "}
         </p>
@@ -207,7 +208,8 @@ function SttCalc() {
  * cannot see the picture. */
 const STT_GRAPH_COLOURS = ["#1e4fae", "#b0361c", "#1d6b30"];
 function SttGraph() {
-  const [fns, setFns] = React.useState(["x^2 - 2", "sin(x)", ""]);
+  // A sum sent from the calculator ("plot it") becomes the first function.
+  const [fns, setFns] = React.useState(() => { const h = sttTakeHandoff(); return h && h.fn ? [h.fn, "", ""] : ["x^2 - 2", "sin(x)", ""]; });
   const [view, setView] = React.useState({ cx: 0, cy: 0, span: 20 });
   const [deg] = React.useState(false);
   const box = React.useRef(null), cv = React.useRef(null);
@@ -285,10 +287,29 @@ function SttGraph() {
 /* ── Dictionary ─────────────────────────────────────────────────────────
  * The free Dictionary API (dictionaryapi.dev, Wiktionary's data): meanings,
  * examples, synonyms, and how to say it. Nothing is stored. */
-function SttDict() {
+/** Add one card to the member's "My words" deck, making the deck the first time. */
+async function sttAddToMyWords(front, back) {
+  const r = await NGGApi.member.tools.decks();
+  const d = (r.decks || []).find(x => x.name === "My words");
+  let cards = [];
+  if (d) { const full = await NGGApi.member.tools.deck(d.deckId); cards = full.cards || []; if (cards.some(c => c.front.toLowerCase() === front.toLowerCase())) return "already"; }
+  await NGGApi.member.tools.save({ deckId: d ? d.deckId : "", name: "My words", source: "From the dictionary", cards: cards.concat([{ front, back }]) });
+  return "added";
+}
+function SttDict({ signedIn }) {
   const [q, setQ] = React.useState("");
   const [st, setSt] = React.useState({ phase: "idle" });
+  const [saved, setSaved] = React.useState("");
+  const save = async () => {
+    const m = (st.entries || []).flatMap(en => en.meanings || [])[0];
+    const def = m && m.definitions && m.definitions[0] ? "(" + m.partOfSpeech + ") " + m.definitions[0].definition : "";
+    if (!def) return;
+    setSaved("…");
+    try { const r = await sttAddToMyWords(st.word, def); setSaved(r === "already" ? "Already in My words." : "Added to My words — review it in Flashcards."); }
+    catch (e) { setSaved(sttErr(e)); }
+  };
   const look = async (word) => {
+    setSaved("");
     const w = String(word || q).trim().toLowerCase();
     if (!/^[a-z][a-z' -]{0,40}$/.test(w)) { setSt({ phase: "error", text: "Type one English word (letters only)." }); return; }
     setSt({ phase: "loading" });
@@ -317,8 +338,12 @@ function SttDict() {
           : <article className="stt-card stt-dict">
               <header className="stt-row stt-row-split">
                 <h3 className="stt-h3 stt-word">{st.word} {phon ? <small className="stt-meta">{phon}</small> : null}</h3>
-                {audio ? <button type="button" className="stt-chip" onClick={() => { try { new Audio(audio).play(); } catch (_) {} }} aria-label={"Hear how to say " + st.word}><i className="ph ph-speaker-high" aria-hidden="true"/>Hear it</button> : null}
+                <div className="stt-row">
+                  {audio ? <button type="button" className="stt-chip" onClick={() => { try { new Audio(audio).play(); } catch (_) {} }} aria-label={"Hear how to say " + st.word}><i className="ph ph-speaker-high" aria-hidden="true"/>Hear it</button> : null}
+                  {signedIn ? <button type="button" className="stt-chip" onClick={save} disabled={saved === "…"}><i className="ph ph-cards" aria-hidden="true"/>Add to My words</button> : null}
+                </div>
               </header>
+              {saved && saved !== "…" ? <p className="stt-meta" role="status">{saved}</p> : null}
               {st.entries.flatMap(en => en.meanings || []).slice(0, 6).map((m, i) => (
                 <section key={i} className="stt-sense">
                   <p className="stt-pos">{m.partOfSpeech}</p>

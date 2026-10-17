@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code preview</title>
+<!--
+  The Study tools' code playground runs a member's HTML, CSS and JavaScript
+  HERE, never in the app's own page.
+
+  Why a page of its own: the site's Content-Security-Policy allows only the
+  app's own scripts (by hash), and an srcdoc or blob frame inherits that
+  policy — so a student's <script> would never run. This file is served with
+  its OWN policy (.htaccess → code-sandbox.html): inline scripts allowed, no
+  network at all, and `sandbox allow-scripts` without allow-same-origin, so it
+  runs as an opaque origin: it cannot read the site's cookies, storage or
+  pages, and it cannot fetch anything. The frame element carries the same
+  sandbox, so the guarantee holds even where the header did not arrive.
+
+  The parent sends {type:'ngg-run', html, css, js}; this page writes it as a
+  fresh document and reports console output and errors back by postMessage.
+-->
+</head>
+<body>
+<script>
+(function () {
+  var REPORT = "(function(){var P=parent;function s(v){try{if(typeof v==='string')return v;if(v instanceof Error)return v.name+': '+v.message;return JSON.stringify(v)}catch(e){return String(v)}}"
+    + "['log','info','warn','error'].forEach(function(k){var o=console[k];console[k]=function(){var a=[].slice.call(arguments).map(s).join(' ');try{P.postMessage({type:'ngg-console',level:k,text:a.slice(0,2000)},'*')}catch(e){}o&&o.apply(console,arguments)}});"
+    + "window.addEventListener('error',function(e){P.postMessage({type:'ngg-console',level:'error',text:(e.message||'Error')+(e.lineno?' (line '+e.lineno+')':'')},'*')});"
+    + "window.addEventListener('unhandledrejection',function(e){P.postMessage({type:'ngg-console',level:'error',text:'Promise: '+s(e.reason)},'*')});})();";
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.type !== 'ngg-run' || ev.source !== parent) return;
+    var esc = function (s) { return String(s || '').replace(/<\/(script)/gi, '<\\/$1'); };
+    var doc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<script>' + REPORT + '<\/script><style>' + String(d.css || '').replace(/<\/style/gi, '<\\/style') + '</style></head><body>'
+      + String(d.html || '') + '<script>' + esc(d.js) + '\n//# sourceURL=your-code.js<\/script></body></html>';
+    document.open(); document.write(doc); document.close();
+  });
+  parent.postMessage({ type: 'ngg-ready' }, '*');
+})();
+</script>
+</body>
+</html>

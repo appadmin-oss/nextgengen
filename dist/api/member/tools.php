@@ -5,7 +5,8 @@ $s = require_member_session();
 $mid = (string)($s['mid'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 const TOOLS_READ = ['decks' => 'member.tools.decks', 'deck' => 'member.tools.deck', 'due' => 'member.tools.due', 'stats' => 'member.tools.stats', 'lessons' => 'member.tools.lessons'];
-const TOOLS_WRITE = ['save' => 'member.tools.deck.save', 'delete' => 'member.tools.deck.delete', 'review' => 'member.tools.review', 'log' => 'member.tools.log', 'ai' => 'member.tools.cards.ai'];
+const TOOLS_WRITE = ['save' => 'member.tools.deck.save', 'delete' => 'member.tools.deck.delete', 'review' => 'member.tools.review', 'log' => 'member.tools.log', 'ai' => 'member.tools.cards.ai',
+                     'quiz' => 'member.tools.quiz.ai', 'notes' => 'member.tools.notes.ai'];
 if ($method === 'GET') {
     $op = TOOLS_READ[(string)($_GET['view'] ?? '')] ?? null;
     if (!$op) json_error('unknown_view', 400);
@@ -14,7 +15,7 @@ if ($method === 'GET') {
     $b = read_json_body();
     $op = TOOLS_WRITE[(string)($b['action'] ?? '')] ?? null;
     if (!$op) json_error('unknown_action', 400);
-    if ($op === 'member.tools.cards.ai') rate_limit_check_actor('member.curriculum.ask', $mid);
+    if (in_array($op, ['member.tools.cards.ai', 'member.tools.quiz.ai', 'member.tools.notes.ai'], true)) rate_limit_check_actor('member.curriculum.ask', $mid);
     $res = gs_call($op, ['memberId' => $mid] + array_diff_key($b, ['memberId' => 1, 'action' => 1]));
 } else {
     json_error('method_not_allowed', 405);

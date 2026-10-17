@@ -880,6 +880,8 @@
         review:  (cardId, grade) => request('/member/tools.php', { body: { action: 'review', cardId, grade } }),
         log:     (entry) => request('/member/tools.php', { body: Object.assign({ action: 'log' }, entry) }),
         aiCards: (unitId) => request('/member/tools.php', { body: { action: 'ai', unitId } }),
+        quiz:    (unitId) => request('/member/tools.php', { body: { action: 'quiz', unitId } }),
+        notes:   (text) => request('/member/tools.php', { body: { action: 'notes', text } }),
       },
       momentum:     () => request('/member/momentum.php'),
       /* Read-only. There is no member-side write to the ledger. */

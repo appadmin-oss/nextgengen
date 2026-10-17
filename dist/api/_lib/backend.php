@@ -628,6 +628,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.tools.stats'          => 'study_stats',
             'member.tools.cards.ai'       => 'study_cards_ai',
             'member.tools.lessons'        => 'study_lessons',
+            'member.tools.quiz.ai'        => 'study_quiz_ai',
+            'member.tools.notes.ai'       => 'study_notes_ai',
             'admin.media.purgeDerived'    => 'admin_media_purge_derived',
             'family.fees.pay'             => 'family_fees_pay',
             /* Self-service. Every one of these takes its memberId from the

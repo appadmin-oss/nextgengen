@@ -74,6 +74,7 @@ const ORDER = [
   'src/modules/gate/face-check.jsx',
   'src/modules/tools/tools-core.jsx',
   'src/modules/tools/tools-more.jsx',
+  'src/modules/tools/tools-labs.jsx',
   'src/modules/control/cr-tab-learning.jsx',
   'src/modules/control/cr-tab-publishing.jsx',
   'src/modules/control/cr-tab-system.jsx',

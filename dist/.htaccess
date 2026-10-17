@@ -120,7 +120,7 @@ AddDefaultCharset UTF-8
   # (files.example.org) must be added to connect-src and frame-src here by
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
-script-src 'self' 'sha256-iv77ohL5NoZDmB5bgMtRdV+ze+tfKu5T4myH2jhEUgA=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
+script-src 'self' 'sha256-ASeAsjmszLOr0kt3B2Fj+iQMh8bualLheARFcxKRI9I=' 'sha256-iv77ohL5NoZDmB5bgMtRdV+ze+tfKu5T4myH2jhEUgA=' 'sha256-mKIF9SO7F9PdewecOKNZgV6Rxs27qr2vGcMQWtIUTDI=' 'sha256-1kg2x4XteKTODYzGnkjEe1nQJYOSvlvJY4fdtuKo6OQ=' 'sha256-xHa/pnm6+KO5RpKF+7KJ2uoALZHW93H0tKhWCmyOsas=' 'sha256-0oum4Q4hYuyjH6H7YRlAYOwOsMf5vXmTkbTw7FVaheI=' 'unsafe-hashes' 'sha256-MguIPR6qNR8D3B+eAlK+bIRTZe8t3wkOY4B/56Me9FU=' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
@@ -132,6 +132,17 @@ frame-ancestors 'self'; \
 base-uri 'self'; \
 form-action 'self'; \
 object-src 'none'"
+
+  # The Study tools' code playground runs a member's own HTML/CSS/JS in this
+  # one page, under its own policy: inline scripts allowed (they are the
+  # member's code), NO network (default-src 'none'), and a sandbox without
+  # allow-same-origin, so it is an opaque origin that cannot read this site's
+  # cookies, storage or pages. Only this site may frame it.
+  <Files "code-sandbox.html">
+    Header always set Content-Security-Policy "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; frame-ancestors 'self'; sandbox allow-scripts allow-modals"
+    Header always unset X-Frame-Options
+    Header set Cache-Control "no-cache, must-revalidate"
+  </Files>
 
   # JSX files: treated as scripts (text/babel) in the dev/root deploy. They
   # keep the SAME name across deploys, so they must revalidate every load or a

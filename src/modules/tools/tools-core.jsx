@@ -127,21 +127,43 @@ function sttFormat(v) {
   return String(parseFloat(v.toPrecision(10)));
 }
 
-/* ── The registry: one list, everything derived (tabs, paths, titles). */
+/* ── The registry: one list, everything derived (tabs, sub-tools, paths,
+ * titles). Similar tools live under one tab and hand work to each other: a
+ * word looked up becomes a flashcard, a missed quiz question becomes a
+ * flashcard, a sum with x in it is one press from its graph. */
 const STT_TOOLS = [
-  { id: "home",   label: "Overview",     icon: "ph-squares-four", account: true,  sub: "Your week of study at a glance" },
-  { id: "cards",  label: "Flashcards",   icon: "ph-cards",        account: true,  sub: "Remember more with spaced repetition" },
-  { id: "focus",  label: "Focus timer",  icon: "ph-timer",        account: false, sub: "Study in blocks, with breaks" },
-  { id: "typing", label: "Typing",       icon: "ph-keyboard",     account: false, sub: "Faster, more accurate typing" },
-  { id: "calc",   label: "Calculator",   icon: "ph-calculator",   account: false, sub: "Scientific calculator" },
-  { id: "graph",  label: "Graphs",       icon: "ph-chart-line",   account: false, sub: "Plot y = f(x)" },
-  { id: "dict",   label: "Dictionary",   icon: "ph-book-bookmark",account: false, sub: "Meanings, examples, pronunciation" },
+  { id: "home",   label: "Today",       icon: "ph-sun-horizon",  account: false, sub: "Focus timer, your week and what’s due",
+    subs: [] },
+  { id: "revise", label: "Revise",      icon: "ph-cards",        account: true,  sub: "Flashcards, quizzes and notes — remember more",
+    subs: [["cards", "Flashcards"], ["quiz", "Quiz me"], ["notes", "Summarise notes"]] },
+  { id: "maths",  label: "Maths",       icon: "ph-calculator",   account: false, sub: "Calculator, graphs and number bases",
+    subs: [["calc", "Calculator"], ["graph", "Graphs"], ["bases", "Number bases"]] },
+  { id: "words",  label: "Words",       icon: "ph-book-bookmark",account: false, sub: "Dictionary and typing practice",
+    subs: [["dict", "Dictionary"], ["typing", "Typing"]] },
+  { id: "labs",   label: "Course labs", icon: "ph-flask",        account: false, sub: "Tools for Tech, Creative, Media and Business courses",
+    subs: [] },
 ];
 const STT_IDS = STT_TOOLS.map(t => t.id);
-function sttToolFromPath() {
+/* Addresses the tools had before they were merged: still in bookmarks and links. */
+const STT_ALIASES = { cards: ["revise", "cards"], ai: ["revise", "quiz"], focus: ["home", ""], typing: ["words", "typing"], calc: ["maths", "calc"], graph: ["maths", "graph"], dict: ["words", "dict"] };
+function sttRoute() {
   const seg = (typeof location !== "undefined" ? location.pathname : "").replace(/^\/+|\/+$/g, "").split("/");
-  return seg[0] === "study" && STT_IDS.includes(seg[1]) ? seg[1] : "home";
+  if (seg[0] !== "study") return { tool: "home", sub: "" };
+  if (STT_ALIASES[seg[1]]) return { tool: STT_ALIASES[seg[1]][0], sub: STT_ALIASES[seg[1]][1] };
+  const tool = STT_IDS.includes(seg[1]) ? seg[1] : "home";
+  const def = STT_TOOLS.find(t => t.id === tool);
+  const sub = def.subs.some(x => x[0] === seg[2]) ? seg[2] : (def.subs[0] ? def.subs[0][0] : "");
+  return { tool, sub };
 }
+function sttPath(tool, sub) {
+  const def = STT_TOOLS.find(t => t.id === tool);
+  return "/study" + (tool === "home" ? "" : "/" + tool + (sub && def.subs[0] && sub !== def.subs[0][0] ? "/" + sub : ""));
+}
+/** Move to a tool from anywhere inside the app (a dictionary word → flashcards, a sum → its graph). */
+function sttGo(tool, sub, data) {
+  try { window.__sttHandoff = data || null; window.dispatchEvent(new CustomEvent("stt:go", { detail: { tool, sub } })); } catch (_) {}
+}
+function sttTakeHandoff() { const d = window.__sttHandoff; window.__sttHandoff = null; return d || null; }
 function sttErr(e) {
   const c = e && (e.code || e.message);
   const T = { network: "You’re offline. Try again when you’re connected.", daily_limit: "You’ve used today’s study-helper allowance. It resets tomorrow.",
@@ -159,34 +181,43 @@ function SttState({ kind, text, retry, children }) {
 
 /* ── The app shell ─────────────────────────────────────────────────────── */
 function ToolsApp({ setPage }) {
-  const [tool, setTool] = React.useState(sttToolFromPath);
+  const [route, setRoute] = React.useState(sttRoute);
+  const tool = route.tool, sub = route.sub;
   const auth = useAuth();
   const [me, setMe] = React.useState({ phase: "loading" });
   // Asked again when the sign-in modal changes who is signed in.
   React.useEffect(() => {
     NGGApi.auth.me().then(r => setMe({ phase: "ok", member: (r && r.member) || null }), () => setMe({ phase: "ok", member: null }));
   }, [auth && auth.isSignedIn]);
-  React.useEffect(() => {
-    const on = () => setTool(sttToolFromPath());
-    window.addEventListener("popstate", on); return () => window.removeEventListener("popstate", on);
-  }, []);
-  const go = id => {
-    setTool(id);
-    try { history.pushState({ page: "study" }, "", "/study" + (id === "home" ? "" : "/" + id)); } catch (_) {}
+  const go = React.useCallback((id, s2) => {
+    const def0 = STT_TOOLS.find(t => t.id === id) || STT_TOOLS[0];
+    const nsub = s2 && def0.subs.some(x => x[0] === s2) ? s2 : (def0.subs[0] ? def0.subs[0][0] : "");
+    setRoute({ tool: def0.id, sub: nsub });
+    try { history.pushState({ page: "study" }, "", sttPath(def0.id, nsub)); } catch (_) {}
     try { window.scrollTo(0, 0); } catch (_) {}
-  };
+  }, []);
+  React.useEffect(() => {
+    const on = () => setRoute(sttRoute());
+    const jump = e => go(e.detail.tool, e.detail.sub);
+    window.addEventListener("popstate", on); window.addEventListener("stt:go", jump);
+    // An old address is rewritten to the one it now lives at.
+    try { const want = sttPath(route.tool, route.sub); if (location.pathname !== want && !/^\/study\/?$/.test(location.pathname)) history.replaceState({ page: "study" }, "", want); } catch (_) {}
+    return () => { window.removeEventListener("popstate", on); window.removeEventListener("stt:go", jump); };
+  }, [go]); // eslint-disable-line
   const def = STT_TOOLS.find(t => t.id === tool) || STT_TOOLS[0];
-  React.useEffect(() => { try { document.title = def.label + " · Study tools · NGG"; } catch (_) {} }, [def]);
+  const subDef = def.subs.find(x => x[0] === sub);
+  React.useEffect(() => { try { document.title = (subDef ? subDef[1] : def.label) + " · Study tools · NGG"; } catch (_) {} }, [def, subDef]);
   const signedIn = me.phase === "ok" && !!me.member;
-  // Arrow keys move along the tabs and focus goes with them (roving tabindex), Home and End to either end.
-  const tabKey = e => {
-    const i = STT_IDS.indexOf(tool), n = STT_IDS.length;
-    const to = e.key === "ArrowRight" || e.key === "ArrowDown" ? (i + 1) % n : e.key === "ArrowLeft" || e.key === "ArrowUp" ? (i - 1 + n) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
+  // Arrow keys move along a tab row and focus goes with them (roving tabindex), Home and End to either end.
+  const rowKey = (ids, cur, pick, prefix) => e => {
+    const i = ids.indexOf(cur), n = ids.length;
+    const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
     if (to < 0) return;
-    e.preventDefault(); go(STT_IDS[to]);
-    setTimeout(() => { const b = document.getElementById("stt-tab-" + STT_IDS[to]); if (b) b.focus(); }, 0);
+    e.preventDefault(); pick(ids[to]);
+    setTimeout(() => { const btn = document.getElementById(prefix + ids[to]); if (btn) btn.focus(); }, 0);
   };
   const needsAccount = def.account && me.phase === "ok" && !signedIn;
+  const subIds = def.subs.map(x => x[0]);
   return (
     <div className="stt-app" data-screen-label="Study tools">
       <header className="stt-top">
@@ -196,7 +227,7 @@ function ToolsApp({ setPage }) {
         <h1 className="stt-h1">Study tools</h1>
         <span className="stt-who">{signedIn ? (me.member.fullName || "").split(" ")[0] : ""}</span>
       </header>
-      <nav className="stt-tabs" role="tablist" aria-label="Study tools" onKeyDown={tabKey}>
+      <nav className="stt-tabs" role="tablist" aria-label="Study tools" onKeyDown={rowKey(STT_IDS, tool, id => go(id), "stt-tab-")}>
         {STT_TOOLS.map(t => (
           <button key={t.id} type="button" role="tab" id={"stt-tab-" + t.id} aria-selected={t.id === tool} aria-controls="stt-panel" tabIndex={t.id === tool ? 0 : -1}
             className={"stt-tab" + (t.id === tool ? " is-on" : "")} onClick={() => go(t.id)}>
@@ -206,17 +237,32 @@ function ToolsApp({ setPage }) {
       </nav>
       <main id="stt-panel" className="stt-panel" role="tabpanel" aria-labelledby={"stt-tab-" + tool}>
         <div className="stt-panel-h"><h2 className="stt-h2">{def.label}</h2><p className="stt-sub">{def.sub}</p></div>
+        {def.subs.length > 1 && !needsAccount ? (
+          <div className="stt-subtabs" role="tablist" aria-label={def.label} onKeyDown={rowKey(subIds, sub, s2 => go(tool, s2), "stt-sub-")}>
+            {def.subs.map(([id, l]) => <button key={id} type="button" role="tab" id={"stt-sub-" + id} aria-selected={id === sub} tabIndex={id === sub ? 0 : -1}
+              className={"stt-chip" + (id === sub ? " is-on" : "")} onClick={() => go(tool, id)}>{l}</button>)}
+          </div>
+        ) : null}
         {me.phase === "loading" && def.account ? <SttState kind="loading"/>
-          : needsAccount ? <SttState kind="empty" text="Sign in to keep flashcards and see your week. The timer, typing, calculator, graphs and dictionary work without an account.">
+          : needsAccount ? <SttState kind="empty" text="Sign in to keep flashcards, take quizzes and see your week. The focus timer, maths, words and course labs work without an account.">
               <button type="button" className="stt-btn is-go" onClick={() => auth && auth.openSignIn && auth.openSignIn()}>Sign in</button></SttState>
-          : tool === "home" ? <SttOverview go={go}/>
-          : tool === "cards" ? <SttFlashcards/>
-          : tool === "focus" ? <SttFocus signedIn={signedIn}/>
-          : tool === "typing" ? <SttTyping signedIn={signedIn}/>
-          : tool === "calc" ? <SttCalc/>
-          : tool === "graph" ? <SttGraph/>
-          : <SttDict/>}
+          : tool === "home" ? <SttToday go={go} signedIn={signedIn}/>
+          : tool === "revise" ? (sub === "quiz" ? <SttQuiz/> : sub === "notes" ? <SttNotes/> : <SttFlashcards/>)
+          : tool === "maths" ? (sub === "graph" ? <SttGraph/> : sub === "bases" ? <SttBases/> : <SttCalc/>)
+          : tool === "words" ? (sub === "typing" ? <SttTyping signedIn={signedIn}/> : <SttDict signedIn={signedIn}/>)
+          : <SttLabs/>}
       </main>
+    </div>
+  );
+}
+
+/* ── Today: the focus timer, with the week beside it ─────────────────── */
+function SttToday({ go, signedIn }) {
+  const [bump, setBump] = React.useState(0);           // a finished block refreshes the week
+  return (
+    <div className="stt-today">
+      <SttFocus signedIn={signedIn} onLogged={() => setBump(n => n + 1)}/>
+      {signedIn ? <SttOverview key={bump} go={go}/> : <SttState kind="empty" text="Sign in to see your week of study, your streak and the flashcards that are due."/>}
     </div>
   );
 }
@@ -241,7 +287,6 @@ function SttOverview({ go }) {
         <div className="stt-bars" role="img" aria-label={"Focus minutes by day: " + s.week.map(w => dayName(w.day) + " " + w.minutes).join(", ")}>
           {s.week.map(w => <div key={w.day} className="stt-bar"><span className="stt-bar-fill" style={{ height: Math.round(w.minutes / max * 100) + "%" }}/><small>{dayName(w.day)}</small></div>)}
         </div>
-        <button type="button" className="stt-btn" onClick={() => go("focus")}>Start a focus block</button>
       </section>
       <section className="stt-card" aria-labelledby="stt-st-h">
         <h3 id="stt-st-h" className="stt-h3">Study streak</h3>
@@ -252,13 +297,13 @@ function SttOverview({ go }) {
         <h3 id="stt-fc-h" className="stt-h3">Flashcards</h3>
         <p className="stt-big">{due} <small>due now</small></p>
         <p className="stt-p">{s.cardsWeek} reviewed this week · {(st.d.decks || []).length} {(st.d.decks || []).length === 1 ? "deck" : "decks"}</p>
-        <button type="button" className="stt-btn" onClick={() => go("cards")}>{due ? "Review now" : "Open flashcards"}</button>
+        <button type="button" className="stt-btn" onClick={() => go("revise", "cards")}>{due ? "Review now" : "Open flashcards"}</button>
       </section>
       <section className="stt-card" aria-labelledby="stt-ty-h">
         <h3 id="stt-ty-h" className="stt-h3">Typing</h3>
         <p className="stt-big">{s.typing.best} <small>words a minute, best</small></p>
         <p className="stt-p">{s.typing.runs ? s.typing.runs + " runs" : "No runs yet"}</p>
-        <button type="button" className="stt-btn" onClick={() => go("typing")}>Practise</button>
+        <button type="button" className="stt-btn" onClick={() => go("words", "typing")}>Practise</button>
       </section>
     </div>
   );
