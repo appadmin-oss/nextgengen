@@ -1727,3 +1727,23 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   `{textMessage:{text}, phoneNumbers, deviceId?, simNumber?}`; an id and a
   state other than Failed is a send. First for +234, before textbee. It still
   spends the SIM's airtime — no SMS route is free of carrier charges.
+
+## 2026-10-17 (later still) — Telegram as the free text channel
+
+- `api/_lib/telegram.php`, migration 157 (`telegram_links`: E.164 phone →
+  chat). `sms_send()` tries Telegram first for a connected number and falls
+  through to the SMS providers on any failure; a 403 / chat-not-found unlinks
+  at once. Linking is by **phone**, so every existing caller (guardian checks,
+  volunteer IDs, mentor alerts, sign-in codes) uses it with no change.
+- A person links by sharing their own contact: `contact.user_id` must equal
+  `from.id`, so a forwarded contact is refused. Private chats only.
+- Webhook `api/hooks/telegram.php`: `X-Telegram-Bot-Api-Secret-Token` must
+  equal `telegram_webhook_secret()` (HMAC of the bot token under
+  `cookie_secret`), set by the key's **Test** (`telegram_setup`: getMe +
+  setWebhook). Always 200 to Telegram so a bad update is not retried.
+- `sms_enabled()` is true with only a bot configured; an unconnected number
+  then fails honestly (`sms_failed` in the audit), as callers already expect.
+- Client: `TelegramConnect` (components.jsx) in the family portal's *Emails &
+  connection*, and the public `/telegram` route (ROUTES) with a QR.
+- `tests/telegram.test.js`, and PHP tests for the linking, routing, fallback,
+  unlink-on-block and setup.

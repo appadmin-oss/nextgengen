@@ -24,6 +24,7 @@ require $ROOT . '/_lib/mailer.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 require $ROOT . '/_lib/object-store.php';
+require $ROOT . '/_lib/telegram.php';
 require $ROOT . '/_lib/anchor-content.php';
 require $ROOT . '/_lib/ai.php';
 foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'summer', 'club', 'circle', 'momentum', 'integrations', 'registration', 'hooks', 'behaviour'] as $d) require $ROOT . "/_lib/domain/$d.php";

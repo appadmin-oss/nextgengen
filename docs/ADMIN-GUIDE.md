@@ -1758,6 +1758,31 @@ Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
 
+## Free messages on Telegram
+
+Telegram messages cost nothing, on Android **and** iPhone. Once somebody
+connects, every text the site would send their number — sign-in codes,
+check-in alerts, guardian notices, volunteer IDs — goes to their Telegram
+instead. If Telegram can't reach them, the SMS goes as before, so nothing is
+ever lost.
+
+**Setting it up (once, about five minutes):**
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and pick a name (e.g.
+   *NGG Messages*) and a username ending in `bot` (e.g. `NGGMessagesBot`).
+2. Copy the token BotFather gives you into Control Room → Settings → API keys
+   → **Telegram**, and press **Test**. Test checks the token and connects the
+   bot to this site. The site must be on `https://`.
+
+**How people connect:** share **yoursite/telegram** (it has a button and a QR
+code) in parents' WhatsApp groups, on the noticeboard, or in a newsletter.
+Families also see it under *Emails & connection* in their family account.
+They open the bot, press **Start**, then **Share my phone number**. That's all.
+Telegram only lets them share their *own* number, so nobody can redirect
+somebody else's messages. They should use the number on their NGG record (or
+their child's record, for a guardian). `/stop` in the chat goes back to SMS;
+`/status` shows what is connected.
+
 ## Text messages: the free way
 
 Control Room → Settings → API keys → **SMS Gateway for Android (free)**. It is

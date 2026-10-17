@@ -3951,3 +3951,71 @@ function PayBalanceButton({ amountText, pay, className }) {
     </div>
   );
 }
+
+/* ── Free messages on Telegram ───────────────────────────────────────────────
+ * Every text the site sends (sign-in codes, check-ins, notices) goes to
+ * Telegram instead of SMS for a number connected to the programme's bot
+ * (api/_lib/telegram.php) — free, on Android or iPhone. This card is the
+ * invitation: the bot link, a QR for a phone held up to a laptop screen, and
+ * what happens. Renders nothing when no bot is set up, and an honest line
+ * with a retry when the check fails — never a dead button. */
+function TelegramConnect({ compact }) {
+  const [st, setSt] = React.useState({ phase: "loading" });
+  const load = React.useCallback(() => {
+    setSt({ phase: "loading" });
+    NGGApi.public.telegram().then(r => setSt({ phase: "ok", r }), () => setSt({ phase: "error" }));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  const [qr, setQr] = React.useState("");
+  const url = st.phase === "ok" && st.r.enabled ? st.r.url : "";
+  React.useEffect(() => {
+    if (!url || compact) return;
+    let alive = true;
+    loadVendor("qrcode").then(() => {
+      if (!alive || !window.qrcode) return;
+      try { const q = window.qrcode(0, "M"); q.addData(url); q.make(); setQr(q.createDataURL(6, 2)); } catch (_) {}
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [url, compact]);
+  if (st.phase === "loading") return <div className="tgc is-loading" aria-busy="true"><span className="tgc-skel"/></div>;
+  if (st.phase === "error") return <div className="tgc is-error" role="alert"><p>Couldn’t check whether Telegram messages are available.</p><button type="button" className="tgc-retry" onClick={load}>Try again</button></div>;
+  if (!url) return null;
+  return (
+    <section className={"tgc" + (compact ? " is-compact" : "")} aria-labelledby="tgc-h">
+      <div className="tgc-body">
+        <h2 id="tgc-h" className="tgc-h"><i className="ph ph-telegram-logo" aria-hidden="true"/>Get our messages free on Telegram</h2>
+        <p className="tgc-p">Sign-in codes, check-ins and notices about your child come to Telegram instead of by SMS. It works on Android and iPhone, and costs nothing.</p>
+        <ol className="tgc-steps">
+          <li>Open our bot{st.r.bot ? <> (<b>@{st.r.bot}</b>)</> : null} and press <b>Start</b>.</li>
+          <li>Press <b>Share my phone number</b>. Use the number on your NGG record.</li>
+        </ol>
+        <a className="tgc-go" href={url} target="_blank" rel="noopener noreferrer">Open Telegram</a>
+        <p className="tgc-fine">Send /stop in the chat at any time to go back to SMS.</p>
+      </div>
+      {qr && !compact ? <img className="tgc-qr" src={qr} alt={"QR code for " + url}/> : null}
+    </section>
+  );
+}
+
+/* /telegram — the same invitation as a page of its own, to share in a parents'
+   WhatsApp group or print for a centre's noticeboard. */
+function TelegramPage({ setPage }) {
+  return (
+    <div className="tgp" data-screen-label="Telegram">
+      <p className="tgp-eyebrow">Messages from NGG</p>
+      <h1 className="tgp-h1">Free messages, on the phone you already have</h1>
+      <p className="tgp-lead">A text message costs money every time it is sent. Telegram does not. Connect once and every message we would have texted you comes to Telegram instead.</p>
+      <TelegramConnect/>
+      <TelegramPageFallback setPage={setPage}/>
+    </div>
+  );
+}
+function TelegramPageFallback({ setPage }) {
+  const [on, setOn] = React.useState(null);
+  React.useEffect(() => { NGGApi.public.telegram().then(r => setOn(!!r.enabled), () => setOn(true)); }, []);
+  if (on !== false) return null;
+  return <EmptyState title="Telegram messages aren’t set up yet" message="We’ll keep sending messages by SMS and email. Check back later."
+    action={<button type="button" className="tgc-retry" onClick={() => setPage("home")}>Back to the home page</button>}/>;
+}
+
+Object.assign(window, { TelegramConnect, TelegramPage });

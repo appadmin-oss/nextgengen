@@ -433,7 +433,7 @@ function FamilyWard({ link, view, go, askKind, onRemoved }) {
   if (view === "fees") return <div className="fam-ward">{hero}<FamilyFees d={d} link={link} first={first} go={go}/></div>;
   if (view === "lessons") return <div className="fam-ward">{hero}<FamilyLessons d={d} first={first}/></div>;
   if (view === "messages") return <div className="fam-ward">{hero}<FamilyTellCentre key={askKind || "msg"} d={d} link={link} first={first} reload={load} initialKind={askKind}/></div>;
-  if (view === "emails") return <div className="fam-ward">{hero}<FamilyNotify link={link} first={first} onRemoved={onRemoved}/></div>;
+  if (view === "emails") return <div className="fam-ward">{hero}<FamilyNotify link={link} first={first} onRemoved={onRemoved}/><TelegramConnect/></div>;
   return <div className="fam-ward">{hero}<FamilyToday d={d} link={link} first={first} go={go}/></div>;
 }
 

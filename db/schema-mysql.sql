@@ -3714,3 +3714,18 @@ INSERT INTO schema_version (version) VALUES (155) ON DUPLICATE KEY UPDATE versio
 -- 156: emails stored the way the sign-in door compares them — a data fix-up,
 -- so it lives in NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
 INSERT INTO schema_version (version) VALUES (156) ON DUPLICATE KEY UPDATE version = version;
+
+-- 157: texts by Telegram — a shared, Telegram-verified phone number and its chat.
+CREATE TABLE IF NOT EXISTS telegram_links (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phone VARCHAR(20) NOT NULL,
+  chatId VARCHAR(32) NOT NULL,
+  tgUserId VARCHAR(32) DEFAULT '',
+  tgName VARCHAR(120) DEFAULT '',
+  linkedAt VARCHAR(32) DEFAULT '',
+  lastSentAt VARCHAR(32) DEFAULT '',
+  sent INT DEFAULT 0,
+  UNIQUE KEY idx_tg_phone (phone),
+  KEY idx_tg_chat (chatId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (157) ON DUPLICATE KEY UPDATE version = version;

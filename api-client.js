@@ -1022,6 +1022,7 @@
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
+      telegram:   () => request('/public/telegram.php'),
       stats:      () => request('/public/stats.php'),
       status:     () => request('/public/status.php'),
       volunteerStatus: () => request('/public/volunteer-status.php'),

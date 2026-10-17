@@ -72,6 +72,7 @@ require $ROOT . '/_lib/ai.php';
 require $ROOT . '/_lib/bus.php';
 require $ROOT . '/_lib/sms.php';
 require $ROOT . '/_lib/object-store.php';
+require $ROOT . '/_lib/telegram.php';
 require $ROOT . '/_lib/nudges.php';
 /* Every domain file, discovered rather than listed.
  *
@@ -28656,6 +28657,64 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('sms · a private server address must be https; anything else uses the public server', $seen['url'] === 'https://api.sms-gate.app/3rdparty/v1/messages' && sms_enabled());
     unset($GLOBALS['__sms_http_mock']);
     if ($keepSms === null) unset($GLOBALS['CONFIG']['sms']); else $GLOBALS['CONFIG']['sms'] = $keepSms;
+})();
+
+/* Texts by Telegram (telegram.php): connect by sharing your own number; every text to it goes there, free. */
+(function () {
+    $keep = $GLOBALS['CONFIG']['telegram'] ?? null; $keepSms = $GLOBALS['CONFIG']['sms'] ?? null;
+    $GLOBALS['CONFIG']['telegram'] = ['bot_token' => '123456789:AAHfake_token_for_tests_0123456789abcd', 'bot_username' => 'NGGTestBot'];
+    $GLOBALS['CONFIG']['sms'] = ['default_country' => 'NG', 'termii' => ['api_key' => 'tk']];
+    $sent = []; $GLOBALS['__tg_mock'] = function ($m, $p) use (&$sent) { $sent[] = [$m, $p]; return ['ok' => true, 'result' => ['message_id' => 77, 'username' => 'NGGTestBot']]; };
+    db_exec("DELETE FROM telegram_links");
+    $msg = fn($x) => telegram_handle_update(['update' => ['update_id' => 1, 'message' => ['message_id' => 1, 'chat' => ['id' => 5550001, 'type' => 'private'], 'from' => ['id' => 5550001]] + $x]]);
+
+    $r = $msg(['text' => '/start ngg']);
+    chk('telegram · /start asks for the number, with Telegram\'s own share-contact button', !empty($r['prompted']) && $sent[0][0] === 'sendMessage'
+        && !empty($sent[0][1]['reply_markup']['keyboard'][0][0]['request_contact']));
+    $r = $msg(['contact' => ['phone_number' => '2348031112222', 'user_id' => 9999, 'first_name' => 'Someone']]);
+    chk('telegram · a forwarded contact (somebody else\'s number) is refused and nothing is linked', ($r['refused'] ?? '') === 'not_own' && !telegram_link_for('+2348031112222'));
+    $r = $msg(['contact' => ['phone_number' => '2348031112222', 'user_id' => 5550001, 'first_name' => 'Ada', 'last_name' => 'Parent']]);
+    $l = telegram_link_for('+2348031112222');
+    chk('telegram · sharing your OWN number links it to this chat, in E.164', ($r['linked'] ?? '') === '+2348031112222' && $l && $l['chatId'] === '5550001' && $l['tgName'] === 'Ada Parent');
+    chk('telegram · …and the reply masks the number and says how to stop', strpos(end($sent)[1]['text'], '+234803') !== false && strpos(end($sent)[1]['text'], '2222') === false && strpos(end($sent)[1]['text'], '/stop') !== false);
+    chk('telegram · group chats are ignored', !empty(telegram_handle_update(['update' => ['message' => ['chat' => ['id' => -100, 'type' => 'group'], 'from' => ['id' => 1], 'text' => '/start']]])['ignored']));
+
+    $smsCalls = 0; $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$smsCalls) { $smsCalls++; return ['ok' => true, 'body' => '{}']; };
+    $sent = [];
+    $s1 = sms_send('08031112222', 'Your NGG code is 123456');
+    chk('telegram · a text to a connected number goes to Telegram, and no SMS is paid for', ($s1['provider'] ?? '') === 'telegram' && $smsCalls === 0
+        && $sent[0][1]['chat_id'] === '5550001' && $sent[0][1]['text'] === 'Your NGG code is 123456'
+        && (int)telegram_link_for('+2348031112222')['sent'] === 1);
+    $s2 = sms_send('08039998888', 'Hello');
+    chk('telegram · a number that is not connected still gets its SMS', ($s2['provider'] ?? '') === 'termii' && $smsCalls === 1);
+    $GLOBALS['__tg_mock'] = fn($m, $p) => ['ok' => false, 'error_code' => 403, 'description' => 'Forbidden: bot was blocked by the user'];
+    $s3 = sms_send('08031112222', 'Hello again');
+    chk('telegram · someone who blocked the bot is disconnected and gets the SMS at once', ($s3['provider'] ?? '') === 'termii' && !telegram_link_for('+2348031112222'));
+    $GLOBALS['__tg_mock'] = fn($m, $p) => ['ok' => false, 'error_code' => 502, 'description' => 'Bad Gateway'];
+    db_insert('telegram_links', ['phone' => '+2348031112222', 'chatId' => '5550001', 'tgUserId' => '5550001', 'linkedAt' => now_iso(), 'sent' => 0]);
+    chk('telegram · a Telegram outage falls back to SMS and keeps the link', (sms_send('08031112222', 'x')['provider'] ?? '') === 'termii' && telegram_link_for('+2348031112222'));
+
+    $sent = []; $GLOBALS['__tg_mock'] = function ($m, $p) use (&$sent) { $sent[] = [$m, $p]; return ['ok' => true, 'result' => []]; };
+    $r = $msg(['text' => '/stop']);
+    chk('telegram · /stop disconnects, so texts go by SMS again', ($r['stopped'] ?? 0) === 1 && !telegram_link_for('+2348031112222'));
+
+    $GLOBALS['CONFIG']['sms'] = [];
+    chk('telegram · with only a bot set up, texting is "on" — and an unconnected number fails honestly', sms_enabled() && (sms_send('08030000000', 'x')['ok'] ?? true) === false);
+
+    $keepOrigin = $GLOBALS['CONFIG']['app_origin'] ?? null; $GLOBALS['CONFIG']['app_origin'] = 'https://ngg.example.org';
+    $calls = []; $GLOBALS['__tg_mock'] = function ($m, $p) use (&$calls) { $calls[$m] = $p; return ['ok' => true, 'result' => $m === 'getMe' ? ['username' => 'NGGTestBot'] : true]; };
+    $t = telegram_setup();
+    chk('telegram · Test checks the token and points the webhook here, with a secret only this site knows', $t['pass'] === true
+        && $calls['setWebhook']['url'] === 'https://ngg.example.org/api/hooks/telegram.php' && $calls['setWebhook']['secret_token'] === telegram_webhook_secret()
+        && strlen(telegram_webhook_secret()) === 48 && $calls['setWebhook']['allowed_updates'] === ['message']);
+    $GLOBALS['CONFIG']['app_origin'] = $keepOrigin;
+    chk('telegram · the site invites people with the bot link', public_telegram([])['url'] === 'https://t.me/NGGTestBot?start=ngg');
+    unset($GLOBALS['CONFIG']['telegram']);
+    chk('telegram · …and offers nothing when no bot is set up', public_telegram([])['enabled'] === false && !telegram_on());
+    unset($GLOBALS['__tg_mock'], $GLOBALS['__sms_http_mock']);
+    if ($keep !== null) $GLOBALS['CONFIG']['telegram'] = $keep;
+    if ($keepSms === null) unset($GLOBALS['CONFIG']['sms']); else $GLOBALS['CONFIG']['sms'] = $keepSms;
+    db_exec("DELETE FROM telegram_links");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
