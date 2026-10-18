@@ -11994,7 +11994,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-kid-help { margin: 14px 0 0; }
 .m9x-kid-link, .m9x-view-opt { font: inherit; cursor: pointer; }
 .m9x-kid-link { min-height: 44px; padding: 0; border: 0; background: none; font-weight: 600; font-size: 15px; color: #0b0b0c; text-decoration: underline; }
-.m9x-view { padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e6e5e0; container-type: inline-size; }
+.m9x-view { margin-top: 16px; padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e6e5e0; container-type: inline-size; }
 .m9x-view-h { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: #0b0b0c; }
 .m9x-view-p { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #4a4a50; }
 .m9x-view-opts { display: grid; grid-template-columns: 1fr; gap: 8px; }
@@ -12011,3 +12011,20 @@ button.m9x-ev-sum { cursor: pointer; }
 .ip6-note i { font-size: 18px; margin-top: 1px; }
 .ip6-slot { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 32px 40px 0; }
 .ip6-slot.is-narrow { padding: 16px 16px 0; }
+
+/* Portals on a phone: an area's tabs wrap onto a second line as pills instead
+   of scrolling sideways out of sight. A child could not tell there were more
+   ("Lessons" cut to "sons", "Study tools" off the edge); every tab is now on
+   screen, the open one filled. Measured against <main>'s own width, so a
+   narrow window on a desktop gets the same row. */
+.m9-app main, .i6-app main, .m15-app main { container-type: inline-size; }
+@container (max-width: 600px) {
+  nav.m9-0ff9378, nav.i6-741cc14, nav.m15-caa321b { flex-wrap: wrap; overflow: visible; gap: 8px; border-bottom: 0; margin: 0 0 4px; }
+  nav.m9-0ff9378 > button.m9-abcd739, nav.i6-741cc14 > button.i6-abcd739, nav.m15-caa321b > button.m15-abcd739 {
+    min-height: 44px; padding: 0 16px; margin-bottom: 0; border: 1px solid #dcdad3; border-radius: 999px; background: #fff; color: #2a2a30; font-size: 15px; }
+  nav.m9-0ff9378 > button.m9-abcd739[aria-current="true"], nav.i6-741cc14 > button.i6-abcd739[aria-current="true"], nav.m15-caa321b > button.m15-abcd739[aria-current="true"] {
+    background: #0b0b0c; border-color: #0b0b0c; color: #fff; }
+  /* The mentor screen's four views: two by two, so "How it's going" is not squeezed onto two lines. */
+  [role="tablist"].m9-849d18f { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  nav.m9-0ff9378 > button.m9-abcd739:focus-visible, nav.i6-741cc14 > button.i6-abcd739:focus-visible, nav.m15-caa321b > button.m15-abcd739:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+}

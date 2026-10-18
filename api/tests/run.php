@@ -28489,6 +28489,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('assignments · its centre is the instructor’s own', (string)db_row('SELECT centre FROM assignments WHERE assignmentId = ?', [$aid])['centre'] === 'Egbeda');
     chk('assignments · the members it reaches are told', $sv['notified'] === count($audIds) && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ASG-T1' AND title LIKE 'New assignment%'"));
     chk('assignments · a TECH member sees it', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-T1'])['assignments'], 'assignmentId'), true));
+    // Imported rows: "Active" or a blank status, a centre typed in another case. They are members like any other.
+    $mk('ASG-IMP1', 'TECH', 'egbeda ', ['status' => 'Active']); $mk('ASG-IMP2', 'TECH', 'Egbeda', ['status' => '']);
+    chk('assignments · an imported "Active" member at "egbeda " sees it', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-IMP1'])['assignments'], 'assignmentId'), true));
+    chk('assignments · so does one whose status was left blank', in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-IMP2'])['assignments'], 'assignmentId'), true));
+    chk('assignments · and both are in its audience', count(array_intersect(['ASG-IMP1', 'ASG-IMP2'], array_column(assignment_audience(['track' => 'Coding', 'centre' => 'Egbeda']), 'memberId'))) === 2);
+    $mk('ASG-SUS', 'TECH', 'Egbeda', ['status' => 'Suspended']);
+    chk('assignments · a suspended member still does not', !in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-SUS'])['assignments'], 'assignmentId'), true));
+    db_exec("DELETE FROM members WHERE memberId IN ('ASG-IMP1', 'ASG-IMP2', 'ASG-SUS')");
     chk('assignments · a MUSIC member does not, and cannot hand it in by its id', !in_array($aid, array_column(assignment_list_for_member(['memberId' => 'ASG-M1'])['assignments'], 'assignmentId'), true)
         && (assignment_submit(['memberId' => 'ASG-M1', 'assignmentId' => $aid, 'text' => 'mine'])['error'] ?? '') === 'not_for_you');
     chk('assignments · a member hands it in', !empty(assignment_submit(['memberId' => 'ASG-T1', 'assignmentId' => $aid, 'text' => 'I built a page with a heading and a photo.'])['ok']));

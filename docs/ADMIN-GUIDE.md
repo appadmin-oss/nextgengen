@@ -2047,9 +2047,16 @@ Each kind of person chooses one way. The first listed is the one suggested:
 
 | Who | Ways they may choose |
 |---|---|
-| Members (children and young people) | A private question · a 6-digit PIN · an authenticator app · a code by email |
-| Instructors, volunteers and mentors | An authenticator app · a code by email · a 6-digit PIN |
-| Guardians | A family PIN · an authenticator app · a private question |
+| Members (children and young people) | A private question · a 6-digit PIN · an authenticator app · a code by email · a code by text message |
+| Instructors, volunteers and mentors | An authenticator app · a code by email · a 6-digit PIN · a code by text message |
+| Guardians | A family PIN · an authenticator app · a private question · a code by text message |
+
+**A code by text message** is offered only while a text channel is set up
+(Telegram, the programme's own phone, or a paid SMS provider, under Settings →
+API keys). The person types a number or uses the one on their record; it is
+set only once a texted code reaches it. If they have connected Telegram, the
+code goes there, free. If texts stop working later, the sign-in screen says
+the text did not go through, and their backup codes still let them in.
 | Staff | The Control Room authenticator (managed in **Access & roles**) |
 
 Whatever they choose, they also get **eight one-time backup codes** when they
@@ -2094,6 +2101,20 @@ current answer or code first. Where it is required, it cannot be turned off.
 
 ---
 
+## The member portal on a phone, and for younger members
+
+**The simple view.** Members under 13 see a simpler My NGG: five places
+named in plain words (Today, My mentor, Learn, Me, Help), big buttons on
+Today for the four things they do most, and Money kept out of the menu (it
+is a guardian's business at that age; its page still opens from a link).
+Older members see the full view. Anyone can switch in **Profile → How your
+portal looks**, and the choice is theirs: it is not reset by a birthday.
+
+**Tabs on a phone.** Inside each place, the tabs (for example Lessons,
+Saturday, Timetable, Study tools) wrap onto a second line as buttons on a
+narrow screen, so every one is visible. They used to scroll sideways out of
+sight. The same is true in the mentor and instructor portals.
+
 ## Things that go wrong, and what they mean
 
 | What you see | What it means | What to do |
@@ -2115,6 +2136,7 @@ current answer or code first. Where it is required, it cannot be turned off.
 | A card shows the wrong details | It was printed from an older published version | Check **ID cards → One person's cards**; reprint |
 | A card's QR will not scan | Flagged at publish time if the modules are too small | Fix the QR size in the Design Studio and republish |
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
+| A member sees lessons but no assignments | Older builds compared the member's status and centre exactly; an imported "Active", a blank status or "egbeda " matched nothing | Fixed: those compare the way the rest of the record does. A member still sees nothing if they are suspended, or their course is not the assignment's |
 | "Not a Member ID or email" at sign-in | Older builds refused card numbers | Card numbers (`VOL-INS-26-001`, `026-014`) are accepted now |
 | A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
 | "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |

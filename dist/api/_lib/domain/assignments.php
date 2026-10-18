@@ -50,9 +50,14 @@ const ASG_BULK_MAX   = 500;
 
 /** Does this assignment reach this member? $ctx: curriculum_course_ctx(), reused across a list. */
 function assignment_matches_member(array $a, array $member, string $currentSessionId, ?array &$ctx = null): bool {
-    if ((string)($member['status'] ?? 'active') !== 'active') return false;
+    /* Compared the way the rest of the record is: an imported row says
+     * "Active", or leaves it blank, and a centre is typed "egbeda " as often
+     * as "Egbeda". Compared exactly, those members saw no assignments at all
+     * while their lessons (matched loosely) showed. */
+    $st = strtolower(trim((string)($member['status'] ?? '')));
+    if ($st !== '' && $st !== 'active') return false;
     $c = trim((string)($a['centre'] ?? ''));
-    if ($c !== '' && $c !== 'All' && $c !== 'Both' && $c !== (string)($member['centre'] ?? '')) return false;
+    if ($c !== '' && $c !== 'All' && $c !== 'Both' && mb_strtolower($c) !== mb_strtolower(trim((string)($member['centre'] ?? '')))) return false;
     $sid = (string)($a['sessionId'] ?? '');
     if ($sid !== '' && $currentSessionId !== '' && $sid !== $currentSessionId) return false;
     $track = trim((string)($a['track'] ?? ''));
@@ -71,9 +76,9 @@ function assignment_session_id(): string {
 function assignment_audience(array $a): array {
     $sid = assignment_session_id();
     $args = [];
-    $sql = "SELECT memberId, fullName, email, centre, track, disciplines, division, status, type, role FROM members WHERE status = 'active'";
+    $sql = "SELECT memberId, fullName, email, centre, track, disciplines, division, status, type, role FROM members WHERE (status IS NULL OR LOWER(TRIM(status)) IN ('active', ''))";
     $c = trim((string)($a['centre'] ?? ''));
-    if ($c !== '' && $c !== 'All' && $c !== 'Both') { $sql .= ' AND centre = ?'; $args[] = $c; }
+    if ($c !== '' && $c !== 'All' && $c !== 'Both') { $sql .= ' AND LOWER(TRIM(centre)) = ?'; $args[] = mb_strtolower($c); }
     $ctx = null; $out = [];
     foreach (db_all($sql, $args) as $m) {
         if (is_admin_role((string)($m['role'] ?? ''))) continue;   // staff are not set homework

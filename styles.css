@@ -8302,7 +8302,7 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .stt-brand { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap); color: var(--stt-ink-2); text-decoration: none; font-weight: 600; }
 .stt-h1 { margin: 0; font: 700 18px/1.2 var(--c-font-display); }
 .stt-who { margin-left: auto; color: var(--stt-ink-3); font-size: 14px; }
-.stt-tabs { display: flex; gap: 4px; padding: 8px 16px; overflow-x: auto; background: #fff; border-bottom: 1px solid var(--stt-line); scrollbar-width: thin; }
+.stt-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 16px; background: #fff; border-bottom: 1px solid var(--stt-line); scrollbar-width: thin; }
 .stt-tab { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap); padding: 0 14px; border: 0; border-radius: var(--c-r-pill); background: transparent; color: var(--stt-ink-2); font: 500 14px/1 inherit; cursor: pointer; white-space: nowrap; }
 .stt-tab:hover { background: var(--stt-soft); }
 .stt-tab.is-on { background: var(--stt-ink); color: #fff; }

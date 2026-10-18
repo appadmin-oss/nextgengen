@@ -1810,3 +1810,35 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   one in-range answer is dropped; fewer than 3 is a refusal and a refund) and
   `study_notes_ai` (distress → people to talk to, nothing spent), both on
   `study_ai_take` / `study_ai_refund`. `study_log` accepts `quiz`.
+
+## 2026-10-18 — Portals for younger members, phone tabs, two crashes, assignments, text-message codes
+
+- **Simple view** (`mp9-app.jsx` `viewMode()`/`simple()`/`setView()`, state key
+  `mp9.view`): on by default below `MP9_SIMPLE_UNDER` (13), switchable in
+  Profile (`viewSwitch()`, rendered in `slotEnd` so it never pushes the tabs
+  down). `mp9SimpleAreas()` names the five areas plainly; `MP9_SIMPLE_TILES`
+  are the big buttons on Today (`simpleTiles()`, in the hand-written slot —
+  `mp9-view.jsx` is generated and untouched).
+- **dc-compile loop variables** are emitted as `l_<name>`. A design loop
+  `as="h"` shadowed the view's `h` (createElement) and crashed instructor
+  Teach and Analytics, the member's results history and the mentor's family
+  history ("h is not a function"). All three views regenerated; the CSS is
+  byte-identical. `instructor-v6.test.js` opens both screens and asserts no
+  view has an unprefixed loop.
+- **Phone tabs**: `<main>` is a container in all three portals; under 600px
+  an area's tab row wraps as pills (`[aria-current="true"]` filled) instead of
+  scrolling sideways. The member's mentor tablist goes two by two; the study
+  tools' tab row wraps.
+- **Instructor portal**: the assignment desk sits in the 960px column; skill
+  distribution bars count out of the whole class (unmarked in grey); Analytics
+  says why attendance is empty before any roll is closed.
+- **Assignments not showing**: `assignment_matches_member` and
+  `assignment_audience` compared status and centre exactly, so an imported
+  "Active", a blank status or a centre in another case saw none (lessons,
+  matched loosely, still showed). Both are case- and space-insensitive now.
+- **Text-message sign-in codes** (`mfa.php`): `sms` in `MFA_METHODS` for every
+  kind, offered only while `sms_enabled()`; enrolment holds the number in
+  `mfa.pend` until a texted code proves it, stored as `rec.to`; the challenge
+  texts that number via `sms_send()` (Telegram first). A failed send deletes
+  the waiting code. `mfa_mask_phone()` for display. Client: `mfa.jsx`
+  (phone field, "Text me a code").

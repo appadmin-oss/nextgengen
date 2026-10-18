@@ -684,7 +684,6 @@ Object.assign(Mp9Portal.prototype, {
       {loading ? <div className="m9x-slot"><div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div></div> : null}
       {s.scr === "today" && rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-slot m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
       {s.scr === "today" && this.simple() ? this.simpleTiles() : null}
-      {s.scr === "me" ? this.viewSwitch() : null}
     </>;
   },
   slotEnd() {
@@ -696,7 +695,9 @@ Object.assign(Mp9Portal.prototype, {
       onClose={() => this.setState({ handIn: null })}
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
-    return handEl ? <>{rest}{handEl}</> : rest;
+    // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
+    const view = s.scr === "me" ? this.viewSwitch() : null;
+    return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
     const s = this.state;
