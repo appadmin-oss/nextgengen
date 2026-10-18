@@ -590,7 +590,7 @@ function DashboardPage({ setPage }) {
   // so the dashboard is current the moment they look at it.
   /* NGG members get the Member Portal (v9, src/modules/member9), which reads
      its own data per screen; `?classic=1` keeps this dashboard reachable. */
-  const v9 = !!(data && data.member && data.member.type === "NGG") && !/[?&]classic=1/.test(window.location.search || "") && typeof Mp9Portal === "function";
+  const v9 = !!(data && memberIsNgg(data.member)) && !/[?&]classic=1/.test(window.location.search || "") && typeof Mp9Portal === "function";
   React.useEffect(() => {
     if (!isSignedIn || v9) return;
     let id = null;

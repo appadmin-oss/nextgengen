@@ -81,6 +81,7 @@ async function as(memberId, admin, viewport) {
       $mk('NGG-MV-ADM', 'Ade Admin', 'super_admin');
       $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567']);
       $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
+      $mk('NGG-MV-K3', 'Bayo Lowercase', 'member', ['type' => 'ngg', 'track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-15 years'))]);
       $mk('NGG-MV-MEN', 'Ngozi Eke');
       db_insert('mentors', ['mentorId' => 'MEN-MV-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@mv.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
         'programme' => 'ngg', 'memberId' => 'NGG-MV-MEN', 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
@@ -258,6 +259,12 @@ async function as(memberId, admin, viewport) {
     await shot(kid, 'kid-profile');
     chk('no page errors (11-year-old)', kid.errs.length === 0);
     if (kid.errs.length) console.error(kid.errs.join('\n'));
+
+    // ── An account whose type is not spelled exactly "NGG" is still a member ──
+    const lc = await as('NGG-MV-K3', false);
+    await lc.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(lc);
+    await lc.waitForSelector('.m9-app main', { timeout: 60000 }).catch(() => {});
+    chk('Type "ngg" (any case) opens the new portal, as the server counts it', await lc.isVisible('.m9-app main'));
 
     // ── Classic stays reachable ──
     await mb.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });

@@ -8239,12 +8239,12 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
                     </div>
                   </div>
                 : <div className="admin-detail-actions" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                    <select className="admin-select" value={ngvRole} disabled={busy || m.type !== "NGG" || m.status !== "active"} onChange={(e) => setNgvRole(e.target.value)} aria-label="Volunteer role">
+                    <select className="admin-select" value={ngvRole} disabled={busy || !memberIsNgg(m) || m.status !== "active"} onChange={(e) => setNgvRole(e.target.value)} aria-label="Volunteer role">
                       <option value="volunteer">Volunteer</option>
                       <option value="instructor">Instructor</option>
                       <option value="mentor">Mentor</option>
                     </select>
-                    <button className="btn btn-ghost btn-sm" disabled={busy || m.type !== "NGG" || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
+                    <button className="btn btn-ghost btn-sm" disabled={busy || !memberIsNgg(m) || m.status !== "active"} onClick={promoteNgv}>Promote to NGV</button>
                     <span className="admin-hint" style={{ margin: 0 }}>Advances an active NGG member into the volunteer tier, provisions their NGV ID, and emails it to them.</span>
                   </div>}
             </div>

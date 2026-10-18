@@ -1,3 +1,10 @@
+/* Is this an NGG member (not a Summer School account)? The same rule as the
+   server's member_is_ngg(): anything but "summer", in any case or spacing.
+   The dashboard used to ask for the exact string "NGG", so an account whose
+   type was blank or "ngg" got the old dashboard while the server called it a
+   member. */
+function memberIsNgg(m) { return !!m && String(m.type == null ? "NGG" : m.type).trim().toLowerCase() !== "summer"; }
+
 /* ================================================================
    NGG — Shared components
    Loaded as type=text/babel after React + data.js + photos.js
