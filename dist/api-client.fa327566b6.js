@@ -722,7 +722,7 @@
         status:    (family) => request('/auth/mfa.php' + (family ? '?who=family' : '')),
         challenge: (family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'challenge' } }),
         verify:    (answer, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'verify', answer } }),
-        start:     (type, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'start', type } }),
+        start:     (type, family, phone) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: Object.assign({ action: 'start', type }, phone ? { phone } : {}) }),
         enroll:    (data, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: Object.assign({ action: 'enroll' }, data) }),
         off:       (current, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'off', current } }),
         backup:    (current, family) => request('/auth/mfa.php' + (family ? '?who=family' : ''), { body: { action: 'backup', current } }),

@@ -38,16 +38,21 @@ const MFA_POLICY_DEFAULT = ['member' => 'optional', 'team' => 'optional', 'guard
  * security); never widen it past this. A child is offered the question first
  * because it needs no phone; the team the app, because it needs no inbox. */
 const MFA_METHODS = [
-    'member'   => ['question', 'pin', 'app', 'email'],
-    'team'     => ['app', 'email', 'pin'],
-    'guardian' => ['pin', 'app', 'question'],
+    'member'   => ['question', 'pin', 'app', 'email', 'sms'],
+    'team'     => ['app', 'email', 'pin', 'sms'],
+    'guardian' => ['pin', 'app', 'question', 'sms'],
 ];
 const MFA_METHOD_INFO = [
     'question' => ['label' => 'A private question', 'blurb' => 'Pick a question only you can answer. We ask it when you sign in.'],
     'pin'      => ['label' => 'A 6-digit PIN', 'blurb' => 'Six digits only you know, asked each time you sign in. Not a birthday or 123456.'],
     'app'      => ['label' => 'An authenticator app', 'blurb' => 'Google Authenticator, Microsoft Authenticator or similar shows a new 6-digit code every 30 seconds.'],
     'email'    => ['label' => 'A code by email', 'blurb' => 'We email a 6-digit code to the address on your record when you sign in. Not asked again if you signed in with an emailed code.'],
+    'sms'      => ['label' => 'A code by text message', 'blurb' => 'We text a 6-digit code to your phone when you sign in — on Telegram instead, free, if you have connected it to NGG.'],
 ];
+/* 'sms' is offered only while a text channel is configured (sms_enabled():
+ * Telegram, the programme's phone, or a paid provider). An enrolment made
+ * while it was on stays checkable: the code is sent, and if the channel has
+ * since gone, the challenge says so and the backup codes are the way in. */
 /* One-time backup codes, issued whenever a step is set up: the way in when the
  * phone is lost or the answer forgotten, without waiting for the desk. */
 const MFA_BACKUP_N = 8;
@@ -99,16 +104,16 @@ function mfa_principal(string $id, string $who): ?array {
     if ($who === 'guardian') {
         $g = db_row("SELECT * FROM guardians WHERE guardianId = ? LIMIT 1", [$id]);
         return $g ? ['id' => $id, 'who' => 'guardian', 'kind' => 'guardian', 'name' => (string)($g['fullName'] ?? ''),
-                     'email' => (string)($g['email'] ?? ''), 'centre' => ''] : null;
+                     'email' => (string)($g['email'] ?? ''), 'phone' => (string)($g['phone'] ?? ''), 'centre' => ''] : null;
     }
     if ($who === 'volunteer') {
         $v = db_row("SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1", [$id]);
         return $v ? ['id' => $id, 'who' => 'volunteer', 'kind' => 'team', 'name' => (string)($v['fullName'] ?? ''),
-                     'email' => (string)($v['email'] ?? ''), 'centre' => (string)($v['centre'] ?? ''), 'role' => (string)($v['role'] ?? '')] : null;
+                     'email' => (string)($v['email'] ?? ''), 'phone' => (string)($v['phone'] ?? ''), 'centre' => (string)($v['centre'] ?? ''), 'role' => (string)($v['role'] ?? '')] : null;
     }
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return null;
-    $base = ['id' => $id, 'who' => 'member', 'name' => (string)($m['fullName'] ?? ''), 'email' => (string)($m['email'] ?? ''),
+    $base = ['id' => $id, 'who' => 'member', 'name' => (string)($m['fullName'] ?? ''), 'email' => (string)($m['email'] ?? ''), 'phone' => (string)($m['phone'] ?? ''),
              'centre' => (string)($m['centre'] ?? ''), 'role' => (string)($m['role'] ?? '')];
     if (is_admin_role((string)($m['role'] ?? ''))) return $base + ['kind' => 'staff', 'staffApp' => trim((string)($m['totpSecret'] ?? '')) !== ''];
     // An adult member who mentors holds children's records: the team's step, not a child's.
@@ -129,6 +134,7 @@ function mfa_policy(): array {
 function mfa_methods_for(string $kind): array {
     $all = MFA_METHODS[$kind] ?? [];
     $set = setting_get('mfa_methods');
+    if (!function_exists('sms_enabled') || !sms_enabled()) $all = array_values(array_diff($all, ['sms']));
     $pick = is_array($set) && is_array($set[$kind] ?? null) ? array_values(array_intersect($all, $set[$kind])) : [];
     return $pick ?: $all;
 }
@@ -216,13 +222,33 @@ function mfa_mask_email(string $e): string {
     return $e !== '' && function_exists('mask_email') ? mask_email($e) : '';
 }
 
-/** Email a one-off code for $purpose ('signin' | 'enroll'). */
-function mfa_send_code(array $pr, string $purpose): array {
-    if ($pr['email'] === '') return ['ok' => false, 'error' => 'no_email_on_file'];
+function mfa_mask_phone(string $e164): string {
+    $d = preg_replace('/\D/', '', $e164) ?? '';
+    return strlen($d) >= 7 ? '+' . substr($d, 0, 3) . ' ••• ••• ' . substr($d, -4) : '';
+}
+
+/**
+ * Send a one-off code for $purpose ('signin' | 'enroll') by email, or by text
+ * to $to (an E.164 number) when $channel is 'sms'. One code at a time, never
+ * re-sent inside 30 seconds.
+ */
+function mfa_send_code(array $pr, string $purpose, string $channel = 'email', string $to = ''): array {
+    $isSms = $channel === 'sms';
+    if ($isSms) {
+        if ($to === '') return ['ok' => false, 'error' => 'no_phone_on_file'];
+        if (!function_exists('sms_enabled') || !sms_enabled()) return ['ok' => false, 'error' => 'sms_disabled'];
+    } elseif ($pr['email'] === '') return ['ok' => false, 'error' => 'no_email_on_file'];
+    $masked = $isSms ? mfa_mask_phone($to) : mfa_mask_email($pr['email']);
     $prev = mfa_get($pr['id'], 'mfa.code');
-    if (is_array($prev) && (int)($prev['at'] ?? 0) > time() - 30) return ['ok' => true, 'masked' => mfa_mask_email($pr['email']), 'resent' => false];
+    if (is_array($prev) && (int)($prev['at'] ?? 0) > time() - 30 && (string)($prev['p'] ?? '') === $purpose && (string)($prev['to'] ?? '') === ($isSms ? $to : '')) return ['ok' => true, 'masked' => $masked, 'resent' => false];
     $code = new_otp();
-    mfa_put($pr['id'], 'mfa.code', ['h' => password_hash($code, PASSWORD_DEFAULT), 'exp' => time() + MFA_CODE_TTL, 'at' => time(), 'p' => $purpose]);
+    mfa_put($pr['id'], 'mfa.code', ['h' => password_hash($code, PASSWORD_DEFAULT), 'exp' => time() + MFA_CODE_TTL, 'at' => time(), 'p' => $purpose, 'to' => $isSms ? $to : '']);
+    if ($isSms) {
+        // No link in the text: a code someone reads out is the only thing in it.
+        $r = sms_send($to, 'NGG: your sign-in code is ' . $code . '. It is good for 10 minutes. Never share it — NGG staff will not ask for it.');
+        if (empty($r['ok'])) { mfa_del($pr['id'], 'mfa.code'); return ['ok' => false, 'error' => 'sms_failed', 'detail' => (string)($r['error'] ?? '')]; }
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true, 'via' => (string)($r['provider'] ?? '')];
+    }
     $first = explode(' ', $pr['name'])[0] ?? '';
     $html = email_template([
         'eyebrow' => 'Two-step sign-in',
@@ -232,7 +258,7 @@ function mfa_send_code(array $pr, string $purpose): array {
         'footNote'=> 'If you did not just sign in to Next Generation Genius, someone may have your ID card. Tell your coordinator.',
     ]);
     $sent = send_mail($pr['email'], 'Your NGG sign-in code', $html);
-    return ['ok' => true, 'masked' => mfa_mask_email($pr['email']), 'delivery' => $sent];
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $sent];
 }
 
 function mfa_code_ok(string $id, string $code, string $purpose): bool {
@@ -250,7 +276,8 @@ function mfa_check(string $id, array $e, string $input): bool {
         case 'question': return $input !== '' && password_verify(mfa_norm_answer($input), (string)($e['a'] ?? ''));
         case 'pin':      return preg_match('/^\d{6}$/', $input) === 1 && password_verify($input, (string)($e['a'] ?? ''));
         case 'app':      return totp_verify((string)($e['secret'] ?? ''), $input, 1);
-        case 'email':    return mfa_code_ok($id, $input, 'signin');
+        case 'email':
+        case 'sms':      return mfa_code_ok($id, $input, 'signin');
     }
     return false;
 }
@@ -278,6 +305,8 @@ function mfa_status(array $p): array {
         'questions' => in_array('question', mfa_methods_for($kind), true) ? MFA_QUESTIONS : [],
         'backupLeft' => $e ? mfa_backup_left($pr['id']) : 0,
         'email' => mfa_mask_email($pr['email']),
+        'phone' => ($ph = function_exists('sms_normalize') ? sms_normalize((string)($pr['phone'] ?? '')) : '') !== '' ? mfa_mask_phone($ph) : '',
+        'sentTo' => $e && $e['type'] === 'sms' ? mfa_mask_phone((string)($e['to'] ?? '')) : '',
         'bypassUntil' => mfa_bypass_until($pr['id']),
         'locked' => attempt_locked('mfa', $pr['id'])];
 }
@@ -299,6 +328,16 @@ function mfa_enroll_start(array $p): array {
         if ($pr['email'] === '') return ['ok' => false, 'error' => 'no_email_on_file'];
         $r = mfa_send_code($pr, 'enroll');
         return $r['ok'] ? $r + ['type' => 'email'] : $r;
+    }
+    if ($type === 'sms') {
+        // The number typed in now, or the one on the record. Either is proven
+        // only by the code reaching it, so a typo cannot lock anybody out.
+        $raw = trim((string)($p['phone'] ?? '')) !== '' ? (string)$p['phone'] : (string)($pr['phone'] ?? '');
+        $to = sms_normalize($raw);
+        if ($to === '') return ['ok' => false, 'error' => trim((string)($p['phone'] ?? '')) !== '' ? 'bad_number' : 'no_phone_on_file'];
+        mfa_put($pr['id'], 'mfa.pend', ['type' => 'sms', 'to' => $to, 'exp' => time() + 1800]);
+        $r = mfa_send_code($pr, 'enroll', 'sms', $to);
+        return $r['ok'] ? $r + ['type' => 'sms'] : $r;
     }
     return ['ok' => true, 'type' => $type];
 }
@@ -351,6 +390,15 @@ function mfa_enroll_finish(array $p): array {
             attempt_fail('mfa', $id, MFA_FAIL_MAX, MFA_FAIL_LOCK);
             return ['ok' => false, 'error' => 'code_wrong'];
         }
+    } elseif ($type === 'sms') {
+        $pend = mfa_get($id, 'mfa.pend');
+        if (!is_array($pend) || ($pend['type'] ?? '') !== 'sms' || (int)($pend['exp'] ?? 0) < time()) return ['ok' => false, 'error' => 'setup_expired'];
+        if (!mfa_code_ok($id, (string)($p['code'] ?? ''), 'enroll')) {
+            attempt_fail('mfa', $id, MFA_FAIL_MAX, MFA_FAIL_LOCK);
+            return ['ok' => false, 'error' => 'code_wrong'];
+        }
+        $rec += ['to' => (string)$pend['to']];
+        mfa_del($id, 'mfa.pend');
     }
     mfa_put($id, 'mfa', $rec);
     attempt_reset('mfa', $id);
@@ -368,8 +416,8 @@ function mfa_challenge(array $p): array {
     if (!$e) return ['ok' => true, 'type' => 'enroll'];
     $out = ['ok' => true, 'type' => (string)$e['type'], 'locked' => attempt_locked('mfa', $pr['id'])];
     if ($e['type'] === 'question') $out['question'] = (string)($e['q'] ?? '');
-    if ($e['type'] === 'email' && !$out['locked']) {
-        $r = mfa_send_code($pr, 'signin');
+    if (($e['type'] === 'email' || $e['type'] === 'sms') && !$out['locked']) {
+        $r = $e['type'] === 'sms' ? mfa_send_code($pr, 'signin', 'sms', (string)($e['to'] ?? '')) : mfa_send_code($pr, 'signin');
         if (empty($r['ok'])) return $r;
         $out += ['masked' => $r['masked'], 'delivery' => $r['delivery'] ?? true];
     }

@@ -48,7 +48,7 @@ if ($method === 'GET') {
         $res = gs_call('mfa.verify', $base + ['answer' => v_safe_text((string)($b['answer'] ?? ''), 120)]);
         if (!empty($res['ok'])) $clear();
     } elseif ($action === 'start') {
-        $res = gs_call('mfa.enroll.start', $base + ['type' => (string)($b['type'] ?? '')]);
+        $res = gs_call('mfa.enroll.start', $base + ['type' => (string)($b['type'] ?? ''), 'phone' => (string)($b['phone'] ?? '')]);
     } elseif ($action === 'enroll') {
         // A session owing a step it has never set up proves the current one by setting it.
         if ($pending !== '' && $pending !== 'enroll') json_error('mfa_required', 401);

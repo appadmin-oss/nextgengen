@@ -11982,3 +11982,25 @@ button.m9x-ev-sum { cursor: pointer; }
 .fc-btn { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid #d4d2cb; background: #fff; color: var(--fc-ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
 .fc-btn.is-go { background: var(--fc-ink); border-color: var(--fc-ink); color: #fff; }
 .fc-btn:focus-visible, .fc-x:focus-visible { outline: 2px solid var(--fc-ink); outline-offset: 2px; }
+
+/* Member portal: the simple view (mp9-more.jsx simpleTiles / viewSwitch). */
+.m9x-kid { padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e6e5e0; container-type: inline-size; }
+.m9x-kid-h { margin: 0 0 14px; font-size: 20px; font-weight: 700; color: #0b0b0c; }
+.m9x-kid-grid { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@container (min-width: 620px) { .m9x-kid-grid { grid-template-columns: repeat(4, 1fr); } }
+.m9x-kid-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 104px; padding: 14px 10px; border: 1px solid #e8e5dd; border-radius: 16px; background: #fafaf8; color: #0b0b0c; font: 600 16px 'Geist', system-ui, sans-serif; text-align: center; cursor: pointer; }
+.m9x-kid-tile:hover { background: #f4f4f2; }
+.m9x-kid-tile:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-kid-tile i { font-size: 32px; }
+.m9x-kid-help { margin: 14px 0 0; }
+.m9x-kid-link, .m9x-view-opt { font: inherit; cursor: pointer; }
+.m9x-kid-link { min-height: 44px; padding: 0; border: 0; background: none; font-weight: 600; font-size: 15px; color: #0b0b0c; text-decoration: underline; }
+.m9x-view { padding: 20px; border-radius: 18px; background: #fff; border: 1px solid #e6e5e0; container-type: inline-size; }
+.m9x-view-h { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: #0b0b0c; }
+.m9x-view-p { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #4a4a50; }
+.m9x-view-opts { display: grid; grid-template-columns: 1fr; gap: 8px; }
+@container (min-width: 440px) { .m9x-view-opts { grid-template-columns: 1fr 1fr; } }
+.m9x-view-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 64px; padding: 12px 14px; border: 1px solid #e8e5dd; border-radius: 14px; background: #fafaf8; color: #0b0b0c; text-align: left; }
+.m9x-view-opt span { font-size: 13px; color: #4a4a50; }
+.m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
+.m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }

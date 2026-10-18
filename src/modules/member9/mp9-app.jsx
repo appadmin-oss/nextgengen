@@ -41,7 +41,8 @@ const MP9_LOADERS = {
   // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
   evals: () => NGGApi.member.pod.read("evals"),
 };
-const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb"];
+const MP9_SIMPLE_UNDER = 13;
+const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */
 const MP9_ROUTE = { "/member/account/money": "money", "/member/grow/results": "results", "/member/learn": "learn", "/member/mentor": "mentor",
@@ -180,6 +181,13 @@ class Mp9Portal extends React.Component {
   }
   satDate() { const t = this.dd("today") || {}; return (t.week || {}).saturday || ""; }
   older() { return this.me().older; }
+  /* The simple view: fewer areas in plain words, big buttons on Today. On by
+     default below MP9_SIMPLE_UNDER, and every member can switch it in their
+     profile — a confident ten-year-old and an unsure fifteen-year-old both
+     get the view they chose, not the one their birthday chose. */
+  viewMode() { const v = this.st("mp9.view", null); if (v === "simple" || v === "full") return v; const a = this.me().age; return a !== null && a !== undefined && a < MP9_SIMPLE_UNDER ? "simple" : "full"; }
+  simple() { return this.viewMode() === "simple"; }
+  setView(v) { if (v === this.viewMode()) return; this.saveSt("mp9.view", v); this.toast(v === "simple" ? "Simple view is on. Switch back any time in your profile." : "Full view is on. Switch back any time in your profile."); }
 
   /* ── Today ───────────────────────────────────────────────────────────── */
   todayVals(go) {

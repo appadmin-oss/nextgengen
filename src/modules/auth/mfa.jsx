@@ -13,7 +13,7 @@
    question, the team an authenticator app or an emailed code, a guardian a
    family PIN — and the server decides it; this file only draws what it says. */
 
-const MFA_ICON = { question: "chat-circle-dots", app: "device-mobile", email: "envelope-simple", pin: "password" };
+const MFA_ICON = { question: "chat-circle-dots", app: "device-mobile", email: "envelope-simple", pin: "password", sms: "chat-text" };
 
 function mfaErr(e, fallback) {
   const c = e && (e.code || e.message);
@@ -29,6 +29,10 @@ function mfaErr(e, fallback) {
     pin_too_easy: "That PIN is too easy to guess. Avoid 111111, 123456 and the like.",
     setup_expired: "Setup took too long. Start again.",
     no_email_on_file: "There is no email on your record. Ask your coordinator to add one, or pick another way.",
+    no_phone_on_file: "There is no phone number on your record. Type the number to text, or pick another way.",
+    bad_number: "That doesn’t look like a phone number. Use 080… or +234….",
+    sms_failed: "The text didn’t go through. Try again in a minute, or use a backup code.",
+    sms_disabled: "Text messages aren’t switched on right now. Use a backup code, or ask your coordinator.",
     mfa_required_by_policy: "NGG requires this for your account, so it can’t be turned off.",
     nothing_to_verify: "Nothing to confirm — you’re in.",
     not_available: "Two-step sign-in isn’t available for this account.",
@@ -74,6 +78,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
   const [type, setType] = React.useState("");          // setup: chosen method
   const [setupData, setSetupData] = React.useState(null); // app: {secret, otpauth}; email: {masked}
   const [qr, setQr] = React.useState("");
+  const [phone, setPhone] = React.useState("");          // sms setup: the number to text (blank = the one on record)
   const [answer, setAnswer] = React.useState("");
   const [question, setQuestion] = React.useState("");
   const [ownQ, setOwnQ] = React.useState(false);
@@ -141,6 +146,14 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     }).catch(e => { if (live) setErr(mfaErr(e)); });
     return () => { live = false; };
   }, [mode, type]);
+  const textMe = async e => {
+    if (e) e.preventDefault();
+    if (busy) return;
+    setBusy(true); setErr(""); setSetupData(null);
+    try { setSetupData(await NGGApi.auth.mfa.start("sms", family, phone.trim())); setAnswer(""); }
+    catch (x) { setErr(mfaErr(x)); }
+    setBusy(false);
+  };
 
   const verify = async (e, v) => {
     if (e) e.preventDefault();
@@ -218,7 +231,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     } catch (_) {}
   };
   const sendCurrentCode = async () => {
-    try { const c = await NGGApi.auth.mfa.challenge(family); setNote("We emailed a code" + (c.masked ? " to " + c.masked : "") + "."); } catch (x) { setErr(mfaErr(x)); }
+    try { const c = await NGGApi.auth.mfa.challenge(family); setNote("We " + (status.type === "sms" ? "texted" : "emailed") + " a code" + (c.masked ? " to " + c.masked : "") + "."); } catch (x) { setErr(mfaErr(x)); }
   };
 
   const fieldErr = err ? <p role="alert" className="signin-ferr"><i className="ph ph-warning-circle" aria-hidden="true"/>{err}</p> : null;
@@ -231,8 +244,8 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
   const currentField = enrolled ? (
     <div className="mfa-current">
       <MfaField id="mfa-cur" kind={status.type === "question" || status.type === "pin" ? status.type : "code"} value={current} onChange={v => { setErr(""); setCurrent(v); }}
-        label={status.type === "question" ? "First, your current answer — " + (status.question || "") : status.type === "pin" ? "First, your current PIN" : "First, a code from your current " + (status.type === "app" ? "app" : "email")}/>
-      {status.type === "email" && <button type="button" className="signin-link signin-link--sm" onClick={sendCurrentCode}>Email me a code</button>}
+        label={status.type === "question" ? "First, your current answer — " + (status.question || "") : status.type === "pin" ? "First, your current PIN" : "First, a code from your current " + (status.type === "app" ? "app" : status.type === "sms" ? "phone" : "email")}/>
+      {(status.type === "email" || status.type === "sms") && <button type="button" className="signin-link signin-link--sm" onClick={sendCurrentCode}>{status.type === "sms" ? "Text me a code" : "Email me a code"}</button>}
     </div>
   ) : null;
 
@@ -264,7 +277,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
     body = <div className="mfa-state" role="status" aria-live="polite"><span className="signin-spin" aria-hidden="true"/> Loading…</div>;
   } else if (mode === "step") {
     const t = useBackup ? "backup" : chal.type;
-    title = t === "backup" ? "Use a backup code" : t === "question" ? "One more question" : t === "pin" ? "Your " + pinName : t === "app" ? "Code from your app" : "Check your email";
+    title = t === "backup" ? "Use a backup code" : t === "question" ? "One more question" : t === "pin" ? "Your " + pinName : t === "app" ? "Code from your app" : t === "sms" ? "Check your phone" : "Check your email";
     sub = t === "backup" ? "One of the eight codes you saved when you set this up. Each works once." : t === "question" ? "So we know it’s really you." : t === "pin" ? "The six digits you chose for this account." : t === "app" ? "Open your authenticator app and type the code it shows for NGG." : <>We sent a code{chal.masked ? <> to <b>{chal.masked}</b></> : null}. It’s good for 10 minutes.</>;
     body = (
       <form onSubmit={verify} className="signin-form" noValidate>
@@ -283,7 +296,7 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
         {fieldErr}
         {submit("Continue", !answer.trim())}
         <div className="signin-alts mfa-alts">
-          {t === "email" && <button type="button" className="signin-link" onClick={resend} disabled={busy}>Send a new code</button>}
+          {(t === "email" || t === "sms") && <button type="button" className="signin-link" onClick={resend} disabled={busy}>Send a new code</button>}
           {(t === "question" || t === "pin") && <button type="button" className="signin-link" onClick={recheck} disabled={busy}>I’ve been let in by staff</button>}
           <button type="button" className="signin-link" onClick={() => { setUseBackup(b => !b); setAnswer(""); setErr(""); }}>{useBackup ? "Back to my usual step" : "Use a backup code"}</button>
           {onSignOut && <button type="button" className="signin-link" onClick={onSignOut}>Sign out</button>}
@@ -418,6 +431,23 @@ function MfaDialog({ mode: initialMode, family, forced, onDone, onSignOut, onClo
           </>
         );
         ready = answer.replace(/\D/g, "").length === 6;
+      } else if (type === "sms") {
+        fields = !setupData ? (
+          <>
+            <label className="signin-label" htmlFor="mfa-ph">Phone number to text</label>
+            <input id="mfa-ph" ref={inputRef} className="signin-input" type="tel" inputMode="tel" autoComplete="tel" placeholder={status.phone ? "Leave blank for " + status.phone : "080… or +234…"}
+              value={phone} onChange={e => { setErr(""); setPhone(e.target.value); }}/>
+            <p className="signin-help">{status.phone ? "Leave it blank to use the number on your record, " + status.phone + "." : "There’s no number on your record yet, so type the one to text."} If you’ve connected Telegram to NGG, the code comes there instead, free.</p>
+            <button type="button" className="signin-submit" onClick={textMe} disabled={busy || (!status.phone && !phone.trim())} aria-busy={busy || undefined}>{busy ? <span className="signin-spin" role="status" aria-label="Working"/> : "Text me a code"}</button>
+          </>
+        ) : (
+          <>
+            <p className="signin-help">We sent a code to <b>{setupData.masked}</b>. Type it here to confirm the number — you’ll get a fresh one each time you sign in.</p>
+            <MfaField id="mfa-sm" kind="code" value={answer} inputRef={inputRef} onChange={v => { setErr(""); setAnswer(v); }}/>
+            <button type="button" className="signin-link signin-link--sm" onClick={() => { setSetupData(null); setAnswer(""); }}>Use a different number</button>
+          </>
+        );
+        ready = !!setupData && answer.replace(/\D/g, "").length === 6;
       }
       body = (
         <form onSubmit={finish} className="signin-form" noValidate>

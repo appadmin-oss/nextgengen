@@ -80,6 +80,7 @@ async function as(memberId, admin, viewport) {
       db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EGB', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => $now]);
       $mk('NGG-MV-ADM', 'Ade Admin', 'super_admin');
       $mk('NGG-MV-K1', 'Tolu Adebayo', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-14 years -2 months')), 'school' => 'Egbeda High', 'displayId' => '026-014', 'phone' => '08031234567']);
+      $mk('NGG-MV-K2', 'Ada Okafor', 'member', ['track' => 'TECH', 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'school' => 'Egbeda Primary', 'displayId' => '026-015']);
       $mk('NGG-MV-MEN', 'Ngozi Eke');
       db_insert('mentors', ['mentorId' => 'MEN-MV-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@mv.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
         'programme' => 'ngg', 'memberId' => 'NGG-MV-MEN', 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
@@ -236,6 +237,27 @@ async function as(memberId, admin, viewport) {
     await shot(ph, 'phone-today');
     chk('no page errors (member)', mb.errs.length === 0 && ph.errs.length === 0);
     if (mb.errs.length || ph.errs.length) console.error(mb.errs.concat(ph.errs).join('\n'));
+
+    // ── Age: an 11-year-old gets the simple view, and can switch it ──
+    const kid = await as('NGG-MV-K2', false);
+    await kid.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(kid);
+    await kid.waitForSelector('.m9x-kid', { timeout: 60000 }).catch(() => {});
+    const kidNav = await kid.innerText('aside nav').catch(() => '');
+    chk('Simple view: on by default for an 11-year-old, with big buttons on Today', await kid.isVisible('.m9x-kid') && (await kid.$$('.m9x-kid-tile')).length === 4);
+    chk('Simple view: five plainly named areas, no Money or Account in the nav', /My mentor/.test(kidNav) && /Help/.test(kidNav) && /\bMe\b/.test(kidNav) && !/Money|Account/.test(kidNav));
+    await kid.click('.m9x-kid-tile:has-text("My lessons")'); await settle(kid);
+    chk('Simple view: a big button opens its page, with plain tab names', /My lessons/.test(await kid.innerText('main nav').catch(() => '')));
+    await kid.click('aside nav button:has-text("Help")'); await kid.click('main nav button:has-text("My profile")'); await settle(kid);
+    chk('Profile: the view switch says which view is on', (await kid.getAttribute('.m9x-view-opt:has-text("Simple")', 'aria-pressed')) === 'true');
+    await kid.click('.m9x-view-opt:has-text("Full")');
+    await kid.waitForFunction(() => /Account/.test((document.querySelector('aside nav') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    await kid.waitForTimeout(400);
+    chk('Profile: switching to Full is the member’s own choice, saved', q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K2' AND stateKey = 'mp9.view'")['stateValue'] ?? ''`).replace(/"/g, '') === 'full' && /Account/.test(await kid.innerText('aside nav')));
+    chk('Full view by default from 13: a 14-year-old sees no big buttons', !(await mb.isVisible('.m9x-kid')));
+    await shot(kid, 'kid-profile');
+    chk('no page errors (11-year-old)', kid.errs.length === 0);
+    if (kid.errs.length) console.error(kid.errs.join('\n'));
 
     // ── Classic stays reachable ──
     await mb.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });

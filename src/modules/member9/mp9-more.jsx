@@ -1,6 +1,23 @@
 /* ── Member Portal v9 — the rest of the screens, the sheets, navigation and
  * render (see mp9-app.jsx for the data layer and Today / mentor / growth). ── */
 
+/* The simple view's areas: five places, each named for what a child goes
+   there to do. Money is a guardian's business at this age and stays out of
+   the nav (its screen still opens from a link); Records is "My requests". */
+function mp9SimpleAreas(older) {
+  return [["Today", "ph ph-sun-horizon", [["today", "Today"]]],
+    ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "My club"]]],
+    ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
+    ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
+    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
+}
+const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
+  timetable: "When to come to the centre", tools: "Flashcards, quizzes and a focus timer", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
+  results: "Add your school report", help: "Ask a grown-up at NGG for help", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
+/* Today's big buttons in the simple view: the four things a child comes to do,
+   one press each, before the full Today screen below. */
+const MP9_SIMPLE_TILES = [["mentor", "Talk to my mentor", "ph ph-chat-circle-text"], ["learn", "My lessons", "ph ph-book-open-text"], ["sat", "This Saturday", "ph ph-calendar-star"], ["growth", "My goals", "ph ph-target"]];
+
 Object.assign(Mp9Portal.prototype, {
   /* ── Learn, timetable, companion, money, records, me, community ───────── */
   learnVals(go) {
@@ -584,21 +601,25 @@ Object.assign(Mp9Portal.prototype, {
     const resDue = b["grow/results"] ? "1" : "", owed = b["account/money"] ? mp9Naira(b["account/money"]) : "", learnN = b["learn/lessons"] ? String(b["learn/lessons"]) : "";
     const BADGE = { mentor: unreadChat ? String(unreadChat) : "", results: resDue, learn: learnN, money: owed };
     const bdg = id => BADGE[id] || "";
-    const areas = [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
+    const simple = this.simple();
+    const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
       ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Anchor Journal"]]],
       ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]]
+      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const navGroups = [{ h: "", hasH: false, items: areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, bg: on ? "#fff" : "transparent", sh: on ? "0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)" : "none", fw: on ? 600 : 500, badge: a.badge, hasBadge: !!a.badge, go: () => this.go(a.ids[0]) }; }) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? "#0b0b0c" : "#5a5a60", fw: on ? 600 : 500, bar: on ? "#0b0b0c" : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? "#0b0b0c" : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
     const subs = { sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
     const actions = [["Write in my journal", "ph ph-pencil-simple-line", () => { location.href = "/journal/"; }], ["Upload my school results", "ph ph-exam", () => this.go("results")], ["Add proof for a mission", "ph ph-camera", () => this.go("sat")],
       ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["I've made a payment", "ph ph-currency-ngn", () => this.go("records", { rKind: "I've made a payment", rF: {} })],
-      ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")]];
+      ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
+      simple ? ["Switch to the full view", "ph ph-squares-four", () => this.setView("full")] : ["Switch to the simple view", "ph ph-hand-pointing", () => this.setView("simple")]]
+      .filter(a => !(simple && /payment/.test(a[0])));
     const q = s.palQ.trim().toLowerCase();
     const items = flat.map(x => ({ t: x.label, k: "Go to", icon: x.icon, run: () => this.go(x.id) })).concat(actions.map(([t2, icon, run]) => ({ t: t2, k: "Do", icon, run }))).filter(x => !q || x.t.toLowerCase().includes(q));
     const pi = Math.min(s.palI, Math.max(0, items.length - 1));
@@ -628,6 +649,27 @@ Object.assign(Mp9Portal.prototype, {
     };
   },
 
+  simpleTiles() {
+    const first = this.me().first;
+    return <nav className="m9x-slot m9x-kid" aria-label="Where do you want to go?">
+      <h2 className="m9x-kid-h">{first ? "Hi " + first + "! " : ""}Where do you want to go?</h2>
+      <ul className="m9x-kid-grid">{MP9_SIMPLE_TILES.map(([id, label, icon]) =>
+        <li key={id}><button type="button" className="m9x-kid-tile" onClick={() => this.go(id)}><i className={icon} aria-hidden="true"/><span>{label}</span></button></li>)}</ul>
+      <p className="m9x-kid-help"><button type="button" className="m9x-kid-link" onClick={() => this.go("help")}>Stuck? Ask for help</button></p>
+    </nav>;
+  },
+  viewSwitch() {
+    const mode = this.viewMode();
+    return <section className="m9x-slot m9x-view" aria-labelledby="m9x-view-h">
+      <h2 id="m9x-view-h" className="m9x-view-h">How your portal looks</h2>
+      <p className="m9x-view-p">The simple view shows fewer places, in plain words, with big buttons on Today. Pick whichever feels easier — you can change it any time.</p>
+      <div className="m9x-view-opts" role="group" aria-label="Portal view">
+        {[["simple", "Simple", "Fewer places, big buttons"], ["full", "Full", "Everything, all in one place"]].map(([v, l, d]) =>
+          <button key={v} type="button" className={"m9x-view-opt" + (mode === v ? " is-on" : "")} aria-pressed={mode === v ? "true" : "false"} onClick={() => this.setView(v)}><b>{l}</b><span>{d}</span></button>)}
+      </div>
+    </section>;
+  },
+
   /* ── The whole screen ────────────────────────────────────────────────── */
   slot() {
     const s = this.state;
@@ -641,6 +683,8 @@ Object.assign(Mp9Portal.prototype, {
     return <>
       {loading ? <div className="m9x-slot"><div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div></div> : null}
       {s.scr === "today" && rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-slot m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
+      {s.scr === "today" && this.simple() ? this.simpleTiles() : null}
+      {s.scr === "me" ? this.viewSwitch() : null}
     </>;
   },
   slotEnd() {
