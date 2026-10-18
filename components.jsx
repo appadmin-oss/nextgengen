@@ -3,6 +3,12 @@
    The dashboard used to ask for the exact string "NGG", so an account whose
    type was blank or "ngg" got the old dashboard while the server called it a
    member. */
+/* The portals' area colours, one meaning each across all three portals: amber is
+   "today / this week", blue is Saturday and the classroom, teal is progress, violet
+   is people (mentees, students, mentors), slate is admin. None is a status colour,
+   and each passes 4.5:1 as text on white. The member portal's MP9_ACCENT uses the same. */
+const PORTAL_HUE = { amber: "#a15c07", blue: "#1d4ed8", teal: "#0f766e", violet: "#6d28d9", slate: "#475569" };
+
 function memberIsNgg(m) { return !!m && String(m.type == null ? "NGG" : m.type).trim().toLowerCase() !== "summer"; }
 
 /* ================================================================

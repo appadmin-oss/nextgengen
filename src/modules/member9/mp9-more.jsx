@@ -748,6 +748,8 @@ Object.assign(Mp9Portal.prototype, {
       return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
+    // The formation day is the staff-edited schedule with the member's own part (tests/mentor-v15); it sits in the column.
+    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
     if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },

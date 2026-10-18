@@ -49,7 +49,7 @@ const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", com
 /* Area hues stay clear of the status colours (green = done, amber-brown = warning, red = a problem),
    so a colour never says two things: Grow is teal, not green. Today is the NGG amber, deepened to
    pass 4.5:1 as text. Each is used in small doses — the tab, the icon, a tint — never as a page fill. */
-const MP9_ACCENT = { today: "#a15c07", mentor: "#6d28d9", grow: "#0f766e", learn: "#1d4ed8", account: "#475569" };
+const MP9_ACCENT = { today: PORTAL_HUE.amber, mentor: PORTAL_HUE.violet, grow: PORTAL_HUE.teal, learn: PORTAL_HUE.blue, account: PORTAL_HUE.slate };
 const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */
