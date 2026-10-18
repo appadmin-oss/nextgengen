@@ -46,7 +46,10 @@ const MP9_SIMPLE_UNDER = 13;
    where they are by colour as well as by name. Each passes 4.5:1 with white text and on white. */
 const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", community: "mentor", growth: "grow", results: "grow", passport: "grow", journal: "grow",
   learn: "learn", sat: "learn", timetable: "learn", tools: "learn", opps: "learn", me: "account", money: "account", records: "account", help: "account" };
-const MP9_ACCENT = { today: "#c2410c", mentor: "#6d28d9", grow: "#15803d", learn: "#1d4ed8", account: "#334155" };
+/* Area hues stay clear of the status colours (green = done, amber-brown = warning, red = a problem),
+   so a colour never says two things: Grow is teal, not green. Today is the NGG amber, deepened to
+   pass 4.5:1 as text. Each is used in small doses — the tab, the icon, a tint — never as a page fill. */
+const MP9_ACCENT = { today: "#a15c07", mentor: "#6d28d9", grow: "#0f766e", learn: "#1d4ed8", account: "#475569" };
 const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */

@@ -1860,3 +1860,19 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   three-column grid (`li.cols`).
 - Saturday no longer shows the day twice (the formation block repeated the plan).
 - Today puts the account summary last (CSS `order`); the simple view hides it.
+
+## 2026-10-18 — Member portal colour, made calmer and rule-based
+
+The first pass (a three-colour gradient banner, solid area fills) read as
+rough. The colour now follows rules a change can be checked against:
+- **60-30-10**: neutral surfaces carry the page; the area's tint marks where you
+  are (`--m9-tint`, `--m9-line`); the ONE solid colour is the next action (the
+  banner's Start, NGG amber `#f5b026` with dark text, 10.4:1).
+- **Selected is a state**: a selected phone tab gets the tint and the area's
+  ink, not a fill.
+- **Area hues never reuse status hues**: Grow is teal `#0f766e`, so green
+  still means done; Today is a deepened NGG amber `#a15c07`. Every text pairing
+  is 4.5:1 or better (checked, listed in the commit).
+- **Never colour alone** (WCAG 1.4.1): states keep their icon and label.
+- **Age**: the simple view's tints are slightly stronger; teenagers get the calm
+  ones (NN/g found teens prefer clean layouts and dislike loud graphics).
