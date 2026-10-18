@@ -83,6 +83,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 </section></sc-if>
 <sc-if value="{{ onToday }}" hint-placeholder-val="{{ true }}">
   <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;color:#6b6b72">{{ subtitle }}</span><span style="font-size:24px;font-weight:700;letter-spacing:-0.02em">{{ greeting }}</span></div></sc-if>
+  <div style="display:contents">{{ todaySlot }}</div>
   <section aria-labelledby="acc-h" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:14px">
     <div style="display:flex;align-items:center;gap:8px"><h2 id="acc-h" style="margin:0;font-size:16px;font-weight:600;flex:1">Account</h2><button onClick="{{ goMoney }}" style="height:36px;padding:0 4px;border:0;background:none;font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">Full statement<i class="ph ph-caret-right"></i></button></div>
     <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">

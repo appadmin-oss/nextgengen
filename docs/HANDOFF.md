@@ -1842,3 +1842,21 @@ Tests: `run.php` +17; new `tests/assign-desk.test.js` (22).
   texts that number via `sms_send()` (Telegram first). A failed send deletes
   the waiting code. `mfa_mask_phone()` for display. Client: `mfa.jsx`
   (phone field, "Text me a code").
+
+## 2026-10-18 — Member portal: energy, and nothing left outside the column
+
+- **Today's banner** (`mp9-more.jsx` `hero()`, in the new `{{ todaySlot }}` of
+  `member-portal-v9.dc.html`, under the greeting): level, XP to the next level
+  (momentum: 250 XP a level), streak, and the ONE next step from the To do list
+  with its button; "All caught up" with the momentum nudge otherwise.
+- **One colour per area** (`MP9_AREA_OF`, `MP9_ACCENT`; `markArea()` writes
+  `data-area` / `data-view` on the portal frame): the area's tab underline, its
+  phone pill, the bottom-bar item and the sidebar icon take it. Each passes 4.5:1.
+- **Hand-written panels sit in the design's column** (`.m9x-end`, and the
+  Today slot inside the column): Study helper, evaluations and the view switch
+  used to render full-bleed outside it.
+- **Scorecard rows had no names**: `MP_SKILLS` arrives as `[name, hint]`
+  pairs; the controller read only strings and objects. The rows also get their
+  three-column grid (`li.cols`).
+- Saturday no longer shows the day twice (the formation block repeated the plan).
+- Today puts the account summary last (CSS `order`); the simple view hides it.

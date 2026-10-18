@@ -125,6 +125,8 @@ async function as(memberId, admin, viewport) {
     await mb.waitForSelector('.m9-app main', { timeout: 60000 }).catch(async e => { console.error('DEBUG', mb.errs.join('\n'), (await mb.innerText('body')).slice(0, 800)); throw e; });
     await mb.waitForFunction(() => /Good (morning|afternoon|evening), Tolu/.test(document.body.innerText), null, { timeout: 30000 });
     const today = await main(mb);
+    chk('Today: the banner shows the level, the XP to the next one, and one next step', await mb.isVisible('.m9x-hero') && /Level \d/.test(today) && /XP to/.test(today) && /Your next step|All caught up/i.test(today));
+    chk('Today: the banner sits inside the page column, under the greeting', await mb.evaluate(() => { const h = document.querySelector('.m9x-hero'); return !!h && !!h.closest('main > div'); }));
     chk('/dashboard opens the Member Portal for an NGG member, by name', /Tolu/.test(today));
     chk('Today: account, To do, the mentor’s last message and the Leadership Index from the server', /Account/.test(today) && /To do/i.test(today) && /Well done leading the team/.test(today) && /62 \/ 100/.test(today) && /\+8/.test(today));
     await shot(mb, 'today');
@@ -154,6 +156,8 @@ async function as(memberId, admin, viewport) {
     await nav(mb, 'Grow');
     await mb.waitForFunction(() => /My Leadership Index/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
     await mb.click('main [role="tab"]:has-text("My view")');
+    const growTxt = await main(mb);
+    chk('Growth: every row of the scorecard is named (the skills arrive as [name, hint] pairs)', /Communication/.test(growTxt) && /Speaks and listens clearly/.test(growTxt) && /Multiplication/.test(growTxt));
     await mb.click('main button[aria-label^="Raise"]');
     await mb.click('main button:has-text("Save my scores"), main button:has-text("Update my scores")');
     await mb.waitForTimeout(1200);

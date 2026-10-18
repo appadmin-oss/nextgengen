@@ -608,9 +608,10 @@ Object.assign(Mp9Portal.prototype, {
       ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
+    const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
     const navGroups = [{ h: "", hasH: false, items: areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, bg: on ? "#fff" : "transparent", sh: on ? "0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)" : "none", fw: on ? 600 : 500, badge: a.badge, hasBadge: !!a.badge, go: () => this.go(a.ids[0]) }; }) }];
-    const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? "#0b0b0c" : "#5a5a60", fw: on ? 600 : 500, bar: on ? "#0b0b0c" : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
-    const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? "#0b0b0c" : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
+    const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
+    const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
     const subs = { sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
@@ -649,9 +650,53 @@ Object.assign(Mp9Portal.prototype, {
     };
   },
 
+  /* Today, under the greeting: the record drive when it is asking, then the
+     banner (level, XP, streak and the ONE next thing to do), then the simple
+     view's big buttons. In the design's column, so it lines up with the cards. */
+  todaySlot() {
+    const s = this.state, rec = this.props.rec;
+    if (s.scr !== "today" || !this.dd("today")) return null;
+    return <>
+      {rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
+      {this.hero()}
+      {this.simple() ? this.simpleTiles() : null}
+    </>;
+  },
+  hero() {
+    const t = this.dd("today") || {}, mom = (this.dd("mom") || {}).momentum || null, stats = (this.dd("dash") || {}).stats || {};
+    const LEVELS = ["Seedling", "Sprout", "Sapling", "Rooted", "Vanguard"];
+    const level = (mom && mom.level) || stats.level || 1, name = (mom && mom.levelName) || LEVELS[Math.min(4, level - 1)];
+    const xp = mom ? mom.xp : 0, toNext = mom ? mom.xpToNext : 250, span = xp + toNext || 250, pct = level >= 5 ? 100 : Math.round(xp / span * 100);
+    const streak = (mom && mom.streak) || stats.streak || 0;
+    const first = (t.todo || [])[0] || null;
+    const scrOf = x => MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
+    const nudge = mom && mom.nudges && mom.nudges[0] ? mom.nudges[0].text : "";
+    const left = (t.todo || []).length;
+    return <section className="m9x-hero" aria-labelledby="m9x-hero-h">
+      <div className="m9x-hero-top">
+        <span className="m9x-hero-lvl"><i className="ph-fill ph-plant" aria-hidden="true"/>Level {level} · {name}</span>
+        <span className={"m9x-hero-streak" + (streak ? " is-on" : "")}><i className="ph-fill ph-fire" aria-hidden="true"/>{streak ? streak + "-day streak" : "Start a streak today"}</span>
+      </div>
+      <div className="m9x-hero-xp">
+        <div className="m9x-hero-bar" role="progressbar" aria-label="Progress to the next level" aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}><span style={{ width: pct + "%" }}/></div>
+        <span className="m9x-hero-xpt">{level >= 5 ? "Top level. You’re a Vanguard." : toNext + " XP to " + LEVELS[Math.min(4, level)]}</span>
+      </div>
+      {first ? <div className="m9x-hero-next">
+        <span className="m9x-hero-eyebrow" id="m9x-hero-h">Your next step{left > 1 ? " · " + left + " things to do" : ""}</span>
+        <b className="m9x-hero-t">{first.title}</b>
+        {first.subtitle ? <span className="m9x-hero-s">{first.subtitle}</span> : null}
+        <button type="button" className="m9x-hero-go" onClick={() => this.go(scrOf(first))}>{first.cta || "Start"}<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+      </div> : <div className="m9x-hero-next is-done">
+        <span className="m9x-hero-eyebrow" id="m9x-hero-h">All caught up</span>
+        <b className="m9x-hero-t">Nothing waiting for you. Nice work.</b>
+        {nudge ? <span className="m9x-hero-s">{nudge}</span> : null}
+        <button type="button" className="m9x-hero-go" onClick={() => this.go("tools")}>Practise something<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+      </div>}
+    </section>;
+  },
   simpleTiles() {
     const first = this.me().first;
-    return <nav className="m9x-slot m9x-kid" aria-label="Where do you want to go?">
+    return <nav className="m9x-kid" aria-label="Where do you want to go?">
       <h2 className="m9x-kid-h">{first ? "Hi " + first + "! " : ""}Where do you want to go?</h2>
       <ul className="m9x-kid-grid">{MP9_SIMPLE_TILES.map(([id, label, icon]) =>
         <li key={id}><button type="button" className="m9x-kid-tile" onClick={() => this.go(id)}><i className={icon} aria-hidden="true"/><span>{label}</span></button></li>)}</ul>
@@ -682,8 +727,6 @@ Object.assign(Mp9Portal.prototype, {
     const rec = this.props.rec;
     return <>
       {loading ? <div className="m9x-slot"><div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div></div> : null}
-      {s.scr === "today" && rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-slot m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
-      {s.scr === "today" && this.simple() ? this.simpleTiles() : null}
     </>;
   },
   slotEnd() {
@@ -705,7 +748,6 @@ Object.assign(Mp9Portal.prototype, {
       return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")
       ? <Mp9Evals data={this.dd("evals")} err={s.er.evals} busy={!!s.ld.evals} retry={() => this.load("evals")} latestOnly={s.scr === "sat"} mentor={this.mentorInfo().first}/> : null;
-    if (s.scr === "sat" && typeof FormationDay === "function") return <div className="m9x-slot"><FormationDay audience="member" compact={true}/>{evals}</div>;
     if (evals) return <div className="m9x-slot">{evals}</div>;
     return null;
   },
@@ -721,9 +763,15 @@ Object.assign(Mp9Portal.prototype, {
     const mine = this.dd("mine") || {}, sc = mine.mentorScores || [];
     const tot = sc[0] ? sc[0].total : null, prevT = sc[1] ? sc[1].total : null;
     const sess = (this.dd("dash") || {}).session || null, stats = (this.dd("dash") || {}).stats || {};
+    /* What follows the design's column (study helper, evaluations, the view
+       switch) is laid out IN that column: same width, same side padding. It
+       used to sit outside it, full-bleed against the screen edge, and read as
+       something left on the page by mistake. */
+    const endEl = this.slotEnd();
+    const end = endEl ? <div className={"m9x-end" + (narrow ? " is-narrow" : "")}>{endEl}</div> : null;
     const vals = Object.assign({
       rootRef: this.rootRef, narrow, wide, outerPad: "0", frameW: "100%", frameH: "100%", frameR: "0", frameSh: "none",
-      mainPad: narrow ? "16px 16px 28px" : "32px 40px 56px", toastBottom: narrow ? "92px" : "24px",
+      mainPad: narrow ? (end ? "16px 16px 0" : "16px 16px 28px") : (end ? "32px 40px 0" : "32px 40px 56px"), toastBottom: narrow ? "92px" : "24px",
       greeting: "Good " + mp9Greeting() + ", " + me.first,
       me: { ...me, name: me.name || "…" }, mentor: { name: M.name, first: M.first, initials: M.initials, role: M.role, months: mine.mentor && mine.mentor.since ? Math.max(1, Math.round((Date.now() - new Date(mine.mentor.since + "T12:00:00Z")) / (30.4 * 864e5))) : 1, since: mine.mentor && mine.mentor.since ? mp9Date(mine.mentor.since, { month: "long", year: "numeric" }) : "this session", next: this.satDate() ? mp9Date(this.satDate(), { weekday: "short", day: "numeric", month: "short" }) + " · 8:30 at the centre" : "Saturday at the centre" },
       sessEnds: me.sessEnds,
@@ -741,7 +789,7 @@ Object.assign(Mp9Portal.prototype, {
       retry: () => { this.setState({ er: {} }); MP9_CORE.forEach(k => this.load(k)); }, signIn: () => {},
       toastOn: !!s.toast, toastText: s.toast ? s.toast.text : "", toastUndo: !!(s.toast && s.toast.undo), toastUndoFn: () => { s.toast && s.toast.undo && s.toast.undo(); this.setState({ toast: null }); },
       sys: this.sysVals(), st: this.standingVals(go), gt: this.subTabs("gtab", [["score", "Scorecard", "ph ph-chart-line-up"], ["week", "This week", "ph ph-list-checks"], ["well", "Wellness", "ph ph-heartbeat"], ["journey", "Journey", "ph ph-path"]]),
-      mainSlot: this.slot(), mainSlotEnd: this.slotEnd(),
+      mainSlot: this.slot(), mainSlotEnd: end, todaySlot: this.todaySlot(),
     },
       this.accVals(), this.todayVals(go), this.liVals(go), this.growVals(go), this.wellVals(), this.qlineVals(), this.journeyVals(), this.momentumVals(),
       { mv: this.mentorVals(go) }, this.chatVals(),

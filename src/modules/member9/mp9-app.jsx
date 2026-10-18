@@ -42,6 +42,11 @@ const MP9_LOADERS = {
   evals: () => NGGApi.member.pod.read("evals"),
 };
 const MP9_SIMPLE_UNDER = 13;
+/* Which area a screen belongs to, and that area's colour: one colour per place, so a child knows
+   where they are by colour as well as by name. Each passes 4.5:1 with white text and on white. */
+const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", community: "mentor", growth: "grow", results: "grow", passport: "grow", journal: "grow",
+  learn: "learn", sat: "learn", timetable: "learn", tools: "learn", opps: "learn", me: "account", money: "account", records: "account", help: "account" };
+const MP9_ACCENT = { today: "#c2410c", mentor: "#6d28d9", grow: "#15803d", learn: "#1d4ed8", account: "#334155" };
 const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */
@@ -90,7 +95,10 @@ class Mp9Portal extends React.Component {
     pal: false, palQ: "", palI: 0, mState: {}, qMood: null, qText: "", qSaved: [], liked: {}, cheered: {}, cmts: {}, cDraft: {}, cOpen: {}, daysAll: false, ledgerAll: false,
     rKind: null, rF: {}, nUnread: false, codeShown: false, evType: null, evText: "", evFile: null, evSent: false,
   };
+  /* Each area has its own colour; the stylesheet reads it from data-area on the portal's frame. */
+  markArea() { const r = this.rootRef.current, a = MP9_AREA_OF[this.state.scr] || "today", v = this.viewMode(); if (!r) return; if (r.dataset.area !== a) r.dataset.area = a; if (r.dataset.view !== v) r.dataset.view = v; }
   componentDidMount() {
+    this.markArea();
     this.ro = new ResizeObserver(([e]) => this.setState({ w: e.contentRect.width }));
     if (this.rootRef.current) this.ro.observe(this.rootRef.current);
     MP9_CORE.forEach(k => this.load(k));
@@ -113,6 +121,7 @@ class Mp9Portal extends React.Component {
   }
   componentDidUpdate(pp, ps) {
     this.rsEffects();
+    this.markArea();
     if (this.state.pal && !ps.pal) setTimeout(() => this.palRef.current && this.palRef.current.focus(), 30);
     if (ps.sheet && !this.state.sheet && this._sheetFrom) { const el = this._sheetFrom; this._sheetFrom = null; setTimeout(() => { try { el.focus(); } catch (_) {} }, 0); }
   }
@@ -324,7 +333,8 @@ class Mp9Portal extends React.Component {
   /* ── My growth ───────────────────────────────────────────────────────── */
   liVals(go) {
     const s = this.state, set = o => this.setState(o), mine = this.dd("mine") || {}, mentor = this.mentorInfo().first;
-    const skills = (mine.skills || []).map(x => typeof x === "string" ? [x, ""] : [x.label || x.name || x.k || "", x.hint || x.desc || x.h || ""]);
+    // MP_SKILLS arrives as [name, what it looks like] pairs; read every shape, or the rows have no names.
+    const skills = (mine.skills || []).map(x => typeof x === "string" ? [x, ""] : Array.isArray(x) ? [String(x[0] || ""), String(x[1] || "")] : [x.label || x.name || x.k || "", x.hint || x.desc || x.h || ""]);
     const LI = skills.length ? skills : [];
     const sc = mine.mentorScores || [];
     const cur = sc[0] ? sc[0].scores : null, prev = sc[1] ? sc[1].scores : null;
@@ -350,6 +360,8 @@ class Mp9Portal extends React.Component {
         NGGApi.member.chatSend("Can we make " + LI[focusI][0] + " my next goal? We can write it together on Saturday.").then(() => { set({ liAsked: true }); this.refresh(["chat"]); this.toast("Sent to " + mentor + ". You’ll write the goal together on Saturday."); }).catch(e => this.toast(mp9Err(e))); },
       modes: [["mentor", mentor + "’s view"], ["mine", "My view"], ["both", "Side by side"]].map(([id, l]) => ({ l, on: mode === id ? "true" : "false", bg: mode === id ? "#fff" : "transparent", sh: mode === id ? "0 1px 2px rgba(11,11,12,.1)" : "none", go: () => set({ liMode: id }) })),
       isMine: mode === "mine", notMine: mode !== "mine", isBoth: mode === "both", showBars: true,
+      // Name | bars | the score (or the − + buttons): the row's three columns, which the design leaves to the controller.
+      cols: "minmax(0, 1.3fr) minmax(64px, 1fr) auto",
       rows: LI.map(([l, h], i) => { const c0 = cur ? cur[i] : null, p = prev ? prev[i] : null, dd = c0 !== null && p !== null ? c0 - p : null;
         return { l, h, self: self[i], gap: mode === "both" && c0 !== null && Math.abs(self[i] - c0) >= 2,
           vT: mode === "both" ? self[i] + " · " + (c0 === null ? "–" : c0) : c0 === null ? "–" : String(c0), dT: mode === "both" ? "you · " + mentor : dd ? (dd > 0 ? "+" : "") + dd : "–",
@@ -359,7 +371,7 @@ class Mp9Portal extends React.Component {
           up: () => set({ liSelf: { ...(s.liSelf || {}), [i]: Math.min(10, self[i] + 1) } }), dn: () => set({ liSelf: { ...(s.liSelf || {}), [i]: Math.max(0, self[i] - 1) } }) }; }),
       saveL: saved ? "Saved" : dueSelf ? "Save my scores" : "Update my scores", saveOp: saved ? 0.55 : 1, saveNote: saved ? mentor + " will see them before your next one-to-one." : "Only you and " + mentor + " see these.",
       saveSelf: () => { if (saved) return; NGGApi.member.pod.act("selfScore", { scores: self }).then(() => { set({ liSaved: self.join(","), liMode: cur ? "both" : "mine" }); this.refresh(["mine"]); this.toast(cur ? "Saved. Here’s how your view compares with " + mentor + "’s." : "Saved. " + mentor + " sees them before your next one-to-one."); }).catch(e => this.toast(mp9Err(e))); },
-      trend: trend.length ? trend : [{ m: "–", v: "", h: "4%", bg: "#e6e5e0" }],
+      trend: trend.length ? trend : [{ m: "Your first month shows here", v: "", h: "4%", bg: "#e6e5e0" }],
       mini: curV.map((v, i) => ({ h: (v * 10) + "%", bg: i === focusI ? "#f5b026" : "#0b0b0c" })),
     } };
   }
@@ -519,7 +531,7 @@ class Mp9Portal extends React.Component {
     const prog = goal ? goal.progress || 0 : 0;
     const MS = ["Getting started", "First steps taken", "Halfway there", "Nearly there", "Done"];
     const sc = mine.mentorScores || [];
-    const LI = (mine.skills || []).map(x => typeof x === "string" ? x : x.label || x.name || "");
+    const LI = (mine.skills || []).map(x => typeof x === "string" ? x : Array.isArray(x) ? String(x[0] || "") : x.label || x.name || "");
     const indicators = LI.map((k, i) => {
       const o = sc.slice().reverse().map(r => Math.min(3, Math.round((r.scores[i] || 0) / 10 * 3)));
       const first = o[0], lastV = o[o.length - 1];
