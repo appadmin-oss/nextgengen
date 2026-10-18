@@ -108,11 +108,16 @@ function parse(src) {
 function decode(s) { return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
 
 /* ── Expressions ───────────────────────────────────────────────────────── */
+/* A loop variable is emitted under a prefix, never under the design's own
+   name: a design that loops `as="h"` (a history row) otherwise shadows the
+   view's `h` (React.createElement) inside the loop, and the screen throws
+   "h is not a function" the moment that list has a row. */
+const LOOP = name => 'l_' + name;
 const PATH = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
 function exprOf(p, scope) {
   if (!PATH.test(p)) throw new Error('not a plain path: {{ ' + p + ' }} in ' + SRC);
   const [head, ...rest] = p.split('.');
-  const base = scope.includes(head) ? head : 'v.' + head;
+  const base = scope.includes(head) ? LOOP(head) : 'v.' + head;
   // Optional chaining keeps a missing value from throwing, exactly as the
   // prototype runtime renders a missing value as nothing.
   return [base].concat(rest).join('?.');
@@ -176,7 +181,7 @@ function emitNode(n, scope, ind) {
     const as = String(A.as);
     const sc2 = scope.concat([as, as + '__i']);
     const body = n.kids.map(k => emitNode(k, sc2, ind + 1)).filter(Boolean);
-    return 'dcL(' + l.js + ').map((' + as + ', ' + as + '__i) => h(F, { key: ' + as + '__i }, ' + body.join(', ') + '))';
+    return 'dcL(' + l.js + ').map((' + LOOP(as) + ', ' + LOOP(as + '__i') + ') => h(F, { key: ' + LOOP(as + '__i') + ' }, ' + body.join(', ') + '))';
   }
   if (n.tag === 'x-dc') return 'h(F, null, ' + kids().join(', ') + ')';
   const props = [];

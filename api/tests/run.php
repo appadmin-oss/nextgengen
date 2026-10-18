@@ -27973,6 +27973,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('mfa · the challenge emails a code', $chal['type'] === 'email' && !empty($mm[1]));
     chk('mfa · and that code passes the step', !empty(mfa_verify($ins + ['answer' => $mm[1] ?? ''])['ok']));
     chk('mfa · once only', (mfa_verify($ins + ['answer' => $mm[1] ?? ''])['error'] ?? '') === 'wrong_answer');
+    // A code by text message: offered only while a text channel is configured.
+    chk('mfa · no text channel, no text-message option', !in_array('sms', mfa_methods_for('team'), true) && (mfa_enroll_start($ins + ['type' => 'sms'])['error'] ?? '') === 'bad_type');
+    $GLOBALS['CONFIG']['sms'] = ['smsgate' => ['username' => 'u', 'password' => 'p']];
+    $texts = [];
+    $GLOBALS['__sms_http_mock'] = function ($url, $opts) use (&$texts) { $b = json_decode($opts[CURLOPT_POSTFIELDS], true); $texts[] = ['to' => $b['phoneNumbers'][0] ?? '', 'text' => $b['textMessage']['text'] ?? '']; return ['ok' => true, 'body' => '{"id":"m1","state":"Pending"}']; };
+    $smsCode = function () use (&$texts) { $t = $texts ? $texts[count($texts) - 1]['text'] : ''; return preg_match('/code is (\d{6})/', (string)$t, $sm) ? $sm[1] : ''; };
+    chk('mfa · with a text channel, every kind may choose a text-message code', in_array('sms', mfa_methods_for('team'), true) && in_array('sms', mfa_methods_for('member'), true) && in_array('sms', mfa_methods_for('guardian'), true));
+    chk('mfa · a number that is not one is refused before anything is sent', (mfa_enroll_start($ins + ['type' => 'sms', 'phone' => '12'])['error'] ?? '') === 'bad_number' && !$texts);
+    $st = mfa_enroll_start($ins + ['type' => 'sms', 'phone' => '0803 555 0101']);
+    chk('mfa · setup texts a code to the number typed, shown masked', !empty($st['ok']) && $st['type'] === 'sms' && (end($texts)['to'] ?? '') === '+2348035550101' && str_ends_with($st['masked'], '0101') && !str_contains($st['masked'], '555'));
+    chk('mfa · the text carries the code and no link', $smsCode() !== '' && !preg_match('#https?://#', end($texts)['text']));
+    chk('mfa · a wrong code does not set it', (mfa_enroll_finish($ins + ['type' => 'sms', 'code' => '000000', 'pendingEnroll' => true])['error'] ?? '') === 'code_wrong');
+    attempt_reset('mfa', 'VOL-INS-26-901');
+    $fin = mfa_enroll_finish($ins + ['type' => 'sms', 'code' => $smsCode(), 'pendingEnroll' => true]);
+    chk('mfa · the texted code sets it, on the number it reached', !empty($fin['ok']) && mfa_enrolment('VOL-INS-26-901')['type'] === 'sms' && mfa_enrolment('VOL-INS-26-901')['to'] === '+2348035550101' && count($fin['backupCodes'] ?? []) === MFA_BACKUP_N);
+    $nT = count($texts);
+    $chal = mfa_challenge($ins);
+    chk('mfa · the sign-in step texts that number', $chal['type'] === 'sms' && count($texts) === $nT + 1 && end($texts)['to'] === '+2348035550101' && str_ends_with($chal['masked'], '0101'));
+    chk('mfa · and the texted code passes it, once', !empty(mfa_verify($ins + ['answer' => $smsCode()])['ok']) && (mfa_verify($ins + ['answer' => $smsCode()])['error'] ?? '') === 'wrong_answer');
+    chk('mfa · status names where codes go, masked', str_ends_with((string)mfa_status($ins)['sentTo'], '0101'));
+    $GLOBALS['__sms_http_mock'] = fn($url, $opts) => ['ok' => false, 'error' => 'http_500'];
+    db_exec("DELETE FROM member_state WHERE memberId = 'VOL-INS-26-901' AND stateKey = 'mfa.code'");
+    chk('mfa · a text that fails says so, and leaves no code waiting', (mfa_challenge($ins)['error'] ?? '') === 'sms_failed' && mfa_get('VOL-INS-26-901', 'mfa.code') === null);
+    unset($GLOBALS['__sms_http_mock']); $GLOBALS['CONFIG']['sms'] = null;
+    mfa_put('VOL-INS-26-901', 'mfa', ['type' => 'email', 'since' => now_iso()]);
     chk('mfa · the team cannot turn it off while it is required', (mfa_off($ins + ['current' => 'x'])['error'] ?? '') === 'mfa_required_by_policy');
 
     // Guardians: a family PIN.

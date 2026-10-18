@@ -162,6 +162,18 @@ async function as(memberId, admin, viewport) {
     const km = q(`db_row("SELECT level, evidence FROM skill_marks WHERE subjectId = 'NGG-IN-K2' AND skill = 'Reads an error message and acts on it'")`) || {};
     chk('Skills: the new level and its evidence are on the record', Number(km.level) === 3 && /missing tag/.test(km.evidence || ''));
     await shot(ip, 'skills');
+    // Analytics and Teach: both loop over lists whose design variable was once `h`, which shadowed
+    // the view's own createElement and crashed the screen ("h is not a function").
+    await ip.click('main >> text=Analytics');
+    await ip.waitForFunction(() => /Where the class is on each skill/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    const anaTxt = await ip.innerText('body');
+    chk('Analytics: opens, with the class on each skill and every student’s row', /Where the class is on each skill/.test(anaTxt) && /Every student, every skill/.test(anaTxt) && !/SOMETHING BROKE/i.test(anaTxt));
+    await ip.click('nav >> text=Saturday'); await ip.click('main >> text=Teach');
+    await ip.waitForFunction(() => /Hinge check/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    const teachTxt = await ip.innerText('body');
+    chk('Teach: opens with the hinge question’s answers to count', /Hinge check/.test(teachTxt) && /which tag is a heading/.test(teachTxt) && !/SOMETHING BROKE/i.test(teachTxt));
+    const views = ['src/modules/instructor6/ip6-view.jsx', 'src/modules/member9/mp9-view.jsx', 'src/modules/mentor15/mp15-view.jsx'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'));
+    chk('Generated views: every loop variable is prefixed, so none can shadow h or F', views.every(t => !/\.map\(\((?!l_)/.test(t)));
     // Students → one student
     await ip.click('nav >> text=Students');
     await ip.waitForFunction(() => /Zara Ibrahim/.test(document.querySelector('main').innerText), null, { timeout: 20000 });

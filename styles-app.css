@@ -11860,7 +11860,6 @@ button.m9x-ev-sum { cursor: pointer; }
 .asd-work { white-space: pre-wrap; background: var(--asd-bg); border: 1px solid var(--asd-line); border-radius: var(--asd-r-sm); padding: 12px; font-size: 14px; line-height: 1.55; max-height: 320px; overflow: auto; }
 .asd-missing h3 { margin: 6px 0 8px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
 .asd-missing ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px 14px; font-size: 13.5px; }
-.ip6-asd { padding: 8px 0 24px; }
 
 /* ── The member's hand-in panel (AsdHandIn) — the member portal's own light ink ── */
 .ahi-veil { position: fixed; inset: 0; background: rgba(11, 11, 12, .45); display: flex; align-items: flex-end; justify-content: center; z-index: 900; padding: 0; }
@@ -12004,3 +12003,11 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-view-opt span { font-size: 13px; color: #4a4a50; }
 .m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
 .m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+
+/* Instructor portal: the assignment desk sits in the page's column, not under the sidebar's edge. */
+.ip6-asd { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 0 40px 56px; }
+.ip6-asd.is-narrow { padding: 0 16px 28px; }
+.ip6-note { display: flex; gap: 10px; align-items: flex-start; margin: 0; max-width: 880px; padding: 12px 14px; border-radius: 14px; background: #fdf6e3; color: #6e4d00; font-size: 14px; line-height: 1.5; }
+.ip6-note i { font-size: 18px; margin-top: 1px; }
+.ip6-slot { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 32px 40px 0; }
+.ip6-slot.is-narrow { padding: 16px 16px 0; }

@@ -175,6 +175,9 @@ class Ip6Portal extends React.Component {
     const e = need.map(k => S.er[k]).find(Boolean);
     if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
     if (need.some(k => S.ld[k] || !S.d[k])) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div></div>;
+    // Analytics before any Saturday has a closed roll: say why the attendance chart is empty, and what fills it.
+    if (S.scr === 'analytics' && S.d.hist && !((S.d.hist.weeks) || []).some(w => w.closed))
+      return <div className={"ip6-slot" + (S.w < 760 ? " is-narrow" : "")}><p className="ip6-note" role="status"><i className="ph ph-info" aria-hidden="true"/>No Saturday has a closed roll yet, so attendance has nothing to show. Close the roll after the class starts and each Saturday appears here.</p></div>;
     return null;
   }
 
@@ -225,8 +228,9 @@ class Ip6Portal extends React.Component {
       curriculum: course.name, students: L.length + ' in your class', student: [selM.age !== null && selM.age !== undefined ? 'Age ' + selM.age : '', selM.mentor ? 'mentor ' + selM.mentor : 'no mentor yet'].filter(Boolean).join(' · '), support: 'You’re not on your own', report: 'Goes straight to the safeguarding officer', more: '' };
     const rem = S.timer ? Math.max(0, Math.ceil((S.timer - Date.now()) / 1000)) : 0;
     const out = {
-      rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className="ip6-asd"><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
-      mainPad: narrow ? '16px 16px 28px' : '32px 40px 56px', toastBottom: narrow ? '92px' : '24px',
+      rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
+      // The assignment desk follows the column, so the column keeps no bottom padding above it.
+      mainPad: narrow ? (cur === 'assignments' ? '16px 16px 0' : '16px 16px 28px') : (cur === 'assignments' ? '32px 40px 0' : '32px 40px 56px'), toastBottom: narrow ? '92px' : '24px',
       me, course, navGroups: areaNav, tabbar: areaTabbar, moreList, areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.label, title: area.kids.length > 1 && !inDetail ? area.label : titles[cur], subtitle: subs[cur] || '', showBack: S.hist.length > 0, back: () => this.goBack(),
       goReport: () => this.goTo('report'), go: id => () => this.goTo(id),
       timerOn: !!S.timer, timerText: Math.floor(rem / 60) + ':' + String(rem % 60).padStart(2, '0'), stopTimer: () => set({ timer: null }),
@@ -467,7 +471,9 @@ class Ip6Portal extends React.Component {
     o.kpis = [['Attendance', totAll ? Math.round(totHere / totAll * 100) + '%' : '—', S.anaRange === '4w' ? 'last 4 Saturdays' : wk.length + ' Saturdays with a closed roll'], ['Skill moves up', String(ups), 'across ' + C.skills.length + ' skills'], ['Exit tickets', ex.all ? Math.round(ex.got / ex.all * 100) + '%' : '—', 'got it, first time'], ['Need support', String(new Set(stalled.concat(atRisk).map(m => m.id)).size), 'low attendance or exit tickets']].map(([k, v, d]) => ({ k, v, d }));
     o.attBars = wk.map(w => { const n = w.here, mx = Math.max(1, w.here + w.away); return { w: ip6Date(w.date), n, h: Math.round(n / mx * 100) + '%', lbl: n + ' of ' + mx + ' on ' + ip6Date(w.date) }; });
     o.skillAvg = C.short.map((t, k) => { const vs = L.map(m => lvlOf(m, k)).filter(v => v !== null && v !== undefined); const a = vs.length ? vs.reduce((n, v) => n + v, 0) / vs.length : 0; const up = L.filter(m => m.prev[k] !== null && lvlOf(m, k) !== null && lvlOf(m, k) > m.prev[k]).length;
-      return { t, a: vs.length ? a.toFixed(1) : '—', w: Math.round(a / 3 * 100) + '%', up, hasUp: up > 0, dist: [0, 1, 2, 3].map(l => ({ bg: IP6_LVCOL[l], w: vs.length ? Math.round(vs.filter(v => v === l).length / vs.length * 100) + '%' : '0%' })) }; });
+      return { t, a: vs.length ? a.toFixed(1) : '—', w: Math.round(a / 3 * 100) + '%', up, hasUp: up > 0, dist: [0, 1, 2, 3].map(l => ({ bg: IP6_LVCOL[l], w: L.length ? Math.round(vs.filter(v => v === l).length / L.length * 100) + '%' : '0%' }))
+        // Out of the whole class, not of those marked: one child marked is not a full bar. The rest is "not marked yet".
+        .concat(L.length > vs.length ? [{ bg: '#e6e5e0', w: Math.round((L.length - vs.length) / L.length * 100) + '%' }] : []) }; });
     o.heat = L.map(m => ({ name: m.first, open: () => this.goTo('student', { sel: m.id, stTab: 'overview' }), att: m.att !== null && m.att !== undefined ? m.att + '%' : '—', attFg: m.att !== null && m.att < 80 ? '#b0361c' : '#4a4a50',
       cells: C.skills.map((_, k) => { const v = lvlOf(m, k); const has = v !== null && v !== undefined; return { bg: has ? IP6_LVCOL[v] : '#e6e5e0', fg: v === 3 ? '#fff' : '#0b0b0c', t: has ? IP6_LEVELS[v][0] : '·', tip: C.short[k] + ': ' + (has ? IP6_LEVELS[v] : 'not marked'), up: has && m.prev[k] !== null && v > m.prev[k] }; }) }));
     o.heatHead = C.short.map(t => ({ t }));
