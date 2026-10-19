@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 161;
+const NGG_SCHEMA_TARGET = 162;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4863,6 +4863,36 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_crule_id ON conduct_rules(ruleId);
             ALTER TABLE attendance_duty ADD COLUMN startTime TEXT DEFAULT '';
             ALTER TABLE attendance_duty ADD COLUMN endTime TEXT DEFAULT '';
+        ",
+        /* Community v3 (domain/community-v3.php). A question can have an
+           accepted answer; a homework post names its task; a video carries its
+           chapters, captions and summary points, and a code post its source;
+           a moderator's decision is timed so the median review time is real;
+           a safeguarding case has a severity and a lead; a member's place in a
+           video is kept on the server, not in one browser. */
+        162 => "
+            ALTER TABLE community_posts ADD COLUMN answerId TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN homeworkId TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaMeta TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaCode TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN reviewedBy TEXT DEFAULT '';
+            ALTER TABLE community_comments ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN severity TEXT DEFAULT 'high';
+            ALTER TABLE community_safeguarding ADD COLUMN leadId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN leadName TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN postId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN source TEXT DEFAULT 'screen';
+            ALTER TABLE community_safeguarding ADD COLUMN note TEXT DEFAULT '';
+            CREATE TABLE IF NOT EXISTS community_video_progress (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              postId TEXT NOT NULL,
+              pos INTEGER DEFAULT 0,
+              dur INTEGER DEFAULT 0,
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cvp_member_post ON community_video_progress(memberId, postId);
         ",
     ];
 

@@ -23,7 +23,15 @@ if ($method === 'GET') {
     elseif ($view === 'homeworkList') $res = gs_call('community.homeworkList', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
     // Who is typing. Read on the channel's existing poll — no extra timer.
     elseif ($view === 'typing')    $res = gs_call('community.typingWho', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
-    else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
+    // Community v3: the viewer, once; the home carousel; homework as a board;
+    // files across the viewer's channels; a video's chapters and captions.
+    elseif ($view === 'v3boot')    $res = gs_call('community.v3boot', ['memberId' => $s['mid']]);
+    elseif ($view === 'home')      $res = gs_call('community.home', ['memberId' => $s['mid']]);
+    elseif ($view === 'hwBoard')   $res = gs_call('community.hwBoard', ['memberId' => $s['mid']]);
+    elseif ($view === 'v3files')   $res = gs_call('community.v3files', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '']);
+    elseif ($view === 'media')     $res = gs_call('community.media', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
+    elseif ($view === 'videoPoints') $res = gs_call('community.videoPoints', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
+    else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0), 'scope' => $_GET['scope'] ?? '']);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -72,6 +80,10 @@ if ($method === 'GET') {
         $res = empty($b['stop'])
             ? gs_call('community.typingPing', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? ''])
             : gs_call('community.typingStop', ['memberId' => $s['mid'], 'channel' => $b['channel'] ?? '']);
+    } elseif ($action === 'answer') {
+        $res = gs_call('community.answer', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'commentId' => $b['commentId'] ?? '']);
+    } elseif ($action === 'videoPos') {
+        $res = gs_call('community.videoPos', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'pos' => $b['pos'] ?? 0, 'dur' => $b['dur'] ?? 0]);
     } elseif ($action === 'star') {
         $res = gs_call('community.star', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'ip' => client_ip()]);
     } else {

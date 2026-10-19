@@ -291,6 +291,7 @@ function member_merge_policy(): array {
         'post_reactions'         => 'MOVE_UNIQUE',
         'community_bookmarks'    => 'MOVE_UNIQUE',
         'community_stars'        => 'MOVE_UNIQUE',
+        'community_video_progress' => 'MOVE_UNIQUE',  // one place in a video per person; the survivor's stands
         'event_rsvps'            => 'MOVE_UNIQUE',
         'engagement_snapshots'   => 'MOVE_UNIQUE',
         'auth_sessions'          => 'DROP',           // sign-in state, not history
@@ -569,6 +570,7 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId,
         'post_reactions'       => ['postId', 'emoji'],
         'community_bookmarks'  => ['postId'],
         'community_stars'      => ['postId'],
+        'community_video_progress' => ['postId'],
         'event_rsvps'          => ['eventId'],
         'engagement_snapshots' => ['weekStart', 'role'],
         'member_ledger'        => ['kind', 'periodKey'],

@@ -6810,6 +6810,10 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
 }
 
 function AdminCommunity() {
+  const auth = typeof useAuth === "function" ? useAuth() : {};
+  /* Safeguarding cases are for trained leads (the `safeguarding` capability),
+     not everyone who edits the feed; the server refuses the rest. */
+  const canSg = typeof auth.hasCap === "function" && auth.hasCap("safeguarding");
   const [tab, setTab] = React.useState("moderation");
   const [pending, setPending] = React.useState(null);
   const [mode, setMode] = React.useState("");
@@ -6829,10 +6833,11 @@ function AdminCommunity() {
       <div className="admin-filters">
         <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
         <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
-        <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
+        {canSg && <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
           Safeguarding{safeguarding > 0 ? " · " + safeguarding : ""}
-        </button>
+        </button>}
       </div>
+      {!canSg && safeguarding > 0 && <p className="admin-hint">{safeguarding} safeguarding {safeguarding === 1 ? "case is" : "cases are"} open. Only trained safeguarding leads can open them; a super admin can grant that.</p>}
       {tab === "moderation" && <AdminCommunityModeration mode={mode} onChanged={setMode}/>}
       {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/>
         : tab === "safeguarding" ? <AdminCommunitySafeguarding onChange={loadPending}/>

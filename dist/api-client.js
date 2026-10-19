@@ -974,6 +974,16 @@
         post_get: (postId) => request('/member/community.php' + qs({ view: 'post', postId })),
         // Filter-chip counts for the Today screen (unread / mentions / saved).
         today:    () => request('/member/community.php' + qs({ view: 'today' })),
+        /* Community v3 (domain/community-v3.php). */
+        v3boot:     () => request('/member/community.php' + qs({ view: 'v3boot' })),
+        v3feed:     (channel, page) => request('/member/community.php' + qs({ view: 'feed', channel: channel || 'all', sort: 'latest', page: page || 0, scope: 'mine' })),
+        home:       () => request('/member/community.php' + qs({ view: 'home' })),
+        hwBoard:    () => request('/member/community.php' + qs({ view: 'hwBoard' })),
+        v3files:    (channel) => request('/member/community.php' + qs({ view: 'v3files', channel: channel || '' })),
+        media:      (postId) => request('/member/community.php' + qs({ view: 'media', postId })),
+        videoPoints:(postId) => request('/member/community.php' + qs({ view: 'videoPoints', postId }), { timeout: 60000 }),
+        videoPos:   (postId, pos, dur) => request('/member/community.php', { body: { action: 'videoPos', postId, pos: Math.floor(pos || 0), dur: Math.floor(dur || 0) } }),
+        answer:     (postId, commentId) => request('/member/community.php', { body: { action: 'answer', postId, commentId: commentId || '' } }),
       },
       arcade: {
         home:   () => request('/member/arcade.php' + qs({ view: 'home' })),
@@ -1543,7 +1553,12 @@
         overview:      () => request('/admin/community.php' + qs({ view: 'overview' })),
         queue:         (status) => request('/admin/community.php' + qs({ view: 'queue', status: status || 'pending' })),
         channelUpsert: (data) => request('/admin/community.php', { body: { action: 'channel', data } }),
-        moderate:      (kind, id, act) => request('/admin/community.php', { body: { action: 'moderate', kind, id, do: act } }),
+        // `extra` carries `body` (edit & approve), `note` (message, escalate) and `severity` (escalate).
+        moderate:      (kind, id, act, extra) => request('/admin/community.php', { body: Object.assign({ action: 'moderate', kind, id, do: act }, extra || {}) }),
+        stats:         () => request('/admin/community.php' + qs({ view: 'stats' })),
+        health:        () => request('/admin/community.php' + qs({ view: 'health' })),
+        // Trained safeguarding leads: take a case, set its severity, move it on.
+        safeguardingUpdate: (caseId, change) => request('/admin/community.php', { body: Object.assign({ action: 'safeguardingUpdate', caseId }, change || {}) }),
         // How hard the feed is screened: 'strict' | 'flag' | 'off'. Super admin.
         moderation:    (mode) => request('/admin/community.php', { body: { action: 'moderation', mode } }),
         /* Crisis disclosures the screen caught. A queue of its own, never

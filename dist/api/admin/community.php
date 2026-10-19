@@ -11,6 +11,8 @@ if ($method === 'GET') {
     // queue: "four things to review" and "a child said something about hurting
     // themselves" must not read as one number.
     elseif ($view === 'safeguarding') $res = gs_call('admin.community.safeguarding', ['requesterId' => $s['mid'], 'status' => $_GET['status'] ?? 'open']);
+    elseif ($view === 'stats')  $res = gs_call('admin.community.stats', ['requesterId' => $s['mid']]);
+    elseif ($view === 'health') $res = gs_call('admin.community.health', ['requesterId' => $s['mid']]);
     else                   $res = gs_call('admin.community.overview', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -20,7 +22,12 @@ if ($method === 'GET') {
     } elseif ($action === 'safeguardingAck') {
         $res = gs_call('admin.community.safeguarding.ack', ['requesterId' => $s['mid'], 'caseId' => $b['caseId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'moderate') {
-        $res = gs_call('admin.community.moderate', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'post', 'id' => $b['id'] ?? '', 'action' => $b['do'] ?? '', 'ip' => client_ip()]);
+        // `body` (edit & approve), `note` (message the author, escalate) and `severity` (escalate) ride along.
+        $res = gs_call('admin.community.moderate', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'post', 'id' => $b['id'] ?? '', 'action' => $b['do'] ?? '',
+            'body' => $b['body'] ?? '', 'note' => $b['note'] ?? '', 'severity' => $b['severity'] ?? 'high', 'ip' => client_ip()]);
+    } elseif ($action === 'safeguardingUpdate') {
+        $res = gs_call('admin.community.safeguarding.update', ['requesterId' => $s['mid'], 'caseId' => $b['caseId'] ?? '', 'ip' => client_ip()]
+            + array_intersect_key($b, array_flip(['severity', 'status', 'take', 'note'])));
     } elseif (($b['action'] ?? '') === 'moderation') {
         // How hard the feed is screened. Super-admin only, enforced in the
         // domain layer, and audited — see admin_community_moderation_set.
@@ -31,7 +38,7 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, (string)($res['message'] ?? '') ?: null);
 /* Featuring, hiding or removing a post changes the public Showcase, which is a
    cached read — moderating something offensive and having it stay on the public
    page for the rest of the TTL is the failure that matters here. */

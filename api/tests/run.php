@@ -29127,5 +29127,134 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM conduct_rules"); db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'CP-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'CP-%'");
 })();
 
+
+/* Community v3 (domain/community-v3.php): one safety check for browser and
+   server; hold rules for students only; staff-only kinds; questions with an
+   accepted answer; code and video meta; reports that reach safeguarding;
+   safeguarding gated on its own capability; the moderation extras. */
+(function () {
+    $now = now_iso();
+    $mk = static fn($id, $name, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@cv3.example',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Cvthree', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('CV3-S', 'Sade Student', 'member', ['track' => 'Cv3 Coding']);
+    $mk('CV3-S2', 'Kunle Student', 'member', ['track' => 'Cv3 Coding']);
+    $mk('CV3-T', 'Tunde Mentor', 'mentor');
+    $mk('CV3-ADM', 'Ada Editor', 'admin');
+    $mk('CV3-SUP', 'Sam Super', 'super_admin');
+    community_ensure_channels();
+    db_insert('community_channels', ['channelId' => 'CH-CV3A', 'slug' => 'cv3-coding', 'name' => 'Cv3 Coding', 'kind' => 'course', 'color' => '#3b5bdb', 'icon' => 'ph ph-code', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('community_channels', ['channelId' => 'CH-CV3B', 'slug' => 'cv3-robots', 'name' => 'Cv3 Robots', 'kind' => 'course', 'color' => '#1d6b30', 'icon' => 'ph ph-robot', 'status' => 'active', 'createdAt' => $now]);
+    // community_spam_check refuses a second post within 15 seconds; age each author's posts as we go.
+    $age = static fn($who) => db_exec('UPDATE community_posts SET createdAt = ? WHERE authorId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 3600), $who]);
+    $post = function (string $who, array $data) use ($age) { $r = backend_dispatch('community.post', ['memberId' => $who, 'data' => $data + ['channel' => 'cv3-coding'], 'ip' => '1.1.1.1']); $age($who); return $r; };
+    setting_set('community_moderation', ['mode' => 'strict']);
+
+    $c = cm3_safety_check('call me on 08031234567');
+    chk('cm3 safety: a Nigerian mobile number is caught for review', $c['v'] === 'review' && $c['code'] === 'phone');
+    $c = cm3_safety_check('that idea is stupid');
+    chk('cm3 safety: an unkind word is caught, with a kinder rewrite', $c['v'] === 'review' && $c['code'] === 'unkind' && $c['fix'] === 'that idea is not right');
+    chk('cm3 safety: a social app link is caught', cm3_safety_check('add me on instagram')['code'] === 'social');
+    chk('cm3 safety: ALL CAPS is a nudge, not a hold', cm3_safety_check('THIS IS SO GOOD TODAY')['v'] === 'nudge');
+    chk('cm3 safety: a video gets the "a mentor watches it" notice', cm3_safety_check('my clip', 'video')['v'] === 'video');
+    chk('cm3 safety: a kind sentence is fine', cm3_safety_check('Well done, that looks great')['v'] === 'ok');
+    $R = cm3_safety_rules();
+    chk('cm3 safety: the rules are data the browser can compile', is_string($R['phone']) && is_string($R['social']) && count($R['unkind']) === 7 && @preg_match('/' . $R['phone'] . '/', '') !== false);
+
+    $p1 = $post('CV3-S', ['body' => 'text me 08031234567']);
+    chk('cm3 hold: a student\'s post with a phone number waits under strict', !empty($p1['queued']) && $p1['post']['status'] === 'pending'
+        && (json_decode((string)db_row('SELECT moderation FROM community_posts WHERE postId = ?', [$p1['post']['postId']])['moderation'], true)['rule'] ?? '') === 'phone');
+    $p2 = $post('CV3-T', ['body' => 'Office line is 08031234567 for parents']);
+    chk('cm3 hold: staff are never held by the rules', empty($p2['queued']) && $p2['post']['status'] === 'published');
+    setting_set('community_moderation', ['mode' => 'flag']);
+    $p3 = $post('CV3-S2', ['body' => 'you are a loser']);
+    chk('cm3 hold: under flag it goes live, flagged for a person', $p3['post']['status'] === 'published' && (int)db_row('SELECT reportCount FROM community_posts WHERE postId = ?', [$p3['post']['postId']])['reportCount'] === 1);
+    $v1 = $post('CV3-S2', ['body' => 'my robot', 'mediaType' => 'video', 'mediaUrl' => 'https://example.org/v.mp4', 'mediaDuration' => 60]);
+    chk('cm3 hold: a student\'s video still waits under flag', $v1['post']['status'] === 'pending');
+    setting_set('community_moderation', ['mode' => 'strict']);
+    $v2 = $post('CV3-T', ['body' => 'Lesson 3', 'mediaType' => 'video', 'mediaUrl' => 'https://example.org/l3.mp4', 'mediaDuration' => 130,
+        'videoTitle' => 'Wiring a button', 'chapters' => "0:00 Hello\n1:20 Wiring\n0:40 Parts", 'captions' => "WEBVTT\n\n00:00:00.000 --> 00:00:04.000\nHello everyone\n\n00:01:20.500 --> 00:01:24.000\n<i>Now</i> the wires"]);
+    chk('cm3 video: a staff video publishes', $v2['post']['status'] === 'published' && ($v2['post']['video']['chapters'] ?? 0) === 3 && !empty($v2['post']['video']['captions']));
+    $m = backend_dispatch('community.media', ['memberId' => 'CV3-S', 'postId' => $v2['post']['postId']]);
+    chk('cm3 video: chapters are sorted from zero and captions are parsed from VTT', ($m['chapters'][1] ?? []) === [40, 'Parts'] && ($m['captions'][1] ?? []) === [80, 'Now the wires'] && $m['title'] === 'Wiring a button');
+    backend_dispatch('community.videoPos', ['memberId' => 'CV3-S', 'postId' => $v2['post']['postId'], 'pos' => 75, 'dur' => 130]);
+    chk('cm3 video: where a member stopped is kept on the server', (backend_dispatch('community.media', ['memberId' => 'CV3-S', 'postId' => $v2['post']['postId']])['pos'] ?? 0) === 75);
+
+    chk('cm3 kinds: a student cannot post an announcement', ($post('CV3-S2', ['body' => 'Hear ye', 'kind' => 'announce'])['error'] ?? '') === 'forbidden');
+    $an = $post('CV3-T', ['body' => "Showcase is on Saturday\nBring something you made.", 'kind' => 'announcement']);
+    chk('cm3 kinds: a staff announcement publishes, pinned', $an['post']['kind'] === 'announce' && $an['post']['pinned'] === true);
+    $hw = $post('CV3-T', ['kind' => 'homework', 'hwTitle' => 'About me page', 'hwDue' => gmdate('Y-m-d', time() + 4 * 86400) . ' 18:00', 'body' => 'Build a page about yourself.']);
+    chk('cm3 kinds: homework sets the task and pins the post that names it', !empty($hw['ok']) && $hw['post']['homeworkId'] !== '' && $hw['post']['pinned'] === true);
+    $board = backend_dispatch('community.hwBoard', ['memberId' => 'CV3-S']);
+    $mine = null; foreach ($board['homework'] ?? [] as $h) if ($h['id'] === $hw['post']['homeworkId']) $mine = $h;
+    chk('cm3 homework: the student sees it to do, in the design\'s shape', $mine && $mine['me'] === 'todo' && $mine['ch'] === 'cv3-coding' && !isset($mine['cohort']));
+    $tb = backend_dispatch('community.hwBoard', ['memberId' => 'CV3-T']);
+    $tr = null; foreach ($tb['homework'] ?? [] as $h) if ($h['id'] === $hw['post']['homeworkId']) $tr = $h;
+    chk('cm3 homework: the mentor sees the cohort', $tr && count($tr['cohort']) >= 2 && in_array('missing', array_column($tr['cohort'], 'state'), true));
+
+    // A moderator approves what the (test) screen held, as they would.
+    $approve = fn($r) => backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $r['post']['postId'], 'action' => 'approve']);
+    $q = $post('CV3-S2', ['body' => 'How do I centre a div?', 'kind' => 'question']);
+    if ($q['post']['status'] !== 'published') $approve($q);
+    $cm = backend_dispatch('community.comment', ['memberId' => 'CV3-T', 'postId' => $q['post']['postId'], 'body' => 'Use flexbox on the parent.']);
+    chk('cm3 answers: another student cannot mark the answer', (backend_dispatch('community.answer', ['memberId' => 'CV3-S', 'postId' => $q['post']['postId'], 'commentId' => $cm['comment']['commentId']])['error'] ?? '') === 'forbidden');
+    $ans = backend_dispatch('community.answer', ['memberId' => 'CV3-S2', 'postId' => $q['post']['postId'], 'commentId' => $cm['comment']['commentId']]);
+    $cs = backend_dispatch('community.comments', ['memberId' => 'CV3-S2', 'postId' => $q['post']['postId']])['comments'];
+    chk('cm3 answers: the asker marks it, and the reply says so', ($ans['answerId'] ?? '') === $cm['comment']['commentId'] && !empty($cs[0]['isAnswer']) && $cs[0]['role'] === 'Mentor');
+    $qf = backend_dispatch('community.feed', ['memberId' => 'CV3-S', 'channel' => 'questions', 'scope' => 'mine']);
+    chk('cm3 feed: the Questions filter shows questions, answered ones say so', count($qf['posts']) >= 1 && $qf['posts'][0]['kind'] === 'question' && $qf['posts'][0]['answered'] === true);
+
+    $code = $post('CV3-S', ['body' => 'My first page', 'mediaType' => 'code', 'code' => "<h1>Hi</h1>\n<p>About me</p>", 'codeTitle' => 'about.html', 'hint' => 'should be dropped']);
+    if ($code['post']['status'] !== 'published') $approve($code);
+    $cmd = backend_dispatch('community.media', ['memberId' => 'CV3-S2', 'postId' => $code['post']['postId']]);
+    chk('cm3 code: a code post keeps its source; a student\'s hint is not kept', $code['post']['code']['title'] === 'about.html' && $cmd['code'] === "<h1>Hi</h1>\n<p>About me</p>" && $cmd['hint'] === '');
+    $files = backend_dispatch('community.v3files', ['memberId' => 'CV3-S']);
+    chk('cm3 files: code and videos are listed across the member\'s channels', in_array('code', array_column($files['files'], 'kind'), true) && in_array('videos', array_column($files['files'], 'kind'), true));
+
+    $other = backend_dispatch('community.post', ['memberId' => 'CV3-T', 'data' => ['channel' => 'cv3-robots', 'body' => 'Robots only'], 'ip' => '1.1.1.1']); $age('CV3-T');
+    $mineFeed = array_column(backend_dispatch('community.feed', ['memberId' => 'CV3-S', 'channel' => 'all', 'scope' => 'mine'])['posts'], 'postId');
+    chk('cm3 feed: a student\'s home feed reads only the channels they follow', !in_array($other['post']['postId'], $mineFeed, true) && in_array($an['post']['postId'], $mineFeed, true));
+
+    $b = backend_dispatch('community.v3boot', ['memberId' => 'CV3-S']);
+    chk('cm3 boot: a student is a student, with the rules and their channels', $b['me']['role'] === 'student' && !$b['me']['canModerate'] && isset($b['rules']['phone'])
+        && in_array('cv3-coding', array_column(array_filter($b['channels'], fn($c) => $c['mine']), 'slug'), true));
+    chk('cm3 boot: a mentor is an instructor; content is the community team; safeguarding is its own trust',
+        backend_dispatch('community.v3boot', ['memberId' => 'CV3-T'])['me']['role'] === 'instructor'
+        && ($ab = backend_dispatch('community.v3boot', ['memberId' => 'CV3-ADM'])['me'])['role'] === 'admin' && !$ab['canSafeguard']
+        && backend_dispatch('community.v3boot', ['memberId' => 'CV3-SUP'])['me']['canSafeguard'] === true);
+    $home = backend_dispatch('community.home', ['memberId' => 'CV3-S']);
+    chk('cm3 home: the carousel is built from real records (announcement and homework)', in_array('Announcement', array_column($home['slides'], 'tag'), true) && in_array('Homework', array_column($home['slides'], 'tag'), true));
+
+    backend_dispatch('community.report', ['memberId' => 'CV3-S2', 'targetType' => 'post', 'targetId' => $code['post']['postId'], 'reason' => 'safety']);
+    $case = db_row("SELECT * FROM community_safeguarding WHERE postId = ? ORDER BY id DESC LIMIT 1", [$code['post']['postId']]);
+    chk('cm3 report: "worried someone is not safe" becomes a high safeguarding case', $case && $case['source'] === 'report' && $case['severity'] === 'high');
+    chk('cm3 safeguarding: a content editor cannot read cases', (backend_dispatch('admin.community.safeguarding', ['requesterId' => 'CV3-ADM'])['error'] ?? '') === 'forbidden');
+    $cases = backend_dispatch('admin.community.safeguarding', ['requesterId' => 'CV3-SUP'])['cases'] ?? [];
+    chk('cm3 safeguarding: a lead reads cases with severity and source', in_array($case['caseId'], array_column($cases, 'caseId'), true) && isset($cases[0]['severity'], $cases[0]['source']));
+    backend_dispatch('admin.community.safeguarding.update', ['requesterId' => 'CV3-SUP', 'caseId' => $case['caseId'], 'take' => 1, 'severity' => 'medium']);
+    $c2 = db_row('SELECT status, severity, leadName FROM community_safeguarding WHERE caseId = ?', [$case['caseId']]);
+    chk('cm3 safeguarding: a lead takes a case and sets its severity', $c2['status'] === 'in_progress' && $c2['severity'] === 'medium' && $c2['leadName'] === 'Sam Super');
+    chk('cm3 safeguarding: an editor cannot take one', (backend_dispatch('admin.community.safeguarding.update', ['requesterId' => 'CV3-ADM', 'caseId' => $case['caseId'], 'take' => 1])['error'] ?? '') === 'forbidden');
+
+    backend_dispatch('community.report', ['memberId' => 'CV3-S', 'targetType' => 'post', 'targetId' => $p3['post']['postId'], 'reason' => 'unkind']);
+    $queue = backend_dispatch('admin.community.queue', ['requesterId' => 'CV3-ADM', 'status' => 'queue']);
+    $kinds = []; foreach ($queue['posts'] as $qp) $kinds[$qp['postId']] = $qp['kind'];
+    chk('cm3 queue: each item says why it is there — held, video or reported', ($kinds[$p1['post']['postId']] ?? '') === 'held' && ($kinds[$v1['post']['postId']] ?? '') === 'video' && ($kinds[$p3['post']['postId']] ?? '') === 'reported');
+    backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $p1['post']['postId'], 'action' => 'edit', 'body' => 'text me (number removed)']);
+    $e = db_row('SELECT status, body, reviewedAt FROM community_posts WHERE postId = ?', [$p1['post']['postId']]);
+    chk('cm3 moderate: edit & approve publishes the edited text and times the decision', $e['status'] === 'published' && $e['body'] === 'text me (number removed)' && $e['reviewedAt'] !== '');
+    chk('cm3 moderate: messaging the author needs a note', (backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $p3['post']['postId'], 'action' => 'message'])['error'] ?? '') === 'note_required');
+    $es = backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $p3['post']['postId'], 'action' => 'escalate', 'severity' => 'high']);
+    chk('cm3 moderate: escalating hides the post and opens a case', !empty($es['caseId']) && db_row('SELECT status FROM community_posts WHERE postId = ?', [$p3['post']['postId']])['status'] === 'hidden');
+    $st = backend_dispatch('admin.community.stats', ['requesterId' => 'CV3-ADM']);
+    chk('cm3 stats: the median review time is measured from real decisions', $st['decisions'] >= 1 && $st['medianMinutes'] !== null && isset($st['counts']['video']));
+    $hl = backend_dispatch('admin.community.health', ['requesterId' => 'CV3-ADM']);
+    chk('cm3 health: posts per day for a week, and the busiest channels', count($hl['days']) === 7 && array_sum(array_column($hl['days'], 1)) >= 1 && count($hl['top']) >= 1);
+
+    foreach (['community_posts' => 'authorId', 'community_comments' => 'memberId', 'community_reports' => 'memberId', 'community_video_progress' => 'memberId'] as $t => $col) db_exec("DELETE FROM $t WHERE $col LIKE 'CV3-%'");
+    db_exec("DELETE FROM community_safeguarding WHERE authorId LIKE 'CV3-%'");
+    db_exec("DELETE FROM community_homework WHERE createdBy = 'CV3-T'"); db_exec("DELETE FROM community_homework_state WHERE memberId LIKE 'CV3-%'");
+    db_exec("DELETE FROM community_channels WHERE channelId IN ('CH-CV3A','CH-CV3B')"); db_exec("DELETE FROM members WHERE memberId LIKE 'CV3-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -3850,3 +3850,28 @@ CREATE TABLE IF NOT EXISTS conduct_rules (
 ALTER TABLE attendance_duty ADD COLUMN startTime VARCHAR(5) DEFAULT '';
 ALTER TABLE attendance_duty ADD COLUMN endTime VARCHAR(5) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (161) ON DUPLICATE KEY UPDATE version = version;
+
+-- 162: Community v3 — answers, homework posts, video meta and progress, code posts, review timing, safeguarding severity/lead.
+ALTER TABLE community_posts ADD COLUMN answerId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN homeworkId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN mediaMeta MEDIUMTEXT;
+ALTER TABLE community_posts ADD COLUMN mediaCode MEDIUMTEXT;
+ALTER TABLE community_posts ADD COLUMN reviewedAt VARCHAR(32) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN reviewedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE community_comments ADD COLUMN reviewedAt VARCHAR(32) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN severity VARCHAR(10) DEFAULT 'high';
+ALTER TABLE community_safeguarding ADD COLUMN leadId VARCHAR(64) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN leadName VARCHAR(160) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN postId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN source VARCHAR(20) DEFAULT 'screen';
+ALTER TABLE community_safeguarding ADD COLUMN note TEXT;
+CREATE TABLE IF NOT EXISTS community_video_progress (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  postId VARCHAR(40) NOT NULL,
+  pos INT DEFAULT 0,
+  dur INT DEFAULT 0,
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cvp_member_post (memberId, postId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (162) ON DUPLICATE KEY UPDATE version = version;
