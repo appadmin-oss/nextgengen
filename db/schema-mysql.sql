@@ -3795,3 +3795,8 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   KEY idx_ss_member (memberId, day)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (159) ON DUPLICATE KEY UPDATE version = version;
+
+-- 160: one lead per programme (leadVolunteerId = NGG centre lead).
+-- NULL until set; the backfill is NGG_MYSQL_ROW_FIXUPS 'centres.summerLead' (db.php).
+ALTER TABLE centres ADD COLUMN summerLeadVolunteerId VARCHAR(64) NULL;
+INSERT INTO schema_version (version) VALUES (160) ON DUPLICATE KEY UPDATE version = version;

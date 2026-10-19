@@ -28974,5 +28974,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM curriculum_units WHERE unitId = 'CU-ST-1'"); db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-ST-%'"); db_exec("DELETE FROM member_state WHERE memberId LIKE 'NGG-ST-%'");
 })();
 
+/* NGG and Summer School name their own centre leads: different people. */
+(function () {
+    $A = 'NGG-2025-0099';
+    db_insert('volunteers', ['volunteerId' => 'VOL-LD-N', 'fullName' => 'Nneka Club Lead', 'email' => 'ldn@example.com', 'role' => 'admin', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-LD-S', 'fullName' => 'Sola Summer Lead', 'email' => 'lds@example.com', 'role' => 'admin', 'status' => 'active', 'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.centres.upsert', ['requesterId' => $A, 'data' => ['name' => 'Leadsville', 'code' => 'LV', 'color' => '#76B043', 'programmes' => ['ngg', 'summer'],
+        'leadVolunteerId' => 'VOL-LD-N', 'summerLeadVolunteerId' => 'VOL-LD-S']]);
+    chk('centre saves with an NGG lead and a separate Summer lead', !empty($r['ok']));
+    $row = null;
+    foreach ((backend_dispatch('admin.centres.list', ['requesterId' => $A])['centres'] ?? []) as $c) if ($c['name'] === 'Leadsville') $row = $c;
+    chk('directory reports each programme\'s own lead', $row && $row['leadName'] === 'Nneka Club Lead' && $row['summerLeadName'] === 'Sola Summer Lead');
+    $c = db_row("SELECT * FROM centres WHERE name = 'Leadsville'");
+    chk('public meta: the Summer page names the Summer lead, the Club the NGG lead',
+        centre_public_meta($c, 'summer')['lead'] !== centre_public_meta($c, 'ngg')['lead']);
+    chk('an unknown Summer lead is refused', (backend_dispatch('admin.centres.upsert', ['requesterId' => $A, 'data' => ['centreId' => $c['centreId'], 'name' => 'Leadsville', 'code' => 'LV', 'color' => '#76B043', 'summerLeadVolunteerId' => 'VOL-NOPE']])['error'] ?? '') === 'bad_lead');
+    db_exec("DELETE FROM centres WHERE name = 'Leadsville'"); db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-LD-N','VOL-LD-S')");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

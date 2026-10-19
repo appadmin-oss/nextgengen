@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 159;
+const NGG_SCHEMA_TARGET = 160;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -87,6 +87,13 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 160 — the Summer School lead starts as the centre's existing lead. NULL
+     * marks "never set", so a lead somebody cleared ('') is not refilled. */
+    'centres.summerLead' => "
+        UPDATE centres SET summerLeadVolunteerId = CASE
+            WHEN COALESCE(programmes, '') = '' OR programmes LIKE '%summer%' THEN COALESCE(leadVolunteerId, '') ELSE '' END
+         WHERE summerLeadVolunteerId IS NULL
+    ",
     /* A member could once write "MFA.bypass" / "STAFF.…" / "AI.…" (the guard was
      * case-sensitive, MySQL's collation is not). Server-written keys are always
      * lower case, so any such key not in lower case was forged: remove it. */
@@ -4792,6 +4799,17 @@ function db_migrate(PDO $db): void {
               day TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_ss_member ON study_sessions(memberId, day);
+        ",
+        /* One lead per programme. leadVolunteerId is the NGG centre lead; a
+           centre that also hosts Summer School names its Summer lead
+           separately, because they are different people. Existing rows that
+           serve Summer start with the same person, so nothing changes until
+           somebody sets it. */
+        160 => "
+            ALTER TABLE centres ADD COLUMN summerLeadVolunteerId TEXT;
+            UPDATE centres SET summerLeadVolunteerId = CASE
+                WHEN COALESCE(programmes, '') = '' OR programmes LIKE '%summer%' THEN COALESCE(leadVolunteerId, '') ELSE '' END
+              WHERE summerLeadVolunteerId IS NULL;
         ",
     ];
 

@@ -1,0 +1,6 @@
+{
+  "// what": "The Club Portal v3 design's sample copy, and the value that replaces it. See tools/dc-compile.js.",
+  "Attendance from Saturday 3 October": "{{ attFrom }}",
+  "{{ r.mGranted }}/7": "{{ r.mGranted }}/{{ clauseN }}",
+  "Tunde Akin</span><span style=\"font-size:13px; color:#6b6b72;\">Club coordinator · see what you can do": "{{ meName }}</span><span style=\"font-size:13px; color:#6b6b72;\">{{ meRole }} · see what you can do"
+}

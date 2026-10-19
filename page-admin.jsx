@@ -11160,7 +11160,11 @@ function AdminCentres() {
                   : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}
               </td>
               <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
-              <td>{c.leadName ? <span className="chip chip-lime">{c.leadName}</span> : <span className="admin-cell-sub">—</span>}</td>
+              <td>
+                {centreProgrammes(c).indexOf("ngg") !== -1 && (c.leadName ? <span className="chip chip-lime" title="NGG centre lead">{c.leadName}</span> : <span className="admin-cell-sub">No NGG lead</span>)}
+                {centreProgrammes(c).length === 2 && <br/>}
+                {centreProgrammes(c).indexOf("summer") !== -1 && (c.summerLeadName ? <span className="chip" title="Summer School lead">Summer · {c.summerLeadName}</span> : <span className="admin-cell-sub">No Summer lead</span>)}
+              </td>
               {/* Two programmes, two numbers. The year-round roster first,
                   because this is the NGG directory. */}
               <td className="admin-num">{c.members ? fmtNum(c.members) : <span className="admin-cell-sub">0</span>}</td>
@@ -11215,6 +11219,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     name: c.name || "", code: c.code || "", color: c.color || "#76B043",
     status: c.status || "active", capacity: c.capacity != null ? String(c.capacity) : "",
     address: c.address || "", area: c.area || "", leadVolunteerId: c.leadVolunteerId || "",
+    summerLeadVolunteerId: c.summerLeadVolunteerId || "",
     phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", notes: c.notes || "",
     whatsappUrl: c.whatsappUrl || "",
     slug: c.slug || "", pageStatus: c.pageStatus || "draft",
@@ -11248,6 +11253,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         centreId: c.centreId, name: f.name.trim(), code: f.code.trim().toUpperCase(), color: f.color,
         status: f.status, capacity: f.capacity === "" ? 0 : parseInt(f.capacity, 10) || 0,
         address: f.address, area: f.area, leadVolunteerId: f.leadVolunteerId,
+        summerLeadVolunteerId: f.summerLeadVolunteerId,
         phone: f.phone, email: f.email, meetDays: f.meetDays, meetTime: f.meetTime, notes: f.notes,
         whatsappUrl: f.whatsappUrl.trim(),
         slug: f.slug.trim(), pageStatus: f.pageStatus,
@@ -11294,8 +11300,18 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           {field("area", "Area / city", { max: 120, ph: "e.g. Alimosho · Lagos" })}
           {field("address", "Street address", { max: 240, grow: true, min: 260, ph: "Building, street, landmark" })}
           <div style={{ flex: "1 1 240px", minWidth: 200 }}>
-            <span style={lbl}>Centre lead (volunteer)</span>
-            <select className="admin-select" style={{ width: "100%" }} value={f.leadVolunteerId} onChange={e => set("leadVolunteerId", e.target.value)}>
+            <span style={lbl}>NGG centre lead (volunteer)</span>
+            <select className="admin-select" style={{ width: "100%" }} value={f.leadVolunteerId} onChange={e => set("leadVolunteerId", e.target.value)}
+              disabled={f.programmes.indexOf("ngg") === -1} title={f.programmes.indexOf("ngg") === -1 ? "The NGG Club doesn't run here" : undefined}>
+              <option value="">— none —</option>
+              {leads.map(o => <option key={o.volunteerId} value={o.volunteerId}>{o.name}{o.role ? " · " + o.role : ""}{o.centre && o.centre !== c.name ? " (" + o.centre + ")" : ""}</option>)}
+            </select>
+          </div>
+          {/* Summer School names its own lead: a different person from the NGG lead. */}
+          <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+            <span style={lbl}>Summer School lead (volunteer)</span>
+            <select className="admin-select" style={{ width: "100%" }} value={f.summerLeadVolunteerId} onChange={e => set("summerLeadVolunteerId", e.target.value)}
+              disabled={f.programmes.indexOf("summer") === -1} title={f.programmes.indexOf("summer") === -1 ? "Summer School doesn't run here" : undefined}>
               <option value="">— none —</option>
               {leads.map(o => <option key={o.volunteerId} value={o.volunteerId}>{o.name}{o.role ? " · " + o.role : ""}{o.centre && o.centre !== c.name ? " (" + o.centre + ")" : ""}</option>)}
             </select>

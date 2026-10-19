@@ -2865,7 +2865,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, summerLeadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
     // A scoped admin's directory is their centres.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['name'], $scopeNames, true)));
@@ -2902,6 +2902,9 @@ function admin_centres_list(array $p): array {
         $r['full'] = ((int)$r['capacity'] > 0 && $r['summerEnrolled'] >= (int)$r['capacity']);
         $lid = (string)($r['leadVolunteerId'] ?? '');
         $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
+        // The Summer School lead is a different person from the NGG centre lead.
+        $sid = (string)($r['summerLeadVolunteerId'] ?? '');
+        $r['summerLeadName'] = $sid !== '' ? ($volById[$sid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$sid])['fullName'] ?? '') : '';
         // gallery is stored as a JSON array of image URLs — hand the editor an array.
         $g2 = json_decode((string)($r['gallery'] ?? ''), true);
         $r['gallery'] = is_array($g2) ? array_values(array_filter(array_map('strval', $g2))) : [];
@@ -2923,9 +2926,14 @@ function admin_centres_list(array $p): array {
  * A surname, email or phone of the lead never leaves the server. Pass a centre
  * row that already includes area/address/leadVolunteerId/meetDays/meetTime.
  */
-function centre_public_meta(array $c): array {
+function centre_public_meta(array $c, ?string $programme = null): array {
     $lead = null;
-    $lid = (string)($c['leadVolunteerId'] ?? '');
+    /* Which programme's lead: asked for, else NGG for a centre the Club uses
+       and Summer School for a Summer-only venue. They are different people. */
+    $programme = $programme ?? (centre_serves($c, 'ngg') ? 'ngg' : 'summer');
+    $lid = $programme === 'summer'
+        ? (string)($c['summerLeadVolunteerId'] ?? '')
+        : (string)($c['leadVolunteerId'] ?? '');
     if ($lid !== '') {
         $v = db_row("SELECT fullName, firstName, lastName, role, faculty, visibilityConsent, photoUrl FROM volunteers WHERE volunteerId = ?", [$lid]);
         if ($v) {
@@ -3071,6 +3079,14 @@ function admin_centres_upsert(array $p): array {
             return ['ok' => false, 'error' => 'bad_lead'];
         }
         $row['leadVolunteerId'] = $lead;
+    }
+    // The Summer School lead, kept apart from the NGG lead above.
+    if (array_key_exists('summerLeadVolunteerId', $d)) {
+        $lead = trim((string)$d['summerLeadVolunteerId']);
+        if ($lead !== '' && !db_row('SELECT id FROM volunteers WHERE volunteerId = ?', [$lead])) {
+            return ['ok' => false, 'error' => 'bad_lead'];
+        }
+        $row['summerLeadVolunteerId'] = $lead;
     }
 
     // ── Public centre-page content (the immersive /centres/<slug> landing) ──
@@ -3258,7 +3274,7 @@ function centre_page_public(array $c): array {
 
 /** Public: the directory of published Summer School centres (for /centres). */
 function public_centres_list(): array {
-    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, heroPosition, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl, programmes
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, heroPosition, area, address, meetDays, meetTime, capacity, leadVolunteerId, summerLeadVolunteerId, whatsappUrl, programmes
                     FROM centres WHERE status = 'active' AND pageStatus = 'published' AND slug <> '' ORDER BY name");
     // These are Summer School's centre pages: a Club-only centre is not one.
     $rows = array_values(array_filter($rows, static fn($r) => centre_serves($r, 'summer')));
@@ -3269,7 +3285,7 @@ function public_centres_list(): array {
     $centres = [];
     foreach ($rows as $r) {
         $enrolled = $byCentre[(string)$r['name']] ?? 0;
-        $meta = centre_public_meta($r);
+        $meta = centre_public_meta($r, 'summer');
         $centres[] = [
             'slug'    => (string)$r['slug'],
             'name'    => (string)$r['name'],
