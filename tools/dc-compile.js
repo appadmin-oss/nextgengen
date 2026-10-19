@@ -63,8 +63,14 @@ tpl = tpl.replace(/<helmet>[\s\S]*?<\/helmet>/, '').replace(/<!--[\s\S]*?-->/g, 
 const ROOT_CLASS = PREFIX + '-app';
 function scopeCss(css) {
   const out = [];
-  const re = /(@media[^{]*)\{((?:[^{}]*\{[^{}]*\})*)\s*\}|([^{}@]+)\{([^{}]*)\}/g; let m;
+  /* @keyframes pass through unscoped (a step selector like `60%` is not a
+     selector to scope); @font-face is dropped — the site's own fonts.css
+     declares the faces, and a design's relative font URLs point nowhere. */
+  const re = /(@keyframes\s+[\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)\s*\}|@font-face\s*\{[^{}]*\}|(@media[^{]*)\{((?:[^{}]*\{[^{}]*\})*)\s*\}|([^{}@]+)\{([^{}]*)\}/g; let m;
   while ((m = re.exec(css))) {
+    if (m[1]) { out.push(m[1].trim() + '{' + m[2].trim() + '}'); continue; }
+    if (!m[3] && !m[5]) continue;
+    m = [m[0], m[3], m[4], m[5], m[6]];
     if (m[1]) { const inner = scopeCss(m[2]); if (inner) out.push(m[1].trim() + '{' + inner + '}'); continue; }
     const sels = m[3].split(',').map(x => x.trim()).filter(x => x && !/^(html|body)$/.test(x));
     if (!sels.length) continue;
@@ -206,7 +212,9 @@ function emitNode(n, scope, ind) {
       if (r.static) cls.push(String(val).trim()); else dynClass.push(r.raw ? 'dcS(' + r.js + ')' : r.js);
       continue;
     }
-    const name = ATTR_MAP[k] || k;
+    /* A field's onInput is React's onChange (React fires onChange on every
+       keystroke); keeping onInput would leave the controlled field read-only. */
+    const name = k === 'onInput' && ['input', 'textarea'].includes(n.tag) && A.onChange === undefined ? 'onChange' : (ATTR_MAP[k] || k);
     if (val === true) { props.push(JSON.stringify(name) + ': true'); continue; }
     const r = interp(String(val), scope);
     if (r.static) {
@@ -231,7 +239,7 @@ function emitNode(n, scope, ind) {
   }
   if (dynStyle.length) props.push('"style": { ' + dynStyle.join(', ') + ' }');
   // A controlled field with no handler is read-only; React would warn otherwise.
-  if (['input', 'textarea', 'select'].includes(n.tag) && A.value !== undefined && !A.onChange) props.push('"readOnly": true');
+  if (['input', 'textarea', 'select'].includes(n.tag) && A.value !== undefined && !A.onChange && !A.onInput) props.push('"readOnly": true');
   const ks = VOID.has(n.tag) ? [] : kids();
   /* <main> carries one slot, v.mainSlot, ahead of the design's own content: the
      controller puts a screen's loading bar or its error-with-retry there, so

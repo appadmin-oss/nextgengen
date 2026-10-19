@@ -1869,7 +1869,7 @@ keep the phone charged, on Wi-Fi or data, and with battery saving off for the
 app. Nigerian numbers go to this phone first, then textbee, Termii and Twilio
 if they are set. Email and in-app alerts cost nothing and are always sent too.
 
-## File storage (Cloudflare R2 or Backblaze B2)
+## File storage (any S3-compatible bucket)
 
 When Cloudinary's plan runs low, give the site a **storage bucket** instead.
 Once one is set in Control Room → Settings → **API keys → File storage**, every
@@ -1879,12 +1879,18 @@ those photos keep showing from where they are.
 
 - **Which one.** **Cloudflare R2** is the recommendation: 10 GB free, and you
   never pay for people viewing files (Cloudinary counts every view). **Backblaze
-  B2** works the same way (10 GB free, then about $6 per TB a month). Any other
-  S3-compatible store (Amazon S3, Wasabi) works too.
-- **Setting it up** takes the endpoint, the bucket name, an access key and its
-  secret, and the bucket's **public address**. `docs/SETUP.md → File storage`
-  has the steps for R2 and B2, including the one rule the bucket needs (CORS)
-  so browsers may upload to it.
+  B2** works the same way (10 GB free, then about $6 per TB a month). Amazon S3,
+  Wasabi, DigitalOcean Spaces, Supabase Storage, IDrive e2 and any other
+  S3-compatible store work too.
+- **Setting it up.** Press **Set up** on the File storage row and pick your
+  provider: the guide shows its steps in order, what the endpoint, region and
+  public address look like, and a button that copies the one rule the bucket
+  needs (CORS) so browsers may upload to it — for Backblaze B2, whose website
+  cannot set that rule, it copies the B2 command instead. **Connect** opens the
+  form for that provider. It takes the endpoint, the bucket name, an access key
+  and its secret, and the bucket's **public address**. IDrive e2, other
+  providers and custom domains also need one line added to the site's
+  `.htaccess` (the guide says so; `docs/SETUP.md → File storage` has it).
 - **Test** writes a small file, reads it back from the public address, and
   deletes it. If it fails it says which part: the keys, the bucket name, or a
   bucket that is not public.

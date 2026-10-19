@@ -368,7 +368,7 @@ Object.assign(CR_TAB_DEFS, {
       if (d.media) out.push(d.media.store
         ? { type: "status", span: 3, title: "File storage", sub: d.media.store.bucket + " · " + d.media.store.endpointHost, summary: "New uploads go to the bucket", tone: "ok",
             items: [["Files served from", d.media.store.host, "neutral"], ["Cloudinary", d.media.usage && d.media.usage.configured ? "Keeps serving what it already holds" : "Not used", "neutral"]] }
-        : { type: "note", span: 3, icon: "info", text: "New uploads go to " + (d.media.uploadsTo === "cloudinary" ? "Cloudinary." : "this server.") + " A storage bucket (Cloudflare R2 or Backblaze B2) takes them instead once it is set in Settings → API keys → File storage.",
+        : { type: "note", span: 3, icon: "info", text: "New uploads go to " + (d.media.uploadsTo === "cloudinary" ? "Cloudinary." : "this server.") + " A storage bucket (Cloudflare R2, Backblaze B2, Amazon S3 or any S3-compatible service) takes them instead once it is set in Settings → API keys → File storage, which has a step-by-step guide for each.",
             act: { l: "Set up storage", run: () => ctx.go("settings", "keys") } });
       if (d.objects) out.push(...crSyObjectBlocks(d.objects, ctx));
       if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
@@ -817,12 +817,17 @@ async function crSyAiProbe(ctx) {
    Status in words (connected here, from config.php, not set), what the service
    powers, where to get a key, and Add / Change / Test / Remove. A secret is
    never shown — only how it ends — and a blank field keeps what is saved. */
-function crSyKeyEdit(ctx, s) {
+function crSyKeyEdit(ctx, s, prov) {
   const ids = s.fields.map((f, i) => "f" + i);
   const vals = {};
   s.fields.forEach((f, i) => { vals[ids[i]] = f.kind === "secret" ? "" : (f.source === "here" ? f.value : ""); });
+  /* File storage: the provider picked in the guide fills its own label and
+     shows that provider's shapes as placeholders, so the form says what to type. */
+  const pv = prov && s.providers ? s.providers.find(x => x.id === prov) : null;
+  const shape = pv ? { "storage.endpoint": pv.endpoint, "storage.region": pv.region, "storage.public_base": pv.public, "storage.provider": pv.label } : {};
+  if (pv) s.fields.forEach((f, i) => { if (f.path === "storage.provider") vals[ids[i]] = pv.label; });
   ctx.form({
-    title: (s.setHere || s.connected ? "Change " : "Connect ") + s.label,
+    title: (s.setHere || s.connected ? "Change " : "Connect ") + (pv ? pv.label : s.label),
     intro: s.what + (s.guarded ? " Once a secret key is in use, a change waits until a second person with Fees and Settings confirms it, and everyone with Fees is emailed." : ""),
     submit: s.guarded && s.connected ? "Propose the change" : "Save",
     values: vals,
@@ -831,7 +836,7 @@ function crSyKeyEdit(ctx, s) {
       type: f.kind === "secret" ? "password" : f.kind === "port" ? "text" : f.kind === "email" ? "email" : "text",
       ac: f.kind === "secret" ? "new-password" : "off", im: f.kind === "port" ? "numeric" : undefined,
       ph: f.kind === "secret" ? (f.set ? "Saved · ends " + f.ending + (f.source === "file" ? " (config.php)" : "") + " — leave blank to keep" : "Paste the key")
-        : (f.source === "file" ? f.value + " (config.php)" : ""),
+        : (f.source === "file" ? f.value + " (config.php)" : (shape[f.path] || "")),
       help: [f.help, f.optional ? "" : ""].filter(Boolean).join(" ") || undefined,
     })),
     onSubmit: async v => {
@@ -870,7 +875,53 @@ function crSyFirstSentence(t) {
   if (out.length < 30 && parts[1]) out += " " + parts[1].trim();   // "Paid." alone says too little
   return out;
 }
+/* File storage's connection guide: a picker of S3-compatible providers and
+   that provider's numbered steps, its address shapes and the CORS rule the
+   bucket needs (the browser uploads straight to it). The catalogue is the
+   server's (STORAGE_PROVIDERS, service-keys.php) — one list. */
+function crSyStorageProvider(s) {
+  const f = s.fields.find(x => x.path === "storage.provider");
+  const said = String(f && f.value || "").toLowerCase();
+  const hit = said && s.providers.find(p => p.label.toLowerCase() === said || p.id === said);
+  if (hit) return hit.id;
+  const ep = String((s.fields.find(x => x.path === "storage.endpoint") || {}).value || "");
+  const by = [["r2", /r2\.cloudflarestorage/], ["b2", /backblazeb2/], ["s3", /amazonaws/], ["wasabi", /wasabisys/], ["spaces", /digitaloceanspaces/], ["supabase", /supabase\.co/], ["idrive", /idrivee2/]];
+  const m = ep && by.find(x => x[1].test(ep));
+  return m ? m[0] : ep ? "other" : "r2";
+}
+function CrSyStorageGuide({ ctx, s, prov, setProv }) {
+  const p = s.providers.find(x => x.id === prov) || s.providers[0];
+  const gid = "cr-stg-" + p.id;
+  return (
+    <section className="cr-stg" aria-labelledby={gid + "-h"}>
+      <div className="cr-stg-head">
+        <label className="cr-stg-pick"><span>Provider</span>
+          <select className="cr-select" value={p.id} onChange={e => setProv(e.target.value)}>
+            {s.providers.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select></label>
+        <p className="cr-hint">{p.note}</p>
+      </div>
+      <h4 id={gid + "-h"} className="cr-stg-h">Connect {p.label}, step by step</h4>
+      <ol className="cr-stg-steps">{p.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+      <dl className="cr-stg-shape">
+        <div><dt>Endpoint</dt><dd className="cr-mono">{p.endpoint}</dd></div>
+        <div><dt>Region</dt><dd className="cr-mono">{p.region}</dd></div>
+        <div><dt>Public address</dt><dd className="cr-mono">{p.public}</dd></div>
+      </dl>
+      {p.id !== "supabase" && s.cors && <details className="cr-stg-cors"><summary>{p.id === "b2" ? "The B2 command that sets the CORS rule" : "The CORS rule for this site"}</summary><pre className="cr-mono">{p.id === "b2" ? s.corsB2 : s.cors}</pre></details>}
+      <div className="cr-key-acts">
+        <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s, p.id)}>{s.connected || s.setHere ? "Change to " + p.label : "Connect " + p.label}</button>
+        {p.id !== "supabase" && s.cors && (p.id === "b2"
+          ? <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, s.corsB2, "The B2 command")}>Copy the B2 command</button>
+          : <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, s.cors, "The CORS rule")}>Copy the CORS rule</button>)}
+        <span className="cr-grow"/>
+        <a className="cr-key-link" href={p.link} target="_blank" rel="noopener noreferrer">Open {p.label}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>
+      </div>
+    </section>
+  );
+}
 function CrSyKeyCard({ ctx, s, open, onToggle }) {
+  const [prov, setProv] = React.useState(() => s.providers ? crSyStorageProvider(s) : "");
   const [res, setRes] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const st = crSyKeyState(s);
@@ -899,6 +950,7 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
         <CrPill tone={st.tone} t={st.t}/>
         {s.connected || s.setHere
           ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage"}</button>
+          : s.providers ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Set up"}</button>
           : <button type="button" className="cr-btn is-sm" onClick={() => crSyKeyEdit(ctx, s)}>Add key</button>}
       </div>
       <div className="cr-key-body" id={pid} hidden={!open}>
@@ -913,15 +965,16 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
         </dl>
         {res && <p className={"cr-key-res" + (res.pass === true ? " is-ok" : res.pass === false ? " is-bad" : "")} role="status"><CrIcon n={res.pass === true ? "check-circle" : res.pass === false ? "warning-circle" : "info"}/>{res.detail}{res.ms ? " · " + crNum(res.ms) + " ms" : ""}</p>}
         <div className="cr-key-acts">
-          {(s.connected || s.setHere) && <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s)}>Change</button>}
+          {(s.connected || s.setHere) && !s.providers && <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s)}>Change</button>}
           {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
           {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
           {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, CR_SY_SCRIPT_MAIL, "The Apps Script")}>Copy the Apps Script</button>}
           {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, crSyNewSecret(), "A new secret")} title="Paste it into the script’s SHARED_SECRET and into Change here.">Copy a new secret</button>}
           <span className="cr-grow"/>
           {s.changedAt && <span className="cr-hint">Changed {crAgo(s.changedAt)}{s.changedBy ? " by " + s.changedBy : ""}</span>}
-          <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">{s.connected ? "Open " + s.label : "Get a key"}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>
+          {!s.providers && <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">{s.connected ? "Open " + s.label : "Get a key"}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>}
         </div>
+        {s.providers && <CrSyStorageGuide ctx={ctx} s={s} prov={prov} setProv={setProv}/>}
       </div>
     </article>
   );

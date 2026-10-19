@@ -28652,6 +28652,21 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $h = store_auth_headers('GET', 'https://examplebucket.s3.amazonaws.com/test.txt', '', ['range' => 'bytes=0-9'], 'AKIAIOSFODNN7EXAMPLE', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'us-east-1', $t);
     chk('storage · …and so does a server-side request (header auth example)', strpos(end($h), 'Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41') !== false);
 
+    $sv = service_key_view('storage', []);
+    $ids = array_column($sv['providers'] ?? [], 'id');
+    chk('storage · the keys screen offers every S3-compatible provider, not just two', $ids === ['r2', 'b2', 's3', 'wasabi', 'spaces', 'supabase', 'idrive', 'other']);
+    chk('storage · …each with a link, the address shapes and at least three steps',
+        count(array_filter($sv['providers'], fn($p) => str_starts_with($p['link'], 'https://') && $p['endpoint'] !== '' && $p['public'] !== '' && count($p['steps']) >= 3)) === 8);
+    $cors = json_decode($sv['cors'], true);
+    chk('storage · …and the CORS rule the bucket needs, for uploads (PUT) from this site', ($cors[0]['AllowedMethods'] ?? []) === ['PUT', 'GET', 'HEAD'] && count($cors[0]['AllowedOrigins'] ?? []) === 1);
+    chk('storage · B2 gets the b2 CLI command (its console cannot allow PUT)', str_starts_with($sv['corsB2'], "b2 bucket update --cors-rules '") && str_contains($sv['corsB2'], 's3_put'));
+    $csp = (string)file_get_contents(__DIR__ . '/../../.htaccess');
+    chk('storage · the CSP lets the browser upload to every provider the guide offers by wildcard',
+        count(array_filter(['*.r2.cloudflarestorage.com', '*.backblazeb2.com', '*.amazonaws.com', '*.wasabisys.com', '*.digitaloceanspaces.com', '*.supabase.co'],
+            fn($h) => preg_match('#connect-src[^;]*https://' . preg_quote($h, '#') . '#', $csp))) === 6);
+    chk('storage · the provider is an optional label, not a new required field', (fn($f) => $f && $f['optional'])(current(array_filter($sv['fields'], fn($f) => $f['path'] === 'storage.provider'))));
+    chk('storage · other services carry no provider list', service_key_view('groq', [])['providers'] === null);
+
     $keep = $GLOBALS['CONFIG']['storage'] ?? null;
     $GLOBALS['CONFIG']['storage'] = ['endpoint' => 'https://acct.r2.cloudflarestorage.com', 'region' => 'auto', 'bucket' => 'ngg-media', 'access_key' => 'AK', 'secret_key' => 'SK',
                                      'public_base' => 'http://pub-x.r2.dev', 'folder' => 'ngg'];

@@ -4497,10 +4497,15 @@ function CommunityApp({ setPage, auth }) {
     };
   }, []);
 
+  /* Community v3 (src/modules/community3/) is the Community. The previous
+     screens stay reachable at ?classic=1 only while v3 takes over their last
+     features (the journal, notifications, text size). */
+  const classic = (() => { try { return new URLSearchParams(location.search).get("classic") === "1"; } catch (e) { return false; } })();
   return (
     <div className="page cm-page" data-screen-label="Community">
-      <CmMobileApp auth={auth} setPage={setPage} channels={channels}
-                   reloadChannels={reloadChannels}/>
+      {classic || typeof Cm3App !== "function"
+        ? <CmMobileApp auth={auth} setPage={setPage} channels={channels} reloadChannels={reloadChannels}/>
+        : <Cm3App auth={auth} setPage={setPage}/>}
     </div>
   );
 }

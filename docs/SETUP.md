@@ -265,7 +265,7 @@ inside JSON (where the slashes are escaped, `\/api\/public\/photo.php`) or
 inside a percent-encoded link was deleted a week after upload. Every encoding
 is recognised now, and a scan that cannot be completed deletes nothing.
 
-### File storage: Cloudflare R2 or Backblaze B2
+### File storage: any S3-compatible bucket
 
 Once a bucket is configured, every new upload goes to it (the browser PUTs the
 file straight to the bucket with a 15-minute presigned URL; the secret never
@@ -273,6 +273,16 @@ leaves PHP). Cloudinary, if set, keeps serving what it already holds. Enter the
 values in **Control Room → Settings → API keys → File storage**, or in
 `api/config.php` under `storage` (see `api/config.example.php`), then press
 **Test**.
+
+The **File storage** row opens a connection guide: pick the provider and it
+shows that provider's numbered steps, the endpoint / region / public-address
+shapes to type, a button that copies the CORS rule for *this* site (built from
+`app_origin`), and a **Connect** button whose form is pre-labelled for it. The
+catalogue is `STORAGE_PROVIDERS` in `api/_lib/domain/service-keys.php`: Cloudflare
+R2, Backblaze B2, Amazon S3, Wasabi, DigitalOcean Spaces, Supabase Storage,
+IDrive e2, and any other S3-compatible service. All of them use the same upload
+code (SigV4 presigned PUT); a new provider is a row in that list, never new
+upload code. The R2 and B2 steps are below; the guide on screen has the rest.
 
 **Cloudflare R2 (recommended: 10 GB free, no download charges)**
 
@@ -317,7 +327,9 @@ b2 bucket update --cors-rules '[{"corsRuleName":"ngg","allowedOrigins":["https:/
 ```
 
 **Content-Security-Policy.** `.htaccess` already allows
-`*.r2.cloudflarestorage.com`, `*.r2.dev` and `*.backblazeb2.com`. A bucket on a
+`*.r2.cloudflarestorage.com`, `*.r2.dev`, `*.backblazeb2.com`, `*.amazonaws.com`,
+`*.wasabisys.com`, `*.digitaloceanspaces.com` and `*.supabase.co`. IDrive e2
+(its hosts carry a region number), any other provider, and a bucket on a
 **custom domain** must be added to `connect-src` and `frame-src` there by hand,
 or uploads (and photos on printed cards) fail with a CSP error in the console.
 

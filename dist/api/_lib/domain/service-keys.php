@@ -25,6 +25,50 @@ declare(strict_types=1);
    - Every change is audited by service and field name, never value.
    ========================================================================== */
 
+/* The S3-compatible services File storage can use, each with the steps to
+   connect it. One protocol (presigned PUT, domain/media-objects.php), so a new
+   provider is a row here, never new upload code. `endpoint`, `region` and
+   `public` are the shapes to type; `cors` is whether the bucket needs the CORS
+   rule (all of these do — the browser PUTs straight to the bucket). */
+const STORAGE_PROVIDERS = [
+    ['id' => 'r2', 'label' => 'Cloudflare R2', 'note' => 'Recommended. 10 GB free, and downloads are never charged.', 'link' => 'https://dash.cloudflare.com/?to=/:account/r2',
+     'endpoint' => 'https://<account id>.r2.cloudflarestorage.com', 'region' => 'auto', 'public' => 'https://pub-<id>.r2.dev or your custom domain',
+     'steps' => ['Cloudflare dashboard → R2 → Create bucket (e.g. ngg-media).', 'Bucket → Settings → Public access → allow the r2.dev subdomain, or connect a custom domain. That address is the Public address.',
+                 'R2 → Manage API tokens → Create API token with Object Read & Write on this bucket. Copy the Access Key ID and Secret Access Key — the secret is shown once.',
+                 'The endpoint is on the R2 overview page: https://<account id>.r2.cloudflarestorage.com. Region: auto.', 'Bucket → Settings → CORS policy → paste the rule below.']],
+    ['id' => 'b2', 'label' => 'Backblaze B2', 'note' => '10 GB free; downloads are free up to three times what you store.', 'link' => 'https://secure.backblaze.com/b2_buckets.htm',
+     'endpoint' => 'https://s3.<region>.backblazeb2.com', 'region' => 'us-west-004 (the part of the endpoint after s3.)', 'public' => 'https://f004.backblazeb2.com/file/<bucket>',
+     'steps' => ['Buckets → Create a Bucket. Set Files in Bucket to Public.', 'Note the bucket’s Endpoint (e.g. s3.us-west-004.backblazeb2.com). The region is the middle part.',
+                 'App Keys → Add a New Application Key, with Read and Write access to this bucket only. Copy the keyID (Access key ID) and applicationKey (Secret).',
+                 'Public address: https://f<cluster>.backblazeb2.com/file/<bucket> — open any uploaded file in the B2 browser to see your cluster number.',
+                 'CORS: B2’s web console cannot allow uploads (PUT), so set the rule with the B2 command-line tool — the command is below.']],
+    ['id' => 's3', 'label' => 'Amazon S3', 'note' => 'Pay as you go. The most widely used.', 'link' => 'https://s3.console.aws.amazon.com/s3/buckets',
+     'endpoint' => 'https://s3.<region>.amazonaws.com', 'region' => 'af-south-1 (Cape Town) or eu-west-2 (London)', 'public' => 'https://<bucket>.s3.<region>.amazonaws.com',
+     'steps' => ['S3 → Create bucket in a region near Nigeria (af-south-1 Cape Town, or eu-west-2 London).', 'Permissions → turn off Block all public access for this bucket, then add a bucket policy allowing s3:GetObject for everyone on arn:aws:s3:::<bucket>/*.',
+                 'IAM → Users → create a user for NGG with a policy allowing s3:PutObject, s3:GetObject and s3:DeleteObject on this bucket only. Security credentials → Create access key.',
+                 'Endpoint: https://s3.<region>.amazonaws.com. Public address: https://<bucket>.s3.<region>.amazonaws.com (or a CloudFront domain).', 'Permissions → Cross-origin resource sharing (CORS) → paste the rule below.']],
+    ['id' => 'wasabi', 'label' => 'Wasabi', 'note' => 'Flat price per TB, no download charges. 90-day minimum storage.', 'link' => 'https://console.wasabisys.com/',
+     'endpoint' => 'https://s3.<region>.wasabisys.com', 'region' => 'eu-central-1 (or the bucket’s region)', 'public' => 'https://s3.<region>.wasabisys.com/<bucket>',
+     'steps' => ['Buckets → Create Bucket and pick a region.', 'Bucket → Settings → Policies → add a public-read policy for s3:GetObject (Wasabi needs public files enabled on the account first).',
+                 'Access Keys → Create New Access Key (a sub-user limited to this bucket is best). Copy both keys.', 'Endpoint: https://s3.<region>.wasabisys.com. Public address: https://s3.<region>.wasabisys.com/<bucket>.', 'Bucket → Settings → CORS → paste the rule below.']],
+    ['id' => 'spaces', 'label' => 'DigitalOcean Spaces', 'note' => '250 GB and a CDN for a flat monthly fee.', 'link' => 'https://cloud.digitalocean.com/spaces',
+     'endpoint' => 'https://<region>.digitaloceanspaces.com', 'region' => 'fra1, lon1, ams3 …', 'public' => 'https://<space>.<region>.cdn.digitaloceanspaces.com',
+     'steps' => ['Spaces Object Storage → Create a Space; enable the CDN; set File Listing to Restricted.', 'API → Spaces Keys → Generate New Key. Copy the Key (Access key ID) and Secret.',
+                 'Endpoint: https://<region>.digitaloceanspaces.com. Bucket: the Space’s name. Region: e.g. fra1.', 'Public address: the CDN endpoint, https://<space>.<region>.cdn.digitaloceanspaces.com.', 'Space → Settings → CORS Configurations → add the rule below.']],
+    ['id' => 'supabase', 'label' => 'Supabase Storage', 'note' => '1 GB free on the free plan.', 'link' => 'https://supabase.com/dashboard/project/_/storage/buckets',
+     'endpoint' => 'https://<project ref>.supabase.co/storage/v1/s3', 'region' => 'the project’s region, e.g. eu-west-2', 'public' => 'https://<project ref>.supabase.co/storage/v1/object/public/<bucket>',
+     'steps' => ['Storage → New bucket, marked Public.', 'Project Settings → Storage → S3 Connection: copy the Endpoint and Region, then New access key for the Access key ID and Secret.',
+                 'Public address: https://<project ref>.supabase.co/storage/v1/object/public/<bucket>.', 'Supabase allows browser uploads from any origin by default; no CORS rule is needed.']],
+    ['id' => 'idrive', 'label' => 'IDrive e2', 'note' => 'Low-cost, no download charges.', 'link' => 'https://app.idrivee2.com/',
+     'endpoint' => 'https://<endpoint>.idrivee2-<n>.com', 'region' => 'the region shown with the endpoint', 'public' => 'https://<endpoint>.idrivee2-<n>.com/<bucket>',
+     'steps' => ['Buckets → Create Bucket, then enable public access for it.', 'Access Keys → Create Access Key with read/write on this bucket.', 'The endpoint and region are on the Regions page. Public address: <endpoint>/<bucket>.', 'Bucket → CORS → add the rule below.',
+                 'IDrive’s addresses carry a region number, so add your endpoint’s host to connect-src and frame-src in the site’s .htaccess, or the browser blocks the upload.']],
+    ['id' => 'other', 'label' => 'Another S3-compatible service', 'note' => 'MinIO, Linode, Scaleway, Hetzner … anything that speaks S3 presigned uploads.', 'link' => 'https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html',
+     'endpoint' => 'https://<the service’s S3 endpoint>', 'region' => 'the service’s region name (or auto)', 'public' => 'the address files are read from',
+     'steps' => ['Create a bucket whose files can be read publicly.', 'Create an access key limited to that bucket, with read and write.', 'Enter the S3 endpoint, region, bucket, keys and public address here.', 'Allow browser uploads from this site with the CORS rule below.',
+                 'Add the endpoint’s and the public address’s hosts to connect-src and frame-src in the site’s .htaccess, or the browser blocks the upload.']],
+];
+
 /* [path, label, kind, optional, help]
    kind: secret | text | port | secure | email | model */
 const SERVICE_KEYS = [
@@ -46,14 +90,15 @@ const SERVICE_KEYS = [
     'cloudinary' => ['group' => 'photos', 'label' => 'Cloudinary', 'link' => 'https://console.cloudinary.com/settings/api-keys',
         'what' => 'Stores and edits headshots in the cloud. Without it, photos are kept on this server.', 'test' => 'cloudinary',
         'fields' => [['cloudinary.cloud_name', 'Cloud name', 'text', false, ''], ['cloudinary.api_key', 'API key', 'text', false, 'The number.'], ['cloudinary.api_secret', 'API secret', 'secret', false, '']]],
-    'storage' => ['group' => 'storage', 'label' => 'File storage (Cloudflare R2 / Backblaze B2)', 'link' => 'https://dash.cloudflare.com/?to=/:account/r2',
-        'what' => 'Where every new photo and file is kept once it is set: any S3-compatible bucket. Cloudflare R2 is recommended (10 GB free, and nobody pays for downloads); Backblaze B2 works the same way. What Cloudinary already holds stays there and keeps working. The bucket must allow uploads from this site: see docs/SETUP.md → File storage for the CORS rule.', 'test' => 'storage',
+    'storage' => ['group' => 'storage', 'label' => 'File storage (S3-compatible)', 'providers' => 'STORAGE_PROVIDERS', 'link' => 'https://dash.cloudflare.com/?to=/:account/r2',
+        'what' => 'Where every new photo and file is kept once it is set: any S3-compatible bucket — Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, DigitalOcean Spaces, Supabase Storage, IDrive e2 or your own. Cloudflare R2 is recommended (10 GB free, and nobody pays for downloads). Pick your provider below for its step-by-step guide. What Cloudinary already holds stays there and keeps working. The bucket must allow uploads from this site: see docs/SETUP.md → File storage for the CORS rule.', 'test' => 'storage',
         'fields' => [['storage.endpoint', 'S3 endpoint', 'https', false, 'R2: https://<account id>.r2.cloudflarestorage.com · B2: https://s3.<region>.backblazeb2.com'],
                      ['storage.region', 'Region', 'text', true, 'R2: auto (or blank). B2: the region in the endpoint, e.g. us-west-004.'],
                      ['storage.bucket', 'Bucket', 'bucket', false, 'The bucket name, e.g. ngg-media.'],
                      ['storage.access_key', 'Access key ID', 'text', false, 'R2: Manage API tokens → Object Read & Write. B2: the keyID of an application key.'],
                      ['storage.secret_key', 'Secret access key', 'secret', false, 'Shown once when the key is made.'],
-                     ['storage.public_base', 'Public address', 'https', false, 'Where files are read from. R2: the r2.dev URL or your custom domain. B2: https://f004.backblazeb2.com/file/<bucket>.']]],
+                     ['storage.public_base', 'Public address', 'https', false, 'Where files are read from. R2: the r2.dev URL or your custom domain. B2: https://f004.backblazeb2.com/file/<bucket>.'],
+                     ['storage.provider', 'Provider', 'text', true, 'Which service the bucket is on — only a label, so the screen can show its guide.']]],
     'paystack' => ['group' => 'payments', 'label' => 'Paystack', 'link' => 'https://dashboard.paystack.com/#/settings/developers',
         'what' => 'Card and bank payments for joining invoices and donations. Point its webhook at /api/hooks/paystack.php.', 'test' => 'paystack', 'guard' => true,
         'fields' => [['paystack.secret', 'Secret key', 'secret', false, 'sk_live_… (or sk_test_… while testing).'], ['paystack.public', 'Public key', 'text', true, 'pk_live_…']]],
@@ -168,6 +213,9 @@ function service_key_view(string $svc, array $stored): array {
                      'set' => $val !== '', 'ending' => $kind === 'secret' && $val !== '' ? substr($val, -4) : '', 'value' => $kind === 'secret' ? '' : $val];
     }
     return ['id' => $svc, 'group' => $d['group'], 'label' => $d['label'], 'what' => $d['what'], 'link' => $d['link'], 'testable' => $d['test'] !== '',
+            'providers' => isset($d['providers']) ? STORAGE_PROVIDERS : null,
+            'cors' => isset($d['providers']) ? cm_storage_cors_rule() : '',
+            'corsB2' => isset($d['providers']) ? cm_storage_cors_b2() : '',
             'guarded' => !empty($d['guard']), 'connected' => $required, 'setHere' => $anyHere, 'fields' => $fields,
             'changedAt' => (string)($stored['meta'][$svc]['at'] ?? ''), 'changedBy' => (string)($stored['meta'][$svc]['byName'] ?? '')];
 }
@@ -368,3 +416,19 @@ function admin_keys_test(array $p): array {
     }
     return ['ok' => true, 'pass' => null, 'detail' => 'This service has no safe test; it is used the next time it is needed.'];
 }
+
+/** The CORS rule a bucket needs so this site's browsers can upload to it. */
+function cm_storage_cors_rule(): string {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') ?: 'https://your-ngg-site.example';
+    return json_encode([['AllowedOrigins' => [$origin], 'AllowedMethods' => ['PUT', 'GET', 'HEAD'], 'AllowedHeaders' => ['content-type'],
+        'ExposeHeaders' => ['ETag'], 'MaxAgeSeconds' => 3600]], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+}
+
+/** The same rule for Backblaze B2, whose console cannot allow PUT: a b2 CLI command. */
+function cm_storage_cors_b2(): string {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') ?: 'https://your-ngg-site.example';
+    $rule = json_encode([['corsRuleName' => 'ngg', 'allowedOrigins' => [$origin], 'allowedOperations' => ['s3_put', 's3_get', 's3_head'],
+        'allowedHeaders' => ['content-type'], 'exposeHeaders' => ['ETag'], 'maxAgeSeconds' => 3600]], JSON_UNESCAPED_SLASHES);
+    return "b2 bucket update --cors-rules '" . $rule . "' <bucket> allPublic";
+}
+

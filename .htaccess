@@ -116,7 +116,10 @@ AddDefaultCharset UTF-8
   # The file-storage bucket (api/_lib/object-store.php) is listed the same way:
   # *.r2.cloudflarestorage.com and *.backblazeb2.com take the browser's direct
   # PUT of an upload; *.r2.dev and *.backblazeb2.com serve the files back to
-  # fetch() and to the document viewer's frame. A bucket on a CUSTOM domain
+  # fetch() and to the document viewer's frame. Amazon S3, Wasabi, DigitalOcean
+  # Spaces and Supabase (STORAGE_PROVIDERS, service-keys.php) both take the PUT
+  # and serve on their own domains. IDrive e2's hosts carry a per-region number
+  # (idrivee2-46.com) no wildcard can cover, so — like a bucket on a CUSTOM domain
   # (files.example.org) must be added to connect-src and frame-src here by
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
@@ -124,9 +127,9 @@ script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
-connect-src 'self' https://api.cloudinary.com https://res.cloudinary.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://*.backblazeb2.com https://api.dictionaryapi.dev https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; \
+connect-src 'self' https://api.cloudinary.com https://res.cloudinary.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://*.backblazeb2.com https://*.amazonaws.com https://*.wasabisys.com https://*.digitaloceanspaces.com https://*.supabase.co https://api.dictionaryapi.dev https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; \
 worker-src 'self' blob:; \
-frame-src 'self' https://res.cloudinary.com https://*.r2.dev https://*.backblazeb2.com https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; \
+frame-src 'self' https://res.cloudinary.com https://*.r2.dev https://*.backblazeb2.com https://*.amazonaws.com https://*.wasabisys.com https://*.digitaloceanspaces.com https://*.supabase.co https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; \
 media-src 'self' https: blob:; \
 frame-ancestors 'self'; \
 base-uri 'self'; \

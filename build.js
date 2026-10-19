@@ -117,6 +117,8 @@ const ORDER = [
   'src/modules/club3/cp3-meta.jsx',
   'src/modules/club3/cp3-directory.jsx',
   'src/modules/club3/cp3-app.jsx',
+  'src/modules/community3/cm3-view.jsx',
+  'src/modules/community3/cm3-app.jsx',
   'page-family.jsx',
   'page-book.jsx',
   'page-analytics.jsx',

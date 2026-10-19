@@ -65,12 +65,14 @@ button:disabled{cursor:default!important}
   </nav>
   <div style="border-top:1px solid #e8e5dd;padding-top:12px;display:flex;flex-direction:column;gap:10px">
     <div style="display:flex;align-items:center;gap:10px;padding:0 4px"><span style="width:32px;height:32px;border-radius:50%;background:{{ meTone }};display:grid;place-items:center;font-size:12px;font-weight:600;flex-shrink:0">{{ meIni }}</span><span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:13px;font-weight:600">{{ meName }}</span><span style="font-size:12px;color:#6b6b72">{{ meRole }}</span></span></div>
+    <sc-if value="{{ showRoles }}" hint-placeholder-val="{{ false }}">
     <div role="group" aria-label="Preview as" style="display:flex;flex-direction:column;gap:4px">
       <span style="font-size:11px;color:#6b6b72;font-weight:500;letter-spacing:.04em;text-transform:uppercase;padding:0 4px">Preview as</span>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;background:#efeee9;border-radius:9px;padding:2px">
         <sc-for list="{{ roles }}" as="r" hint-placeholder-count="3"><button onClick="{{ r.go }}" aria-pressed="{{ r.pressed }}" style="height:32px;border:0;border-radius:7px;background:{{ r.bg }};box-shadow:{{ r.sh }};font-size:12px;font-weight:{{ r.fw }};cursor:pointer">{{ r.label }}</button></sc-for>
       </div>
     </div>
+    </sc-if>
   </div>
 </aside>
 </sc-if>
@@ -206,6 +208,7 @@ button:disabled{cursor:default!important}
       <sc-if value="{{ p.hasLast }}" hint-placeholder-val="{{ false }}"><button onClick="{{ p.openThread }}" style="display:flex;gap:10px;align-items:center;padding:10px 12px;margin-top:-4px;border:0;border-radius:12px;background:#f7f6f2;text-align:left;cursor:pointer;width:100%" style-hover="background:#f0efea"><span style="width:26px;height:26px;border-radius:50%;background:{{ p.lastTone }};display:grid;place-items:center;font-size:10px;font-weight:700;flex-shrink:0">{{ p.lastIni }}</span><span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><strong style="font-weight:600">{{ p.lastName }}</strong> <span style="color:#3a3a40">{{ p.lastBody }}</span></span><span style="font-size:12.5px;font-weight:600;color:#3a3a40;flex-shrink:0">{{ p.lastMore }}</span></button></sc-if>
     </article>
   </sc-for>
+  {{ moreEl }}
   <sc-if value="{{ feedEmpty }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;padding:40px 16px;color:#6b6b72;display:flex;flex-direction:column;align-items:center;gap:6px"><i class="ph ph-sun-horizon" style="font-size:30px"></i><p style="margin:0;font-weight:600;color:#0b0b0c;font-size:15px">{{ emptyT }}</p><p style="margin:0;text-wrap:pretty">{{ emptyD }}</p></div></sc-if>
 </sc-if>
 
@@ -282,8 +285,13 @@ button:disabled{cursor:default!important}
   <p style="margin:0;font-size:12.5px;color:#6b6b72;text-wrap:pretty">Mentors and the community team can read every channel. There are no private messages in Community — talk to your mentor in My NGG.</p>
 </sc-if>
 
+{{ offlineEl }}
 <sc-if value="{{ onArcade }}" hint-placeholder-val="{{ false }}">
   {{ arcadeEl }}
+</sc-if>
+
+<sc-if value="{{ onJournal }}" hint-placeholder-val="{{ false }}">
+  {{ journalEl }}
 </sc-if>
 
 <sc-if value="{{ modLocked }}" hint-placeholder-val="{{ false }}">
@@ -306,7 +314,7 @@ button:disabled{cursor:default!important}
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onClick="{{ it.approve }}" style="height:40px;padding:0 14px;border:0;border-radius:10px;background:#1d6b30;color:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-check"></i>Approve</button>
           <button onClick="{{ it.hide }}" style="height:40px;padding:0 14px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-eye-slash"></i>Hide with a kind note</button>
-          <button onClick="{{ it.remove }}" style="height:40px;padding:0 14px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-trash"></i>Remove</button>
+          <button onClick="{{ it.edit }}" style="height:40px;padding:0 14px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-pencil-simple"></i>Edit &amp; approve</button><button onClick="{{ it.remove }}" style="height:40px;padding:0 14px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-trash"></i>Remove</button><button onClick="{{ it.message }}" style="height:40px;padding:0 14px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-chat-circle-text"></i>Message author</button>
           <span style="flex:1"></span>
           <button onClick="{{ it.escalate }}" style="height:40px;padding:0 14px;border:1px solid #f3c7c2;border-radius:10px;background:#fdf1ef;color:#7a1a10;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-lifebuoy"></i>Safeguarding concern</button>
         </div>
@@ -435,7 +443,7 @@ button:disabled{cursor:default!important}
     <div style="flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px">
       <div role="radiogroup" aria-label="What kind of post" style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ compTypes }}" as="t" hint-placeholder-count="4"><button role="radio" aria-checked="{{ t.sel }}" onClick="{{ t.go }}" style="height:40px;padding:0 13px;border-radius:999px;border:1px solid {{ t.bd }};background:{{ t.bg }};color:{{ t.fg }};display:flex;align-items:center;gap:6px;font-weight:500;cursor:pointer"><i class="{{ t.icon }}" style="font-size:16px"></i>{{ t.label }}</button></sc-for></div>
       <label style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">Post to</span><select value="{{ compCh }}" onChange="{{ onCompCh }}" style="height:46px;border:1px solid #e8e5dd;border-radius:10px;padding:0 12px;background:#fff;font-size:14.5px"><sc-for list="{{ compChans }}" as="c" hint-placeholder-count="4"><option value="{{ c.slug }}">{{ c.name }}</option></sc-for></select><span style="font-size:12.5px;color:#3a3a40;display:flex;align-items:center;gap:6px"><i class="ph ph-eye"></i>{{ compAudience }}</span></label>
-      <sc-if value="{{ compIsHw }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px"><label style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">Homework title</span><input value="{{ hwTitle }}" onInput="{{ onHwTitle }}" placeholder="e.g. Add a photo gallery to your page" style="height:46px;border:1px solid #e8e5dd;border-radius:10px;padding:0 12px;outline:0"></label><label style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">Due</span><select value="{{ hwDue }}" onChange="{{ onHwDue }}" style="height:46px;border:1px solid #e8e5dd;border-radius:10px;padding:0 10px;background:#fff"><sc-for list="{{ dueOpts }}" as="d" hint-placeholder-count="3"><option value="{{ d }}">{{ d }}</option></sc-for></select></label></div></sc-if>
+      <sc-if value="{{ compIsHw }}" hint-placeholder-val="{{ false }}"><div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px"><label style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">Homework title</span><input value="{{ hwTitle }}" onInput="{{ onHwTitle }}" placeholder="e.g. Add a photo gallery to your page" style="height:46px;border:1px solid #e8e5dd;border-radius:10px;padding:0 12px;outline:0"></label><label style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">Due</span><select value="{{ hwDue }}" onChange="{{ onHwDue }}" style="height:46px;border:1px solid #e8e5dd;border-radius:10px;padding:0 10px;background:#fff"><sc-for list="{{ dueOpts }}" as="d" hint-placeholder-count="3"><option value="{{ d.v }}">{{ d.l }}</option></sc-for></select></label></div></sc-if>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div style="display:flex;align-items:center;gap:8px"><label for="cp-t" style="font-size:13px;font-weight:600;flex:1">{{ compLabel }}</label><sc-if value="{{ compHasHelp }}" hint-placeholder-val="{{ false }}"><button onClick="{{ compHelp }}" style="height:32px;padding:0 10px;border:0;border-radius:8px;background:#fdf6e3;color:#6b4b00;font-weight:600;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:5px"><i class="ph ph-sparkle"></i>Help me start</button></sc-if></div>
         <textarea id="cp-t" value="{{ compText }}" onInput="{{ onCompText }}" rows="5" placeholder="{{ compPh }}" style="border:1px solid #e8e5dd;border-radius:12px;padding:12px;font-size:15px;line-height:1.5;resize:vertical;outline:0;min-height:130px"></textarea>
@@ -574,12 +582,7 @@ button:disabled{cursor:default!important}
         <sc-for list="{{ pdfThumbs }}" as="t" hint-placeholder-count="2"><button onClick="{{ t.go }}" aria-label="{{ t.label }}" aria-current="{{ t.cur }}" style="border:0;background:transparent;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;color:#fff"><span aria-hidden="true" style="width:96px;aspect-ratio:1/1.414;background:#fff;border-radius:3px;outline:2px solid {{ t.ring }};outline-offset:3px;padding:9px 8px;display:flex;flex-direction:column;gap:4px;overflow:hidden"><span style="font-family:'Bricolage Grotesque',sans-serif;font-size:7px;font-weight:800;color:#0b0b0c;line-height:1.1">{{ t.h }}</span><span style="height:2px;width:50%;background:#f5b026"></span><span style="height:2px;background:#e6e5e0"></span><span style="height:2px;background:#e6e5e0"></span><span style="height:2px;width:70%;background:#e6e5e0"></span><span style="height:2px;background:#e6e5e0;margin-top:3px"></span><span style="height:2px;width:80%;background:#e6e5e0"></span></span><span style="font-size:11.5px;color:#a9a7a0">{{ t.n }}</span></button></sc-for>
       </nav></sc-if>
       <div style="flex:1;min-width:0;overflow:auto;background:#2a2a2e;padding:24px 16px;display:flex;justify-content:center;align-items:flex-start">
-        <article style="width:{{ pageW }};flex-shrink:0;aspect-ratio:1/1.414;background:#fff;color:#0b0b0c;border-radius:4px;box-shadow:0 12px 40px rgba(0,0,0,.45);padding:3em 2.6em;display:flex;flex-direction:column;gap:1.1em;font-size:{{ pageFs }};overflow:hidden">
-          <div style="display:flex;align-items:center;gap:.6em;font-size:.8em;color:#6b6b72"><img src="assets/logo.png" alt="" style="width:1.9em;height:1.9em;border-radius:50%"><span style="flex:1;font-weight:600">Next Generation Genius</span><span style="font-family:'Geist Mono',monospace">{{ pg.n }}</span></div>
-          <div style="display:flex;flex-direction:column;gap:.35em;margin-top:.6em"><h1 style="margin:0;font-family:'Bricolage Grotesque','Geist',sans-serif;font-size:2.2em;font-weight:800;letter-spacing:-0.03em;line-height:1.02">{{ pg.h }}</h1><span style="font-size:.95em;color:#6b6b72">{{ pg.sub }}</span><span style="width:3em;height:.3em;background:#f5b026;border-radius:2px;margin-top:.4em"></span></div>
-          <sc-for list="{{ pg.blocks }}" as="bk" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:.3em"><sc-if value="{{ bk.hasH }}" hint-placeholder-val="{{ true }}"><h2 style="margin:0;font-size:1.08em;font-weight:700">{{ bk.h }}</h2></sc-if><p style="margin:0;font-size:1em;line-height:1.55;white-space:pre-wrap;font-family:{{ bk.font }}">{{ bk.t }}</p></div></sc-for>
-          <span style="margin-top:auto;font-size:.75em;color:#6b6b72;border-top:1px solid #ecebe7;padding-top:.7em">{{ pg.foot }}</span>
-        </article>
+        {{ pdfPageEl }}
       </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:8px 12px;border-top:1px solid #232327;flex-wrap:wrap">
@@ -636,7 +639,8 @@ button:disabled{cursor:default!important}
 </div>
 </sc-if>
 
-<sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}"><div role="status" style="position:absolute;left:50%;transform:translateX(-50%);bottom:{{ toastBottom }};z-index:80;background:#0b0b0c;color:#fff;padding:12px 16px;border-radius:12px;font-size:13.5px;width:max-content;max-width:calc(100% - 32px);box-shadow:0 10px 30px rgba(0,0,0,.2);display:flex;gap:8px;align-items:center"><i class="ph-fill ph-check-circle" style="color:#f5b026;font-size:18px;flex-shrink:0"></i><span>{{ toast }}</span></div></sc-if>
+<sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}"><div role="status" style="position:absolute;left:50%;transform:translateX(-50%);bottom:{{ toastBottom }};z-index:80;background:#0b0b0c;color:#fff;padding:12px 16px;border-radius:12px;font-size:13.5px;width:max-content;max-width:calc(100% - 32px);box-shadow:0 10px 30px rgba(0,0,0,.2);display:flex;gap:8px;align-items:center"><i class="ph-fill ph-check-circle" style="color:#f5b026;font-size:18px;flex-shrink:0"></i><span>{{ toast }}</span>{{ undoEl }}</div></sc-if>
+{{ editEl }}
 
 </sc-if>
 </div>
