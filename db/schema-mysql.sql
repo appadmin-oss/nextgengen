@@ -3800,3 +3800,53 @@ INSERT INTO schema_version (version) VALUES (159) ON DUPLICATE KEY UPDATE versio
 -- NULL until set; the backfill is NGG_MYSQL_ROW_FIXUPS 'centres.summerLead' (db.php).
 ALTER TABLE centres ADD COLUMN summerLeadVolunteerId VARCHAR(64) NULL;
 INSERT INTO schema_version (version) VALUES (160) ON DUPLICATE KEY UPDATE version = version;
+
+-- 161: Club portal v3 — announcements with approval, check-in follow-up, fine rules, shift times.
+CREATE TABLE IF NOT EXISTS club_announcements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  annId VARCHAR(64) NOT NULL,
+  title VARCHAR(200) DEFAULT '',
+  body TEXT,
+  aud VARCHAR(16) DEFAULT 'guardians',
+  centre VARCHAR(120) DEFAULT 'all',
+  channels VARCHAR(64) DEFAULT '["app"]',
+  status VARCHAR(16) DEFAULT 'draft',
+  sendAt VARCHAR(32) DEFAULT '',
+  byId VARCHAR(64) DEFAULT '',
+  byName VARCHAR(160) DEFAULT '',
+  approvedById VARCHAR(64) DEFAULT '',
+  approvedByName VARCHAR(160) DEFAULT '',
+  note TEXT,
+  sentAt VARCHAR(32) DEFAULT '',
+  stats TEXT,
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cann_id (annId),
+  KEY idx_cann_status (status, sendAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS club_checkin_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  checkinKey VARCHAR(120) NOT NULL,
+  toldAt VARCHAR(32) DEFAULT '',
+  toldBy VARCHAR(64) DEFAULT '',
+  seenAt VARCHAR(32) DEFAULT '',
+  seenBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_ccs_key (checkinKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS conduct_rules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ruleId VARCHAR(64) NOT NULL,
+  reason VARCHAR(32) DEFAULT '',
+  name VARCHAR(160) DEFAULT '',
+  whenText VARCHAR(200) DEFAULT '',
+  amount INT DEFAULT 0,
+  capTerm INT DEFAULT 0,
+  active INT DEFAULT 1,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_crule_id (ruleId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE attendance_duty ADD COLUMN startTime VARCHAR(5) DEFAULT '';
+ALTER TABLE attendance_duty ADD COLUMN endTime VARCHAR(5) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (161) ON DUPLICATE KEY UPDATE version = version;

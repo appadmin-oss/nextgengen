@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 160;
+const NGG_SCHEMA_TARGET = 161;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4810,6 +4810,59 @@ function db_migrate(PDO $db): void {
             UPDATE centres SET summerLeadVolunteerId = CASE
                 WHEN COALESCE(programmes, '') = '' OR programmes LIKE '%summer%' THEN COALESCE(leadVolunteerId, '') ELSE '' END
               WHERE summerLeadVolunteerId IS NULL;
+        ",
+        /* Club portal v3 (domain/club-portal.php). Announcements wait for an
+           admin before they reach a family; a check-in a coordinator passed to
+           a mentor, or marked seen, stays that way; a fine rule is on or off
+           and never goes over its cap per term; a duty shift has its times. */
+        161 => "
+            CREATE TABLE IF NOT EXISTS club_announcements (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              annId TEXT NOT NULL,
+              title TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              aud TEXT DEFAULT 'guardians',
+              centre TEXT DEFAULT 'all',
+              channels TEXT DEFAULT '[\"app\"]',
+              status TEXT DEFAULT 'draft',
+              sendAt TEXT DEFAULT '',
+              byId TEXT DEFAULT '',
+              byName TEXT DEFAULT '',
+              approvedById TEXT DEFAULT '',
+              approvedByName TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              sentAt TEXT DEFAULT '',
+              stats TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cann_id ON club_announcements(annId);
+            CREATE INDEX IF NOT EXISTS idx_cann_status ON club_announcements(status, sendAt);
+            CREATE TABLE IF NOT EXISTS club_checkin_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              checkinKey TEXT NOT NULL,
+              toldAt TEXT DEFAULT '',
+              toldBy TEXT DEFAULT '',
+              seenAt TEXT DEFAULT '',
+              seenBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ccs_key ON club_checkin_state(checkinKey);
+            CREATE TABLE IF NOT EXISTS conduct_rules (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ruleId TEXT NOT NULL,
+              reason TEXT DEFAULT '',
+              name TEXT DEFAULT '',
+              whenText TEXT DEFAULT '',
+              amount INTEGER DEFAULT 0,
+              capTerm INTEGER DEFAULT 0,
+              active INTEGER DEFAULT 1,
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_crule_id ON conduct_rules(ruleId);
+            ALTER TABLE attendance_duty ADD COLUMN startTime TEXT DEFAULT '';
+            ALTER TABLE attendance_duty ADD COLUMN endTime TEXT DEFAULT '';
         ",
     ];
 

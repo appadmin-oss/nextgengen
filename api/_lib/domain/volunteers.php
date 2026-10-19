@@ -524,7 +524,8 @@ function public_cert(array $p): array {
 function admin_volunteer_safeguard(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['pending', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    // in_progress: screening has started (references asked for). Anything but cleared is not cleared.
+    if (!in_array($status, ['pending', 'in_progress', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $volunteerId = (string)($p['volunteerId'] ?? '');
     $n = db_update('volunteers', ['safeguarding' => $status, 'updatedAt' => now_iso()], ['volunteerId' => $volunteerId]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];

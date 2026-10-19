@@ -1692,6 +1692,9 @@
         complete: (date, centre, volunteerId) => request('/admin/attendance.php', { body: { action: 'complete', date, centre, volunteerId } }),
         leaderboard: () => request('/admin/attendance.php' + qs({ view: 'leaderboard' })),
       },
+      /* Club portal v3 (api/admin/club-portal.php → domain/club-portal.php):
+         one route, the op named in the body. */
+      clubp: (op, args) => request('/admin/club-portal.php', { body: Object.assign({}, args || {}, { op: op }), timeout: op === 'brief' ? 60000 : undefined }),
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
         /* Both lists are searched, filtered and PAGED server-side now. The

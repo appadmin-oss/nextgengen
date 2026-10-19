@@ -338,6 +338,7 @@ function admin_club_members(array $p): array {
         $like = '%' . $q . '%'; array_push($params, $like, $like, $like);
     }
     if (!empty($p['centre'])) { $where[] = 'centre = ?'; $params[] = (string)$p['centre']; }
+    if (!empty($p['track'])) { $where[] = 'lower(track) = ?'; $params[] = strtolower((string)$p['track']); }
     // A centre-scoped coordinator sees only their centres, same as the member desk.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {
@@ -349,15 +350,23 @@ function admin_club_members(array $p): array {
 
     // Allow-listed, like the member desk: the column lands in SQL text.
     $sortable = ['createdAt' => 'createdAt', 'fullName' => 'fullName', 'memberId' => 'memberId',
-                 'centre' => 'centre', 'status' => 'status'];
+                 'centre' => 'centre', 'status' => 'status', 'track' => 'track'];
     $sortKey = (string)($p['sort'] ?? '');
     $sortCol = $sortable[$sortKey] ?? 'createdAt';
     $dir = strtolower((string)($p['dir'] ?? '')) === 'asc' ? 'ASC' : 'DESC';
     if ($sortKey === '') $dir = 'DESC';
-    $orderExpr = in_array($sortCol, ['fullName', 'centre', 'status'], true) ? "lower($sortCol)" : $sortCol;
+    $orderExpr = in_array($sortCol, ['fullName', 'centre', 'status', 'track'], true) ? "lower($sortCol)" : $sortCol;
     $orderSql = " ORDER BY $orderExpr $dir, memberId ASC";
 
     $total = (int)(db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'] ?? 0);
+    /* The same filter by every status, for the status tabs' counts: the status
+       clause is the second condition when present (see above), so drop it. */
+    $counts = [];
+    if (!empty($p['counts'])) {
+        $cw = $where; $cp = $params;
+        if ($status !== '' && $status !== 'all') { array_splice($cw, 1, 1); array_splice($cp, 0, 1); }
+        foreach (db_all('SELECT status, COUNT(*) c FROM members WHERE ' . implode(' AND ', $cw) . ' GROUP BY status', $cp) as $r) $counts[(string)$r['status']] = (int)$r['c'];
+    }
     if (!empty($p['all'])) {
         $rows = db_all('SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT 5000', $params);
         return ['ok' => true, 'total' => $total, 'members' => array_map('public_member', $rows)];
@@ -368,6 +377,6 @@ function admin_club_members(array $p): array {
         array_merge($params, [$pageSize, ($page - 1) * $pageSize]));
     return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
             'sort' => array_search($sortCol, $sortable, true) ?: 'createdAt', 'dir' => strtolower($dir),
-            'statuses' => CLUB_BULK_STATUSES,
+            'statuses' => CLUB_BULK_STATUSES, 'counts' => $counts,
             'members' => array_map('public_member', $rows)];
 }

@@ -28992,5 +28992,109 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM centres WHERE name = 'Leadsville'"); db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-LD-N','VOL-LD-S')");
 })();
 
+/* Club portal v3 (domain/club-portal.php): NGG centres only, scoped per row,
+ * announcements wait for an admin, check-ins reach the mentor, fine caps hold. */
+(function () {
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CP-A', 'name' => 'Cpalpha', 'code' => 'CPA', 'color' => '#111111', 'status' => 'active', 'programmes' => 'ngg', 'meetDays' => 'Saturdays', 'meetTime' => '9am-2pm', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('centres', ['centreId' => 'CP-B', 'name' => 'Cpbeta', 'code' => 'CPB', 'color' => '#222222', 'status' => 'active', 'programmes' => 'ngg,summer', 'meetDays' => 'Wednesdays', 'meetTime' => '5pm-7pm', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('centres', ['centreId' => 'CP-S', 'name' => 'Cpsummer', 'code' => 'CPS', 'color' => '#333333', 'status' => 'active', 'programmes' => 'summer', 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk = static fn($id, $name, $role, $centre, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@cp.example', 'type' => 'NGG', 'status' => 'active',
+        'role' => $role, 'centre' => $centre, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('CP-ADM', 'Ada Admin', 'admin', 'Cpalpha');
+    $mk('CP-CLB', 'Cole Club', 'club_admin', 'Cpalpha');
+    $mk('CP-LEAD', 'Lola Lead', 'centre_lead', 'Cpalpha', ['centreScope' => '["CP-A"]']);
+    $mk('CP-M1', 'Tobi Alpha', 'member', 'Cpalpha', ['parentEmail' => 'p1@cp.example', 'parentName' => 'Mrs Alpha', 'track' => 'Coding']);
+    $mk('CP-M2', 'Bimpe Beta', 'member', 'Cpbeta', ['parentEmail' => 'p2@cp.example', 'track' => 'Robotics']);
+    $mk('CP-M3', 'Gone Quiet', 'member', 'Cpalpha', ['status' => 'inactive']);
+
+    $boot = fn($who) => backend_dispatch('admin.clubp.boot', ['requesterId' => $who]);
+    $names = fn($r) => array_column($r['centres'] ?? [], 'name');
+    chk('club portal: a club admin covers every NGG centre, never a Summer-only venue',
+        in_array('Cpalpha', $names($boot('CP-CLB')), true) && in_array('Cpbeta', $names($boot('CP-CLB')), true) && !in_array('Cpsummer', $names($boot('CP-CLB')), true));
+    chk('club portal: a centre lead covers their own centre only', $names($boot('CP-LEAD')) === ['Cpalpha'] && !empty($boot('CP-LEAD')['me']['scoped']));
+    $a = null; foreach ($boot('CP-CLB')['centres'] as $c) if ($c['name'] === 'Cpalpha') $a = $c;
+    chk('club portal: a centre reads its days and hours from its meeting text', $a && $a['days'] === [6] && $a['open'] === '09:00' && $a['close'] === '14:00');
+    chk('club portal: a summer coordinator is refused', empty(backend_dispatch('admin.clubp.boot', ['requesterId' => 'NGG-2025-0099']) ['ok']) === false);
+
+    $d = backend_dispatch('admin.clubp.dashboard', ['requesterId' => 'CP-LEAD']);
+    chk('club portal: dashboard counts only the lead\'s centre', !empty($d['ok']) && ($d['memberStats']['byStatus'][0][1] ?? -1) === 1 && isset($d['centreStats']['CP-A']) && !isset($d['centreStats']['CP-B']));
+    chk('club portal: dashboard counts active members missing a required permission', ($d['counts']['permissionsMissing'] ?? 0) === 1);
+
+    // Permissions: recorded through the member desk's op, and scoped on the way in.
+    $r = backend_dispatch('admin.clubp.consent.set', ['requesterId' => 'CP-LEAD', 'memberId' => 'CP-M2', 'type' => 'participation', 'v' => 'g', 'method' => 'Paper form']);
+    chk('club portal: a lead cannot record a permission at another centre', ($r['error'] ?? '') === 'out_of_scope');
+    foreach (['participation', 'medical', 'data'] as $t) backend_dispatch('admin.clubp.consent.set', ['requesterId' => 'CP-LEAD', 'memberId' => 'CP-M1', 'type' => $t, 'v' => 'g', 'method' => 'Paper form']);
+    $c = backend_dispatch('admin.clubp.consents', ['requesterId' => 'CP-LEAD']);
+    $row = null; foreach ($c['rows'] ?? [] as $x) if ($x['id'] === 'CP-M1') $row = $x;
+    chk('club portal: recorded permissions read back, with the guardian', $row && ($row['consent']['medical']['v'] ?? '') === 'g' && $row['consent']['guardian'] === 'Mrs Alpha' && ($c['totals']['missingRequired'] ?? -1) === 0);
+
+    // Check-ins: a struggling member reaches their mentor; "seen" hides it.
+    db_insert('mentors', ['mentorId' => 'CP-MEN', 'fullName' => 'Mo Mentor', 'email' => 'mo@cp.example', 'status' => 'active', 'centre' => 'Cpalpha', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'CP-M1', 'mentorId' => 'CP-MEN', 'status' => 'active', 'startedAt' => $now]);
+    db_insert('member_checkins', ['memberId' => 'CP-M1', 'week' => '2026-W42', 'wellbeing' => 'Struggling', 'note' => 'Exams', 'createdAt' => $now]);
+    $ci = backend_dispatch('admin.clubp.checkins', ['requesterId' => 'CP-CLB'])['checkins'] ?? [];
+    $one = null; foreach ($ci as $x) if ($x['memberId'] === 'CP-M1') $one = $x;
+    chk('club portal: a struggling check-in shows as low, with the mentor', $one && $one['tone'] === 'bad' && $one['mentor'] === 'Mo Mentor' && !$one['told']);
+    $t = backend_dispatch('admin.clubp.checkin', ['requesterId' => 'CP-CLB', 'id' => 'CP-M1|2026-W42', 'act' => 'tell']);
+    chk('club portal: telling the mentor is recorded', !empty($t['ok']) && $t['mentor'] === 'Mo Mentor' && (string)db_row("SELECT toldAt FROM club_checkin_state WHERE checkinKey = 'CP-M1|2026-W42'")['toldAt'] !== '');
+    backend_dispatch('admin.clubp.checkin', ['requesterId' => 'CP-CLB', 'id' => 'CP-M1|2026-W42', 'act' => 'seen']);
+    $ids = array_column(backend_dispatch('admin.clubp.checkins', ['requesterId' => 'CP-CLB'])['checkins'] ?? [], 'memberId');
+    chk('club portal: a check-in marked seen leaves the list, and undo brings it back', !in_array('CP-M1', $ids, true)
+        && !empty(backend_dispatch('admin.clubp.checkin', ['requesterId' => 'CP-CLB', 'id' => 'CP-M1|2026-W42', 'act' => 'unseen'])['ok'])
+        && in_array('CP-M1', array_column(backend_dispatch('admin.clubp.checkins', ['requesterId' => 'CP-CLB'])['checkins'], 'memberId'), true));
+
+    // Announcements: a coordinator's waits; an admin approves and it goes out.
+    $s1 = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-CLB', 'action' => 'submit', 'ann' => ['title' => 'No class', 'body' => 'Closed for the holiday.', 'aud' => 'members', 'centre' => 'Cpalpha', 'ch' => ['app']]]);
+    chk('club portal: a coordinator\'s announcement waits for approval', !empty($s1['ok']) && $s1['announcement']['status'] === 'pending' && empty($s1['stats']));
+    $no = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-CLB', 'action' => 'approve', 'ann' => ['id' => $s1['announcement']['id']]]);
+    chk('club portal: a coordinator cannot approve one', ($no['error'] ?? '') === 'forbidden');
+    $sb = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-ADM', 'action' => 'sendback', 'ann' => ['id' => $s1['announcement']['id']]]);
+    chk('club portal: sending back needs a note', ($sb['error'] ?? '') === 'note_required');
+    $ap = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-ADM', 'action' => 'approve', 'ann' => ['id' => $s1['announcement']['id']]]);
+    chk('club portal: an admin approves and it goes out to the centre\'s members only', !empty($ap['ok']) && $ap['announcement']['status'] === 'sent' && ($ap['stats']['app'] ?? 0) === 1
+        && (bool)db_row("SELECT id FROM notifications WHERE memberId = 'CP-M1' AND title = 'No class'") && !db_row("SELECT id FROM notifications WHERE memberId = 'CP-M2' AND title = 'No class'"));
+    $ld = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-LEAD', 'action' => 'draft', 'ann' => ['title' => 'x', 'body' => 'y', 'centre' => 'all', 'ch' => ['app']]]);
+    chk('club portal: a lead\'s announcement is held to their own centre', !empty($ld['ok']) && $ld['announcement']['centre'] === 'Cpalpha');
+    chk('club portal: reach is de-duplicated guardians', (backend_dispatch('admin.clubp.ann.reach', ['requesterId' => 'CP-CLB', 'aud' => 'guardians', 'centre' => 'Cpalpha'])['reach'] ?? 0) === 1);
+
+    // Fine rules: off posts nothing; a cap holds per term.
+    backend_dispatch('admin.clubp.section', ['requesterId' => 'CP-CLB', 'sec' => 'conduct']);
+    db_exec("UPDATE conduct_rules SET capTerm = 1000, active = 1 WHERE reason = 'late'");
+    $f1 = fees_post('CP-M1', 'fine', 800, ['method' => 'late']); $f2 = fees_post('CP-M1', 'fine', 800, ['method' => 'late']); $f3 = fees_post('CP-M1', 'fine', 800, ['method' => 'late']);
+    chk('club portal: a capped fine rule never goes over its cap in a term', (int)$f1['amount'] === 800 && (int)$f2['amount'] === 200 && $f3 === null);
+    backend_dispatch('admin.clubp.decide', ['requesterId' => 'CP-CLB', 'sec' => 'conduct', 'id' => 'RULE-ABSENT', 'act' => 'off']);
+    chk('club portal: a rule turned off posts nothing', fees_post('CP-M2', 'fine', 500, ['method' => 'absent']) === null && fees_post('CP-M2', 'fine', 500, ['method' => 'equipment']) !== null);
+    chk('club portal: a centre lead cannot change fine rules', (backend_dispatch('admin.clubp.decide', ['requesterId' => 'CP-LEAD', 'sec' => 'conduct', 'id' => 'RULE-ABSENT', 'act' => 'on'])['error'] ?? '') === 'forbidden');
+
+    // Every section answers for a club admin; search is scoped.
+    $okAll = true;
+    foreach (CP_SECTIONS as $sec) { $r = backend_dispatch('admin.clubp.section', ['requesterId' => 'CP-CLB', 'sec' => $sec]); if (empty($r['ok'])) { $okAll = false; fwrite(STDERR, "       section $sec: " . json_encode($r) . "\n"); } }
+    chk('club portal: every section loads', $okAll);
+    $rota = backend_dispatch('admin.clubp.section', ['requesterId' => 'CP-LEAD', 'sec' => 'rota']);
+    chk('club portal: the rota lists the coming meeting days, unfilled', !empty($rota['rows']) && $rota['rows'][0]['cells'][4][1] === 'Unfilled' && $rota['rows'][0]['cells'][1] === 'Cpalpha');
+    $sr = fn($who, $q) => array_column(backend_dispatch('admin.clubp.search', ['requesterId' => $who, 'q' => $q])['members'] ?? [], 'id');
+    chk('club portal: search finds by name in scope, not outside it', $sr('CP-CLB', 'bimpe') === ['CP-M2'] && $sr('CP-LEAD', 'bimpe') === [] && $sr('CP-LEAD', 'tobi') === ['CP-M1']);
+
+    // The brief: facts in, three paragraphs out, even with no AI configured.
+    $b = backend_dispatch('admin.clubp.brief', ['requesterId' => 'CP-CLB']);
+    chk('club portal: the weekly brief has its three paragraphs', !empty($b['ok']) && str_starts_with($b['text'], 'Before Saturday:') && str_contains($b['text'], 'Slipping:') && str_contains($b['text'], 'This week:'));
+
+    // A family link made by staff: the first is active, a second guardian waits.
+    $l1 = backend_dispatch('admin.clubp.create', ['requesterId' => 'CP-CLB', 'form' => 'families', 'vals' => ['guardian' => 'Mrs Alpha', 'contact' => 'p1@cp.example', 'child' => 'Tobi Alpha|CP-M1', 'rel' => 'Mother', 'reason' => 'Seen ID in person']]);
+    $l2 = backend_dispatch('admin.clubp.create', ['requesterId' => 'CP-CLB', 'form' => 'families', 'vals' => ['guardian' => 'Mr Alpha', 'contact' => 'p1b@cp.example', 'child' => 'Tobi Alpha|CP-M1', 'rel' => 'Father', 'reason' => 'Seen ID in person']]);
+    chk('club portal: a staff-made family link is active; a second guardian waits for approval', !empty($l1['ok']) && empty($l1['pending']) && !empty($l2['pending']));
+
+    $ro = backend_dispatch('admin.club.members', ['requesterId' => 'CP-LEAD', 'status' => 'active', 'counts' => 1, 'track' => 'coding']);
+    chk('club roster: course filter and per-status counts for the same filter', ($ro['total'] ?? 0) === 1 && ($ro['members'][0]['memberId'] ?? '') === 'CP-M1'
+        && ($ro['counts']['active'] ?? 0) === 1 && !isset($ro['counts']['inactive']));
+    $ro2 = backend_dispatch('admin.club.members', ['requesterId' => 'CP-LEAD', 'status' => 'active', 'counts' => 1]);
+    chk('club roster: counts cover every status, not just the one shown', ($ro2['counts']['inactive'] ?? 0) === 1);
+    db_exec("DELETE FROM centres WHERE centreId IN ('CP-A','CP-B','CP-S')"); db_exec("DELETE FROM members WHERE memberId LIKE 'CP-%'");
+    db_exec("DELETE FROM mentors WHERE mentorId = 'CP-MEN'"); db_exec("DELETE FROM mentor_assignments WHERE mentorId = 'CP-MEN'");
+    db_exec("DELETE FROM member_checkins WHERE memberId LIKE 'CP-%'"); db_exec("DELETE FROM club_announcements"); db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'CP-%'");
+    db_exec("DELETE FROM conduct_rules"); db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'CP-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
