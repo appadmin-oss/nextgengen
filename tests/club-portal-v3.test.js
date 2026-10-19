@@ -140,6 +140,43 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
     chk('“needs you” names the struggling check-in and the application', /struggling/.test(t) && /Applications to review/.test(t));
     chk('no page errors on the dashboard', c.errs.length === 0);
     if (c.errs.length) c.errs.slice(0, 5).forEach(e => console.error('      ' + e));
+
+    console.log('\n── Command palette ─────────────────────────────────────────');
+    await c.page.keyboard.press('Control+k');
+    await c.page.waitForTimeout(300);
+    await c.page.keyboard.type('tobi');
+    chk('Ctrl K opens the palette and finds a member by name', await waitText(c.page, /NGG-CV-M1|Tobi Adeyemi/, 8000));
+    await c.page.keyboard.press('Escape');
+
+    console.log('\n── Roster (the Student Directory) ──────────────────────────');
+    await c.page.goto(BASE + '/club-admin?s=roster', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(c.page);
+    chk('the directory lists the Club members', await waitText(c.page, /Tobi Adeyemi/, 20000) && await waitText(c.page, /Bimpe Balogun/, 5000));
+    t = await text(c.page);
+    chk('…and never a staff account', !/Cole Club/.test(t.split('Everyone')[1] || ''));
+    await shot(c.page, '02-roster');
+
+    console.log('\n── Promote from Summer School ──────────────────────────────');
+    await c.page.goto(BASE + '/club-admin?s=promote', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(c.page);
+    chk('the Summer graduate is waiting to be promoted', await waitText(c.page, /Graduating Kid/, 20000));
+    await shot(c.page, '03-promote');
+    chk('no page errors across palette, roster and promote', c.errs.length === 0);
+    if (c.errs.length) c.errs.slice(0, 5).forEach(e => console.error('      ' + e));
+
+    console.log('\n── A centre lead is held to their centre ───────────────────');
+    const l = await openAs(LEAD);
+    await waitText(l.page, /things? need|Everything is on track/, 20000);
+    t = await text(l.page);
+    chk('the lead sees Ayobo and not Egbeda in the centres table', /Ayobo/.test(t) && !/Egbeda/.test(t.split('Centres side by side')[1] || 'Egbeda'));
+    chk('no page errors for the lead', l.errs.length === 0);
+
+    console.log('\n── Phone ───────────────────────────────────────────────────');
+    const ph = await openAs(CLUB, '/club-admin', { width: 390, height: 760 });
+    await waitText(ph.page, /Home/, 20000);
+    const barOk = await ph.page.evaluate(() => { const n = document.querySelector('nav[aria-label="Main"]'); if (!n) return false; const r = n.getBoundingClientRect(); return r.bottom <= window.innerHeight + 1 && r.height > 30; });
+    chk('the bottom tab bar is fully on screen on a phone', barOk);
+    await shot(ph.page, '04-phone');
   } catch (e) {
     bad('harness — ' + (e && e.message ? e.message : e));
     if (e && e.stack) console.error(String(e.stack).split('\n').slice(0, 4).join('\n'));

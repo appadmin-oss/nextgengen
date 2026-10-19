@@ -96,7 +96,27 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
 ## Next, in order
 
 1. (done) Commit and push.
-2. **Finish `tests/club-portal-v3.test.js`.** Drive each item in the browser and fix what breaks.
+2. **Fix the two failing checks in `tests/club-portal-v3.test.js`.** It now has 13 checks; 11 pass.
+   - Passing: dashboard, roster, centre-lead scope, phone tab bar.
+   - **Promote list stays on its spinner.** The sidebar badge counts 1, so the
+     dashboard's call works, but the screen's call
+     `NGGApi.admin.club.promotable({pageSize:200})` had not returned after 20s.
+     - Likely cause: `suggestedCentre` road-distance lookups to an external
+       service that cannot be reached offline.
+     - Check `admin_club_promotable` and `centres-ngg.php`.
+     - Either cap or skip those lookups when the service is unreachable, or
+       load the list without suggestions and fill them in afterwards.
+     - Also make `promoteErr` and slow loads visible on the screen. Right now
+       `pEmptyText` only shows once `S.promote` is set.
+   - **Palette member search failed.** Ctrl K, then type "tobi"; the expected
+     text never appeared.
+     - Check that the Ctrl K handler fires while focus is in the page.
+       `onKey` is attached to `document`.
+     - Check that `admin.clubp.search` returns, and that `palMembers` renders
+       under "Members".
+   - Screenshots were taken with `CLUBV3_SHOTS=<dir>`. The dashboard and
+     promote shots match the design closely.
+3. **Then extend `tests/club-portal-v3.test.js`.** Drive each item in the browser and fix what breaks.
    - Command palette: Ctrl K, then a member search.
    - Roster: the directory loads, search works, the drawer saves, a centre lead takes the register.
    - Promote: the graduate is listed, the confirm warns about a missing guardian email, and the promotion lands in the database.
@@ -111,21 +131,21 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
    - Phone at 390 px: the bottom tab bar is fully on screen.
    - Take screenshots with `CLUBV3_SHOTS=dir` and compare them to `screenshots/club/*.png`.
    - Add the test to `package.json` scripts and to `test:all`.
-3. **Rewrite the Club part of `tests/admin-bulk.test.js`.** It currently drives the old two-tab screen.
+4. **Rewrite the Club part of `tests/admin-bulk.test.js`.** It currently drives the old two-tab screen.
    - Starting line: `── A club coordinator gets NARROWER actions`.
    - Point it at v3: Promote at `?s=promote`, and the roster bulk actions in the directory.
    - Then delete the dead `ClubManager`, `ClubPromote` and `ClubRoster` from `page-portals.jsx`.
-4. **Run the other suites** and fix anything broken:
+5. **Run the other suites** and fix anything broken:
    - `npm run test:routes`
    - `test:ui`
    - `tests/responsive-staff.test.js`
    - `tests/admin-bulk.test.js`
-5. **Known gaps in Club v3 to close or state honestly:**
+6. **Known gaps in Club v3 to close or state honestly:**
    - **Tournaments:** results come from games on the chess screen, so results are read-only in the portal. There is no over-the-board result entry; only add it if it can update ratings properly.
    - **Mentorship row action:** it opens `/control/people/mentorship`. Check that path exists.
    - **ID cards:** "Print" goes to the ID Card Studio.
    - **Desk creation:** shows the generated password once, in a confirm dialog. Check that the `admin.gates.create` response field really is `password`.
-6. **Community redesign** (task #36). The gap audit:
+7. **Community redesign** (task #36). The gap audit:
    - The existing app is in `page-club.jsx`: `CommunityPage` at about line 882 and `CmMobileApp` at about line 3987.
    - Admin moderation is in `page-admin.jsx`, around lines 5655 and 6812–6994.
    - The server is in `api/_lib/domain/community*.php`.
@@ -146,9 +166,9 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
      - safeguarding severity and lead, gated on the existing `safeguarding` cap rather than `content`
      - a Questions filter and a My posts filter
    - **Approach:** compile `Community.dc.html` with dc-compile, the same way as Club v3, and drive it from a controller on the existing `community.*` ops. Add the missing ops.
-7. **Docs.** Update `docs/ADMIN-GUIDE.md` for the Club portal v3, the separate Summer lead, announcement approval and fine-rule caps. Append to `docs/HANDOFF.md`.
-8. **Deliver.** Build `dist/`, zip it to the scratchpad as `ngg-production.zip`, and send it to the user.
-9. **Delete this file.**
+8. **Docs.** Update `docs/ADMIN-GUIDE.md` for the Club portal v3, the separate Summer lead, announcement approval and fine-rule caps. Append to `docs/HANDOFF.md`.
+9. **Deliver.** Build `dist/`, zip it to the scratchpad as `ngg-production.zip`, and send it to the user.
+10. **Delete this file.**
 
 ## Gotchas learned
 
