@@ -59,9 +59,12 @@ class Cp3Portal extends React.Component {
     this.measure = () => { const el = this.rootRef.current; const w = Math.round((el && el.getBoundingClientRect().width) || window.innerWidth); if (w && Math.abs(w - this.state.width) > 16) this.setState({ width: w }); };
     window.addEventListener("resize", this.measure); this.measure();
     this.onKey = e => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); return this.setState(s => ({ pal: !s.pal, palQ: "", palI: 0, palMembers: [] })); }
+      /* The portal's own palette. The site-wide one (command.jsx) listens on
+         window for the same keys; this listener is on document and runs first,
+         so stopping it here keeps one palette, not two fighting for the keys. */
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); e.stopPropagation(); return this.setState(s => ({ pal: !s.pal, palQ: "", palI: 0, palMembers: [] })); }
       if (e.key === "Escape" && this.state.pal) return this.setState({ pal: false });
-      if (e.key === "/" && !this.state.pal && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "")) { e.preventDefault(); return this.setState({ pal: true, palQ: "", palI: 0, palMembers: [] }); }
+      if (e.key === "/" && !this.state.pal && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "")) { e.preventDefault(); e.stopPropagation(); return this.setState({ pal: true, palQ: "", palI: 0, palMembers: [] }); }
       if (e.key === "Escape") {
         const S = this.state;
         if (S.scopeOpen) return this.setState({ scopeOpen: false });
@@ -96,8 +99,11 @@ class Cp3Portal extends React.Component {
     this.setState({ bootErr: "" });
     this.api("boot").then(b => {
       const lock = b.me.scoped ? (b.me.centres[0] || "") : "";
-      this.setState(s => ({ boot: b, scope: lock || s.scope, centre: s.centre && b.centres.some(c => c.id === s.centre) ? s.centre : (b.centres[0] ? b.centres[0].id : "") }));
-      this.loadDash(); this.loadSlots(); this.loadComp(); this.loadAnn(); this.loadFor(this.state.sec);
+      /* loadFor reads this.state.boot, so it runs once boot is IN state: called
+         straight after setState it returned early, and a section opened by its
+         URL (?s=promote) never loaded. */
+      this.setState(s => ({ boot: b, scope: lock || s.scope, centre: s.centre && b.centres.some(c => c.id === s.centre) ? s.centre : (b.centres[0] ? b.centres[0].id : "") }),
+        () => { this.loadDash(); this.loadSlots(); this.loadComp(); this.loadAnn(); if (this.state.sec !== "home") this.loadFor(this.state.sec); });
     }).catch(e => this.setState({ bootErr: cp3Err(e, "Couldn’t open the Club portal.") }));
   }
   loadDash() { this.setState({ dashErr: "" }); return this.api("dashboard").then(d => this.setState({ dash: d })).catch(e => this.setState({ dashErr: cp3Err(e) })); }
@@ -514,8 +520,11 @@ class Cp3Portal extends React.Component {
     out.hasNoEmailSel = noEmailSel > 0; out.noEmailSelText = noEmailSel ? noEmailSel + " with no guardian email" : "All have a guardian email";
     out.askPromoteSel = () => this.askPromote(pselIds);
     out.phonePromoteBar = isPhone && sec === "promote" && pselIds.length > 0;
-    out.pEmpty = !!S.promote && plist.length === 0;
-    out.pEmptyText = S.promoteErr ? "Couldn’t load the list: " + S.promoteErr : promotable.length ? "Nobody matches these filters." : "Nobody is waiting to be promoted. Summer School records appear here once they graduate.";
+    // Loading, failed and empty each say so: a table that stays blank hides an outage.
+    out.pEmpty = !!S.promoteErr || !S.promote || plist.length === 0;
+    out.pEmptyText = S.promoteErr ? "Couldn’t load the Summer School list: " + S.promoteErr + " Open Promote again to retry."
+      : !S.promote ? "Loading the Summer School records…"
+      : promotable.length ? "Nobody matches these filters." : "Nobody is waiting to be promoted. Summer School records appear here once they graduate.";
     out.hasResult = !!S.result; out.resultText = S.result ? S.result.n + " promoted into the Club." + (S.result.failed ? " " + S.result.failed + " not (" + S.result.why + ")." : "") : "";
     out.resultSub = S.result ? (S.result.noEmail ? S.result.noEmail + " need a sign-in set up by hand." : "Sign-in links are on their way to guardians.") : ""; out.dismissResult = () => this.setState({ result: null });
 
