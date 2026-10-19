@@ -187,9 +187,41 @@ function family_me(array $p): array {
         if (!member_is_ngg($m) || isset($linked[(string)$m['memberId']])) continue;
         $suggest[] = ['memberId' => (string)$m['memberId'], 'firstName' => explode(' ', trim((string)$m['fullName']))[0] ?? '', 'centre' => (string)$m['centre']];
     }
+    $notices = array_map(static fn($n) => ['id' => (string)$n['noticeId'], 'kind' => (string)$n['kind'], 'title' => (string)$n['title'], 'body' => (string)$n['body'],
+        'from' => (string)$n['fromName'], 'at' => (string)$n['createdAt'], 'read' => (string)$n['readAt'] !== ''],
+        db_all('SELECT * FROM guardian_notices WHERE guardianId = ? ORDER BY createdAt DESC, id DESC LIMIT ' . FAMILY_NOTICES_SHOWN, [(string)$g['guardianId']]));
+    $unread = (int)(db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = ? AND readAt = ''", [(string)$g['guardianId']])['c'] ?? 0);
     return ['ok' => true, 'guardian' => family_guardian_public($g),
             'wards' => array_map(static fn($l) => family_link_public($l, $l), $links),
-            'suggestions' => $suggest, 'relationships' => FAMILY_RELATIONSHIPS, 'max' => FAMILY_WARDS_MAX];
+            'suggestions' => $suggest, 'relationships' => FAMILY_RELATIONSHIPS, 'max' => FAMILY_WARDS_MAX,
+            'notices' => $notices, 'unread' => $unread];
+}
+
+/* ── The family inbox ──────────────────────────────────────────────────────
+ * Announcements reach a guardian IN their family account, not only by email
+ * (club-portal.php cp_ann_send, the App channel). One row per guardian per
+ * announcement — a parent of three gets it once — and the unique index on
+ * (guardianId, kind, refId) makes a re-send a no-op rather than a duplicate. */
+const FAMILY_NOTICES_SHOWN = 20;
+
+/** Put one notice in a guardian's inbox. True when it is new. */
+function family_notice_add(string $guardianId, string $kind, string $refId, string $title, string $body, string $from = ''): bool {
+    if ($guardianId === '') return false;
+    try {
+        if (db_row('SELECT 1 FROM guardian_notices WHERE guardianId = ? AND kind = ? AND refId = ?', [$guardianId, $kind, $refId])) return false;
+        db_insert('guardian_notices', ['noticeId' => 'GN-' . strtoupper(rand_hex(6)), 'guardianId' => $guardianId, 'kind' => $kind, 'refId' => $refId,
+            'title' => mb_substr($title, 0, 200), 'body' => mb_substr($body, 0, 4000), 'fromName' => mb_substr($from, 0, 160), 'createdAt' => now_iso(), 'readAt' => '']);
+        return true;
+    } catch (Throwable $e) { return false; }
+}
+
+/** family.notices.read — mark one notice (id) or all of them (no id) read. Only the guardian's own. */
+function family_notices_read(array $p): array {
+    $gid = (string)($p['guardianId'] ?? ''); $id = (string)($p['noticeId'] ?? '');
+    if ($gid === '') return ['ok' => false, 'error' => 'not_found'];
+    if ($id !== '') db_exec("UPDATE guardian_notices SET readAt = ? WHERE guardianId = ? AND noticeId = ? AND readAt = ''", [now_iso(), $gid, $id]);
+    else db_exec("UPDATE guardian_notices SET readAt = ? WHERE guardianId = ? AND readAt = ''", [now_iso(), $gid]);
+    return ['ok' => true, 'unread' => (int)(db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = ? AND readAt = ''", [$gid])['c'] ?? 0)];
 }
 
 /** family.profile — the guardian's own name and phone. The email IS the sign-in, so it is not editable here. */

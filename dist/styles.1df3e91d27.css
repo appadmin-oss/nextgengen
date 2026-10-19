@@ -6714,6 +6714,17 @@ textarea.fam-input { resize: vertical; }
 .fam-list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--fx-row); font-size: 14px; }
 .fam-list-row:first-child { border-top: 0; }
 .fam-list-row.is-void { text-decoration: line-through; color: var(--fx-muted); }
+.fam-notices-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fam-notices-head .fam-h2 { margin: 0; flex: 1; min-width: 0; }
+.fam-notice { border-top: 1px solid var(--fx-row); }
+.fam-notice:first-child { border-top: 0; }
+.fam-notice-t { width: 100%; min-height: 44px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 0; border: 0; background: none; font: inherit; color: var(--fx-ink); text-align: left; cursor: pointer; }
+.fam-notice-t b { font-size: 14.5px; font-weight: 500; }
+.fam-notice.is-new .fam-notice-t b { font-weight: 700; }
+.fam-notice-t .fam-meta { margin: 0; }
+.fam-notice-dot { width: 8px; height: 8px; border-radius: var(--fx-r-pill); background: var(--fx-gold); flex: none; align-self: center; }
+.fam-notice-b { margin: 0 0 12px; font-size: 14px; line-height: 1.55; color: var(--fx-ink-2); white-space: pre-wrap; }
+.fam-notice-b[hidden] { display: none; }
 .fam-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
 .fam-table th { text-align: left; font-weight: 500; color: var(--fx-muted); padding: 8px 0; border-bottom: 1px solid var(--fx-line); font-size: 12.5px; }
 .fam-table td { padding: 8px 0; border-bottom: 1px solid var(--fx-row); }

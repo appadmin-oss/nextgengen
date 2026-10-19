@@ -229,13 +229,28 @@ const SHOTS = process.env.CLUBV3_SHOTS || '';
     await c.page.fill('input[placeholder="e.g. No class on Saturday"]', 'No class on Saturday 24th');
     await c.page.fill('textarea[placeholder^="Say what"]', 'The centre is closed for repairs. Classes resume the week after.');
     const chan = l => c.page.evaluate(src => { const b = Array.from(document.querySelectorAll('button[aria-pressed]')).find(x => x.offsetParent && x.innerText.trim() === src); if (b) b.click(); }, l);
-    await chan('App notification'); await chan('Email');
-    await clickBtn(c.page, /^Submit for approval$/);
-    chk('an app-only announcement to guardians is refused: they have no app inbox', await waitText(c.page, /Guardians don’t get app notifications/, 5000));
+    const pressed = () => c.page.evaluate(() => Array.from(document.querySelectorAll('div[role=dialog] button[aria-pressed="true"]')).map(x => x.innerText.trim()));
+    chk('a new announcement starts on App and Email, not SMS', JSON.stringify(await pressed()) === JSON.stringify(['App', 'Email']));
     await chan('Email');
     await clickBtn(c.page, /^Submit for approval$/);
+    chk('app-only to guardians with no family account is refused, never sent to nobody', await waitText(c.page, /Nobody in this audience can be reached by the app/, 8000));
+    await chan('Email');
+    // SMS: too long for a text → a short version that keeps every fact, or email and Telegram.
+    await c.page.fill('textarea[placeholder^="Say what"]', 'The centre is closed for repairs on Saturday 24th, so there is no class. Classes resume the week after, on Saturday 31st at 10am as usual. '
+      + 'Please make sure your child brings their project folder, because instructors will check the robotics builds from before the break. Any questions, call the desk on 08031234567.');
+    await chan('SMS');
+    chk('a message too long for a text asks for an SMS version, and says email and Telegram are the fallback', await waitText(c.page, /SMS version/, 4000) && /Too long for a text/.test(await text(c.page)));
+    await clickBtn(c.page, /^Shorten with AI/);
+    chk('with no AI set up, shortening says so and offers email and Telegram', await waitText(c.page, /AI isn’t set up on this site/, 8000));
+    await c.page.fill('textarea[aria-label="SMS version"]', 'No class Sat 24th (repairs). Back Sat 31st. Bring project folder. Desk: 08031234567.');
+    chk('a short version that drops a fact is flagged, naming it', await waitText(c.page, /Leaves out 10/, 4000));
+    await c.page.fill('textarea[aria-label="SMS version"]', 'No class Sat 24th (repairs). Back Sat 31st, 10am. Bring project folder. Desk: 08031234567.');
+    await c.page.waitForTimeout(300);
+    chk('…a faithful one is not, and the preview shows the text as sent', !/Leaves out/.test(await text(c.page)) && /As a text[\s\S]*NGG: No class Sat 24th/.test(await text(c.page)));
+    await clickBtn(c.page, /^Submit for approval$/);
     await waitText(c.page, /Sent to an admin for approval/, 8000);
-    chk('a coordinator’s announcement waits for an admin', (q("SELECT status FROM club_announcements WHERE title = 'No class on Saturday 24th'")[0] || {}).status === 'pending');
+    { const r = q("SELECT status, channels, smsBody FROM club_announcements WHERE title = 'No class on Saturday 24th'")[0] || {};
+      chk('a coordinator’s announcement waits for an admin, with its SMS version', r.status === 'pending' && /sms/.test(r.channels) && /Back Sat 31st, 10am/.test(r.smsBody)); }
     chk('…and the screen follows it to Waiting', /No class on Saturday 24th/.test(await text(c.page)));
 
     console.log('\n── Applications ────────────────────────────────────────────');

@@ -29073,9 +29073,63 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('club portal: a lead\'s announcement is held to their own centre', !empty($ld['ok']) && $ld['announcement']['centre'] === 'Cpalpha');
     chk('club portal: reach is de-duplicated guardians', (backend_dispatch('admin.clubp.ann.reach', ['requesterId' => 'CP-CLB', 'aud' => 'guardians', 'centre' => 'Cpalpha'])['reach'] ?? 0) === 1);
     $un = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-CLB', 'action' => 'submit', 'ann' => ['title' => 'Hi', 'body' => 'Hello', 'aud' => 'guardians', 'centre' => 'Cpalpha', 'ch' => ['app']]]);
-    chk('club portal: an app-only announcement to guardians is refused (no app inbox), not sent to nobody', ($un['error'] ?? '') === 'unreachable');
-    chk('club portal: members by SMS alone is refused; members by app, or guardians by email, is fine', cp_ann_unreachable('members', ['sms']) !== ''
-        && cp_ann_unreachable('members', ['app']) === '' && cp_ann_unreachable('guardians', ['email']) === '' && cp_ann_unreachable('both', ['app']) === '');
+    chk('club portal: app-only to guardians when none has a family account is refused, not sent to nobody', ($un['error'] ?? '') === 'unreachable' && str_contains((string)($un['message'] ?? ''), 'Nobody'));
+    chk('club portal: members by SMS alone is refused; members by app, or guardians by app or email, is fine', cp_ann_unreachable('members', ['sms']) !== ''
+        && cp_ann_unreachable('members', ['app']) === '' && cp_ann_unreachable('guardians', ['email']) === '' && cp_ann_unreachable('guardians', ['app']) === '' && cp_ann_unreachable('both', ['app']) === '');
+    chk('club portal: new announcements start on App and Email (Telegram too once a bot is set), never SMS', cp_ann_default_channels() === ['app', 'email']);
+
+    // In-app reaches guardians: their family account's inbox, once each.
+    db_insert('guardians', ['guardianId' => 'G-CPA', 'email' => 'p1@cp.example', 'fullName' => 'Mrs Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-CPA', 'guardianId' => 'G-CPA', 'memberId' => 'CP-M1', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('club portal: reach counts the guardians with a family account', (backend_dispatch('admin.clubp.ann.reach', ['requesterId' => 'CP-CLB', 'aud' => 'guardians', 'centre' => 'Cpalpha'])['familyApp'] ?? 0) === 1);
+    $ga = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-ADM', 'action' => 'submit', 'ann' => ['title' => 'Kit day', 'body' => 'Bring trainers on Saturday.', 'aud' => 'guardians', 'centre' => 'Cpalpha', 'ch' => ['app']]]);
+    chk('club portal: in-app to guardians lands in their family account', !empty($ga['ok']) && ($ga['stats']['family'] ?? 0) === 1
+        && (int)db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = 'G-CPA' AND title = 'Kit day'")['c'] === 1);
+    chk('club portal: …and the same announcement again is not a second notice', family_notice_add('G-CPA', 'announcement', $ga['announcement']['id'], 'Kit day', 'x') === false);
+    $fm = family_me(['guardianId' => 'G-CPA']);
+    chk('family: the account carries its notices, unread first counted', ($fm['unread'] ?? 0) === 1 && ($fm['notices'][0]['title'] ?? '') === 'Kit day' && $fm['notices'][0]['read'] === false);
+    family_notices_read(['guardianId' => 'G-OTHER', 'noticeId' => $fm['notices'][0]['id']]);
+    chk('family: another guardian cannot mark it read', family_me(['guardianId' => 'G-CPA'])['unread'] === 1);
+    chk('family: reading it clears it', (family_notices_read(['guardianId' => 'G-CPA', 'noticeId' => $fm['notices'][0]['id']])['unread'] ?? -1) === 0);
+
+    // The SMS rule: a text is never cut off. Long → a short version that keeps every fact, or email and Telegram instead.
+    $long = 'Our end-of-term trip to the science museum is on Saturday 14 June. The bus leaves the centre at 9:30am sharp and returns by 4pm. '
+          . 'The cost is ₦5,000 per child, paid at the desk or online at https://ngg.example/trip by Wednesday. Children should bring a packed lunch, water, '
+          . 'and wear their NGG T-shirt so we can spot them in the crowds. Questions? Call 08031234567.';
+    $f = cp_ann_facts($long);
+    chk('sms facts: numbers (commas folded), days, months, links and phone numbers', isset($f['n:14'], $f['n:9'], $f['n:30'], $f['n:5000'], $f['n:4'], $f['d:sat'], $f['d:jun'], $f['d:wed'], $f['url:ngg.example/trip'], $f['n:8031234567']));
+    chk('sms facts: "may" is a month only beside a day number', !isset(cp_ann_facts('You may come')['d:may']) && isset(cp_ann_facts('On 3 May')['d:may']) && isset(cp_ann_facts('Sat, 3rd May')['d:sat']));
+    $good = 'Trip Sat 14 Jun: bus 9:30am, back 4pm. N5000, pay by Wed at desk or https://ngg.example/trip. Lunch, water, NGG T-shirt. Call 08031234567.';
+    chk('sms facts: a short version that keeps everything loses nothing', cp_ann_lost_facts($long, $good) === []);
+    chk('sms facts: one that drops the price says so', cp_ann_lost_facts($long, str_replace('N5000, ', '', $good)) === ['5000']);
+    [$c1, $b1, $n1] = cp_ann_sms_rule('Museum trip', $long, ['sms'], '');
+    chk('sms rule: too long with no short version → SMS dropped for email, and it says so', $c1 === ['email'] && $b1 === '' && str_contains($n1, 'SMS dropped'));
+    [$c2, $b2] = cp_ann_sms_rule('Museum trip', $long, ['app', 'sms'], $good);
+    chk('sms rule: a short version that keeps every fact goes as the text', $c2 === ['app', 'sms'] && $b2 === $good);
+    [$c3, , $n3] = cp_ann_sms_rule('Museum trip', $long, ['sms'], str_replace('9:30am', 'morning', $good));
+    chk('sms rule: a short version that loses the time is not sent, and the note names it', !in_array('sms', $c3, true) && str_contains($n3, '9') && str_contains($n3, '30'));
+    [$c4, $b4, $n4] = cp_ann_sms_rule('Hi', 'Short and sweet.', ['sms'], '');
+    chk('sms rule: a message that fits goes as it is', $c4 === ['sms'] && $b4 === '' && $n4 === '');
+    $sv = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-CLB', 'action' => 'submit', 'ann' => ['title' => 'Museum trip', 'body' => $long, 'aud' => 'guardians', 'centre' => 'Cpalpha', 'ch' => ['sms', 'app']]]);
+    chk('club portal: submitting a long SMS announcement switches it to email and keeps the app, with the reason', !empty($sv['ok']) && $sv['announcement']['ch'] === ['app', 'email'] && str_contains((string)$sv['smsNote'], 'SMS dropped'));
+
+    // AI shortening: checked for lost facts, retried once, refused rather than trusted.
+    $aiKeep = $GLOBALS['CONFIG']['ai'] ?? null; $GLOBALS['CONFIG']['ai'] = [];
+    chk('shorten: with no AI it says so and offers email (and Telegram)', ($r = backend_dispatch('admin.clubp.ann.shorten', ['requesterId' => 'CP-CLB', 'title' => 'Museum trip', 'body' => $long]))['error'] === 'ai_off' && $r['fallback'] === ['email']);
+    $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'k'];
+    $calls = 0;
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$calls, $good) { $calls++; return ['ok' => true, 'text' => '"NGG: ' . $good . '"']; };
+    $r = backend_dispatch('admin.clubp.ann.shorten', ['requesterId' => 'CP-CLB', 'title' => 'Museum trip', 'body' => $long]);
+    chk('shorten: a faithful AI version comes back, quotes and prefix stripped', !empty($r['ok']) && $r['text'] === $good && $calls === 1);
+    $calls = 0; $seen = [];
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$calls, &$seen, $good) { $calls++; $seen[] = $turns[0]['text']; return ['ok' => true, 'text' => str_replace('N5000, ', '', $good)]; };
+    $r = backend_dispatch('admin.clubp.ann.shorten', ['requesterId' => 'CP-CLB', 'title' => 'Museum trip', 'body' => $long]);
+    chk('shorten: one that drops a fact is retried naming it, then refused (lost_facts) with the fallback', ($r['error'] ?? '') === 'lost_facts' && $calls === 2
+        && str_contains($seen[1] ?? '', 'left out: 5000') && $r['lost'] === ['5000'] && $r['fallback'] === ['email']);
+    $r = backend_dispatch('admin.clubp.ann.shorten', ['requesterId' => 'CP-CLB', 'title' => 'Hi', 'body' => 'Short.']);
+    chk('shorten: a message that already fits is not rewritten', !empty($r['ok']) && !empty($r['fits']) && $r['text'] === '');
+    unset($GLOBALS['__ai_mock']); $GLOBALS['CONFIG']['ai'] = $aiKeep;
+    db_exec("DELETE FROM guardian_notices WHERE guardianId = 'G-CPA'"); db_exec("DELETE FROM guardian_wards WHERE linkId = 'GW-CPA'"); db_exec("DELETE FROM guardians WHERE guardianId = 'G-CPA'");
     chk('timetable: Chess (taught in every division) is a course the timetable accepts', in_array('Chess', tt_courses(), true));
 
     // Fine rules: off posts nothing; a cap holds per term.

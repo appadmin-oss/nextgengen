@@ -34,6 +34,13 @@ const CP_ROWS_MAX = 500;
 const CP_STAFF_ROLES_SQL = "('super_admin','admin','club_admin','summer_admin','centre_lead','editor','audit')";
 const CP_ANN_EMAIL_MAX = 400;
 const CP_ANN_SMS_MAX = 400;
+const CP_ANN_TG_MAX = 400;
+/* An announcement's SMS is at most two texts (306 characters, "NGG: " and
+ * all). Longer, it needs a short SMS version — written, or AI-shortened and
+ * checked for lost facts — or the SMS is dropped and it goes by email and
+ * Telegram instead, which carry the whole message. Never truncated. */
+const CP_ANN_SMS_CHARS = 306;
+const CP_ANN_CHANNELS = ['app', 'email', 'telegram', 'sms'];
 const CP_ROTA_WEEKS = 4;
 
 /* ── Context ─────────────────────────────────────────────────────────────── */
@@ -1039,7 +1046,49 @@ function cp_ann_row(array $a): array {
             'ch' => array_values(array_filter((array)(safe_json((string)$a['channels']) ?: ['app']))), 'status' => (string)$a['status'],
             'by' => (string)$a['byName'], 'byId' => (string)$a['byId'], 'approvedBy' => (string)$a['approvedByName'], 'note' => (string)$a['note'],
             'sendAtIso' => (string)$a['sendAt'], 'sendAt' => (string)$a['sendAt'] !== '' && (string)$a['status'] === 'scheduled' ? gmdate('D j M, H:i', strtotime((string)$a['sendAt']) + 3600) : '',
-            'at' => cp_ago((string)($a['sentAt'] ?: $a['updatedAt'])), 'stats' => safe_json((string)$a['stats']) ?: null];
+            'at' => cp_ago((string)($a['sentAt'] ?: $a['updatedAt'])), 'stats' => safe_json((string)$a['stats']) ?: null, 'smsBody' => (string)($a['smsBody'] ?? '')];
+}
+/** The channels a new announcement starts with: the app (members, and
+ *  guardians in their family account) and email, plus Telegram when the site
+ *  has a bot. SMS costs money per text, so it is a choice, not a default. */
+function cp_ann_default_channels(): array {
+    return array_merge(['app', 'email'], function_exists('telegram_on') && telegram_on() ? ['telegram'] : []);
+}
+/** A stored phone (08031234567, 234803…) as the E.164 Telegram links are keyed by. */
+function cp_ann_e164(string $ph): string { return function_exists('sms_normalize') ? sms_normalize($ph) : telegram_phone_e164($ph); }
+/** The text an SMS of this announcement would carry, without a short version. */
+function cp_ann_sms_full(string $title, string $body): string { return 'NGG: ' . trim($title) . '. ' . trim($body); }
+
+/**
+ * The facts a shortened text must not lose: every number (dates, times,
+ * amounts, phone numbers, ages), every day and month named, every link and
+ * email address. Returns [normalised key => as written]. A shortened SMS that
+ * is missing any of the original's keys has removed core information.
+ */
+function cp_ann_facts(string $t): array {
+    $out = [];
+    $t = preg_replace('/(?<=\d),(?=\d{3}\b)/u', '', $t);                       // 5,000 → 5000
+    if (preg_match_all('~\bhttps?://[^\s<>"]+|\bwww\.[^\s<>"]+~iu', $t, $m)) foreach ($m[0] as $u) { $u = rtrim($u, '.,;:)!?'); $out['url:' . strtolower(preg_replace('~^https?://~i', '', $u))] = $u; }
+    if (preg_match_all('/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu', $t, $m)) foreach ($m[0] as $e) $out['email:' . strtolower($e)] = $e;
+    $noLinks = preg_replace(['~\bhttps?://[^\s<>"]+|\bwww\.[^\s<>"]+~iu', '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu'], ' ', $t);
+    if (preg_match_all('/\d+/u', $noLinks, $m)) foreach ($m[0] as $n) { $k = ltrim($n, '0') ?: '0'; $out['n:' . $k] = $n; }
+    static $named = null;
+    if ($named === null) {
+        $named = ['today' => 'today', 'tomorrow' => 'tomorrow', 'tonight' => 'tonight', 'tues' => 'tue', 'thur' => 'thu', 'thurs' => 'thu', 'sept' => 'sep'];
+        foreach (['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'january', 'february', 'march', 'april', 'june',
+                  'july', 'august', 'september', 'october', 'november', 'december'] as $w) { $named[$w] = substr($w, 0, 3); $named[substr($w, 0, 3)] = substr($w, 0, 3); }
+    }
+    if (preg_match_all('/\b[A-Za-z]+\b/u', $noLinks, $m)) foreach ($m[0] as $w) {
+        $lw = strtolower($w);
+        if (isset($named[$lw])) $out['d:' . $named[$lw]] = $w;
+    }
+    // "May" is a month only beside a day number ("3 May", "May 3rd"), not in "you may".
+    if (preg_match('/\bmay\s+\d|\d(?:st|nd|rd|th)?\s+may\b/iu', $noLinks, $mm)) $out['d:may'] = 'May';
+    return $out;
+}
+/** The facts of $long that $short has lost, as written in $long. */
+function cp_ann_lost_facts(string $long, string $short): array {
+    return array_values(array_diff_key(cp_ann_facts($long), cp_ann_facts($short)));
 }
 function cp_is_approver(array $req): bool { return in_array(strtolower((string)$req['role']), ['admin', 'super_admin'], true); }
 
@@ -1049,21 +1098,24 @@ function cp_ann_audience(array $x, string $aud, string $centre): array {
     $where = "type = 'NGG' AND status = 'active' AND COALESCE(role,'') NOT IN " . CP_STAFF_ROLES_SQL . " AND $inSql";
     $args = $inArgs;
     if ($centre !== 'all') { $where .= ' AND centre = ?'; $args[] = $centre; }
-    $members = db_all("SELECT memberId, email, parentEmail, parentPhone, fullName FROM members WHERE $where", $args);
-    $gEmails = []; $gPhones = [];
+    $members = db_all("SELECT memberId, email, phone, parentEmail, parentPhone, fullName FROM members WHERE $where", $args);
+    $gEmails = []; $gPhones = []; $gIds = []; $mPhones = [];
+    if ($aud !== 'guardians') foreach ($members as $m) { $ph = preg_replace('/\D+/', '', (string)$m['phone']); if (strlen((string)$ph) >= 10) $mPhones[$ph] = true; }
     if ($aud !== 'members') {
         foreach ($members as $m) {
             $e = strtolower(trim((string)$m['parentEmail'])); if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL)) $gEmails[$e] = true;
             $ph = preg_replace('/\D+/', '', (string)$m['parentPhone']); if (strlen((string)$ph) >= 10) $gPhones[$ph] = true;
         }
         $ids = array_column($members, 'memberId');
-        foreach (array_chunk($ids, 400) as $ch) foreach (db_all("SELECT g.email, g.phone FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.status = 'active' AND w.memberId IN ("
+        foreach (array_chunk($ids, 400) as $ch) foreach (db_all("SELECT g.guardianId, g.email, g.phone FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.status = 'active' AND COALESCE(g.status,'active') = 'active' AND w.memberId IN ("
                 . implode(',', array_fill(0, count($ch), '?')) . ')', $ch) as $g) {
+            $gIds[(string)$g['guardianId']] = true;
             $e = strtolower(trim((string)$g['email'])); if ($e !== '') $gEmails[$e] = true;
             $ph = preg_replace('/\D+/', '', (string)$g['phone']); if (strlen((string)$ph) >= 10) $gPhones[$ph] = true;
         }
     }
     return ['members' => $aud === 'guardians' ? [] : $members, 'emails' => array_keys($gEmails), 'phones' => array_keys($gPhones),
+            'guardianIds' => array_keys($gIds), 'memberPhones' => array_keys(array_diff_key($mPhones, $gPhones)),
             'reach' => ($aud === 'guardians' ? 0 : count($members)) + ($aud === 'members' ? 0 : max(count($gEmails), count($gPhones)))];
 }
 
@@ -1077,7 +1129,8 @@ function admin_clubp_ann_list(array $p): array {
         $r = cp_ann_row($a); $r['reach'] = cp_ann_audience($x, $r['aud'], $r['centre'])['reach'];
         $rows[] = $r;
     }
-    return ['ok' => true, 'announcements' => $rows, 'canApprove' => cp_is_approver($x['req']), 'smsOn' => function_exists('sms_enabled') && sms_enabled()];
+    return ['ok' => true, 'announcements' => $rows, 'canApprove' => cp_is_approver($x['req']), 'smsOn' => function_exists('sms_enabled') && sms_enabled(),
+            'tgOn' => function_exists('telegram_on') && telegram_on(), 'aiOn' => function_exists('ai_enabled') && ai_enabled(), 'defaultCh' => cp_ann_default_channels(), 'smsChars' => CP_ANN_SMS_CHARS];
 }
 /** admin.clubp.ann.reach — reach and SMS phones for a draft, for the editor. */
 function admin_clubp_ann_reach(array $p): array {
@@ -1086,18 +1139,91 @@ function admin_clubp_ann_reach(array $p): array {
     $centre = (string)($p['centre'] ?? 'all');
     if ($centre !== 'all' && !cp_covers($x, $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
     $a = cp_ann_audience($x, $aud, $centre);
-    return ['ok' => true, 'reach' => $a['reach'], 'phones' => count($a['phones']), 'emails' => count($a['emails']), 'members' => count($a['members'])];
+    $tg = 0;
+    if (function_exists('telegram_on') && telegram_on() && function_exists('telegram_link_for'))
+        foreach (array_merge($a['phones'], $a['memberPhones']) as $ph) if (telegram_link_for(cp_ann_e164($ph))) $tg++;
+    return ['ok' => true, 'reach' => $a['reach'], 'phones' => count($a['phones']), 'emails' => count($a['emails']), 'members' => count($a['members']),
+            'familyApp' => count($a['guardianIds']), 'telegram' => $tg];
 }
 
-/** Why these channels can reach nobody in this audience, or ''. Guardians have
- *  no app inbox (family alerts go by email); members get no SMS. */
+/** Why these channels can reach nobody in this audience, or ''. Every
+ *  channel reaches a guardian now — App lands in their family account — and
+ *  members get no SMS (a member's own phone is reached by Telegram only). */
 function cp_ann_unreachable(string $aud, array $chs): string {
-    $toG = $aud !== 'members'; $toM = $aud !== 'guardians';
-    $gOk = $toG && (in_array('email', $chs, true) || in_array('sms', $chs, true));
-    $mOk = $toM && (in_array('app', $chs, true) || in_array('email', $chs, true));
-    if ($gOk || $mOk) return '';
-    return $aud === 'guardians' ? 'Guardians don’t get app notifications. Add Email or SMS to reach them.'
-         : ($aud === 'members' ? 'Members don’t get SMS. Add App or Email to reach them.' : 'None of these channels reaches anybody. Add Email.');
+    $toM = $aud !== 'guardians';
+    if ($aud !== 'members' && array_intersect(['app', 'email', 'sms', 'telegram'], $chs)) return '';
+    if ($toM && array_intersect(['app', 'email', 'telegram'], $chs)) return '';
+    return 'Members don’t get SMS. Add App or Email to reach them.';
+}
+/** How many of this audience the channels actually reach — 0 is refused,
+ *  never sent to nobody. Members' email, app and Telegram; guardians' family
+ *  accounts, emails, phones and Telegram. */
+function cp_ann_reachable(array $aud, array $chs): int {
+    $n = 0; $on = static fn($c) => in_array($c, $chs, true);
+    if ($on('app')) $n += count($aud['members']) + count($aud['guardianIds']);
+    if ($on('email')) { $n += count($aud['emails']); foreach ($aud['members'] as $m) if (filter_var(trim((string)$m['email']), FILTER_VALIDATE_EMAIL)) $n++; }
+    if ($on('sms') && function_exists('sms_enabled') && sms_enabled()) $n += count($aud['phones']);
+    if ($on('telegram') && function_exists('telegram_on') && telegram_on())
+        foreach (array_merge($aud['phones'], $aud['memberPhones']) as $ph) if (telegram_link_for(cp_ann_e164($ph))) $n++;
+    return $n;
+}
+function cp_ann_nobody(array $chs): string {
+    $l = array_map(static fn($c) => ['app' => 'the app', 'email' => 'email', 'telegram' => 'Telegram', 'sms' => 'SMS'][$c] ?? $c, $chs);
+    return 'Nobody in this audience can be reached by ' . implode(' or ', $l) . ' — no family accounts, addresses or connected phones. Add Email, or check the records.';
+}
+
+/**
+ * The SMS rule, applied before anything is saved as ready to send. Returns
+ * [channels, smsBody, note]. A text that fits goes as it is. One that does
+ * not needs a short version that keeps every fact (cp_ann_lost_facts); without
+ * one the SMS is dropped and email and Telegram carry the message instead — a
+ * text is never cut off mid-sentence. `note` says what happened, or ''.
+ */
+function cp_ann_sms_rule(string $title, string $body, array $chs, string $smsBody): array {
+    if (!in_array('sms', $chs, true)) return [$chs, '', ''];
+    if (mb_strlen(cp_ann_sms_full($title, $body)) <= CP_ANN_SMS_CHARS) return [$chs, '', ''];
+    $smsBody = trim($smsBody);
+    if ($smsBody !== '' && mb_strlen('NGG: ' . $smsBody) <= CP_ANN_SMS_CHARS && !cp_ann_lost_facts($title . ' ' . $body, $smsBody)) return [$chs, $smsBody, ''];
+    $alt = array_values(array_unique(array_merge(array_diff($chs, ['sms']), ['email'], function_exists('telegram_on') && telegram_on() ? ['telegram'] : [])));
+    $why = $smsBody === '' ? 'too long for a text, with no short version' : (mb_strlen('NGG: ' . $smsBody) > CP_ANN_SMS_CHARS ? 'too long for a text, and the short version is too' : 'too long for a text, and the short version leaves out ' . implode(', ', cp_ann_lost_facts($title . ' ' . $body, $smsBody)));
+    return [$alt, '', 'SMS dropped: the message is ' . $why . '. It goes by ' . implode(', ', array_map(static fn($c) => ['app' => 'the app', 'email' => 'email', 'telegram' => 'Telegram', 'sms' => 'SMS'][$c], $alt)) . ' instead.'];
+}
+
+/**
+ * admin.clubp.ann.shorten — an SMS version of a long announcement, by AI,
+ * checked: every number, day, month, link and email in the original must be
+ * in it, and it must fit two texts. One retry names what was lost; a second
+ * failure is refused (lost_facts), and the editor offers email and Telegram,
+ * which carry the whole message. A person approves the short version with the
+ * announcement — nothing AI writes is sent unread.
+ */
+function admin_clubp_ann_shorten(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    $title = trim((string)($p['title'] ?? '')); $body = trim((string)($p['body'] ?? ''));
+    if ($body === '') return ['ok' => false, 'error' => 'incomplete', 'message' => 'Write the message first.'];
+    if (mb_strlen(cp_ann_sms_full($title, $body)) <= CP_ANN_SMS_CHARS) return ['ok' => true, 'text' => '', 'fits' => true];
+    $fallback = array_values(array_unique(array_merge(['email'], function_exists('telegram_on') && telegram_on() ? ['telegram'] : [])));
+    if (!function_exists('ai_enabled') || !ai_enabled()) return ['ok' => false, 'error' => 'ai_off', 'fallback' => $fallback,
+        'message' => 'AI isn’t set up on this site, so it can’t shorten the text. Write a short version yourself, or send by email and Telegram, which carry the whole message.'];
+    $limit = CP_ANN_SMS_CHARS - 5 - 6;
+    $sys = 'You shorten announcements from a youth club to parents into ONE SMS. At most ' . $limit . ' characters. Keep EVERY date, day, time, place, amount of money, phone number, link and email, and what the family must do. '
+         . 'Drop greetings, sign-offs and explanation. Plain text, no emojis, no quotation marks, no "NGG:" prefix. Reply with the SMS only.';
+    $facts = cp_ann_facts($title . ' ' . $body); $lost = [];
+    for ($try = 0; $try < 2; $try++) {
+        $msg = 'Title: ' . $title . "\nMessage: " . $body . ($lost ? "\nYour last version left out: " . implode(', ', $lost) . '. Put them back and keep it under ' . $limit . ' characters.' : '');
+        $r = ai_complete($sys, $msg, 220);
+        if (empty($r['ok'])) return ['ok' => false, 'error' => 'ai_failed', 'fallback' => $fallback, 'message' => 'The AI didn’t answer. Write a short version yourself, or send by email and Telegram.'];
+        $t = trim(preg_replace('/\s+/u', ' ', trim((string)$r['text'], " \t\n\r\"'“”")));
+        $t = preg_replace('/^NGG:\s*/i', '', $t);
+        $lost = cp_ann_lost_facts($title . ' ' . $body, $t);
+        if (!$lost && $t !== '' && mb_strlen('NGG: ' . $t) <= CP_ANN_SMS_CHARS) {
+            audit('club.ann.shorten', $x['me'], '', ['from' => mb_strlen($body), 'to' => mb_strlen($t)]);
+            return ['ok' => true, 'text' => $t, 'kept' => array_values($facts)];
+        }
+        if (!$lost) $lost = ['(it was ' . mb_strlen($t) . ' characters)'];
+    }
+    return ['ok' => false, 'error' => 'lost_facts', 'fallback' => $fallback, 'lost' => $lost,
+        'message' => 'The AI couldn’t fit it in a text without leaving out ' . implode(', ', $lost) . '. Write a short version yourself, or send by email and Telegram, which carry the whole message.'];
 }
 
 /** Send one announcement now. Reports what actually went. */
@@ -1105,8 +1231,23 @@ function cp_ann_send(array $x, array $a): array {
     $ch = (array)(safe_json((string)$a['channels']) ?: ['app']);
     $aud = cp_ann_audience($x, (string)$a['aud'], (string)$a['centre']);
     $title = (string)$a['title']; $body = (string)$a['body'];
-    $stats = ['app' => 0, 'email' => 0, 'sms' => 0, 'emailSkipped' => 0, 'smsSkipped' => 0];
-    if (in_array('app', $ch, true)) foreach ($aud['members'] as $m) { try { push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => $title, 'body' => $body, 'linkPage' => 'dashboard']); $stats['app']++; } catch (Throwable $e) {} }
+    $stats = ['app' => 0, 'family' => 0, 'email' => 0, 'telegram' => 0, 'sms' => 0, 'emailSkipped' => 0, 'smsSkipped' => 0, 'telegramSkipped' => 0, 'smsDropped' => 0];
+    if (in_array('app', $ch, true)) {
+        foreach ($aud['members'] as $m) { try { push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => $title, 'body' => $body, 'linkPage' => 'dashboard']); $stats['app']++; } catch (Throwable $e) {} }
+        // Guardians with a family account: one notice each, however many children.
+        foreach ($aud['guardianIds'] as $gid) if (family_notice_add($gid, 'announcement', (string)$a['annId'], $title, $body, (string)($a['approvedByName'] ?: $a['byName']))) $stats['family']++;
+    }
+    /* Telegram carries the whole message, free. A phone it reaches is not also
+       texted, so a guardian with both on gets it once. */
+    $tgDone = [];
+    if (in_array('telegram', $ch, true) && function_exists('telegram_on') && telegram_on()) {
+        $phones = array_merge($aud['phones'], $aud['memberPhones']);
+        foreach (array_slice($phones, 0, CP_ANN_TG_MAX) as $ph) {
+            $r = telegram_send_to_phone(cp_ann_e164($ph), $title . "\n\n" . $body);
+            if (!empty($r['ok'])) { $stats['telegram']++; $tgDone[$ph] = true; }
+        }
+        $stats['telegramSkipped'] = max(0, count($phones) - CP_ANN_TG_MAX);
+    }
     if (in_array('email', $ch, true) && function_exists('send_mail') && function_exists('email_template')) {
         $to = $aud['emails'];
         foreach ($aud['members'] as $m) { $e = strtolower(trim((string)$m['email'])); if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL)) $to[] = $e; }
@@ -1116,9 +1257,14 @@ function cp_ann_send(array $x, array $a): array {
         $stats['emailSkipped'] = max(0, count($to) - CP_ANN_EMAIL_MAX);
     }
     if (in_array('sms', $ch, true) && function_exists('sms_enabled') && sms_enabled() && function_exists('sms_send')) {
-        $text = 'NGG: ' . $title . '. ' . $body;
-        foreach (array_slice($aud['phones'], 0, CP_ANN_SMS_MAX) as $ph) { $r = sms_send($ph, mb_substr($text, 0, 480)); if (!empty($r['ok'])) $stats['sms']++; }
-        $stats['smsSkipped'] = max(0, count($aud['phones']) - CP_ANN_SMS_MAX);
+        $full = cp_ann_sms_full($title, $body); $short = trim((string)($a['smsBody'] ?? ''));
+        $text = mb_strlen($full) <= CP_ANN_SMS_CHARS ? $full : ($short !== '' ? 'NGG: ' . $short : '');
+        if ($text === '') $stats['smsDropped'] = count($aud['phones']);   // never truncated; saved rows were checked, this is the belt
+        else {
+            $to = array_values(array_filter($aud['phones'], static fn($ph) => !isset($tgDone[$ph])));
+            foreach (array_slice($to, 0, CP_ANN_SMS_MAX) as $ph) { $r = sms_send($ph, $text); if (!empty($r['ok'])) $stats['sms']++; }
+            $stats['smsSkipped'] = max(0, count($to) - CP_ANN_SMS_MAX);
+        }
     }
     db_update('club_announcements', ['status' => 'sent', 'sentAt' => now_iso(), 'stats' => json_encode($stats), 'updatedAt' => now_iso()], ['annId' => (string)$a['annId']]);
     return $stats;
@@ -1142,7 +1288,12 @@ function admin_clubp_ann_save(array $p): array {
     if (in_array($act, ['approve', 'sendback'], true)) {
         if (!$isAdm) return ['ok' => false, 'error' => 'forbidden', 'message' => 'Only an admin approves announcements.'];
         if (!$have || (string)$have['status'] !== 'pending') return ['ok' => false, 'error' => 'not_pending'];
-        if ($act === 'approve') { $why = cp_ann_unreachable((string)$have['aud'], (array)(safe_json((string)$have['channels']) ?: ['app'])); if ($why !== '') return ['ok' => false, 'error' => 'unreachable', 'message' => $why . ' Send it back with a note.']; }
+        if ($act === 'approve') {
+            $hch = (array)(safe_json((string)$have['channels']) ?: ['app']);
+            $why = cp_ann_unreachable((string)$have['aud'], $hch);
+            if ($why === '' && cp_ann_reachable(cp_ann_audience($x, (string)$have['aud'], (string)$have['centre']), $hch) === 0) $why = cp_ann_nobody($hch);
+            if ($why !== '') return ['ok' => false, 'error' => 'unreachable', 'message' => $why . ' Send it back with a note.'];
+        }
         if ($act === 'sendback') {
             $note = trim((string)($p['note'] ?? '')); if ($note === '') return ['ok' => false, 'error' => 'note_required'];
             db_update('club_announcements', ['status' => 'changes', 'note' => mb_substr($note, 0, 600), 'updatedAt' => now_iso()], ['annId' => $id]);
@@ -1177,18 +1328,23 @@ function admin_clubp_ann_save(array $p): array {
     $centre = (string)($d['centre'] ?? 'all');
     if ($x['scoped'] && ($centre === 'all' || !cp_covers($x, $centre))) $centre = $x['names'][0] ?? '';
     if ($centre !== 'all' && !cp_covers($x, $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
-    $chs = array_values(array_intersect(['app', 'sms', 'email'], (array)($d['ch'] ?? [])));
+    $chs = array_values(array_intersect(CP_ANN_CHANNELS, (array)($d['ch'] ?? [])));
     $sendAt = '';
     if (($d['when'] ?? 'asap') === 'later') { $t = strtotime((string)($d['sendAt'] ?? '')); if ($t) $sendAt = gmdate('Y-m-d\TH:i:s\Z', $t); }
     $row = ['title' => mb_substr(trim((string)($d['title'] ?? '')), 0, 200), 'body' => mb_substr(trim((string)($d['body'] ?? '')), 0, 4000),
             'aud' => in_array($d['aud'] ?? '', ['guardians', 'members', 'both'], true) ? (string)$d['aud'] : 'guardians', 'centre' => $centre,
-            'channels' => json_encode($chs ?: ['app']), 'sendAt' => $sendAt, 'updatedAt' => now_iso()];
+            'channels' => json_encode($chs ?: cp_ann_default_channels()), 'sendAt' => $sendAt, 'updatedAt' => now_iso(),
+            'smsBody' => mb_substr(trim((string)($d['smsBody'] ?? '')), 0, 600)];
+    $smsNote = '';
     if ($act === 'submit') {
+        [$chs, $row['smsBody'], $smsNote] = cp_ann_sms_rule($row['title'], $row['body'], $chs, $row['smsBody']);
+        $row['channels'] = json_encode($chs);
         $errs = [];
         if ($row['title'] === '') $errs[] = 'title'; if ($row['body'] === '') $errs[] = 'body'; if (!$chs) $errs[] = 'channel';
         if (($d['when'] ?? 'asap') === 'later' && $sendAt === '') $errs[] = 'sendAt';
         if ($errs) return ['ok' => false, 'error' => 'incomplete', 'fields' => $errs];
         $why = cp_ann_unreachable($row['aud'], $chs);
+        if ($why === '' && cp_ann_reachable(cp_ann_audience($x, $row['aud'], $centre), $chs) === 0) $why = cp_ann_nobody($chs);
         if ($why !== '') return ['ok' => false, 'error' => 'unreachable', 'message' => $why];
     }
     if ($have) db_update('club_announcements', $row, ['annId' => $id]);
@@ -1199,14 +1355,14 @@ function admin_clubp_ann_save(array $p): array {
         $r = db_row('SELECT * FROM club_announcements WHERE annId = ?', [$id]);
         $stats = (string)$r['status'] === 'pending' ? cp_ann_send($x, $r) : null;
         audit('club.ann.send', $me, $id, ['stats' => $stats]);
-        return ['ok' => true, 'stats' => $stats, 'announcement' => cp_ann_row(db_row('SELECT * FROM club_announcements WHERE annId = ?', [$id]))];
+        return ['ok' => true, 'stats' => $stats, 'smsNote' => $smsNote, 'announcement' => cp_ann_row(db_row('SELECT * FROM club_announcements WHERE annId = ?', [$id]))];
     }
     db_update('club_announcements', ['status' => 'pending', 'note' => ''], ['annId' => $id]);
     $admins = db_all("SELECT memberId, email FROM members WHERE role IN ('admin','super_admin') AND COALESCE(status,'') NOT IN ('suspended','deleted','merged') AND memberId <> ?", [$me]);
     notify_people($admins, ['kind' => 'approval', 'title' => 'An announcement is waiting for you', 'body' => $myName . ' wrote “' . $row['title'] . '”.',
         'linkPage' => 'club-admin', 'ctaPath' => '/club-admin', 'eyebrow' => 'NGG Club']);
     audit('club.ann.submit', $me, $id, []);
-    return ['ok' => true, 'announcement' => cp_ann_row(db_row('SELECT * FROM club_announcements WHERE annId = ?', [$id]))];
+    return ['ok' => true, 'smsNote' => $smsNote, 'announcement' => cp_ann_row(db_row('SELECT * FROM club_announcements WHERE annId = ?', [$id]))];
 }
 /** Web-cron: send the scheduled announcements that are due. */
 function cp_ann_due_tick(): int {

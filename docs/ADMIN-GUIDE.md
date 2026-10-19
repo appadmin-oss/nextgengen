@@ -1258,6 +1258,46 @@ fines** (or Summer School → Policy).
 - Attendance rates count only scans on real programme days, so a visit on a
   day the centre does not meet never hides a missed session.
 
+### Club announcements (Club portal → Announcements)
+
+A coordinator or centre lead writes an announcement; an **admin approves** it
+before anything goes out (an admin's own goes straight out, or at the time
+they set). The approver reads exactly what will be sent — including the text
+message version, below.
+
+**Channels.** A new announcement starts on **App** and **Email**, plus
+**Telegram** once the site has a Telegram bot (Settings → API keys → Telegram).
+SMS is never on by default: it costs money per text.
+
+| Channel | Members | Guardians |
+|---|---|---|
+| App | their notifications | their **family account** — a "From the Club" list at the top of /family, marked new until read |
+| Email | their email | every guardian email on the record and on family accounts, once each |
+| Telegram | their phone, if connected to the bot | their phone, if connected — the **whole** message, free |
+| SMS | — (members don't get SMS) | guardians' phones; a phone that already got it on Telegram is not texted too |
+
+**Too long for a text.** A text holds 306 characters ("NGG: " and all — two
+texts). When the message is longer and SMS is ticked, the editor asks for an
+**SMS version**:
+
+- **Shorten with AI** writes one. It is checked before you see it: every
+  number, date, day, time, amount of money, phone number, link and email in the
+  full message must still be in it. If the AI drops one it is asked once more,
+  naming what it left out; if it still can't, it says so and offers email and
+  Telegram instead. Nothing the AI writes is sent without the approver reading it.
+- You can write or edit the SMS version yourself. The editor names any fact it
+  leaves out ("Leaves out 10") as you type.
+- **Send by email and Telegram instead** turns SMS off; those channels carry the
+  whole message.
+- If an announcement is submitted with SMS, a long message and no faithful SMS
+  version, **SMS is dropped** and it goes by email (and Telegram) instead — and
+  the screen says so. A text is never cut off mid-sentence.
+
+**Nobody reached is refused.** An announcement whose channels reach nobody in
+its audience (for example App only, to guardians at a centre where no guardian
+has a family account yet) is refused with the reason, not "sent" to nobody. The
+reach line under the editor counts each person once.
+
 ### Approval notifications
 
 Nothing waits in a queue unseen any more. Each of these sends an in-app

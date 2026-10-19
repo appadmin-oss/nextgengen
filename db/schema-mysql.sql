@@ -3875,3 +3875,19 @@ CREATE TABLE IF NOT EXISTS community_video_progress (
   UNIQUE KEY idx_cvp_member_post (memberId, postId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (162) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS guardian_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  noticeId VARCHAR(40) NOT NULL UNIQUE,
+  guardianId VARCHAR(64) NOT NULL,
+  kind VARCHAR(30) DEFAULT 'announcement',
+  refId VARCHAR(64) DEFAULT '',
+  title VARCHAR(255) DEFAULT '',
+  body TEXT,
+  fromName VARCHAR(160) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  readAt VARCHAR(32) DEFAULT '',
+  KEY idx_gnotice_guardian (guardianId, createdAt),
+  UNIQUE KEY idx_gnotice_ref (guardianId, kind, refId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE club_announcements ADD COLUMN smsBody TEXT;
+INSERT INTO schema_version (version) VALUES (163) ON DUPLICATE KEY UPDATE version = version;

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 162;
+const NGG_SCHEMA_TARGET = 163;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4893,6 +4893,28 @@ function db_migrate(PDO $db): void {
               updatedAt TEXT DEFAULT ''
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cvp_member_post ON community_video_progress(memberId, postId);
+        ",
+        /* Announcements reach guardians in their family account, not only by
+         * email: guardian_notices is the family inbox (one row per guardian per
+         * announcement, read when they open it). smsBody is the short SMS
+         * version an announcement carries when its text is too long for a
+         * text — written or AI-shortened, approved with the rest. */
+        163 => "
+            CREATE TABLE IF NOT EXISTS guardian_notices (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              noticeId TEXT UNIQUE NOT NULL,
+              guardianId TEXT NOT NULL,
+              kind TEXT DEFAULT 'announcement',
+              refId TEXT DEFAULT '',
+              title TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              fromName TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              readAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_gnotice_guardian ON guardian_notices(guardianId, createdAt);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_gnotice_ref ON guardian_notices(guardianId, kind, refId);
+            ALTER TABLE club_announcements ADD COLUMN smsBody TEXT DEFAULT '';
         ",
     ];
 

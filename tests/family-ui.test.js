@@ -204,6 +204,24 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.waitForSelector('.fam-tab', { timeout: 40000 });
     chk('…and the parent now has both children', (await fp.$$('.fam-tab')).length === 2);
 
+    /* ── Announcements reach the family account (the App channel) ── */
+    php(`$g = db_row("SELECT guardianId FROM guardians WHERE email = 'mum@example.org'");
+         db_insert('guardian_notices', ['noticeId' => 'GN-FU1', 'guardianId' => $g['guardianId'], 'kind' => 'announcement', 'refId' => 'ANN-FU1',
+           'title' => 'Kit day on Saturday', 'body' => 'Bring trainers and water.', 'fromName' => 'Ada Admin', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z'), 'readAt' => '']);`);
+    await fp.reload({ waitUntil: 'domcontentloaded' });
+    await fp.waitForSelector('.fx-nav-item', { timeout: 40000 });
+    const badged = await fp.waitForFunction(() => /1 new from the Club/.test(document.querySelector('.fx-nav')?.textContent || ''), null, { timeout: 15000 }).then(() => true).catch(() => false);
+    if (!badged) console.error('      nav: ' + JSON.stringify(await fp.$eval('.fx-nav', el => el.textContent).catch(() => 'none')));
+    chk('a new Club announcement is badged on Today, whatever screen the parent is on', badged);
+    await fp.click('.fx-nav-item:has-text("Today")');
+    await fp.waitForSelector('.fam-notices', { timeout: 20000 });
+    chk('a Club announcement shows in the family account, marked new', /Kit day on Saturday/.test(await fp.$eval('.fam-notices', el => el.innerText)) && /1 new/i.test(await fp.$eval('.fam-notices', el => el.innerText)));
+    await fp.click('.fam-notice-t');
+    await fp.waitForFunction(() => { const b = document.querySelector('.fam-notice-b'); return b && !b.hidden; });
+    chk('…opening it shows the message', /Bring trainers and water/.test(await fp.$eval('.fam-notice-b', el => el.innerText)));
+    await fp.waitForFunction(() => !/new/i.test(document.querySelector('.fam-notices-head')?.innerText || 'new'), null, { timeout: 15000 }).catch(() => {});
+    chk('…and marks it read, on the server', php(`echo db_row("SELECT readAt FROM guardian_notices WHERE noticeId = 'GN-FU1'")['readAt'];`) !== '');
+
     /* ── The emailed link, on another device ── */
     const lctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const lp = await lctx.newPage();

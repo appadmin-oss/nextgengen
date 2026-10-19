@@ -280,6 +280,7 @@ function FamilyHome({ me, reload, setPage, onSignedOut }) {
             {FAMILY_VIEWS.map(v => (
               <button key={v.id} type="button" className="fx-nav-item" aria-current={view === v.id && !adding ? "page" : undefined} onClick={() => go(v.id)}>
                 <i className={"ph ph-" + v.icon} aria-hidden="true"/>{v.label}
+                {v.id === "today" && me.unread > 0 && <span className="fx-badge"><span className="sr-only">, </span>{me.unread}<span className="sr-only"> new from the Club</span></span>}
               </button>
             ))}
             <button type="button" className="fx-nav-item" aria-current={view === "emails" && !adding ? "page" : undefined} onClick={() => go("emails")}>
@@ -304,6 +305,8 @@ function FamilyHome({ me, reload, setPage, onSignedOut }) {
           </div>
 
           {adding && <FamilyAddWard me={me} onDone={() => { setAdding(false); reload(); }}/>}
+
+          {(view === "today" || !current) && !adding && <FamilyNotices me={me} reload={reload}/>}
 
           {waiting.length > 0 && (view === "today" || !current) && (
             <section className="fam-card" aria-labelledby="fam-wait-h">
@@ -331,11 +334,53 @@ function FamilyHome({ me, reload, setPage, onSignedOut }) {
           {FAMILY_VIEWS.map(v => (
             <button key={v.id} type="button" className="fx-tab" aria-current={view === v.id ? "page" : undefined} onClick={() => go(v.id)}>
               <i className={"ph ph-" + v.icon} aria-hidden="true"/>{v.short}
+              {v.id === "today" && me.unread > 0 && <span className="fx-badge"><span className="sr-only">, </span>{me.unread}<span className="sr-only"> new from the Club</span></span>}
             </button>
           ))}
         </nav>
       )}
     </div>
+  );
+}
+
+/* Announcements from the Club, in the family account itself (the App channel
+   of a Club announcement, guardian_notices). Unread ones lead and are marked;
+   reading one marks it, and "Mark all read" clears the lot. */
+function FamilyNotices({ me, reload }) {
+  const list = me.notices || [];
+  const [open, setOpen] = React.useState("");
+  const [err, setErr] = React.useState("");
+  if (!list.length) return null;
+  const read = async id => {
+    setErr("");
+    try { await NGGApi.family.act("notices.read", id ? { noticeId: id } : {}); reload(); }
+    catch (e) { setErr("Couldn't mark it read. Check your connection and try again."); }
+  };
+  const when = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+  return (
+    <section className="fam-card fam-notices" aria-labelledby="fam-notices-h">
+      <div className="fam-notices-head">
+        <h2 id="fam-notices-h" className="fam-h2">From the Club</h2>
+        {me.unread > 0 && <span className="fam-chip is-warn" aria-live="polite">{me.unread} new</span>}
+        {me.unread > 0 && <button type="button" className="fam-btn" onClick={() => read("")}>Mark all read</button>}
+      </div>
+      {err && <p className="fam-err" role="alert">{err}</p>}
+      <ul className="fam-list">
+        {list.map(n => {
+          const isOpen = open === n.id;
+          return (
+            <li key={n.id} className={"fam-notice" + (n.read ? "" : " is-new")}>
+              <button type="button" className="fam-notice-t" aria-expanded={isOpen} aria-controls={"fam-n-" + n.id}
+                onClick={() => { setOpen(isOpen ? "" : n.id); if (!n.read && !isOpen) read(n.id); }}>
+                {!n.read && <><span className="fam-notice-dot" aria-hidden="true"/><span className="sr-only">New: </span></>}
+                <b>{n.title}</b><span className="fam-meta">{when(n.at)}{n.from ? " · " + n.from : ""}</span>
+              </button>
+              <p id={"fam-n-" + n.id} className="fam-notice-b" hidden={!isOpen}>{n.body}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

@@ -16,6 +16,7 @@ switch ($action) {
     case 'request':     $res = gs_call('family.request.create', $base + ['linkId' => $b['linkId'] ?? '', 'kind' => $b['kind'] ?? '', 'subject' => $b['subject'] ?? '',
                                                           'body' => $b['body'] ?? '', 'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
                                                           'refEntryId' => $b['refEntryId'] ?? '']); break;
+    case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;
     default: json_error('unknown_action', 400);
 }

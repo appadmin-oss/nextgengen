@@ -24,6 +24,23 @@ function cp3Ini(n) { return String(n || "").split(" ").filter(Boolean).map(w => 
 function cp3M(t) { const p = String(t || "0:0").split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 function cp3HM(x) { return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); }
 function cp3Fmt(n) { return Number(n || 0).toLocaleString("en"); }
+/* The facts a shortened SMS must keep — numbers, named days and months,
+   links, emails. The live hint only; cp_ann_facts() on the server decides. */
+const CP3_NAMED = (() => { const m = { today: "today", tomorrow: "tomorrow", tonight: "tonight", tues: "tue", thur: "thu", thurs: "thu", sept: "sep" };
+  ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december"]
+    .forEach(w => { m[w] = w.slice(0, 3); m[w.slice(0, 3)] = w.slice(0, 3); }); return m; })();
+function cp3AnnFacts(t) {
+  const out = {}; t = String(t || "").replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const urlRe = /\bhttps?:\/\/[^\s<>"]+|\bwww\.[^\s<>"]+/gi, mailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+  (t.match(urlRe) || []).forEach(u => { u = u.replace(/[.,;:)!?]+$/, ""); out["url:" + u.toLowerCase().replace(/^https?:\/\//, "")] = u; });
+  (t.match(mailRe) || []).forEach(e => { out["email:" + e.toLowerCase()] = e; });
+  const rest = t.replace(urlRe, " ").replace(mailRe, " ");
+  (rest.match(/\d+/g) || []).forEach(n => { out["n:" + (n.replace(/^0+/, "") || "0")] = n; });
+  (rest.match(/\b[A-Za-z]+\b/g) || []).forEach(w => { const k = CP3_NAMED[w.toLowerCase()]; if (k) out["d:" + k] = w; });
+  if (/\bmay\s+\d|\d(?:st|nd|rd|th)?\s+may\b/i.test(rest)) out["d:may"] = "May";
+  return out;
+}
+function cp3LostFacts(long, short) { const a = cp3AnnFacts(long), b = cp3AnnFacts(short); return Object.keys(a).filter(k => !(k in b)).map(k => a[k]); }
 function cp3Err(e, fallback) {
   if (!e) return fallback || "Something went wrong.";
   if (e.detail) return e.detail;
@@ -42,7 +59,7 @@ class Cp3Portal extends React.Component {
     this.state = {
       boot: null, bootErr: "", sec: cp3SecFromUrl() || "home", width: 1280,
       dash: null, dashErr: "", slots: null, slotsErr: "", promote: null, promoteErr: "", roster: null, rosterErr: "",
-      comp: null, compErr: "", cons: null, consErr: "", gData: {}, gErr: {}, ann: null, annErr: "", annMeta: { canApprove: false, smsOn: false },
+      comp: null, compErr: "", cons: null, consErr: "", gData: {}, gErr: {}, ann: null, annErr: "", annMeta: { canApprove: false, smsOn: false, tgOn: false, aiOn: false, defaultCh: ["app", "email"], smsChars: 306 },
       trnList: null, trnErr: "", trnView: null, trnDetail: null, trnDraft: null, trnStep: 0, trnTried: false, trnQ: "", trnCands: [],
       centre: (() => { try { return localStorage.getItem("ngg.tt.centre") || ""; } catch (e) { return ""; } })(), view: "week",
       form: null, psel: {}, rsel: {}, q: "", pcentre: "", joins: {}, result: null, confirm: null, exportOpen: false, showIns: false, toast: "", toastUndo: false,
@@ -117,7 +134,7 @@ class Cp3Portal extends React.Component {
     }).catch(e => this.setState({ slotsErr: cp3Err(e) }));
   }
   loadComp() { this.setState({ compErr: "" }); return this.api("checkins").then(r => this.setState({ comp: r.checkins || [] })).catch(e => this.setState({ compErr: cp3Err(e) })); }
-  loadAnn() { this.setState({ annErr: "" }); return this.api("ann.list").then(r => this.setState({ ann: r.announcements || [], annMeta: { canApprove: !!r.canApprove, smsOn: !!r.smsOn } })).catch(e => this.setState({ annErr: cp3Err(e) })); }
+  loadAnn() { this.setState({ annErr: "" }); return this.api("ann.list").then(r => this.setState({ ann: r.announcements || [], annMeta: { canApprove: !!r.canApprove, smsOn: !!r.smsOn, tgOn: !!r.tgOn, aiOn: !!r.aiOn, defaultCh: r.defaultCh || ["app", "email"], smsChars: r.smsChars || 306 } })).catch(e => this.setState({ annErr: cp3Err(e) })); }
   loadCons() { this.setState({ consErr: "" }); return this.api("consents").then(r => this.setState({ cons: r, permOver: {} })).catch(e => this.setState({ consErr: cp3Err(e) })); }
   loadPromote() {
     this.setState({ promoteErr: "" });
@@ -372,13 +389,30 @@ class Cp3Portal extends React.Component {
   annSave(action, extra) {
     const E = this.state.annEdit; if (!E) return;
     this.setState({ busy: true });
-    return this.api("ann.save", Object.assign({ action, ann: { id: E.id || "", title: E.title, body: E.body, aud: E.aud, centre: E.centre, ch: E.ch, when: E.when || "asap", sendAt: E.sendAtLocal || "" } }, extra || {}))
+    return this.api("ann.save", Object.assign({ action, ann: { id: E.id || "", title: E.title, body: E.body, aud: E.aud, centre: E.centre, ch: E.ch, smsBody: E.smsBody || "", when: E.when || "asap", sendAt: E.sendAtLocal || "" } }, extra || {}))
       .then(r => {
         // Follow the announcement to the tab it now lives in, so it doesn't seem to vanish.
         const st = ((r && r.announcement) || {}).status; const adm = this.isAdm();
         const tab = !st || action === "delete" ? this.state.annTab : (st === "draft" || st === "changes") ? (adm ? (st === "draft" ? "draft" : "changes") : "mine") : st;
-        this.setState({ busy: false, annEdit: null, annNote: "", annTab: tab }); this.loadAnn(); if (action !== "draft") this.loadDash(); return r; })
+        this.setState({ busy: false, annEdit: null, annNote: "", annTab: tab }); this.loadAnn(); if (action !== "draft") this.loadDash();
+        if (r && r.smsNote) this.toast(r.smsNote);
+        return r; })
       .catch(e => { this.setState({ busy: false }); if ((e.code || "") === "incomplete") this.setState(s => ({ annEdit: Object.assign({}, s.annEdit, { tried: true }) })); else this.fail(e); throw e; });
+  }
+  /* An SMS version of a long announcement, by AI. The server checks it kept
+     every date, time, amount and link; when it can't (or AI isn't set up) the
+     SMS gives way to email and Telegram, which carry the whole message. */
+  annShorten() {
+    const E = this.state.annEdit; if (!E || this.state.annShortBusy) return;
+    this.setState({ annShortBusy: true, annShortMsg: "" });
+    this.api("ann.shorten", { title: E.title, body: E.body })
+      .then(r => this.setState(s => ({ annShortBusy: false, annShortMsg: r.fits ? "It already fits in a text." : "Shortened. Every date, time, amount and link is kept — read it before it goes.", annEdit: r.text ? Object.assign({}, s.annEdit, { smsBody: r.text }) : s.annEdit })))
+      .catch(e => this.setState({ annShortBusy: false, annShortMsg: cp3Err(e) || "Couldn’t shorten it." }));
+  }
+  annNoSms() {
+    const M = this.state.annMeta;
+    this.setState(s => ({ annShortMsg: "", annEdit: Object.assign({}, s.annEdit, { smsBody: "", ch: Array.from(new Set(s.annEdit.ch.filter(c => c !== "sms").concat(["email"], M.tgOn ? ["telegram"] : []))) }) }));
+    this.toast(M.tgOn ? "SMS off. It goes by email and Telegram, which carry the whole message." : "SMS off. It goes by email, which carries the whole message.");
   }
   annReach(E) {
     const key = E.aud + "|" + E.centre;
@@ -888,36 +922,50 @@ class Cp3Portal extends React.Component {
       const curT = S.annTab || tabsDef[0][0];
       out.isAnn = sec === "announce";
       out.annTabs = tabsDef.map(t => { const on = curT === t[0]; const n = vis.filter(x => inTab(x, t[0])).length; return { l: t[1], n: String(n), on, bg: on ? "#fff" : "transparent", sh: on ? "0 1px 2px rgba(0,0,0,.1)" : "none", border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => this.setState({ annTab: t[0] }) }; });
-      const chL = { app: "App", sms: "SMS", email: "Email" };
+      const chL = { app: "App", sms: "SMS", email: "Email", telegram: "Telegram" };
       out.annRows = vis.filter(x => inTab(x, curT)).map(x => { const s = ST2[x.status] || ST2.draft; const t = CP3_TONE[s[1]];
         return { title: x.title || "Untitled draft", sub: ({ guardians: "Guardians", members: "Members", both: "Members and guardians" })[x.aud] + " · " + (x.centre === "all" ? "every centre" : x.centre) + " · " + cp3Fmt(x.reach || 0) + " people",
-          ch: x.ch.map(c => chL[c]).join(" · "), by: x.by, at: x.sendAt ? "Goes " + x.sendAt : x.at, st: s[0], sbg: t[0], sfg: t[1], sdot: t[2], onClick: () => { this.reachKey = ""; this.setState({ annEdit: Object.assign({}, x, { when: x.sendAtIso ? "later" : "asap", sendAtLocal: x.sendAtIso ? x.sendAtIso.slice(0, 16) : "" }), annNote: "", annReach: null }); } }; });
+          ch: x.ch.map(c => chL[c]).join(" · "), by: x.by, at: x.sendAt ? "Goes " + x.sendAt : x.at, st: s[0], sbg: t[0], sfg: t[1], sdot: t[2], onClick: () => { this.reachKey = ""; this.setState({ annEdit: Object.assign({}, x, { when: x.sendAtIso ? "later" : "asap", sendAtLocal: x.sendAtIso ? x.sendAtIso.slice(0, 16) : "" }), annNote: "", annReach: null, annShortMsg: "" }); } }; });
       out.annEmpty = !!S.ann && out.annRows.length === 0; out.annEmptyL = S.annErr ? "Couldn’t load announcements: " + S.annErr : curT === "pending" && isAdm ? "Nothing waiting. You’re all caught up." : "Nothing here.";
-      out.annNew = () => { this.reachKey = ""; this.setState({ annEdit: { id: null, title: "", body: "", aud: "guardians", centre: lockC || (scope !== "all" ? scope : "all"), ch: ["email"], status: "draft", by: me, byId: B.me.id, when: "asap", sendAtLocal: "" }, annNote: "", annReach: null }); };
+      out.annNew = () => { this.reachKey = ""; this.setState({ annEdit: { id: null, title: "", body: "", aud: "guardians", centre: lockC || (scope !== "all" ? scope : "all"), ch: (S.annMeta.defaultCh || ["app", "email"]).slice(), smsBody: "", status: "draft", by: me, byId: B.me.id, when: "asap", sendAtLocal: "" }, annNote: "", annReach: null, annShortMsg: "" }); };
       const E = S.annEdit; out.hasAnn = !!E;
       if (E) {
         this.annReach(E);
         const mine = E.byId === B.me.id || !E.id; const editable = (E.status === "draft" || E.status === "changes") && (mine || isAdm); const reviewing = isAdm && E.status === "pending";
         const set = p => this.setState(s => ({ annEdit: Object.assign({}, s.annEdit, p) }));
-        const len = (E.body || "").length; const seg = Math.max(1, Math.ceil(len / 160)); const rc = S.annReach && S.annReach.key === E.aud + "|" + E.centre ? S.annReach : null;
-        const reach = rc ? rc.reach : (E.reach || 0); const smsN = E.ch.includes("sms") && rc ? rc.phones : 0;
-        const errs = []; if (!E.title.trim()) errs.push("Add a title."); if (!E.body.trim()) errs.push("Write the message."); if (!E.ch.length) errs.push("Pick at least one channel."); if (E.when === "later" && !E.sendAtLocal) errs.push("Pick when it goes out."); { const g = E.aud !== "members", m = E.aud !== "guardians", c = k => E.ch.includes(k); if (E.ch.length && !((g && (c("email") || c("sms"))) || (m && (c("app") || c("email"))))) errs.push(E.aud === "guardians" ? "Guardians don’t get app notifications. Add Email or SMS to reach them." : E.aud === "members" ? "Members don’t get SMS. Add App or Email to reach them." : "None of these channels reaches anybody. Add Email."); }
-        const warn = []; if (E.ch.includes("sms") && E.aud === "members") warn.push("Members don’t get SMS. It only goes to guardians’ phones."); if (E.aud === "both" && E.ch.length && !E.ch.includes("email") && !E.ch.includes("sms")) warn.push("Guardians don’t get app notifications, so only members will see this. Add Email or SMS for guardians.");
+        const len = (E.body || "").length; const rc = S.annReach && S.annReach.key === E.aud + "|" + E.centre ? S.annReach : null;
+        const reach = rc ? rc.reach : (E.reach || 0); const smsN = E.ch.includes("sms") && rc ? Math.max(0, rc.phones - (E.ch.includes("telegram") ? rc.telegram || 0 : 0)) : 0;
+        const errs = []; if (!E.title.trim()) errs.push("Add a title."); if (!E.body.trim()) errs.push("Write the message."); if (!E.ch.length) errs.push("Pick at least one channel."); if (E.when === "later" && !E.sendAtLocal) errs.push("Pick when it goes out."); { const c = k => E.ch.includes(k); if (E.ch.length && E.aud === "members" && !(c("app") || c("email") || c("telegram"))) errs.push("Members don’t get SMS. Add App or Email to reach them."); }
+        const warn = []; if (E.ch.includes("sms") && E.aud === "members") warn.push("Members don’t get SMS. It only goes to guardians’ phones.");
+        if (E.aud !== "members" && E.ch.length === 1 && E.ch[0] === "app" && rc) warn.push("In the app, only guardians with a family account see it (" + cp3Fmt(rc.familyApp || 0) + " here). Add Email to reach the rest.");
+        if (E.ch.includes("telegram") && !S.annMeta.tgOn) warn.push("Telegram isn’t set up on this site (Settings → API keys → Telegram), so nothing will go there.");
         if (E.ch.includes("sms") && !S.annMeta.smsOn) warn.push("SMS isn’t set up on this site, so nothing will go by text. Choose App or Email too.");
-        if (E.ch.includes("sms") && len > 160) warn.push("That’s " + seg + " texts per person. Shorter is cheaper and more likely to be read.");
+        const smsMax = S.annMeta.smsChars || 306; const fullSms = "NGG: " + (E.title || "").trim() + ". " + (E.body || "").trim();
+        const needsShort = E.ch.includes("sms") && fullSms.length > smsMax; const smsText = needsShort ? (E.smsBody ? "NGG: " + E.smsBody.trim() : "") : fullSms;
+        const smsLost = needsShort && E.smsBody ? cp3LostFacts((E.title || "") + " " + (E.body || ""), E.smsBody) : [];
+        const smsSeg = Math.max(1, Math.ceil(smsText.length / 160));
+        if (E.ch.includes("sms") && !needsShort && smsSeg > 1) warn.push("That’s " + smsSeg + " texts per person. Shorter is cheaper and more likely to be read.");
+        if (needsShort && (!E.smsBody || smsLost.length || smsText.length > smsMax)) warn.push("Too long for a text. Without a short version that keeps every fact, SMS is dropped and it goes by email" + (S.annMeta.tgOn ? " and Telegram" : "") + " instead — never cut off.");
         if (E.centre === "all" && !isAdm && !lockC) warn.push("This goes to every centre. Check it applies to all of them.");
-        const confirmSend = (label, fn) => this.setState({ confirm: { title: "Send to " + cp3Fmt(reach) + " people?", body: "Goes out now by " + E.ch.map(c => chL[c]).join(", ") + "." + (smsN ? " SMS costs about ₦" + cp3Fmt(smsN * seg * 4) + "." : "") + " Sent messages can’t be recalled.", cta: label, onOk: () => { this.setState({ confirm: null }); fn(); } } });
-        const statsLine = r => { if (!r || !r.stats) return ""; const parts = [r.stats.app ? r.stats.app + " in the app" : "", r.stats.email ? r.stats.email + " by email" : "", r.stats.sms ? r.stats.sms + " by SMS" : ""].filter(Boolean);
-          return (parts.length ? "Sent: " + parts.join(", ") + "." : "Marked sent, but it reached nobody: nobody in this audience has a contact for these channels.") + (r.stats.emailSkipped || r.stats.smsSkipped ? " Some were over the per-send limit; send again for the rest." : ""); };
-        out.an = { title: E.id ? (editable ? "Edit announcement" : E.title) : "New announcement", t: E.title, b: E.body, onT: e => set({ title: e.target.value }), onB: e => set({ body: e.target.value }), len: len + " characters" + (E.ch.includes("sms") ? " · " + seg + " text" + (seg > 1 ? "s" : "") : ""), lenColor: E.ch.includes("sms") && len > 160 ? "#7a5600" : "#6b6b72",
+        const confirmSend = (label, fn) => this.setState({ confirm: { title: "Send to " + cp3Fmt(reach) + " people?", body: "Goes out now by " + E.ch.map(c => chL[c]).join(", ") + "." + (smsN && S.annMeta.smsOn ? " SMS costs about ₦" + cp3Fmt(smsN * smsSeg * 4) + "." : "") + " Sent messages can’t be recalled.", cta: label, onOk: () => { this.setState({ confirm: null }); fn(); } } });
+        const statsLine = r => { if (!r || !r.stats) return ""; const parts = [r.stats.app ? r.stats.app + " in the app" : "", r.stats.family ? r.stats.family + " in family accounts" : "", r.stats.email ? r.stats.email + " by email" : "", r.stats.telegram ? r.stats.telegram + " on Telegram" : "", r.stats.sms ? r.stats.sms + " by SMS" : ""].filter(Boolean);
+          return (parts.length ? "Sent: " + parts.join(", ") + "." : "Marked sent, but it reached nobody: nobody in this audience has a contact for these channels.") + (r.stats.emailSkipped || r.stats.smsSkipped || r.stats.telegramSkipped ? " Some were over the per-send limit; send again for the rest." : "") + (r.stats.smsDropped ? " No texts went: it was too long for SMS." : ""); };
+        out.an = { title: E.id ? (editable ? "Edit announcement" : E.title) : "New announcement", t: E.title, b: E.body, onT: e => set({ title: e.target.value }), onB: e => set({ body: e.target.value }), len: len + " characters" + (E.ch.includes("sms") && !needsShort ? " · " + smsSeg + " text" + (smsSeg > 1 ? "s" : "") : needsShort ? " · too long for a text" : ""), lenColor: E.ch.includes("sms") && (needsShort || smsSeg > 1) ? "#7a5600" : "#6b6b72",
           editable, readOnly: !editable, reviewing, isChanges: E.status === "changes" && !!E.note, note: E.note || "", st: (ST2[E.status] || ST2.draft)[0], stBg: CP3_TONE[(ST2[E.status] || ST2.draft)[1]][0], stFg: CP3_TONE[(ST2[E.status] || ST2.draft)[1]][1], by: E.by, approvedBy: E.approvedBy || "", hasApproved: !!E.approvedBy,
           auds: [["guardians", "Guardians"], ["members", "Members"], ["both", "Both"]].map(o => { const on = E.aud === o[0]; return { l: o[1], on, border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => editable && set({ aud: o[0] }) }; }),
           centreLocked: !!lockC, centreL: lockC || "", cens: [["all", "Every centre"]].concat(centresAll.map(c => [c.name, c.name])).map(o => { const on = E.centre === o[0]; return { l: o[1], on, border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => editable && set({ centre: o[0] }) }; }),
-          chs: [["app", "App notification"], ["sms", "SMS"], ["email", "Email"]].map(o => { const on = E.ch.includes(o[0]); return { l: o[1], on, border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => editable && set({ ch: on ? E.ch.filter(c => c !== o[0]) : E.ch.concat([o[0]]) }) }; }),
+          chs: [["app", "App"], ["email", "Email"], ["telegram", "Telegram"], ["sms", "SMS"]].map(o => { const on = E.ch.includes(o[0]); return { l: o[1], on, border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => editable && set({ ch: on ? E.ch.filter(c => c !== o[0]) : E.ch.concat([o[0]]) }) }; }),
+          chHint: "App reaches members and guardians with a family account. Email and Telegram carry the whole message" + (S.annMeta.tgOn ? "" : " (Telegram isn’t set up yet)") + "; SMS costs per text.",
+          needsShort, smsWhy: "the message is " + fullSms.length + " characters; a text holds " + smsMax, sms: E.smsBody || "", onSms: e => set({ smsBody: e.target.value }),
+          smsLen: (E.smsBody ? ("NGG: " + E.smsBody.trim()).length : 0) + " / " + smsMax + " characters", smsLenColor: E.smsBody && ("NGG: " + E.smsBody.trim()).length > smsMax ? "#a12a2a" : "#6b6b72",
+          hasSmsLost: smsLost.length > 0, smsLost: "Leaves out " + smsLost.join(", ") + ". Put it back, or send by email and Telegram instead.",
+          hasSmsMsg: !!S.annShortMsg, smsMsg: S.annShortMsg || "", onShorten: () => this.annShorten(), shortenBusy: !!S.annShortBusy,
+          shortenL: S.annShortBusy ? "Shortening…" : S.annMeta.aiOn ? "Shorten with AI" : "Shorten with AI (not set up)", onNoSms: () => this.annNoSms(), noSmsL: S.annMeta.tgOn ? "Send by email and Telegram instead" : "Send by email instead",
+          showSmsPv: E.ch.includes("sms") && !!smsText, smsPv: smsText,
           whens: [["asap", isAdm ? "Send now" : "As soon as approved"], ["later", "At a set time"]].map(o => { const on = (E.when || "asap") === o[0]; return { l: o[1], on, bg: on ? "#fff" : "transparent", sh: on ? "0 1px 2px rgba(0,0,0,.1)" : "none", onClick: () => editable && set({ when: o[0] }) }; }),
           isLater: E.when === "later", sendAt: E.sendAtLocal || "", onSendAt: e => set({ sendAtLocal: e.target.value }),
           reach: rc ? "Reaches " + cp3Fmt(reach) + " " + ({ guardians: "guardians", members: "members", both: "members and guardians" })[E.aud] + (E.centre === "all" ? " across every centre" : " at " + E.centre) + ", each counted once." : "Counting who it reaches…",
-          cost: smsN ? "SMS costs about ₦" + cp3Fmt(smsN * seg * 4) + " (" + cp3Fmt(smsN) + " phones × " + seg + " text" + (seg > 1 ? "s" : "") + ")." : "", hasCost: !!smsN && S.annMeta.smsOn,
+          cost: smsN && smsText ? "SMS costs about ₦" + cp3Fmt(smsN * smsSeg * 4) + " (" + cp3Fmt(smsN) + " phones × " + smsSeg + " text" + (smsSeg > 1 ? "s" : "") + ")." : "", hasCost: !!smsN && !!smsText && S.annMeta.smsOn,
           warn, hasWarn: warn.length > 0, errs: E.tried ? errs : [], hasErr: !!E.tried && errs.length > 0, pvTitle: E.title || "Your title", pvBody: E.body || "Your message appears here.",
           approvalNote: isAdm ? "" : "An admin reviews it before anything is sent. You can still edit it until then.", hasApprovalNote: !isAdm && editable,
           noteV: S.annNote, onNote: e => this.setState({ annNote: e.target.value }), noteErr: !!E.triedNote && !S.annNote.trim(),
