@@ -659,6 +659,13 @@ function fees_post(string $memberId, string $kind, int $amount, array $opts = []
     $isCharge = in_array($kind, FEES_CHARGE_KINDS, true);
     $isCredit = in_array($kind, FEES_CREDIT_KINDS, true);
     if (!$isCharge && !$isCredit) return null;
+    /* A fine falls under a Club conduct rule (domain/club-portal.php): a rule
+       that is off posts nothing, and a capped rule never goes over its cap per
+       term — whichever desk, import or policy run the fine came from. */
+    if ($kind === 'fine' && function_exists('conduct_rule_allow')) {
+        $amount = conduct_rule_allow($memberId, $amount, $opts);
+        if ($amount <= 0) return null;
+    }
     $periodKey = (string)($opts['periodKey'] ?? '');
     /* A credit with no period key would collide with the next one under the
        unique index — two payments in the same month are two real events. Give

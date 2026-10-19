@@ -5995,7 +5995,7 @@ function PortalLogin({ brand, onVerified }) {
 }
 
 // Wraps a single portal section with its own login → cap-lock → 2FA → chrome.
-function PortalGate({ cap, brand, setPage, children }) {
+function PortalGate({ cap, brand, setPage, children, bare }) {
   const { member, adminOk, loading, setAdminOk, hasCap, onVerified, signOut } = useAuth();
 
   if (loading) return <div className="page admin"><div className="container" style={{ padding: "120px 0" }}><div className="dash-spinner"/></div></div>;
@@ -6015,6 +6015,9 @@ function PortalGate({ cap, brand, setPage, children }) {
     </div></section></div>;
   }
   if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
+  /* A portal that draws its own shell (the Club portal v3) gets the gate and
+     nothing else: a second header above its own would be two of everything. */
+  if (bare) return typeof children === "function" ? children({ member, signOut }) : children;
 
   return (
     <div className="page admin coord-portal" data-portal={brand.key} data-screen-label={brand.label}>
@@ -6048,10 +6051,12 @@ function SummerAdminPortal({ setPage }) {
   </PortalGate>;
 }
 
+/* /club-admin is the Club portal v3 (src/modules/club3/). ClubManager, the
+   two-tab screen it replaced, is kept for the Control Room's embedded use. */
 function ClubAdminPortal({ setPage }) {
-  return <PortalGate cap="club" setPage={setPage}
+  return <PortalGate cap="club" setPage={setPage} bare
     brand={{ key: "club", label: "NGG Club", eyebrow: "NGG CLUB · STAFF PORTAL", icon: "◈" }}>
-    <ClubManager/>
+    {({ signOut }) => <Cp3Portal setPage={setPage} signOut={signOut}/>}
   </PortalGate>;
 }
 

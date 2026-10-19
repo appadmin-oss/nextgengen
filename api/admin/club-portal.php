@@ -6,7 +6,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') json_error('method_not_all
 $b = read_json_body();
 $b = is_array($b) ? $b : [];
 $ops = ['boot', 'dashboard', 'section', 'decide', 'create', 'checkins', 'checkin', 'consents', 'consent.set', 'consent.link',
-        'ann.list', 'ann.reach', 'ann.save', 'brief', 'brief.send', 'search'];
+        'ann.list', 'ann.reach', 'ann.save', 'brief', 'brief.send', 'search', 'directory', 'register', 'message', 'dir.bulk', 'dir.save'];
 $op = (string)($b['op'] ?? '');
 if (!in_array($op, $ops, true)) json_error('unknown_action', 400);
 unset($b['op']);

@@ -363,7 +363,7 @@ function cp_checkin_rows(array $x): array {
         $w = strtolower((string)$r['wellbeing']);
         [$mood, $tone] = $w === 'okay' ? ['Okay', 'ok'] : ($w === 'struggling' ? ['Low', 'bad'] : ($w === 'need help' ? ['Low', 'bad'] : ['Okay', 'neutral']));
         $note = trim((string)$r['note']);
-        $out[] = ['id' => $key, 'name' => (string)$r['fullName'], 'mid' => (string)($r['displayId'] ?: $r['memberId']), 'memberId' => (string)$r['memberId'],
+        $out[] = ['id' => $key, 'name' => (string)$r['fullName'], 'mid' => (string)($r['displayId'] ?: $r['memberId']), 'memberId' => (string)$r['memberId'], 'centre' => (string)$r['centre'],
                   'mood' => $mood, 'tone' => $tone, 'wellbeing' => (string)$r['wellbeing'], 'note' => $note !== '' ? '“' . $note . '”' : '',
                   'when' => cp_ago((string)$r['createdAt']), 'mentor' => $mentorOf[(string)$r['memberId']] ?? 'No mentor yet',
                   'hasMentor' => isset($mentorOf[(string)$r['memberId']]), 'told' => !empty($s['toldAt'])];
@@ -1257,4 +1257,213 @@ function admin_clubp_search(array $p): array {
                     ORDER BY CASE WHEN lower(fullName) LIKE ? THEN 0 ELSE 1 END, fullName LIMIT 6", array_merge($inArgs, [$like, $like, $like, $q . '%']));
     return ['ok' => true, 'members' => array_map(static fn($r) => ['id' => (string)$r['memberId'], 'displayId' => (string)($r['displayId'] ?: $r['memberId']), 'name' => (string)$r['fullName'],
         'centre' => (string)$r['centre'], 'course' => (string)$r['track'], 'status' => (string)$r['status']], $rows)];
+}
+
+/* ── Student directory (the roster) ─────────────────────────────────────── */
+
+const CP_DIR_WEEKS = 8;
+const CP_DIR_MAX = 6000;
+const CP_MSG_MAX = 500;
+
+/** The session a register is for at a centre: today if it meets today, else its most recent meeting day this week. */
+function cp_register_date(array $centre): string {
+    $days = function_exists('centre_meet_weekdays') ? (centre_meet_weekdays((string)$centre['meetDays']) ?: [6]) : [6];
+    for ($i = 0; $i < 7; $i++) { $d = time() - $i * 86400; if (in_array((int)gmdate('N', $d), $days, true)) return gmdate('Y-m-d', $d); }
+    return gmdate('Y-m-d');
+}
+
+/**
+ * admin.clubp.directory — every member in scope, compact, for the directory's
+ * own search, views and filters: class, division, course, mentor, the last
+ * eight sessions, consent, ID card, dues. One grouped query per fact, never
+ * one per member.
+ */
+function admin_clubp_directory(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    [$inSql, $inArgs] = cp_in($x);
+    $mem = db_all("SELECT memberId, displayId, fullName, centre, track, status, joinDate, parentName, parentPhone, profileJson, photoUrl, createdAt FROM members
+                   WHERE type = 'NGG' AND status IN ('active','inactive') AND COALESCE(role,'') NOT IN " . CP_STAFF_ROLES_SQL . " AND $inSql ORDER BY fullName LIMIT " . CP_DIR_MAX, $inArgs);
+    $ids = array_column($mem, 'memberId');
+    $in = static function (array $ids, callable $fn) { foreach (array_chunk($ids, 400) as $ch) $fn($ch, implode(',', array_fill(0, count($ch), '?'))); };
+    // Session dates: the meeting days that had any attendance, newest eight, per centre.
+    $dates = []; $since = gmdate('Y-m-d', time() - 70 * 86400);
+    foreach (db_all("SELECT m.centre, a.date FROM attendance a JOIN members m ON m.memberId = a.studentId WHERE a.date >= ? AND m.type = 'NGG' AND " . str_replace('centre', 'm.centre', $inSql) . " GROUP BY m.centre, a.date ORDER BY a.date DESC", array_merge([$since], $inArgs)) as $r)
+        if (count($dates[(string)$r['centre']] ?? []) < CP_DIR_WEEKS) $dates[(string)$r['centre']][] = (string)$r['date'];
+    $att = [];
+    $in($ids, function ($ch, $ph) use (&$att, $since) {
+        foreach (db_all("SELECT studentId, date, status FROM attendance WHERE date >= ? AND studentId IN ($ph)", array_merge([$since], $ch)) as $a) $att[(string)$a['studentId']][(string)$a['date']] = (string)$a['status'] === 'late' ? 'L' : 'P';
+    });
+    $mentor = []; foreach (db_all("SELECT a.memberId, t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.status = 'active'") as $r) $mentor[(string)$r['memberId']] = (string)$r['fullName'];
+    $cons = cp_consents_for($ids);
+    $issued = [];
+    $in($ids, function ($ch, $ph) use (&$issued) {
+        // As the ID Card Studio counts it: a proof is not a card anybody holds.
+        try { foreach (db_all("SELECT DISTINCT ci.subjectId FROM card_issues ci JOIN card_runs cr ON cr.runId = ci.runId WHERE ci.subjectType = 'member' AND ci.ok = 1 AND cr.mode != 'proof' AND ci.subjectId IN ($ph)", $ch) as $r) $issued[(string)$r['subjectId']] = true; } catch (Throwable $e) {}
+    });
+    $owing = [];
+    $in($ids, function ($ch, $ph) use (&$owing) {
+        foreach (db_all("SELECT memberId, SUM(CASE WHEN direction = 'charge' THEN amount ELSE -amount END) bal FROM member_ledger WHERE COALESCE(voidedAt,'') = '' AND memberId IN ($ph) GROUP BY memberId", $ch) as $r)
+            if ((int)$r['bal'] > 0) $owing[(string)$r['memberId']] = (int)$r['bal'];
+    });
+    $guard = [];
+    $in($ids, function ($ch, $ph) use (&$guard) {
+        foreach (db_all("SELECT w.memberId, g.fullName, g.phone FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.status = 'active' AND w.memberId IN ($ph)", $ch) as $r) $guard[(string)$r['memberId']] ??= $r;
+    });
+    $termStart = gmdate('Y-m-d', time() - 90 * 86400);
+    $rows = [];
+    foreach ($mem as $m) {
+        $id = (string)$m['memberId']; $centre = (string)$m['centre'];
+        $prof = safe_json((string)$m['profileJson']) ?: [];
+        $ds = array_reverse($dates[$centre] ?? []);
+        $marks = array_map(static fn($d) => $att[$id][$d] ?? 'A', $ds);
+        $joined = (string)($m['joinDate'] ?: substr((string)$m['createdAt'], 0, 10));
+        // Sessions before they joined are "not enrolled", not absences.
+        foreach ($ds as $i => $d) if ($joined !== '' && $d < $joined) $marks[$i] = null;
+        $known = array_values(array_filter($marks, static fn($a) => $a !== null));
+        $pct = $known ? (int)round(count(array_filter($known, static fn($a) => $a !== 'A')) / count($known) * 100) : null;
+        $run = 0; for ($i = count($marks) - 1; $i >= 0 && $marks[$i] === 'A'; $i--) $run++;
+        $c = $cons[$id] ?? [];
+        $parts = preg_split('/\s+/', trim((string)$m['fullName'])) ?: [''];
+        $g = $guard[$id] ?? null;
+        $rows[] = ['id' => (string)($m['displayId'] ?: $id), 'memberId' => $id, 'name' => (string)$m['fullName'], 'first' => (string)$parts[0], 'last' => (string)end($parts),
+            'centre' => $centre, 'cls' => (string)($prof['class'] ?? ''), 'course' => (string)$m['track'], 'division' => cp_div_label((string)$m['track']),
+            'mentor' => $mentor[$id] ?? null, 'status' => (string)$m['status'] === 'inactive' ? 'Paused' : ($joined >= $termStart ? 'New' : 'Active'),
+            'att' => $marks, 'pct' => $pct, 'absentRun' => $run, 'consent' => !cp_required_missing($c), 'idCard' => !empty($issued[$id]), 'owing' => isset($owing[$id]),
+            'guardian' => $g ? (string)$g['fullName'] : (string)$m['parentName'], 'phone' => $g && (string)$g['phone'] !== '' ? (string)$g['phone'] : (string)$m['parentPhone'],
+            'joined' => $joined];
+    }
+    $mentors = [];
+    foreach (db_all("SELECT mentorId, fullName, centre FROM mentors WHERE COALESCE(programme,'') <> 'summer' AND COALESCE(status,'') NOT IN ('rejected','archived','removed','left') ORDER BY fullName") as $mm)
+        if (!$x['scoped'] || cp_covers($x, (string)$mm['centre'])) $mentors[(string)($mm['centre'] ?: 'All')][] = ['id' => (string)$mm['mentorId'], 'name' => (string)$mm['fullName']];
+    $classes = defined('CLUB_APPLY_CLASSES') ? CLUB_APPLY_CLASSES : ['Pri 4', 'Pri 5', 'Pri 6', 'JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
+    $weeks = []; $next = [];
+    foreach ($x['centres'] as $cc) { $weeks[(string)$cc['name']] = array_map(static fn($d) => gmdate('j M', strtotime($d)), array_reverse($dates[(string)$cc['name']] ?? []));
+        $next[(string)$cc['name']] = cp_register_date($cc); }
+    return ['ok' => true, 'students' => $rows, 'centres' => $x['names'], 'classes' => array_values($classes), 'mentors' => $mentors, 'weeks' => $weeks, 'registerDates' => $next,
+            'divisions' => array_values(array_unique(array_merge(['Chess'], array_map(static fn($d) => cp_div_label_of((string)$d['name']), function_exists('club_divisions') ? club_divisions() : []))))];
+}
+function cp_div_label_of(string $division): string {
+    $k = cp_div_key_of($division);
+    return ['tech' => 'Technology', 'media' => 'Media', 'arts' => 'Creative Arts', 'biz' => 'Business', 'chess' => 'Chess'][$k];
+}
+function cp_div_key_of(string $division): string {
+    $short = function_exists('club_division_short') ? strtoupper(club_division_short($division)) : strtoupper($division);
+    if (str_contains($short, 'TECH')) return 'tech'; if (str_contains($short, 'MEDIA')) return 'media';
+    if (str_contains($short, 'BUS')) return 'biz'; if (str_contains($short, 'ART') || str_contains($short, 'CREAT')) return 'arts';
+    return 'chess';
+}
+function cp_div_label(string $course): string { $k = cp_div_key($course); return ['tech' => 'Technology', 'media' => 'Media', 'arts' => 'Creative Arts', 'biz' => 'Business', 'chess' => 'Chess'][$k]; }
+
+/** Members this requester may act on, from a list of member ids; out of scope and unknown ids are named, not skipped. */
+function cp_members_in_scope(array $x, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $ids))));
+    $ok = []; $refused = [];
+    foreach (array_chunk($ids, 400) as $ch) {
+        $have = [];
+        foreach (db_all("SELECT memberId, centre, fullName, parentPhone, parentEmail FROM members WHERE type = 'NGG' AND memberId IN (" . implode(',', array_fill(0, count($ch), '?')) . ')', $ch) as $m) $have[(string)$m['memberId']] = $m;
+        foreach ($ch as $id) { $m = $have[$id] ?? null; if (!$m) $refused[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; elseif (!cp_covers($x, (string)$m['centre'])) $refused[] = ['id' => $id, 'ok' => false, 'error' => 'out_of_scope']; else $ok[$id] = $m; }
+    }
+    return [$ok, $refused];
+}
+
+/** admin.clubp.register — a register for the centre's current session: P and L recorded; A leaves no check-in. */
+function admin_clubp_register(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    $marks = is_array($p['marks'] ?? null) ? $p['marks'] : [];
+    if (!$marks) return ['ok' => false, 'error' => 'nothing_marked'];
+    if (count($marks) > CP_DIR_MAX) return ['ok' => false, 'error' => 'too_many'];
+    [$ok, $refused] = cp_members_in_scope($x, array_keys($marks));
+    $byCentre = []; foreach ($x['centres'] as $c) $byCentre[(string)$c['name']] = cp_register_date($c);
+    $present = 0; $late = 0; $absent = 0; $already = 0; $now = now_iso();
+    foreach ($ok as $id => $m) {
+        $mk = strtoupper((string)$marks[$id]); $date = $byCentre[(string)$m['centre']] ?? gmdate('Y-m-d');
+        if ($mk === 'A') { $absent++; continue; }
+        if (!in_array($mk, ['P', 'L'], true)) { $refused[] = ['id' => $id, 'ok' => false, 'error' => 'bad_mark']; continue; }
+        if (db_row('SELECT 1 FROM attendance WHERE studentId = ? AND date = ?', [$id, $date])) { $already++; continue; }
+        try { db_insert('attendance', ['cohortId' => '', 'studentId' => $id, 'token' => '', 'date' => $date, 'checkInAt' => $now, 'method' => 'register', 'byId' => $x['me'],
+            'status' => $mk === 'L' ? 'late' : 'present', 'createdAt' => $now]); $mk === 'L' ? $late++ : $present++; } catch (Throwable $e) { $already++; }
+    }
+    audit('club.register', $x['me'], '', ['present' => $present, 'late' => $late, 'absent' => $absent, 'already' => $already, 'refused' => count($refused)]);
+    return ['ok' => true, 'present' => $present, 'late' => $late, 'absent' => $absent, 'already' => $already, 'refused' => $refused];
+}
+
+/** admin.clubp.message — the selected members' guardians, by SMS (when set up) and in the app. */
+function admin_clubp_message(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    $text = trim((string)($p['text'] ?? '')); $ch = is_array($p['ch'] ?? null) ? $p['ch'] : [];
+    if ($text === '' || mb_strlen($text) > 1000) return ['ok' => false, 'error' => 'bad_text'];
+    $ids = (array)($p['memberIds'] ?? []);
+    if (count($ids) > CP_MSG_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . CP_MSG_MAX . ' at a time.'];
+    [$ok, $refused] = cp_members_in_scope($x, $ids);
+    $app = 0; $sms = 0; $noPhone = 0; $phones = [];
+    foreach ($ok as $id => $m) {
+        if (!empty($ch['app'])) { try { push_notification($id, ['kind' => 'announcement', 'title' => 'A message from NGG', 'body' => $text, 'linkPage' => 'dashboard']); $app++; } catch (Throwable $e) {} }
+        $ph = preg_replace('/\D+/', '', (string)$m['parentPhone']);
+        if (strlen((string)$ph) >= 10) $phones[$ph] = true; else $noPhone++;
+    }
+    if (!empty($ch['sms']) && function_exists('sms_enabled') && sms_enabled()) foreach (array_keys($phones) as $ph) { $r = sms_send($ph, mb_substr('NGG: ' . $text, 0, 480)); if (!empty($r['ok'])) $sms++; }
+    audit('club.message', $x['me'], '', ['members' => count($ok), 'app' => $app, 'sms' => $sms]);
+    return ['ok' => true, 'app' => $app, 'sms' => $sms, 'noPhone' => $noPhone, 'smsOn' => function_exists('sms_enabled') && sms_enabled(), 'refused' => $refused];
+}
+
+/**
+ * admin.clubp.dir.bulk — the directory's bulk actions, each through the op that
+ * owns it: mentor (admin.mentor.assign), idcard (the ID Card Studio's queue),
+ * move (admin.club.members.bulk centre), status (admin.club.members.bulk status).
+ */
+function admin_clubp_dir_bulk(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    $act = (string)($p['act'] ?? ''); $ids = (array)($p['memberIds'] ?? []);
+    if (count($ids) > CP_MSG_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . CP_MSG_MAX . ' at a time.'];
+    [$ok, $refused] = cp_members_in_scope($x, $ids);
+    $me = $x['me']; $ip = (string)($p['ip'] ?? '');
+    if (!$ok) return ['ok' => true, 'applied' => 0, 'results' => $refused];
+    if ($act === 'mentor') {
+        $mentorId = (string)($p['mentorId'] ?? ''); $res = []; $n = 0;
+        foreach (array_keys($ok) as $id) { $r = backend_dispatch('admin.mentor.assign', ['requesterId' => $me, 'memberId' => $id, 'mentorId' => $mentorId, 'ip' => $ip]);
+            $res[] = ['id' => $id, 'ok' => !empty($r['ok']), 'error' => $r['error'] ?? null]; if (!empty($r['ok'])) $n++; }
+        audit('club.dir.mentor', $me, $mentorId, ['n' => $n]);
+        return ['ok' => true, 'applied' => $n, 'results' => array_merge($res, $refused)];
+    }
+    if ($act === 'idcard') {
+        $items = array_map(static fn($id) => ['subjectType' => 'member', 'subjectId' => $id, 'why' => 'New card from the Club roster', 'cause' => 'new'], array_keys($ok));
+        $r = backend_dispatch('admin.ids.reprint.request', ['requesterId' => $me, 'items' => $items, 'ip' => $ip]);
+        return empty($r['ok']) ? $r : ['ok' => true, 'applied' => (int)($r['added'] ?? 0) + (int)($r['updated'] ?? 0), 'results' => $refused];
+    }
+    if ($act === 'move' || $act === 'status') {
+        $val = (string)($p['value'] ?? '');
+        if ($act === 'move' && !cp_covers($x, $val)) return ['ok' => false, 'error' => 'out_of_scope'];
+        $map = ['Active' => 'active', 'Paused' => 'inactive', 'New' => 'active'];
+        $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $me, 'action' => $act === 'move' ? 'centre' : 'status', 'memberIds' => array_keys($ok),
+            $act === 'move' ? 'centre' : 'status' => $act === 'move' ? $val : ($map[$val] ?? $val), 'ip' => $ip]);
+        if (empty($r['ok'])) return $r;
+        return ['ok' => true, 'applied' => (int)($r['applied'] ?? 0), 'results' => array_merge((array)($r['results'] ?? []), $refused)];
+    }
+    return ['ok' => false, 'error' => 'bad_act'];
+}
+
+/** admin.clubp.dir.save — one record from the directory's drawer: class, centre, guardian, phone, status, mentor. */
+function admin_clubp_dir_save(array $p): array {
+    $x = cp_ctx($p); if (!$x['ok']) return $x;
+    $id = (string)($p['memberId'] ?? ''); $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    [$ok] = cp_members_in_scope($x, [$id]);
+    if (!$ok) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (isset($d['centre']) && !cp_covers($x, (string)$d['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    $me = $x['me']; $ip = (string)($p['ip'] ?? '');
+    if (isset($d['phone']) && $d['phone'] !== '' && !preg_match('/^0\d{10}$/', preg_replace('/\s+/', '', (string)$d['phone']))) return ['ok' => false, 'error' => 'bad_phone', 'message' => 'Phone must be 11 digits starting with 0.'];
+    $data = ['memberId' => $id];
+    if (array_key_exists('centre', $d)) $data['centre'] = (string)$d['centre'];
+    if (array_key_exists('guardian', $d)) $data['parentName'] = mb_substr(trim((string)$d['guardian']), 0, 160);
+    if (array_key_exists('phone', $d)) $data['parentPhone'] = preg_replace('/\s+/', '', (string)$d['phone']);
+    if (array_key_exists('status', $d)) $data['status'] = ['Active' => 'active', 'New' => 'active', 'Paused' => 'inactive'][(string)$d['status']] ?? 'active';
+    if (count($data) > 1) { $r = backend_dispatch('admin.members.upsert', ['requesterId' => $me, 'data' => $data, 'ip' => $ip]); if (empty($r['ok'])) return $r; }
+    if (array_key_exists('cls', $d)) {
+        $row = db_row('SELECT profileJson FROM members WHERE memberId = ?', [$id]);
+        $prof = safe_json((string)($row['profileJson'] ?? '')) ?: [];
+        $prof['class'] = mb_substr(trim((string)$d['cls']), 0, 20);
+        db_update('members', ['profileJson' => json_encode($prof, JSON_UNESCAPED_UNICODE), 'updatedAt' => now_iso()], ['memberId' => $id]);
+    }
+    if (array_key_exists('mentorId', $d)) { $r = backend_dispatch('admin.mentor.assign', ['requesterId' => $me, 'memberId' => $id, 'mentorId' => (string)$d['mentorId'], 'ip' => $ip]); if (empty($r['ok'])) return $r; }
+    audit('club.dir.save', $me, $id, ['keys' => array_keys($d)]);
+    return ['ok' => true];
 }

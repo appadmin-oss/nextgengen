@@ -22,7 +22,7 @@ if ($method === 'GET') {
         $args = ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '',
                  'sort' => $_GET['sort'] ?? '', 'dir' => $_GET['dir'] ?? '',
                  'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null,
-                 'all' => $_GET['all'] ?? null];
+                 'all' => $_GET['all'] ?? null, 'track' => $_GET['track'] ?? '', 'counts' => $_GET['counts'] ?? null];
         if (array_key_exists('status', $_GET)) $args['status'] = (string)$_GET['status'];
         $res = gs_call('admin.club.members', $args);
     }

@@ -29085,6 +29085,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $l2 = backend_dispatch('admin.clubp.create', ['requesterId' => 'CP-CLB', 'form' => 'families', 'vals' => ['guardian' => 'Mr Alpha', 'contact' => 'p1b@cp.example', 'child' => 'Tobi Alpha|CP-M1', 'rel' => 'Father', 'reason' => 'Seen ID in person']]);
     chk('club portal: a staff-made family link is active; a second guardian waits for approval', !empty($l1['ok']) && empty($l1['pending']) && !empty($l2['pending']));
 
+    // The directory: every member in scope, compact, with the facts its views filter on.
+    $dir = backend_dispatch('admin.clubp.directory', ['requesterId' => 'CP-LEAD']);
+    $byId = []; foreach ($dir['students'] ?? [] as $st) $byId[$st['memberId']] = $st;
+    chk('directory: a lead sees their centre\'s members, not staff and not other centres', isset($byId['CP-M1'], $byId['CP-M3']) && !isset($byId['CP-M2']) && !isset($byId['CP-LEAD']));
+    chk('directory: status, mentor and consent read from the record', $byId['CP-M3']['status'] === 'Paused' && $byId['CP-M1']['mentor'] === 'Mo Mentor' && $byId['CP-M1']['consent'] === true && $byId['CP-M1']['idCard'] === false);
+    $rg = backend_dispatch('admin.clubp.register', ['requesterId' => 'CP-LEAD', 'marks' => ['CP-M1' => 'L', 'CP-M3' => 'A', 'CP-M2' => 'P']]);
+    chk('register: late is recorded, absent leaves no check-in, another centre is refused by name', ($rg['late'] ?? 0) === 1 && ($rg['absent'] ?? 0) === 1 && count($rg['refused'] ?? []) === 1 && ($rg['refused'][0]['error'] ?? '') === 'out_of_scope'
+        && (string)db_row("SELECT status FROM attendance WHERE studentId = 'CP-M1' ORDER BY id DESC LIMIT 1")['status'] === 'late');
+    $rg2 = backend_dispatch('admin.clubp.register', ['requesterId' => 'CP-LEAD', 'marks' => ['CP-M1' => 'P']]);
+    chk('register: never writes over a check-in that is there', ($rg2['already'] ?? 0) === 1 && ($rg2['present'] ?? 0) === 0);
+    $ms = backend_dispatch('admin.clubp.message', ['requesterId' => 'CP-LEAD', 'memberIds' => ['CP-M1', 'CP-M2'], 'text' => 'Bring your laptop', 'ch' => ['app' => true]]);
+    chk('message: in scope gets it, out of scope is named', ($ms['app'] ?? 0) === 1 && count($ms['refused'] ?? []) === 1);
+    $mv = backend_dispatch('admin.clubp.dir.bulk', ['requesterId' => 'CP-LEAD', 'act' => 'move', 'memberIds' => ['CP-M1'], 'value' => 'Cpbeta']);
+    chk('directory bulk: a lead cannot move a member to a centre they don\'t cover', ($mv['error'] ?? '') === 'out_of_scope');
+    $sv = backend_dispatch('admin.clubp.dir.save', ['requesterId' => 'CP-LEAD', 'memberId' => 'CP-M1', 'data' => ['cls' => 'JSS2', 'phone' => '08031234567', 'guardian' => 'Mrs Alpha']]);
+    $pj = json_decode((string)db_row("SELECT profileJson FROM members WHERE memberId = 'CP-M1'")['profileJson'], true);
+    chk('directory drawer: class and guardian phone save to the record', !empty($sv['ok']) && ($pj['class'] ?? '') === 'JSS2' && (string)db_row("SELECT parentPhone FROM members WHERE memberId = 'CP-M1'")['parentPhone'] === '08031234567');
+    chk('directory drawer: a bad phone is refused', (backend_dispatch('admin.clubp.dir.save', ['requesterId' => 'CP-LEAD', 'memberId' => 'CP-M1', 'data' => ['phone' => '12345']])['error'] ?? '') === 'bad_phone');
     $ro = backend_dispatch('admin.club.members', ['requesterId' => 'CP-LEAD', 'status' => 'active', 'counts' => 1, 'track' => 'coding']);
     chk('club roster: course filter and per-status counts for the same filter', ($ro['total'] ?? 0) === 1 && ($ro['members'][0]['memberId'] ?? '') === 'CP-M1'
         && ($ro['counts']['active'] ?? 0) === 1 && !isset($ro['counts']['inactive']));
@@ -29093,7 +29111,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM centres WHERE centreId IN ('CP-A','CP-B','CP-S')"); db_exec("DELETE FROM members WHERE memberId LIKE 'CP-%'");
     db_exec("DELETE FROM mentors WHERE mentorId = 'CP-MEN'"); db_exec("DELETE FROM mentor_assignments WHERE mentorId = 'CP-MEN'");
     db_exec("DELETE FROM member_checkins WHERE memberId LIKE 'CP-%'"); db_exec("DELETE FROM club_announcements"); db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'CP-%'");
-    db_exec("DELETE FROM conduct_rules"); db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'CP-%'");
+    db_exec("DELETE FROM conduct_rules"); db_exec("DELETE FROM guardian_wards WHERE memberId LIKE 'CP-%'"); db_exec("DELETE FROM attendance WHERE studentId LIKE 'CP-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

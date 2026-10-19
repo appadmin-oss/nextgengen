@@ -238,6 +238,16 @@ function emitNode(n, scope, ind) {
      every screen has its three states without the design being edited.
      v.mainSlotEnd, after the content, holds a screen the controller supplies
      whole, so it sits under the design's own title and tabs. */
+  /* <dc-import name="X" …>: one design embedding another (the Club portal's
+     roster IS the Student Directory design). It compiles to a box carrying the
+     element's own layout class, and inside it whatever the controller registers
+     for that name in v.dcImports — called with the attributes as props. */
+  if (n.tag === 'dc-import') {
+    const nm = JSON.stringify(String(A.name || ''));
+    const own = props.filter(x => !/^"(name|className|style)":/.test(x));
+    const box = props.filter(x => /^"(className|style)":/.test(x));
+    return 'h("div", ' + (box.length ? '{ ' + box.join(', ') + ' }' : 'null') + ', dcImport(v.dcImports, ' + nm + ', { ' + own.join(', ') + ' }))';
+  }
   if (n.tag === 'main' && !mainSlotted) { mainSlotted = true; ks.unshift('dcT(v.mainSlot)'); ks.push('dcT(v.mainSlotEnd)'); }
   return 'h(' + JSON.stringify(n.tag) + ', ' + (props.length ? '{ ' + props.join(', ') + ' }' : 'null') + (ks.length ? ', ' + ks.join(', ') : '') + ')';
 }
@@ -265,6 +275,8 @@ function dcS(x) { return x === undefined || x === null || x === false ? "" : Str
 function dcT(x) { return x === undefined || x === null || x === false || x === true ? null : (typeof x === "object" ? x : String(x)); }
 function dcL(x) { return Array.isArray(x) ? x : []; }
 function dcB(x) { return x === true || x === "true"; }
+/* <dc-import>: the controller registers what a name renders; nothing when it has not. */
+function dcImport(map, name, props) { const f = map && map[name]; return typeof f === "function" ? f(props || {}) : null; }
 `);
 
 /* CSS into styles-app.css between markers. */

@@ -3,3 +3,5 @@ function dcS(x) { return x === undefined || x === null || x === false ? "" : Str
 function dcT(x) { return x === undefined || x === null || x === false || x === true ? null : (typeof x === "object" ? x : String(x)); }
 function dcL(x) { return Array.isArray(x) ? x : []; }
 function dcB(x) { return x === true || x === "true"; }
+/* <dc-import>: the controller registers what a name renders; nothing when it has not. */
+function dcImport(map, name, props) { const f = map && map[name]; return typeof f === "function" ? f(props || {}) : null; }
