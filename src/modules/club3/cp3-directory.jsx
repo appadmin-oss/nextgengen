@@ -105,7 +105,7 @@ class Sd3Directory extends React.Component {
       if (patch) this.patchRows(okIds, patch);
       this.setState({ busy: false, dialog: null, sel: {} });
       this.toast(done(r.applied || 0) + (bad.length ? " · " + bad.length + " not (" + (typeof adminFailSummary === "function" ? adminFailSummary(bad) : "refused") + ")" : ""));
-    }).catch(e => { this.setState({ busy: false }); this.toast((e.code || "") === "approval_pending" ? "Sent to a second admin to approve." : cp3Err(e)); });
+    }).catch(e => { const queued = (e.code || "") === "approval_pending"; this.setState(queued ? { busy: false, dialog: null, sel: {} } : { busy: false }); this.toast(queued ? "Sent to a second admin to approve. Nothing changes until they do." : cp3Err(e)); });
   }
   exportCsv(rows) {
     const esc = v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';

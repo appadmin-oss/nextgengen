@@ -699,6 +699,7 @@ body.cm-app .fab-top { display: none; }
 .nav-auth { position: relative; }
 .nav-auth-trigger {
   display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px;
   background: transparent;
   border: 1.5px solid rgba(12,20,50,0.12);
   border-radius: 999px;
@@ -748,7 +749,7 @@ body.cm-app .fab-top { display: none; }
 
 /* Notifications bell */
 .nav-bell { position: relative; }
-.nav-bell-btn { position: relative; width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid rgba(12,20,50,0.12); background: transparent; cursor: pointer; font-size: 16px; line-height: 1; display: grid; place-items: center; transition: border-color .16s ease, background .16s ease; }
+.nav-bell-btn { position: relative; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid rgba(12,20,50,0.12); background: transparent; cursor: pointer; font-size: 16px; line-height: 1; display: grid; place-items: center; transition: border-color .16s ease, background .16s ease; }
 .nav-bell-btn:hover { border-color: var(--navy-900); background: rgba(12,20,50,0.04); }
 .nav-bell-badge { position: absolute; top: -3px; right: -3px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--coral,#e4032b); color: #fff; font-size: 10px; font-weight: 800; display: grid; place-items: center; border: 2px solid var(--paper,#fbf7ed); box-sizing: border-box; }
 .nav-bell-menu { position: absolute; top: calc(100% + 8px); right: 0; width: 340px; max-width: 90vw; background: #fff; border-radius: 14px; box-shadow: 0 18px 50px -12px rgba(12,20,50,0.3); border: 1px solid rgba(12,20,50,0.06); z-index: 60; animation: menu-in 0.18s ease; overflow: hidden; }
@@ -7323,7 +7324,6 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .svenue-lede, .svenue-foot { margin: 0; }
 .svenue-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
 .svenue-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.promote-joins { min-width: 140px; }
 @container (max-width: 720px) { .svenue-grid { grid-template-columns: 1fr 1fr; } .svenue-wide { grid-column: 1 / -1; } }
 
 /* ============================================================
@@ -12967,7 +12967,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .cp3x-bootcard { max-width: 420px; text-align: center; display: grid; gap: 12px; justify-items: center; }
 .cp3x-bootcard h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
 .cp3x-bootcard p { margin: 0; font-size: 14px; color: #5d5d63; line-height: 1.5; }
-.cp3x-btn { height: 38px; padding: 0 16px; border: 0; border-radius: 10px; background: #0b0b0c; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.cp3x-btn { height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #0b0b0c; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
 .cp3x-btn:focus-visible { outline: 2px solid #0b0b0c; outline-offset: 2px; }
 .cp3x-spin { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #ececea; border-top-color: #0b0b0c; animation: cp3x-spin .8s linear infinite; }
 @keyframes cp3x-spin { to { transform: rotate(360deg); } }

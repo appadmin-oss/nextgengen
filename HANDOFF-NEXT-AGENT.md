@@ -131,16 +131,16 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
    - Phone at 390 px: the bottom tab bar is fully on screen.
    - Take screenshots with `CLUBV3_SHOTS=dir` and compare them to `screenshots/club/*.png`.
    - Add the test to `package.json` scripts and to `test:all`.
-4. **Rewrite the Club part of `tests/admin-bulk.test.js`.** It currently drives the old two-tab screen.
+4. (done) **Rewrite the Club part of `tests/admin-bulk.test.js`.** It currently drives the old two-tab screen.
    - Starting line: `── A club coordinator gets NARROWER actions`.
    - Point it at v3: Promote at `?s=promote`, and the roster bulk actions in the directory.
    - Then delete the dead `ClubManager`, `ClubPromote` and `ClubRoster` from `page-portals.jsx`.
-5. **Run the other suites** and fix anything broken:
+5. (done: routes 60/60, ui 661/661, responsive-staff 3/3, admin-bulk 44/44) **Run the other suites** and fix anything broken:
    - `npm run test:routes`
    - `test:ui`
    - `tests/responsive-staff.test.js`
    - `tests/admin-bulk.test.js`
-6. **Known gaps in Club v3 to close or state honestly:**
+6. (done; tournaments results stay read-only, results come from games on the chess screen) **Known gaps in Club v3 to close or state honestly:**
    - **Tournaments:** results come from games on the chess screen, so results are read-only in the portal. There is no over-the-board result entry; only add it if it can update ratings properly.
    - **Mentorship row action:** it opens `/control/people/mentorship`. Check that path exists.
    - **ID cards:** "Print" goes to the ID Card Studio.
