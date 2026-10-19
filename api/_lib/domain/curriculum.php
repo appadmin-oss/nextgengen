@@ -706,6 +706,135 @@ function admin_curriculum_seed(array $p): array {
         'rows' => array_values($all[$key]['lessons'] ?? [])];
 }
 
+/* ══ Course coverage, and a term's outline for a course that has none ══════
+ *
+ * The catalogue lists the courses NGG offers; lessons exist for some of them.
+ * A member whose course has no published lesson opens Learn to an empty list,
+ * and nothing told staff which courses those were. admin.curriculum.coverage
+ * says, course by course, what is written, for which years and weeks, and how
+ * many members take it — courses with members and no lessons first.
+ * admin.curriculum.plan drafts a term's outline for one course (titles,
+ * summaries, objectives) for the ordinary import to check and write as DRAFTS;
+ * each is then written with "Write the lesson" (admin.curriculum.ai) and
+ * published. Nothing reaches a member until somebody publishes it.
+ */
+const CURR_PLAN_WEEKS_MAX = 24;
+/* The NGG term arc: fundamentals, a mini project, a real brief, a capstone, a
+ * showcase. Used as written when no AI is configured, and as the spine the AI
+ * is asked to follow when one is. */
+const CURR_PLAN_ARC = [
+    ['Welcome to {c}: tools, safety and a first win', 'Meet the tools, agree how we work, and finish something small today.'],
+    ['{c} fundamentals: the core idea', 'The one idea everything else in {c} builds on, practised until it is easy.'],
+    ['{c} fundamentals: practising the basics', 'Short, repeated practice of the basics, with feedback from a partner.'],
+    ['{c} fundamentals: putting it together', 'Combine the basics into one complete piece of work.'],
+    ['Mini project: plan it', 'Choose a small project, plan it in steps, and agree what "done" looks like.'],
+    ['Mini project: make it', 'Build the mini project, test it, and fix what does not work.'],
+    ['Show and improve: a feedback round', 'Show the mini project, take two pieces of feedback, and act on one.'],
+    ['Going further: a new technique', 'A technique that takes your {c} work up a level.'],
+    ['Real-world brief: a problem in our community', 'Use {c} on a real problem someone in Nigeria has, and explain your choices.'],
+    ['Capstone: plan and prototype', 'Plan the term capstone and make a first rough version.'],
+    ['Capstone: build and test', 'Finish the capstone and test it with someone who has not seen it.'],
+    ['Showcase and reflection', 'Present the capstone, celebrate the term, and set one goal for next term.'],
+];
+
+function admin_curriculum_coverage(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
+    $divOf = []; $courses = [];
+    foreach ($catalogue as $div => $cs) foreach ($cs as $c) { $k = mb_strtolower(trim((string)$c)); if (!isset($courses[$k])) { $courses[$k] = (string)$c; $divOf[$k] = (string)$div; } }
+    $stat = [];
+    foreach (db_all("SELECT course, level, week, status, body FROM curriculum_units WHERE status IN ('published', 'draft') AND course <> ''") as $u) {
+        $k = mb_strtolower(trim((string)$u['course']));
+        if (!isset($courses[$k])) { $courses[$k] = (string)$u['course']; $divOf[$k] = ''; }
+        $s = &$stat[$k];
+        $s = ($s ?? []) + ['published' => 0, 'draft' => 0, 'years' => [], 'weeks' => 0, 'homework' => 0];
+        if ($u['status'] === 'published') {
+            $s['published']++;
+            $s['weeks'] = max($s['weeks'], (int)$u['week']);
+            $y = curriculum_level_year((string)$u['level']); if ($y) $s['years'][$y] = true;
+            if (preg_match("/##\s*This week(?:'|’)s assignment/u", (string)$u['body'])) $s['homework']++;
+        } else $s['draft']++;
+        unset($s);
+    }
+    // Members per course, through the same matching the member's own Learn page uses (one pass, one context).
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(role,'member') NOT IN ('admin','super_admin','editor','club_admin')"; $args = [];
+    if ($scope !== null) { if (!$scope) $where .= ' AND 1 = 0'; else { $where .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = $scope; } }
+    $members = [];
+    $none = 0; $ctx = null;
+    $taught = []; foreach ($stat as $k => $s) if ($s['published'] > 0) $taught[$k] = true;
+    foreach (db_all("SELECT memberId, track, disciplines, division FROM members WHERE $where", $args) as $m) {
+        $mine = array_map(static fn($c) => mb_strtolower(trim((string)$c)), curriculum_member_courses($m, $ctx));
+        $has = false;
+        foreach (array_unique($mine) as $k) { if (isset($courses[$k])) $members[$k] = ($members[$k] ?? 0) + 1; if (isset($taught[$k])) $has = true; }
+        if (!$has && isset($taught[''])) $has = true;
+        if (!$has) $none++;
+    }
+    $rows = [];
+    foreach ($courses as $k => $name) {
+        $s = $stat[$k] ?? ['published' => 0, 'draft' => 0, 'years' => [], 'weeks' => 0, 'homework' => 0];
+        $years = array_keys($s['years']); sort($years);
+        $rows[] = ['course' => $name, 'division' => $divOf[$k] ?? '', 'published' => $s['published'], 'drafts' => $s['draft'], 'years' => $years,
+                   'weeks' => $s['weeks'], 'homework' => $s['homework'], 'members' => $members[$k] ?? 0,
+                   'state' => $s['published'] > 0 ? 'taught' : ($s['draft'] > 0 ? 'drafting' : 'empty')];
+    }
+    usort($rows, static function ($a, $b) {
+        $rank = static fn($r) => $r['state'] === 'taught' ? 2 : ($r['members'] > 0 ? 0 : 1);
+        return [$rank($a), -$a['members'], $a['course']] <=> [$rank($b), -$b['members'], $b['course']];
+    });
+    $empty = count(array_filter($rows, static fn($r) => $r['state'] !== 'taught'));
+    return ['ok' => true, 'courses' => $rows, 'emptyCourses' => $empty, 'membersWithoutLessons' => $none, 'canWrite' => admin_cap_gate($p, 'curriculum')['ok']];
+}
+
+function admin_curriculum_plan(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $course = curriculum_clean_text($p['course'] ?? '', 120);
+    if ($course === '') return ['ok' => false, 'error' => 'course_required'];
+    $level = curriculum_clean_text($p['level'] ?? '', 60);
+    $weeks = max(4, min(CURR_PLAN_WEEKS_MAX, (int)($p['weeks'] ?? 12) ?: 12));
+    $start = max(1, min(104 - $weeks + 1, (int)($p['fromWeek'] ?? 1) ?: 1));
+    // The arc stretched (or squeezed) to the term's length.
+    $arc = [];
+    $n = count(CURR_PLAN_ARC);
+    for ($i = 0; $i < $weeks; $i++) {
+        $j = $weeks === 1 ? 0 : (int)round($i * ($n - 1) / ($weeks - 1));
+        [$t, $sum] = CURR_PLAN_ARC[$j];
+        $arc[] = ['title' => str_replace('{c}', $course, $t), 'summary' => str_replace('{c}', $course, $sum)];
+    }
+    $seen = [];
+    foreach ($arc as $i => $a) { $k = $a['title']; $seen[$k] = ($seen[$k] ?? 0) + 1; if ($seen[$k] > 1) $arc[$i]['title'] .= ' (part ' . $seen[$k] . ')'; }
+    $lessons = []; $via = 'template';
+    if (!empty($p['ai']) && function_exists('ai_classify') && function_exists('ai_enabled') && ai_enabled('default')) {
+        $r = ai_classify("You plan courses for Next Generation Genius, a Saturday programme for 10–17 year olds in Nigeria. Plan ONE term of the course given: "
+            . "exactly $weeks weekly lessons that build on each other, following this arc: fundamentals, a mini project, a feedback round, a new technique, "
+            . "a real-world brief rooted in Nigerian life, a capstone, and a showcase. Plain British English, no invented facts. "
+            . 'Return JSON: {"lessons": [{"title": "under 70 characters", "summary": "1–2 sentences", "objectives": ["3 to 5 short items starting You will…"]}]}.',
+            "Course: $course" . ($level !== '' ? "\nLevel: $level" : '') . "\nWeeks: $weeks\nArc to follow:\n" . implode("\n", array_map(static fn($a, $i) => ($i + 1) . '. ' . $a['title'], $arc, array_keys($arc))),
+            2400, 'default');
+        $got = is_array($r['data']['lessons'] ?? null) ? array_values($r['data']['lessons']) : [];
+        if (!empty($r['ok']) && count($got) >= $weeks) {
+            foreach (array_slice($got, 0, $weeks) as $x) {
+                $t = curriculum_clean_text(is_array($x) ? ($x['title'] ?? '') : '', 200);
+                if (mb_strlen($t) < 3) { $lessons = []; break; }
+                $lessons[] = ['title' => $t, 'summary' => curriculum_clean_text($x['summary'] ?? '', 600),
+                              'objectives' => array_slice(array_values(array_filter(array_map(static fn($o) => curriculum_clean_text((string)$o, 200), is_array($x['objectives'] ?? null) ? $x['objectives'] : []))), 0, 5)];
+            }
+            if ($lessons) $via = 'ai';
+        }
+    }
+    if (!$lessons) foreach ($arc as $a) $lessons[] = ['title' => $a['title'], 'summary' => $a['summary'], 'objectives' => []];
+    // Never on top of a lesson already in that slot: each week takes the next free position.
+    $taken = [];
+    foreach (db_all('SELECT week, position FROM curriculum_units WHERE course = ? AND level = ?', [$course, $level]) as $r) $taken[(int)$r['week']][(int)$r['position']] = true;
+    $rows = [];
+    foreach ($lessons as $i => $l) {
+        $wk = $start + $i; $pos = 1; while (isset($taken[$wk][$pos])) $pos++;
+        $rows[] = ['course' => $course, 'level' => $level, 'week' => $wk, 'position' => $pos, 'title' => $l['title'], 'summary' => $l['summary'],
+                   'objectives' => $l['objectives'], 'status' => 'draft'];
+    }
+    return ['ok' => true, 'rows' => $rows, 'via' => $via, 'aiAvailable' => function_exists('ai_enabled') && ai_enabled('default')];
+}
+
 /**
  * Draft a lesson's summary, objectives and checks from its text, with the AI.
  * Returns a DRAFT for a person to read — nothing is saved. Fails with

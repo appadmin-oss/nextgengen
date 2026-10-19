@@ -1366,6 +1366,8 @@
         list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),
         get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
         report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),
+        coverage: () => request('/admin/curriculum.php' + qs({ view: 'coverage' })),
+        plan:    (o) => request('/admin/curriculum.php', { body: Object.assign({ action: 'plan' }, o || {}), timeout: 120000 }),
         year:    (memberId, year) => request('/admin/curriculum.php', { body: { action: 'year', memberId, year } }),
         submissions: (status) => request('/admin/curriculum.php' + qs({ view: 'submissions', status: status || 'pending' })),
         review:  (decision, materialIds, note) => request('/admin/curriculum.php', { body: { action: 'review', decision, materialIds, note: note || '' } }),

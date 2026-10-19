@@ -13,6 +13,7 @@ if ($method === 'GET') {
     if ($view === 'get') $res = gs_call('admin.curriculum.get', ['requesterId' => $mid, 'unitId' => (string)($_GET['unitId'] ?? '')]);
     elseif ($view === 'seed') $res = gs_call('admin.curriculum.seed', ['requesterId' => $mid, 'key' => (string)($_GET['key'] ?? '')]);
     elseif ($view === 'courses') $res = gs_call('admin.club.catalogue.get', ['requesterId' => $mid]);
+    elseif ($view === 'coverage') $res = gs_call('admin.curriculum.coverage', ['requesterId' => $mid]);
     elseif ($view === 'schedule') $res = gs_call('admin.curriculum.schedule', ['requesterId' => $mid]);
     elseif ($view === 'submissions') $res = gs_call('admin.curriculum.submissions', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'pending')]);
     elseif ($view === 'report') $res = gs_call('admin.curriculum.report', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''), 'memberId' => (string)($_GET['memberId'] ?? '')]);
@@ -47,6 +48,8 @@ if ($method === 'GET') {
                          'publish' => !empty($b['publish']), 'ip' => client_ip()]),
             'ai'     => gs_call('admin.curriculum.ai', ['requesterId' => $mid, 'title' => (string)($b['title'] ?? ''), 'text' => (string)($b['text'] ?? ''),
                          'course' => (string)($b['course'] ?? ''), 'level' => (string)($b['level'] ?? ''), 'checks' => (int)($b['checks'] ?? 5), 'ip' => client_ip()]),
+            'plan'   => gs_call('admin.curriculum.plan', ['requesterId' => $mid, 'course' => (string)($b['course'] ?? ''), 'level' => (string)($b['level'] ?? ''),
+                         'weeks' => (int)($b['weeks'] ?? 12), 'fromWeek' => (int)($b['fromWeek'] ?? 1), 'ai' => !empty($b['ai'])]),
             'review' => gs_call('admin.curriculum.review', ['requesterId' => $mid, 'decision' => (string)($b['decision'] ?? ''),
                          'materialIds' => is_array($b['materialIds'] ?? null) ? $b['materialIds'] : [], 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]),
             'schedule' => gs_call('admin.curriculum.schedule', ['requesterId' => $mid, 'data' => is_array($b['data'] ?? null) ? $b['data'] : [], 'ip' => client_ip()]),

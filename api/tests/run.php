@@ -28583,6 +28583,41 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId LIKE 'ASG-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASG'"); db_exec("DELETE FROM notifications WHERE memberId LIKE 'ASG-%'");
 })();
 
+// ── Course coverage, and a term's outline for a course with no lessons ──
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'COV-ADM0', 'fullName' => 'Cov Zero', 'email' => 'cov.zero@cov.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    // A catalogue course nothing is written for (the catalogue is whatever this database holds).
+    $T = (array_values(array_filter(admin_curriculum_coverage(['requesterId' => 'COV-ADM0'])['courses'] ?? [], fn($r) => $r['state'] === 'empty'))[0]['course'] ?? 'Robotics');
+    db_insert('members', ['memberId' => 'COV-R1', 'fullName' => 'Rita Robot', 'email' => 'rita@cov.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'track' => $T, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'COV-ADM', 'fullName' => 'Cov Admin', 'email' => 'cov.admin@cov.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin',
+        'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $adm = ['requesterId' => 'COV-ADM', 'ip' => ''];
+    $cov = admin_curriculum_coverage($adm);
+    $row = array_values(array_filter($cov['courses'] ?? [], fn($r) => $r['course'] === $T))[0] ?? null;
+    chk('coverage · every catalogue course is listed, one with no lessons and its member', !empty($cov['ok']) && $row && $row['state'] === 'empty' && $row['members'] >= 1 && $row['published'] === 0);
+    chk('coverage · a course with members and no lessons comes before a taught one', ($cov['courses'][0]['state'] ?? '') !== 'taught');
+    chk('coverage · members with no lessons are counted', ($cov['membersWithoutLessons'] ?? 0) >= 1);
+    $plan = admin_curriculum_plan($adm + ['course' => $T, 'level' => 'Year 1 · Foundation', 'weeks' => 12]);
+    $rows = $plan['rows'] ?? [];
+    chk('outline · twelve weekly drafts for the course, week 1 to 12, named for it, with no AI', !empty($plan['ok']) && $plan['via'] === 'template' && count($rows) === 12
+        && array_column($rows, 'week') === range(1, 12) && str_contains($rows[0]['title'], $T) && $rows[0]['status'] === 'draft' && str_contains($rows[11]['title'], 'Showcase'));
+    chk('outline · a term squeezed to 6 weeks still runs from welcome to showcase, titles unique', count($r6 = admin_curriculum_plan($adm + ['course' => $T, 'weeks' => 6])['rows']) === 6
+        && str_contains($r6[0]['title'], 'Welcome') && str_contains($r6[5]['title'], 'Showcase') && count(array_unique(array_column($r6, 'title'))) === 6);
+    db_insert('curriculum_units', ['unitId' => 'COV-U1', 'course' => $T, 'level' => 'Year 1 · Foundation', 'week' => 1, 'position' => 1, 'title' => 'Already here', 'status' => 'draft', 'version' => 1, 'createdAt' => $now]);
+    $p2 = admin_curriculum_plan($adm + ['course' => $T, 'level' => 'Year 1 · Foundation', 'weeks' => 4]);
+    chk('outline · never on top of a lesson already in that slot', $p2['rows'][0]['week'] === 1 && $p2['rows'][0]['position'] === 2 && $p2['rows'][1]['position'] === 1);
+    chk('outline · an editor without the curriculum permission is refused', (admin_curriculum_plan(['requesterId' => 'COV-R1', 'course' => $T])['ok'] ?? true) === false);
+    $dry = admin_curriculum_import($adm + ['rows' => $p2['rows'], 'dryRun' => true, 'allowNewCourse' => true]);
+    $imp = admin_curriculum_import($adm + ['rows' => $p2['rows'], 'digest' => $dry['digest'], 'allowNewCourse' => true]);
+    chk('outline · the import writes them as drafts nobody sees', ($imp['tally']['create'] ?? 0) === 4 && (int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE course = ? AND status = 'draft'", [$T])['c'] === 5
+        && !(int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE course = ? AND status = 'published'", [$T])['c']);
+    $cov2 = admin_curriculum_coverage($adm);
+    chk('coverage · then the course reads as drafts only', (array_values(array_filter($cov2['courses'], fn($r) => $r['course'] === $T))[0]['state'] ?? '') === 'drafting');
+    db_exec("DELETE FROM curriculum_units WHERE course = ?", [$T]); db_exec("DELETE FROM members WHERE memberId LIKE 'COV-%'");
+})();
+
 /* The desk's face check: off by default, and the server keeps a verdict, never a picture. */
 (function () {
     $now = now_iso();

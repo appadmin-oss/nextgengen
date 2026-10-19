@@ -178,6 +178,36 @@ function crCurExport(ctx) {
     done: () => "Opened in a new tab",
   });
 }
+/* A term's outline for one course (admin.curriculum.plan): titles, summaries and
+   objectives, checked by the ordinary import and written as DRAFTS. Each is then
+   written from its title ("Write the lesson") and published. */
+function crCurOutline(ctx, course) {
+  const cov = ((ctx.data || {}).cov || {}).courses || [];
+  const opts = cov.map(c => [c.course, c.course + (c.state === "taught" ? " · " + crPlural(c.published, "lesson") : c.members ? " · no lessons, " + crPlural(c.members, "member") : " · no lessons")]);
+  ctx.form({
+    title: "Build a course outline", submit: "Draft the outline", busyLabel: "Drafting…",
+    intro: "A term of weekly lessons for one course: fundamentals, a mini project, a real-world brief, a capstone and a showcase. They arrive as drafts nobody sees. Write each one from its title, then publish.",
+    values: { course: course || (opts[0] || [""])[0], level: "Year 1 · Foundation", weeks: "12", fromWeek: "1", ai: true },
+    fields: [
+      { id: "course", l: "Course", type: "select", req: true, opts },
+      { id: "level", l: "Year and level", ph: "Year 1 · Foundation", help: "Say the year (Year 1, 2 or 3) so members see the lessons for their year." },
+      { id: "weeks", l: "Weeks in the term", type: "number", im: "numeric", req: true, help: "4 to 24. Most terms are 12.", check: v => +v >= 4 && +v <= 24 ? "" : "Between 4 and 24." },
+      { id: "fromWeek", l: "Starting at week", type: "number", im: "numeric", req: true, help: "1 for a new course; later to add a second term.", check: v => +v >= 1 && +v <= 100 ? "" : "Between 1 and 100." },
+      { id: "ai", l: "Write the titles with AI, when it is set up", type: "switch", help: "Off, or with no AI configured: NGG’s standard term outline, named for the course." },
+    ],
+    onSubmit: async v => {
+      const r = await NGGApi.admin.curriculum.plan({ course: v.course, level: v.level || "", weeks: +v.weeks, fromWeek: +v.fromWeek, ai: !!v.ai });
+      const rows = r.rows || [];
+      if (!rows.length) return { fieldErrors: { course: "Nothing to draft for that course." } };
+      const opts2 = { publish: false, allowNewCourse: true };
+      const res = await NGGApi.admin.curriculum.importRows(rows, Object.assign({ dryRun: true }, opts2));
+      ctx.setData(x => Object.assign({}, x, { plan: { rows, opts: opts2, res, name: v.course + " outline (" + (r.via === "ai" ? "written by AI" : "NGG standard term") + ")" } }));
+      return res;
+    },
+    done: (v, r) => "Outline ready · " + crCurTally(r.tally) + ". Read it, then Import.",
+  });
+}
+
 function crCurTally(t) {
   t = t || {};
   return [crNum(t.create) + " new", crNum(t.update) + " updated", crNum(t.unchanged) + " unchanged", crNum(t.failed) + " refused"].join(" · ");
@@ -220,14 +250,16 @@ Object.assign(CR_TAB_DEFS, {
   curriculum: {
     skeleton: ["table"],
     load: async ctx => {
-      const [list, seeds] = await Promise.all([
+      const [list, seeds, cov] = await Promise.all([
         NGGApi.admin.curriculum.list({}),
         ctx.can("curriculum") ? NGGApi.admin.curriculum.seed().catch(() => ({ seeds: [] })) : { seeds: [] },
+        NGGApi.admin.curriculum.coverage().catch(e => ({ err: e })),
       ]);
-      return { units: list.units || [], canWrite: !!list.canWrite, seeds: seeds.seeds || [], plan: (ctx.data && ctx.data.plan) || null };
+      return { units: list.units || [], canWrite: !!list.canWrite, seeds: seeds.seeds || [], cov, plan: (ctx.data && ctx.data.plan) || null };
     },
     actions: (d, ctx) => [(d.units || []).length ? { l: "Export PDF", icon: "file-pdf", run: () => crCurExport(ctx) } : null].concat(d.canWrite ? [
       { l: "Import lessons", icon: "upload-simple", primary: true, run: () => crCurImport(ctx) },
+      { l: "Build a course outline", icon: "path", run: () => crCurOutline(ctx) },
       d.plan ? { l: "Discard the check", icon: "x", run: () => ctx.setData(x => Object.assign({}, x, { plan: null })) } : null,
       { l: "Download template", icon: "download-simple", run: () => {
         const a = document.createElement("a");
@@ -258,6 +290,35 @@ Object.assign(CR_TAB_DEFS, {
           filters: ["Result"], sortInit: null });
       }
       const st = s => CR_CUR_STATUS[s] || [s, "neutral"];
+      /* Course coverage (admin.curriculum.coverage): which courses have lessons, for which years, and who takes them. */
+      const cov = d.cov || {};
+      if (cov.err) out.push({ type: "note", span: 6, icon: "warning-circle", tone: "warn", text: "Course coverage couldn’t load.", sub: crErr(cov.err, "Try again."), act: { l: "Try again", run: () => ctx.reload() } });
+      else if (cov.courses) {
+        const gap = cov.courses.filter(c => c.state !== "taught" && c.members > 0);
+        out.push({ type: "kpis", span: 6, items: [
+          { l: "Courses with lessons", v: crNum(cov.courses.length - cov.emptyCourses), dn: "of " + crNum(cov.courses.length) + " in the catalogue" },
+          { l: "Courses with none", v: crNum(cov.emptyCourses), dn: gap.length ? crNum(gap.length) + " have members waiting" : "none with members" },
+          { l: "Members with no lessons", v: crNum(cov.membersWithoutLessons), dn: cov.membersWithoutLessons ? "their course has nothing published" : "everyone has lessons" },
+        ] });
+        if (gap.length && d.canWrite) out.push({ type: "note", span: 6, icon: "path", tone: "warn",
+          text: gap.slice(0, 3).map(c => c.course + " (" + crPlural(c.members, "member") + ")").join(", ") + (gap.length > 3 ? " and " + crNum(gap.length - 3) + " more" : "") + " have members but no published lessons.",
+          sub: "Build a term’s outline for one, then write each lesson from its title and publish.",
+          act: { l: "Build a course outline", run: () => crCurOutline(ctx, gap[0].course) } });
+        const CR_COV = { taught: ["Has lessons", "ok"], drafting: ["Drafts only", "warn"], empty: ["No lessons", "bad"] };
+        out.push({ type: "table", span: 6, title: "Courses", sub: "Every course in the catalogue, and what is written for it",
+          cols: ["Course", "Division", "State", { l: "Published", num: true }, { l: "Drafts", num: true }, "Years", { l: "Weeks", num: true }, { l: "Members", num: true }],
+          rows: cov.courses.map(c => ({ key: "cov-" + c.course, cells: [
+            { k: "strong", t: c.course, s: c.homework ? crPlural(c.homework, "lesson") + " set homework" : "" },
+            { k: "text", t: c.division || "—" },
+            { k: "status", t: (CR_COV[c.state] || [c.state])[0], tone: (CR_COV[c.state] || [0, "neutral"])[1] },
+            { k: "num", t: crNum(c.published), v: c.published },
+            { k: "num", t: crNum(c.drafts), v: c.drafts },
+            { k: "text", t: c.years && c.years.length ? c.years.map(y => "Year " + y).join(", ") : c.published ? "Every year" : "—" },
+            { k: "num", t: c.weeks ? crNum(c.weeks) : "—", v: c.weeks },
+            { k: "num", t: crNum(c.members), v: c.members },
+          ] })),
+          search: "Search courses", filters: ["Division", "State"], nosel: true, sortInit: null });
+      }
       out.push({ type: "table", span: 6, title: "Lessons", sub: crPlural(d.units.length, "lesson") + " · retired lessons are hidden",
         /* The NGG Learning Path (curriculum_path): Year → Term → Week, coded Y1·T2·W3, so every course groups and sorts the same way. */
         cols: ["Lesson", "Course", "Term", { l: "Path", num: true }, "Status", { l: "Checks", num: true }, { l: "Completed", num: true }],

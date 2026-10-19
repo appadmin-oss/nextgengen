@@ -1898,3 +1898,22 @@ member copy strips the assignment, by design) and an empty Assignments list.
   `AsdAutoBar` shows it, rows carry `fromLesson` ("Set by the lesson").
 - Tests: PHP (off, issue, due date + steps, skips, once, year both ways, told,
   who may switch) and assign-desk (the bar, off/on issues, the chip, the member).
+
+## 2026-10-19 — Course coverage and course outlines
+
+Thirty-odd catalogue courses, four with lessons: a member on Robotics or Acting
+opened Learn to nothing, and no screen said which courses those were.
+- `admin.curriculum.coverage` (curriculum.php): per catalogue course (and any
+  course lessons are filed under): published / draft counts, years, weeks,
+  lessons that set homework, and members who take it — counted with
+  `curriculum_member_courses`, the member page's own matching, in one pass;
+  centre-scoped; members with no published lesson counted. Gaps with members first.
+- `admin.curriculum.plan`: a term's outline for one course (`CURR_PLAN_ARC`, the
+  NGG term shape, stretched to 4–24 weeks; AI titles when configured), each in
+  the next free position of its week. Rows go through `admin_curriculum_import`
+  as drafts (allowNewCourse), so the check, digest and audit are the import's.
+- Control Room: KPI row, a gap note with its action, the Courses table, and
+  "Build a course outline" (`crCurOutline`).
+- Coding and Media Lab lessons have no "This week's assignment" section; their
+  homework is each lesson's own check (task, code, project), handed in in the
+  lesson and marked in Marking — by design, so auto-issue leaves them alone.

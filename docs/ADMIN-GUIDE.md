@@ -1054,6 +1054,26 @@ under them.
 To keep a new course in line, write its levels as `Year N · Term T: Name`.
 Use weeks 1–24 within each year.
 
+### Which courses have lessons, and building one that has none
+
+**Learning → Curriculum** opens with three figures (courses with lessons,
+courses with none, members with no lessons) and a **Courses** table: every
+course in the catalogue, whether it has lessons, drafts only, or nothing, how
+many lessons are published and for which years and weeks, how many set
+homework, and how many members take it. Courses with members and no lessons
+come first, because those members open Learn to an empty list.
+
+**Build a course outline** drafts a term for one course: choose the course,
+the year and level (say the year, so members see their own year's lessons),
+how many weeks (4 to 24), and the week to start at. It follows NGG's term
+shape: welcome and first win, fundamentals, a mini project, a feedback round, a
+new technique, a real-world brief, a capstone and a showcase. With AI set up
+the titles are written for the course; without it you get the standard
+outline named for the course. The outline goes through the same check as an
+import and arrives as **drafts nobody sees**, never on top of a lesson already
+in that slot. Open each draft, use **Write the lesson** to write it from its
+title, read it, and publish.
+
 ### AI in the curriculum
 
 - In the lesson editor, give a lesson only a title and press **✦ Write the

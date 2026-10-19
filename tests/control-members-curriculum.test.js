@@ -177,6 +177,21 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await check();
     chk('a second check reports every lesson unchanged', await until(/72 unchanged/, 60000));
 
+    // ── Course coverage, and a term's outline for a course with none ──
+    chk('coverage: the Courses table lists the catalogue, with the courses that have no lessons', await until(/Courses with none/) && await until(/Robotics/) && await until(/No lessons/));
+    await page.click('button:has-text("Build a course outline") >> nth=0');
+    await page.selectOption('#crf-course', 'Robotics');
+    await page.click('button:has-text("Draft the outline")');
+    chk('the outline is checked like an import before anything is written', await until(/Import 12 lessons/, 60000)
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics'").n === 0);
+    await page.click('button:has-text("Import 12 lessons")');
+    await page.click('.cr-confirm button.is-primary');
+    chk('…and imports twelve weekly drafts nobody sees yet', await until(/Imported · 12 created/, 60000)
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics' AND status = 'draft'").n === 12
+      && +one("SELECT COUNT(*) n FROM curriculum_units WHERE course = 'Robotics' AND status = 'published'").n === 0);
+    chk('…week 1 to 12, opening with the welcome and closing with the showcase', /Welcome to Robotics/.test(one("SELECT title FROM curriculum_units WHERE course = 'Robotics' AND week = 1").title)
+      && /Showcase/.test(one("SELECT title FROM curriculum_units WHERE course = 'Robotics' AND week = 12").title));
+
     chk('no uncaught page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {
