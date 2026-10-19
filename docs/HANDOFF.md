@@ -1917,3 +1917,14 @@ opened Learn to nothing, and no screen said which courses those were.
 - Coding and Media Lab lessons have no "This week's assignment" section; their
   homework is each lesson's own check (task, code, project), handed in in the
   lesson and marked in Marking — by design, so auto-issue leaves them alone.
+
+## 2026-10-19 — Bottom navigation off screen on phones
+
+The three portals' frames were `height: 100vh` (generated classes). On Android
+Chrome and iOS Safari 100vh is the height with the address bar hidden, so while
+it shows, the frame's bottom — the bottom navigation — sat under the screen
+edge. Overridden in styles-app.css to `100dvh` (100vh kept as the fallback);
+the boot and hub screens likewise. The member and instructor bottom bars also
+pad for `env(safe-area-inset-bottom)` (the viewport is `viewport-fit=cover`), as
+the mentor's already did. member-v9 asserts the bar is on screen, the page does
+not scroll past it, and the frame rule uses dvh.

@@ -12103,3 +12103,12 @@ button.m9x-ev-sum { cursor: pointer; }
 .asd-auto-t b { color: var(--asd-ink); font-size: 14px; }
 .asd-auto-note { color: var(--asd-ink); font-weight: 600; }
 .asd-chip.is-lesson { background: #eff4ff; color: #1d4ed8; }
+
+/* The portals' frame is the VISIBLE height of the phone, not 100vh. On Android
+   Chrome and iOS Safari 100vh is the height with the address bar hidden, so with
+   it showing the bottom of the frame — the bottom navigation — sat below the
+   screen. dvh tracks the bar; 100vh stays as the fallback for older browsers. */
+.m9-e375159, .i6-e375159, .m15-5cba4ee { height: 100vh; height: 100dvh; }
+.m15x-boot, .m15x-hub { min-height: 100vh; min-height: 100dvh; }
+/* …and the member and instructor bottom bars clear the iPhone home indicator, as the mentor's does. */
+.m9-cde623e, .i6-cde623e { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }

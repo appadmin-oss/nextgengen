@@ -238,6 +238,11 @@ async function as(memberId, admin, viewport) {
     await ph.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ph);
     await ph.waitForSelector('.m9-app nav[aria-label="My NGG"]', { timeout: 60000 });
+    const fit = await ph.evaluate(() => { const n = document.querySelector('.m9-app nav[aria-label="My NGG"]'); const r = n.getBoundingClientRect();
+      const css = [...document.styleSheets].some(sh => { try { return [...sh.cssRules].some(x => /100dvh/.test(x.cssText) && /m9-e375159/.test(x.cssText)); } catch (_) { return false; } });
+      return { bottom: Math.round(r.bottom), vh: innerHeight, scroll: document.scrollingElement.scrollHeight, dvh: css }; });
+    chk('Phone: the bottom bar sits fully on screen, and nothing pushes the page past it', fit.bottom <= fit.vh && fit.scroll <= fit.vh + 1);
+    chk('Phone: the frame is the visible height (dvh), so a browser address bar cannot push the bar off screen', fit.dvh);
     chk('Phone: the bottom tab bar replaces the sidebar', await ph.isVisible('.m9-app nav[aria-label="My NGG"]') && !(await ph.isVisible('.m9-app aside')));
     await shot(ph, 'phone-today');
     chk('no page errors (member)', mb.errs.length === 0 && ph.errs.length === 0);
