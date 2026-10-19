@@ -641,13 +641,36 @@ function cp_sec_mentorship(array $x): array {
         $rows[] = ['id' => (string)$m['matchId'], 'memberId' => (string)$m['memberId'], 'cells' => [['p', (string)$m['menteeName'], (string)$m['memberId']], (string)$m['mentorName'],
                    $m['startedAt'] ? gmdate('M Y', strtotime((string)$m['startedAt'])) : '—', cp_ago((string)$m['lastContact']), ['s', $label[$h] ?? $h, $tone[$h] ?? 'neutral']]];
     }
+    // Pairs made from a centre's mentor list live in mentor_assignments, not in the
+    // pods programme's mentor_matches. Both are real pairings; show each mentee once.
+    $seen = array_flip(array_column($rows, 'memberId'));
+    [$inSql, $inArgs] = cp_in($x, 'm.centre');
+    $pairs = db_all("SELECT a.id, a.memberId, a.startedAt, m.fullName mname, m.displayId, t.fullName tname FROM mentor_assignments a
+                     JOIN members m ON m.memberId = a.memberId LEFT JOIN mentors t ON t.mentorId = a.mentorId
+                     WHERE a.status = 'active' AND m.type = 'NGG' AND $inSql ORDER BY m.fullName", $inArgs);
+    $ids = array_values(array_unique(array_column($pairs, 'memberId'))); $last = [];
+    if ($ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT subjectId, MAX(metOn) d FROM mentor_meetings WHERE subjectId IN ($ph) GROUP BY subjectId", $ids) as $r) $last[(string)$r['subjectId']] = (string)$r['d'];
+    }
+    foreach ($pairs as $a) {
+        $mid = (string)$a['memberId'];
+        if (isset($seen[$mid]) || count($rows) >= CP_ROWS_MAX) continue;
+        $seen[$mid] = 1;
+        $lc = $last[$mid] ?? '';
+        $fresh = $lc === '' && (string)$a['startedAt'] !== '' && strtotime((string)$a['startedAt']) >= time() - 14 * 86400;
+        $stale = !$fresh && ($lc === '' || strtotime($lc) < time() - 30 * 86400);
+        $rows[] = ['id' => 'ma:' . $a['id'], 'memberId' => $mid, 'cells' => [['p', (string)$a['mname'], (string)($a['displayId'] ?: $mid)], (string)($a['tname'] ?: 'Unknown mentor'),
+                   $a['startedAt'] ? gmdate('M Y', strtotime((string)$a['startedAt'])) : '—', cp_ago($lc), $fresh ? ['s', 'New pair', 'neutral'] : ($stale ? ['s', 'Overdue', 'warn'] : ['s', 'On track', 'ok'])]];
+    }
     $un = cp_dashboard_unpaired($x);
     return ['rows' => $rows, 'note' => $un ? $un . ' member' . ($un === 1 ? ' has' : 's have') . ' no mentor. Pair them from each centre’s mentor list; a mentor takes up to 12.' : ''];
 }
 function cp_dashboard_unpaired(array $x): int {
     [$inSql, $inArgs] = cp_in($x, 'm.centre');
     return (int)(db_row("SELECT COUNT(*) c FROM members m WHERE m.type = 'NGG' AND m.status = 'active' AND COALESCE(m.role,'') NOT IN " . CP_STAFF_ROLES_SQL . " AND $inSql
-        AND NOT EXISTS (SELECT 1 FROM mentor_assignments a WHERE a.memberId = m.memberId AND a.status = 'active')", $inArgs)['c'] ?? 0);
+        AND NOT EXISTS (SELECT 1 FROM mentor_assignments a WHERE a.memberId = m.memberId AND a.status = 'active')
+        AND NOT EXISTS (SELECT 1 FROM mentor_matches x WHERE x.memberId = m.memberId AND x.status IN ('active','paused','closing'))", $inArgs)['c'] ?? 0);
 }
 function cp_sec_behaviour(array $x): array {
     [$inSql, $inArgs] = cp_in($x, 'm.centre');
@@ -783,6 +806,11 @@ function admin_clubp_decide(array $p): array {
                 if ((string)$a['photoUrl'] === '') return ['ok' => false, 'error' => 'needs_photo', 'message' => 'Ask for a photo before accepting. ID cards need one.'];
                 return $run('admin.application.convert', ['id' => (int)$id]);
             }
+            if ($act === 'photo') {
+                $url = trim((string)($p['url'] ?? ''));
+                if ($url === '' || strlen($url) > 512 || !preg_match('#^(/|https?://|data:image/)#i', $url)) return ['ok' => false, 'error' => 'bad_photo', 'message' => 'That photo didn’t upload. Try again.'];
+                return $run('admin.application.update', ['id' => (int)$id, 'data' => ['photoUrl' => $url]]);
+            }
             if ($act === 'waitlist' || $act === 'reject') return $run('admin.applications.status', ['id' => (int)$id, 'status' => $act === 'reject' ? 'rejected' : 'waitlist']);
             break;
         }
@@ -845,7 +873,7 @@ function admin_clubp_decide(array $p): array {
             [$date, $centre] = array_pad(explode('|', $id, 2), 2, '');
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !cp_covers($x, $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
             if ($act === 'fill') {
-                $r = $run('admin.attendance.duty.set', ['date' => $date, 'centre' => $centre, 'volunteerId' => (string)($p['who'] ?? '')]);
+                $r = $run('admin.attendance.duty.set', ['date' => $date, 'centre' => $centre, 'volunteerId' => (string)($p['who'] ?? ''), 'noBoard' => true]);
                 if (!empty($r['ok'])) cp_rota_times($date, $centre);
                 if (($r['error'] ?? '') === 'not_cleared') $r['message'] = 'They aren’t cleared to work with children yet. Choose someone who is.';
                 return $r;
@@ -987,7 +1015,7 @@ function admin_clubp_create(array $p): array {
             if ($end <= $start) return ['ok' => false, 'error' => 'bad_time', 'message' => 'It must end after it starts.'];
             if (!admin_cap_gate(['requesterId' => $me], 'checkin')['ok']) return ['ok' => false, 'error' => 'forbidden'];
             if ($who === '') return ['ok' => false, 'error' => 'missing_fields', 'message' => 'Choose who is on duty. A shift with nobody on it shows as unfilled on its own.'];
-            $r = $run('admin.attendance.duty.set', ['date' => $date, 'centre' => $centre, 'volunteerId' => $who]);
+            $r = $run('admin.attendance.duty.set', ['date' => $date, 'centre' => $centre, 'volunteerId' => $who, 'noBoard' => true]);
             if (empty($r['ok'])) { if (($r['error'] ?? '') === 'not_cleared') $r['message'] = 'They aren’t cleared to work with children yet. Choose someone who is.'; return $r; }
             cp_rota_times($date, $centre, $start, $end);
             return ['ok' => true];
@@ -1061,6 +1089,17 @@ function admin_clubp_ann_reach(array $p): array {
     return ['ok' => true, 'reach' => $a['reach'], 'phones' => count($a['phones']), 'emails' => count($a['emails']), 'members' => count($a['members'])];
 }
 
+/** Why these channels can reach nobody in this audience, or ''. Guardians have
+ *  no app inbox (family alerts go by email); members get no SMS. */
+function cp_ann_unreachable(string $aud, array $chs): string {
+    $toG = $aud !== 'members'; $toM = $aud !== 'guardians';
+    $gOk = $toG && (in_array('email', $chs, true) || in_array('sms', $chs, true));
+    $mOk = $toM && (in_array('app', $chs, true) || in_array('email', $chs, true));
+    if ($gOk || $mOk) return '';
+    return $aud === 'guardians' ? 'Guardians don’t get app notifications. Add Email or SMS to reach them.'
+         : ($aud === 'members' ? 'Members don’t get SMS. Add App or Email to reach them.' : 'None of these channels reaches anybody. Add Email.');
+}
+
 /** Send one announcement now. Reports what actually went. */
 function cp_ann_send(array $x, array $a): array {
     $ch = (array)(safe_json((string)$a['channels']) ?: ['app']);
@@ -1103,6 +1142,7 @@ function admin_clubp_ann_save(array $p): array {
     if (in_array($act, ['approve', 'sendback'], true)) {
         if (!$isAdm) return ['ok' => false, 'error' => 'forbidden', 'message' => 'Only an admin approves announcements.'];
         if (!$have || (string)$have['status'] !== 'pending') return ['ok' => false, 'error' => 'not_pending'];
+        if ($act === 'approve') { $why = cp_ann_unreachable((string)$have['aud'], (array)(safe_json((string)$have['channels']) ?: ['app'])); if ($why !== '') return ['ok' => false, 'error' => 'unreachable', 'message' => $why . ' Send it back with a note.']; }
         if ($act === 'sendback') {
             $note = trim((string)($p['note'] ?? '')); if ($note === '') return ['ok' => false, 'error' => 'note_required'];
             db_update('club_announcements', ['status' => 'changes', 'note' => mb_substr($note, 0, 600), 'updatedAt' => now_iso()], ['annId' => $id]);
@@ -1148,6 +1188,8 @@ function admin_clubp_ann_save(array $p): array {
         if ($row['title'] === '') $errs[] = 'title'; if ($row['body'] === '') $errs[] = 'body'; if (!$chs) $errs[] = 'channel';
         if (($d['when'] ?? 'asap') === 'later' && $sendAt === '') $errs[] = 'sendAt';
         if ($errs) return ['ok' => false, 'error' => 'incomplete', 'fields' => $errs];
+        $why = cp_ann_unreachable($row['aud'], $chs);
+        if ($why !== '') return ['ok' => false, 'error' => 'unreachable', 'message' => $why];
     }
     if ($have) db_update('club_announcements', $row, ['annId' => $id]);
     else { $id = 'ANN-' . strtoupper(rand_hex(5)); db_insert('club_announcements', $row + ['annId' => $id, 'status' => 'draft', 'byId' => $me, 'byName' => $myName, 'createdAt' => now_iso()]); }

@@ -251,7 +251,7 @@ class Sd3Directory extends React.Component {
         flags: flagsOf(v), hasFlags: flagsOf(v).length > 0, pctL: v.pct == null ? "no record yet" : v.pct + "% present or late",
         weeks: v.att.map((a, w) => ({ w: wk[w] || "", l: a || "–", bg: a ? { P: "#e8f5ec", L: "#fdf2d8", A: "#fde8e6" }[a] : "#f4f4f3", fg: a ? { P: "#17663a", L: "#7a5600", A: "#a12a1f" }[a] : "#a3a3a8" })),
         cls: v.cls, onCls: e => up({ cls: e.target.value }), centre: v.centre, onCentre: e => up({ centre: e.target.value, mentor: null }), centreLocked: !!cen,
-        mentor: v.mentor || "", onMentor: e => up({ mentor: e.target.value || null }), mentorLocked: false, mentorOpts: (((D.mentors || {})[v.centre] || []).concat((D.mentors || {}).All || [])).map(m => m.name),
+        mentor: v.mentor || "", onMentor: e => up({ mentor: e.target.value || null }), mentorLocked: false, mentorOpts: (() => { const o = (((D.mentors || {})[v.centre] || []).concat((D.mentors || {}).All || [])).map(m => m.name); return v.mentor && !o.includes(v.mentor) ? [v.mentor].concat(o) : o; })(),
         statusOpts: ["Active", "Paused"].map(o => ({ l: o, on: (v.status === "New" ? "Active" : v.status) === o, bg: (v.status === "New" ? "Active" : v.status) === o ? "#fff" : "transparent", sh: (v.status === "New" ? "Active" : v.status) === o ? "0 1px 2px rgba(11,11,12,.12)" : "none", onClick: () => up({ status: o }) })),
         guardian: v.guardian, onGuardian: e => up({ guardian: e.target.value }), phone: v.phone, onPhone: e => up({ phone: e.target.value }), phoneBorder: phoneBad ? "#d6453d" : "#e2e2df",
         consent: v.consent, onConsent: () => { if (P.onPermissions) P.onPermissions(v.memberId); }, consentTrack: v.consent ? "#17663a" : "#c9c9c5", consentKnob: v.consent ? "16px" : "2px",

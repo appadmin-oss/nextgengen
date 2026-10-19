@@ -172,7 +172,7 @@ class Cp3Portal extends React.Component {
     if (CP3_SECTION_IDS.indexOf(sec) === -1) sec = "home";
     this.flushPending();
     this.setState(s => ({ recentSec: [sec].concat(s.recentSec.filter(x => x !== sec)).slice(0, 4) }));
-    this.setState({ sec, pal: false, exportOpen: false, gq: "", gtab: null, permSel: null, gDetail: null, gForm: null, trnView: null, trnDetail: null });
+    this.setState({ sec, pal: false, exportOpen: false, confirm: null, gq: "", gtab: null, permSel: null, gDetail: null, gForm: null, trnView: null, trnDetail: null });
     try { const u = new URL(window.location.href); if (sec === "home") u.searchParams.delete("s"); else u.searchParams.set("s", sec); window.history.pushState({}, "", u.pathname + u.search); } catch (e) {}
     const m = this.rootRef.current && this.rootRef.current.querySelector("main"); if (m) m.scrollTop = 0;
     this.loadFor(sec);
@@ -270,9 +270,11 @@ class Cp3Portal extends React.Component {
   askPromote(ids) {
     const list = ((this.state.promote || {}).rows || []).filter(p => ids.includes(p.studentId)); const noEmail = list.filter(p => p.noContact).length; const one = list.length === 1;
     if (!list.length) return;
+    const noCentre = list.filter(p => !this.joinsOf(p));
+    if (noCentre.length) return this.toast("Choose the Club centre " + (noCentre.length === 1 ? noCentre[0].fullName + " joins" : noCentre.length + " of them join") + " first. Their Summer centre isn’t a Club centre.");
     this.setState({ confirm: { title: one ? "Promote " + list[0].fullName + " into the Club?" : "Promote " + list.length + " into the Club?",
-      body: (one ? "They become" : "Each becomes") + " an active NGG member carrying their name, photograph, course and centre, and is emailed a link to set a password. Their Summer School record is marked promoted.",
-      hasWarn: noEmail > 0, warn: noEmail + (noEmail === 1 ? " has" : " have") + " no guardian email on file. They’ll still be promoted, but nobody can email them a way in, so a centre lead will need to set that up by hand.",
+      body: (one ? "They become an active NGG member carrying their name, photograph, course and centre, and are" : "Each becomes an active NGG member carrying their name, photograph, course and centre, and is") + " emailed a link to set a password. " + (one ? "Their Summer School record is" : "Their Summer School records are") + " marked promoted.",
+      hasWarn: noEmail > 0, warn: (one ? list[0].fullName + " has" : noEmail + (noEmail === 1 ? " of them has" : " of them have")) + " no guardian email on file. They’ll still be promoted, but nobody can email them a way in, so a centre lead will need to set that up by hand.",
       cta: one ? "Promote" : "Promote " + list.length, onOk: () => this.promote(ids) } });
   }
   promote(ids) {
@@ -281,7 +283,9 @@ class Cp3Portal extends React.Component {
     this.setState({ confirm: null, busy: true });
     NGGApi.admin.club.promoteBulk(ids, centres).then(r => {
       const failed = (r.results || []).filter(x => x && x.ok === false);
-      this.setState({ psel: {}, busy: false, result: { n: r.promoted || 0, noEmail, failed: failed.length, why: failed.length && typeof adminFailSummary === "function" ? adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) : "" } });
+      const okIds = ids.filter(id => !failed.some(x => (x.studentId || x.id) === id));
+      const noEmailOk = failed.length ? rows.filter(p => okIds.includes(p.studentId) && p.noContact).length : noEmail;
+      this.setState({ psel: {}, busy: false, result: { n: r.promoted || 0, noEmail: noEmailOk, failed: failed.length, why: failed.length && typeof adminFailSummary === "function" ? adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) : "" } });
       this.loadPromote(); this.loadDash();
     }).catch(e => { this.setState({ busy: false }); this.fail(e, "Couldn’t promote them."); });
   }
@@ -289,7 +293,8 @@ class Cp3Portal extends React.Component {
   /* ── generic decisions and forms ───────────────────────────────────── */
   decide(sec, row, x) {
     if (x.act === "studio") { this.setState({ gDetail: null }); if (this.props.setPage) this.props.setPage("id-cards"); return; }
-    if (x.act === "workspace") { this.setState({ gDetail: null }); try { window.location.href = "/control/people/mentorship"; } catch (e) {} return; }
+    if (x.act === "photo") return this.addApplicantPhoto(row);
+    if (x.act === "workspace") { this.setState({ gDetail: null }); try { window.location.href = "/control/mentorship"; } catch (e) {} return; }
     const prev = this.state.gData[sec];
     const apply = rows => this.setState(s => ({ gData: Object.assign({}, s.gData, { [sec]: Object.assign({}, prev, { rows }) }), gDetail: null }));
     const sIdx = row.cells.findIndex(c => Array.isArray(c) && c[0] === "s");
@@ -312,6 +317,21 @@ class Cp3Portal extends React.Component {
     }
     this.setState({ busy: true });
     run().then(() => { this.setState({ busy: false }); apply(next); this.toast(x.toast + " · " + title); }).catch(e => { this.setState({ busy: false }); this.fail(e); });
+  }
+  /* An application can't be accepted without a photo (the ID card needs one).
+     The family usually hands one over at the centre, so staff can add it here. */
+  addApplicantPhoto(row) {
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
+    inp.onchange = () => {
+      const f = inp.files && inp.files[0]; if (!f) return;
+      if (!/^image\//.test(f.type || "")) return this.toast("That isn’t a photo. Choose a JPG or PNG.");
+      this.setState({ busy: true });
+      NGGApi.uploadOrInline(f, "headshot")
+        .then(up => this.api("decide", { sec: "applications", id: row.id, act: "photo", url: up.url }))
+        .then(() => { this.setState({ busy: false, gDetail: null }); this.toast("Photo added. They can be accepted now."); this.loadSection("applications"); this.loadDash(); })
+        .catch(e => { this.setState({ busy: false }); this.fail(e, "Couldn’t add the photo."); });
+    };
+    inp.click();
   }
   openGForm(key) {
     const FM = cp3Forms(this.formCtx())[key]; const vals = {};
@@ -353,7 +373,11 @@ class Cp3Portal extends React.Component {
     const E = this.state.annEdit; if (!E) return;
     this.setState({ busy: true });
     return this.api("ann.save", Object.assign({ action, ann: { id: E.id || "", title: E.title, body: E.body, aud: E.aud, centre: E.centre, ch: E.ch, when: E.when || "asap", sendAt: E.sendAtLocal || "" } }, extra || {}))
-      .then(r => { this.setState({ busy: false, annEdit: null, annNote: "" }); this.loadAnn(); if (action !== "draft") this.loadDash(); return r; })
+      .then(r => {
+        // Follow the announcement to the tab it now lives in, so it doesn't seem to vanish.
+        const st = ((r && r.announcement) || {}).status; const adm = this.isAdm();
+        const tab = !st || action === "delete" ? this.state.annTab : (st === "draft" || st === "changes") ? (adm ? (st === "draft" ? "draft" : "changes") : "mine") : st;
+        this.setState({ busy: false, annEdit: null, annNote: "", annTab: tab }); this.loadAnn(); if (action !== "draft") this.loadDash(); return r; })
       .catch(e => { this.setState({ busy: false }); if ((e.code || "") === "incomplete") this.setState(s => ({ annEdit: Object.assign({}, s.annEdit, { tried: true }) })); else this.fail(e); throw e; });
   }
   annReach(E) {
@@ -525,8 +549,8 @@ class Cp3Portal extends React.Component {
     out.pEmptyText = S.promoteErr ? "Couldn’t load the Summer School list: " + S.promoteErr + " Open Promote again to retry."
       : !S.promote ? "Loading the Summer School records…"
       : promotable.length ? "Nobody matches these filters." : "Nobody is waiting to be promoted. Summer School records appear here once they graduate.";
-    out.hasResult = !!S.result; out.resultText = S.result ? S.result.n + " promoted into the Club." + (S.result.failed ? " " + S.result.failed + " not (" + S.result.why + ")." : "") : "";
-    out.resultSub = S.result ? (S.result.noEmail ? S.result.noEmail + " need a sign-in set up by hand." : "Sign-in links are on their way to guardians.") : ""; out.dismissResult = () => this.setState({ result: null });
+    out.hasResult = !!S.result; out.resultText = S.result ? (S.result.n ? S.result.n + " promoted into the Club." : "Nobody was promoted.") + (S.result.failed ? " " + S.result.failed + " refused (" + S.result.why + ")." : "") : "";
+    out.resultSub = !S.result || !S.result.n ? "" : S.result.noEmail ? S.result.noEmail + (S.result.noEmail === 1 ? " needs" : " need") + " a sign-in set up by hand." : "Sign-in links are on their way to guardians."; out.dismissResult = () => this.setState({ result: null });
 
     /* ── roster: the Student Directory, embedded (cp3-directory.jsx) ── */
     out.true = true;
@@ -561,7 +585,7 @@ class Cp3Portal extends React.Component {
         const blocks = ds.map(s => { const d = this.div(s.course); const a = cp3M(s.s), b = cp3M(s.e); return { course: s.course, time: s.s + "–" + s.e, meta: s.room + " · " + (s.ins || "No instructor"), aria: s.course + ", " + s.s + " to " + s.e + ", " + s.room + ". Edit",
           top: ((a - o) / 60 * HH + 3) + "px", height: ((b - a) / 60 * HH - 6) + "px", left: "calc(" + (laneOf[s.id] / L * 100) + "% + 4px)", width: "calc(" + (100 / L) + "% - 8px)", bg: d[0], line: d[1], onClick: () => this.setState({ form: Object.assign({}, s) }) }; });
         const gaps = []; for (let x = o; x < cl; x += 30) { const used = ds.filter(s => cp3M(s.s) < x + 30 && x < cp3M(s.e)).length; if (used === 0) gaps.push(x); }
-        return { name: CP3_DAYS[wd], meta: this.fmtDate(this.nextDate(wd)) + " · " + ds.length + " classes", blocks,
+        return { name: CP3_DAYS[wd], meta: this.fmtDate(this.nextDate(wd)) + " · " + ds.length + (ds.length === 1 ? " class" : " classes"), blocks,
           gaps: gaps.map(x => ({ l: cp3HM(x), aria: "Add a slot at " + cp3HM(x), top: ((x - o) / 60 * HH + 2) + "px", height: (30 / 60 * HH - 4) + "px",
             onClick: () => { const f = { id: null, centreId: cen, wd, s: cp3HM(x), e: cp3HM(Math.min(cl, x + 60)), course: "Chess", room: C0.rooms[0], ins: "", insId: "", level: "" }; const free = C0.rooms.find(r => !this.clashesFor(Object.assign({}, f, { room: r }), all).some(c => c.type === "room")); this.setState({ form: Object.assign({}, f, { room: free || f.room }) }); } })) };
       });
@@ -619,10 +643,10 @@ class Cp3Portal extends React.Component {
       const cntS = {}; tab.rows.forEach(r => { const s2 = r.cells.find(c => Array.isArray(c) && c[0] === "s"); if (s2) cntS[s2[2]] = (cntS[s2[2]] || 0) + 1; });
       const ks = ["bad", "warn", "ok", "neutral"].filter(k => cntS[k]); const SL = sec === "team" ? LBL : { bad: "Blocked", warn: "Needs action", ok: "Fine", neutral: "Off" };
       out.gSummary = ks.length > 1 ? ks.map(k => ({ l: SL[k], n: cntS[k], dot: tone(k)[2] })) : [];
-      out.gEmpty = !gLoading && rowsI.length === 0; out.gq = S.gq || ""; out.onGQ = e => this.setState({ gq: e.target.value });
+      out.gEmpty = !gLoading && rowsI.length === 0; out.gEmptyText = gq ? "Nothing matches that search." : tab.rows.length ? "Nothing at " + scope + " in this list." : (tab.empty || gdef.empty || "Nothing here yet."); out.gq = S.gq || ""; out.onGQ = e => this.setState({ gq: e.target.value });
       const errNote = S.gErr[sec] ? "Couldn’t load this list: " + S.gErr[sec] + "." : gLoading ? "Loading…" : "";
       out.gNote = errNote || tab.note || gdef.note || ""; out.gHasNote = !!out.gNote; out.gCount = rowsI.length === tab.rows.length ? rowsI.length + " shown" : rowsI.length + " of " + tab.rows.length;
-    } else { out.gPg = {}; out.gTabs = []; out.gCols = []; out.gRows = []; out.gSummary = []; out.gHasTabs = false; out.gEmpty = false; out.gHasNote = false; }
+    } else { out.gPg = {}; out.gTabs = []; out.gCols = []; out.gRows = []; out.gSummary = []; out.gHasTabs = false; out.gEmpty = false; out.gEmptyText = ""; out.gHasNote = false; }
     out.moreGroups = NAVG.map(g => ({ h: g[0] || "Overview", items: g[1].filter(n => !CP3_TABS.some(t => t[0] === n[0])).map((n, i) => { const b = badge[n[0]]; const ok = !!n[3];
       return { l: n[1], icon: "ph ph-" + n[2], ok, off: !ok, ariaOff: ok ? undefined : "true", fg: ok ? "#0b0b0c" : "#8a8a90", bt: i ? "1px solid #f1f1ef" : "0", hasBadge: !!(ok && b && b[0]), badge: b ? cap99(b[0]) : 0, bb: b ? b[1] : "", bf: b ? b[2] : "",
         onClick: () => ok ? this.go(n[0]) : this.toast("Open the portal on a computer to use " + n[1].toLowerCase() + ".") }; }) })).filter(g => g.items.length);
@@ -733,7 +757,7 @@ class Cp3Portal extends React.Component {
               if (x.k === "danger" && ["remove", "decline", "reject", "unlink"].indexOf(x.act) !== -1) { this.setState({ confirm: { title: x.l + " · " + out.gdTitle + "?", body: "This can’t be undone from here.", cta: x.l, danger: true, onOk: () => { this.setState({ confirm: null }); this.decide(sec, row, x); } } }); return; }
               this.decide(sec, row, x); } }; });
           out.gdFill = !!DEC.fill; const pool = ((S.gData.rota || {}).pool) || [];
-          out.fillOpts = DEC.fill ? [{ v: "", l: "Choose someone" }].concat(pool.map(o => ({ v: o.v, l: o.l }))) : [];
+          out.fillOpts = DEC.fill ? [{ v: "", l: pool.length ? "Choose someone" : "Nobody yet: approve a volunteer in Volunteers first" }].concat(pool.map(o => ({ v: o.v, l: o.l }))) : [];
           out.fillWho = S.fillWho; out.onFillWho = e => this.setState({ fillWho: e.target.value });
           const who = pool.find(o => o.v === S.fillWho);
           out.doFill = () => { if (!S.fillWho || (who && who.bad)) return; this.decide(sec, row, { act: "fill", do: ["Confirmed", "ok"], toast: (who ? who.l : "They") + " is on duty" }); };
@@ -778,6 +802,7 @@ class Cp3Portal extends React.Component {
         entrants: String(t.entrants || 0), st: c[0], sbg: tn[0], sfg: tn[1], sdot: tn[2], onClick: () => { this.setState({ trnView: t.tournamentId, trnQ: "", trnDetail: null }); this.loadTrnDetail(t.tournamentId); } }; });
       out.trnNew = () => this.setState({ trnView: "new", trnStep: 0, trnTried: false, trnDraft: { format: "swiss", tc: "10+0", variant: "standard", rated: true, rounds: 0, kinds: ["member", "student", "volunteer", "staff"], centres: [], minR: 0, maxR: 0, programme: "ngg", when: "open", startsAt: "", dur: 24, name: "", desc: "" } });
       out.trnBack = () => this.setState({ trnView: null, trnDetail: null });
+      out.trnEmpty = out.trnIsList && list.length === 0; out.trnEmptyText = S.trnErr ? "Couldn’t load tournaments: " + S.trnErr + " Open Tournaments again to retry." : !S.trnList ? "Loading tournaments…" : "No tournaments yet. Start one with Host a tournament.";
       if (out.trnIsNew) {
         const dr = S.trnDraft; const set = p => this.setState(s => ({ trnDraft: Object.assign({}, s.trnDraft, p) })); const step = S.trnStep; const fm = TR.formats.find(x => x.id === dr.format) || TR.formats[0]; const vr = TR.variants.find(x => x.id === dr.variant);
         const tcName = id => (TR.tcs.find(x => x.id === id) || {}).name || id;
@@ -826,7 +851,7 @@ class Cp3Portal extends React.Component {
         const det = S.trnDetail || { rounds: [], standings: [] }; const c = stOf(t); const tn = tone(c[1]);
         const cur = (det.rounds[0] || { boards: [] }).boards; const left = cur.filter(g => !g.isBye && !g.result).length;
         const fm = TR.formats.find(x => x.id === t.format || x.server === t.format) || TR.formats[0];
-        out.td = { name: t.name, sub: (t.formatName || fm.name) + " · " + (t.timeControl || "") + (t.window ? " · " + t.window : ""), st: c[0], sbg: tn[0], sfg: tn[1], desc: t.description || fm.sub,
+        out.td = { name: t.name, sub: (t.formatName || fm.name) + " · " + (t.timeControl || "") + (t.window && t.window.startsAt ? " · starts " + new Date(t.window.startsAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""), st: c[0], sbg: tn[0], sfg: tn[1], desc: t.description || fm.sub,
           isOpen: t.status === "open" || t.status === "draft", isRunning: t.status === "running", isDone: t.status === "complete",
           kpis: [["Entrants", String(t.entrants || det.standings.length || 0)], ["Rounds", (det.rounds.length || 0) + (t.totalRounds ? " of " + t.totalRounds : "")], ["Games still to play", String(left)]].map(x => ({ l: x[0], v: x[1] })) };
         const tq = (S.trnQ || "").trim();
@@ -868,7 +893,7 @@ class Cp3Portal extends React.Component {
         return { title: x.title || "Untitled draft", sub: ({ guardians: "Guardians", members: "Members", both: "Members and guardians" })[x.aud] + " · " + (x.centre === "all" ? "every centre" : x.centre) + " · " + cp3Fmt(x.reach || 0) + " people",
           ch: x.ch.map(c => chL[c]).join(" · "), by: x.by, at: x.sendAt ? "Goes " + x.sendAt : x.at, st: s[0], sbg: t[0], sfg: t[1], sdot: t[2], onClick: () => { this.reachKey = ""; this.setState({ annEdit: Object.assign({}, x, { when: x.sendAtIso ? "later" : "asap", sendAtLocal: x.sendAtIso ? x.sendAtIso.slice(0, 16) : "" }), annNote: "", annReach: null }); } }; });
       out.annEmpty = !!S.ann && out.annRows.length === 0; out.annEmptyL = S.annErr ? "Couldn’t load announcements: " + S.annErr : curT === "pending" && isAdm ? "Nothing waiting. You’re all caught up." : "Nothing here.";
-      out.annNew = () => { this.reachKey = ""; this.setState({ annEdit: { id: null, title: "", body: "", aud: "guardians", centre: lockC || (scope !== "all" ? scope : "all"), ch: ["app"], status: "draft", by: me, byId: B.me.id, when: "asap", sendAtLocal: "" }, annNote: "", annReach: null }); };
+      out.annNew = () => { this.reachKey = ""; this.setState({ annEdit: { id: null, title: "", body: "", aud: "guardians", centre: lockC || (scope !== "all" ? scope : "all"), ch: ["email"], status: "draft", by: me, byId: B.me.id, when: "asap", sendAtLocal: "" }, annNote: "", annReach: null }); };
       const E = S.annEdit; out.hasAnn = !!E;
       if (E) {
         this.annReach(E);
@@ -876,13 +901,14 @@ class Cp3Portal extends React.Component {
         const set = p => this.setState(s => ({ annEdit: Object.assign({}, s.annEdit, p) }));
         const len = (E.body || "").length; const seg = Math.max(1, Math.ceil(len / 160)); const rc = S.annReach && S.annReach.key === E.aud + "|" + E.centre ? S.annReach : null;
         const reach = rc ? rc.reach : (E.reach || 0); const smsN = E.ch.includes("sms") && rc ? rc.phones : 0;
-        const errs = []; if (!E.title.trim()) errs.push("Add a title."); if (!E.body.trim()) errs.push("Write the message."); if (!E.ch.length) errs.push("Pick at least one channel."); if (E.when === "later" && !E.sendAtLocal) errs.push("Pick when it goes out.");
-        const warn = []; if (E.ch.includes("sms") && E.aud === "members") warn.push("Members don’t get SMS. It only goes to guardians’ phones.");
+        const errs = []; if (!E.title.trim()) errs.push("Add a title."); if (!E.body.trim()) errs.push("Write the message."); if (!E.ch.length) errs.push("Pick at least one channel."); if (E.when === "later" && !E.sendAtLocal) errs.push("Pick when it goes out."); { const g = E.aud !== "members", m = E.aud !== "guardians", c = k => E.ch.includes(k); if (E.ch.length && !((g && (c("email") || c("sms"))) || (m && (c("app") || c("email"))))) errs.push(E.aud === "guardians" ? "Guardians don’t get app notifications. Add Email or SMS to reach them." : E.aud === "members" ? "Members don’t get SMS. Add App or Email to reach them." : "None of these channels reaches anybody. Add Email."); }
+        const warn = []; if (E.ch.includes("sms") && E.aud === "members") warn.push("Members don’t get SMS. It only goes to guardians’ phones."); if (E.aud === "both" && E.ch.length && !E.ch.includes("email") && !E.ch.includes("sms")) warn.push("Guardians don’t get app notifications, so only members will see this. Add Email or SMS for guardians.");
         if (E.ch.includes("sms") && !S.annMeta.smsOn) warn.push("SMS isn’t set up on this site, so nothing will go by text. Choose App or Email too.");
         if (E.ch.includes("sms") && len > 160) warn.push("That’s " + seg + " texts per person. Shorter is cheaper and more likely to be read.");
         if (E.centre === "all" && !isAdm && !lockC) warn.push("This goes to every centre. Check it applies to all of them.");
         const confirmSend = (label, fn) => this.setState({ confirm: { title: "Send to " + cp3Fmt(reach) + " people?", body: "Goes out now by " + E.ch.map(c => chL[c]).join(", ") + "." + (smsN ? " SMS costs about ₦" + cp3Fmt(smsN * seg * 4) + "." : "") + " Sent messages can’t be recalled.", cta: label, onOk: () => { this.setState({ confirm: null }); fn(); } } });
-        const statsLine = r => r && r.stats ? "Sent: " + [r.stats.app ? r.stats.app + " in the app" : "", r.stats.email ? r.stats.email + " by email" : "", r.stats.sms ? r.stats.sms + " by SMS" : ""].filter(Boolean).join(", ") + (r.stats.emailSkipped || r.stats.smsSkipped ? ". Some were over the per-send limit; send again for the rest." : ".") : "";
+        const statsLine = r => { if (!r || !r.stats) return ""; const parts = [r.stats.app ? r.stats.app + " in the app" : "", r.stats.email ? r.stats.email + " by email" : "", r.stats.sms ? r.stats.sms + " by SMS" : ""].filter(Boolean);
+          return (parts.length ? "Sent: " + parts.join(", ") + "." : "Marked sent, but it reached nobody: nobody in this audience has a contact for these channels.") + (r.stats.emailSkipped || r.stats.smsSkipped ? " Some were over the per-send limit; send again for the rest." : ""); };
         out.an = { title: E.id ? (editable ? "Edit announcement" : E.title) : "New announcement", t: E.title, b: E.body, onT: e => set({ title: e.target.value }), onB: e => set({ body: e.target.value }), len: len + " characters" + (E.ch.includes("sms") ? " · " + seg + " text" + (seg > 1 ? "s" : "") : ""), lenColor: E.ch.includes("sms") && len > 160 ? "#7a5600" : "#6b6b72",
           editable, readOnly: !editable, reviewing, isChanges: E.status === "changes" && !!E.note, note: E.note || "", st: (ST2[E.status] || ST2.draft)[0], stBg: CP3_TONE[(ST2[E.status] || ST2.draft)[1]][0], stFg: CP3_TONE[(ST2[E.status] || ST2.draft)[1]][1], by: E.by, approvedBy: E.approvedBy || "", hasApproved: !!E.approvedBy,
           auds: [["guardians", "Guardians"], ["members", "Members"], ["both", "Both"]].map(o => { const on = E.aud === o[0]; return { l: o[1], on, border: on ? "2px solid #0b0b0c" : "1px solid #e2e2df", onClick: () => editable && set({ aud: o[0] }) }; }),

@@ -454,6 +454,10 @@ function admin_attendance_duty_set(array $p): array {
     else db_insert('attendance_duty', ['date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId'], 'createdAt' => now_iso()]);
     volunteer_award_points($volunteerId, 'duty_assigned', DUTY_POINTS_ASSIGNED, "On duty · {$centre}", $date);
     audit('attendance.duty.set', $g['requester']['memberId'], $volunteerId, ['date' => $date, 'centre' => $centre], (string)($p['ip'] ?? ''));
+    // Reading the board materialises an automatic pick for every Summer centre
+    // that day (and emails whoever it picks). A caller that only set one shift
+    // — the Club portal's rota — asks for no board, so it starts nothing else.
+    if (!empty($p['noBoard'])) return ['ok' => true, 'date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId];
     return attendance_duty_board(['date' => $date]);
 }
 

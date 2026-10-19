@@ -65,7 +65,11 @@ function tt_centre_window(string $text): ?array {
 
 /** Courses a slot may name: the academy catalogue, plus any already holding lessons. */
 function tt_courses(): array {
-    return function_exists('curriculum_courses') ? curriculum_courses() : (function_exists('academy_courses') ? academy_courses() : []);
+    $all = function_exists('curriculum_courses') ? curriculum_courses() : (function_exists('academy_courses') ? academy_courses() : []);
+    // Chess is taught in every division, so it is in no one division's catalogue.
+    foreach ($all as $c) if (strcasecmp((string)$c, 'Chess') === 0) return $all;
+    array_unshift($all, 'Chess');
+    return $all;
 }
 
 function tt_public_slot(array $r, array $centres, array $instructors, bool $withInstructor = true): array {

@@ -29057,6 +29057,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ld = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-LEAD', 'action' => 'draft', 'ann' => ['title' => 'x', 'body' => 'y', 'centre' => 'all', 'ch' => ['app']]]);
     chk('club portal: a lead\'s announcement is held to their own centre', !empty($ld['ok']) && $ld['announcement']['centre'] === 'Cpalpha');
     chk('club portal: reach is de-duplicated guardians', (backend_dispatch('admin.clubp.ann.reach', ['requesterId' => 'CP-CLB', 'aud' => 'guardians', 'centre' => 'Cpalpha'])['reach'] ?? 0) === 1);
+    $un = backend_dispatch('admin.clubp.ann.save', ['requesterId' => 'CP-CLB', 'action' => 'submit', 'ann' => ['title' => 'Hi', 'body' => 'Hello', 'aud' => 'guardians', 'centre' => 'Cpalpha', 'ch' => ['app']]]);
+    chk('club portal: an app-only announcement to guardians is refused (no app inbox), not sent to nobody', ($un['error'] ?? '') === 'unreachable');
+    chk('club portal: members by SMS alone is refused; members by app, or guardians by email, is fine', cp_ann_unreachable('members', ['sms']) !== ''
+        && cp_ann_unreachable('members', ['app']) === '' && cp_ann_unreachable('guardians', ['email']) === '' && cp_ann_unreachable('both', ['app']) === '');
+    chk('timetable: Chess (taught in every division) is a course the timetable accepts', in_array('Chess', tt_courses(), true));
 
     // Fine rules: off posts nothing; a cap holds per term.
     backend_dispatch('admin.clubp.section', ['requesterId' => 'CP-CLB', 'sec' => 'conduct']);
@@ -29073,6 +29078,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('club portal: every section loads', $okAll);
     $rota = backend_dispatch('admin.clubp.section', ['requesterId' => 'CP-LEAD', 'sec' => 'rota']);
     chk('club portal: the rota lists the coming meeting days, unfilled', !empty($rota['rows']) && $rota['rows'][0]['cells'][4][1] === 'Unfilled' && $rota['rows'][0]['cells'][1] === 'Cpalpha');
+    // Setting one shift from the Club portal must not materialise automatic
+    // Summer picks for every other centre that day (each one emails somebody).
+    db_insert('volunteers', ['volunteerId' => 'VOL-NB1', 'fullName' => 'Nb Vol', 'email' => '', 'status' => 'active', 'safeguarding' => 'cleared', 'centre' => 'Cpalpha', 'programme' => 'ngg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $cnt = static fn($d) => (int)db_row('SELECT COUNT(*) c FROM attendance_duty WHERE date = ?', [$d])['c'];
+    $ds = backend_dispatch('admin.clubp.decide', ['requesterId' => 'CP-CLB', 'sec' => 'rota', 'id' => '2031-01-04|Cpalpha', 'act' => 'fill', 'who' => 'VOL-NB1']);
+    chk('duty: the Club rota sets exactly the one shift asked for', !empty($ds['ok']) && $cnt('2031-01-04') === 1);
+    admin_attendance_duty_set(['requesterId' => 'CP-CLB', 'date' => '2031-01-11', 'centre' => 'Cpalpha', 'volunteerId' => 'VOL-NB1']);
+    chk('duty: …while the Summer desk\'s own call still returns its board', $cnt('2031-01-11') >= 1);
     $sr = fn($who, $q) => array_column(backend_dispatch('admin.clubp.search', ['requesterId' => $who, 'q' => $q])['members'] ?? [], 'id');
     chk('club portal: search finds by name in scope, not outside it', $sr('CP-CLB', 'bimpe') === ['CP-M2'] && $sr('CP-LEAD', 'bimpe') === [] && $sr('CP-LEAD', 'tobi') === ['CP-M1']);
 

@@ -262,7 +262,7 @@ button,input,select,textarea{font:inherit;color:inherit}
                     <td style="padding:{{ cellPad }}; border-bottom:1px solid #f1f1ef; white-space:nowrap;"><div style="display:flex; flex-direction:column;"><span style="font-weight:500;">{{ r.name }}</span><span style="font-size:12px; color:#6b6b72; font-family:'Geist Mono', monospace;">{{ r.sub }}</span></div></td>
                     <td style="padding:{{ cellPad }}; border-bottom:1px solid #f1f1ef; white-space:nowrap;">{{ r.course }}</td>
                     <td style="padding:{{ cellPad }}; border-bottom:1px solid #f1f1ef; white-space:nowrap; color:#4a4a50;">{{ r.summer }}</td>
-                    <td style="padding:6px 16px; border-bottom:1px solid #f1f1ef;"><select value="{{ r.joins }}" onChange="{{ r.onJoins }}" aria-label="Club centre for {{ r.name }}" style="height:32px; padding:0 8px; border:1px solid {{ r.joinsBorder }}; border-radius:8px; background:#fff; font-size:13px;"><sc-for list="{{ centreOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.id }}">{{ o.name }}</option></sc-for></select><sc-if value="{{ r.moved }}"><span style="display:block; font-size:11.5px; color:#7a5600; margin-top:2px;">Different from summer</span></sc-if></td>
+                    <td style="padding:6px 16px; border-bottom:1px solid #f1f1ef;"><select value="{{ r.joins }}" onChange="{{ r.onJoins }}" aria-label="Club centre for {{ r.name }}" style="height:32px; padding:0 8px; border:1px solid {{ r.joinsBorder }}; border-radius:8px; background:#fff; font-size:13px;"><option value="" disabled="true">Choose a centre</option><sc-for list="{{ centreOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.id }}">{{ o.name }}</option></sc-for></select><sc-if value="{{ r.moved }}"><span style="display:block; font-size:11.5px; color:#7a5600; margin-top:2px;">Different from summer</span></sc-if></td>
                     <td style="padding:{{ cellPad }}; border-bottom:1px solid #f1f1ef; white-space:nowrap;"><span style="display:inline-flex; align-items:center; gap:8px;"><span style="width:56px; height:5px; border-radius:999px; background:#f1f1ef; overflow:hidden;"><span style="display:block; height:100%; width:{{ r.pct }}; background:{{ r.pbg }};"></span></span><span style="font-variant-numeric:tabular-nums;">{{ r.days }}</span></span></td>
                     <td style="padding:{{ cellPad }}; border-bottom:1px solid #f1f1ef; white-space:nowrap;"><sc-if value="{{ r.hasEmail }}"><span style="color:#4a4a50;">{{ r.email }}</span></sc-if><sc-if value="{{ r.noEmail }}"><span style="display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 9px; border-radius:999px; background:#fdf2d8; color:#7a5600; font-size:12px; font-weight:500;" title="They can be promoted, but nobody can email them a way to sign in">Missing</span></sc-if></td>
                     <td style="padding:6px 16px; border-bottom:1px solid #f1f1ef; text-align:right;"><button onClick="{{ r.onPromote }}" style="height:30px; padding:0 12px; border:1px solid #e2e2df; border-radius:8px; background:#fff; cursor:pointer; font-size:13px; font-weight:500;" style-hover="border-color:#0b0b0c">Promote</button></td>
@@ -459,6 +459,7 @@ button,input,select,textarea{font:inherit;color:inherit}
                 </sc-for>
               </tbody>
             </table>
+            <sc-if value="{{ trnEmpty }}"><div style="padding:32px; text-align:center; color:#6b6b72;">{{ trnEmptyText }}</div></sc-if>
           </div>
         </sc-if>
 
@@ -554,7 +555,7 @@ button,input,select,textarea{font:inherit;color:inherit}
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap:16px; align-items:start;">
               <section style="border:1px solid #ececea; border-radius:14px; overflow:hidden;">
                 <div style="padding:12px 14px; border-bottom:1px solid #f1f1ef; display:flex; flex-direction:column; gap:10px;">
-                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap;">Add players</h3><button onClick="{{ td.addTop }}" style="height:30px; padding:0 10px; border:1px solid #e2e2df; border-radius:8px; background:#fff; cursor:pointer; font-size:12.5px; font-weight:500; white-space:nowrap;">Enter 16 from this centre</button></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;"><h3 style="margin:0; font-size:14px; font-weight:600; white-space:nowrap;">Add players</h3><button onClick="{{ td.addTop }}" style="height:30px; padding:0 10px; border:1px solid #e2e2df; border-radius:8px; background:#fff; cursor:pointer; font-size:12.5px; font-weight:500; white-space:nowrap;">Invite everyone who can enter</button></div>
                   <div style="display:flex; align-items:center; gap:8px; height:36px; padding:0 10px; border:1px solid #e7e7e5; border-radius:10px;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input value="{{ trnQ }}" onChange="{{ onTrnQ }}" placeholder="Search a member by name or ID" aria-label="Search members to enter" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:13.5px;"></div>
                   <span style="font-size:12px; color:#6b6b72;">Players can also enter themselves from the chess screen.</span>
                 </div>
@@ -674,7 +675,7 @@ button,input,select,textarea{font:inherit;color:inherit}
                 </nav>
               </sc-if>
             </div>
-            <sc-if value="{{ gEmpty }}"><div style="padding:32px; text-align:center; color:#6b6b72;">Nothing matches that search.</div></sc-if>
+            <sc-if value="{{ gEmpty }}"><div style="padding:32px; text-align:center; color:#6b6b72;">{{ gEmptyText }}</div></sc-if>
           </div>
           <sc-if value="{{ gHasNote }}"><p style="margin:0; display:flex; gap:8px; align-items:flex-start; font-size:13px; color:#4a4a50;"><i class="ph ph-info" aria-hidden="true" style="font-size:15px; margin-top:1px;"></i>{{ gNote }}</p></sc-if>
         </sc-if>
@@ -794,7 +795,7 @@ button,input,select,textarea{font:inherit;color:inherit}
         <div style="border:1px solid #ececea; border-radius:16px; overflow:hidden;">
           <sc-for list="{{ gRows }}" as="r" hint-placeholder-count="5"><button onClick="{{ r.onClick }}" style="display:flex; align-items:center; gap:12px; width:100%; min-height:64px; padding:10px 14px; border:0; border-bottom:1px solid #f1f1ef; background:#fff; text-align:left;"><span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><span style="font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.pA }}</span><span style="font-size:13px; color:#6b6b72;">{{ r.sub }}</span></span><sc-if value="{{ r.hasSt }}"><span style="height:24px; padding:0 8px; border-radius:999px; background:{{ r.sbg }}; color:{{ r.sfg }}; font-size:12px; font-weight:500; display:inline-flex; align-items:center; white-space:nowrap;">{{ r.st }}</span></sc-if></button></sc-for>
           <sc-if value="{{ gPg.hasMore }}"><button onClick="{{ gPg.next }}" style="width:100%; min-height:52px; border:0; border-top:1px solid #f1f1ef; background:#fafaf9; font-size:14px; font-weight:500; display:flex; align-items:center; justify-content:center; gap:6px;">Show {{ gPg.moreN }} more<span style="color:#6b6b72; font-weight:400;">· {{ gPg.shown }}</span></button></sc-if>
-          <sc-if value="{{ gEmpty }}"><div style="padding:28px; text-align:center; color:#6b6b72;">Nothing matches that search.</div></sc-if>
+          <sc-if value="{{ gEmpty }}"><div style="padding:28px; text-align:center; color:#6b6b72;">{{ gEmptyText }}</div></sc-if>
         </div>
         <sc-if value="{{ gHasNote }}"><p style="margin:0; font-size:13.5px; color:#4a4a50;">{{ gNote }}</p></sc-if>
       </sc-if>

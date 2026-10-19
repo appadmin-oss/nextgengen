@@ -96,7 +96,7 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
 ## Next, in order
 
 1. (done) Commit and push.
-2. **Fix the two failing checks in `tests/club-portal-v3.test.js`.** It now has 13 checks; 11 pass.
+2. (done) **Fix the two failing checks in `tests/club-portal-v3.test.js`.** It now has 13 checks; 11 pass.
    - Passing: dashboard, roster, centre-lead scope, phone tab bar.
    - **Promote list stays on its spinner.** The sidebar badge counts 1, so the
      dashboard's call works, but the screen's call
@@ -116,7 +116,7 @@ The original zip is unpacked at `/tmp/claude-0/-home-user-nextgengen/e214c1e0-cc
        under "Members".
    - Screenshots were taken with `CLUBV3_SHOTS=<dir>`. The dashboard and
      promote shots match the design closely.
-3. **Then extend `tests/club-portal-v3.test.js`.** Drive each item in the browser and fix what breaks.
+3. (done: 48 checks, `npm run test:clubv3`, in `test:all`) **Then extend `tests/club-portal-v3.test.js`.** Drive each item in the browser and fix what breaks.
    - Command palette: Ctrl K, then a member search.
    - Roster: the directory loads, search works, the drawer saves, a centre lead takes the register.
    - Promote: the graduate is listed, the confirm warns about a missing guardian email, and the promotion lands in the database.

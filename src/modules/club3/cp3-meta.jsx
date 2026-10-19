@@ -28,20 +28,20 @@ const CP3_DAYS = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "S
 
 /* Generic sections: the design's title, description, columns and row action. */
 const CP3_G = {
-  applications: { title: "Applications", desc: "People asking to join the Club directly, not through Summer School.", cols: ["Applicant", "Wants", "Centre", "Applied", "Status"], act: "Review" },
-  approvals: { title: "Approvals", desc: "Decisions that need a second pair of eyes before anything changes.", cols: ["Request", "From", "Detail", "Waiting"], act: "Decide" },
-  requests: { title: "Member requests", desc: "Changes members and guardians have asked for.", cols: ["Member", "Asks to", "Detail", "Sent"], act: "Open" },
-  families: { title: "Families", desc: "Guardian accounts and the children they can see.", cols: ["Guardian", "Children", "Relationship", "Signed in", "Status"] },
-  idcards: { title: "ID cards", desc: "Cards for the gate scanners. A card can’t print until its photo is on file.", cols: ["Member", "Card", "Reason", "Photo", "Status"], act: "Print" },
-  mentorship: { title: "Mentorship", desc: "Who mentors whom. The instructor develops the skill; the mentor develops the person.", cols: ["Mentee", "Mentor", "Since", "Last contact", "Health"], act: "Open" },
-  behaviour: { title: "Behaviour", desc: "Early signals mentors should know about. Private to staff.", cols: ["Member", "Signal", "Kind", "Mentor", "Status"], act: "Open" },
-  conduct: { title: "Conduct & fines", desc: "Clear rules and transparent records. Guardians can see every line.", cols: ["Rule", "Amount", "Cap per term", "Applied this term", "Status"] },
-  curriculum: { title: "Curriculum", desc: "Courses taught across the four divisions. Chess is compulsory in all of them.", cols: ["Course", "Division", "Centres", "Members"] },
-  tournaments: { title: "Tournaments", desc: "Chess and inter-centre competitions.", cols: ["Tournament", "Date", "Centre", "Entrants", "Status"], act: "Open" },
-  desks: { title: "Check-in desks", desc: "Gate scanners at each centre.", cols: ["Desk", "On duty", "Scanned last session", "Last scan", "Status"] },
-  rota: { title: "Duty rota", desc: "Who staffs each desk and when.", cols: ["Date", "Centre", "Shift", "On duty", "Status"], act: "Fill" },
-  volunteers: { title: "Volunteers", desc: "People offering to help, and where their screening is.", cols: ["Volunteer", "Role", "Availability", "Screening", "Applied"], act: "Screen" },
-  staffact: { title: "Staff activity", desc: "Who did what in the Club portal this week.", cols: ["Staff", "Access", "Actions this week", "Most active in", "Last active"] },
+  applications: { title: "Applications", desc: "People asking to join the Club directly, not through Summer School.", cols: ["Applicant", "Wants", "Centre", "Applied", "Status"], act: "Review", empty: "No applications are waiting." },
+  approvals: { title: "Approvals", desc: "Decisions that need a second pair of eyes before anything changes.", cols: ["Request", "From", "Detail", "Waiting"], act: "Decide", empty: "Nothing is waiting for a decision." },
+  requests: { title: "Member requests", desc: "Changes members and guardians have asked for.", cols: ["Member", "Asks to", "Detail", "Sent"], act: "Open", empty: "No requests from members or guardians." },
+  families: { title: "Families", desc: "Guardian accounts and the children they can see.", cols: ["Guardian", "Children", "Relationship", "Signed in", "Status"], empty: "No guardian accounts yet." },
+  idcards: { title: "ID cards", desc: "Cards for the gate scanners. A card can’t print until its photo is on file.", cols: ["Member", "Card", "Reason", "Photo", "Status"], act: "Print", empty: "Every member has a printed card. Nothing to print." },
+  mentorship: { title: "Mentorship", desc: "Who mentors whom. The instructor develops the skill; the mentor develops the person.", cols: ["Mentee", "Mentor", "Since", "Last contact", "Health"], act: "Open", empty: "No mentoring pairs yet." },
+  behaviour: { title: "Behaviour", desc: "Early signals mentors should know about. Private to staff.", cols: ["Member", "Signal", "Kind", "Mentor", "Status"], act: "Open", empty: "No signals in the last two weeks." },
+  conduct: { title: "Conduct & fines", desc: "Clear rules and transparent records. Guardians can see every line.", cols: ["Rule", "Amount", "Cap per term", "Applied this term", "Status"], empty: "No conduct rules yet. Use Add a rule." },
+  curriculum: { title: "Curriculum", desc: "Courses taught across the four divisions. Chess is compulsory in all of them.", cols: ["Course", "Division", "Centres", "Members"], empty: "No courses yet. Use Add a course." },
+  tournaments: { title: "Tournaments", desc: "Chess and inter-centre competitions.", cols: ["Tournament", "Date", "Centre", "Entrants", "Status"], act: "Open", empty: "No tournaments yet. Start one with Host a tournament." },
+  desks: { title: "Check-in desks", desc: "Gate scanners at each centre.", cols: ["Desk", "On duty", "Scanned last session", "Last scan", "Status"], empty: "No check-in desks yet. Use Open a desk to set one up." },
+  rota: { title: "Duty rota", desc: "Who staffs each desk and when.", cols: ["Date", "Centre", "Shift", "On duty", "Status"], act: "Fill", empty: "No shifts on the rota. Use Add a shift." },
+  volunteers: { title: "Volunteers", desc: "People offering to help, and where their screening is.", cols: ["Volunteer", "Role", "Availability", "Screening", "Applied"], act: "Screen", empty: "No volunteer offers waiting." },
+  staffact: { title: "Staff activity", desc: "Who did what in the Club portal this week.", cols: ["Staff", "Access", "Actions this week", "Most active in", "Last active"], empty: "No staff activity this week." },
 };
 
 /* Row decisions. `act` is the server's (admin.clubp.decide); `do` is how the
@@ -49,6 +49,7 @@ const CP3_G = {
 const CP3_DECIDE = {
   applications: { acts: [
     { l: "Accept and add to roster", k: "primary", act: "accept", do: "remove", toast: "Added to the roster", block: r => r[4][1] === "Missing photo" ? "Ask for a photo before accepting. ID cards need one." : "" },
+    { l: "Add their photo", k: "ghost", act: "photo", toast: "", show: r => r[4][1] === "Missing photo" },
     { l: "Waitlist", k: "ghost", act: "waitlist", do: ["Waitlisted", "neutral"], toast: "Waitlisted", show: r => r[4][1] !== "Waitlisted" },
     { l: "Reject", k: "danger", act: "reject", do: "remove", toast: "Rejected" }] },
   approvals: { acts: [

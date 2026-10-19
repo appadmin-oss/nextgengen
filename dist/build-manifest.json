@@ -1,14 +1,14 @@
 {
-  "buildId": "8f518d4d19",
-  "builtAt": "2026-10-19T13:25:54.405Z",
+  "buildId": "b00737c46d",
+  "builtAt": "2026-10-19T14:33:31.827Z",
   "bundle": {
-    "file": "app.beed9ec360.min.js",
-    "bytes": 4505224,
-    "gzipBytes": 1232255,
+    "file": "app.f23af84ab8.min.js",
+    "bytes": 4508999,
+    "gzipBytes": 1233467,
     "files": 89
   },
   "assets": {
-    "app.min.js": "app.beed9ec360.min.js",
+    "app.min.js": "app.f23af84ab8.min.js",
     "styles.css": "styles.c7a142c47f.css",
     "styles-app.css": "styles-app.c4734a0d7d.css",
     "data.js": "data.29d3739700.js",
