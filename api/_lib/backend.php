@@ -768,6 +768,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'staff.assignments.save'        => 'staff_assignments_save',
             'staff.assignments.audience'    => 'staff_assignments_audience',
             'staff.assignments.draft'    => 'staff_assignments_draft',
+            'staff.assignments.auto'     => 'staff_assignments_auto',
             'staff.assignments.submissions' => 'staff_assignment_submissions',
             'staff.assignments.status'      => 'staff_assignments_status',
             'staff.assignments.remind'      => 'staff_assignments_remind',

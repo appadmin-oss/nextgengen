@@ -12093,3 +12093,13 @@ button.m9x-ev-sum { cursor: pointer; }
    order moves it without forking the design), and the simple view leaves money to the guardian. */
 .m9-app [data-area="today"] section[aria-labelledby="acc-h"] { order: 1; }
 .m9-app [data-view="simple"] section[aria-labelledby="acc-h"] { display: none; }
+
+/* Assignment desk: "lessons set their own homework" (assign-desk.jsx AsdAutoBar). */
+.asd-auto { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--asd-line); border-radius: var(--asd-r); background: var(--asd-s1); }
+.asd-auto.is-on { background: #eff4ff; border-color: #d3e0fd; }
+.asd-auto > i { font-size: 22px; color: var(--asd-ink-3); margin-top: 1px; }
+.asd-auto.is-on > i { color: #1d4ed8; }
+.asd-auto-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; color: var(--asd-ink-2); }
+.asd-auto-t b { color: var(--asd-ink); font-size: 14px; }
+.asd-auto-note { color: var(--asd-ink); font-weight: 600; }
+.asd-chip.is-lesson { background: #eff4ff; color: #1d4ed8; }

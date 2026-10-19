@@ -64,6 +64,7 @@ function AssignmentDesk({ api, title }) {
           <p>Set work for a course, link it to a lesson, see who handed in and who hasn't, and mark it.</p></div>}
         <button type="button" className="asd-btn is-primary" onClick={() => setView({ kind: "edit", row: null })}><i className="ph ph-plus" aria-hidden="true"/> New assignment</button>
       </div>
+      {data && data.auto ? <AsdAutoBar desk={desk} auto={data.auto} onChanged={load}/> : null}
       <div className="asd-tabs" role="tablist" aria-label="Show">
         {[["", "All"], ["published", "Open"], ["draft", "Drafts"], ["closed", "Closed"]].map(([k, l]) => (
           <button key={k || "all"} type="button" role="tab" aria-selected={tab === k} className={"asd-tab" + (tab === k ? " is-on" : "")} onClick={() => setTab(k)}>
@@ -87,7 +88,8 @@ function AssignmentDesk({ api, title }) {
                   <button type="button" className="asd-link" onClick={() => setView({ kind: "marks", id: a.assignmentId })}>{a.title}</button>
                   <span className="asd-meta">
                     <span className={"asd-chip is-" + a.status}>{ASD_STATUS[a.status] || a.status}</span>
-                    {a.track || "Whole Club"}{a.centre ? " · " + a.centre : ""}{a.proofLabel ? " · " + a.proofLabel : ""}{a.unitId ? " · from a lesson" : ""}{a.canEdit ? "" : " · read-only"}
+                    {a.fromLesson ? <span className="asd-chip is-lesson" title="Set by the lesson itself when its week began">Set by the lesson</span> : null}
+                    {a.track || "Whole Club"}{a.centre ? " · " + a.centre : ""}{a.proofLabel ? " · " + a.proofLabel : ""}{a.fromLesson ? "" : a.unitId ? " · from a lesson" : ""}{a.canEdit ? "" : " · read-only"}
                   </span>
                 </span>
                 <span role="cell" className={a.overdue && a.status === "published" ? "asd-due is-late" : "asd-due"}>{asdDate(a.dueAt)}</span>
@@ -96,6 +98,34 @@ function AssignmentDesk({ api, title }) {
               </div>))}
           </div>
         </>}
+    </div>
+  );
+}
+
+/* "Lessons set their own homework": what it does, the week of the term it is on,
+   and — for an admin in the Control Room — the switch. */
+function AsdAutoBar({ desk, auto, onChanged }) {
+  const [busy, setBusy] = React.useState(false);
+  const [note, setNote] = React.useState("");
+  const flip = async () => {
+    setBusy(true); setNote("");
+    try {
+      const r = await desk.auto(!auto.on);
+      setNote(r.on ? (r.issued ? r.issued + " assignment" + (r.issued === 1 ? "" : "s") + " set from this week’s lessons." : r.skipped === "no_term" ? "On. Set the term’s start date in Curriculum so lessons know their week." : "On. Nothing new to set this week.") : "Off. Lessons no longer set homework by themselves.");
+      onChanged && onChanged();
+    } catch (e) { setNote(asdErr(e)); }
+    setBusy(false);
+  };
+  return (
+    <div className={"asd-auto" + (auto.on ? " is-on" : "")}>
+      <i className={"ph " + (auto.on ? "ph-magic-wand" : "ph-pause-circle")} aria-hidden="true"/>
+      <div className="asd-auto-t">
+        <b>{auto.on ? "Lessons set their own homework" : "Lessons do not set homework by themselves"}</b>
+        <span>{auto.on ? "When a lesson’s week begins, its “This week’s assignment” goes to that course and year, due when the lesson is due." + (auto.week ? " This is week " + auto.week + " of the term." : " The term has no start date yet.")
+          : "Homework reaches members only when it is set here."}</span>
+        {note ? <span className="asd-auto-note" role="status">{note}</span> : null}
+      </div>
+      {auto.canSet ? <button type="button" className="asd-btn is-sm" role="switch" aria-checked={auto.on ? "true" : "false"} disabled={busy} aria-busy={busy ? "true" : undefined} onClick={flip}>{busy ? "Saving…" : auto.on ? "Turn off" : "Turn on"}</button> : null}
     </div>
   );
 }

@@ -20,6 +20,7 @@ if ($method === 'GET') {
         case 'grade':   $res = gs_call('staff.assignment.grade', $base + ['submissionId' => (string)($b['submissionId'] ?? ''), 'grade' => $b['grade'] ?? '', 'feedback' => (string)($b['feedback'] ?? ''), 'email' => !empty($b['email'])]); break;
         case 'return':  $res = gs_call('staff.assignment.return', $base + ['submissionId' => (string)($b['submissionId'] ?? ''), 'feedback' => (string)($b['feedback'] ?? '')]); break;
         case 'draft':   $res = gs_call('staff.assignments.draft', $base + ['unitId' => (string)($b['unitId'] ?? ''), 'ai' => !empty($b['ai'])]); break;
+        case 'auto':    $res = gs_call('staff.assignments.auto', $base + ['on' => !empty($b['on'])]); break;
         case 'suggest': $res = gs_call('staff.assignment.suggest', $base + ['submissionId' => (string)($b['submissionId'] ?? '')]); break;
         default: json_error('unknown_action', 400);
     }

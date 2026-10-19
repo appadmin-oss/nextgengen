@@ -1972,6 +1972,7 @@
       giveBack:    (submissionId, feedback) => request(path, { body: { action: 'return', submissionId, feedback } }),
       suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
       draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
+      auto:        (on) => request(path, { body: { action: 'auto', on: !!on }, timeout: 60000 }),
     };
   }
   function qs(obj) {

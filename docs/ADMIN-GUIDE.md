@@ -1072,6 +1072,20 @@ Use weeks 1–24 within each year.
 **Learning → Assignments** in the Control Room, and **Progress →
 Assignments** in the instructor portal. It is the same desk in both places.
 
+**Lessons set their own homework.** A published lesson with a "This week's
+assignment" section sets that assignment by itself when its week of the term
+begins: published to the lesson's course and **year**, at every centre, due
+when the lesson is due, with the lesson's success criteria as steps, and the
+members it is for are told. It happens once per lesson. A lesson that already
+has an assignment (one you set by hand) is left alone. On the desk these rows
+say **Set by the lesson**; edit, close or delete them like any other. The bar
+at the top of the desk says it is on and which week of the term it is; an
+admin in the Control Room can **Turn off** (and back on, which sets this
+week's straight away). It needs the term's start date (Curriculum → schedule).
+
+Homework from a lesson reaches the year that lesson is for: a Year 2 lesson's
+homework is not set for Year 1 members.
+
 - **New assignment**: choose the course (an admin can also choose the whole
   Club), optionally the centre, and optionally a lesson. **Draft from the
   lesson** fills in the lesson's own weekly assignment, its objectives and its

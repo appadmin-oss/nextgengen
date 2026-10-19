@@ -200,6 +200,8 @@ function web_cron_run(): void {
                 // for quiet hours go out here too.
                 if (web_cron_due('mentor_jobs', web_cron_cfg('mentor_jobs', 600)) && function_exists('mpa_tick')) web_cron_guard('mentor_jobs', fn() => mpa_tick());
                 // Cloudinary usage: read every six hours, alert as it climbs, pause uploads when full.
+                // Lessons set their own homework when their week begins (assignments.php), every six hours.
+                if (web_cron_due('assign_auto', web_cron_cfg('assign_auto', 21600)) && function_exists('assignment_auto_issue')) web_cron_guard('assign_auto', fn() => assignment_auto_issue());
                 // Bucket files nothing uses any more (a week old): deleted, daily (media-objects.php).
                 if (web_cron_due('media_sweep', web_cron_cfg('media_sweep', 86400)) && function_exists('media_obj_sweep')) web_cron_guard('media_sweep', fn() => media_obj_sweep());
                 if (web_cron_due('media_usage', web_cron_cfg('media_usage', MEDIA_REFRESH_SECONDS)) && function_exists('media_usage_refresh')) web_cron_guard('media_usage', fn() => media_usage_refresh());

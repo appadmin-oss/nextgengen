@@ -28547,6 +28547,37 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $inf = assignment_infer_from_unit(['course' => 'Business', 'title' => 'Google Sheets: Build a tracker', 'body' => "## Success criteria\n\n- Totals by formula\n- Header frozen\n\n## AI"]);
     chk('a lesson suggests its hand-in: a Sheets lesson hands in a link, with its success criteria as steps', $inf['proof'] === 'link' && $inf['steps'] === ['Totals by formula', 'Header frozen']);
     chk('…and a piano lesson a recording', assignment_infer_from_unit(['course' => 'Piano', 'title' => 'Scales', 'body' => ''])['proof'] === 'recording');
+    // ── Lessons set their own homework ──
+    $prevCur = setting_get('curriculum'); $prevAuto = setting_get(ASG_AUTO_KEY);
+    $today = attendance_today();
+    setting_set('curriculum', ['startDate' => gmdate('Y-m-d', strtotime($today . ' UTC') - 8 * 86400)]);   // the term is in its week 2
+    $pos = 0;
+    $unit = function ($id, $week, $level, $body) use ($now, &$pos) { db_insert('curriculum_units', ['unitId' => $id, 'course' => 'Coding', 'level' => $level, 'week' => $week, 'position' => 90 + (++$pos),
+        'title' => "Lesson $id", 'body' => $body, 'status' => 'published', 'version' => 1, 'createdAt' => $now]); };
+    $unit('CU-AUTO-1', 2, 'Year 1', "## Learn\n\nHeadings.\n\n## This week's assignment\n\nBuild a page about your street, with three headings.\n\n## Success criteria\n\n- Three headings\n- One photo");
+    $unit('CU-AUTO-2', 2, 'Year 2', "## This week's assignment\n\nBuild a two-page site with a menu.");
+    $unit('CU-AUTO-3', 2, 'Year 1', "## Learn\n\nNo homework this week.");
+    $unit('CU-AUTO-9', 9, 'Year 1', "## This week's assignment\n\nNot yet.");
+    setting_set(ASG_AUTO_KEY, ['on' => false]);
+    chk('lesson homework · off, nothing is set', (assignment_auto_issue($today)['skipped'] ?? '') === 'off' && !db_row("SELECT 1 FROM assignments WHERE unitId LIKE 'CU-AUTO-%'"));
+    setting_set(ASG_AUTO_KEY, ['on' => true]);
+    $iss = assignment_auto_issue($today);
+    $A1 = db_row("SELECT * FROM assignments WHERE unitId = 'CU-AUTO-1'");
+    chk('lesson homework · this week’s lessons with an assignment set it, published, from the lesson', $iss['week'] === 2 && $iss['issued'] === 2 && $A1 && $A1['status'] === 'published' && $A1['createdBy'] === 'curriculum'
+        && str_contains($A1['instructions'], 'three headings') && $A1['track'] === 'Coding');
+    chk('lesson homework · due when the lesson is due, with the success criteria as steps', $A1['dueAt'] === curriculum_due_date((string)curriculum_schedule()['startDate'], 2) && json_decode((string)$A1['steps'], true) === ['Three headings', 'One photo']);
+    chk('lesson homework · a lesson with no assignment, and a later week, set nothing', !db_row("SELECT 1 FROM assignments WHERE unitId IN ('CU-AUTO-3', 'CU-AUTO-9')"));
+    chk('lesson homework · once only: a second run sets nothing new', assignment_auto_issue($today)['issued'] === 0 && (int)db_row("SELECT COUNT(*) c FROM assignments WHERE unitId = 'CU-AUTO-1'")['c'] === 1);
+    $mine = array_column(assignment_list_for_member(['memberId' => 'ASG-T1'])['assignments'], 'unitId');
+    chk('lesson homework · a Year 1 Coding member sees the Year 1 lesson’s homework, not the Year 2 one', in_array('CU-AUTO-1', $mine, true) && !in_array('CU-AUTO-2', $mine, true));
+    db_upsert('member_state', ['memberId' => 'ASG-T2', 'stateKey' => CURR_YEAR_KEY, 'stateValue' => '2', 'updatedAt' => $now], ['memberId', 'stateKey'], ['stateValue' => '2']);
+    $t2 = in_array('CU-AUTO-2', array_column(assignment_list_for_member(['memberId' => 'ASG-T2'])['assignments'], 'unitId'), true);
+    chk('lesson homework · …and a Year 2 member sees the Year 2 one', $t2);
+    chk('lesson homework · the members it reaches are told', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ASG-T1' AND title LIKE '%Build a page about your street%'"));
+    chk('lesson homework · only an admin in the Control Room may switch it', (staff_assignments_auto($ins + ['on' => false])['error'] ?? '') === 'forbidden' && assignment_auto_on());
+    db_exec("DELETE FROM assignments WHERE unitId LIKE 'CU-AUTO-%'"); db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CU-AUTO-%'");
+    db_exec("DELETE FROM member_state WHERE memberId = 'ASG-T2' AND stateKey = ?", [CURR_YEAR_KEY]);
+    setting_set('curriculum', $prevCur); setting_set(ASG_AUTO_KEY, $prevAuto);
     foreach ([$lk, $rc, $ph] as $x) { db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$x]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$x]); }
     db_exec("DELETE FROM assignment_submissions WHERE assignmentId = ?", [$aid]); db_exec("DELETE FROM assignments WHERE assignmentId = ?", [$aid]);
     db_exec("DELETE FROM members WHERE memberId LIKE 'ASG-%'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-INS-26-ASG'"); db_exec("DELETE FROM notifications WHERE memberId LIKE 'ASG-%'");

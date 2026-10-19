@@ -1876,3 +1876,25 @@ rough. The colour now follows rules a change can be checked against:
 - **Never colour alone** (WCAG 1.4.1): states keep their icon and label.
 - **Age**: the simple view's tints are slightly stronger; teenagers get the calm
   ones (NN/g found teens prefer clean layouts and dislike loud graphics).
+
+## 2026-10-19 — Lessons set their own homework
+
+The curriculum's assignments reached members only if staff re-typed each
+lesson's "This week's assignment" on the desk; members saw the lesson (its
+member copy strips the assignment, by design) and an empty Assignments list.
+- `assignment_auto_issue()` (assignments.php): when a lesson's week of the term
+  begins (`assignment_term_week`, from `curriculum.startDate`), a published lesson
+  with that section is issued once (`createdBy = 'curriculum'`), due on
+  `curriculum_due_date`, built by `assignment_draft_from_unit()` — the same
+  lifting the desk's "Draft from the lesson" uses (one implementation). Skips a
+  lesson that already has an assignment, and one whose week is over. Runs on the
+  webcron (`assign_auto`, 6-hourly) and at most hourly from a page view
+  (`assignment_auto_tick`, a JSON stamp — settings are JSON objects; a bare
+  number reads back as null, which is also why the switch is `{on: bool}`).
+- **Year matching**: an assignment with a `unitId` reaches only members placed
+  in that lesson's year (`assignment_unit_year`, `assignment_member_year`); the
+  audience loads every placement in one query (`assignment_placed_years`).
+- `staff.assignments.auto` (admin, Control Room only) switches it; the desk's
+  `AsdAutoBar` shows it, rows carry `fromLesson` ("Set by the lesson").
+- Tests: PHP (off, issue, due date + steps, skips, once, year both ways, told,
+  who may switch) and assign-desk (the bar, off/on issues, the chip, the member).

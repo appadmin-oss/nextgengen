@@ -49,7 +49,7 @@ const ASG_BULK_MAX   = 500;
 /* ── Who gets it ─────────────────────────────────────────────────────────── */
 
 /** Does this assignment reach this member? $ctx: curriculum_course_ctx(), reused across a list. */
-function assignment_matches_member(array $a, array $member, string $currentSessionId, ?array &$ctx = null): bool {
+function assignment_matches_member(array $a, array $member, string $currentSessionId, ?array &$ctx = null, ?array $placed = null): bool {
     /* Compared the way the rest of the record is: an imported row says
      * "Active", or leaves it blank, and a centre is typed "egbeda " as often
      * as "Egbeda". Compared exactly, those members saw no assignments at all
@@ -60,11 +60,35 @@ function assignment_matches_member(array $a, array $member, string $currentSessi
     if ($c !== '' && $c !== 'All' && $c !== 'Both' && mb_strtolower($c) !== mb_strtolower(trim((string)($member['centre'] ?? '')))) return false;
     $sid = (string)($a['sessionId'] ?? '');
     if ($sid !== '' && $currentSessionId !== '' && $sid !== $currentSessionId) return false;
+    /* An assignment drawn from a lesson reaches the year that lesson is for:
+     * a Year 2 lesson's homework is not set for Year 1 (members see only their
+     * own year's lessons, so the homework follows the same rule). */
+    $uy = assignment_unit_year((string)($a['unitId'] ?? ''));
+    if ($uy > 0 && function_exists('curriculum_member_year') && assignment_member_year($member, $placed) !== $uy) return false;
     $track = trim((string)($a['track'] ?? ''));
     if ($track === '' || $track === 'All') return true;
     $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($member, $ctx) : [(string)($member['track'] ?? '')];
     foreach ($courses as $mc) if (mb_strtolower(trim($mc)) === mb_strtolower($track)) return true;
     return false;
+}
+
+/** The programme year of the lesson an assignment came from (0: none, or a year-less lesson). Cached per request. */
+function assignment_unit_year(string $unitId): int {
+    static $cache = [];
+    if ($unitId === '' || !function_exists('curriculum_level_year')) return 0;
+    if (!array_key_exists($unitId, $cache)) $cache[$unitId] = curriculum_level_year((string)(db_row('SELECT level FROM curriculum_units WHERE unitId = ?', [$unitId])['level'] ?? ''));
+    return $cache[$unitId];
+}
+/** Every member's placed programme year, in one query: a list's callers read it once, not once per member. */
+function assignment_placed_years(): array {
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    return $placed;
+}
+/** A member's placed year: from $placed when the caller loaded it, else read for this one member. */
+function assignment_member_year(array $m, ?array $placed = null): int {
+    $id = (string)($m['memberId'] ?? '');
+    return $placed !== null ? curriculum_member_year($m, $placed[$id] ?? 0)['year'] : curriculum_member_year($m)['year'];
 }
 
 function assignment_session_id(): string {
@@ -80,9 +104,10 @@ function assignment_audience(array $a): array {
     $c = trim((string)($a['centre'] ?? ''));
     if ($c !== '' && $c !== 'All' && $c !== 'Both') { $sql .= ' AND LOWER(TRIM(centre)) = ?'; $args[] = mb_strtolower($c); }
     $ctx = null; $out = [];
+    $placed = assignment_unit_year((string)($a['unitId'] ?? '')) > 0 ? assignment_placed_years() : null;
     foreach (db_all($sql, $args) as $m) {
         if (is_admin_role((string)($m['role'] ?? ''))) continue;   // staff are not set homework
-        if (assignment_matches_member($a, $m, $sid, $ctx)) $out[] = $m;
+        if (assignment_matches_member($a, $m, $sid, $ctx, $placed)) $out[] = $m;
     }
     return $out;
 }
@@ -234,6 +259,7 @@ function assignment_public_sub(?array $sub): ?array {
 }
 
 function assignment_list_for_member(array $p): array {
+    assignment_auto_tick();
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];
@@ -241,11 +267,12 @@ function assignment_list_for_member(array $p): array {
     $subs = [];
     foreach (db_all('SELECT * FROM assignment_submissions WHERE memberId = ?', [$memberId]) as $r) $subs[$r['assignmentId']] = $r;
     $now = time(); $ctx = null; $out = [];
+    $placed = [$memberId => (int)(db_row('SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = ?', [$memberId, CURR_YEAR_KEY])['stateValue'] ?? 0)];
     foreach (db_all("SELECT * FROM assignments WHERE status IN ('published','closed') ORDER BY COALESCE(NULLIF(dueAt,''), createdAt)") as $a) {
         $sub = $subs[$a['assignmentId']] ?? null;
         // A closed assignment stays on the list only for the people who handed something in.
         if ($a['status'] === 'closed' && !$sub) continue;
-        if (!$sub && !assignment_matches_member($a, $member, $sid, $ctx)) continue;
+        if (!$sub && !assignment_matches_member($a, $member, $sid, $ctx, $placed)) continue;
         $due = assignment_due_ts($a);
         $state = $sub ? ((string)$sub['status'] === 'graded' ? 'marked' : ((string)$sub['status'] === 'returned' ? 'returned' : 'submitted'))
                       : ($a['status'] === 'closed' ? 'closed' : ($due && $due < $now ? 'late' : 'todo'));
@@ -332,12 +359,14 @@ function assignment_row_public(array $a, array $counts, bool $canEdit): array {
         'unitId' => (string)($a['unitId'] ?? ''), 'remindedAt' => (string)($a['remindedAt'] ?? ''),
         'submissionCount' => (int)($k['c'] ?? 0), 'gradedCount' => (int)($k['g'] ?? 0), 'toMark' => (int)($k['m'] ?? 0),
         'canEdit' => $canEdit, 'overdue' => ($d = assignment_due_ts($a)) > 0 && $d < time(),
+        'fromLesson' => (string)($a['createdBy'] ?? '') === 'curriculum',
     ] + assignment_proof_public($a);
 }
 
 /** staff.assignments.list — what this person may see, newest first; with counts and their courses. */
 function staff_assignments_list(array $p): array {
     $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    assignment_auto_tick();
     $counts = [];
     foreach (db_all("SELECT assignmentId, COUNT(*) c, SUM(CASE WHEN status='graded' THEN 1 ELSE 0 END) g, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) m FROM assignment_submissions GROUP BY assignmentId") as $r) {
         $counts[$r['assignmentId']] = ['c' => (int)$r['c'], 'g' => (int)$r['g'], 'm' => (int)$r['m']];
@@ -369,6 +398,8 @@ function staff_assignments_list(array $p): array {
     return ['ok' => true, 'assignments' => $out, 'who' => $g['who'], 'courses' => array_values($courses), 'canWhole' => $g['canWhole'],
             'centres' => $g['centres'] ?? array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name'),
             'scopedCentres' => $g['centres'] !== null, 'units' => $units,
+            'auto' => ['on' => assignment_auto_on(), 'week' => assignment_term_week(function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d')),
+                       'canSet' => $g['who'] === 'admin' && !empty($p['viaAdmin'])],
             'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking'),
             'proofs' => array_map(fn($k) => ['id' => $k] + ASG_PROOF_META[$k], array_values(array_diff(ASG_PROOFS, ['either'])))];
 }
@@ -568,6 +599,103 @@ function staff_assignment_suggest(array $p): array {
  * with a capable model the instructions are rewritten as clear steps with
  * success criteria. It never writes.
  */
+/** A lesson's own "This week's assignment" section, or ''. */
+function assignment_unit_task(array $u): string {
+    return preg_match("/##\s*This week(?:'|’)s assignment\s*\n+(.+?)(?:\n##|\n>|$)/su", (string)$u['body'], $h) ? trim($h[1]) : '';
+}
+
+/** The assignment a lesson sets, lifted as written: its task, objectives and marking. No AI. */
+function assignment_draft_from_unit(array $u): array {
+    $task = assignment_unit_task($u);
+    $objectives = array_values(array_filter(array_map('strval', json_decode((string)($u['objectives'] ?? '[]'), true) ?: [])));
+    $rubric = (string)(db_row("SELECT rubric FROM curriculum_checks WHERE unitId = ? AND kind IN ('task','project','essay','code') AND rubric <> '' ORDER BY position LIMIT 1", [(string)$u['unitId']])['rubric'] ?? '');
+    $lines = [$task !== '' ? $task : ('Show what you learned in "' . $u['title'] . '".')];
+    if ($objectives) $lines[] = "\nBy the end you should be able to:\n" . implode("\n", array_map(fn($o) => '- ' . preg_replace('/^You will /i', '', $o), $objectives));
+    $lines[] = "\nHand in: what you made or practised, and one thing that is still hard.";
+    if ($rubric !== '') $lines[] = "\nHow it is marked: " . $rubric;
+    return ['title' => mb_substr('Week ' . (int)$u['week'] . ': ' . ($task !== '' ? preg_replace('/[.:].*$/su', '', $task) : $u['title']), 0, 120),
+            'instructions' => trim(implode("\n", $lines)), 'track' => (string)$u['course'], 'week' => (int)$u['week'], 'unitId' => (string)$u['unitId'],
+            'points' => 10, 'dueAt' => assignment_default_due()] + assignment_infer_from_unit($u);
+}
+
+/* ── Lessons set their own homework ─────────────────────────────────────────
+ *
+ * A published lesson that says "This week's assignment" sets it, by itself,
+ * when its week of the term begins: one published assignment per lesson, due
+ * when the lesson is due (curriculum_due_date), for the lesson's course and
+ * year, at every centre. Before this, a lesson's homework reached members only
+ * if a member of staff re-typed it on the desk, so a member saw the lesson and
+ * an empty Assignments list. A lesson that already has an assignment (set by
+ * hand, or issued before) is left alone; staff can edit, close or delete an
+ * issued one like any other. Off with the `assignments_auto` setting.
+ */
+const ASG_AUTO_KEY = 'assignments_auto';
+
+function assignment_auto_on(): bool {
+    $v = function_exists('setting_get') ? setting_get(ASG_AUTO_KEY) : null;
+    return is_array($v) && array_key_exists('on', $v) ? !empty($v['on']) : true;   // on unless an admin turned it off
+}
+
+/** The week of the term that $today falls in (1-based), or 0 when no term is set or it has not begun. */
+function assignment_term_week(string $today): int {
+    if (!function_exists('curriculum_schedule')) return 0;
+    $start = (string)curriculum_schedule()['startDate'];
+    if ($start === '' || $today < $start) return 0;
+    return intdiv((int)((strtotime($today . ' UTC') - strtotime($start . ' UTC')) / 86400), 7) + 1;
+}
+
+function assignment_auto_issue(?string $today = null): array {
+    if (!assignment_auto_on()) return ['ok' => true, 'issued' => 0, 'skipped' => 'off'];
+    $today = $today ?? (function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d'));
+    $week = assignment_term_week($today);
+    if ($week < 1) return ['ok' => true, 'issued' => 0, 'skipped' => 'no_term'];
+    $start = (string)curriculum_schedule()['startDate'];
+    $have = [];
+    foreach (db_all("SELECT unitId FROM assignments WHERE unitId <> ''") as $r) $have[(string)$r['unitId']] = true;
+    $issued = [];
+    // This week's lessons, and last week's if they were never issued (a term set up mid-week).
+    foreach (db_all("SELECT * FROM curriculum_units WHERE status = 'published' AND week IN (?, ?) ORDER BY week, course, position", [$week, max(1, $week - 1)]) as $u) {
+        if (isset($have[(string)$u['unitId']]) || assignment_unit_task($u) === '') continue;
+        $due = curriculum_due_date($start, (int)$u['week']);
+        if ($due !== '' && $due < $today) continue;   // its week is over: issuing it now would be late on arrival
+        $d = assignment_draft_from_unit($u);
+        $id = 'ASG-' . gmdate('Y') . '-' . rand_hex(4);
+        $now = now_iso();
+        db_insert('assignments', ['assignmentId' => $id, 'title' => $d['title'], 'instructions' => $d['instructions'], 'track' => (string)$u['course'], 'centre' => '',
+            'sessionId' => assignment_session_id(), 'dueAt' => $due ?: assignment_default_due(), 'points' => 10, 'proof' => in_array($d['proof'], ASG_PROOFS, true) ? $d['proof'] : 'any',
+            'attachmentUrl' => '', 'unitId' => (string)$u['unitId'], 'week' => (int)$u['week'], 'steps' => $d['steps'] ? json_encode($d['steps'], JSON_UNESCAPED_UNICODE) : '',
+            'status' => 'published', 'createdBy' => 'curriculum', 'createdAt' => $now, 'updatedAt' => $now]);
+        $have[(string)$u['unitId']] = true;
+        $issued[] = $id;
+        notify_assignment_published($id, false);
+    }
+    if ($issued) audit('assignment.auto_issue', 'curriculum', '', ['issued' => count($issued), 'week' => $week, 'ids' => $issued], '');
+    return ['ok' => true, 'issued' => count($issued), 'week' => $week, 'ids' => $issued];
+}
+
+/** staff.assignments.auto — an admin turns "lessons set their own homework" on or off; on issues this week's now. */
+function staff_assignments_auto(array $p): array {
+    $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
+    if ($g['who'] !== 'admin' || empty($p['viaAdmin'])) return ['ok' => false, 'error' => 'forbidden'];
+    $on = !empty($p['on']);
+    setting_set(ASG_AUTO_KEY, ['on' => $on], (string)$g['me']);
+    audit('assignment.auto_' . ($on ? 'on' : 'off'), (string)$g['me'], '', [], (string)($p['ip'] ?? ''));
+    $r = $on ? assignment_auto_issue() : ['issued' => 0];
+    return ['ok' => true, 'on' => $on, 'issued' => (int)($r['issued'] ?? 0), 'week' => (int)($r['week'] ?? 0), 'skipped' => (string)($r['skipped'] ?? '')];
+}
+
+/** Run the issue at most once an hour from a page view, so nobody waits for the nightly job. */
+function assignment_auto_tick(): void {
+    try {
+        if (!assignment_auto_on()) return;
+        // Settings are JSON objects (setting_get reads a bare number as nothing), so the stamp is one too.
+        $last = (int)((setting_get('assignments_auto_at') ?: [])['at'] ?? 0);
+        if ($last > time() - 3600) return;
+        setting_set('assignments_auto_at', ['at' => time()]);
+        assignment_auto_issue();
+    } catch (\Throwable $e) {}
+}
+
 function staff_assignments_draft(array $p): array {
     $g = assignment_staff_gate($p); if (!$g['ok']) return $g;
     $u = db_row("SELECT * FROM curriculum_units WHERE unitId = ? AND status = 'published'", [(string)($p['unitId'] ?? '')]);
@@ -575,17 +703,10 @@ function staff_assignments_draft(array $p): array {
     if ($g['courses'] !== null && !in_array(mb_strtolower((string)$u['course']), array_map('mb_strtolower', $g['courses']), true))
         return ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'That lesson is outside the courses you teach.'];
     $body = (string)$u['body'];
-    $task = '';
-    if (preg_match("/##\s*This week(?:'|’)s assignment\s*\n+(.+?)(?:\n##|\n>|$)/su", $body, $h)) $task = trim($h[1]);
+    $task = assignment_unit_task($u);
     $objectives = array_values(array_filter(array_map('strval', json_decode((string)($u['objectives'] ?? '[]'), true) ?: [])));
     $rubric = (string)(db_row("SELECT rubric FROM curriculum_checks WHERE unitId = ? AND kind IN ('task','project','essay','code') AND rubric <> '' ORDER BY position LIMIT 1", [(string)$u['unitId']])['rubric'] ?? '');
-    $lines = [$task !== '' ? $task : ('Show what you learned in "' . $u['title'] . '".')];
-    if ($objectives) $lines[] = "\nBy the end you should be able to:\n" . implode("\n", array_map(fn($o) => '- ' . preg_replace('/^You will /i', '', $o), $objectives));
-    $lines[] = "\nHand in: what you made or practised, and one thing that is still hard.";
-    if ($rubric !== '') $lines[] = "\nHow it is marked: " . $rubric;
-    $draft = ['title' => mb_substr('Week ' . (int)$u['week'] . ': ' . ($task !== '' ? preg_replace('/[.:].*$/su', '', $task) : $u['title']), 0, 120),
-              'instructions' => trim(implode("\n", $lines)), 'track' => (string)$u['course'], 'week' => (int)$u['week'], 'unitId' => (string)$u['unitId'],
-              'points' => 10, 'dueAt' => assignment_default_due()] + assignment_infer_from_unit($u);
+    $draft = assignment_draft_from_unit($u);
     $via = 'lesson';
     if (!empty($p['ai']) && function_exists('ai_enabled') && ai_enabled('marking')) {
         $r = ai_classify('You write homework for 10–17 year olds in the NGG Club, a Nigerian youth programme. From the lesson given, write ONE assignment that '

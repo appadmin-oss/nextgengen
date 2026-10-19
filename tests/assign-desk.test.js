@@ -218,6 +218,24 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
     await confirm(ap, 'Delete');
     await ap.waitForTimeout(1200);
     chk('delete is refused for work that was handed in — the row says why', q(`(int)db_row("SELECT COUNT(*) c FROM assignments")['c']`) === 1);
+    /* ── Lessons set their own homework ── */
+    php(`setting_set('curriculum', ['startDate' => gmdate('Y-m-d', strtotime(attendance_today() . ' UTC') - 8 * 86400)]);
+      db_insert('curriculum_units', ['unitId' => 'CU-AD-2', 'course' => 'Piano', 'level' => 'Year 1 · Foundation', 'week' => 2, 'position' => 2, 'title' => 'Minor scales', 'status' => 'published', 'version' => 1,
+        'body' => "## This week's assignment\\n\\nRecord the A minor scale, hands together.", 'createdAt' => now_iso()]); echo 'ok';`);
+    await ap.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(ap);
+    await ap.waitForSelector('.asd-auto', { timeout: 30000 }).catch(() => {});
+    chk('the desk says lessons set their own homework, and the week of the term', /Lessons set their own homework/.test(await ap.innerText('.asd-auto')) && /week 2 of the term/.test(await ap.innerText('.asd-auto')));
+    await ap.click('.asd-auto button[role="switch"]');   // off
+    await ap.waitForFunction(() => /do not set homework/.test(document.querySelector('.asd-auto')?.innerText || ''), null, { timeout: 15000 });
+    await ap.click('.asd-auto button[role="switch"]');   // on again: this week's lessons are set now
+    await ap.waitForFunction(() => /set from this week/.test(document.querySelector('.asd-auto')?.innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    const auto = q(`db_row("SELECT title, status, createdBy, track FROM assignments WHERE unitId = 'CU-AD-2'")`);
+    chk('turning it on sets this week’s lesson homework, published, for the lesson’s course', auto && auto.status === 'published' && auto.createdBy === 'curriculum' && auto.track === 'Piano');
+    chk('…once: the lesson that already had an assignment is left alone', +q(`(int)db_row("SELECT COUNT(*) c FROM assignments WHERE unitId = 'CU-AD-1'")['c']`) === 1);
+    await ap.waitForSelector('.asd-chip.is-lesson', { timeout: 15000 }).catch(() => {});
+    chk('the desk marks it as set by the lesson', /Set by the lesson/i.test(await ap.innerText('.asd-list')));
+    await mp.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mp); await mp.waitForTimeout(2500);
+    chk('the Piano member sees the lesson’s homework', (q(`assignment_list_for_member(['memberId' => 'NGG-AD-M1'])['assignments']`) || []).some(x => x.unitId === 'CU-AD-2'));
     if (process.env.ASD_SHOTS) { await ap.screenshot({ path: process.env.ASD_SHOTS + '/desk.png', fullPage: true }); await ip.screenshot({ path: process.env.ASD_SHOTS + '/instructor.png', fullPage: true }); }
     chk('no page errors on any screen', !ap.errs.length && !ip.errs.length && !mp.errs.length);
     if (ap.errs.length || ip.errs.length || mp.errs.length) console.error(ap.errs, ip.errs, mp.errs);
