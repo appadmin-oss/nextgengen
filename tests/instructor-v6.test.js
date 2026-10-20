@@ -79,6 +79,11 @@ async function as(memberId, admin, viewport) {
       $mk('NGG-IN-INS', 'Tunde Teacher');
       db_insert('volunteers', ['volunteerId' => 'VOL-IN-1', 'fullName' => 'Tunde Teacher', 'email' => 'tunde.teacher@class.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda',
         'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'memberId' => 'NGG-IN-INS', 'createdAt' => $now]);
+      // Tunde has taught here for a while: the Academy's "Start here" is behind him. Femi starts today.
+      foreach (academy_orientation_ids('instructor') as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-IN-INS', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
+      $mk('NGG-IN-NEW', 'Femi New');
+      db_insert('volunteers', ['volunteerId' => 'VOL-IN-2', 'fullName' => 'Femi New', 'email' => 'femi.new@class.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda',
+        'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'memberId' => 'NGG-IN-NEW', 'createdAt' => $now]);
       foreach ([1 => 'Zara Ibrahim', 2 => 'Kelechi Ike', 3 => 'Mariam Yusuf', 4 => 'Samuel Ade'] as $i => $n) $mk("NGG-IN-K$i", $n, 'member', ['track' => 'Coding', 'dob' => '2013-03-0' . $i]);
       db_insert('mentors', ['mentorId' => 'MEN-IN-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi@class.example', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => '', 'createdAt' => $now]);
       db_insert('mentor_assignments', ['mentorId' => 'MEN-IN-1', 'memberId' => 'NGG-IN-K1', 'status' => 'active', 'startedAt' => $now]);
@@ -190,6 +195,31 @@ async function as(memberId, admin, viewport) {
     chk('a child outside the class is refused by the server', q(`instructor_class_roll(['requesterId' => 'NGG-IN-INS', 'marks' => ['NGG-IN-ADM' => 'here']])['ok'] ?? false`) === true && !/NGG-IN-ADM/.test(sess().rollJson || ''));
     chk('no page errors (instructor)', ip.errs.length === 0);
     if (ip.errs.length) console.error(ip.errs.join('\n'));
+
+    // ── First login: a new instructor's portal is the Instructor Academy's "Start here" until it is passed ──
+    const nw = await as('NGG-IN-NEW', false);
+    await nw.goto(BASE + '/instructor/ngg', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(nw);
+    const navTxt = () => nw.$$eval('.i6-app nav', ns => ns.map(n => n.innerText).join(' '));
+    const locked = await nw.waitForFunction(() => /Start here: 0 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true).catch(() => false);
+    chk('a new instructor’s first login opens on the Instructor Academy’s “Start here”', locked && /Start here: using the portal/.test(await nw.innerText('main')));
+    chk('…the nav holds only the Academy and Support', !/Saturday|Progress|Students/.test(await navTxt()) && /Academy/.test(await navTxt()));
+    chk('…and the server refuses the class’s writes until then', q(`backend_dispatch('instructor.class.roll', ['requesterId' => 'NGG-IN-NEW'])['error'] ?? ''`) === 'orientation_required');
+    php(`foreach (array_slice(academy_orientation_ids('instructor'), 0, 5) as $m) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-IN-NEW', 'moduleId' => $m, 'score' => 100, 'passedAt' => now_iso()]);`);
+    await nw.reload({ waitUntil: 'domcontentloaded' });
+    await nw.waitForFunction(() => /Start here: 5 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 });
+    const lastI = q(`(function () { $id = academy_orientation_ids('instructor')[5]; foreach (academy_track('instructor')['modules'] as $m) if ($m['id'] === $id) return $m; })()`);
+    await nw.click('main button:has-text("Start ' + lastI.title + '")');
+    const cont = () => nw.click('main .ip6a-nav .ip6a-btn.is-primary');
+    for (let k = 0; k < lastI.lessons.length; k++) await cont();
+    const choose = async t => { await nw.click('main .ip6a-opt:has-text("' + t.replace(/"/g, '\\"') + '")'); await cont(); };
+    if (lastI.scenario) await choose(lastI.scenario.options.find(o => o.right).text);
+    for (const qq of lastI.quiz) await choose(qq.options[qq.answer]);
+    const passed = await nw.waitForFunction(() => /Passed · 100%/.test(document.body.innerText), null, { timeout: 20000 }).then(() => true).catch(() => false);
+    await nw.waitForFunction(() => /Saturday/.test(Array.from(document.querySelectorAll('.i6-app nav')).map(n => n.innerText).join(' ')), null, { timeout: 30000 }).catch(() => {});
+    chk('passing the last guide opens the whole portal', passed && /Saturday/.test(await navTxt()));
+    chk('no page errors (new instructor)', nw.errs.length === 0);
+    if (nw.errs.length) console.error(nw.errs.join('\n'));
 
     // ── An admin teaches both programmes: a chooser ──
     const ad = await as('NGG-IN-ADM', true);

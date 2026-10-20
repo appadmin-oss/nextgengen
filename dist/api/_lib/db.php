@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 163;
+const NGG_SCHEMA_TARGET = 164;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4915,6 +4915,30 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_gnotice_guardian ON guardian_notices(guardianId, createdAt);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_gnotice_ref ON guardian_notices(guardianId, kind, refId);
             ALTER TABLE club_announcements ADD COLUMN smsBody TEXT DEFAULT '';
+        ",
+        /* The Instructor Academy's record (domain/academy.php): passes and
+         * every attempt, keyed by track and person so another portal's
+         * Academy is a seed file, not a table. Mentors keep mentor_academy. */
+        164 => "
+            CREATE TABLE IF NOT EXISTS academy_passes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              track TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              moduleId TEXT NOT NULL,
+              score INTEGER DEFAULT 0,
+              passedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_acpass ON academy_passes(track, personId, moduleId);
+            CREATE TABLE IF NOT EXISTS academy_attempts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              track TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              moduleId TEXT NOT NULL,
+              score INTEGER DEFAULT 0,
+              passed INTEGER DEFAULT 0,
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_acatt ON academy_attempts(track, personId, moduleId, at);
         ",
     ];
 

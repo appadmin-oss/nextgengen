@@ -1928,3 +1928,62 @@ the boot and hub screens likewise. The member and instructor bottom bars also
 pad for `env(safe-area-inset-bottom)` (the viewport is `viewport-fit=cover`), as
 the mentor's already did. member-v9 asserts the bar is on screen, the page does
 not scroll past it, and the frame rule uses dvh.
+
+## 2026-10-19 — Club portal v3, Community v3, announcements, storage, Academies
+
+One session, from a design handoff (Club staff portal v3 and the Community) and
+the requests that followed it. Schema 160 → 164.
+
+**Club portal v3** (`/club-admin`, `domain/club-portal.php`, `src/modules/club3/`).
+The design compiled with `tools/dc-compile.js` (`cp3-view.jsx`, `sd3-view.jsx`,
+generated — never edit) and driven by `Cp3Portal`; ops `admin.clubp.*`, gate
+`club`, NGG centres only, scope per row. Migration 160 splits the centre lead
+(`centres.summerLeadVolunteerId`); 161 adds `club_announcements`,
+`club_checkin_state`, `conduct_rules`. `fees_post` honours a rule's on/off and
+its per-term cap (the last fine is cut to fit). The old `ClubManager`,
+`ClubPromote`, `ClubRoster` are gone; admin-bulk drives v3. The weekly brief
+has a deterministic fallback, so it never depends on AI.
+
+**Community v3** (`/community`, `domain/community-v3.php`, `src/modules/community3/`).
+Compiled from `docs/design/portals/community-v3.dc.html` (holes for real media,
+the PDF page, the arcade, the 2FA gate, journal, offline). Post kinds
+question/work/announcement/homework, the safety rules shared by client and
+server (`cm3_safety_rules`) with students' posts held and staff exempt, video
+chapters/captions/resume (`community_video_progress`, migration 162), code with
+live preview, moderation extras (edit & approve, message author, escalate →
+safeguarding case), median review time, safeguarding gated on the
+`safeguarding` cap. The classic app stays at `?classic=1`; community-page tests
+it there. dc-compile now keeps `@keyframes` and maps `onInput` to `onChange`.
+
+**Announcements** (follow-up request). App reaches guardians in their family
+account (`guardian_notices`, migration 163; "From the Club" on /family, badged
+on Today; one per guardian per announcement). Telegram is a channel and carries
+the whole message; a phone reached there is not also texted. Defaults are App +
+Email (+ Telegram when a bot is set). An SMS longer than two texts needs a
+short version that keeps every number/day/month/link/email (`cp_ann_facts`):
+AI writes one, it is checked, retried once naming what was lost, and refused
+rather than trusted; without a faithful version SMS is dropped for email and
+Telegram and the screen says so. Never truncated. Channels that reach nobody
+are refused at submit and approve.
+
+**File storage** is no longer "R2 or B2": `STORAGE_PROVIDERS` (service-keys.php)
+lists R2, B2, S3, Wasabi, Spaces, Supabase, IDrive e2 and any S3-compatible
+service, each with steps, address shapes and this site's CORS rule (the b2 CLI
+command for B2, whose console cannot allow PUT); the keys screen shows the
+guide and a per-provider Connect form; the CSP allows the new hosts.
+
+**The Academies' "Start here"** (`domain/academy.php`). Both staff Academies
+open with six portal guides (`orientation: true`) naming the right tool for each
+job. Until they are passed the portal opens on the Academy only and
+`academy_intercept` (at backend_dispatch's seam, after the approval and profile
+gates) refuses the portal's writes with `orientation_required`; Report a concern
+is never gated. Orientation is not clearance (still 13 required modules), so no
+mentor was un-cleared. Staff and by-hand clearance are exempt. Instructors have
+an Academy of their own now (`seeds/instructor-academy.json`, `academy_passes` /
+`academy_attempts`, migration 164, `instructor.academy[.result]`, `Ip6Academy`),
+and an instructor whose check isn't recorded yet is sent to the v6 portal (the
+Academy and Curriculum) instead of the old one. The PHP suite's fixtures run
+with `$GLOBALS['__academy_gate_off']`; its Academy block turns the gate on.
+
+Known and not fixed: `tests/responsive-staff` reads `ADMIN_SECTIONS`, which no
+longer exists, and so checks "Control Room (0 sections)".

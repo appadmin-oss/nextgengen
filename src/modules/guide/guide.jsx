@@ -28,6 +28,7 @@ const GUIDE_TOURS = {
     ["ph ph-users-three", "Each child’s page", "Tap a name to see their goals, scores, sessions, family contact and timeline. Log a one-to-one there after you meet."],
     ["ph ph-chat-circle-text", "Messages and families", "Reply to journal entries and check-ins, and send families short updates. Replies wait until 8am if you write late."],
     ["ph ph-shield-check", "Report a concern", "If a child tells you something worrying, use Report a concern. It goes only to the safeguarding officer, the same day."],
+    ["ph ph-graduation-cap", "Start here, in the Academy", "Your portal opens once you have taken the short guides under “Start here” in the Academy — about half an hour, one per part of the job. They show you the right tool for each thing you do."],
   ] },
   summer: { title: "Welcome to Summer School mentoring", steps: [
     ["ph ph-hand-waving", "Your participants", "This edition’s participants, and only them. NGG members are in a separate portal."],
@@ -41,6 +42,7 @@ const GUIDE_TOURS = {
     ["ph ph-clipboard-text", "Plan, teach, check", "Plan sets the goal and the hinge question from this week’s lesson. The exit ticket shows who got it."],
     ["ph ph-notebook", "File the log", "After class, file the session log. Mentors only see your remarks once it is filed."],
     ["ph ph-chart-line-up", "Skills and marking", "Move a child up a skill level with what you saw, and mark written answers waiting for you."],
+    ["ph ph-graduation-cap", "Start here, in the Academy", "Your portal opens once you have taken the short guides under “Start here” in the Instructor Academy — about twenty minutes, one per part of the job. Support and Report a concern work the whole time."],
   ] },
   family: { title: "Welcome to your family account", steps: [
     ["ph ph-hand-waving", "Your child at NGG", "See attendance, lessons, conduct, fees and what their mentor shares, for each child linked to you."],

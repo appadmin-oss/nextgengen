@@ -85,7 +85,7 @@ async function as(memberId, admin, viewport) {
       $mk('NGG-MV-MEN', 'Ngozi Eke');
       db_insert('mentors', ['mentorId' => 'MEN-MV-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@mv.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
         'programme' => 'ngg', 'memberId' => 'NGG-MV-MEN', 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
-      foreach (ms_required_modules() as $mod) db_insert('mentor_academy', ['mentorId' => 'MEN-MV-1', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
+      foreach (array_merge(ms_required_modules(), academy_orientation_ids('mentor')) as $mod) db_insert('mentor_academy', ['mentorId' => 'MEN-MV-1', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
       db_insert('mentor_policy', ['mentorId' => 'MEN-MV-1', 'policyVersion' => MS_POLICY_VERSION, 'signedName' => 'x', 'acceptedAt' => $now]);
       $a = backend_dispatch('admin.ms.match.approve', ['requesterId' => 'NGG-MV-ADM', 'memberId' => 'NGG-MV-K1', 'mentorIds' => ['MEN-MV-1']]);
       backend_dispatch('admin.ms.match.choose', ['requesterId' => 'NGG-MV-ADM', 'matchId' => $a['matchId'], 'mentorId' => 'MEN-MV-1', 'chosenBy' => 'mentee']);

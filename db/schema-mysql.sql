@@ -3891,3 +3891,23 @@ CREATE TABLE IF NOT EXISTS guardian_notices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE club_announcements ADD COLUMN smsBody TEXT;
 INSERT INTO schema_version (version) VALUES (163) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS academy_passes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  track VARCHAR(20) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  moduleId VARCHAR(20) NOT NULL,
+  score INT DEFAULT 0,
+  passedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_acpass (track, personId, moduleId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS academy_attempts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  track VARCHAR(20) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  moduleId VARCHAR(20) NOT NULL,
+  score INT DEFAULT 0,
+  passed TINYINT DEFAULT 0,
+  at VARCHAR(32) DEFAULT '',
+  KEY idx_acatt (track, personId, moduleId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (164) ON DUPLICATE KEY UPDATE version = version;

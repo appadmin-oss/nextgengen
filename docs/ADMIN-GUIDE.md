@@ -22,7 +22,11 @@ those five words to mean something else.
 8. [Summer School](#summer-school)
 9. [The NGG Club](#the-ngg-club)
    - [The curriculum](#the-curriculum)
+   - [The Club portal (/club-admin)](#the-club-portal-club-admin)
+   - [Club announcements](#club-announcements-club-portal--announcements)
    - [Mentorship: Anchor Pods](#mentorship-anchor-pods)
+   - ["Start here": the portal guides](#start-here-the-portal-guides-compulsory-on-first-login)
+   - [The Community (/community)](#the-community-community)
 10. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
 11. [ID cards](#id-cards)
 12. [How bulk actions behave](#how-bulk-actions-behave)
@@ -1258,6 +1262,48 @@ fines** (or Summer School → Policy).
 - Attendance rates count only scans on real programme days, so a visit on a
   day the centre does not meet never hides a missed session.
 
+### The Club portal (/club-admin)
+
+The NGG Club's own staff portal. It needs the **club** capability: admins and
+club admins see every NGG centre; a **centre lead** sees only their own centre,
+and every count, list, export and bulk action is held to it on the server.
+Summer School centres never appear here.
+
+- **Dashboard.** *Saturday readiness* (who is on the rota, desks, consents and
+  photos still missing), the things to clear before Saturday, and the **weekly
+  brief** — three short paragraphs (*Before Saturday*, *Slipping*, *This week*)
+  written by AI from the week's facts, or by a fixed template when AI isn't set
+  up, so it always works. *Send* emails it to the team.
+- **Ctrl K** (or the search box) opens the command palette: any section, any
+  member by name, any action.
+- **Members:** Roster (the student directory — search, filters, register, bulk
+  status/centre, messages), Promote (graduates into the Club; warns when a
+  guardian email is missing), Permissions (consents, recorded with how they were
+  given; Undo for a few seconds), Applications (accepting needs a photo),
+  Approvals, Member requests, Families, ID cards (Print opens the ID Card Studio).
+- **Care:** Check-ins (a low check-in can be sent to the child's mentor with
+  *Tell mentor*, or marked seen), Mentorship, Behaviour, **Conduct & fines**.
+- **Programme:** Timetable (clashes refused; export), Curriculum, Tournaments
+  (results come from the games played on the chess screen, so they are
+  read-only here).
+- **Comms:** Announcements (below). **Gate:** Check-in desks (a new desk's
+  password is shown once), Duty rota. **Team & centres:** Team, Centres,
+  Volunteers, Staff activity.
+- On a phone the bottom bar holds Home, Roster, Timetable, Check-ins and More.
+
+**Conduct & fines.** Each rule (late, absent, equipment …) has an amount, an
+on/off switch and an optional **cap per term**. A rule that is off posts
+nothing; a capped rule never takes a member past its cap in a term — the last
+fine is reduced to fit, and once the cap is reached nothing more is posted.
+Guardians see every line. Only admins and club admins change rules; a centre
+lead cannot.
+
+**Two leads per centre.** A centre has an **NGG lead** and, separately, a
+**Summer School lead** (Centres → the centre). The Club portal and NGG pages use
+the NGG lead; public Summer School pages use the Summer lead. When the two were
+split, a centre that runs Summer School started with its old lead in both
+places; change either one without touching the other.
+
 ### Club announcements (Club portal → Announcements)
 
 A coordinator or centre lead writes an announcement; an **admin approves** it
@@ -1409,6 +1455,37 @@ record: screening (record it in **Mentors**), all **13 Mentor Academy modules**
 safeguarding is renewed yearly), and the signed **NGGC Mentorship Commitment &
 Conduct Policy**.
 
+### "Start here": the portal guides, compulsory on first login
+
+Both staff Academies — the **Mentor Academy** (in `/mentor/ngg`) and the
+**Instructor Academy** (in `/instructor/ngg`, under Resources) — open with a
+group called **Start here: using the portal**: six short guides (three to five
+minutes each), one per part of the portal, each saying which tool does which
+job ("five families need an update → All mentees, filter, select, Family
+update"; "a child arrives after you closed the roll → reopen it"). Each ends
+with a few questions, checked by the server.
+
+- **Compulsory.** Until somebody has passed all six, their portal opens on the
+  Academy and nothing else: the menu holds only the Academy (and Support for
+  instructors), and the server refuses that portal's writes with "Finish
+  “Start here” first". **Report a concern always works.** When the last guide
+  is passed the whole portal opens at once.
+- **Not clearance.** The guides are separate from the 13 modules that clear a
+  mentor to be matched; finishing them doesn't clear anybody, and adding a guide
+  never un-clears anybody.
+- **Who is exempt.** Staff with admin access, and a mentor whose Academy you
+  recorded as completed in person (Control Room → Mentorship → Mentors → the
+  mentor → *Academy completed in person*).
+- **Instructors** also have *Retrieval, hinge questions and exit tickets*,
+  *Feedback that moves learning* and *Safeguarding for instructors* (renewed
+  yearly). An instructor whose safeguarding check isn't recorded yet still gets
+  the portal — the Academy and Curriculum — with the class empty and the reason
+  said.
+- Three tries at one module a day; then it says when to come back.
+- The content is `api/_lib/seeds/mentor-academy.json` and
+  `api/_lib/seeds/instructor-academy.json`. When a portal screen changes, change
+  its guide in the same commit.
+
 **The adaptive rules** run every six hours (and on *Run the rules now*). They
 write a nudge; nothing is ever sent to a child.
 
@@ -1490,6 +1567,38 @@ or sends it back with a note in the Mentor Portal's **School results** tab
 (`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
 missed are listed there too.
+
+## The Community (/community)
+
+The members' community runs on the redesigned app (**Community v3**). The
+previous app is still one link away at `/community?classic=1` while everyone
+moves over.
+
+- **Home** leads with the week's quote, announcements, homework due and
+  featured posts. Channels hold posts of five kinds: post, **question** (can be
+  marked answered by its author or staff), **work** (a project, with photos,
+  video, files or **code** that runs in a live preview), **announcement** and
+  **homework** (set by staff, with a due date and hand-ins). Staff announcements
+  and homework are pinned.
+- **Video** plays in the page with chapters and captions, and remembers where
+  each member stopped. Posted media is resized in the browser before upload.
+- **The safety check** runs as a member types, with the same rules on the
+  server: phone numbers, social-media links, unkind words (with a kinder way to
+  say it), shouting in capitals, and a reminder before posting video. A
+  **student's** post that trips a rule is **held** for a moderator, and they are
+  told why; staff posts are not held.
+- **Reports** from members carry a reason. A *safety* report opens a
+  safeguarding case straight away.
+- **Moderation** (Control Room → Community): the queue filters by kind and
+  reason and shows the median time to a decision. For each item: *Approve*,
+  *Edit & approve* (fix a phone number or a word and let it through),
+  *Message author*, *Hide*, or *Escalate* (hides it and opens a safeguarding
+  case with a severity). Every decision is timed and recorded.
+- **Safeguarding cases** are seen and changed only by people with the
+  **safeguarding** capability — not by everyone with *content*. A case has a
+  severity (low → urgent), a lead, a status and notes.
+- Members also have their **journal**, the arcade, drafts that survive a
+  closed tab, `/poll` and `/shrug`, image paste, and an offline notice.
 
 ## Member records: from optional to required
 

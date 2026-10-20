@@ -824,6 +824,9 @@
       /* The instructor's Today, and one Club class's Saturday in teaching order. */
       teachToday:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'today' }, o || {}))),
       teachClass:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'class' }, o || {}))),
+      /* The Instructor Academy: "Start here" (how to use this portal) and the training. */
+      teachAcademy:       () => request('/member/teaching.php?view=academy'),
+      teachAcademyResult: (moduleId, answers) => request('/member/teaching.php', { body: { action: 'academyResult', moduleId, answers } }),
       classRoll:   (slot, marks, close, awayRest) => request('/member/teaching.php', { body: Object.assign({ action: 'classRoll', marks: marks || {}, close: !!close, awayRest: !!awayRest }, slot || {}) }),
       classPlan:   (slot, plan) => request('/member/teaching.php', { body: Object.assign({ action: 'classPlan', plan }, slot || {}) }),
       classHinge:  (slot, h) => request('/member/teaching.php', { body: Object.assign({ action: 'classHinge' }, slot || {}, h || {}) }),

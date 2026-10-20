@@ -115,6 +115,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.team'           => 'member_mp_team',
             'member.mentor.academy'        => 'member_mp_academy',
             'member.mentor.academy.result' => 'member_mp_academy_result',
+            'instructor.academy'             => 'instructor_academy',
+            'instructor.academy.result'      => 'instructor_academy_result',
             'member.mentor.saturday'       => 'member_mp_saturday',
             'member.mentor.saturday.plan'  => 'member_mp_saturday_plan',
             'member.mentor.register'       => 'member_mp_register',
@@ -1005,6 +1007,8 @@ function backend_dispatch(string $op, array $args = []): array {
         if (function_exists('approval_intercept') && ($queued = approval_intercept($op, $args)) !== null) return $queued;
         // A member whose record is locked by the record drive may only complete it (domain/profile-drive.php).
         if (function_exists('profile_gate_intercept') && ($gated = profile_gate_intercept($op, $args)) !== null) return $gated;
+        // A staff portal's writes wait until its Academy's "Start here" is done (domain/academy.php).
+        if (function_exists('academy_intercept') && ($gated = academy_intercept($op, $args)) !== null) return $gated;
         /* Intake writes are idempotent when the client supplies a submissionId.
          *
          * Declared here, in one place, rather than wrapped inside each of the

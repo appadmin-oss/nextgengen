@@ -60,6 +60,8 @@ $CONFIG = [
     'debug' => true,
 ];
 $GLOBALS['CONFIG'] = $CONFIG;
+// The Academy's "Start here" gate (domain/academy.php): the fixtures below are experienced staff; the Academy block switches it back on.
+$GLOBALS['__academy_gate_off'] = true;
 function client_ip() { return '127.0.0.1'; }
 
 require $ROOT . '/_lib/response.php';
@@ -29323,6 +29325,68 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM community_safeguarding WHERE authorId LIKE 'CV3-%'");
     db_exec("DELETE FROM community_homework WHERE createdBy = 'CV3-T'"); db_exec("DELETE FROM community_homework_state WHERE memberId LIKE 'CV3-%'");
     db_exec("DELETE FROM community_channels WHERE channelId IN ('CH-CV3A','CH-CV3B')"); db_exec("DELETE FROM members WHERE memberId LIKE 'CV3-%'");
+})();
+
+/* The Academies' "Start here" (domain/academy.php): how to use the portal,
+ * compulsory before a mentor's or instructor's portal writes anything. */
+(function () {
+    $GLOBALS['__academy_gate_off'] = false;
+    $now = now_iso();
+    $right = static fn($m) => array_map(static fn($q) => (int)$q['answer'], $m['quiz']);
+    $byId = static function (string $track, string $id) { foreach (academy_track($track)['modules'] as $m) if ($m['id'] === $id) return $m; return null; };
+
+    foreach (['mentor', 'instructor'] as $t) {
+        $a = academy_track($t); $o = academy_orientation_ids($t);
+        chk("academy · $t: “Start here” is the first group, six portal guides", $a['groups'][0] === 'Start here: using the portal' && count($o) === 6
+            && count(array_filter($a['modules'], static fn($m) => !empty($m['orientation']) && $m['group'] === 0)) === 6);
+        chk("academy · $t: every module teaches and tests (lessons, a quiz, answers in range)", !array_filter($a['modules'], static fn($m) => !$m['lessons'] || !$m['quiz']
+            || array_filter($m['quiz'], static fn($q) => !isset($q['options'][(int)$q['answer']]))));
+    }
+    chk('academy · the portal guides are not clearance: still thirteen required modules, none of them a guide',
+        count(ms_required_modules()) === 13 && !array_intersect(academy_orientation_ids('mentor'), ms_required_modules()));
+
+    // Instructor: refused until "Start here" is done; reading and the Academy itself are not.
+    db_insert('volunteers', ['volunteerId' => 'VOL-ACI-1', 'fullName' => 'Ada Teach', 'email' => 'aci1@example.com', 'role' => 'instructor', 'status' => 'active',
+        'safeguarding' => 'cleared', 'centre' => 'Egbeda', 'courses' => json_encode(['Talking Drums']), 'createdAt' => $now]);
+    $ins = ['requesterId' => 'VOL-ACI-1', 'course' => 'Talking Drums'];
+    $r = backend_dispatch('instructor.session.save', $ins);
+    chk('academy · an instructor who hasn’t done “Start here” cannot file a session, and is told why and how long', ($r['error'] ?? '') === 'orientation_required'
+        && str_contains((string)$r['detail'], 'Start here') && $r['orientation']['done'] === 0 && $r['orientation']['mins'] > 0);
+    chk('academy · …nor mark skills or close a roll', (backend_dispatch('instructor.skills.mark', $ins)['error'] ?? '') === 'orientation_required'
+        && (backend_dispatch('instructor.class.roll', $ins)['error'] ?? '') === 'orientation_required');
+    $v = backend_dispatch('instructor.academy', ['requesterId' => 'VOL-ACI-1']);
+    chk('academy · the Instructor Academy opens, with no answer key in it', !empty($v['ok']) && count($v['modules']) >= 9 && $v['orientation']['ok'] === false
+        && !array_filter($v['modules'], static fn($m) => array_filter($m['quiz'], static fn($q) => isset($q['answer']))));
+    $i01 = $byId('instructor', 'i01'); $wrong = array_map(static fn($q) => ((int)$q['answer'] + 1) % count($q['options']), $i01['quiz']);
+    $w = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 'i01', 'answers' => $wrong]);
+    chk('academy · wrong answers are marked but not passed', !empty($w['ok']) && $w['passed'] === false && $w['score'] < 80);
+    chk('academy · every question must be answered', (backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 'i01', 'answers' => [0]])['error'] ?? '') === 'answer_all');
+    foreach (academy_orientation_ids('instructor') as $id) $last = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => $id, 'answers' => $right($byId('instructor', $id))]);
+    chk('academy · passing the six guides opens the portal', !empty($last['passed']) && $last['orientation']['ok'] === true
+        && (backend_dispatch('instructor.session.save', $ins)['error'] ?? '') !== 'orientation_required');
+    backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
+    backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
+    backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
+    chk('academy · the fourth try at a module in a day waits, with when', (($r = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => $right($byId('instructor', 't01'))]))['error'] ?? '') === 'retry_later' && !empty($r['retryAt']));
+
+    // Mentor: the same gate, from their mentor record; concern is never blocked; by-hand clearance exempts.
+    db_insert('members', ['memberId' => 'ACM-M', 'fullName' => 'Gate Mentor', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Quizville', 'dob' => '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'ACMT', 'fullName' => 'Gate Mentor', 'status' => 'active', 'centre' => 'Quizville', 'programme' => 'ngg', 'memberId' => 'ACM-M', 'createdAt' => $now]);
+    $r = backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X']);
+    chk('academy · a new mentor cannot log a session before “Start here”', ($r['error'] ?? '') === 'orientation_required');
+    chk('academy · …but Report a concern is never held back', (backend_dispatch('member.mentor.concern.create', ['requesterId' => 'ACM-M', 'subjectId' => 'X', 'category' => 'Other', 'body' => 'Something worried me today'])['error'] ?? '') !== 'orientation_required');
+    $mv = backend_dispatch('member.mentor.academy', ['requesterId' => 'ACM-M']);
+    chk('academy · the mentor Academy reports “Start here” as not done', ($mv['orientation']['ok'] ?? true) === false && $mv['orientation']['required'] === 6);
+    db_exec("UPDATE mentors SET academyClearedAt = ?, academyClearedBy = 'ADMIN' WHERE mentorId = 'ACMT'", [$now]);
+    chk('academy · an Academy recorded as done in person opens the portal', (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
+    db_exec("UPDATE mentors SET academyClearedAt = '' WHERE mentorId = 'ACMT'");
+    foreach (academy_orientation_ids('mentor') as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACM-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
+    chk('academy · a mentor who passes the six guides is let through', !empty($last['passed']) && ($last['orientation']['ok'] ?? false) === true
+        && (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
+
+    db_exec("DELETE FROM academy_passes WHERE personId = 'VOL-ACI-1'"); db_exec("DELETE FROM academy_attempts WHERE personId = 'VOL-ACI-1'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-ACI-1'");
+    db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM members WHERE memberId = 'ACM-M'");
+    $GLOBALS['__academy_gate_off'] = true;
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

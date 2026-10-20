@@ -527,3 +527,9 @@ Which programmes run at a centre: `ngg`, `summer`, or `ngg,summer` (the default,
 
 Setting `club_catalogue` — the NGG Club's own faculty → courses map (`club_catalogue()` in `domain/curriculum.php`), separate from Summer School's `academy_catalogue`. Materialised from the academy catalogue on first read, then edited only under Curriculum → Courses.
 
+
+## `guardian_notices`, `club_announcements.smsBody` (migration 163)
+A guardian's family-account inbox (`api/_lib/domain/family.php`). `noticeId` (`GN-` + 12 hex), `guardianId`, `kind` (`announcement`), `refId` (the announcement's `annId`), `title`, `body`, `fromName`, `createdAt`, `readAt` (`''` = unread). Unique on (`guardianId`, `kind`, `refId`), so a re-send is not a second notice. `club_announcements.smsBody`: the short SMS version of a long announcement — written or AI-shortened, checked by `cp_ann_lost_facts`, approved with the rest; `''` when the message fits a text or SMS is not used.
+
+## `academy_passes`, `academy_attempts` (migration 164)
+Progress in an Academy other than the mentors' (they keep `mentor_academy` / `mentor_academy_attempts`), keyed by `track` (`instructor`) and `personId` (the signed-in member id). `academy_passes`: `moduleId`, `score`, `passedAt`, unique on (`track`, `personId`, `moduleId`) — only passes are stored. `academy_attempts`: every try, `score`, `passed` 0/1, `at` — three a module a day. Content is `api/_lib/seeds/<track>-academy.json`; modules flagged `orientation` are the "Start here" guides that open the portal (`api/_lib/domain/academy.php`).

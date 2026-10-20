@@ -338,6 +338,8 @@ function mp_me(array $g, array $o): array {
         'role' => $g['mpRole'], 'centre' => (string)($m['centre'] ?? $g['mentor']['centre'] ?? ''),
         'lead' => $g['lead'] ? ['mentorId' => (string)$g['lead']['mentorId'], 'name' => (string)$g['lead']['fullName'], 'first' => mp_first((string)$g['lead']['fullName'])] : null,
         'academy' => $acad ? ['done' => (int)$acad['modulesDone'], 'required' => (int)$acad['modulesRequired']] : null,
+        // "Start here": until it is done the portal opens on the Academy (domain/academy.php).
+        'orientation' => function_exists('academy_mentor_orientation') ? academy_mentor_orientation($m) : ['ok' => true, 'required' => 0, 'done' => 0, 'mins' => 0, 'exempt' => true],
         'screened' => mp_screened($g), 'ngg' => ($g['role'] ?? '') !== 'mentor' || !$m || !function_exists('ms_mentor_is_ngg') || ms_mentor_is_ngg($m),
         'officer' => (function () use ($m, $g) { $o = function_exists('sg_officer') ? sg_officer((string)($m['centre'] ?? $g['mentor']['centre'] ?? '')) : null; return $o ? ['name' => (string)$o['fullName']] : null; })(),
         'centres' => mp_centres($g)['centres'], 'centreOnScreen' => mp_centres($g)['centre'],
@@ -1863,7 +1865,8 @@ function member_mp_academy(array $p): array {
         return $m + ['passedAt' => (string)($d['passedAt'] ?? ''), 'score' => $d ? (int)$d['score'] : null, 'renewBy' => $due];
     }, $a['modules']);
     $cl = function_exists('ms_clearance') && $g['mentorRow'] ? ms_clearance($g['mentorRow']) : [];
-    return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'byHand' => !empty($cl['academyByHand']), 'staff' => !empty($cl['staff'])];
+    return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'byHand' => !empty($cl['academyByHand']), 'staff' => !empty($cl['staff']),
+            'orientation' => function_exists('academy_mentor_orientation') ? academy_mentor_orientation($g['mentorRow']) : null];
 }
 /** academyResult — the server re-scores the answers and stores only a pass. */
 function member_mp_academy_result(array $p): array {
@@ -1879,7 +1882,7 @@ function member_mp_academy_result(array $p): array {
     $pass = $score >= (int)(ms_academy()['pass'] ?? 80);
     if (function_exists('ms_academy_attempt_log')) ms_academy_attempt_log((string)$g['mentorId'], (string)$mod['id'], $score, $pass);
     if ($pass) db_upsert('mentor_academy', ['mentorId' => (string)$g['mentorId'], 'moduleId' => $mod['id'], 'score' => $score, 'passedAt' => now_iso()], ['mentorId', 'moduleId'], ['score' => $score, 'passedAt' => now_iso()]);
-    return ['ok' => true, 'score' => $score, 'passed' => $pass];
+    return ['ok' => true, 'score' => $score, 'passed' => $pass, 'orientation' => function_exists('academy_mentor_orientation') ? academy_mentor_orientation($g['mentorRow']) : null];
 }
 
 

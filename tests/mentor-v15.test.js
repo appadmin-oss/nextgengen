@@ -81,7 +81,7 @@ async function as(memberId, admin, viewport) {
           'tracks' => 'tech', 'programme' => 'ngg', 'memberId' => "NGG-MS-M$i", 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
       }
       foreach ([1, 2] as $i) {   // Ngozi and Tunde are cleared; Bola has not done the Academy
-        foreach (ms_required_modules() as $mod) db_insert('mentor_academy', ['mentorId' => "MEN-MS-$i", 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
+        foreach (array_merge(ms_required_modules(), academy_orientation_ids('mentor')) as $mod) db_insert('mentor_academy', ['mentorId' => "MEN-MS-$i", 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
         db_insert('mentor_policy', ['mentorId' => "MEN-MS-$i", 'policyVersion' => MS_POLICY_VERSION, 'signedName' => 'x', 'acceptedAt' => $now]);
       }
       foreach ([1 => 'Mariam Yusuf', 2 => 'Daniel Okafor', 3 => 'Kemi Adewale'] as $i => $n) $mk("NGG-MS-K$i", $n);
@@ -272,6 +272,32 @@ async function as(memberId, admin, viewport) {
     chk('an NGG-only mentor is refused the Summer School portal', !/Peace Summer/.test(await mt.innerText('body')) && q(`backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MS-M1', 'programme' => 'summer'])['error'] ?? ''`) === 'not_this_programme');
     chk('no page errors (mentor)', mt.errs.length === 0);
     if (mt.errs.length) console.error(mt.errs.join('\n'));
+
+    // ── First login: a new mentor's portal opens on the Academy's "Start here", and stays there until it is passed ──
+    const nb = await as('NGG-MS-M3', false);
+    await nb.goto(BASE + '/mentor/ngg', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(nb);
+    const lockedIn = await nb.waitForFunction(() => /Start here: 0 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true).catch(() => false);
+    chk('a new mentor’s first login opens on the Academy’s “Start here”, saying how long it takes', lockedIn && /about \d+ minutes/.test(await nb.innerText('main')));
+    chk('…with the portal guides first, and the nav holding only the Academy', /Start here: using the portal/.test(await nb.innerText('main'))
+      && !(await nb.$$eval('.m15-app nav', ns => ns.map(n => n.innerText).join(' '))).match(/Mentees|Saturday|Messages/));
+    chk('…Report a concern still one press away', (await nb.$$('text=Report a concern')).length > 0);
+    chk('…and the server refuses the portal’s writes until then', q(`backend_dispatch('member.mentor.session.save', ['requesterId' => 'NGG-MS-M3', 'type' => 'one_to_one'])['error'] ?? ''`) === 'orientation_required');
+    php(`foreach (array_slice(academy_orientation_ids('mentor'), 0, 5) as $m) db_insert('mentor_academy', ['mentorId' => 'MEN-MS-3', 'moduleId' => $m, 'score' => 100, 'passedAt' => now_iso()]);`);
+    await nb.reload({ waitUntil: 'domcontentloaded' });
+    await nb.waitForFunction(() => /Start here: 5 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 });
+    const lastId = q(`academy_orientation_ids('mentor')[5]`); const lastMod = q(`(function () { foreach (ms_academy()['modules'] as $m) if ($m['id'] === '${lastId}') return $m; })()`);
+    await nb.evaluate(t => { const b = Array.from(document.querySelectorAll('main button')).find(x => x.parentElement && x.parentElement.innerText.includes(t)); b && b.click(); }, lastMod.title);
+    const cont = async () => { await nb.evaluate(() => { const b = Array.from(document.querySelectorAll('main button')).filter(x => /^(Continue|See result)$/.test(x.innerText.trim())).pop(); b && b.click(); }); await nb.waitForTimeout(150); };
+    for (let k = 0; k < lastMod.lessons.length; k++) await cont();
+    const choose = async txt => { await nb.evaluate(t => { const b = Array.from(document.querySelectorAll('main [role=radio]')).find(x => x.innerText.trim() === t); b && b.click(); }, txt); await nb.waitForTimeout(100); await cont(); };
+    if (lastMod.scenario) await choose(lastMod.scenario.options.find(o => o.right).text);
+    for (const qq of lastMod.quiz) await choose(qq.options[qq.answer]);
+    const opened = await nb.waitForFunction(() => /Passed · 100%/.test(document.body.innerText), null, { timeout: 20000 }).then(() => true).catch(() => false);
+    await nb.waitForFunction(() => /Mentees/.test(Array.from(document.querySelectorAll('.m15-app nav')).map(n => n.innerText).join(' ')), null, { timeout: 30000 }).catch(() => {});
+    chk('passing the last guide in the portal opens the whole portal', opened && /Mentees/.test(await nb.$$eval('.m15-app nav', ns => ns.map(n => n.innerText).join(' '))));
+    chk('no page errors (new mentor)', nb.errs.length === 0);
+    if (nb.errs.length) console.error(nb.errs.join('\n'));
 
     // ── An admin covers both programmes: a chooser, and the two never mix ──
     const ad = await as('NGG-MS-ADM', true);

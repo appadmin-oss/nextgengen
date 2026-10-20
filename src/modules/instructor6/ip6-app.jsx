@@ -49,6 +49,8 @@ const IP6_ERR = {
   aim_required: 'Write the lesson goal first.', question_and_two_options: 'The hinge needs a question and two options.', no_results: 'Mark at least one exit ticket.',
   summary_required: 'Write what you covered first.', roll_not_closed: 'Close the roll before filing the log.', evidence_required: 'Say what you saw for each child who moved up.',
   no_marks: 'Nothing to save.', not_found: 'That record wasn’t found.', network: 'You’re offline. It’s saved on this device and will send.', rate_limited: 'Too many in a row. Wait a minute.',
+  orientation_required: 'Finish “Start here” in the Academy first. It opens the rest of your portal.', answer_all: 'Answer every question first.',
+  retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
   choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.',
 };
 function ip6Err(e) { const c = (e && (e.code || e.message)) || 'failed'; return IP6_ERR[c] || ('Couldn’t save (' + c + ').'); }
@@ -59,6 +61,9 @@ function ip6Mins(a, b) { const t = x => { const m = /^(\d{1,2}):(\d{2})/.exec(St
 function ip6Date(iso, o) { const d = /^\d{4}-\d{2}-\d{2}/.test(String(iso || '')) ? new Date(String(iso).slice(0, 10) + 'T12:00:00Z') : null; return d ? d.toLocaleDateString('en-GB', Object.assign({ timeZone: 'UTC' }, o || { day: 'numeric', month: 'short' })) : ''; }
 function ip6Short(skill) { const w = String(skill || '').split(/\s+/); return w.length <= 3 ? skill : w.slice(0, 3).join(' '); }
 function ip6Slug(s) { return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+
+/* The screens open before "Start here" is done. */
+const IP6_ORI_OPEN = ['academy', 'support', 'report'];
 
 const ip6Api = {
   today: o => NGGApi.member.teachToday(o), cls: o => NGGApi.member.teachClass(o), hist: o => NGGApi.member.classHistory(o),
@@ -99,6 +104,8 @@ class Ip6Portal extends React.Component {
   }
   loadAll() {
     const a = this.slotArgs();
+    // The Instructor Academy first: it decides whether the rest of the portal is open yet.
+    this.load('acad', () => NGGApi.member.teachAcademy());
     return this.load('today', () => ip6Api.today(a)).then(t => {
       if (!t) return;
       const slot = { course: t.course, centre: t.centre };
@@ -107,8 +114,6 @@ class Ip6Portal extends React.Component {
       this.load('curr', () => ip6Api.curr()); this.load('res', () => ip6Api.results(Object.assign({ filter: 'all' }, slot)));
       this.load('form', () => NGGApi.public.formation('instructor'));
       this.load('me', () => NGGApi.auth.me());
-      // The Academy, for an instructor who is also on a mentor record (otherwise there is nothing to show).
-      this.load('acad', () => NGGApi.member.mentorView('academy').catch(() => ({ modules: [] })));
       this.load('comm', () => NGGApi.member.community.channels().then(c => { const ch = ((c && c.channels) || []).find(x => x.kind === 'course' && (x.name || '').toLowerCase() === String(t.course).toLowerCase()) || ((c && c.channels) || []).find(x => x.slug === ip6Slug(t.course));
         if (!ch) return { channel: null, posts: [], hw: null };
         return Promise.all([NGGApi.member.community.feed(ch.slug, 'latest', 0).catch(() => ({ posts: [] })), NGGApi.member.community.homework(ch.slug).catch(() => ({ homework: null }))]).then(([f, h]) => ({ channel: ch, posts: (f && f.posts) || [], hw: (h && h.homework) || null })); }));
@@ -125,8 +130,13 @@ class Ip6Portal extends React.Component {
 
   toast(text, undo) { clearTimeout(this._t); this.setState({ toast: { text, undo } }); this._t = setTimeout(() => this.setState({ toast: null }), 6500); }
   scrollTop() { const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0; }
-  goTop(scr) { this.setState({ scr, hist: [] }); this.scrollTop(); }
-  goTo(scr, extra) { const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
+  /* "Start here" (domain/academy.php): until the portal guides are passed the
+     portal opens on the Academy, with Support and Report a concern. */
+  oriLocked() { const a = this.state.d.acad; return !!(a && a.orientation && a.orientation.ok === false); }
+  oriGate(scr) { if (this.oriLocked() && !IP6_ORI_OPEN.includes(scr)) { this.toast('Finish “Start here” in the Academy first — it opens the rest of your portal.'); return 'academy'; } return scr; }
+  componentDidUpdate() { if (this.oriLocked() && !IP6_ORI_OPEN.includes(this.state.scr)) this.setState({ scr: 'academy', hist: [] }); }
+  goTop(scr) { scr = this.oriGate(scr); this.setState({ scr, hist: [] }); this.scrollTop(); }
+  goTo(scr, extra) { if (this.oriGate(scr) !== scr) return this.goTop('academy'); const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
   goBack() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'today', hist: h.slice(0, -1) }); this.scrollTop(); }
   loadStu(id) { if (id && !this.state.d['stu:' + id]) this.load('stu:' + id, () => ip6Api.stu(id)); }
 
@@ -171,7 +181,7 @@ class Ip6Portal extends React.Component {
   /* ── Loading and an honest error, inside <main> ─────────────────────── */
   slot() {
     const S = this.state; const need = ['today', 'cls'];
-    if (S.scr === 'assignments') return null;   // the desk loads its own data, and says so
+    if (S.scr === 'assignments' || S.scr === 'academy') return null;   // the desk and the Academy load their own data, and say so
     const e = need.map(k => S.er[k]).find(Boolean);
     if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
     if (need.some(k => S.ld[k] || !S.d[k])) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div></div>;
@@ -200,39 +210,45 @@ class Ip6Portal extends React.Component {
     const steps = loop.steps || {};
     const resAttn = ((D.res || {}).counts || {}).attn || 0;
     const cmNeed = this.cmNeedRows();
+    const oriL = this.oriLocked(); const acad = D.acad || {}; const ori = acad.orientation || {};
+    const acadTodo = (acad.modules || []).filter(m => (m.orientation || m.required) && !(m.passedAt && !(m.renewBy && m.renewBy < new Date().toISOString().slice(0, 10)))).length;
     const groups = [
       { h: '', items: [['today', 'Today', 'ph ph-sun-horizon', ''], ['roll', 'Class roll', 'ph ph-list-checks', rollClosed ? '' : String(L.filter(m => !m.rollMark && S.here[m.id] === undefined).length || '')]] },
       { h: 'This Saturday', items: [['plan', 'Plan', 'ph ph-path', steps.plan === 'done' ? '' : '1'], ['teach', 'Teach', 'ph ph-presentation-chart', ''], ['exit', 'Exit ticket', 'ph ph-ticket', steps.exit === 'done' ? '' : '1'], ['log', 'Session log', 'ph ph-notebook', steps.log === 'done' ? '' : '1']] },
       { h: 'Teach', items: [['analytics', 'Analytics', 'ph ph-chart-bar', ''], ['skills', 'Skills board', 'ph ph-ladder', ''], ['marking', 'Marking', 'ph ph-check-square', markLeft ? String(markLeft) : ''], ['assignments', 'Assignments', 'ph ph-clipboard-text', ''], ['curriculum', 'Curriculum', 'ph ph-books', '']] },
-      { h: 'People', items: [['students', 'Students', 'ph ph-users-three', ''], ['results', 'School results', 'ph ph-exam', resAttn ? String(resAttn) : ''], ['community', 'Community', 'ph ph-chats-circle', cmNeed.length ? String(cmNeed.length) : ''], ['support', 'Support', 'ph ph-lifebuoy', '']] },
+      { h: 'People', items: [['students', 'Students', 'ph ph-users-three', ''], ['results', 'School results', 'ph ph-exam', resAttn ? String(resAttn) : ''], ['community', 'Community', 'ph ph-chats-circle', cmNeed.length ? String(cmNeed.length) : ''], ['support', 'Support', 'ph ph-lifebuoy', ''], ['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : '']] },
     ];
+    if (oriL) groups.splice(0, groups.length, { h: 'Start here', items: [['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : ''], ['support', 'Support', 'ph ph-lifebuoy', '']] });
     const navCur = cur === 'student' ? 'students' : cur === 'report' ? 'support' : cur;
     const flat = [].concat(...groups.map(g => g.items));
     const tabIds = ['today', 'roll', 'teach', 'exit'];
     const moreList = flat.filter(x => !tabIds.includes(x[0])).map(([id, label, icon, badge]) => ({ label, icon, badge, hasBadge: !!badge, go: () => this.goTo(id) }));
     const bOf = id => (flat.find(z => z[0] === id) || [])[3] || '';
-    const AREAS = [['Today', 'ph ph-sun-horizon', [['today', 'Today']]], ['Saturday', 'ph ph-presentation-chart', [['roll', 'Roll'], ['plan', 'Plan'], ['teach', 'Teach'], ['exit', 'Exit ticket'], ['log', 'Session log']]], ['Progress', 'ph ph-chart-bar', [['marking', 'Marking'], ['assignments', 'Assignments'], ['skills', 'Skills board'], ['analytics', 'Analytics'], ['results', 'School results']]], ['Students', 'ph ph-users-three', [['students', 'Students'], ['community', 'Community']]], ['Resources', 'ph ph-books', [['curriculum', 'Curriculum'], ['support', 'Support']]]]
+    const AREAS = [['Today', 'ph ph-sun-horizon', [['today', 'Today']]], ['Saturday', 'ph ph-presentation-chart', [['roll', 'Roll'], ['plan', 'Plan'], ['teach', 'Teach'], ['exit', 'Exit ticket'], ['log', 'Session log']]], ['Progress', 'ph ph-chart-bar', [['marking', 'Marking'], ['assignments', 'Assignments'], ['skills', 'Skills board'], ['analytics', 'Analytics'], ['results', 'School results']]], ['Students', 'ph ph-users-three', [['students', 'Students'], ['community', 'Community']]], ['Resources', 'ph ph-books', [['curriculum', 'Curriculum'], ['support', 'Support'], ['academy', 'Academy']]]]
       .concat(this.props.onSummer ? [['Summer School', 'ph ph-sun', [['summer', 'Summer School']]]] : [])
       .map(([label, icon, kids]) => { const b = kids.filter(([id]) => bOf(id)).length; return { label, icon, kids, ids: kids.map(k => k[0]), b }; });
+    if (oriL) AREAS.splice(0, AREAS.length, { label: 'Start here', icon: 'ph ph-graduation-cap', kids: [['academy', 'Academy'], ['support', 'Support']], ids: ['academy', 'support'], b: acadTodo ? 1 : 0 });
     const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
     const IP6_HUE = { today: 'amber', roll: 'blue', marking: 'teal', students: 'violet', curriculum: 'slate', summer: 'amber' };
     const hue = a => PORTAL_HUE[IP6_HUE[a.ids[0]] || 'slate'], hueOn = hue(area);
     const inDetail = cur === 'student' || cur === 'report';
-    const toScr = id => { if (id === 'summer') return this.props.onSummer(); this.setState({ scr: id }); this.scrollTop(); };
+    const toScr = id => { if (id === 'summer') return this.props.onSummer(); this.setState({ scr: this.oriGate(id) }); this.scrollTop(); };
     const areaNav = [{ h: '', hasH: false, items: AREAS.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace('ph ', 'ph-fill ') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd' : 'none', fw: on ? 600 : 500, badge: a.b ? String(a.b) : '', hasBadge: !!a.b, go: () => a.ids[0] === 'summer' ? this.props.onSummer() : this.goTop(a.ids[0]) }; }) }];
     const areaTabbar = AREAS.filter(a => a.ids[0] !== 'summer').map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace('ph ', 'ph-fill ') : a.icon, cur: on ? 'page' : undefined, fw: on ? 600 : 500, fg: on ? hue(a) : '#626a6e', hasBadge: !!a.b, go: () => this.goTop(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const b = bOf(id); return { l, on: on ? 'true' : 'false', fg: on ? hueOn : '#5a5a60', fw: on ? 600 : 500, bar: on ? hueOn : 'transparent', badge: b, hasBadge: !!b, go: () => toScr(id) }; });
     const selM = L.find(m => m.id === S.sel) || L[0] || { id: '', name: '', first: '', age: null, mentor: '', sk: [], prev: [], initials: '' };
-    const titles = { results: 'School results', community: 'Community', plan: 'Plan the lesson', teach: 'Teach', exit: 'Exit ticket', analytics: 'Class analytics', today: wide ? 'Good morning' + (me.first ? ', ' + me.first : '') : 'Today', roll: 'Class roll', log: 'Session log', skills: 'Skills board', marking: 'Marking', assignments: 'Assignments', curriculum: 'Curriculum', students: 'Students', student: selM.name, support: 'Support', report: 'Report a concern', more: 'More' };
+    const titles = { results: 'School results', community: 'Community', plan: 'Plan the lesson', teach: 'Teach', exit: 'Exit ticket', analytics: 'Class analytics', today: wide ? 'Good morning' + (me.first ? ', ' + me.first : '') : 'Today', roll: 'Class roll', log: 'Session log', skills: 'Skills board', marking: 'Marking', assignments: 'Assignments', curriculum: 'Curriculum', students: 'Students', student: selM.name, support: 'Support', report: 'Report a concern', more: 'More', academy: 'Instructor Academy' };
     const subs = { assignments: 'Set work for your courses, see who handed in, and mark it', results: 'Term results and growth plans for your class', community: 'Opens in its own page · what’s waiting for you here', plan: (course.week ? 'Week ' + course.week + ' · ' : '') + course.unit + ' · built on what works in the classroom', teach: time + ' · ' + hereN + ' here',
       exit: 'Find out who learned it, then give one piece of feedback to the whole class', analytics: course.name + ' · ' + L.length + ' students', today: course.name + (course.week ? ' · week ' + course.week : '') + ' · ' + ip6Date(cls.date || today.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + time + (course.room ? ' · ' + course.room : ''),
       roll: hereN + ' of ' + L.length + ' here', log: course.name + (course.week ? ' · week ' + course.week : ''), skills: course.name + ' · ' + C.skills.length + ' skills · four levels, not scores', marking: markLeft + ' answers and ' + toGrade + ' homework to review',
-      curriculum: course.name, students: L.length + ' in your class', student: [selM.age !== null && selM.age !== undefined ? 'Age ' + selM.age : '', selM.mentor ? 'mentor ' + selM.mentor : 'no mentor yet'].filter(Boolean).join(' · '), support: 'You’re not on your own', report: 'Goes straight to the safeguarding officer', more: '' };
+      curriculum: course.name, students: L.length + ' in your class', student: [selM.age !== null && selM.age !== undefined ? 'Age ' + selM.age : '', selM.mentor ? 'mentor ' + selM.mentor : 'no mentor yet'].filter(Boolean).join(' · '), support: 'You’re not on your own', report: 'Goes straight to the safeguarding officer', more: '',
+      academy: oriL ? 'Start here: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' portal guides done' : 'How to use this portal, and the training for teaching at NGG' };
     const rem = S.timer ? Math.max(0, Math.ceil((S.timer - Date.now()) / 1000)) : 0;
     const out = {
-      rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
+      rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div>
+        : cur === 'academy' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><Ip6Academy data={D.acad} err={S.er.acad} reload={() => this.load('acad', () => NGGApi.member.teachAcademy())} toast={t => this.toast(t)}/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
       // The assignment desk follows the column, so the column keeps no bottom padding above it.
-      mainPad: narrow ? (cur === 'assignments' ? '16px 16px 0' : '16px 16px 28px') : (cur === 'assignments' ? '32px 40px 0' : '32px 40px 56px'), toastBottom: narrow ? '92px' : '24px',
+      mainPad: narrow ? (cur === 'assignments' || cur === 'academy' ? '16px 16px 0' : '16px 16px 28px') : (cur === 'assignments' || cur === 'academy' ? '32px 40px 0' : '32px 40px 56px'), toastBottom: narrow ? '92px' : '24px',
       me, course, navGroups: areaNav, tabbar: areaTabbar, moreList, areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.label, title: area.kids.length > 1 && !inDetail ? area.label : titles[cur], subtitle: subs[cur] || '', showBack: S.hist.length > 0, back: () => this.goBack(),
       goReport: () => this.goTo('report'), go: id => () => this.goTo(id),
       timerOn: !!S.timer, timerText: Math.floor(rem / 60) + ':' + String(rem % 60).padStart(2, '0'), stopTimer: () => set({ timer: null }),
@@ -352,7 +368,9 @@ class Ip6Portal extends React.Component {
     o.st = { ...selM, rem: (remarksAll[selM.id] || []).map(t => ({ t })), hasRem: (remarksAll[selM.id] || []).length > 0, pct: selM.att !== null && selM.att !== undefined ? selM.att + '%' : '—',
       skills: C.skills.map((t, k) => { const v = lvlOf(selM, k), p = selM.prev[k]; const has = v !== null && v !== undefined; return { t, v: has ? IP6_LEVELS[v] : 'Not marked', up: has && p !== null && v > p, upText: has && p !== null && v > p ? 'Up from ' + IP6_LEVELS[p].toLowerCase() : '', segs: [0, 1, 2, 3].map(x => ({ bg: has && x <= v ? IP6_LVCOL[v] : '#e6e5e0' })) }; }) };
     o.supportOpts = IP6_SUPPORT.map(t => ({ t, pick: () => this.support(t) }));
-    o.academy = (((D.acad || {}).modules) || []).filter(m => m.required).slice(0, 4).map(m => ({ m: m.title, s: m.passedAt ? 'Passed ' + m.score + '%' : 'Not started' }));
+    { const A = D.acad || {}, O = A.orientation || {};
+      o.academy = (O.required ? [{ m: 'Start here: using the portal', s: O.ok ? 'Done' : O.done + ' of ' + O.required + ' guides' }] : [])
+        .concat((A.modules || []).filter(m => m.required).slice(0, 3).map(m => ({ m: m.title, s: m.passedAt ? 'Passed ' + m.score + '%' : 'Not started' }))); }
     o.cats = IP6_CONCERN_KINDS.map(c => ({ c, on: S.cat === c, ring: S.cat === c ? '#0b0b0c' : '#d6d4cc', bw: S.cat === c ? '2px' : '1px', pick: () => set({ cat: c }) }));
     o.kidOpts = [{ id: '', name: 'Choose…' }].concat(L.map(m => ({ id: m.id, name: m.name })));
     o.cKid = S.cKid; o.onCKid = e => set({ cKid: e.target.value }); o.cText = S.cText; o.onCText = e => set({ cText: e.target.value });
@@ -610,7 +628,9 @@ function InstructorHome() {
   const [st, setSt] = React.useState({ state: 'loading', ngg: false, summer: false });
   const auth = (window.useAuth || (() => null))();
   const probe = React.useCallback(() => {
-    Promise.all([NGGApi.member.teachToday({}).then(() => true).catch(e => (e && (e.code === 'unauthorized')) ? 'auth' : false),
+    /* An instructor whose check isn't recorded yet still gets this portal: the
+       Academy and Curriculum are theirs now, and the class says plainly why it's empty. */
+    Promise.all([NGGApi.member.teachToday({}).then(() => true).catch(e => (e && (e.code === 'unauthorized')) ? 'auth' : (e && e.code === 'not_cleared') ? true : false),
                  NGGApi.member.mentorRoster('', '', 'summer').then(() => true).catch(() => false)])
       .then(([n, s]) => setSt({ state: n === 'auth' ? 'auth' : 'ready', ngg: n === true, summer: s === true }));
   }, []);
@@ -632,3 +652,92 @@ function InstructorHome() {
       <li><a href="/instructor/summer" onClick={e => { e.preventDefault(); go('summer'); }}><i className="ph ph-sun" aria-hidden="true"/><span><b>Summer School</b><span>This edition’s participants on your track.</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li>
     </ul></div></div>;
 }
+
+/* ── The Instructor Academy ─────────────────────────────────────────────────
+   "Start here: using the portal" — one short guide per area, naming the right
+   tool for each job — then the teaching and safeguarding modules. A module is
+   lessons, an optional "what would you do?" (which shows its answer: it
+   teaches), and questions whose key stays on the server; the score comes back
+   when the module is finished. Until "Start here" is passed, this is the
+   portal (Ip6Portal.oriLocked). */
+function Ip6Academy({ data, err, reload, toast }) {
+  const [mod, setMod] = React.useState(null);
+  const [step, setStep] = React.useState(0);
+  const [ans, setAns] = React.useState({});
+  const [res, setRes] = React.useState(null);
+  const topRef = React.useRef(null);
+  const today = new Date().toISOString().slice(0, 10);
+  const done = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
+  React.useEffect(() => { if (topRef.current) { topRef.current.focus(); } }, [mod, step]);
+  if (err) return <div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>The Academy couldn’t load ({(err.code || err.message || 'error')}).</span><button type="button" onClick={reload}>Retry</button></div>;
+  if (!data) return <div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading the Academy</span></div>;
+  const mods = data.modules || []; const ori = data.orientation || { ok: true };
+  const m = mods.find(x => x.id === mod);
+  if (!m) {
+    const n = mods.filter(done).length;
+    return (
+      <div className="ip6a">
+        {!ori.ok && <section className="ip6a-lock" role="note" aria-labelledby="ip6a-lock-h"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+          <div><h2 id="ip6a-lock-h">Start here: {ori.done} of {ori.required} portal guides done</h2>
+            <p>Before your portal opens, take the short guides under “Start here: using the portal” (about {ori.mins} minutes in all). Each shows you the right tool for one part of the job — Today, the roll and the plan, teaching and the exit ticket, the session log, marking and skills, your students, and what to do when you’re worried about a child. Support and Report a concern work the whole time.</p></div></section>}
+        <section className="ip6a-card ip6a-prog" aria-label="Your progress"><div><b>{n} of {mods.length} modules complete</b><span>{Math.round(n / Math.max(1, mods.length) * 100)}%</span></div>
+          <div className="ip6a-bar"><span style={{ width: (n / Math.max(1, mods.length) * 100) + '%' }}/></div></section>
+        {(data.groups || []).map((h, gi) => (
+          <section key={gi} className="ip6a-card" aria-labelledby={'ip6a-g' + gi}><h2 id={'ip6a-g' + gi} className="ip6a-h">{h}</h2>
+            <ul className="ip6a-list">{mods.filter(x => x.group === gi).map(x => { const d = done(x), lapsed = !!x.passedAt && !d;
+              return <li key={x.id}><i className={d ? 'ph-fill ph-check-circle is-done' : 'ph ph-circle'} aria-hidden="true"/>
+                <span className="ip6a-t"><b>{x.title}</b><span>{d ? 'Passed ' + x.score + '%' + (x.renewBy ? ' · renew by ' + ip6Date(x.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + x.mins + ' min' + (x.orientation ? ' · opens your portal' : x.required ? ' · required' : '') + (x.note && !x.orientation ? ' · ' + x.note : '')}</span></span>
+                <button type="button" className={'ip6a-btn' + (d ? '' : ' is-primary')} onClick={() => { setMod(x.id); setStep(0); setAns({}); setRes(null); }}>{d ? 'Review' : lapsed ? 'Renew' : 'Start'}<span className="m15x-sr"> {x.title}</span></button></li>; })}</ul></section>
+        ))}
+      </div>
+    );
+  }
+  const steps = (m.lessons || []).map(l => ({ k: 'lesson', h: l.h, b: l.body }));
+  if (m.scenario) steps.push({ k: 'scen', h: m.scenario.situation, opts: m.scenario.options.map(o => o.text), right: m.scenario.options.map(o => !!o.right), why: m.scenario.options.map(o => o.why) });
+  (m.quiz || []).forEach(q => steps.push({ k: 'quiz', h: q.q, opts: q.options }));
+  steps.push({ k: 'result' });
+  const i = Math.min(step, steps.length - 1), st = steps[i], a = ans[i];
+  const qIdx = steps.map((s, j) => s.k === 'quiz' ? j : -1).filter(j => j >= 0);
+  const choice = st.k === 'scen' || st.k === 'quiz', answered = a !== undefined;
+  const pass = !!(res && res.passed), pending = !!(res && res.pending);
+  const to = n => {
+    if (steps[n] && steps[n].k === 'result') {
+      setRes({ pending: true });
+      const wasLocked = !ori.ok;
+      NGGApi.member.teachAcademyResult(m.id, qIdx.map(j => ans[j])).then(r => { setRes(r); if (r.passed) { reload(); if (wasLocked && r.orientation && r.orientation.ok) toast('“Start here” is done. Your whole portal is open.'); } })
+        .catch(e => setRes({ error: ip6Err(e) }));
+    }
+    setStep(n);
+  };
+  return (
+    <div className="ip6a">
+      <button type="button" className="ip6a-back" onClick={() => setMod(null)}><i className="ph ph-arrow-left" aria-hidden="true"/>Academy</button>
+      <section className="ip6a-card ip6a-player" aria-labelledby="ip6a-mh">
+        <div className="ip6a-meta"><span>{st.k === 'result' ? 'Finished' : 'Step ' + (i + 1) + ' of ' + (steps.length - 1)}</span><span>{m.mins} min</span></div>
+        <div className="ip6a-bar"><span style={{ width: (i / Math.max(1, steps.length - 1) * 100) + '%' }}/></div>
+        <p className="ip6a-kind">{m.title} · {st.k === 'lesson' ? 'Lesson ' + (i + 1) + ' of ' + (m.lessons || []).length : st.k === 'scen' ? 'What would you do?' : st.k === 'quiz' ? 'Question ' + (qIdx.indexOf(i) + 1) + ' of ' + qIdx.length : 'Result'}</p>
+        {st.k !== 'result' ? <>
+          <h2 id="ip6a-mh" className="ip6a-mh" tabIndex={-1} ref={topRef}>{st.h}</h2>
+          {st.k === 'lesson' && <p className="ip6a-body">{st.b}</p>}
+          {choice && <div className="ip6a-opts" role="radiogroup" aria-labelledby="ip6a-mh">{st.opts.map((l, j) => { const on = a === j; const scen = st.k === 'scen'; const ok = scen && answered && st.right[j], bad = scen && answered && on && !st.right[j];
+            return <button key={j} type="button" role="radio" aria-checked={on} className={'ip6a-opt' + (on ? ' is-on' : '') + (ok ? ' is-ok' : '') + (bad ? ' is-bad' : '')}
+              onClick={() => { if (scen && answered) return; setAns(Object.assign({}, ans, { [i]: j })); }}>
+              <i className={ok ? 'ph-fill ph-check-circle' : bad ? 'ph-fill ph-x-circle' : on ? 'ph-fill ph-radio-button' : 'ph ph-circle'} aria-hidden="true"/>{l}</button>; })}</div>}
+          {choice && answered && <p className={'ip6a-fb' + (st.k === 'scen' ? (st.right[a] ? ' is-ok' : ' is-warn') : '')} role="status">
+            <b>{st.k === 'scen' ? (st.right[a] ? 'Right. ' : 'Not quite. ') : 'Answer recorded. '}</b>{st.k === 'scen' ? st.why[a] : 'You can change it before you go on. Your score is worked out when you finish.'}</p>}
+        </> : <div className="ip6a-res" role="status" aria-live="polite">
+          <i className={pending ? 'ph ph-hourglass' : pass ? 'ph-fill ph-seal-check is-done' : 'ph ph-arrow-counter-clockwise'} aria-hidden="true"/>
+          <h2 id="ip6a-mh" className="ip6a-mh" tabIndex={-1} ref={topRef}>{pending ? 'Checking your answers…' : res && res.error ? 'Not saved' : pass ? 'Passed · ' + res.score + '%' : (res ? res.score : 0) + '% · the pass mark is ' + (data.pass || 80) + '%'}</h2>
+          <p className="ip6a-body">{pending ? '' : res && res.error ? res.error : pass ? 'Saved to your record.' + (m.renewDays ? ' You’ll be reminded before it needs renewing.' : '') : 'Read the lessons again, then retake the questions. Nothing is recorded until you pass.'}</p></div>}
+        <div className="ip6a-nav">
+          {i > 0 && st.k !== 'result' && <button type="button" className="ip6a-btn" onClick={() => to(i - 1)}>Back</button>}
+          <span className="ip6a-grow"/>
+          <button type="button" className="ip6a-btn is-primary" aria-disabled={(choice && !answered) || pending}
+            onClick={() => { if (pending) return; if (st.k === 'result') { if (pass || (res && res.error)) setMod(null); else { setStep(0); setAns({}); setRes(null); } return; } if (choice && !answered) return toast('Choose an answer first'); to(i + 1); }}>
+            {st.k === 'result' ? (pass || (res && res.error) ? 'Back to Academy' : 'Try again') : steps[i + 1].k === 'result' ? 'See result' : 'Continue'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
