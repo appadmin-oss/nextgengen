@@ -197,10 +197,12 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await ap.waitForFunction(() => !document.querySelector('.admin-table tbody tr') || /Nobody is waiting/.test(document.body.innerText), null, { timeout: 15000 });
     chk('approving connects the parent', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'active');
     await ap.goto(BASE + '/nextadmin?s=requests', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ap);   // dev mode compiles every file in the browser: the boot budget, never a bare timeout (CLAUDE.md §1)
     await ap.waitForSelector('text=From their family account', { timeout: 40000 });
     chk('the desk sees the notice came from the family account', true);
 
     await fp.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(fp);
     await fp.waitForSelector('.fam-tab', { timeout: 40000 });
     chk('…and the parent now has both children', (await fp.$$('.fam-tab')).length === 2);
 
@@ -209,6 +211,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
          db_insert('guardian_notices', ['noticeId' => 'GN-FU1', 'guardianId' => $g['guardianId'], 'kind' => 'announcement', 'refId' => 'ANN-FU1',
            'title' => 'Kit day on Saturday', 'body' => 'Bring trainers and water.', 'fromName' => 'Ada Admin', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z'), 'readAt' => '']);`);
     await fp.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(fp);
     await fp.waitForSelector('.fx-nav-item', { timeout: 40000 });
     const badged = await fp.waitForFunction(() => /1 new from the Club/.test(document.querySelector('.fx-nav')?.textContent || ''), null, { timeout: 15000 }).then(() => true).catch(() => false);
     if (!badged) console.error('      nav: ' + JSON.stringify(await fp.$eval('.fx-nav', el => el.textContent).catch(() => 'none')));
@@ -233,6 +236,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await lp.click('button:has-text("Email me a code")');
     await lp.waitForSelector('#fam-otp');
     await lp.goto(BASE + '/family?fsignin=' + latestToken(), { waitUntil: 'domcontentloaded' });
+    await waitForBoot(lp);
     await lp.waitForSelector('.fam-tab', { timeout: 40000 });
     chk('the emailed link signs in on a phone', (await lp.$$('.fam-tab')).length === 2);
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));

@@ -13741,3 +13741,13 @@ button.m9x-ev-sum { cursor: pointer; }
 .ip6a-nav { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .ip6a-grow { flex: 1; }
 
+/* The Control Room on a touch screen (tests/responsive-staff.test.js): every
+   standalone control clears the 44px touch floor. The dense desktop sizes
+   (34–40px) stay for a mouse; min-height wins over the fixed heights above,
+   so no rule here has to fight them. */
+@media (pointer: coarse) {
+  .cr-btn, .cr-topbtn, .cr-searchbtn, .cr-switcher, .cr-nav-item, .cr-tab, .cr-ptab, .cr-skip { min-height: 44px; }
+  .cr-iconbtn, .cr-avatar { min-width: 44px; min-height: 44px; }
+  .asd-btn, .asd-tab { min-height: 44px; }
+}
+

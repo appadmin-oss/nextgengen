@@ -1987,3 +1987,23 @@ with `$GLOBALS['__academy_gate_off']`; its Academy block turns the gate on.
 
 Known and not fixed: `tests/responsive-staff` reads `ADMIN_SECTIONS`, which no
 longer exists, and so checks "Control Room (0 sections)".
+
+## 2026-10-20 — responsive-staff measures the Control Room again
+
+`tests/responsive-staff.test.js` read `ADMIN_SECTIONS` out of page-admin.jsx and
+mounted `AdminPage`; both left when the Control Room moved to
+`src/modules/control/`, so it swept "0 sections" and passed. It now reads the
+live `CR_PAGES` registry from the built bundle (fewer than 30 tabs is a
+failure, not a pass), mounts `ControlRoomPage` and drives
+`__adminSection(page, tab)` through all 71 tabs, and also sweeps the v15 mentor
+portal, the v6 instructor portal and the family account. Findings are grouped
+by control as well as by page.
+
+What it found, fixed under `@media (pointer: coarse)` only (mouse sizes
+unchanged): the Control Room's buttons, page and sub-tabs, top-bar controls,
+nav items, icon buttons and avatar, the assignment desk's buttons and tabs, and
+the family account's links, buttons and brand mark were 30–40px tall on touch
+screens; all now clear 44px.
+
+family-ui waited a bare 40s after page loads in dev mode; the Babel boot now
+takes longer than that, so every load waits on `waitForBoot` (CLAUDE.md §1).

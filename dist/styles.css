@@ -8514,3 +8514,10 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .stt-opt.is-ok { border-color: var(--stt-ok); background: #eef7f0; color: #14501f; font-weight: 600; }
 .stt-opt.is-bad { border-color: var(--stt-bad); background: #fdeeea; color: #7a2410; }
 .stt-opt:disabled { cursor: default; }
+
+/* The family account on a touch screen: its links, buttons and brand mark
+   clear the 44px touch floor (tests/responsive-staff.test.js). */
+@media (pointer: coarse) {
+  .fam-link, .fam-btn, .fam-brand { min-height: 44px; }
+}
+
