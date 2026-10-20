@@ -10012,69 +10012,100 @@ function VolunteerNggMove({ v, onDone }) {
   );
 }
 
-function VolunteerEditor({ v, onSaved, onDelete }) {
-  const centreOpts = useCentreOptions();
-  const [f, setF] = React.useState({
-    fullName: v.fullName || "", firstName: v.firstName || "", lastName: v.lastName || "",
-    email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
-    centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
-    visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
-    dob: v.dob || "", programme: v.programme || "summer",
-  });
-  const [busy, setBusy] = React.useState(false);
-  const set = (k, val) => setF(x => ({ ...x, [k]: val }));
-  const save = async () => {
-    if ((f.firstName.trim() + f.lastName.trim()).length < 2) { toast.error("Enter a first and last name."); return; }
-    setBusy(true);
-    try {
-      await NGGApi.admin.volunteers.update(v.volunteerId, {
-        ...f, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean), visibilityConsent: f.visibilityConsent ? 1 : 0,
+/* Edit a volunteer's details — the Control Room's own form (ctx.form), the
+   same layer every other record in the Control Room edits through.
+
+   What used to go wrong, each now closed:
+   · it sent EVERY field back, so anything the roster row did not carry was
+     written over: the photo (the list had no photoUrl) was wiped on every
+     save. Now only the fields that changed are sent.
+   · it required a first and last name even on a record that only ever had a
+     full name, and kept three name boxes that could disagree. Now: first and
+     last name, split from the full name when the record has only that, and
+     the server rebuilds the full name from them.
+   · an empty email was refused, so a volunteer who signs in with an ID card
+     (and has no email) could not be edited at all. Blank is allowed now.
+   · a blank programme was sent as "summer", quietly moving NGG volunteers
+     (and their card's expiry) to Summer School. Programme is a field now. */
+const VOL_ROLE_OPTS = [["mentor", "Mentor"], ["instructor", "Instructor"], ["admin", "Admin / Ops"]];
+const VOL_PROG_OPTS = [["summer", "Summer School"], ["ngg", "NGG Club"], ["both", "Both"]];
+const VOL_STATUS_OPTS = [["active", "Active"], ["inactive", "Inactive"], ["archived", "Archived"]];
+const VOL_ERR_FIELD = { bad_email: ["email", "That email isn’t valid."], bad_dob: ["dob", "That date of birth isn’t a real date in the past."],
+  bad_name: ["firstName", "Enter a first and last name."], bad_role: ["role", "Pick a role."], bad_programme: ["programme", "Pick a programme."],
+  out_of_scope: ["centre", "That centre is outside the centres you manage."] };
+function volunteerNameParts(v) {
+  const first = String(v.firstName || "").trim(), last = String(v.lastName || "").trim();
+  if (first || last) return [first, last];
+  const w = String(v.fullName || "").trim().split(/\s+/).filter(Boolean);
+  return [w[0] || "", w.slice(1).join(" ")];
+}
+function volunteerEditForm(v, centres, onSaved) {
+  const [first, last] = volunteerNameParts(v);
+  const init = { firstName: first, lastName: last, email: v.email || "", phone: v.phone || "", role: VOL_ROLE_OPTS.some(o => o[0] === v.role) ? v.role : "mentor",
+    programme: v.programme || "summer", status: v.status || "active", centre: v.centre || "", faculty: v.faculty || "",
+    courses: (v.courses || []).join(", "), dob: /^\d{4}-\d{2}-\d{2}/.test(v.dob || "") ? String(v.dob).slice(0, 10) : "", visibilityConsent: !!Number(v.visibilityConsent) };
+  const centreOpts = (v.centre && !centres.includes(v.centre) ? [v.centre].concat(centres) : centres).map(c => [c, c]);
+  return {
+    title: "Edit " + (v.fullName || "volunteer"),
+    intro: "Only what you change is saved. The photo, portal access and profile are under More.",
+    submit: "Save",
+    values: init,
+    fields: [
+      { id: "firstName", l: "First name", req: true, max: 80, ac: "given-name" },
+      { id: "lastName", l: "Last name", req: true, max: 80, ac: "family-name" },
+      { id: "email", l: "Email", type: "email", email: true, max: 160, help: "Leave blank for someone who signs in with their ID card." },
+      { id: "phone", l: "Phone", type: "tel", max: 48, im: "tel" },
+      { id: "role", l: "Role", type: "chips", req: true, opts: VOL_ROLE_OPTS },
+      { id: "programme", l: "Programme", type: "chips", req: true, opts: VOL_PROG_OPTS, help: "Moving between Summer School and NGG changes when their card stops opening the door." },
+      { id: "centre", l: "Centre", type: "select", opts: centreOpts, ph: "No centre" },
+      { id: "faculty", l: "Faculty", max: 80 },
+      { id: "courses", l: "Courses", max: 600, help: "Separate courses with commas." },
+      { id: "dob", l: "Date of birth", type: "date" },
+      { id: "status", l: "Status", type: "chips", req: true, opts: VOL_STATUS_OPTS },
+      { id: "visibilityConsent", l: "Consented to be featured (photo and first name) on the public site and boards", type: "switch" },
+    ],
+    onSubmit: async vals => {
+      const out = {};
+      Object.keys(init).forEach(k => {
+        const a = typeof init[k] === "string" ? init[k].trim() : init[k], b = typeof vals[k] === "string" ? vals[k].trim() : vals[k];
+        if (a !== b) out[k] = b;
       });
-      toast.success("Volunteer saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : (e.code || e.message)); }
+      /* The name is one thing: change either part and both are sent, so a
+         record that only ever had a full name gets both parts at once. */
+      if (out.firstName !== undefined || out.lastName !== undefined) { out.firstName = vals.firstName.trim(); out.lastName = vals.lastName.trim(); }
+      if (out.courses !== undefined) out.courses = out.courses.split(",").map(c => c.trim()).filter(Boolean);
+      if (out.visibilityConsent !== undefined) out.visibilityConsent = out.visibilityConsent ? 1 : 0;
+      if (!Object.keys(out).length) return { unchanged: true };
+      try { await NGGApi.admin.volunteers.update(v.volunteerId, out); }
+      catch (e) { const fe = VOL_ERR_FIELD[e.code]; if (fe) return { fieldErrors: { [fe[0]]: fe[1] } }; throw e; }
+      onSaved();
+      return { saved: Object.keys(out).length };
+    },
+    done: (vals, r) => r && r.unchanged ? "Nothing changed." : (vals.firstName.trim() + " " + vals.lastName.trim()).trim() + " saved.",
+  };
+}
+
+/* The rest of a volunteer's record: the photo (saved on its own, the moment
+   it is taken), their public profile, and delete. Portal access sits below. */
+function VolunteerMore({ v, onSaved, onDelete }) {
+  const [photo, setPhoto] = React.useState(v.photoUrl || "");
+  const [busy, setBusy] = React.useState(false);
+  const savePhoto = async val => {
+    const prev = photo; setPhoto(val); setBusy(true);
+    try { await NGGApi.admin.volunteers.update(v.volunteerId, { photoUrl: val || "" }); toast.success(val ? "Photo saved." : "Photo removed."); onSaved(); }
+    catch (e) { setPhoto(prev); toast.error("Couldn’t save the photo (" + (e.code || e.message) + "). Try again."); }
     finally { setBusy(false); }
   };
-  const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
-  const fld = (key, label, opts = {}) => (
-    <div style={{ flex: "1 1 180px", minWidth: opts.min || 150 }}>
-      <span style={lbl}>{label}</span>
-      <input className="admin-input" style={{ width: "100%" }} type={opts.type || "text"} value={f[key]} onChange={e => set(key, e.target.value)} placeholder={opts.ph || ""}/>
-    </div>
-  );
   return (
-    <div style={{ padding: "16px 4px", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div><span style={lbl}>Photo</span><PhotoCapture value={f.photoUrl} onChange={val => set("photoUrl", val)} size={80} label="Volunteer photo"/></div>
-        <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-          {fld("fullName", "Full name", { min: 200 })}
-          {fld("email", "Email", { type: "email", min: 200 })}
-          {fld("phone", "Phone")}
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Role</span><select className="admin-select" value={f.role} onChange={e => set("role", e.target.value)}><option value="admin">Admin / Ops</option><option value="mentor">Mentor</option><option value="instructor">Instructor</option></select></div>
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select></div>
-        </div>
+    <div className="vol-more">
+      <div className="vol-more-photo">
+        <span className="admin-field-label">Photo</span>
+        <PhotoCapture value={photo} onChange={savePhoto} size={80} label={"Photo of " + (v.fullName || "the volunteer")}/>
+        {busy && <span className="admin-hint" role="status">Saving…</span>}
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
-        {fld("firstName", "First name")}
-        {fld("lastName", "Last name")}
-        <div style={{ flex: "1 1 180px", minWidth: 150 }}><span style={lbl}>Centre</span>
-          <select className="admin-input" style={{ width: "100%" }} value={f.centre || ""} onChange={e => set("centre", e.target.value)}>
-            <option value="">— select —</option>
-            {((f.centre && !centreOpts.includes(f.centre)) ? [f.centre, ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        {fld("faculty", "Faculty")}
-        {fld("dob", "Date of birth", { type: "date", min: 160 })}
-        {fld("courses", "Courses (comma-separated)", { min: 220 })}
-      </div>
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
-        <input type="checkbox" checked={f.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)}/>
-        Consented to be featured (photo + first name) on the public site &amp; boards
-      </label>
       <ProfileExtrasEditor subjectType="volunteer" subjectId={v.volunteerId}/>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save volunteer"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onSaved}>Cancel</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onDelete} style={{ color: "#b03535", marginLeft: "auto" }}>Delete volunteer</button>
+      <div className="vol-more-acts">
+        <button type="button" className="btn btn-ghost btn-sm vol-del" onClick={onDelete}>Delete volunteer</button>
       </div>
     </div>
   );
@@ -10127,7 +10158,8 @@ function VolunteerPortalAccess({ v, onSaved }) {
 
 const VOL_PROGRAMME_SHORT = { summer: "Summer", ngg: "NGG Club", both: "Club + Summer" };
 
-function AdminVolunteers() {
+function AdminVolunteers({ crCtx } = {}) {
+  const volCentres = useCentreOptions();
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
@@ -10288,7 +10320,8 @@ function AdminVolunteers() {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Edit"}</button>
+                        {crCtx && <button className="btn btn-ghost btn-sm" onClick={() => crCtx.form(volunteerEditForm(v, volCentres, load))}>Edit details</button>}
+                        <button className="btn btn-ghost btn-sm" aria-expanded={editId === v.volunteerId} onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "More"}</button>
                         {(v.programme || "summer") === "summer" && v.status === "active" &&
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === "ngg:" + v.volunteerId ? "" : "ngg:" + v.volunteerId)}>{editId === "ngg:" + v.volunteerId ? "Close" : "Bring into NGG"}</button>}
                         {v.safeguarding === "cleared"
@@ -10300,7 +10333,7 @@ function AdminVolunteers() {
                       <VolunteerNggMove v={v} onDone={() => { setEditId(""); load(); }}/>
                     </td></tr>}
                     {editId === v.volunteerId && <tr><td colSpan={8} style={{ background: "rgba(12,20,50,0.03)" }}>
-                      <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
+                      <VolunteerMore v={v} onSaved={load} onDelete={() => removeVol(v)}/>
                       <VolunteerPortalAccess v={v} onSaved={load}/>
                     </td></tr>}
                     </React.Fragment>

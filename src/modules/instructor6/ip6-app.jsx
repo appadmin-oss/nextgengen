@@ -246,7 +246,10 @@ class Ip6Portal extends React.Component {
     const rem = S.timer ? Math.max(0, Math.ceil((S.timer - Date.now()) / 1000)) : 0;
     const out = {
       rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div>
-        : cur === 'academy' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><Ip6Academy data={D.acad} err={S.er.acad} reload={() => this.load('acad', () => NGGApi.member.teachAcademy())} toast={t => this.toast(t)}/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
+        : cur === 'academy' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><StaffAcademy data={D.acad} err={S.er.acad} reload={() => this.load('acad', () => NGGApi.member.teachAcademy())} toast={t => this.toast(t)}
+          submit={(id, answers) => NGGApi.member.teachAcademyResult(id, answers)} portal="Instructor"
+          jobs="Today, the roll and the plan, teaching and the exit ticket, the session log, marking and skills, your students, and what to do when you’re worried about a child"
+          lead="Support and Report a concern work the whole time."/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
       // The assignment desk follows the column, so the column keeps no bottom padding above it.
       mainPad: narrow ? (cur === 'assignments' || cur === 'academy' ? '16px 16px 0' : '16px 16px 28px') : (cur === 'assignments' || cur === 'academy' ? '32px 40px 0' : '32px 40px 56px'), toastBottom: narrow ? '92px' : '24px',
       me, course, navGroups: areaNav, tabbar: areaTabbar, moreList, areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.label, title: area.kids.length > 1 && !inDetail ? area.label : titles[cur], subtitle: subs[cur] || '', showBack: S.hist.length > 0, back: () => this.goBack(),
@@ -653,91 +656,4 @@ function InstructorHome() {
     </ul></div></div>;
 }
 
-/* ── The Instructor Academy ─────────────────────────────────────────────────
-   "Start here: using the portal" — one short guide per area, naming the right
-   tool for each job — then the teaching and safeguarding modules. A module is
-   lessons, an optional "what would you do?" (which shows its answer: it
-   teaches), and questions whose key stays on the server; the score comes back
-   when the module is finished. Until "Start here" is passed, this is the
-   portal (Ip6Portal.oriLocked). */
-function Ip6Academy({ data, err, reload, toast }) {
-  const [mod, setMod] = React.useState(null);
-  const [step, setStep] = React.useState(0);
-  const [ans, setAns] = React.useState({});
-  const [res, setRes] = React.useState(null);
-  const topRef = React.useRef(null);
-  const today = new Date().toISOString().slice(0, 10);
-  const done = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
-  React.useEffect(() => { if (topRef.current) { topRef.current.focus(); } }, [mod, step]);
-  if (err) return <div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>The Academy couldn’t load ({(err.code || err.message || 'error')}).</span><button type="button" onClick={reload}>Retry</button></div>;
-  if (!data) return <div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading the Academy</span></div>;
-  const mods = data.modules || []; const ori = data.orientation || { ok: true };
-  const m = mods.find(x => x.id === mod);
-  if (!m) {
-    const n = mods.filter(done).length;
-    return (
-      <div className="ip6a">
-        {!ori.ok && <section className="ip6a-lock" role="note" aria-labelledby="ip6a-lock-h"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
-          <div><h2 id="ip6a-lock-h">Start here: {ori.done} of {ori.required} portal guides done</h2>
-            <p>Before your portal opens, take the short guides under “Start here: using the portal” (about {ori.mins} minutes in all). Each shows you the right tool for one part of the job — Today, the roll and the plan, teaching and the exit ticket, the session log, marking and skills, your students, and what to do when you’re worried about a child. Support and Report a concern work the whole time.</p></div></section>}
-        <section className="ip6a-card ip6a-prog" aria-label="Your progress"><div><b>{n} of {mods.length} modules complete</b><span>{Math.round(n / Math.max(1, mods.length) * 100)}%</span></div>
-          <div className="ip6a-bar"><span style={{ width: (n / Math.max(1, mods.length) * 100) + '%' }}/></div></section>
-        {(data.groups || []).map((h, gi) => (
-          <section key={gi} className="ip6a-card" aria-labelledby={'ip6a-g' + gi}><h2 id={'ip6a-g' + gi} className="ip6a-h">{h}</h2>
-            <ul className="ip6a-list">{mods.filter(x => x.group === gi).map(x => { const d = done(x), lapsed = !!x.passedAt && !d;
-              return <li key={x.id}><i className={d ? 'ph-fill ph-check-circle is-done' : 'ph ph-circle'} aria-hidden="true"/>
-                <span className="ip6a-t"><b>{x.title}</b><span>{d ? 'Passed ' + x.score + '%' + (x.renewBy ? ' · renew by ' + ip6Date(x.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + x.mins + ' min' + (x.orientation ? ' · opens your portal' : x.required ? ' · required' : '') + (x.note && !x.orientation ? ' · ' + x.note : '')}</span></span>
-                <button type="button" className={'ip6a-btn' + (d ? '' : ' is-primary')} onClick={() => { setMod(x.id); setStep(0); setAns({}); setRes(null); }}>{d ? 'Review' : lapsed ? 'Renew' : 'Start'}<span className="m15x-sr"> {x.title}</span></button></li>; })}</ul></section>
-        ))}
-      </div>
-    );
-  }
-  const steps = (m.lessons || []).map(l => ({ k: 'lesson', h: l.h, b: l.body }));
-  if (m.scenario) steps.push({ k: 'scen', h: m.scenario.situation, opts: m.scenario.options.map(o => o.text), right: m.scenario.options.map(o => !!o.right), why: m.scenario.options.map(o => o.why) });
-  (m.quiz || []).forEach(q => steps.push({ k: 'quiz', h: q.q, opts: q.options }));
-  steps.push({ k: 'result' });
-  const i = Math.min(step, steps.length - 1), st = steps[i], a = ans[i];
-  const qIdx = steps.map((s, j) => s.k === 'quiz' ? j : -1).filter(j => j >= 0);
-  const choice = st.k === 'scen' || st.k === 'quiz', answered = a !== undefined;
-  const pass = !!(res && res.passed), pending = !!(res && res.pending);
-  const to = n => {
-    if (steps[n] && steps[n].k === 'result') {
-      setRes({ pending: true });
-      const wasLocked = !ori.ok;
-      NGGApi.member.teachAcademyResult(m.id, qIdx.map(j => ans[j])).then(r => { setRes(r); if (r.passed) { reload(); if (wasLocked && r.orientation && r.orientation.ok) toast('“Start here” is done. Your whole portal is open.'); } })
-        .catch(e => setRes({ error: ip6Err(e) }));
-    }
-    setStep(n);
-  };
-  return (
-    <div className="ip6a">
-      <button type="button" className="ip6a-back" onClick={() => setMod(null)}><i className="ph ph-arrow-left" aria-hidden="true"/>Academy</button>
-      <section className="ip6a-card ip6a-player" aria-labelledby="ip6a-mh">
-        <div className="ip6a-meta"><span>{st.k === 'result' ? 'Finished' : 'Step ' + (i + 1) + ' of ' + (steps.length - 1)}</span><span>{m.mins} min</span></div>
-        <div className="ip6a-bar"><span style={{ width: (i / Math.max(1, steps.length - 1) * 100) + '%' }}/></div>
-        <p className="ip6a-kind">{m.title} · {st.k === 'lesson' ? 'Lesson ' + (i + 1) + ' of ' + (m.lessons || []).length : st.k === 'scen' ? 'What would you do?' : st.k === 'quiz' ? 'Question ' + (qIdx.indexOf(i) + 1) + ' of ' + qIdx.length : 'Result'}</p>
-        {st.k !== 'result' ? <>
-          <h2 id="ip6a-mh" className="ip6a-mh" tabIndex={-1} ref={topRef}>{st.h}</h2>
-          {st.k === 'lesson' && <p className="ip6a-body">{st.b}</p>}
-          {choice && <div className="ip6a-opts" role="radiogroup" aria-labelledby="ip6a-mh">{st.opts.map((l, j) => { const on = a === j; const scen = st.k === 'scen'; const ok = scen && answered && st.right[j], bad = scen && answered && on && !st.right[j];
-            return <button key={j} type="button" role="radio" aria-checked={on} className={'ip6a-opt' + (on ? ' is-on' : '') + (ok ? ' is-ok' : '') + (bad ? ' is-bad' : '')}
-              onClick={() => { if (scen && answered) return; setAns(Object.assign({}, ans, { [i]: j })); }}>
-              <i className={ok ? 'ph-fill ph-check-circle' : bad ? 'ph-fill ph-x-circle' : on ? 'ph-fill ph-radio-button' : 'ph ph-circle'} aria-hidden="true"/>{l}</button>; })}</div>}
-          {choice && answered && <p className={'ip6a-fb' + (st.k === 'scen' ? (st.right[a] ? ' is-ok' : ' is-warn') : '')} role="status">
-            <b>{st.k === 'scen' ? (st.right[a] ? 'Right. ' : 'Not quite. ') : 'Answer recorded. '}</b>{st.k === 'scen' ? st.why[a] : 'You can change it before you go on. Your score is worked out when you finish.'}</p>}
-        </> : <div className="ip6a-res" role="status" aria-live="polite">
-          <i className={pending ? 'ph ph-hourglass' : pass ? 'ph-fill ph-seal-check is-done' : 'ph ph-arrow-counter-clockwise'} aria-hidden="true"/>
-          <h2 id="ip6a-mh" className="ip6a-mh" tabIndex={-1} ref={topRef}>{pending ? 'Checking your answers…' : res && res.error ? 'Not saved' : pass ? 'Passed · ' + res.score + '%' : (res ? res.score : 0) + '% · the pass mark is ' + (data.pass || 80) + '%'}</h2>
-          <p className="ip6a-body">{pending ? '' : res && res.error ? res.error : pass ? 'Saved to your record.' + (m.renewDays ? ' You’ll be reminded before it needs renewing.' : '') : 'Read the lessons again, then retake the questions. Nothing is recorded until you pass.'}</p></div>}
-        <div className="ip6a-nav">
-          {i > 0 && st.k !== 'result' && <button type="button" className="ip6a-btn" onClick={() => to(i - 1)}>Back</button>}
-          <span className="ip6a-grow"/>
-          <button type="button" className="ip6a-btn is-primary" aria-disabled={(choice && !answered) || pending}
-            onClick={() => { if (pending) return; if (st.k === 'result') { if (pass || (res && res.error)) setMod(null); else { setStep(0); setAns({}); setRes(null); } return; } if (choice && !answered) return toast('Choose an answer first'); to(i + 1); }}>
-            {st.k === 'result' ? (pass || (res && res.error) ? 'Back to Academy' : 'Try again') : steps[i + 1].k === 'result' ? 'See result' : 'Continue'}</button>
-        </div>
-      </section>
-    </div>
-  );
-}
 

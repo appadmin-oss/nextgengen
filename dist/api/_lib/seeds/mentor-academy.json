@@ -71,7 +71,8 @@
      "why": "It is always one press away, because a worry about a child cannot wait for you to find a menu."
     }
    ],
-   "group": 0
+   "group": 0,
+   "portal": "ngg"
   },
   {
    "id": "p02",
@@ -137,7 +138,8 @@
      "why": "The bulk action books all three at once on the coming Saturday."
     }
    ],
-   "group": 0
+   "group": 0,
+   "portal": "ngg"
   },
   {
    "id": "p03",
@@ -184,7 +186,8 @@
      "why": "Achieved keeps the record of what they did; a new goal can follow."
     }
    ],
-   "group": 0
+   "group": 0,
+   "portal": "ngg"
   },
   {
    "id": "p04",
@@ -250,7 +253,8 @@
      "why": "The strength and next step are what the child and their family actually read."
     }
    ],
-   "group": 0
+   "group": 0,
+   "portal": "ngg"
   },
   {
    "id": "p05",
@@ -307,7 +311,133 @@
      "why": "The prep questions make the supervision about what matters to you."
     }
    ],
-   "group": 0
+   "group": 0,
+   "portal": "ngg"
+  },
+  {
+   "id": "p07",
+   "group": 0,
+   "title": "Summer School portal: your participants",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "portal": "summer",
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Where everything is",
+     "body": "The Summer School mentor portal is one page. At the top: your name, your centre and Report a concern. If you cover more than one centre, choose the one you’re standing in. If you have mentees of your own, switch between “My mentees” and “Whole centre”. Below that: who still needs a weekly review, then everyone in the edition, with search."
+    },
+    {
+     "h": "One participant",
+     "body": "Each row has three buttons. ★ Stars gives stars for something you saw, with a note; once given, the row shows today’s stars. V3 rates how they speak (verbal, vocal, visual) when you watch them present. ✎ opens their notes, where you write what isn’t a reward and read what instructors saw. Press their name to open the full record."
+    },
+    {
+     "h": "Several at once",
+     "body": "Tick the participants (or “Select all shown”) and press “Record for N” at the bottom to award the same stars or note to all of them in one go. Search first to narrow the list; ticks survive a new search."
+    }
+   ],
+   "scenario": {
+    "situation": "Six participants in your group helped set up the hall this morning. What’s the right tool?",
+    "options": [
+     {
+      "text": "Search or scroll to them, tick all six, and press “Record for 6”.",
+      "right": true,
+      "why": "The bulk record gives all six the same stars and note in one step, and each still shows on their own record."
+     },
+     {
+      "text": "Open each record and write a conversation.",
+      "right": false,
+      "why": "A conversation is for a one-to-one talk. A shared reward is a bulk record."
+     },
+     {
+      "text": "Tell them they did well and leave it.",
+      "right": false,
+      "why": "Praise that isn’t recorded can’t be seen on their record by their family or the team."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Where do you read what an instructor noticed about a participant?",
+     "options": [
+      "In their notes (✎)",
+      "In the V3 rating",
+      "Nowhere — instructors don’t share"
+     ],
+     "answer": 0,
+     "why": "Notes are the shared thread between you and the instructors."
+    },
+    {
+     "q": "A participant gave a talk to the group. How do you record how they spoke?",
+     "options": [
+      "★ Stars",
+      "V3 rating",
+      "A weekly review"
+     ],
+     "answer": 1,
+     "why": "V3 scores verbal, vocal and visual delivery, out of 15."
+    }
+   ]
+  },
+  {
+   "id": "p08",
+   "group": 0,
+   "title": "Summer School portal: reviews, conversations and goals",
+   "mins": 4,
+   "note": "Start here",
+   "orientation": true,
+   "portal": "summer",
+   "required": false,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "The weekly review",
+     "body": "Every participant is reviewed once a week. The list at the top of the page names who is still waiting; press a name to open their record on “This week” and answer the questions. When everyone is done it says so."
+    },
+    {
+     "h": "The record",
+     "body": "A participant’s record has four tabs. Conversations: log each talk you have with them — what you discussed, what you agreed, and anything that worried you. Goals: write a goal with them; it becomes active once they agree it, and you mark it achieved when it is. Courage: moments they stepped out of their comfort zone. This week: the weekly review."
+    },
+    {
+     "h": "Log it the same day",
+     "body": "Conversations and reviews are the record your lead and the safeguarding officer rely on. Log them the same day, in plain words."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Who still needs this week’s review?",
+     "options": [
+      "The list at the top of the page shows them",
+      "You have to open every record to check",
+      "Ask your lead"
+     ],
+     "answer": 0,
+     "why": "The reviews-due list names everyone still waiting."
+    },
+    {
+     "q": "You talked with a participant about missing home. Where does it go?",
+     "options": [
+      "Their record → Conversations: what you discussed and agreed",
+      "A star with a note",
+      "Nowhere"
+     ],
+     "answer": 0,
+     "why": "A conversation is logged as a conversation, with anything that worried you."
+    },
+    {
+     "q": "When does a goal become active?",
+     "options": [
+      "As soon as you type it",
+      "Once the participant has agreed it",
+      "At the end of the edition"
+     ],
+     "answer": 1,
+     "why": "A goal is theirs: it goes live when they agree it."
+    }
+   ]
   },
   {
    "id": "p06",

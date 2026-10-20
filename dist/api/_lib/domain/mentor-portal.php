@@ -1854,6 +1854,10 @@ function member_mp_academy(array $p): array {
     $a = function_exists('ms_academy') ? ms_academy() : ['modules' => [], 'pass' => 80, 'groups' => []];
     $done = [];
     foreach (db_all('SELECT moduleId, score, passedAt FROM mentor_academy WHERE mentorId = ?', [(string)$g['mentorId']]) as $r) $done[$r['moduleId']] = $r;
+    /* Only this mentor's portals' guides: a Summer School mentor is not sent
+       through the NGG portal's, nor the other way round. */
+    $portals = $g['mentorRow'] && function_exists('academy_mentor_portals') ? academy_mentor_portals($g['mentorRow']) : null;
+    $list = array_values(array_filter($a['modules'], static fn($m) => !function_exists('academy_module_for') || academy_module_for($m, $portals)));
     $mods = array_map(static function ($m) use ($done) {
         $d = $done[$m['id']] ?? null;
         $renew = (int)($m['renewDays'] ?? 0);
@@ -1863,7 +1867,7 @@ function member_mp_academy(array $p): array {
          * this quiz is part of what clears a mentor to work with children. */
         if (isset($m['quiz'])) $m['quiz'] = array_map(static fn($q) => ['q' => $q['q'], 'options' => $q['options']], (array)$m['quiz']);
         return $m + ['passedAt' => (string)($d['passedAt'] ?? ''), 'score' => $d ? (int)$d['score'] : null, 'renewBy' => $due];
-    }, $a['modules']);
+    }, $list);
     $cl = function_exists('ms_clearance') && $g['mentorRow'] ? ms_clearance($g['mentorRow']) : [];
     return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'byHand' => !empty($cl['academyByHand']), 'staff' => !empty($cl['staff']),
             'orientation' => function_exists('academy_mentor_orientation') ? academy_mentor_orientation($g['mentorRow']) : null];

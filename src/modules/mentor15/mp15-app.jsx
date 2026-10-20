@@ -906,7 +906,7 @@ class Mp15Portal extends React.Component {
    /mentor itself sends a person with one portal straight to it and shows a
    chooser to anyone with more. Old links (/mentor?tab=results, from the school
    results email) land on /mentor/class with their tab. */
-const MP15_SUBS = ['ngg', 'summer', 'class'];
+const MP15_SUBS = ['ngg', 'summer', 'class', 'academy'];
 function mp15Sub() { const p = (location.pathname || '').replace(/^\/+|\/+$/g, '').split('/'); return p[0] === 'mentor' && MP15_SUBS.includes(p[1]) ? p[1] : ''; }
 function mp15Portals(r) {
   const me = (r && r.me) || {}; const progs = me.programmes || []; const out = [];
@@ -933,6 +933,14 @@ function MentorHome() {
   React.useEffect(() => { const f = () => setSub(mp15Sub()); window.addEventListener('popstate', f); return () => window.removeEventListener('popstate', f); }, []);
   const go = to => { try { history.pushState({ page: 'mentor' }, '', '/mentor' + (to ? '/' + to : '')); } catch (_) {} setSub(to); try { window.scrollTo(0, 0); } catch (_) {} };
   const { v15, out } = mp15Portals(boot);
+  /* "Start here" follows a mentor into EVERY mentor portal, not only the NGG
+     one: a Summer School mentor, a mentor with the class tools, or one whose
+     record names no programme all land here first until it is done. The NGG
+     portal gates itself (Mp15Portal.oriLocked), with its own Academy screen. */
+  const me0 = (boot && boot.me) || {};
+  const ori0 = me0.orientation;
+  const oriLocked = !!me0.mentorId && !!ori0 && ori0.ok === false;
+  const ownPortal = sub === 'ngg' || (sub === 'class' && v15);
   /* With no sub-route: one portal → straight there; several → choose. */
   React.useEffect(() => {
     if (state !== 'ready' || sub) return;
@@ -945,6 +953,8 @@ function MentorHome() {
   /* Refused (not signed in, not cleared, no centre, not a mentor): the class
      portal owns those answers and its sign-in doors. */
   const hubBtn = out.includes('summer') && out.length > 1 && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Mentor portals</button>;
+  if (state === 'ready' && me0.mentorId && (sub === 'academy' || (oriLocked && !ownPortal)))
+    return <Mp15AcademyPage boot={boot} locked={oriLocked} onDone={() => { probe(); go(''); }} back={!oriLocked ? () => go('') : null}/>;
   if (sub === 'summer') return <>{hubBtn}<MentorPortal key="summer" programme="summer"/></>;
   /* A v15 mentor's class tools open inside their portal; an instructor or an admin with no pod keeps the stand-alone class page. */
   if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onHub={out.includes('summer') ? () => go('') : null}/>;
@@ -954,20 +964,63 @@ function MentorHome() {
     if (v15) return <Mp15Portal boot={boot} onHub={out.includes('summer') ? () => go('') : null}/>;
     return <div className="m15x-hub"><div className="m15x-hub-in"><h1>The NGG mentor portal isn’t yours</h1>
       <p>It opens for NGG pod, peer and lead mentors and for coordinators.{out.length ? ' These are open to you:' : ' Ask your coordinator if you think that’s wrong.'}</p>
-      <Mp15HubCards out={out} go={go}/></div></div>;
+      <Mp15HubCards out={out.concat(me0.mentorId ? ['academy'] : [])} go={go}/></div></div>;
   }
   if (!out.length) return <MentorPortal key="any"/>;
   return <div className="m15x-hub"><div className="m15x-hub-in">
     <img src="/assets/logo.png" alt="" width="40" height="40"/>
     <h1>Which portal?</h1>
     <p>NGG and Summer School are separate programmes, so each has its own portal and its own list of children.</p>
-    <Mp15HubCards out={out} go={go}/>
+    <Mp15HubCards out={out.concat(me0.mentorId ? ['academy'] : [])} go={go}/>
   </div></div>;
 }
 function Mp15HubCards({ out, go }) {
-  const C = { ngg: ['ph ph-users-three', 'NGG mentor portal', 'Your NGG mentees, the week, Saturday formation, goals, the Leadership Index, families.', '/mentor/ngg'],
+  const C = { academy: ['ph ph-graduation-cap', 'Mentor Academy', 'The portal guides, safeguarding and mentoring practice — and what is due for renewal.', '/mentor/academy'], ngg: ['ph ph-users-three', 'NGG mentor portal', 'Your NGG mentees, the week, Saturday formation, goals, the Leadership Index, families.', '/mentor/ngg'],
               summer: ['ph ph-sun', 'Summer School', 'This edition’s participants: stars, notes, weekly reviews, concerns.', '/mentor/summer'],
               class: ['ph ph-chalkboard', 'NGG class tools', 'Today’s session, stars, skills, curriculum and school results.', '/mentor/class'] };
   return <ul className="m15x-cards">{out.map(k => <li key={k}><a href={C[k][3]} onClick={e => { e.preventDefault(); go(k); }}>
     <i className={C[k][0]} aria-hidden="true"/><span><b>{C[k][1]}</b><span>{C[k][2]}</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li>)}</ul>;
 }
+
+/* The Mentor Academy as a page of its own, for every mentor portal — the
+   Summer School portal and the class tools have no Academy screen of their
+   own. Locked: it IS the portal until "Start here" is done (the server holds
+   the same line: academy_intercept), with Report a concern still one press
+   away. Unlocked (/mentor/academy, or the hub's card): renewals and training. */
+function Mp15AcademyPage({ boot, locked, onDone, back }) {
+  const me = (boot && boot.me) || {};
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [toast, setToast] = React.useState('');
+  const [concern, setConcern] = React.useState(null);   // null | 'loading' | students[]
+  const tt = React.useRef(0);
+  const say = t => { clearTimeout(tt.current); setToast(t); tt.current = setTimeout(() => setToast(''), 5000); };
+  const load = () => { setErr(null); return NGGApi.member.mentorView('academy').then(r => { setData(r); return r; }).catch(e => { setErr(e); return null; }); };
+  React.useEffect(() => { load(); return () => clearTimeout(tt.current); }, []);
+  const reload = () => load().then(r => { if (locked && r && r.orientation && r.orientation.ok) { say('“Start here” is done. Your portal is open.'); setTimeout(onDone, 1200); } });
+  const progs = me.programmes || [];
+  const jobs = [progs.includes('ngg') ? 'your week, mentees, goals and sessions, Saturday, class and messages' : '',
+                progs.includes('summer') ? 'your Summer School participants, stars, notes, reviews, conversations and goals' : '',
+                'what to do when you’re worried about a child'].filter(Boolean).join('; ');
+  const openConcern = () => { setConcern('loading');
+    NGGApi.member.mentorRoster('', '', progs.includes('ngg') && !progs.includes('summer') ? 'ngg' : progs.includes('summer') && !progs.includes('ngg') ? 'summer' : '')
+      .then(r => setConcern((r && r.students) || [])).catch(() => setConcern([])); };
+  return (
+    <div className="sa-page">
+      <header className="sa-page-head">
+        <img src="/assets/logo.png" alt="" width="36" height="36"/>
+        <div className="sa-page-t"><span>{locked ? 'Start here' : 'Mentor portal'}</span><h1>Mentor Academy</h1></div>
+        <span className="sa-grow"/>
+        {back && <button type="button" className="sa-btn" onClick={back}><i className="ph ph-squares-four" aria-hidden="true"/> Mentor portals</button>}
+        <button type="button" className="sa-btn is-danger" onClick={openConcern} disabled={concern === 'loading'}>{concern === 'loading' ? 'Opening…' : 'Report a concern'}</button>
+      </header>
+      <main className="sa-page-main" id="main">
+        <StaffAcademy data={data} err={err} reload={reload} toast={say} portal="Mentor"
+          submit={(id, answers) => NGGApi.member.mentorAct('academyResult', { moduleId: id, answers })} jobs={jobs}/>
+      </main>
+      {Array.isArray(concern) && typeof MentorConcernSheet === 'function' && <MentorConcernSheet students={concern} onClose={() => setConcern(null)}/>}
+      {toast && <div className="sa-toast" role="status" aria-live="polite">{toast}</div>}
+    </div>
+  );
+}
+

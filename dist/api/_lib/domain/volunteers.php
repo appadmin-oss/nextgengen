@@ -632,7 +632,9 @@ function admin_volunteers_list(array $p): array {
         $a['programme'] = volunteer_programme($a);
     }
     unset($a);
-    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    /* photoUrl is on the row because the editor shows it: without it the
+       photo read as empty, and a save wrote that empty back over the picture. */
+    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
     foreach ($roster as &$v) {
         $v['programme'] = volunteer_programme($v);
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
@@ -667,6 +669,21 @@ function admin_volunteer_update(array $p): array {
     foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
     }
+    /* One person, one name: changing the first or last name without a full
+       name rebuilds the full name from the parts (the card, the roster and the
+       sign-in all show fullName), rather than leaving the two to disagree. */
+    if (!array_key_exists('fullName', $d) && (array_key_exists('firstName', $d) || array_key_exists('lastName', $d))) {
+        /* A part this request does not carry comes from the record — and when
+           the record never had parts, from its full name, so changing only the
+           last name of "Bola Ade" gives "Bola Adeyemi", not "Adeyemi". */
+        $words = preg_split('/\s+/', trim((string)($v['fullName'] ?? ''))) ?: [];
+        $hadParts = trim((string)($v['firstName'] ?? '')) !== '' || trim((string)($v['lastName'] ?? '')) !== '';
+        $first = $row['firstName'] ?? ($hadParts ? (string)($v['firstName'] ?? '') : (string)($words[0] ?? ''));
+        $last = $row['lastName'] ?? ($hadParts ? (string)($v['lastName'] ?? '') : implode(' ', array_slice($words, 1)));
+        $name = trim($first . ' ' . $last);
+        if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
+        $row['fullName'] = substr($name, 0, 120);
+    }
     /* Not a plain substr like the rest: with no cloud configured an editor's
        browser sends the image itself, and truncating a data: URL at 512
        characters stores a fragment of base64 that can never render. */
@@ -678,7 +695,9 @@ function admin_volunteer_update(array $p): array {
     if (array_key_exists('email', $d)) {
         // Stored the way the sign-in door compares it: no spaces, lower case.
         $em = strtolower(preg_replace('/\s+/', '', (string)$d['email']) ?? '');
-        if ($em === '' || !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+        /* Blank is allowed: an instructor or volunteer who signs in with their
+           ID card may have no email at all, and must still be editable. */
+        if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
         $row['email'] = substr($em, 0, 160);
     }
     if (array_key_exists('role', $d)) {

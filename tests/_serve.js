@@ -52,8 +52,15 @@ async function waitForServer(base, timeoutMs) {
  * 20s is not a bug worth failing a suite over; a boot that never happens is,
  * and that still fails — with a message that says what was being waited for
  * rather than a bare Playwright timeout.
+ *
+ * Re-measured 2026-10-20, with the Club v3, Community v3 and portal modules in
+ * the tree: 58s from navigation to mount on an idle container (no console
+ * errors — it is the in-page Babel pass). 60s had become the coin flip again,
+ * and the mentor and instructor suites failed on it with nothing wrong. The
+ * budget is 180s now, three times the cost; NGG_BOOT_MS overrides it. The
+ * production bundle (dist/) is compiled once by build.js and is unaffected.
  */
-const BOOT_TIMEOUT = 60000;
+const BOOT_TIMEOUT = Number(process.env.NGG_BOOT_MS) || 180000;
 
 async function waitForBoot(page, timeoutMs) {
   try {

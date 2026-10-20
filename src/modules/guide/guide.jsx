@@ -181,3 +181,98 @@ function DutyPopup({ role, onGo, delay = 900 }) {
     </div>
   );
 }
+
+/* ── The staff Academies (mentors and instructors) ──────────────────────────
+   One list-and-player for every staff portal's Academy: "Start here: using the
+   portal" — one short guide per part of the portal, naming the right tool for
+   each job — then the training modules. A module is lessons, an optional
+   "what would you do?" (which shows its answer: it teaches), and questions
+   whose key stays on the server; the score comes back when it is finished.
+   Until "Start here" is passed the portal opens on this and nothing else
+   (domain/academy.php). `submit(moduleId, answers)` is the portal's own call. */
+const SA_ERR = { answer_all: "Answer every question first.", retry_later: "That is three tries at this module today. Read it again and try tomorrow.",
+  network: "You’re offline. Nothing was saved.", rate_limited: "Too many in a row. Wait a minute and try again." };
+function saErr(e) { const c = (e && (e.code || e.message)) || "failed"; return SA_ERR[c] || "Couldn’t save (" + c + ")."; }
+function saDate(iso, o) { const d = /^\d{4}-\d{2}-\d{2}/.test(String(iso || "")) ? new Date(String(iso).slice(0, 10) + "T12:00:00Z") : null; return d ? d.toLocaleDateString("en-GB", Object.assign({ timeZone: "UTC" }, o || { day: "numeric", month: "short" })) : ""; }
+
+function StaffAcademy({ data, err, reload, toast, submit, portal, jobs, lead }) {
+  const [mod, setMod] = React.useState(null);
+  const [step, setStep] = React.useState(0);
+  const [ans, setAns] = React.useState({});
+  const [res, setRes] = React.useState(null);
+  const topRef = React.useRef(null);
+  const today = new Date().toISOString().slice(0, 10);
+  const done = m => !!m.passedAt && !(m.renewBy && m.renewBy < today);
+  React.useEffect(() => { if (topRef.current) { topRef.current.focus(); } }, [mod, step]);
+  if (err) return <div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>The Academy couldn’t load ({(err.code || err.message || 'error')}).</span><button type="button" onClick={reload}>Retry</button></div>;
+  if (!data) return <div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading the Academy</span></div>;
+  const mods = data.modules || []; const ori = data.orientation || { ok: true };
+  const m = mods.find(x => x.id === mod);
+  if (!m) {
+    const n = mods.filter(done).length;
+    return (
+      <div className="sa">
+        {!ori.ok && <section className="sa-lock" role="note" aria-labelledby="sa-lock-h"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+          <div><h2 id="sa-lock-h">Start here: {ori.done} of {ori.required} portal guides done</h2>
+            <p>Before your portal opens, take the short guides under “Start here: using the portal” (about {ori.mins} minutes in all). Each shows you the right tool for one part of the job — {jobs}. {lead || "Report a concern works the whole time."}</p></div></section>}
+        <section className="sa-card sa-prog" aria-label="Your progress"><div><b>{n} of {mods.length} modules complete</b><span>{Math.round(n / Math.max(1, mods.length) * 100)}%</span></div>
+          <div className="sa-bar"><span style={{ width: (n / Math.max(1, mods.length) * 100) + '%' }}/></div></section>
+        {(data.groups || []).map((h, gi) => (
+          <section key={gi} className="sa-card" aria-labelledby={'sa-g' + gi}><h2 id={'sa-g' + gi} className="sa-h">{h}</h2>
+            <ul className="sa-list">{mods.filter(x => x.group === gi).map(x => { const d = done(x), lapsed = !!x.passedAt && !d;
+              return <li key={x.id}><i className={d ? 'ph-fill ph-check-circle is-done' : 'ph ph-circle'} aria-hidden="true"/>
+                <span className="sa-t"><b>{x.title}</b><span>{d ? 'Passed ' + x.score + '%' + (x.renewBy ? ' · renew by ' + saDate(x.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + x.mins + ' min' + (x.orientation ? ' · opens your portal' : x.required ? ' · required' : '') + (x.note && !x.orientation ? ' · ' + x.note : '')}</span></span>
+                <button type="button" className={'sa-btn' + (d ? '' : ' is-primary')} onClick={() => { setMod(x.id); setStep(0); setAns({}); setRes(null); }}>{d ? 'Review' : lapsed ? 'Renew' : 'Start'}<span className="m15x-sr"> {x.title}</span></button></li>; })}</ul></section>
+        ))}
+      </div>
+    );
+  }
+  const steps = (m.lessons || []).map(l => ({ k: 'lesson', h: l.h, b: l.body }));
+  if (m.scenario) steps.push({ k: 'scen', h: m.scenario.situation, opts: m.scenario.options.map(o => o.text), right: m.scenario.options.map(o => !!o.right), why: m.scenario.options.map(o => o.why) });
+  (m.quiz || []).forEach(q => steps.push({ k: 'quiz', h: q.q, opts: q.options }));
+  steps.push({ k: 'result' });
+  const i = Math.min(step, steps.length - 1), st = steps[i], a = ans[i];
+  const qIdx = steps.map((s, j) => s.k === 'quiz' ? j : -1).filter(j => j >= 0);
+  const choice = st.k === 'scen' || st.k === 'quiz', answered = a !== undefined;
+  const pass = !!(res && res.passed), pending = !!(res && res.pending);
+  const to = n => {
+    if (steps[n] && steps[n].k === 'result') {
+      setRes({ pending: true });
+      const wasLocked = !ori.ok;
+      submit(m.id, qIdx.map(j => ans[j])).then(r => { setRes(r); if (r.passed) { reload(); if (wasLocked && r.orientation && r.orientation.ok) toast('“Start here” is done. Your whole portal is open.'); } })
+        .catch(e => setRes({ error: saErr(e) }));
+    }
+    setStep(n);
+  };
+  return (
+    <div className="sa">
+      <button type="button" className="sa-back" onClick={() => setMod(null)}><i className="ph ph-arrow-left" aria-hidden="true"/>Academy</button>
+      <section className="sa-card sa-player" aria-labelledby="sa-mh">
+        <div className="sa-meta"><span>{st.k === 'result' ? 'Finished' : 'Step ' + (i + 1) + ' of ' + (steps.length - 1)}</span><span>{m.mins} min</span></div>
+        <div className="sa-bar"><span style={{ width: (i / Math.max(1, steps.length - 1) * 100) + '%' }}/></div>
+        <p className="sa-kind">{m.title} · {st.k === 'lesson' ? 'Lesson ' + (i + 1) + ' of ' + (m.lessons || []).length : st.k === 'scen' ? 'What would you do?' : st.k === 'quiz' ? 'Question ' + (qIdx.indexOf(i) + 1) + ' of ' + qIdx.length : 'Result'}</p>
+        {st.k !== 'result' ? <>
+          <h2 id="sa-mh" className="sa-mh" tabIndex={-1} ref={topRef}>{st.h}</h2>
+          {st.k === 'lesson' && <p className="sa-body">{st.b}</p>}
+          {choice && <div className="sa-opts" role="radiogroup" aria-labelledby="sa-mh">{st.opts.map((l, j) => { const on = a === j; const scen = st.k === 'scen'; const ok = scen && answered && st.right[j], bad = scen && answered && on && !st.right[j];
+            return <button key={j} type="button" role="radio" aria-checked={on} className={'sa-opt' + (on ? ' is-on' : '') + (ok ? ' is-ok' : '') + (bad ? ' is-bad' : '')}
+              onClick={() => { if (scen && answered) return; setAns(Object.assign({}, ans, { [i]: j })); }}>
+              <i className={ok ? 'ph-fill ph-check-circle' : bad ? 'ph-fill ph-x-circle' : on ? 'ph-fill ph-radio-button' : 'ph ph-circle'} aria-hidden="true"/>{l}</button>; })}</div>}
+          {choice && answered && <p className={'sa-fb' + (st.k === 'scen' ? (st.right[a] ? ' is-ok' : ' is-warn') : '')} role="status">
+            <b>{st.k === 'scen' ? (st.right[a] ? 'Right. ' : 'Not quite. ') : 'Answer recorded. '}</b>{st.k === 'scen' ? st.why[a] : 'You can change it before you go on. Your score is worked out when you finish.'}</p>}
+        </> : <div className="sa-res" role="status" aria-live="polite">
+          <i className={pending ? 'ph ph-hourglass' : pass ? 'ph-fill ph-seal-check is-done' : 'ph ph-arrow-counter-clockwise'} aria-hidden="true"/>
+          <h2 id="sa-mh" className="sa-mh" tabIndex={-1} ref={topRef}>{pending ? 'Checking your answers…' : res && res.error ? 'Not saved' : pass ? 'Passed · ' + res.score + '%' : (res ? res.score : 0) + '% · the pass mark is ' + (data.pass || 80) + '%'}</h2>
+          <p className="sa-body">{pending ? '' : res && res.error ? res.error : pass ? 'Saved to your record.' + (m.renewDays ? ' You’ll be reminded before it needs renewing.' : '') : 'Read the lessons again, then retake the questions. Nothing is recorded until you pass.'}</p></div>}
+        <div className="sa-nav">
+          {i > 0 && st.k !== 'result' && <button type="button" className="sa-btn" onClick={() => to(i - 1)}>Back</button>}
+          <span className="sa-grow"/>
+          <button type="button" className="sa-btn is-primary" aria-disabled={(choice && !answered) || pending}
+            onClick={() => { if (pending) return; if (st.k === 'result') { if (pass || (res && res.error)) setMod(null); else { setStep(0); setAns({}); setRes(null); } return; } if (choice && !answered) return toast('Choose an answer first'); to(i + 1); }}>
+            {st.k === 'result' ? (pass || (res && res.error) ? 'Back to Academy' : 'Try again') : steps[i + 1].k === 'result' ? 'See result' : 'Continue'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+

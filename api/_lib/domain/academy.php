@@ -36,7 +36,10 @@ const ACADEMY_GATED_MENTOR_OPS = ['member.mentor.session.save', 'member.mentor.s
     'member.mentor.rel.save', 'member.mentor.rel.fit', 'member.mentor.family.send', 'member.mentor.family.drafts', 'member.mentor.supervision.prep',
     'member.mentor.supervision.book', 'member.mentor.retreat.book', 'member.mentor.saturday.plan', 'member.mentor.onetoones.add', 'member.mentor.register',
     'member.mentor.week.review', 'member.mentor.week.review.undo', 'member.mentor.message.reply', 'member.mentor.message.lead', 'member.mentor.plan.approve',
-    'member.mentor.plan.return', 'member.mentor.goal.save', 'member.mentor.goal.status'];
+    'member.mentor.plan.return', 'member.mentor.goal.save', 'member.mentor.goal.status',
+    // The Summer School portal (and the class tools): conversations, reviews, courage, chat, stars, notes.
+    'member.mentor.meeting.save', 'member.mentor.meeting.delete', 'member.mentor.review.save', 'member.mentor.summer.review',
+    'member.mentor.courage.mark', 'member.mentor.chat.send', 'behaviour.star.give', 'behaviour.bulk.award', 'member.remark.add'];
 /** The instructor portal's writes that wait for "Start here". */
 const ACADEMY_GATED_INSTRUCTOR_OPS = ['instructor.class.roll', 'instructor.class.plan', 'instructor.class.hinge', 'instructor.class.exit', 'instructor.class.log',
     'instructor.skills.mark', 'instructor.session.save', 'instructor.result.note', 'instructor.result.seen', 'instructor.result.remind'];
@@ -51,28 +54,40 @@ function academy_track(string $track): array {
     }
     return $cache[$track];
 }
-/** The ids of a track's "Start here" modules. */
-function academy_orientation_ids(string $track): array {
-    return array_values(array_map(static fn($m) => (string)$m['id'], array_filter(academy_track($track)['modules'], static fn($m) => !empty($m['orientation']))));
+/** A module is for these portals: its `portal` ('ngg' | 'summer'), or every portal when it names none. */
+function academy_module_for(array $m, ?array $portals): bool {
+    $p = trim((string)($m['portal'] ?? ''));
+    return $p === '' || $portals === null || in_array($p, $portals, true);
+}
+/** The ids of a track's "Start here" modules — for these portals only, when given.
+ *  A Summer School mentor learns the Summer School portal, not the NGG one; a
+ *  mentor in both programmes takes both. */
+function academy_orientation_ids(string $track, ?array $portals = null): array {
+    return array_values(array_map(static fn($m) => (string)$m['id'],
+        array_filter(academy_track($track)['modules'], static fn($m) => !empty($m['orientation']) && academy_module_for($m, $portals))));
 }
 
-/** "Start here" for one person: {required, done, ok, exempt, mins}. */
-function academy_orientation_state(string $track, string $personId, bool $exempt = false): array {
-    $ids = academy_orientation_ids($track);
-    $mins = 0; foreach (academy_track($track)['modules'] as $m) if (!empty($m['orientation'])) $mins += (int)($m['mins'] ?? 0);
-    if ($exempt || !$ids || $personId === '') return ['required' => count($ids), 'done' => count($ids), 'ok' => true, 'exempt' => $exempt, 'mins' => $mins];
+/** "Start here" for one person: {required, done, ok, exempt, mins, ids}. */
+function academy_orientation_state(string $track, string $personId, bool $exempt = false, ?array $portals = null): array {
+    $ids = academy_orientation_ids($track, $portals);
+    $mins = 0; foreach (academy_track($track)['modules'] as $m) if (in_array((string)$m['id'], $ids, true)) $mins += (int)($m['mins'] ?? 0);
+    if ($exempt || !$ids || $personId === '') return ['required' => count($ids), 'done' => count($ids), 'ok' => true, 'exempt' => $exempt, 'mins' => $mins, 'ids' => $ids];
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $done = $track === 'mentor'
         ? (int)(db_row("SELECT COUNT(DISTINCT moduleId) c FROM mentor_academy WHERE mentorId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$personId], $ids))['c'] ?? 0)
         : (int)(db_row("SELECT COUNT(DISTINCT moduleId) c FROM academy_passes WHERE track = ? AND personId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$track, $personId], $ids))['c'] ?? 0);
-    return ['required' => count($ids), 'done' => $done, 'ok' => $done >= count($ids), 'exempt' => false, 'mins' => $mins];
+    return ['required' => count($ids), 'done' => $done, 'ok' => $done >= count($ids), 'exempt' => false, 'mins' => $mins, 'ids' => $ids];
 }
 /** A mentor's "Start here", from their mentor row: staff and by-hand clearance are exempt. */
 function academy_mentor_orientation(?array $mentorRow): array {
     if (!$mentorRow) return academy_orientation_state('mentor', '', true);
     $cl = function_exists('ms_clearance') ? ms_clearance($mentorRow) : [];
     $exempt = !empty($cl['staff']) || trim((string)($mentorRow['academyClearedAt'] ?? '')) !== '';
-    return academy_orientation_state('mentor', (string)$mentorRow['mentorId'], $exempt);
+    return academy_orientation_state('mentor', (string)$mentorRow['mentorId'], $exempt, academy_mentor_portals($mentorRow));
+}
+/** The mentor portals this record works in: its programmes (mentor_programmes). */
+function academy_mentor_portals(array $mentorRow): array {
+    return function_exists('mentor_programmes') ? mentor_programmes($mentorRow) : ['ngg', 'summer'];
 }
 
 function academy_orientation_refusal(array $st, string $portal): array {

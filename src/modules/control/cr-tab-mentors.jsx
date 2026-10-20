@@ -6,6 +6,6 @@
 Object.assign(CR_TAB_DEFS, {
   mentors: crPanel(() => <AdminMentors/>),
   mentorship: crPanel(() => <AdminMentorship/>),
-  volunteers: crPanel(() => <AdminVolunteers/>),
+  volunteers: crPanel(ctx => <AdminVolunteers crCtx={ctx}/>),
   companion: crPanel(() => <AdminCompanion/>),
 });

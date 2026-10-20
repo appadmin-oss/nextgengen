@@ -9783,6 +9783,24 @@ chk('volunteer update edits role + courses + consent', (function () {
 })());
 chk('volunteer update rejects an unknown role', backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['role' => 'chef']])['error'] === 'bad_role');
 chk('volunteer update rejects a bad email', backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['email' => 'nope']])['error'] === 'bad_email');
+chk('volunteer update allows a blank email (an ID-card volunteer may have none)', !empty(backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['email' => '']])['ok'])
+    && db_row('SELECT email FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1'])['email'] === '');
+chk('volunteer update: changing a name part rebuilds the full name', (function () {
+    backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['lastName' => 'Edited']]);
+    $a = db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1'])['fullName'];
+    // A record that only ever had a full name keeps its first name when only the last changes.
+    db_exec("UPDATE volunteers SET fullName = 'Bola Ade', firstName = '', lastName = '' WHERE volunteerId = 'VOL-DM-1'");
+    backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['lastName' => 'Adeyemi']]);
+    $b = db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1'])['fullName'];
+    return $a === 'Vol Edited' && $b === 'Bola Adeyemi';
+})());
+chk('volunteer update leaves fields it was not sent alone (the photo is not wiped by an edit)', (function () {
+    db_exec("UPDATE volunteers SET photoUrl = 'https://res.cloudinary.com/demo/image/upload/v.jpg' WHERE volunteerId = 'VOL-DM-1'");
+    backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1', 'data' => ['phone' => '08030000010']]);
+    return db_row('SELECT photoUrl FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1'])['photoUrl'] === 'https://res.cloudinary.com/demo/image/upload/v.jpg';
+})());
+chk('the volunteer roster carries the photo, so an editor can show it', in_array('https://res.cloudinary.com/demo/image/upload/v.jpg',
+    array_column(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099'])['volunteers'] ?? [], 'photoUrl'), true));
 chk('volunteer delete removes the record and its QR', (function () {
     return !empty(backend_dispatch('admin.volunteers.delete', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-DM-1'])['ok'])
         && !db_row('SELECT id FROM volunteers WHERE volunteerId = ?', ['VOL-DM-1']) && !db_row('SELECT id FROM qr_codes WHERE token = ?', ['VOLQR-DMDM']);
@@ -29337,11 +29355,15 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     foreach (['mentor', 'instructor'] as $t) {
         $a = academy_track($t); $o = academy_orientation_ids($t);
-        chk("academy · $t: “Start here” is the first group, six portal guides", $a['groups'][0] === 'Start here: using the portal' && count($o) === 6
-            && count(array_filter($a['modules'], static fn($m) => !empty($m['orientation']) && $m['group'] === 0)) === 6);
+        chk("academy · $t: “Start here” is the first group, and every guide is in it", $a['groups'][0] === 'Start here: using the portal' && count($o) >= 6
+            && count(array_filter($a['modules'], static fn($m) => !empty($m['orientation']) && $m['group'] === 0)) === count($o));
         chk("academy · $t: every module teaches and tests (lessons, a quiz, answers in range)", !array_filter($a['modules'], static fn($m) => !$m['lessons'] || !$m['quiz']
             || array_filter($m['quiz'], static fn($q) => !isset($q['options'][(int)$q['answer']]))));
     }
+    chk('academy · each mentor portal has its own guides: NGG six, Summer School three, both programmes all eight',
+        academy_orientation_ids('mentor', ['ngg']) === ['p01', 'p02', 'p03', 'p04', 'p05', 'p06']
+        && academy_orientation_ids('mentor', ['summer']) === ['p07', 'p08', 'p06']
+        && count(academy_orientation_ids('mentor', ['summer', 'ngg'])) === 8);
     chk('academy · the portal guides are not clearance: still thirteen required modules, none of them a guide',
         count(ms_required_modules()) === 13 && !array_intersect(academy_orientation_ids('mentor'), ms_required_modules()));
 
@@ -29383,6 +29405,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach (academy_orientation_ids('mentor') as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACM-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
     chk('academy · a mentor who passes the six guides is let through', !empty($last['passed']) && ($last['orientation']['ok'] ?? false) === true
         && (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
+
+    // A Summer School mentor — and one whose record names no programme, which counts as Summer School —
+    // gets the Academy too: their own portal's guides, and their portal's saves wait for them.
+    db_insert('members', ['memberId' => 'ACS-M', 'fullName' => 'Summer Gate', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Quizville', 'dob' => '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'ACST', 'fullName' => 'Summer Gate', 'status' => 'active', 'centre' => 'Quizville', 'programme' => '', 'memberId' => 'ACS-M', 'createdAt' => $now]);
+    $sv = backend_dispatch('member.mentor.academy', ['requesterId' => 'ACS-M']);
+    $svIds = array_column(array_filter($sv['modules'] ?? [], static fn($m) => !empty($m['orientation'])), 'id');
+    chk('academy · a Summer School mentor’s Academy holds the Summer School guides, not the NGG portal’s', !empty($sv['ok']) && $svIds === ['p07', 'p08', 'p06']
+        && $sv['orientation']['required'] === 3 && $sv['orientation']['ok'] === false);
+    chk('academy · …and the Summer School portal’s saves wait for them (a conversation, a weekly review, stars), concern does not',
+        (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') === 'orientation_required'
+        && (backend_dispatch('member.mentor.review.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') === 'orientation_required'
+        && (backend_dispatch('behaviour.star.give', ['requesterId' => 'ACS-M', 'subjectId' => 'X', 'stars' => 1])['error'] ?? '') === 'orientation_required'
+        && (backend_dispatch('member.mentor.concern.create', ['requesterId' => 'ACS-M', 'subjectId' => 'X', 'category' => 'Other', 'body' => 'Something worried me today'])['error'] ?? '') !== 'orientation_required');
+    foreach (['p07', 'p08', 'p06'] as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACS-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
+    chk('academy · passing their three opens the Summer School portal', ($last['orientation']['ok'] ?? false) === true
+        && (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
+    chk('academy · an instructor’s stars are not held by the mentor gate', (backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-ACI-1', 'subjectId' => 'X', 'stars' => 1])['error'] ?? '') !== 'orientation_required');
+    db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACST'"); db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACST'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACST'"); db_exec("DELETE FROM members WHERE memberId = 'ACS-M'");
 
     db_exec("DELETE FROM academy_passes WHERE personId = 'VOL-ACI-1'"); db_exec("DELETE FROM academy_attempts WHERE personId = 'VOL-ACI-1'"); db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-ACI-1'");
     db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACMT'"); db_exec("DELETE FROM members WHERE memberId = 'ACM-M'");

@@ -210,9 +210,9 @@ async function as(memberId, admin, viewport) {
     await nw.waitForFunction(() => /Start here: 5 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 });
     const lastI = q(`(function () { $id = academy_orientation_ids('instructor')[5]; foreach (academy_track('instructor')['modules'] as $m) if ($m['id'] === $id) return $m; })()`);
     await nw.click('main button:has-text("Start ' + lastI.title + '")');
-    const cont = () => nw.click('main .ip6a-nav .ip6a-btn.is-primary');
+    const cont = () => nw.click('main .sa-nav .sa-btn.is-primary');
     for (let k = 0; k < lastI.lessons.length; k++) await cont();
-    const choose = async t => { await nw.click('main .ip6a-opt:has-text("' + t.replace(/"/g, '\\"') + '")'); await cont(); };
+    const choose = async t => { await nw.click('main .sa-opt:has-text("' + t.replace(/"/g, '\\"') + '")'); await cont(); };
     if (lastI.scenario) await choose(lastI.scenario.options.find(o => o.right).text);
     for (const qq of lastI.quiz) await choose(qq.options[qq.answer]);
     const passed = await nw.waitForFunction(() => /Passed · 100%/.test(document.body.innerText), null, { timeout: 20000 }).then(() => true).catch(() => false);

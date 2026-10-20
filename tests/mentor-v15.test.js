@@ -85,6 +85,10 @@ async function as(memberId, admin, viewport) {
         db_insert('mentor_policy', ['mentorId' => "MEN-MS-$i", 'policyVersion' => MS_POLICY_VERSION, 'signedName' => 'x', 'acceptedAt' => $now]);
       }
       foreach ([1 => 'Mariam Yusuf', 2 => 'Daniel Okafor', 3 => 'Kemi Adewale'] as $i => $n) $mk("NGG-MS-K$i", $n);
+      // A Summer School mentor on their first day: no Academy yet.
+      $mk('NGG-MS-S1', 'Sade Summer');
+      db_insert('mentors', ['mentorId' => 'MEN-MS-S', 'fullName' => 'Sade Summer', 'email' => 'sade.summer@pod.example', 'status' => 'active', 'centre' => 'Egbeda (Summer School)',
+        'programme' => 'summer', 'memberId' => 'NGG-MS-S1', 'checkedAt' => $now, 'createdAt' => $now]);
       foreach ([1, 2] as $i) {
         $a = backend_dispatch('admin.ms.match.approve', ['requesterId' => 'NGG-MS-ADM', 'memberId' => "NGG-MS-K$i", 'mentorIds' => ['MEN-MS-1', 'MEN-MS-2']]);
         backend_dispatch('admin.ms.match.choose', ['requesterId' => 'NGG-MS-ADM', 'matchId' => $a['matchId'], 'mentorId' => 'MEN-MS-1', 'chosenBy' => 'mentee']);
@@ -264,10 +268,12 @@ async function as(memberId, admin, viewport) {
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
     // The old email link (?tab=results) lands on Class › School results, inside the portal
     await mt.goto(BASE + '/mentor?tab=results', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mt);
     await mt.waitForFunction(() => /Waiting for you/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 60000 });
     chk('/mentor?tab=results lands on Class › School results at /mentor/class, inside the portal',
       new URL(mt.url()).pathname === '/mentor/class' && /tab=results/.test(mt.url()) && await mt.isVisible('.m15-app') && !(await mt.$('.m15x-classic')));
     await mt.goto(BASE + '/mentor/summer', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mt);
     await mt.waitForFunction(() => /no class|isn’t/i.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     chk('an NGG-only mentor is refused the Summer School portal', !/Peace Summer/.test(await mt.innerText('body')) && q(`backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MS-M1', 'programme' => 'summer'])['error'] ?? ''`) === 'not_this_programme');
     chk('no page errors (mentor)', mt.errs.length === 0);
@@ -283,10 +289,11 @@ async function as(memberId, admin, viewport) {
       && !(await nb.$$eval('.m15-app nav', ns => ns.map(n => n.innerText).join(' '))).match(/Mentees|Saturday|Messages/));
     chk('…Report a concern still one press away', (await nb.$$('text=Report a concern')).length > 0);
     chk('…and the server refuses the portal’s writes until then', q(`backend_dispatch('member.mentor.session.save', ['requesterId' => 'NGG-MS-M3', 'type' => 'one_to_one'])['error'] ?? ''`) === 'orientation_required');
-    php(`foreach (array_slice(academy_orientation_ids('mentor'), 0, 5) as $m) db_insert('mentor_academy', ['mentorId' => 'MEN-MS-3', 'moduleId' => $m, 'score' => 100, 'passedAt' => now_iso()]);`);
+    php(`foreach (array_slice(academy_orientation_ids('mentor', ['ngg']), 0, 5) as $m) db_insert('mentor_academy', ['mentorId' => 'MEN-MS-3', 'moduleId' => $m, 'score' => 100, 'passedAt' => now_iso()]);`);
     await nb.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(nb);
     await nb.waitForFunction(() => /Start here: 5 of 6 portal guides done/.test(document.body.innerText), null, { timeout: 60000 });
-    const lastId = q(`academy_orientation_ids('mentor')[5]`); const lastMod = q(`(function () { foreach (ms_academy()['modules'] as $m) if ($m['id'] === '${lastId}') return $m; })()`);
+    const lastId = q(`academy_orientation_ids('mentor', ['ngg'])[5]`); const lastMod = q(`(function () { foreach (ms_academy()['modules'] as $m) if ($m['id'] === '${lastId}') return $m; })()`);
     await nb.evaluate(t => { const b = Array.from(document.querySelectorAll('main button')).find(x => x.parentElement && x.parentElement.innerText.includes(t)); b && b.click(); }, lastMod.title);
     const cont = async () => { await nb.evaluate(() => { const b = Array.from(document.querySelectorAll('main button')).filter(x => /^(Continue|See result)$/.test(x.innerText.trim())).pop(); b && b.click(); }); await nb.waitForTimeout(150); };
     for (let k = 0; k < lastMod.lessons.length; k++) await cont();
@@ -298,6 +305,28 @@ async function as(memberId, admin, viewport) {
     chk('passing the last guide in the portal opens the whole portal', opened && /Mentees/.test(await nb.$$eval('.m15-app nav', ns => ns.map(n => n.innerText).join(' '))));
     chk('no page errors (new mentor)', nb.errs.length === 0);
     if (nb.errs.length) console.error(nb.errs.join('\n'));
+
+    // ── A Summer School mentor's first login: the Academy, with the Summer School portal's own guides ──
+    const sm = await as('NGG-MS-S1', false);
+    await sm.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(sm);
+    const smLocked = await sm.waitForFunction(() => /Start here: 0 of 3 portal guides done/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true).catch(() => false);
+    const smTxt = await sm.innerText('body');
+    chk('a Summer School mentor’s first login opens the Mentor Academy too, not the portal', smLocked && /Mentor Academy/.test(smTxt) && !/Peace Summer/.test(smTxt));
+    chk('…with the Summer School portal’s guides, not the NGG portal’s', /Summer School portal: your participants/.test(smTxt) && /Summer School portal: reviews, conversations and goals/.test(smTxt)
+      && !/This week and what’s due/.test(smTxt));
+    chk('…and Report a concern on the same screen', (await sm.$$('button:has-text("Report a concern")')).length === 1);
+    chk('…and the server holds a Summer School save until then', q(`backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MS-S1', 'subjectId' => 'SUM-MP-1'])['error'] ?? ''`) === 'orientation_required');
+    php(`foreach (['p07', 'p08', 'p06'] as $m) db_insert('mentor_academy', ['mentorId' => 'MEN-MS-S', 'moduleId' => $m, 'score' => 100, 'passedAt' => now_iso()]);`);
+    await sm.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(sm);
+    const smOpen = await sm.waitForFunction(() => /Peace Summer/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true).catch(() => false);
+    chk('once done, /mentor opens their Summer School portal', smOpen && new URL(sm.url()).pathname === '/mentor/summer');
+    await sm.goto(BASE + '/mentor/academy', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(sm);
+    chk('…and the Academy stays a page away for renewals (/mentor/academy)', await sm.waitForFunction(() => /Mentor Academy/.test(document.body.innerText) && /3 of \d+ modules complete/.test(document.body.innerText), null, { timeout: 60000 }).then(() => true).catch(() => false));
+    chk('no page errors (Summer School mentor)', sm.errs.length === 0);
+    if (sm.errs.length) console.error(sm.errs.join('\n'));
 
     // ── An admin covers both programmes: a chooser, and the two never mix ──
     const ad = await as('NGG-MS-ADM', true);
@@ -319,6 +348,7 @@ async function as(memberId, admin, viewport) {
     const sumTxt = await ad.innerText('body');
     chk('/mentor/summer: Summer participants only, never NGG members', /Peace Summer/.test(sumTxt) && !/Mariam Yusuf|Daniel Okafor/.test(sumTxt) && /SUMMER SCHOOL/.test(sumTxt));
     await ad.goto(BASE + '/mentor/ngg', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
     await ad.waitForSelector('.m15-app', { timeout: 60000 });
     const cs = await ad.$('.m15x-centre select');
     chk('a coordinator over two NGG centres gets a centre switcher, NGG centres only', !!cs && JSON.stringify(await cs.evaluate(el => Array.from(el.options).map(o => o.value))) === JSON.stringify(['Egbeda', 'Ikeja']));
@@ -336,6 +366,7 @@ async function as(memberId, admin, viewport) {
     chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
     // Control Room → Learning → Saturday formation: edit a block, every portal reads it
     await ad.goto(BASE + '/control/learning/formation', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
     await ad.waitForFunction(() => /Chess & strategic thinking/.test(document.body.innerText), null, { timeout: 60000 });
     await ad.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/admin-formation.png' : path.join(TMP, 'admin-formation.png') });
     await ad.click('tr:has-text("Chess & strategic thinking"), [role=row]:has-text("Chess & strategic thinking")');
