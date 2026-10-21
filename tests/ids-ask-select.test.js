@@ -72,7 +72,7 @@ console.log('questions answered here');
 const c = { n: 2, sheets: 1, lookup: () => [], blockedList: [], onSheet: [], byCentre: [], stock: { sheets: 1, sides: 2, used: 20 }, bad: [], warn: [] };
 chk('"what can you do?" is the help', /I set up the sheet/.test(T.idsAskAnswer('What can you do?', c)));
 chk('"can you help position the image?" is a request about a photo, not the help text', T.idsAskAnswer('Can you help position the image?', c) === null);
-chk('…and the help mentions photos and choosing the AI', /📎/.test(T.idsAskAnswer('What can you do?', c)) && /use Gemini/.test(T.idsAskAnswer('What can you do?', c)));
+chk('…and the help mentions photos, and does not advertise choosing an AI (it is routed automatically)', /📎/.test(T.idsAskAnswer('What can you do?', c)) && !/use Gemini|Groq|OpenAI|Claude/.test(T.idsAskAnswer('What can you do?', c)));
 
 console.log(failed ? `\n❌ FAIL: ${passed} passed, ${failed} failed` : `\n✅ PASS: ${passed} passed, 0 failed (ids assistant)`);
 process.exit(failed ? 1 : 0);

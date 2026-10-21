@@ -541,7 +541,41 @@ function admin_ai_status(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $probe = !empty($p['probe']);
     if ($probe) audit('ai.probe', (string)$g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'ai' => ai_status($probe), 'anyEnabled' => ai_enabled()];
+    return ['ok' => true, 'ai' => ai_status($probe), 'anyEnabled' => ai_enabled(), 'spend' => ai_spend_summary()];
+}
+
+/** The most a month's paid AI may be set to: a typo of an extra zero should not be a bill. */
+const AI_LIMIT_MAX_USD = 2000;
+/** admin.ai.routing.set — the monthly limit on paid models (USD; 0 = paid models off), whether they may do everyday work
+ *  when no free model is set up, and price overrides ("model in out" per line, USD per million tokens). Whole payload checked first. */
+function admin_ai_routing_set(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $cur = setting_get('ai_routing'); $cur = is_array($cur) ? $cur : [];
+    $next = $cur;
+    if (array_key_exists('monthlyLimitUsd', $p)) {
+        $v = trim((string)$p['monthlyLimitUsd']);
+        if ($v === '') $v = '0';
+        if (!is_numeric($v) || (float)$v < 0) return ['ok' => false, 'error' => 'bad_limit', 'detail' => 'The limit is a number of US dollars, 0 or more.'];
+        if ((float)$v > AI_LIMIT_MAX_USD) return ['ok' => false, 'error' => 'limit_too_high', 'detail' => 'At most $' . AI_LIMIT_MAX_USD . ' a month.'];
+        $next['monthlyLimitUsd'] = round((float)$v, 2);
+    }
+    if (array_key_exists('paidEveryday', $p)) $next['paidEveryday'] = !empty($p['paidEveryday']);
+    if (array_key_exists('prices', $p)) {
+        $prices = [];
+        foreach (preg_split('/\r?\n/', (string)$p['prices']) as $i => $line) {
+            $line = trim($line); if ($line === '' || str_starts_with($line, '#')) continue;
+            if (!preg_match('/^([A-Za-z0-9._:\/\-]{2,100})\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/', $line, $m))
+                return ['ok' => false, 'error' => 'bad_price_line', 'detail' => 'Line ' . ($i + 1) . ': write a model, then its input and output price per million tokens, e.g. “claude-opus-5-5 4 20”.'];
+            $prices[strtolower($m[1])] = [(float)$m[2], (float)$m[3]];
+        }
+        if (count($prices) > 40) return ['ok' => false, 'error' => 'too_many_prices', 'detail' => 'Forty price lines at most.'];
+        $next['prices'] = $prices;
+    }
+    setting_set('ai_routing', $next, (string)$g['requester']['memberId']);
+    unset($GLOBALS['__ai_spend']);
+    audit('ai.routing.set', (string)$g['requester']['memberId'], '', ['from' => (float)($cur['monthlyLimitUsd'] ?? 0), 'to' => (float)($next['monthlyLimitUsd'] ?? 0),
+        'paidEveryday' => !empty($next['paidEveryday']), 'prices' => count((array)($next['prices'] ?? []))], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'spend' => ai_spend_summary()];
 }
 
 // ── Analytics overview ──────────────────────────────────────────────────────

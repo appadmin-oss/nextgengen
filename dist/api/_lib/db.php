@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 166;
+const NGG_SCHEMA_TARGET = 167;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4984,6 +4984,29 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_project_person ON project_people(projectId, kind, personId);
             CREATE INDEX IF NOT EXISTS idx_project_people_who ON project_people(kind, personId, status);
+        ",
+        /* 167 — every AI call, with its tokens and estimated cost
+         * (api/_lib/ai.php ai_log_usage), so the monthly limit on paid
+         * models is enforced against what was actually spent. costMicros is
+         * USD × 1,000,000; `estimated` = 1 when the provider gave no counts. */
+        167 => "
+            CREATE TABLE IF NOT EXISTS ai_usage (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              at TEXT NOT NULL,
+              month TEXT NOT NULL,
+              profile TEXT DEFAULT '',
+              job TEXT DEFAULT '',
+              provider TEXT DEFAULT '',
+              model TEXT DEFAULT '',
+              tier TEXT DEFAULT '',
+              inTokens INTEGER DEFAULT 0,
+              outTokens INTEGER DEFAULT 0,
+              costMicros INTEGER DEFAULT 0,
+              estimated INTEGER DEFAULT 0,
+              ok INTEGER DEFAULT 1,
+              error TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_usage_month ON ai_usage(month, tier);
         ",
     ];
 

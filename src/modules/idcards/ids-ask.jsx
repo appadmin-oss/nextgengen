@@ -304,7 +304,6 @@ function idsAskAnswer(text, c) {
       + "**Change it**: “fronts only”, “only Ijaiye”, “add 026-010”, “not Ada”, “make it A3”, “margin 5mm”, “skip the first 3 slots”, “make it a proof”.\n\n"
       + "**Act**: “fill the gaps”, “ask the ones with no photo for photos”, “improve the photos and remove their backgrounds”, “help position Ada’s photo”, “clear the sheet”.\n\n"
       + "**Photos**: press 📎 to add photos. Name each file after the person or their ID (“Ada Obi.jpg”, “026-014.png”) and I match them; anyone I can’t match, you pick.\n\n"
-      + "**AI**: say “use Gemini” (or Groq, Claude, OpenAI) to choose who reads your requests, or “which AI?”.\n\n"
       + "**Ask**: “why can’t I print yet?”, “who’s blocked?”, “who’s on the sheet?”, “has Ada Obi got a card?”, “how much card stock?”.\n\n"
       + "I can’t print and I can’t mark anyone as printed: Print stays your press, with the count on it.";
   }
@@ -536,7 +535,8 @@ function IdsAssistant({ A, onClose }) {
 }
 
 function IdsAskReply({ m, A }) {
-  const by = m.by === "ai" ? "Read by " + (IDS_ASK_PROVIDER[m.provider] || "AI") : m.by === "rules" ? "Read by the studio’s rules" + (m.aiError ? " (the AI didn’t answer)" : "") : "";
+  // The AI is chosen automatically (api/_lib/ai.php ai_route), so the line says that it read it, not which one did.
+  const by = m.by === "ai" ? "Read by the AI" : m.by === "rules" ? "Read by the studio’s rules" + (m.aiError ? " (the AI didn’t answer)" : "") : "";
   const live = m.id === A.liveId;
   if (m.kind === "error") return (
     <div className="ids-ai-card is-bad" role="alert">

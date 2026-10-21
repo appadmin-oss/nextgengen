@@ -1599,6 +1599,7 @@
         keysTest:     (service) => request('/admin/settings.php', { body: { action: 'keysTest', service }, timeout: 60000 }),
         aiKeysSet:    (data) => request('/admin/settings.php', { body: Object.assign({ action: 'aiKeys' }, data) }),
         aiKeysTest:   () => request('/admin/settings.php', { body: { action: 'aiKeysTest' }, timeout: 60000 }),
+        aiRouting:    (data) => request('/admin/settings.php', { body: Object.assign({ action: 'aiRouting' }, data) }),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
         qrVoid:       (token) => request('/admin/summer.php', { body: { action: 'qr_void', token } }),
         qrReassign:   (token, studentId) => request('/admin/summer.php', { body: { action: 'qr_reassign', token, studentId } }),

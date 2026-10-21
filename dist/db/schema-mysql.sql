@@ -3945,3 +3945,21 @@ CREATE TABLE IF NOT EXISTS project_people (
   KEY idx_project_people_who (kind, personId, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (166) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  at VARCHAR(32) NOT NULL,
+  month VARCHAR(7) NOT NULL,
+  profile VARCHAR(40) DEFAULT '',
+  job VARCHAR(10) DEFAULT '',
+  provider VARCHAR(20) DEFAULT '',
+  model VARCHAR(120) DEFAULT '',
+  tier VARCHAR(6) DEFAULT '',
+  inTokens INT DEFAULT 0,
+  outTokens INT DEFAULT 0,
+  costMicros BIGINT DEFAULT 0,
+  estimated TINYINT DEFAULT 0,
+  ok TINYINT DEFAULT 1,
+  error VARCHAR(60) DEFAULT '',
+  KEY idx_ai_usage_month (month, tier)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (167) ON DUPLICATE KEY UPDATE version = version;

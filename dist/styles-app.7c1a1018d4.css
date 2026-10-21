@@ -8060,6 +8060,13 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-sy-frame { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
 .cr-sy-frame-keys { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; }
 .cr-sy-frame-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.cr-sy-spend { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.cr-sy-spend-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.cr-sy-spend-big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cr-sy-spend-big small { font-size: 13px; font-weight: 400; color: var(--cr-muted); }
+.cr-sy-spend-bar { display: block; height: 6px; border-radius: 999px; background: var(--cr-line); overflow: hidden; }
+.cr-sy-spend-bar > span { display: block; height: 100%; background: var(--cr-ink); border-radius: 999px; }
+.cr-sy-spend-t td, .cr-sy-spend-t th { white-space: nowrap; }
 .ids-sum { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
 .ids-sum dt { color: var(--ids-muted); } .ids-sum dd { margin: 0; }
 .ids-sum-line { display: block; }

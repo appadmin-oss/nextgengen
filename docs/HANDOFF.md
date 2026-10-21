@@ -2167,3 +2167,45 @@ Rebuilt from that paste, and finished:
   editing keeps finished parts, closing, the Academy gate, one audit per
   save); `tests/projects.test.js` (24, in `test:all`, `npm run test:projects`)
   drives lead → child → mentor → lead in Chromium.
+
+## 2026-10-21 — AI: automatic routing, and a monthly limit on paid models
+
+The owner: no provider choice for the operator; free models do the bulk, paid
+ones (Claude, OpenAI) only the hard thinking, and only under a spend limit set
+in Settings.
+
+- `ai_profile_chain()` is the configured chain (profile → fallback → flat
+  block, the old `ai_profile_candidates` body); `ai_profile_candidates()` is
+  that chain through `ai_route()`. Every caller and the status table get the
+  routed answer. Jobs: `AI_BRAIN_PROFILES` (marking, insight_answer/synth and
+  the four lenses) are hard thinking; everything else is everyday. Tiers:
+  anthropic/openai paid, OpenRouter paid unless the model ends `:free`,
+  Groq/Gemini free.
+- Everyday → free only (paid only with `ai_routing.paidEveryday` and the limit
+  open, when no free model exists). Hard thinking → paid first, then free;
+  paid dropped once the month's spend reaches the limit. Unset/0 limit = paid
+  off — **a deployment that relied on a Claude key for marking needs a limit
+  set in Settings → API keys → AI spending.**
+- `ai_run()` prices each paid call before making it (input estimated at four
+  characters a token, output at the call's full allowance) and skips it if it
+  could cross the limit (logged as `ai_limit_reached`, cost 0). Every call is
+  logged to `ai_usage` (migration 167) with real token counts where the
+  provider returns them (Anthropic usage, OpenAI-shaped usage, Gemini
+  usageMetadata; OpenRouter is asked for `usage.include` and its reported cost
+  is used). `$GLOBALS['__ai_call_mock']` is the per-candidate test seam.
+- Prices: `AI_PRICES` (USD/MTok by longest model prefix; Claude from the
+  current model table), unknown paid models priced high on purpose
+  (`AI_PRICE_UNKNOWN_PAID`), overrides in Settings.
+- Claude requests fixed for current models (Opus/Sonnet 4.6+, every 5.x):
+  no `temperature` (they 400 on it), an `output_config.effort` by job
+  (high for hard thinking, low otherwise), `max_tokens` at least 4096 so
+  always-on thinking cannot starve the text, `stop_reason: refusal` is a
+  failure so the chain moves on. Default Claude model `claude-opus-5-5`.
+- The `prefer` argument (the ID assistant's "use Gemini") still reorders
+  within what the job may use and cannot add a paid model; the assistant no
+  longer advertises choosing an AI, and says "Read by the AI".
+- Settings → API keys: *AI spending* (`CrSyAiSpend`, `admin.ai.routing.set`,
+  limit ≤ `AI_LIMIT_MAX_USD` 2000, audited) and a *Kind of work* column.
+- Tests: PHP suite +20 routing checks (and the old provider tests read the
+  unrouted chain; marking/assignment tests set a limit; study-helper tests
+  carry a free key); `tests/ai-spend-ui.test.js` (11) in `test:all`.

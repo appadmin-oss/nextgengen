@@ -577,7 +577,7 @@ function staff_assignment_return(array $p): array {
 function staff_assignment_suggest(array $p): array {
     $x = staff_assignment_submission_gate($p); if (!$x['ok']) return $x;
     ['row' => $row, 'a' => $a] = $x;
-    if (!function_exists('ai_enabled') || !ai_enabled('marking')) return ['ok' => false, 'error' => 'ai_unavailable', 'detail' => 'No capable AI model is set up for marking. Add one under Settings → API keys.'];
+    if (!function_exists('ai_enabled') || !ai_enabled('marking')) return ['ok' => false, 'error' => 'ai_unavailable', 'detail' => (function_exists('ai_route_note') ? ai_route_note('marking') : '') ?: 'No capable AI model is set up for marking. Add one under Settings → API keys.'];
     $text = trim((string)$row['answerText']);
     if ($text === '') return ['ok' => false, 'error' => 'nothing_to_read', 'detail' => 'This submission is a file only. Open it and mark it yourself.'];
     $max = max(1, (int)$a['points']);

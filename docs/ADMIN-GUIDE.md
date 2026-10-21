@@ -127,6 +127,21 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 | **Centres** | The centre directory. Add, edit, retire. |
 | **ID cards** | The print log, one person's card history, and the doors into both studios. |
 
+**AI: who answers, and what it costs.** Nobody picks an AI provider; each
+feature is routed by the kind of work it is. *Everyday work* — screening posts,
+classifying observations, photo checks, Anchor Journal coaching, summaries, the
+ID Card Studio assistant — runs on **free** models (Groq, Gemini, OpenRouter's
+free ones). *Hard thinking* — marking written answers, the Analyst's answers,
+lenses and synthesis — tries **paid** models (Claude, OpenAI) first and falls
+back to free ones. Paid models only run within the **monthly limit** set in
+**Settings → API keys → AI spending** (blank or 0 keeps them off). Every call is
+logged with its tokens and estimated cost; a paid call that could take the month
+over the limit is not made, and the free model answers instead. The block shows
+this month's spend by model, what is left and how many paid calls the limit held
+back; the *AI features* table shows each feature's kind of work and, when it is
+on rules only, why. With only a paid key and no free one, everyday work uses each
+feature's own rules unless you allow paid models to do everyday work too.
+
 **Finding a request.** A request waiting for a decision is in **Inbox → Member
 requests**; that is where it is approved or declined. Once it is decided — or
 the member withdraws it — it leaves the Inbox, and it is in **Members →

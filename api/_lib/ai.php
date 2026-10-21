@@ -40,7 +40,8 @@ const AI_DEFAULT_MODEL = [
     'groq'       => 'llama-3.1-8b-instant',
     // Blank: the best Gemini model the key can use, asked of Google (gemini_pick_model).
     'gemini'     => '',
-    'anthropic'  => 'claude-haiku-4-5-20251001',
+    // A paid provider only does hard thinking (ai_route), so its default is the capable model.
+    'anthropic'  => 'claude-opus-5-5',
     'openai'     => 'gpt-4.1-mini',
     'openrouter' => 'meta-llama/llama-3.1-8b-instruct',
 ];
@@ -71,11 +72,17 @@ function ai_default_candidates(): array {
     return $out;
 }
 
-/**
- * Resolve a profile to an ordered list of provider candidates:
- * profile → its fallback → the default block. Invalid entries are skipped.
- */
+/** The providers a profile may USE, in order: its configured chain, routed for its job (ai_route). */
 function ai_profile_candidates(string $profile = 'default'): array {
+    return ai_route($profile, ai_profile_chain($profile));
+}
+
+/**
+ * Resolve a profile to an ordered list of provider candidates as CONFIGURED:
+ * profile → its fallback → the default block. Invalid entries are skipped.
+ * Not routed: ai_profile_candidates() is what may actually be called.
+ */
+function ai_profile_chain(string $profile = 'default'): array {
     $c = ai_config();
     $out = [];
     $push = function ($p) use (&$out) {
@@ -290,7 +297,9 @@ function gemini_generate(array $cand, string $system, array $contents, array $o)
             $j = json_decode((string)$r['body'], true) ?: [];
             $text = '';
             foreach ((array)($j['candidates'][0]['content']['parts'] ?? []) as $p) if (empty($p['thought'])) $text .= (string)($p['text'] ?? '');
-            return $text !== '' ? ['ok' => true, 'text' => trim($text), 'model' => $model, 'provider' => 'gemini']
+            $um = $j['usageMetadata'] ?? null;
+            $usage = is_array($um) ? [(int)($um['promptTokenCount'] ?? 0), (int)($um['candidatesTokenCount'] ?? 0) + (int)($um['thoughtsTokenCount'] ?? 0)] : null;
+            return $text !== '' ? ['ok' => true, 'text' => trim($text), 'model' => $model, 'provider' => 'gemini', 'usage' => $usage]
                 : ['ok' => false, 'error' => 'ai_empty', 'detail' => (string)($j['candidates'][0]['finishReason'] ?? ($j['promptFeedback']['blockReason'] ?? '')), 'model' => $model];
         }
         if ($tries >= 3) return $r + ['model' => $model];
@@ -312,9 +321,131 @@ function gemini_generate(array $cand, string $system, array $contents, array $o)
     }
 }
 
+/** [input, output] tokens from an OpenAI-shaped reply (OpenAI, Groq, OpenRouter), or null. */
+function ai_oai_usage(array $j): ?array {
+    return isset($j['usage']) && is_array($j['usage']) ? [(int)($j['usage']['prompt_tokens'] ?? 0), (int)($j['usage']['completion_tokens'] ?? 0)] : null;
+}
+
 /** An OpenAI reasoning model (o1, o3, o4-mini, gpt-5…): fixed temperature. */
 function ai_openai_is_reasoning(string $model): bool {
     return (bool)preg_match('/^(o\d|gpt-5)/i', trim($model));
+}
+
+
+/* ── Automatic routing and the spend limit ────────────────────────────────
+ *
+ * The operator does not choose a provider. Every profile is one of two jobs:
+ *   · everyday work (classifying, screening, photo checks, coaching replies,
+ *     summaries, the ID assistant) runs on FREE models only — Groq, Gemini,
+ *     and OpenRouter models ending ":free";
+ *   · hard thinking (marking a child's written answer, the Analyst's answers,
+ *     its lenses and its synthesis) tries the PAID models first — Claude,
+ *     OpenAI, OpenRouter's paid models — and falls back to free ones.
+ * Paid models run only under a monthly spend limit set in Settings
+ * (setting `ai_routing.monthlyLimitUsd`; unset or 0 = paid models off). Every
+ * call is logged with its tokens and estimated cost (ai_usage, migration
+ * 167); a paid call that would cross the limit is skipped, and the job is
+ * answered by a free model or by the feature's own rules.
+ */
+const AI_BRAIN_PROFILES = ['marking', 'insight_answer', 'insight_synth', 'insight_mechanism', 'insight_action', 'insight_risk', 'insight_equity'];
+const AI_PAID_PROVIDERS = ['anthropic', 'openai'];
+/* USD per million tokens [input, output], matched by the longest prefix of
+ * the model name. Estimates for a budget, not an invoice: an unknown paid
+ * model is priced HIGH on purpose, so a guess stops spending early rather
+ * than late. Settings can override any model (`ai_routing.prices`). */
+const AI_PRICES = [
+    'claude-fable-5' => [10.0, 50.0], 'claude-mythos-5' => [10.0, 50.0],
+    'claude-opus-5-5' => [4.0, 20.0], 'claude-opus-5' => [5.0, 25.0], 'claude-opus-4-6' => [5.0, 25.0], 'claude-opus-4-7' => [5.0, 25.0], 'claude-opus-4-8' => [5.0, 25.0],
+    'claude-opus-4' => [15.0, 75.0], 'claude-sonnet-5' => [2.0, 10.0], 'claude-sonnet-4' => [3.0, 15.0], 'claude-haiku-5' => [0.10, 0.50], 'claude-haiku-4' => [1.0, 5.0], 'claude-3' => [3.0, 15.0],
+    'gpt-5-nano' => [0.05, 0.40], 'gpt-5-mini' => [0.25, 2.0], 'gpt-5' => [1.25, 10.0], 'gpt-4.1-nano' => [0.10, 0.40], 'gpt-4.1-mini' => [0.40, 1.60], 'gpt-4.1' => [2.0, 8.0],
+    'gpt-4o-mini' => [0.15, 0.60], 'gpt-4o' => [2.5, 10.0], 'o4-mini' => [1.10, 4.40], 'o3' => [2.0, 8.0],
+];
+const AI_PRICE_UNKNOWN_PAID = [15.0, 75.0];
+
+/** everyday | brain */
+function ai_profile_job(string $profile): string { return in_array($profile, AI_BRAIN_PROFILES, true) ? 'brain' : 'everyday'; }
+/** free | paid — by provider, and for OpenRouter by the model's ":free" suffix. */
+function ai_candidate_tier(array $c): string {
+    $prov = (string)($c['provider'] ?? '');
+    if (in_array($prov, AI_PAID_PROVIDERS, true)) return 'paid';
+    if ($prov === 'openrouter') return str_ends_with(strtolower((string)($c['model'] ?? '')), ':free') ? 'free' : 'paid';
+    return 'free';
+}
+/** The operator's routing settings: the monthly limit (USD), whether paid models may do everyday work when no free one is set up, price overrides. */
+function ai_routing_settings(): array {
+    $s = function_exists('setting_get') ? setting_get('ai_routing') : null;
+    $s = is_array($s) ? $s : [];
+    $prices = [];
+    foreach ((array)($s['prices'] ?? []) as $m => $pr) if (is_string($m) && is_array($pr) && count($pr) === 2) $prices[strtolower($m)] = [max(0.0, (float)$pr[0]), max(0.0, (float)$pr[1])];
+    return ['monthlyLimitUsd' => max(0.0, (float)($s['monthlyLimitUsd'] ?? 0)), 'paidEveryday' => !empty($s['paidEveryday']), 'prices' => $prices];
+}
+/** [input, output] USD per million tokens for one candidate. Free tiers cost nothing. */
+function ai_price_for(array $c): array {
+    if (ai_candidate_tier($c) === 'free') return [0.0, 0.0];
+    $m = strtolower((string)($c['model'] ?? ''));
+    $best = null; $len = -1;
+    foreach (ai_routing_settings()['prices'] + AI_PRICES as $prefix => $pr) if (str_starts_with($m, $prefix) && strlen($prefix) > $len) { $best = $pr; $len = strlen($prefix); }
+    return $best ?? AI_PRICE_UNKNOWN_PAID;
+}
+function ai_cost_micros(array $c, int $in, int $out): int {
+    [$pi, $po] = ai_price_for($c);
+    return (int)ceil(($in * $pi + $out * $po));   // USD per 1M tokens × tokens = micro-USD
+}
+/** Estimated spend this month, in micro-USD (USD × 1,000,000). Read once per request. */
+function ai_month_spend_micros(?string $month = null): int {
+    $month = $month ?? gmdate('Y-m');
+    if (isset($GLOBALS['__ai_spend'][$month])) return $GLOBALS['__ai_spend'][$month];
+    try { $v = (int)(db_row('SELECT COALESCE(SUM(costMicros), 0) c FROM ai_usage WHERE month = ?', [$month])['c'] ?? 0); } catch (\Throwable $e) { $v = 0; }
+    return $GLOBALS['__ai_spend'][$month] = $v;
+}
+function ai_limit_micros(): int { return (int)round(ai_routing_settings()['monthlyLimitUsd'] * 1000000); }
+/** May paid models run at all right now? */
+function ai_paid_open(): bool { $l = ai_limit_micros(); return $l > 0 && ai_month_spend_micros() < $l; }
+
+/** Order and filter a profile's candidates for its job. Every candidate comes back tagged with its tier. */
+function ai_route(string $profile, array $cands): array {
+    foreach ($cands as $i => $c) $cands[$i]['tier'] = ai_candidate_tier($c);
+    $free = array_values(array_filter($cands, static fn($c) => $c['tier'] === 'free'));
+    $paid = array_values(array_filter($cands, static fn($c) => $c['tier'] === 'paid'));
+    $open = $paid && ai_paid_open();
+    if (ai_profile_job($profile) === 'brain') return $open ? array_merge($paid, $free) : $free;
+    if ($free) return $free;
+    return $open && ai_routing_settings()['paidEveryday'] ? $paid : [];
+}
+/** Why a profile has the providers it has, in words for the Settings table. */
+function ai_route_note(string $profile): string {
+    $all = array_map('ai_candidate_tier', ai_profile_chain($profile));
+    $hasPaid = in_array('paid', $all, true); $hasFree = in_array('free', $all, true);
+    $brain = ai_profile_job($profile) === 'brain';
+    if ($brain && $hasPaid && !ai_paid_open()) return ai_limit_micros() > 0 ? 'This month’s AI limit is reached, so paid models wait until next month.' : 'Paid models are off until a monthly limit is set.';
+    if (!$brain && !$hasFree && $hasPaid && !ai_routing_settings()['paidEveryday']) return 'Everyday work runs on free models only, and none is set up.';
+    return '';
+}
+
+/** Rough token count for a budget estimate: four characters a token. */
+function ai_estimate_tokens(string $s): int { return (int)ceil(mb_strlen($s) / 4); }
+/** One line in the usage log. Never breaks the request it measures. */
+function ai_log_usage(string $profile, array $cand, array $r, int $in, int $out, bool $estimated, string $month): void {
+    $cost = isset($r['costMicros']) ? max(0, (int)$r['costMicros']) : ai_cost_micros($cand, $in, $out);
+    try {
+        db_insert('ai_usage', ['at' => now_iso(), 'month' => $month, 'profile' => $profile, 'job' => ai_profile_job($profile), 'provider' => (string)$cand['provider'],
+            'model' => (string)($r['model'] ?? $cand['model'] ?? ''), 'tier' => (string)($cand['tier'] ?? ai_candidate_tier($cand)), 'inTokens' => $in, 'outTokens' => $out,
+            'costMicros' => $cost, 'estimated' => $estimated ? 1 : 0, 'ok' => !empty($r['ok']) ? 1 : 0, 'error' => empty($r['ok']) ? mb_substr((string)($r['error'] ?? ''), 0, 60) : '']);
+        $GLOBALS['__ai_spend'][$month] = ai_month_spend_micros($month) + $cost;
+    } catch (\Throwable $e) { /* the log must never break the request it measures */ }
+}
+
+/* Current Claude models (Opus/Sonnet 4.6+, every 5.x) think on every request,
+ * reject `temperature`, and take an effort level instead. Their thinking is
+ * written out of max_tokens, so a small allowance can return no text at all:
+ * they get at least AI_CLAUDE_MIN_OUT. Older models keep the classic shape. */
+const AI_CLAUDE_MIN_OUT = 4096;
+function ai_anthropic_modern(string $model): bool {
+    return (bool)preg_match('/^claude-(?:(?:opus|sonnet)-4-[6-9]|(?:opus|sonnet|haiku|fable|mythos)-5)/', strtolower(trim($model)));
+}
+/** The output tokens a call may use — what the budget check prices. */
+function ai_out_allowance(array $cand, int $maxTokens): int {
+    return ($cand['provider'] ?? '') === 'anthropic' && ai_anthropic_modern((string)($cand['model'] ?? '')) ? max($maxTokens, AI_CLAUDE_MIN_OUT) : $maxTokens;
 }
 
 /** One call against one concrete provider candidate. $turns: [{role,text}]. */
@@ -326,18 +457,23 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         $msgs = [];
         foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
         if (!$msgs) $msgs[] = ['role' => 'user', 'content' => ''];
-        $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp,
-                             'system' => $system, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
+        $req = ['model' => $cand['model'], 'max_tokens' => ai_out_allowance($cand, $maxTokens), 'system' => $system, 'messages' => $msgs];
+        if (ai_anthropic_modern((string)$cand['model'])) $req['output_config'] = ['effort' => ($cand['job'] ?? '') === 'brain' ? 'high' : 'low'];
+        else $req['temperature'] = $temp;
+        $body = json_encode($req, JSON_UNESCAPED_SLASHES);
         $r = ai_http_post('https://api.anthropic.com/v1/messages', $body, [
             'x-api-key: ' . $cand['api_key'], 'anthropic-version: 2023-06-01', 'Content-Type: application/json',
         ]);
         if (!$r['ok']) return $r;
         $j = json_decode($r['body'], true);
+        $usage = isset($j['usage']) ? [(int)($j['usage']['input_tokens'] ?? 0) + (int)($j['usage']['cache_creation_input_tokens'] ?? 0) + (int)($j['usage']['cache_read_input_tokens'] ?? 0), (int)($j['usage']['output_tokens'] ?? 0)] : null;
+        // A declined request is a failure to answer, so the chain moves on to the next provider.
+        if (($j['stop_reason'] ?? '') === 'refusal') return ['ok' => false, 'error' => 'ai_refused', 'usage' => $usage];
         $text = '';
         foreach ((array)($j['content'] ?? []) as $blk) {
             if (($blk['type'] ?? '') === 'text') $text .= (string)($blk['text'] ?? '');
         }
-        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'anthropic'] : ['ok' => false, 'error' => 'ai_empty'];
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'anthropic', 'model' => (string)($j['model'] ?? $cand['model']), 'usage' => $usage] : ['ok' => false, 'error' => 'ai_empty', 'usage' => $usage];
     }
 
     /* OpenRouter — OpenAI-shaped, and the reason "and much more" needs no
@@ -347,7 +483,8 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
     if ($cand['provider'] === 'openrouter') {
         $msgs = [['role' => 'system', 'content' => $system]];
         foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
-        $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
+        // usage.include: OpenRouter reports what the call actually cost, so the budget is not an estimate.
+        $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp, 'messages' => $msgs, 'usage' => ['include' => true]], JSON_UNESCAPED_SLASHES);
         $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
         $r = ai_http_post('https://openrouter.ai/api/v1/chat/completions', $body, array_filter([
             'Authorization: Bearer ' . $cand['api_key'], 'Content-Type: application/json',
@@ -357,7 +494,9 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         if (!$r['ok']) return $r;
         $j = json_decode($r['body'], true);
         $text = $j['choices'][0]['message']['content'] ?? '';
-        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'openrouter'] : ['ok' => false, 'error' => 'ai_empty'];
+        $usage = ai_oai_usage($j);
+        $extra = ['usage' => $usage] + (isset($j['usage']['cost']) && is_numeric($j['usage']['cost']) ? ['costMicros' => (int)ceil((float)$j['usage']['cost'] * 1000000)] : []);
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'openrouter'] + $extra : ['ok' => false, 'error' => 'ai_empty'] + $extra;
     }
 
     /* OpenAI, direct. Chat Completions: `max_completion_tokens`, because the
@@ -374,7 +513,7 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         if (!$r['ok']) return $r;
         $j = json_decode($r['body'], true);
         $text = $j['choices'][0]['message']['content'] ?? '';
-        return $text !== '' ? ['ok' => true, 'text' => trim((string)$text), 'provider' => 'openai'] : ['ok' => false, 'error' => 'ai_empty'];
+        return $text !== '' ? ['ok' => true, 'text' => trim((string)$text), 'provider' => 'openai', 'usage' => ai_oai_usage($j)] : ['ok' => false, 'error' => 'ai_empty', 'usage' => ai_oai_usage($j)];
     }
 
     if ($cand['provider'] === 'groq') {
@@ -387,7 +526,7 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         if (!$r['ok']) return $r;
         $j = json_decode($r['body'], true);
         $text = $j['choices'][0]['message']['content'] ?? '';
-        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'groq'] : ['ok' => false, 'error' => 'ai_empty'];
+        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'groq', 'usage' => ai_oai_usage($j)] : ['ok' => false, 'error' => 'ai_empty'];
     }
 
     // Gemini (gemini_generate: the model the key can use, shaped for it)
@@ -415,14 +554,31 @@ function ai_run(string $profile, string $system, array $turns, int $maxTokens, f
         return $r;
     }
     $cands = ai_profile_candidates($profile);
-    if (!$cands) return ['ok' => false, 'error' => 'ai_disabled'];
+    if (!$cands) return ['ok' => false, 'error' => ai_route_note($profile) !== '' ? 'ai_not_routed' : 'ai_disabled'];
+    // A provider named in the request (the ID assistant's "use Gemini") goes first among the ones this job may use; it cannot add a paid one.
     if ($prefer !== '') usort($cands, static fn($a, $b) => ($b['provider'] === $prefer) <=> ($a['provider'] === $prefer));
     $last = ['ok' => false, 'error' => 'ai_disabled'];
     $t0 = microtime(true);
+    $month = gmdate('Y-m');
+    $inEst = ai_estimate_tokens($system) + array_sum(array_map(static fn($t) => ai_estimate_tokens((string)($t['text'] ?? '')), $turns));
+    $job = ai_profile_job($profile);
     foreach ($cands as $i => $cand) {
         if ($budget > 0 && $i > 0 && microtime(true) - $t0 > $budget) return ['ok' => false, 'error' => 'ai_slow', 'tried' => $i];
-        $r = ai_call_candidate($cand, $system, $turns, $maxTokens, $temp);
-        if (!empty($r['ok'])) return $r;
+        $cand['job'] = $job;
+        // A paid call that could cross the limit is not made: estimated at its full output allowance.
+        if (($cand['tier'] ?? '') === 'paid' && ai_month_spend_micros($month) + ai_cost_micros($cand, $inEst, ai_out_allowance($cand, $maxTokens)) > ai_limit_micros()) {
+            $last = ['ok' => false, 'error' => 'ai_limit_reached'];
+            ai_log_usage($profile, $cand, $last, 0, 0, false, $month);   // costs nothing; counted as a job the limit held back
+            continue;
+        }
+        $r = isset($GLOBALS['__ai_call_mock']) && is_callable($GLOBALS['__ai_call_mock'])
+            ? ($GLOBALS['__ai_call_mock'])($cand, $system, $turns, $maxTokens)
+            : ai_call_candidate($cand, $system, $turns, $maxTokens, $temp);
+        $u = is_array($r['usage'] ?? null) ? $r['usage'] : null;
+        $in = $u ? (int)($u[0] ?? 0) : $inEst;
+        $out = $u ? (int)($u[1] ?? 0) : (!empty($r['ok']) ? ai_estimate_tokens((string)($r['text'] ?? '')) : 0);
+        ai_log_usage($profile, $cand, $r, $in, $out, $u === null, $month);
+        if (!empty($r['ok'])) { unset($r['usage'], $r['costMicros']); return $r + ['tier' => (string)($cand['tier'] ?? '')]; }
         $last = $r;
     }
     return $last;
@@ -576,6 +732,9 @@ function ai_status(bool $probe = false): array {
         $row = [
             'profile' => $profile,
             'what' => $what,
+            'job' => ai_profile_job($profile),
+            'tier' => $cands ? (string)($cands[0]['tier'] ?? '') : '',
+            'routeNote' => ai_route_note($profile),
             'enabled' => count($cands) > 0,
             'provider' => $cands ? (string)$cands[0]['provider'] : '',
             'model' => $cands ? (string)$cands[0]['model'] : '',
@@ -598,3 +757,24 @@ function ai_status(bool $probe = false): array {
     }
     return $out;
 }
+
+/** This month's AI use for Settings: the limit, what was spent, and by whom. Names and numbers only — never keys. */
+function ai_spend_summary(?string $month = null): array {
+    $month = $month ?? gmdate('Y-m');
+    $rs = ai_routing_settings();
+    $rows = [];
+    try {
+        $rows = db_all("SELECT provider, model, tier, COUNT(*) calls, SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END) okCalls, SUM(CASE WHEN error = 'ai_limit_reached' THEN 1 ELSE 0 END) held,
+                               SUM(inTokens) inTokens, SUM(outTokens) outTokens, SUM(costMicros) costMicros, MAX(estimated) estimated
+                          FROM ai_usage WHERE month = ? GROUP BY provider, model, tier ORDER BY SUM(costMicros) DESC, COUNT(*) DESC", [$month]);
+    } catch (\Throwable $e) { $rows = []; }
+    $spent = array_sum(array_map(static fn($r) => (int)$r['costMicros'], $rows));
+    $limit = ai_limit_micros();
+    return ['month' => $month, 'limitUsd' => $rs['monthlyLimitUsd'], 'spentUsd' => round($spent / 1000000, 4), 'leftUsd' => $limit > 0 ? round(max(0, $limit - $spent) / 1000000, 4) : 0.0,
+        'paidOpen' => $limit > 0 && $spent < $limit, 'paidEveryday' => $rs['paidEveryday'],
+        'prices' => array_map(static fn($m, $p) => ['model' => $m, 'in' => $p[0], 'out' => $p[1]], array_keys($rs['prices']), array_values($rs['prices'])),
+        'held' => array_sum(array_map(static fn($r) => (int)$r['held'], $rows)),
+        'byModel' => array_map(static fn($r) => ['provider' => (string)$r['provider'], 'model' => (string)$r['model'], 'tier' => (string)$r['tier'], 'calls' => (int)$r['calls'], 'ok' => (int)$r['okCalls'],
+            'held' => (int)$r['held'], 'inTokens' => (int)$r['inTokens'], 'outTokens' => (int)$r['outTokens'], 'costUsd' => round((int)$r['costMicros'] / 1000000, 4), 'estimated' => (bool)$r['estimated']], $rows)];
+}
+

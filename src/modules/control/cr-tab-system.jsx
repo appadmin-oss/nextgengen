@@ -1075,6 +1075,67 @@ async function crSyKeysTest(ctx) {
     ctx.toast(say("Key 1", r.results.framing) + " · " + say("Key 2", r.results.second), null, !(r.results.framing.ok || r.results.second.ok));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
 }
+/* AI spending (api/_lib/ai.php ai_route): nobody chooses a provider. Everyday work runs on
+   free models; hard thinking tries paid ones first, under this monthly limit. */
+const CR_SY_JOB = { everyday: "Everyday · free models", brain: "Hard thinking · paid first" };
+function crSyUsd(n) { const v = Number(n) || 0; return "$" + (v > 0 && v < 0.01 ? v.toFixed(4) : v.toFixed(2)); }
+function crSyAiSpendForm(ctx, sp) {
+  ctx.form({
+    title: "AI spending",
+    intro: "Free models (Groq, Gemini, OpenRouter’s free ones) do everyday work. Paid models (Claude, OpenAI) only do hard thinking — marking written answers and the Analyst — and only within this monthly limit. Once it is reached they wait until next month and the free models carry on.",
+    submit: "Save",
+    values: { limit: sp.limitUsd ? String(sp.limitUsd) : "", everyday: sp.paidEveryday ? "1" : "0", prices: (sp.prices || []).map(x => x.model + " " + x.in + " " + x.out).join("\n") },
+    fields: [
+      { id: "limit", l: "Monthly limit for paid models (US$)", im: "decimal", ph: "0 — paid models off", max: 10,
+        help: "Estimated from each call’s tokens. Leave blank or 0 to keep paid models off.",
+        check: v => (v === "" || (/^\d+(\.\d{1,2})?$/.test(v) && Number(v) >= 0)) ? "" : "Enter a number of dollars, such as 10 or 12.50." },
+      { id: "everyday", l: "When no free model is set up", type: "chips", opts: [["0", "Everyday work uses each feature’s own rules"], ["1", "Paid models may do everyday work too, within the limit"]] },
+      { id: "prices", l: "Your prices (optional)", type: "textarea", rows: 3, max: 2000, ph: "claude-opus-5-5 4 20",
+        help: "One model a line: its name, then the US$ per million input and output tokens. Only needed if your price differs from the built-in table." },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.summer.aiRouting({ monthlyLimitUsd: v.limit.trim() || "0", paidEveryday: v.everyday === "1", prices: v.prices }); }
+      catch (e) { if (/limit/.test(e.code || "")) return { fieldErrors: { limit: crErr(e, "") } }; if (/price/.test(e.code || "")) return { fieldErrors: { prices: crErr(e, "") } }; throw e; }
+    },
+    done: (v) => { ctx.reload(); return Number(v.limit) > 0 ? "Saved. Paid models may spend up to " + crSyUsd(v.limit) + " a month." : "Saved. Paid models are off."; },
+  });
+}
+function CrSyAiSpend({ ctx, sp }) {
+  if (!sp) return null;
+  const on = sp.limitUsd > 0, pct = on ? Math.min(100, Math.round(sp.spentUsd / sp.limitUsd * 100)) : 0;
+  const mon = sp.month ? new Date(sp.month + "-01T12:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
+  return (
+    <div className="cr-box cr-sy-spend">
+      <div className="cr-sy-spend-head">
+        <span className="cr-sy-spend-big">{crSyUsd(sp.spentUsd)}<small>{on ? " of " + crSyUsd(sp.limitUsd) + " · " + mon : " spent · " + mon}</small></span>
+        <CrPill tone={!on ? "neutral" : sp.paidOpen ? "ok" : "warn"} t={!on ? "Paid models off" : sp.paidOpen ? crSyUsd(sp.leftUsd) + " left" : "Limit reached"}/>
+      </div>
+      {on && <span className="cr-sy-spend-bar" role="progressbar" aria-label={"Spent this month: " + pct + "% of the limit"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}><span style={{ width: pct + "%" }}/></span>}
+      <p className="cr-hint" role="status" aria-live="polite">
+        {!on ? "Paid models are off, so hard thinking uses free models when it can. Set a limit to let Claude or OpenAI mark written answers and write the Analyst’s reports."
+          : sp.paidOpen ? "Paid models do hard thinking until the month’s spend reaches the limit." : "This month’s limit is reached: paid models wait until next month, and the free models carry on."}
+        {sp.held ? " " + crPlural(sp.held, "paid call") + " held back by the limit this month." : ""}
+      </p>
+      {sp.byModel && sp.byModel.length > 0 && (
+        <div className="cr-tscroll"><table className="cr-tbl cr-sy-spend-t">
+          <thead><tr><th scope="col">Model</th><th scope="col">Kind</th><th scope="col" className="is-num">Calls</th><th scope="col" className="is-num">Tokens in / out</th><th scope="col" className="is-num">Cost</th></tr></thead>
+          <tbody>{sp.byModel.map(m => (
+            <tr key={m.provider + m.model}>
+              <td>{m.model || m.provider}</td>
+              <td>{m.tier === "paid" ? "Paid" : "Free"}</td>
+              <td className="is-num">{crNum(m.calls)}{m.held ? " (" + crNum(m.held) + " held)" : ""}</td>
+              <td className="is-num">{crNum(m.inTokens)} / {crNum(m.outTokens)}</td>
+              <td className="is-num">{m.tier === "paid" ? crSyUsd(m.costUsd) + (m.estimated ? " est." : "") : "Free"}</td>
+            </tr>))}</tbody>
+        </table></div>
+      )}
+      <div className="cr-sy-frame-acts">
+        <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyAiSpendForm(ctx, sp)}>{on ? "Change the limit" : "Set a monthly limit"}</button>
+      </div>
+    </div>
+  );
+}
+
 function CrSyFraming({ ctx, k }) {
   const [run, setRun] = React.useState(null);
   const stop = React.useRef(false);
@@ -1195,13 +1256,16 @@ Object.assign(CR_TAB_DEFS, {
           : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
             text: ai.anyEnabled ? "AI is on. The table shows which provider answers each feature." : "AI is off — everything still works.",
             sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Gemini or Groq key above to switch it on (both have free tiers)." },
+        ai.aiErr ? null : { type: "custom", span: 6, title: "AI spending", sub: "Nobody picks a provider: everyday work goes to free models, hard thinking to paid ones first, within a monthly limit.",
+          render: () => <CrSyAiSpend ctx={ctx} sp={ai.spend}/> },
         d.keys ? { type: "custom", span: 6, title: "Photo framing (Gemini)", sub: "Two keys: one measures every headshot so cards frame it accurately at their own shape, the other checks photos and backs it up. Existing photos are measured with “Measure existing photos”; new ones when their cards are printed.",
           render: () => <CrSyFraming ctx={ctx} k={d.keys}/> } : null,
         ai.aiErr ? null : { type: "table", span: 6, title: "AI features", nosel: true,
-          cols: [{ l: "Feature", wrap: true }, { l: "Status", wrap: true }, "Provider", "Test"],
+          cols: [{ l: "Feature", wrap: true }, "Kind of work", { l: "Status", wrap: true }, "Provider", "Test"],
           rows: rows.map(r => ({ key: r.profile, cells: [
             { k: "strong", t: r.profile, s: r.what },
-            r.enabled ? { k: "status", t: "On", tone: "ok" } : { k: "text", t: "Rules only", s: r.behaviourWhenOff },
+            { k: "text", t: CR_SY_JOB[r.job] || "Everyday · free models" },
+            r.enabled ? { k: "status", t: r.tier === "paid" ? "On · paid" : "On", tone: "ok" } : { k: "text", t: "Rules only", s: r.routeNote || r.behaviourWhenOff },
             { k: "text", t: r.enabled ? r.provider + (r.model ? " · " + r.model : "") : "—", s: r.fallbacks > 0 ? "+" + crPlural(r.fallbacks, "fallback") : "" },
             !r.probe ? { k: "text", t: "Not tested" } : r.probe.ok ? { k: "status", t: "OK · " + crNum(r.probe.ms) + " ms", tone: "ok" } : { k: "status", t: r.probe.error || "Failed", tone: "bad" },
           ] })),

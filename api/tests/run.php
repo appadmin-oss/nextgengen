@@ -7586,7 +7586,7 @@ chk('openai: a profile or the flat block can name it, and it gets gpt-4.1-mini b
     $keep = $GLOBALS['CONFIG']['ai'] ?? null;
     $GLOBALS['CONFIG']['ai'] = ['provider' => 'openai', 'openai_api_key' => 'sk-o', 'groq_api_key' => 'g',
         'profiles' => ['p_oa' => ['provider' => 'openai', 'api_key' => 'sk-p']]];
-    $flat = ai_profile_candidates('default'); $prof = ai_profile_candidates('p_oa');
+    $flat = ai_profile_chain('default'); $prof = ai_profile_chain('p_oa');   // as configured; routing is tested on its own
     $GLOBALS['CONFIG']['ai'] = $keep;
     return $flat[0]['provider'] === 'openai' && $flat[0]['model'] === 'gpt-4.1-mini' && $prof[0]['api_key'] === 'sk-p' && $prof[0]['model'] === 'gpt-4.1-mini';
 })());
@@ -7598,7 +7598,7 @@ chk('openai: the call goes to api.openai.com with a bearer key and max_completio
     $b = ai_call_candidate(['provider' => 'openai', 'api_key' => 'sk-x', 'model' => 'o4-mini'], 'sys', [['role' => 'me', 'text' => 'hi']], 50, 0.3);
     unset($GLOBALS['__ai_http']);
     [$u, $j, $h] = $seen[0];
-    return $a === ['ok' => true, 'text' => 'Hello.', 'provider' => 'openai'] && $u === 'https://api.openai.com/v1/chat/completions'
+    return array_intersect_key($a, ['ok' => 1, 'text' => 1, 'provider' => 1]) === ['ok' => true, 'text' => 'Hello.', 'provider' => 'openai'] && $u === 'https://api.openai.com/v1/chat/completions'
         && in_array('Authorization: Bearer sk-x', $h, true) && $j['max_completion_tokens'] === 50 && !isset($j['max_tokens']) && $j['temperature'] === 0.3
         && $j['messages'][0] === ['role' => 'system', 'content' => 'sys'] && $j['messages'][2]['role'] === 'assistant'
         && !isset($seen[1][1]['temperature']) && $b['ok'];
@@ -7617,9 +7617,9 @@ chk('a profile can name anthropic or openrouter, and gets a sane default model',
         'p_or'  => ['provider' => 'openrouter', 'api_key' => 'k2', 'model' => 'vendor/some-model'],
         'p_bad' => ['provider' => 'not-a-provider', 'api_key' => 'k3'],
     ]];
-    $ant = ai_profile_candidates('p_ant');
-    $or  = ai_profile_candidates('p_or');
-    $bad = ai_profile_candidates('p_bad');
+    $ant = ai_profile_chain('p_ant');
+    $or  = ai_profile_chain('p_or');
+    $bad = ai_profile_chain('p_bad');
     $GLOBALS['CONFIG']['ai'] = $keep;
     return count($ant) === 1 && $ant[0]['provider'] === 'anthropic' && $ant[0]['model'] !== ''
         && count($or) === 1 && $or[0]['model'] === 'vendor/some-model'
@@ -7627,6 +7627,90 @@ chk('a profile can name anthropic or openrouter, and gets a sane default model',
         // used to build a URL.
         && $bad === [];
 })());
+/* ── Automatic routing: free models for everyday work, paid ones for hard thinking, under a monthly limit ── */
+(function () {
+    $keepAi = $GLOBALS['CONFIG']['ai'] ?? null; $keepRt = setting_get('ai_routing');
+    $setRt = function ($v) { if ($v === null) db_exec("DELETE FROM settings WHERE settingKey = 'ai_routing'"); else setting_set('ai_routing', $v, 'test'); unset($GLOBALS['__ai_spend']); };
+    db_exec('DELETE FROM ai_usage'); $setRt(null);
+    $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'gk', 'anthropic_api_key' => 'ak', 'anthropic_model' => 'claude-opus-5-5'];
+    $prov = fn($p) => array_column(ai_profile_candidates($p), 'provider');
+    chk('ai routing: free and paid are told apart — Groq and Gemini free, Claude and OpenAI paid, OpenRouter by its :free models',
+        ai_candidate_tier(['provider' => 'groq']) === 'free' && ai_candidate_tier(['provider' => 'gemini']) === 'free' && ai_candidate_tier(['provider' => 'anthropic']) === 'paid'
+        && ai_candidate_tier(['provider' => 'openai']) === 'paid' && ai_candidate_tier(['provider' => 'openrouter', 'model' => 'meta-llama/llama-3.3-70b-instruct:free']) === 'free'
+        && ai_candidate_tier(['provider' => 'openrouter', 'model' => 'anthropic/claude-sonnet-5-5']) === 'paid');
+    chk('ai routing: everyday work runs on free models only, even with a paid key set', $prov('moderation') === ['groq'] && $prov('coach') === ['groq'] && $prov('studio') === ['groq']);
+    chk('ai routing: with no monthly limit set, paid models are off — hard thinking uses the free model', $prov('insight_answer') === ['groq']
+        && str_contains(ai_route_note('insight_answer'), 'until a monthly limit is set'));
+    $setRt(['monthlyLimitUsd' => 10]);
+    chk('ai routing: under a limit, hard thinking tries the paid model first and keeps the free one as fallback', $prov('insight_answer') === ['anthropic', 'groq'] && $prov('moderation') === ['groq']);
+    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'ak', 'anthropic_model' => 'claude-opus-5-5'];
+    chk('ai routing: with only a paid key, everyday work falls back to its rules and says why', $prov('moderation') === []
+        && str_contains(ai_route_note('moderation'), 'free models only') && (ai_run('moderation', 's', [['role' => 'me', 'text' => 'x']], 50, 0.1)['error'] ?? '') === 'ai_not_routed');
+    $setRt(['monthlyLimitUsd' => 10, 'paidEveryday' => true]);
+    chk('ai routing: …unless Settings lets paid models do everyday work when no free one is set up', $prov('moderation') === ['anthropic']);
+    $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'gk', 'anthropic_api_key' => 'ak', 'anthropic_model' => 'claude-opus-5-5'];
+    $seen = [];
+    $GLOBALS['__ai_call_mock'] = function ($cand) use (&$seen) { $seen[] = $cand['provider'] . ':' . $cand['tier'] . ':' . $cand['job'];
+        return $cand['provider'] === 'anthropic' ? ['ok' => true, 'text' => 'deep', 'provider' => 'anthropic', 'usage' => [1000, 500]] : ['ok' => true, 'text' => 'quick', 'provider' => 'groq', 'usage' => [80, 20]]; };
+    $r = ai_run('moderation', 's', [['role' => 'me', 'text' => 'x']], 50, 0.1, 'anthropic');
+    chk('ai routing: a provider named in the request (“use Claude”) cannot put a paid model on everyday work', $r['text'] === 'quick' && $seen === ['groq:free:everyday']);
+    $seen = [];
+    $r = ai_run('insight_answer', 's', [['role' => 'me', 'text' => 'why?']], 400, 0.3);
+    $row = db_row("SELECT * FROM ai_usage WHERE provider = 'anthropic' ORDER BY id DESC LIMIT 1");
+    chk('ai routing: a hard-thinking call goes to Claude and is logged with its real tokens and cost (1,000 in × $4 + 500 out × $20 per million = $0.014)',
+        $r['text'] === 'deep' && $r['tier'] === 'paid' && $seen === ['anthropic:paid:brain'] && (int)$row['inTokens'] === 1000 && (int)$row['outTokens'] === 500
+        && (int)$row['costMicros'] === 14000 && (int)$row['estimated'] === 0 && $row['job'] === 'brain' && $row['month'] === gmdate('Y-m') && ai_month_spend_micros() === 14000);
+    chk('ai routing: free calls are logged too, at no cost', (int)db_row("SELECT costMicros FROM ai_usage WHERE provider = 'groq' ORDER BY id DESC LIMIT 1")['costMicros'] === 0);
+    $setRt(['monthlyLimitUsd' => 0.05]);
+    $seen = [];
+    $r = ai_run('insight_answer', 's', [['role' => 'me', 'text' => 'why?']], 400, 0.3);
+    chk('ai routing: a paid call that could cross the limit (priced at its full output allowance) is not made — the free model answers',
+        $r['text'] === 'quick' && $seen === ['groq:free:brain'] && (int)db_row("SELECT COUNT(*) c FROM ai_usage WHERE error = 'ai_limit_reached' AND costMicros = 0")['c'] === 1);
+    $setRt(['monthlyLimitUsd' => 0.01]);
+    chk('ai routing: once the month’s spend reaches the limit, paid models drop out of the chain and Settings says so',
+        $prov('insight_answer') === ['groq'] && str_contains(ai_route_note('insight_answer'), 'limit is reached'));
+    $setRt(['monthlyLimitUsd' => 10, 'prices' => ['claude-opus-5-5' => [1.0, 2.0]]]);
+    chk('ai routing: prices come from the model (longest prefix), an override in Settings wins, and an unknown paid model is priced high on purpose',
+        ai_price_for(['provider' => 'anthropic', 'model' => 'claude-opus-5-5']) === [1.0, 2.0] && ai_price_for(['provider' => 'anthropic', 'model' => 'claude-sonnet-5-5']) === [2.0, 10.0]
+        && ai_price_for(['provider' => 'openai', 'model' => 'gpt-9-turbo']) === AI_PRICE_UNKNOWN_PAID && ai_price_for(['provider' => 'groq', 'model' => 'x']) === [0.0, 0.0]);
+    unset($GLOBALS['__ai_call_mock']);
+    // The Claude request itself, for current models.
+    $sent = [];
+    $GLOBALS['__ai_http'] = function ($url, $body) use (&$sent) { $sent[] = json_decode($body, true);
+        return ['ok' => true, 'body' => json_encode(['model' => 'claude-opus-5-5', 'stop_reason' => 'end_turn', 'content' => [['type' => 'thinking', 'thinking' => ''], ['type' => 'text', 'text' => ' Yes. ']], 'usage' => ['input_tokens' => 12, 'output_tokens' => 300]])]; };
+    $a = ai_call_candidate(['provider' => 'anthropic', 'api_key' => 'ak', 'model' => 'claude-opus-5-5', 'job' => 'brain'], 'sys', [['role' => 'me', 'text' => 'hi']], 20, 0.4);
+    $b = ai_call_candidate(['provider' => 'anthropic', 'api_key' => 'ak', 'model' => 'claude-3-5-haiku-latest', 'job' => 'everyday'], 'sys', [['role' => 'me', 'text' => 'hi']], 20, 0.4);
+    chk('ai routing: a current Claude model gets no temperature, an effort level for its job, and room to think — and only its text is read',
+        !isset($sent[0]['temperature']) && $sent[0]['output_config'] === ['effort' => 'high'] && $sent[0]['max_tokens'] === AI_CLAUDE_MIN_OUT && $a['text'] === 'Yes.' && $a['usage'] === [12, 300]
+        && $sent[1]['temperature'] === 0.4 && !isset($sent[1]['output_config']) && $sent[1]['max_tokens'] === 20);
+    $GLOBALS['__ai_http'] = fn() => ['ok' => true, 'body' => json_encode(['stop_reason' => 'refusal', 'content' => [], 'usage' => ['input_tokens' => 5, 'output_tokens' => 0]])];
+    chk('ai routing: a refusal is a failure, so the chain moves on', (ai_call_candidate(['provider' => 'anthropic', 'api_key' => 'ak', 'model' => 'claude-opus-5-5'], 's', [], 20, 0.1)['error'] ?? '') === 'ai_refused');
+    $GLOBALS['__ai_http'] = function ($url, $body) use (&$sent) { $sent[] = json_decode($body, true);
+        return ['ok' => true, 'body' => json_encode(['choices' => [['message' => ['content' => 'ok']]], 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 5, 'cost' => 0.0021]])]; };
+    $o = ai_call_candidate(['provider' => 'openrouter', 'api_key' => 'ok', 'model' => 'vendor/m'], 's', [], 20, 0.1);
+    chk('ai routing: OpenRouter is asked for, and reports, what the call actually cost', end($sent)['usage'] === ['include' => true] && $o['costMicros'] === 2100 && $o['usage'] === [10, 5]);
+    unset($GLOBALS['__ai_http']);
+    // Settings.
+    db_exec("DELETE FROM members WHERE memberId = 'AIR-ADM'");
+    db_insert('members', ['memberId' => 'AIR-ADM', 'fullName' => 'Router Admin', 'email' => 'air@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $set = fn($x) => backend_dispatch('admin.ai.routing.set', ['requesterId' => 'AIR-ADM'] + $x);
+    chk('ai routing: the limit is a number of dollars, 0 or more, at most $' . AI_LIMIT_MAX_USD, ($set(['monthlyLimitUsd' => '-1'])['error'] ?? '') === 'bad_limit'
+        && ($set(['monthlyLimitUsd' => '50000'])['error'] ?? '') === 'limit_too_high' && ($set(['monthlyLimitUsd' => 'ten'])['error'] ?? '') === 'bad_limit');
+    chk('ai routing: a bad price line is named and nothing is saved', ($set(['monthlyLimitUsd' => '5', 'prices' => "claude-opus-5-5 4 20\nnonsense"])['error'] ?? '') === 'bad_price_line'
+        && (float)(setting_get('ai_routing')['monthlyLimitUsd'] ?? 0) === 10.0);
+    $ok = $set(['monthlyLimitUsd' => '12.5', 'paidEveryday' => false, 'prices' => "# my prices\nclaude-opus-5-5 4 20"]);
+    chk('ai routing: Settings saves the limit, the everyday switch and prices, audits it once, and returns the month', !empty($ok['ok']) && $ok['spend']['limitUsd'] === 12.5
+        && $ok['spend']['spentUsd'] === 0.014 && $ok['spend']['held'] === 1 && setting_get('ai_routing')['prices'] == ['claude-opus-5-5' => [4, 20]]   /* stored as JSON: whole numbers come back as ints */
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'ai.routing.set' AND actorId = 'AIR-ADM'")['c'] === 1);
+    chk('ai routing: only Settings may change it', (backend_dispatch('admin.ai.routing.set', ['requesterId' => 'NGG-NOPE', 'monthlyLimitUsd' => 99])['ok'] ?? true) === false);
+    $st = backend_dispatch('admin.ai.status', ['requesterId' => 'AIR-ADM']);
+    $byP = array_column($st['ai'] ?? [], null, 'profile');
+    chk('ai routing: the status table says which job each feature is and which tier answers it, and carries the month’s spend',
+        ($byP['marking']['job'] ?? '') === 'brain' && ($byP['moderation']['job'] ?? '') === 'everyday' && ($byP['insight_answer']['tier'] ?? '') === 'paid'
+        && ($byP['moderation']['tier'] ?? '') === 'free' && isset($st['spend']['byModel'][0]['costUsd']));
+    db_exec("DELETE FROM members WHERE memberId = 'AIR-ADM'"); db_exec("DELETE FROM audit_log WHERE event = 'ai.routing.set'");
+    db_exec('DELETE FROM ai_usage'); $setRt($keepRt); $GLOBALS['CONFIG']['ai'] = $keepAi;
+})();
 chk('…and the flat key block accepts them too, preference first', (function () {
     $keep = $GLOBALS['CONFIG']['ai'] ?? null;
     $GLOBALS['CONFIG']['ai'] = ['provider' => 'openrouter',
@@ -24537,6 +24621,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $keepAi = $GLOBALS['CONFIG']['ai'] ?? null;
     $GLOBALS['CONFIG']['ai'] = ['provider' => 'anthropic', 'anthropic_api_key' => 'k', 'anthropic_model' => 'claude-haiku-4-5-20251001'];
+    // Marking is hard thinking: paid models run only under a monthly limit.
+    $keepRouting = setting_get('ai_routing'); setting_set('ai_routing', ['monthlyLimitUsd' => 20, 'paidEveryday' => true], 'test'); unset($GLOBALS['__ai_spend']);
     chk('marking: a small model is never used to mark', ai_enabled('default') && !ai_enabled('marking'));
     $GLOBALS['CONFIG']['ai']['profiles']['marking'] = ['provider' => 'anthropic', 'api_key' => 'k', 'model' => 'claude-sonnet-4-5-20250929'];
     chk('marking: a capable model configured for marking is', ai_enabled('marking') && ai_profile_candidates('marking')[0]['model'] === 'claude-sonnet-4-5-20250929'
@@ -24573,6 +24659,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         && (bool)db_row("SELECT id FROM audit_log WHERE event = 'curriculum.safeguarding' AND actorId = 'NGG-MK-1'"));
     unset($GLOBALS['__ai_mock']);
     $GLOBALS['CONFIG']['ai'] = $keepAi;
+    if ($keepRouting === null) db_exec("DELETE FROM settings WHERE settingKey = 'ai_routing'"); else setting_set('ai_routing', $keepRouting, 'test');
     if ($keepAi === null) unset($GLOBALS['CONFIG']['ai']);
     db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-MK-1'");
     db_exec("DELETE FROM curriculum_checks WHERE unitId = 'CUR-MK-1'");
@@ -24944,7 +25031,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'body' => "## Learn\n\nTone tone semitone.\n\n## This week's assignment\n\nPlay D major.", 'objectives' => '[]', 'createdAt' => $now]);
     db_insert('curriculum_units', ['unitId' => 'CU-TU-X', 'course' => 'Coding', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Not theirs', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
     $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
-    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
     $sys = '';
     $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$sys) { $sys = $system;
         if (str_contains($system, 'Return JSON')) return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['body' => "## Why it matters\n\nBecause.\n\n## Success criteria\n\n- One", 'summary' => 'A lesson.', 'objectives' => ['You will play'], 'checks' => []])];
@@ -28832,8 +28919,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('assignments · returned work shows the feedback and can be handed in again', $me['state'] === 'returned' && $me['canSubmit'] === true && $me['submission']['feedback'] === 'Add a second section.');
     assignment_submit(['memberId' => 'ASG-T1', 'assignmentId' => $aid, 'text' => 'Now with an About me section.']);
     $GLOBALS['__ai_mock'] = fn($profile, $system, $turns) => ['ok' => true, 'text' => '{"grade": 17, "feedback": "Clear page. Add links next.", "confidence": "high"}', 'provider' => 'mock'];
-    $prevAi = $GLOBALS['CONFIG']['ai'] ?? null; $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $prevAi = $GLOBALS['CONFIG']['ai'] ?? null; $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    // Marking is hard thinking: a paid model, under a monthly limit.
+    $keepRt = setting_get('ai_routing'); setting_set('ai_routing', ['monthlyLimitUsd' => 20], 'test'); unset($GLOBALS['__ai_spend']);
     $sg = staff_assignment_suggest($ins + ['submissionId' => $sid]);
+    if ($keepRt === null) db_exec("DELETE FROM settings WHERE settingKey = 'ai_routing'"); else setting_set('ai_routing', $keepRt, 'test');
     chk('assignments · an AI suggestion drafts a mark and feedback, writing nothing', !empty($sg['ok']) && $sg['grade'] === 17 && db_row('SELECT status FROM assignment_submissions WHERE submissionId = ?', [$sid])['status'] === 'submitted');
     unset($GLOBALS['__ai_mock']); if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
     chk('assignments · the instructor marks it', !empty(staff_assignment_grade($ins + ['submissionId' => $sid, 'grade' => 17, 'feedback' => 'Clear page.'])['ok']));
@@ -29259,7 +29349,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('curriculum_units', ['unitId' => 'CU-ST-1', 'course' => 'Piano', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Intervals', 'status' => 'published', 'version' => 1,
         'body' => "## Learn\n\nA tone is two semitones.\n\n## This week's assignment\n\nSECRET-TASK", 'objectives' => '[]', 'createdAt' => $now]);
     $prevAi = $GLOBALS['CONFIG']['ai'] ?? null;
-    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
     $sys = ''; $GLOBALS['__ai_mock'] = function ($pr, $system, $turns) use (&$sys) { $sys = $system; return ['ok' => true, 'provider' => 'mock', 'text' => "Tone :: Two semitones\nSemitone :: The very next key\nnot a card"]; };
     db_exec("DELETE FROM member_state WHERE memberId = 'NGG-ST-A' AND stateKey LIKE 'ai.tutor.%'");
     $ai = study_cards_ai($A + ['unitId' => 'CU-ST-1']);
@@ -29274,7 +29364,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__ai_mock']);
     if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
     // Quiz me and Summarise my notes, on the same allowance.
-    $GLOBALS['CONFIG']['ai'] = ['anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
+    $GLOBALS['CONFIG']['ai'] = ['gemini_api_key' => 'g-test', 'anthropic_api_key' => 'sk-test', 'anthropic_model' => 'claude-opus-4-1'];
     $sys = ''; $GLOBALS['__ai_mock'] = function ($pr, $system, $turns) use (&$sys) { $sys = $system . "\n" . ($turns[0]['text'] ?? ''); return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['questions' => [
         ['q' => 'How many semitones in a tone?', 'options' => ['One', 'Two', 'Three', 'Four'], 'answer' => 1, 'why' => 'A tone is two semitones.'],
         ['q' => 'Broken: three options', 'options' => ['a', 'b', 'c'], 'answer' => 0],
@@ -29757,7 +29847,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
     foreach ($it as $f) {
         $rel = substr($f->getPathname(), strlen($root) + 1);
-        if (!str_ends_with($rel, '.php') || preg_match('#^(node_modules|dist|\.git|api/tests)/#', $rel)) continue;
+        if (!str_ends_with($rel, '.php') || preg_match('#^(node_modules|dist|api/tests)/|(^|/)\.#', $rel)) continue;   // dot-folders (.git, .claude worktrees) are not the site
         if (preg_match('/\bsession_issue\s*\(/', (string)file_get_contents($f->getPathname()))) $callers[] = $rel;
     }
     $odd = array_values(array_filter($callers, static fn($r) => !preg_match('#^api/(auth|admin|_lib)/#', $r)));
