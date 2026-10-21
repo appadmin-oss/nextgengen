@@ -1000,8 +1000,11 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     /* Membership renews on the anniversary of joining. The 'once' key from the
        one-off era is still what a 0-month cycle posts, so a deployment that
        never wanted a subscription keeps exactly the row it already has. */
+    // Settled up to a date (fees_settle_through): nothing on or before it is charged again.
+    $settled = substr(trim((string)($member['feesSettledThrough'] ?? '')), 0, 10);
     if ((int)$cfg['membershipFee'] > 0) {
         foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
+            if ($settled !== '' && (string)$per['due'] <= $settled) continue;
             $label = $per['key'] === 'once' ? 'Membership fee'
                 : 'Membership fee — year ' . substr($per['key'], 1) . ' from ' . $per['due'];
             if (fees_post($memberId, 'membership', (int)$cfg['membershipFee'],
@@ -1013,6 +1016,7 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     if ((int)$cfg['monthlyDues'] > 0) {
         $firstMonth = substr($ten['start'], 0, 7);
         foreach (fees_due_months($ten['start'], $asOf ?? gmdate('Y-m-d')) as $mk) {
+            if ($settled !== '' && $mk <= substr($settled, 0, 7)) continue;
             /* The month a member starts is charged only for the meeting days
                left in it — the same figure their joining invoice quoted
                (membership_prorate), so the two cannot disagree. A charge
@@ -1381,6 +1385,93 @@ function admin_fees_waive(array $p): array {
             /* Said out loud when less was waived than was typed, rather than
                leaving somebody to wonder why the balance did not reach zero. */
             'clamped' => $amount < $asked, 'balance' => fees_balance($m)];
+}
+
+/* ── Settled up to a date ───────────────────────────────────────────────────
+ *
+ * Imported members arrive with a join date years back, so the accrual charges
+ * every month and every membership year since — money they paid before this
+ * system existed, or never owed. A waiver alone does not fix that: the next
+ * accrual has nothing telling it those months are settled. This records the
+ * date (members.feesSettledThrough), stops the accrual charging any
+ * membership or dues period on or before it, and clears what was already
+ * charged for those periods with ONE waiver that carries the reason.
+ *
+ * What is cleared is exact, not "the balance": payments and waivers are
+ * applied to the oldest real charges first (the usual order), and only the
+ * membership and dues still unpaid for periods on or before the date are
+ * waived. Fines are conduct, not dues, and stay; the training fee is never
+ * asked for, so it is not touched. The waiver's key is the date, so running it
+ * twice does not clear twice.
+ */
+const FEES_SETTLE_REASON_MAX = 240;
+/** The calendar day each real charge belongs to, for oldest-first allocation. */
+function fees_charge_day(array $e, array $memberDues): string {
+    $k = (string)$e['kind']; $pk = (string)($e['periodKey'] ?? '');
+    if ($k === 'dues' && preg_match('/^\d{4}-\d{2}$/', $pk)) return $pk . '-01';
+    if ($k === 'membership' && isset($memberDues[$pk])) return $memberDues[$pk];
+    return substr((string)($e['createdAt'] ?? ''), 0, 10);
+}
+/** What is unpaid on membership and dues for periods on or before $date (payments applied oldest first). */
+function fees_unpaid_through(array $member, string $date, ?array $cfg = null): int {
+    $cfg = $cfg ?? fees_settings();
+    $ten = fees_tenure($member, $cfg);
+    $memberDues = [];
+    if ($ten['start'] !== '') foreach (fees_membership_periods($ten['start'], gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) $memberDues[(string)$per['key']] = (string)$per['due'];
+    $charges = []; $credit = 0;
+    foreach (fees_entries((string)$member['memberId']) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind'];
+        if ((string)$e['direction'] === 'charge') { if ($kind !== 'training') $charges[] = ['kind' => $kind, 'amount' => (int)$e['amount'], 'day' => fees_charge_day($e, $memberDues)]; }
+        elseif ($kind !== 'writeoff') $credit += (int)$e['amount'];
+    }
+    usort($charges, static fn($a, $b) => [$a['day'], $a['kind']] <=> [$b['day'], $b['kind']]);
+    $unpaid = 0;
+    foreach ($charges as $c) {
+        $take = min($credit, $c['amount']); $credit -= $take;
+        $left = $c['amount'] - $take;
+        if ($left > 0 && in_array($c['kind'], ['membership', 'dues'], true) && $c['day'] !== '' && $c['day'] <= $date) $unpaid += $left;
+    }
+    return $unpaid;
+}
+/** The one implementation: record the date, clear what is unpaid up to it. */
+function fees_settle_through(array $member, string $date, string $reason, string $by, string $ip = ''): array {
+    $id = (string)$member['memberId'];
+    $had = substr(trim((string)($member['feesSettledThrough'] ?? '')), 0, 10);
+    $amount = fees_unpaid_through($member, $date);
+    $entryId = '';
+    if ($amount > 0) {
+        $e = fees_post($id, 'waiver', $amount, ['periodKey' => 'settle:' . $date, 'note' => mb_substr('Settled up to ' . $date . ': ' . $reason, 0, 240), 'by' => $by]);
+        if (!$e) return ['ok' => false, 'error' => 'post_failed'];
+        $entryId = (string)$e['entryId'];
+    }
+    $moved = $had === '' || $date > $had;
+    if ($moved) db_update('members', ['feesSettledThrough' => $date, 'updatedAt' => now_iso()], ['memberId' => $id]);
+    if (!$amount && !$moved) return ['ok' => true, 'unchanged' => true, 'cleared' => 0, 'settledThrough' => $had];
+    // A line on this member's record, like a single edit, whichever way it was made.
+    audit('fees.settle', $by, $id, ['through' => $date, 'from' => $had, 'cleared' => $amount, 'entryId' => $entryId, 'reason' => $reason], $ip);
+    return ['ok' => true, 'cleared' => $amount, 'entryId' => $entryId, 'settledThrough' => $moved ? $date : $had];
+}
+/** Check a settle payload once, before any row is touched. */
+function fees_settle_validate($date, $reason): array {
+    $date = trim((string)$date); $reason = trim((string)preg_replace('/\s+/u', ' ', (string)$reason));
+    if ($date === '') $date = gmdate('Y-m-d');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !strtotime($date . 'T00:00:00Z')) return ['ok' => false, 'error' => 'bad_date'];
+    if ($date > gmdate('Y-m-d')) return ['ok' => false, 'error' => 'date_in_future', 'detail' => 'Settled up to a day that has not come yet would excuse dues not yet charged.'];
+    if (mb_strlen($reason) < 4) return ['ok' => false, 'error' => 'reason_required', 'detail' => 'Say why, so anyone reading the account later knows.'];
+    return ['ok' => true, 'date' => $date, 'reason' => mb_substr($reason, 0, FEES_SETTLE_REASON_MAX)];
+}
+/** admin.fees.settle — one member, from their account. */
+function admin_fees_settle(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $v = fees_settle_validate($p['date'] ?? '', $p['reason'] ?? ''); if (!$v['ok']) return $v;
+    $r = fees_settle_through($m, $v['date'], $v['reason'], (string)$g['requester']['memberId'], (string)($p['ip'] ?? ''));
+    if (empty($r['ok'])) return $r;
+    return $r + ['balance' => fees_balance(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]))];
 }
 
 /**

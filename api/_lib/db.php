@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 167;
+const NGG_SCHEMA_TARGET = 168;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5007,6 +5007,14 @@ function db_migrate(PDO $db): void {
               error TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_ai_usage_month ON ai_usage(month, tier);
+        ",
+        /* 168 — "settled up to": the last day a member's membership and dues
+         * are known to be paid outside this system (an imported member who
+         * had paid, or a family the programme decided owes nothing to that
+         * date). fees_accrue_member never charges a period on or before it,
+         * and fees_settle_through() clears what was already charged. */
+        168 => "
+            ALTER TABLE members ADD COLUMN feesSettledThrough TEXT DEFAULT '';
         ",
     ];
 

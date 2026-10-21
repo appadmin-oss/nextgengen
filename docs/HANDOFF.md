@@ -2209,3 +2209,25 @@ in Settings.
 - Tests: PHP suite +20 routing checks (and the old provider tests read the
   unrouted chain; marking/assignment tests set a limit; study-helper tests
   carry a free key); `tests/ai-spend-ui.test.js` (11) in `test:all`.
+
+## 2026-10-21 — Clearing dues a member does not owe (imported members)
+
+Imported NGG members carried years of membership and dues from an old join
+date — money paid before this system existed. A waiver alone did not hold:
+the next accrual recharged nothing it already had, but nothing told it those
+periods were settled, and the screen offered no exact figure to waive.
+
+- `members.feesSettledThrough` (migration 168). `fees_accrue_member` skips any
+  membership period due, and any dues month, on or before it.
+- `fees_settle_through($member, $date, $reason, $by)` — the one
+  implementation: allocates payments/waivers to the oldest real charges first
+  (`fees_unpaid_through`), waives exactly what is still unpaid on membership
+  and dues up to the date (fines and training untouched), with periodKey
+  `settle:<date>` so it cannot clear twice; moves the date forward only;
+  audits `fees.settle` on the member. `unchanged` when nothing to do.
+- `admin.fees.settle` (one member, `fees` cap, scope gate) and the member
+  desk's bulk op action `feesSettled` (`fees` cap, payload validated once by
+  `fees_settle_validate`, delegates per row, per-row `cleared`, run total,
+  one `admin.members.bulk` event). Control Room: Roster bulk "Clear dues they
+  don't own" and the record's Fees part.
+- Tests: PHP suite +12; `tests/fees-settle-ui.test.js` (8) in `test:all`.

@@ -17112,6 +17112,63 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     else db_exec("DELETE FROM settings WHERE settingKey = 'fees'");
 })();
 
+/* ── Settled up to a date: imported members who do not owe their back-dues ── */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $keepFees = setting_get('fees');
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $SU, 'data' => ['enabled' => true, 'membershipFee' => 5000, 'membershipEveryMonths' => 12,
+        'monthlyDues' => 1000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
+    $now = now_iso();
+    foreach (['STL-A' => 'Imported Ada', 'STL-B' => 'Imported Bola', 'STL-C' => 'Imported Chidi'] as $id => $n) {
+        db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]); db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $n, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'joinDate' => '2024-01-10', 'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    $row = fn($id) => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
+    foreach (['STL-A', 'STL-B', 'STL-C'] as $id) fees_accrue_member($row($id));
+    fees_post('STL-A', 'payment', 2000, ['note' => 'Cash', 'by' => $SU]);
+    fees_post('STL-A', 'fine', 500, ['note' => 'Late', 'by' => $SU, 'periodKey' => 'fine:test']);
+    $bal = fees_balance($row('STL-A'));
+    chk('settle: an imported member with a 2024 join date is charged every membership year and month since', (int)($bal['byKind']['membership'] ?? 0) === 15000 && (int)($bal['byKind']['dues'] ?? 0) > 30000 && $bal['payable'] > 40000);
+    $set = fn($x) => backend_dispatch('admin.fees.settle', ['requesterId' => $SU] + $x);
+    chk('settle: a reason is required, and a date to come is refused', ($set(['memberId' => 'STL-A', 'reason' => ''])['error'] ?? '') === 'reason_required'
+        && ($set(['memberId' => 'STL-A', 'reason' => 'Paid before', 'date' => gmdate('Y-m-d', time() + 3 * 86400)])['error'] ?? '') === 'date_in_future');
+    $before = $bal['payable'];
+    $r = $set(['memberId' => 'STL-A', 'reason' => 'Imported: paid before joining this system']);
+    chk('settle: membership and dues still unpaid are cleared exactly (the payment counted first); the fine stays',
+        !empty($r['ok']) && $r['cleared'] === $before - 500 && $r['balance']['payable'] === 500 && $r['settledThrough'] === gmdate('Y-m-d'));
+    $w = db_row("SELECT * FROM member_ledger WHERE memberId = 'STL-A' AND kind = 'waiver' ORDER BY id DESC LIMIT 1");
+    chk('settle: one waiver on the ledger, carrying the date and the reason', $w && (int)$w['amount'] === $before - 500 && str_contains((string)$w['note'], 'Settled up to ' . gmdate('Y-m-d') . ': Imported: paid before'));
+    $n0 = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'STL-A'")['c'];
+    fees_accrue_member($row('STL-A'));
+    chk('settle: the next accrual charges nothing on or before the date — the dues do not come back',
+        (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'STL-A'")['c'] === $n0 && fees_balance($row('STL-A'))['payable'] === 500);
+    chk('settle: running it again clears nothing twice (unchanged)', !empty($set(['memberId' => 'STL-A', 'reason' => 'Again please'])['unchanged']));
+    // Partial: settled to the end of 2025 only — 2026's membership year and months stay owed.
+    $r = $set(['memberId' => 'STL-B', 'reason' => 'Paid to the end of 2025', 'date' => '2025-12-31']);
+    $owed26 = 0; foreach (fees_entries('STL-B') as $e) if ($e['direction'] === 'charge' && (($e['kind'] === 'dues' && $e['periodKey'] >= '2026-01') || ($e['kind'] === 'membership' && $e['periodKey'] === 'y3'))) $owed26 += (int)$e['amount'];
+    chk('settle: to an earlier date, only the periods up to it are cleared', !empty($r['ok']) && $owed26 > 0 && $r['balance']['payable'] === $owed26);
+    chk('settle: an earlier date than the one recorded changes nothing', !empty($set(['memberId' => 'STL-B', 'reason' => 'Older date', 'date' => '2025-06-30'])['unchanged']));
+    // In bulk, through the member desk's one bulk op.
+    db_exec("DELETE FROM members WHERE memberId IN ('STL-PPL','STL-FEE')");
+    db_insert('members', ['memberId' => 'STL-PPL', 'fullName' => 'People Admin', 'email' => 'stl-ppl@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $bulk = fn($who, $x) => backend_dispatch('admin.members.bulk', ['requesterId' => $who, 'action' => 'feesSettled', 'memberIds' => ['STL-C', 'STL-A', 'NGG-NOPE', $who]] + $x);
+    chk('settle (bulk): it needs the fees permission, not people', ($bulk('STL-PPL', ['date' => '', 'reason' => 'Imported'])['error'] ?? '') === 'forbidden');
+    chk('settle (bulk): the payload is checked before any row', ($bulk($SU, ['reason' => ''])['error'] ?? '') === 'reason_required'
+        && fees_balance($row('STL-C'))['payable'] > 40000);
+    $c0 = fees_balance($row('STL-C'))['payable'];
+    $b = $bulk($SU, ['date' => '', 'reason' => 'Imported roster: paid before this system']);
+    $v = array_column($b['results'] ?? [], null, 'id');
+    chk('settle (bulk): per-row verdicts — cleared, already settled, not found, own account — and the total cleared',
+        !empty($b['ok']) && ($v['STL-C']['cleared'] ?? 0) === $c0 && !empty($v['STL-A']['unchanged']) && ($v['NGG-NOPE']['error'] ?? '') === 'not_found'
+        && ($v[$SU]['error'] ?? '') === 'own_account' && $b['applied'] === 1 && $b['cleared'] === $c0 && fees_balance($row('STL-C'))['payable'] === 0);
+    chk('settle (bulk): one audit event for the run, and a line on each settled member\'s record',
+        (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.members.bulk' AND subject = 'feesSettled'")['c'] === 1
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'fees.settle' AND subject = 'STL-C'"));
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'STL-%'"); db_exec("DELETE FROM members WHERE memberId LIKE 'STL-%'");
+    db_exec("DELETE FROM audit_log WHERE event IN ('fees.settle') OR (event = 'admin.members.bulk' AND subject = 'feesSettled')");
+    setting_set('fees', $keepFees, 'test');
+})();
+
 /* ── M4: the dues ledger is gated by its own `fees` capability, not `people` ──
  * A member-desk admin (people, not fees) must be refused; granting `fees` per
  * person opens it; super_admin holds it by role; and the one-time backfill seed

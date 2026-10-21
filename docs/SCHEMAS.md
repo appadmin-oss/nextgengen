@@ -539,3 +539,6 @@ Projects and activities set in the Mentor Portal (`api/_lib/domain/projects.php`
 
 ## `ai_usage` (migration 167)
 One row per AI call (`api/_lib/ai.php` `ai_log_usage`): `at`, `month` (`YYYY-MM`), `profile`, `job` (`everyday` | `brain`), `provider`, `model`, `tier` (`free` | `paid`), `inTokens`, `outTokens`, `costMicros` (USD × 1,000,000 — the provider's reported cost for OpenRouter, otherwise tokens × the price table), `estimated` (1 when the provider returned no token counts), `ok`, `error` (`ai_limit_reached` marks a paid call the monthly limit held back, at no cost). The month's spend is `SUM(costMicros)`; the limit is setting `ai_routing` (`monthlyLimitUsd`, `paidEveryday`, `prices`).
+
+## `members.feesSettledThrough` (migration 168)
+`YYYY-MM-DD` or ''. The last day the member's membership and dues are settled outside this system. `fees_accrue_member` never charges a membership period due, or a dues month, on or before it; `fees_settle_through()` sets it (never backwards) and posts one `waiver` with periodKey `settle:<date>` for what was still unpaid on those periods (payments applied oldest first).

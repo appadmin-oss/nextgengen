@@ -770,6 +770,18 @@ and emails the family **one invoice**:
 The fees must be switched on under Dues & arrears; with them off the member is
 still accepted and the screen says no invoice went.
 
+**Members who don't owe their back-dues** (imported members especially: their
+join date is years back, so every membership year and month since is charged,
+though they paid before this system existed). Select them in **Members →
+Roster** and use **Clear dues they don’t owe**, or open one member's record →
+**Fees** → the same button. Give the date they are settled up to (today is
+usual) and why. What is still unpaid on membership and dues for periods on or
+before that date is cleared with one waiver carrying your reason — payments
+already made count first — and those periods are never charged again. Fines and
+the programme's training cost are not touched. Running it again changes nothing;
+settle to a later date if more was paid outside the system. Needs the Fees
+permission; each account gets a line in its history, and the run one audit event.
+
 The family pays through the link (Paystack), or by bank transfer or cash.
 
 **Paying the balance online.** After joining, a member's account (their

@@ -1,19 +1,19 @@
 {
-  "buildId": "deb77593b5",
-  "builtAt": "2026-10-21T19:28:57.741Z",
+  "buildId": "6f831ab744",
+  "builtAt": "2026-10-21T19:34:14.998Z",
   "bundle": {
-    "file": "app.b8c8fc95cb.min.js",
-    "bytes": 4755027,
-    "gzipBytes": 1308198,
+    "file": "app.f68ab32b10.min.js",
+    "bytes": 4757432,
+    "gzipBytes": 1308847,
     "files": 91
   },
   "assets": {
-    "app.min.js": "app.b8c8fc95cb.min.js",
+    "app.min.js": "app.f68ab32b10.min.js",
     "styles.css": "styles.4d719f21ab.css",
     "styles-app.css": "styles-app.7c1a1018d4.css",
     "data.js": "data.29d3739700.js",
     "photos.js": "photos.fffb7d55bb.js",
-    "api-client.js": "api-client.7e794e471a.js",
+    "api-client.js": "api-client.0fc516a07e.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.22.0"

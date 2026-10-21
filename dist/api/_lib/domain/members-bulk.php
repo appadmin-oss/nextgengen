@@ -68,6 +68,8 @@ function members_bulk_actions(): array {
         'track'       => ['cap' => 'people', 'needs' => 'track',   'staffSafe' => true,  'label' => 'Set track'],
         'consent'     => ['cap' => 'people', 'needs' => 'consent', 'staffSafe' => true,  'label' => 'Record consent'],
         'remindersOff'=> ['cap' => 'fees',   'needs' => 'onoff',   'staffSafe' => true,  'label' => 'Dues reminders'],
+        // Clears dues they do not owe: delegates to fees_settle_through(), the single-member implementation.
+        'feesSettled' => ['cap' => 'fees',   'needs' => 'settle',  'staffSafe' => true,  'label' => 'Settled up to a date'],
     ];
 }
 
@@ -122,7 +124,12 @@ function admin_members_bulk(array $p): array {
         }
     } elseif ($action === 'remindersOff') {
         $value = !empty($p['off']) ? 1 : 0;
+    } elseif ($action === 'feesSettled') {
+        $v = fees_settle_validate($p['date'] ?? '', $p['reason'] ?? '');
+        if (!$v['ok']) return $v;
+        $value = ['date' => $v['date'], 'reason' => $v['reason']];
     }
+    $cleared = 0;
 
     $scopeNames = admin_centre_names_in_scope($me);
     $now = now_iso();
@@ -151,6 +158,15 @@ function admin_members_bulk(array $p): array {
         }
 
         try {
+            if ($action === 'feesSettled') {
+                $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+                $r = fees_settle_through($full, $value['date'], $value['reason'], (string)$me['memberId'], (string)($p['ip'] ?? ''));
+                if (empty($r['ok'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => false, 'error' => (string)($r['error'] ?? 'refused')]; $refused++; continue; }
+                if (!empty($r['unchanged'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue; }
+                $cleared += (int)$r['cleared'];
+                $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'cleared' => (int)$r['cleared']];
+                $applied++; continue;
+            }
             if ($action === 'consent') {
                 $r = consent_record($mid, (string)$value['type'], (string)$value['status'], 'staff',
                                     (string)($me['fullName'] ?? 'Staff'));
@@ -192,10 +208,10 @@ function admin_members_bulk(array $p): array {
     audit('admin.members.bulk', (string)$me['memberId'], $action, [
         'requested' => count($ids), 'applied' => $applied, 'refused' => $refused,
         'value' => is_array($value) ? $value : (string)$value,
-    ], (string)($p['ip'] ?? ''));
+    ] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []), (string)($p['ip'] ?? ''));
 
     return ['ok' => true, 'action' => $action, 'applied' => $applied, 'refused' => $refused,
-            'requested' => count($ids), 'results' => $results];
+            'requested' => count($ids), 'results' => $results] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []);
 }
 
 /**

@@ -3963,3 +3963,5 @@ CREATE TABLE IF NOT EXISTS ai_usage (
   KEY idx_ai_usage_month (month, tier)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (167) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE members ADD COLUMN feesSettledThrough VARCHAR(10) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (168) ON DUPLICATE KEY UPDATE version = version;
