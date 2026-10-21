@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 165;
+const NGG_SCHEMA_TARGET = 166;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4948,6 +4948,42 @@ function db_migrate(PDO $db): void {
             ALTER TABLE mentors ADD COLUMN honorific TEXT DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN honorific TEXT DEFAULT '';
             ALTER TABLE members ADD COLUMN honorific TEXT DEFAULT '';
+        ",
+        /* 166 — projects and activities (domain/projects.php): staff in the
+         * mentor portal assign one to mentors, to children or both, split
+         * into named groups, from a start date to a finish date. One row per
+         * person on it: kind mentor (personId = mentorId) or member
+         * (personId = memberId), their group, and their part's status. */
+        166 => "
+            CREATE TABLE IF NOT EXISTS projects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              projectId TEXT NOT NULL,
+              title TEXT NOT NULL,
+              detail TEXT DEFAULT '',
+              startOn TEXT DEFAULT '',
+              dueOn TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              status TEXT DEFAULT 'open',
+              createdBy TEXT DEFAULT '',
+              createdByName TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_id ON projects(projectId);
+            CREATE INDEX IF NOT EXISTS idx_projects_by ON projects(createdBy, status);
+            CREATE TABLE IF NOT EXISTS project_people (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              projectId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              personId TEXT NOT NULL,
+              groupName TEXT DEFAULT '',
+              status TEXT DEFAULT 'assigned',
+              note TEXT DEFAULT '',
+              doneAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_project_person ON project_people(projectId, kind, personId);
+            CREATE INDEX IF NOT EXISTS idx_project_people_who ON project_people(kind, personId, status);
         ",
     ];
 

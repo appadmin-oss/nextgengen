@@ -1818,7 +1818,13 @@ function mp_commitments(array $g, string $month, string $today): array {
         $row('journal', 'Anchor Journal with families and teachers', 'Reply to shared entries within a week', $j['over7'] ? 'warn' : 'ok', $j['n'] ? $j['n'] . ' waiting' : 'Up to date', 'Messages', ['label' => 'Open messages', 'route' => 'messages']),
         $row('sts', 'Tuesday STS meeting', 'Planning and review', $att('sts') >= $count(2) ? 'ok' : 'warn', $att('sts') . ' of ' . $count(2), 'Meeting register'),
         $row('parents', 'Parent engagements', 'Meetings and conversations about your mentees', ($peer || !$famDue) ? 'ok' : 'warn', $peer ? 'Your lead contacts families' : ($famDue ? $famDue . ($famDue === 1 ? ' family due' : ' families due') : 'Up to date'), 'Family updates', ['label' => 'See families', 'route' => 'mentees:family']),
-        $row('projects', 'Support NGGC projects and activities', 'As reasonably assigned', 'ok', 'None assigned', 'Assigned by your lead'),
+        (function () use ($row, $mid, $month, $today) {
+            $pj = mp_projects_month($mid, $month, $today);
+            $txt = !$pj['assigned'] ? 'None assigned' : $pj['done'] . ' of ' . $pj['assigned'] . ' done'
+                . ($pj['overdue'] ? ' · ' . $pj['overdue'] . ' past the finish date' : ($pj['next'] ? ' · next finishes ' . gmdate('j M', strtotime($pj['next'] . 'T12:00:00Z')) : ''));
+            return $row('projects', 'Support NGGC projects and activities', 'As reasonably assigned', $pj['overdue'] ? 'warn' : 'ok', $txt, 'Projects',
+                $pj['assigned'] ? ['label' => 'Open projects', 'route' => 'projects'] : null);
+        })(),
         $row('retreat', 'Quarterly day retreat', $retreat ? gmdate('j F', strtotime((string)$retreat['onDate'])) . ($retreat['place'] ? ' · ' . $retreat['place'] : '') : 'Date to be announced',
              !$retreat || $retreat['booked'] ? 'ok' : 'warn', !$retreat ? 'Not scheduled yet' : ($retreat['booked'] ? 'Booked' : 'Not booked'), 'Retreat booking',
              $retreat && !$retreat['booked'] ? ['label' => 'Book my place', 'route' => 'action:retreat.book', 'retreatId' => (string)$retreat['retreatId']] : null),

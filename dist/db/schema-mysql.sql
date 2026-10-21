@@ -3915,3 +3915,33 @@ ALTER TABLE mentors ADD COLUMN honorific VARCHAR(20) DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN honorific VARCHAR(20) DEFAULT '';
 ALTER TABLE members ADD COLUMN honorific VARCHAR(20) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (165) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS projects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  projectId VARCHAR(32) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  detail TEXT,
+  startOn VARCHAR(10) DEFAULT '',
+  dueOn VARCHAR(10) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  createdBy VARCHAR(64) DEFAULT '',
+  createdByName VARCHAR(200) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_projects_id (projectId),
+  KEY idx_projects_by (createdBy, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS project_people (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  projectId VARCHAR(32) NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  groupName VARCHAR(60) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'assigned',
+  note TEXT,
+  doneAt VARCHAR(32) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_project_person (projectId, kind, personId),
+  KEY idx_project_people_who (kind, personId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (166) ON DUPLICATE KEY UPDATE version = version;

@@ -26,7 +26,7 @@ const MP9_CORE = ["today", "dash", "mine", "chat", "notifs", "state"];
 const MP9_NEED = {
   today: ["today", "dash", "mine", "chat", "form", "mom"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
   results: ["res"], companion: ["comp"], sat: ["form", "dash", "evals"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
-  journal: [], opps: ["opps"], community: ["feed"], passport: ["rec"], me: ["circle", "sec", "rec"],
+  journal: [], opps: ["opps"], community: ["feed", "prj"], passport: ["rec"], me: ["circle", "sec", "rec"],
   money: ["stmt", "comp9"], records: ["rec", "reqs"], help: [], more: [],
 };
 const MP9_LOADERS = {
@@ -37,7 +37,7 @@ const MP9_LOADERS = {
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
   sec: () => NGGApi.member.security(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
-  reqs: () => NGGApi.member.requests(),
+  reqs: () => NGGApi.member.requests(), prj: () => NGGApi.member.projects(),
   // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
   evals: () => NGGApi.member.pod.read("evals"),
 };
@@ -54,7 +54,7 @@ const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.por
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */
 const MP9_ROUTE = { "/member/account/money": "money", "/member/grow/results": "results", "/member/learn": "learn", "/member/mentor": "mentor",
-  "/member/sat": "sat", "/member/records": "records", "/member/growth": "growth" };
+  "/member/sat": "sat", "/member/records": "records", "/member/growth": "growth", "/member/community": "community" };
 const MP9_DAYS = ["M", "T", "W", "T", "F", "S", "S"], MP9_DAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function mp9First(n) { return String(n || "").replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, "").trim().split(/\s+/)[0] || ""; }

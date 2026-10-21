@@ -1427,7 +1427,7 @@ address per programme so NGG members and Summer School participants never share 
 
 | Address | Who | What |
 |---|---|---|
-| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), **Class** (Stars, School results, Curriculum) and **My role** (role, Academy, hub). The Saturday schedule sits under each page's own work, not above it |
+| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), **Class** (Stars, School results, Curriculum) and **My role** (role, Projects, Academy, hub). The Saturday schedule sits under each page's own work, not above it |
 | `/mentor/summer` | Summer School mentors; admins | This edition's participants only: stars, notes, reviews, concerns |
 | `/mentor/class` | An NGG mentor: the portal's **Class** area (`?tab=results` / `?tab=curriculum` open those tabs). Anyone else with the class tools (an admin with no pod): the stand-alone class page | Stars, V3, notes, curriculum, school results |
 | `/instructor/ngg` | NGG instructors (Instructor Portal) | Today, Roll, Plan (hinge, exit, retrieval from earlier weeks), Teach, Exit ticket, Session log, Skills board (evidence to move a child up), Marking, Curriculum, Students, Community, School results, Report a concern |
@@ -1558,6 +1558,23 @@ completed CIMC training is marked so once and no longer needs Saturday 7:00am.
 The month also counts the pod (five or more), parent summaries and the Anthem
 and Pledge. The conduct commitments (values, accountability, feedback,
 leadership) are listed for the lead's own review and are not scored.
+
+**Projects and activities.** *My role → Projects* in the Mentor Portal. A lead
+or a coordinator sets a project for the mentors they lead and the children at
+their centre; any mentor, for the children in their own caseload. A project
+has a name, what to do, a start and a finish date (a year at most), and the
+people on it, optionally split into named groups (twenty at most, two hundred
+people). Everyone on it is told when it is set and sees the same countdown.
+A mentor marks their own part done; a child marks theirs from **Community**
+in their app, where they see the project, their group (other children by first
+name, adults by title) and who set it; a project finishing within a week is
+on their **Today**. The person who set it sees every group's tally and may set
+anyone's part — done, not done yet, or *excused* (an excused part is not
+counted). Taking someone off keeps them on the record if they had finished.
+The commitment *Support NGGC projects and activities* on My role counts the
+mentor's projects this month ("1 of 2 done · next finishes 20 Oct"), and turns
+into a to-do when a part is past its finish date. Saving and marking wait for
+the Academy, as the portal's other saves do.
 
 **Safeguarding.** *Report a concern* is in the Mentor Portal's header,
 for every mentor, cleared or not. A report goes to the safeguarding officer for

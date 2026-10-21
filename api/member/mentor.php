@@ -10,7 +10,7 @@ const MENTOR_PORTAL_VIEWS = [
     'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
-    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan', 'messageSearch' => 'member.mentor.message.search', 'growth' => 'member.mentor.growth',
+    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan', 'messageSearch' => 'member.mentor.message.search', 'growth' => 'member.mentor.growth', 'projects' => 'member.mentor.projects',
 ];
 /** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
 const MENTOR_PORTAL_ACTIONS = [
@@ -39,6 +39,8 @@ const MENTOR_PORTAL_ACTIONS = [
     'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
     'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note'], 'mentor.meeting'],
     'planReturn'      => ['member.mentor.plan.return', ['planId', 'note'], 'mentor.meeting'],
+    'projectSave'     => ['member.mentor.project.save', ['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'people'], 'mentor.meeting'],
+    'projectMark'     => ['member.mentor.project.mark', ['projectId', 'kind', 'personId', 'status', 'note'], 'mentor.meeting'],
 ];
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';

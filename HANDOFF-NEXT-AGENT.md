@@ -9,7 +9,7 @@ Commit trailers:
 
 ```
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01MrRoWy2syTb9DhJTxkdYka
+Claude-Session: https://claude.ai/code/session_019W7d5r5kbG5uVyMsRSB2mQ
 ```
 
 The owner's standing rules: never patch with `!important`; no lazy builds;
@@ -42,25 +42,29 @@ Verified at that commit: PHP suite 4921/0; mentor-v15 65/0; instructor-v6
 `tests/ids-ask-select.test.js` 15/0. ids-ask had 1 real failure, fixed after
 (an unreadable request re-applied the plan) — re-run it.
 
-## In progress (update this list as items land)
+## Done and pushed after that (2026-10-21, a second session)
 
-1. **Device-aware guides with real screenshots** (owner asked: guides tailored
-   per device, screenshots, a walkthrough when someone moves to a new kind of
-   device, and onboarding for children — not an Academy).
-   - `src/modules/guide/guide.jsx`: tours now carry `{ shot, phone, desktop }`
-     per step; `GuideShot` shows `assets/guide/<shot>-<phone|desktop>.jpg`;
-     `GUIDE_DEVICE_TOURS` is the "first time on a phone / computer" tour,
-     shown when someone who has done the tour opens the portal on a device
-     class not in `onboard.<portal>.devices`.
-   - `tools/guide-shots.js` seeds a demo programme and takes the pictures.
-     NOT YET RUN. Run it, look at every picture, fix what is wrong.
-   - Still to do: CSS for `.ngt-shot` / `.ngt-where`; the Academy's "Start
-     here" lessons get a `shot` each (seeds JSON) and `StaffAcademy` shows it;
-     `tests/guide.test.js` (every named shot exists at both sizes; the device
-     tour appears for a new device class) added to `test:all`.
-2. **Browser re-runs pending**: mentor-v15, instructor-v6, family-ui, ids-ask,
-   curriculum-ui (new checks for Growth, the curriculum map, the family Growth
-   screen). A batch was running when this was written.
+- **Security:** `_mint.php` (a super-admin session for any request) removed;
+  the root `.htaccess` refuses any `.php` at the document root; the PHP suite
+  pins it. Hosts that ever had the repo root uploaded must rotate
+  `cookie_secret` (see the `docs/HANDOFF.md` entry).
+- **Request history** in `/control` (Members → Request history; ⌘K by
+  `REQ-` id; the member record's Requests part); request list and decision
+  are now centre-scoped.
+- **Projects and activities**, rebuilt — the first build was lost
+  uncommitted. Mentor portal My role → Projects; member Community and Today;
+  the commitment row. `tests/projects.test.js`.
+
+## Lost, not started again
+
+1. **Device-aware guides with real screenshots.** The earlier session's work
+   on this (`GuideShot`, `GUIDE_DEVICE_TOURS`, `tools/guide-shots.js`) was
+   never committed and is gone; `src/modules/guide/guide.jsx` is as it was.
+   Owner asked: guides tailored per device, screenshots, a walkthrough when
+   someone moves to a new kind of device, onboarding for children (not an
+   Academy). Start from scratch.
+2. **Browser re-runs** of instructor-v6, family-ui, ids-ask and
+   curriculum-ui were never confirmed after `3daf0f5`.
 
 ## Asked by the owner on 2026-10-21, not started yet
 

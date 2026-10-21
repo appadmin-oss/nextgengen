@@ -2128,3 +2128,42 @@ was approved, declined or withdrawn. The REQ- id in an alert led nowhere.
   `test:all` and `npm run test:reqhist`) drives it in Chromium: raise through
   the member route, decide through the admin route, then find each one by id,
   reference, filter, deep link, ⌘K, the member record and the Inbox search.
+
+## 2026-10-21 — Projects and activities (rebuilt; the first build was lost)
+
+The previous session wrote this and lost it uncommitted when its container
+was reclaimed; only `projects.php` survived, pasted into the next session.
+Rebuilt from that paste, and finished:
+
+- **Migration 166** (`projects`, `project_people`), mirrored to MySQL;
+  `NGG_SCHEMA_TARGET` 166. `domain/projects.php` in the bootstrap list.
+- Ops `member.mentor.projects` / `.project.save` / `.project.mark` (mentor
+  portal `?view=projects`, actions `projectSave` / `projectMark`), and
+  `member.projects` / `member.project.mark` (`api/member/projects.php`; the
+  memberId is the session's). Save and mark are in
+  `ACADEMY_GATED_MENTOR_OPS`.
+- Fixed from the paste: a coordinator's mentors are the centres they cover
+  (`mp_team_rows` with no `centres` returned every mentor in the programme);
+  no child reaches an unscreened lead (`mp_screened`); a child's alert never
+  falls back to an adult's full name; the child's To do points at
+  `/member/community` (a real route; `/member/projects` was not); the member
+  view takes the suite's `today` as `mp_today()` does.
+- **My role**: the commitment row is `mp_projects_month()` — "None assigned",
+  "1 of 2 done · next finishes 20 Oct", or a warning with "N past the finish
+  date" and an *Open projects* button (the portal's design shows a button on
+  rows that need attention only).
+- **Mentor portal**: *My role → Projects* (`Mp15Projects`, `.mpj-*` in
+  styles-app.css): set / edit / finish / cancel, groups, a searchable picker
+  (mentees first), per-person part select for the setter, mark-my-part for a
+  mentor on it.
+- **Member portal**: *Community* opens with "Your projects" (the design file
+  `member-portal-v9.dc.html`, recompiled with tools/dc-compile.js;
+  `assignedVals()` in mp9-more.jsx): group, countdown and time-gone bar,
+  groupmates by first name and adults by title, mark my part done with a
+  note, an honest error with retry. Today lists a project finishing within a
+  week (`member_project_todos` in `member_today`).
+- Tests: PHP suite +26 (countdown, reach per role, all-or-nothing refusals,
+  groups, what a child is shown, marking rules, the commitment row, Today,
+  editing keeps finished parts, closing, the Academy gate, one audit per
+  save); `tests/projects.test.js` (24, in `test:all`, `npm run test:projects`)
+  drives lead → child → mentor → lead in Chromium.

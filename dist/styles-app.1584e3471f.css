@@ -11499,6 +11499,18 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-0b35dfa{margin:0;font-size:17px;font-weight:600;line-height:1.3}
 .m9-f7b0718{font-size:13.5px;color:#7a5600;display:flex;align-items:center;gap:6px}
 .m9-2f3afa9{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.m9-62191ba{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.m9-bb0b5a5{color:#b0361c;font-size:20px}
+.m9-a6d2e92{flex:1;min-width:180px;font-size:14px;line-height:1.45}
+.m9-ee167ac{margin:0;font-size:14.5px;line-height:1.5;color:#4a4a50}
+.m9-734c02e{font-size:22px;font-weight:700;color:var(--dc-color, unset)}
+.m9-6cdcc79{height:8px;border-radius:999px;background:#ecebe6;overflow:hidden}
+.m9-8f6b6f5{display:block;height:100%;border-radius:999px;width:var(--dc-width, unset);background:var(--dc-background, unset)}
+.m9-67ece17{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:#f4f4f2;font-size:13.5px}
+.m9-9371ff5{color:var(--dc-color, unset)}
+.m9-b41d625{align-self:flex-start;height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.m9-8d6cff2{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:#e9f6ec;color:#1d6b30;font-size:14px;line-height:1.45}
+.m9-55e5be4{height:44px;padding:0 14px;border-radius:12px;border:1px solid #1d6b30;background:#fff;color:#1d6b30;font-size:14px;font-weight:600;cursor:pointer}
 .m9-ce056a9{width:32px;height:32px;border-radius:50%}
 .m9-80ed7e1{height:40px;padding:0 12px;border-radius:999px;border:1px solid #e8e5dd;background:#fff;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--dc-color, unset)}
 .m9-03a96f0{height:40px;padding:0 12px;border-radius:999px;border:1px solid #e8e5dd;background:#fff;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:6px}
@@ -11511,7 +11523,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-abde308{width:28px;height:28px;border-radius:50%;background:var(--dc-background, unset);color:var(--dc-color, unset);display:grid;place-items:center;font-size:12.5px;font-weight:700}
 .m9-5606103{font-size:14px;font-weight:500;line-height:1.3}
 .m9-88491fd{align-self:flex-start;height:44px;padding:0 16px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
-.m9-b41d625{align-self:flex-start;height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .m9-407182e{display:flex;gap:10px;padding:10px 12px;border-radius:12px;background:#f4f4f2;font-size:14px;line-height:1.45}
 .m9-7a21c6a{margin-top:2px}
 .m9-b9a9eb8{align-self:flex-start;height:44px;padding:0 16px;margin-top:4px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
@@ -13924,6 +13935,56 @@ button.m9x-ev-sum { cursor: pointer; }
 .grw-facts dd { margin: 0; color: #0b0b0c; }
 .grw-msg { display: flex; gap: 10px; align-items: center; padding: 14px 16px; border-radius: 14px; background: #f4f4f2; font-size: 14px; color: #2b2b30; }
 .grw-btn { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #d6d4cc; background: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+/* Mentor portal → Projects (Mp15Projects, domain/projects.php). The grw-card
+   housing, with the countdown in the same three tones the member sees. */
+.mpj { container-type: inline-size; display: flex; flex-direction: column; gap: 12px; }
+.mpj-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mpj-go { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 0; background: #0b0b0c; color: #fff; font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.mpj-go:disabled { background: #8d8d93; cursor: not-allowed; }
+.mpj-danger { color: #b0361c; border-color: #e6b8ab; }
+.mpj-card { border-top: 1px solid #efeee9; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.grw-card > .mpj-card:first-of-type { border-top: 0; padding-top: 0; }
+.mpj-head h4 { margin: 0; font-size: 16px; font-weight: 700; color: #0b0b0c; }
+.mpj-when { margin: 4px 0 6px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 13px; color: #5b5b62; }
+.mpj-cd { font-size: 15px; font-weight: 700; color: #45454d; }
+.mpj-cd.is-ok { color: #1d6b30; } .mpj-cd.is-soon { color: #7a5600; } .mpj-cd.is-over { color: #b0361c; }
+.mpj-bar { display: block; height: 6px; border-radius: 999px; background: #efeee9; overflow: hidden; }
+.mpj-bar > span { display: block; height: 100%; border-radius: 999px; background: #0b0b0c; }
+.mpj-detail, .mpj-meta { margin: 0; font-size: 13.5px; line-height: 1.45; color: #45454d; }
+.mpj-people { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.mpj-people > li { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border-radius: 999px; background: #f4f4f2; font-size: 13px; color: #2b2b30; }
+.mpj-people > li.is-done > i { color: #1d6b30; }
+.mpj-mark { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.mpj-mark .mpj-f { flex: 1 1 220px; }
+.mpj-done { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: #e9f6ec; color: #1d6b30; font-size: 13.5px; }
+.mpj-group h5, .mpj-who h5 { margin: 6px 0 4px; font-size: 13px; font-weight: 600; color: #0b0b0c; }
+.mpj-group h5 small, .mpj-f small, .mpj fieldset legend small { font-weight: 400; color: #5b5b62; }
+.mpj-parts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.mpj-parts > li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid #f4f4f2; }
+.mpj-who-n { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 14px; color: #0b0b0c; min-width: 0; }
+.mpj-who-n em { font-style: normal; font-size: 12px; color: #5b5b62; }
+.mpj-who-n small { flex-basis: 100%; font-size: 12.5px; color: #5b5b62; }
+.mpj select, .mpj input:not([type="checkbox"]), .mpj textarea { min-height: 44px; padding: 0 10px; border: 1px solid #d6d4cc; border-radius: 10px; background: #fff; font: inherit; font-size: 15px; color: #0b0b0c; }
+.mpj textarea { padding: 10px; line-height: 1.45; resize: vertical; }
+.mpj-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.mpj-form { display: flex; flex-direction: column; gap: 12px; }
+.mpj-f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: #2b2b30; }
+.mpj-dates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.mpj fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mpj fieldset legend { padding: 0; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #2b2b30; }
+.mpj fieldset.mpj-who { flex-direction: column; align-items: stretch; }
+.mpj-chip { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; padding: 0 4px 0 12px; border-radius: 999px; background: #f4f4f2; font-size: 13px; }
+.mpj-chip button { width: 32px; height: 32px; border: 0; background: none; border-radius: 50%; cursor: pointer; color: #45454d; }
+.mpj-addg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.mpj-search { display: flex; align-items: center; gap: 8px; }
+.mpj-search input { flex: 1; }
+.mpj-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow: auto; }
+.mpj-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 6px; border-radius: 10px; }
+.mpj-pick.is-on { background: #f4f4f2; }
+.mpj-pick label { display: flex; align-items: center; gap: 10px; min-height: 44px; flex: 1; cursor: pointer; font-size: 14px; }
+.mpj-pick label input { width: 20px; height: 20px; }
+.mpj-pick label em { font-style: normal; font-size: 12px; color: #5b5b62; }
+@container (max-width: 420px) { .mpj-dates { grid-template-columns: 1fr; } }
 .grw-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .mpg-wrap { overflow-x: auto; }
 .mpg-t { width: 100%; border-collapse: collapse; font-size: 14px; }

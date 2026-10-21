@@ -40,7 +40,7 @@ const ACADEMY_GATED_MENTOR_OPS = ['member.mentor.session.save', 'member.mentor.s
     'member.mentor.rel.save', 'member.mentor.rel.fit', 'member.mentor.family.send', 'member.mentor.family.drafts', 'member.mentor.supervision.prep',
     'member.mentor.supervision.book', 'member.mentor.retreat.book', 'member.mentor.saturday.plan', 'member.mentor.onetoones.add', 'member.mentor.register',
     'member.mentor.week.review', 'member.mentor.week.review.undo', 'member.mentor.message.reply', 'member.mentor.message.lead', 'member.mentor.plan.approve',
-    'member.mentor.plan.return', 'member.mentor.goal.save', 'member.mentor.goal.status',
+    'member.mentor.plan.return', 'member.mentor.goal.save', 'member.mentor.goal.status', 'member.mentor.project.save', 'member.mentor.project.mark',
     // The Summer School portal (and the class tools): conversations, reviews, courage, chat, stars, notes.
     'member.mentor.meeting.save', 'member.mentor.meeting.delete', 'member.mentor.review.save', 'member.mentor.summer.review',
     'member.mentor.courage.mark', 'member.mentor.chat.send', 'behaviour.star.give', 'behaviour.bulk.award', 'member.remark.add'];

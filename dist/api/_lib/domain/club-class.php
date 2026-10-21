@@ -571,6 +571,8 @@ function member_today(array $p): array {
         $promises = ['planId' => $pub['planId'], 'items' => $pub['items'], 'adherence' => $pub['adherence'], 'status' => $pub['status']];
         if ($left > 0) $todo[] = portal_todo('promises', 'check-circle', "{$left} study session" . ($left === 1 ? '' : 's') . ' left this week', 'Your plan · tick each one when it’s done', 'Tick', '/member/grow/results', 'neutral', 4);
     }
+    // Projects finishing within a week that are not done yet.
+    try { foreach (member_project_todos($mid, $today) as $t) $todo[] = $t; } catch (\Throwable $e) {}
     $sat = club_class_next_date($today);
 
     usort($todo, static fn($a, $b) => [$a['rank'], $a['deadline'] === '' ? '9999' : $a['deadline']] <=> [$b['rank'], $b['deadline'] === '' ? '9999' : $b['deadline']]);

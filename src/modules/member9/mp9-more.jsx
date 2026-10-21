@@ -249,6 +249,35 @@ Object.assign(Mp9Portal.prototype, {
           NGGApi.member.community.comment(id, t2).then(r => { this.setState({ cmts: { ...this.state.cmts, [id]: (this.state.cmts[id] || []).concat(r && r.held === false ? [] : [t2]) }, cDraft: { ...this.state.cDraft, [id]: "" } }); this.toast("Comment sent. It shows once a moderator checks it."); }).catch(er => this.toast(mp9Err(er))); } };
     }).concat(posts.length ? [] : [{ id: "none", by: "NGG", when: "", t: f.error ? "The feed couldn’t load." : "Nothing in the community feed yet.", likesN: 0, cheersN: 0, lkIcon: "ph ph-heart", lkFg: "#4a4a50", chIcon: "ph ph-hands-clapping", chFg: "#4a4a50", like: () => {}, cheer: () => {}, cmts: [], cN: 0, open: false, toggle: () => {}, draft: "", onDraft: () => {}, send: e => e.preventDefault() }]) };
   },
+  /* Projects a mentor or lead put me on (member.projects): the countdown, my group (first names), and my part. */
+  assignedVals() {
+    const s = this.state, D = this.dd("prj"), err = !D && !!(s.er || {}).prj;
+    const TONE = { ok: "#1d6b30", soon: "#7a5600", due: "#7a5600", over: "#b0361c", neutral: "#4a4a50", done: "#4a4a50" };
+    const notes = s.pjNote || {};
+    const send = (p, status) => {
+      const note = status === "done" ? String(notes[p.projectId] || "").trim() : "";
+      return this.act(NGGApi.member.projectMark(p.projectId, status, note), status === "done" ? "Marked done · " + p.title : "Marked not done yet", ["prj", "today"])
+        .then(r => { if (r && status === "done") this.setState({ pjNote: { ...(this.state.pjNote || {}), [p.projectId]: "" } }); });
+    };
+    const list = ((D && D.projects) || []).map(p => {
+      const c = p.countdown || {}, me = p.me || {}, open = p.status === "open";
+      const mates = (p.mates || []).map(m => ({ name: m.name, icon: m.done ? "ph-fill ph-check-circle" : "ph ph-circle", fg: m.done ? "#1d6b30" : "#6b6b72" }))
+        .concat((p.staff || []).map(n => ({ name: n, icon: "ph ph-chalkboard-teacher", fg: "#4a4a50" })));
+      const gt = p.groupTally || { done: 0, of: 0 };
+      return { key: p.projectId, t: p.title, d: p.detail || "", hasD: !!p.detail,
+        eyebrow: (p.group ? p.group + " · " : "") + "Set by " + (p.by || "NGG"),
+        cdLabel: c.label || "", cdFg: TONE[c.tone] || "#4a4a50", pct: (c.elapsedPct || 0) + "%", pctN: String(c.elapsedPct || 0),
+        barL: "How much of the time has gone: " + (c.elapsedPct || 0) + "%",
+        dueL: p.dueOn ? (open ? "Finishes " : "Finished ") + mp9Date(p.dueOn, { weekday: "long", day: "numeric", month: "long" }) : "",
+        hasMates: mates.length > 0, mates, groupL: (p.group || "Everyone on it") + " · " + gt.done + " of " + gt.of + " done",
+        canMark: open && me.status === "assigned", isDone: me.status === "done", canUndo: open && me.status === "done", isExcused: me.status === "excused",
+        doneL: "Your part is done" + (me.doneAt ? " · " + mp9Date(me.doneAt) : "") + (me.note ? " · “" + me.note + "”" : ""),
+        excusedL: "You’re excused from this one" + (me.note ? ": " + me.note : "."),
+        note: notes[p.projectId] || "", onNote: e => this.setState({ pjNote: { ...(this.state.pjNote || {}), [p.projectId]: e.target.value } }),
+        mark: () => send(p, "done"), undo: () => send(p, "assigned") };
+    });
+    return { assigned: list, hasAssigned: list.length > 0, prjErr: err, prjRetry: () => this.refresh(["prj"]) };
+  },
   projectVals() {
     const P = this.st("mp9.project", null);
     const STEPS = ["Find a problem", "Form a team", "Design a solution", "Do it", "Show what changed"];
@@ -797,7 +826,7 @@ Object.assign(Mp9Portal.prototype, {
     },
       this.accVals(), this.todayVals(go), this.liVals(go), this.growVals(go), this.wellVals(), this.qlineVals(), this.journeyVals(), this.momentumVals(),
       { mv: this.mentorVals(go) }, this.chatVals(),
-      this.learnVals(go), this.compVals(go), this.moneyVals(go), this.recordsVals(), this.meVals(), this.feedVals(), this.projectVals(), this.passportVals(),
+      this.learnVals(go), this.compVals(go), this.moneyVals(go), this.recordsVals(), this.meVals(), this.feedVals(), this.assignedVals(), this.projectVals(), this.passportVals(),
       this.satVals(go), this.rsVals(go), this.oppsVals(), this.helpVals(), this.sheetVals(go), this.navVals(), this.notifVals());
     vals.li = Object.assign({}, vals.li, { tot: tot === null ? "–" : tot, delta: tot === null ? vals.li.delta : prevT === null ? "First month scored" : (tot - prevT > 0 ? "+" : "") + (tot - prevT) + " since last month" });
     return vals;

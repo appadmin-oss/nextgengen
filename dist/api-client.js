@@ -909,6 +909,9 @@
       myTimetable:  () => request('/member/my-timetable.php'),
       saveMyTimetable: (doc) => request('/member/my-timetable.php', { body: doc }),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
+      // Projects and activities a mentor or lead put me on (domain/projects.php).
+      projects:     () => request('/member/projects.php'),
+      projectMark:  (projectId, status, note) => request('/member/projects.php', { body: { projectId, status, note: note || '' } }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),

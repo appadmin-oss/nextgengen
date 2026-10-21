@@ -26961,6 +26961,109 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('summer: the NGG review refuses a participant', (backend_dispatch('member.mentor.summer.review', ['requesterId' => 'NGG-MP1', 'subjectId' => 'NGG-MPK1', 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Strong'])['error'] ?? '') === 'not_a_participant');
     $sc = backend_dispatch('member.mentor.concern.create', ['requesterId' => 'NGG-MPS', 'subjectId' => 'SUM-MP-1', 'category' => 'Injury or harm', 'body' => 'He had a bruise he would not explain.']);
     chk('summer: a concern about a participant reaches the officer\'s queue', !empty($sc['ok']) && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sc['ref']])['subjectName'] === 'Tobi Participant');
+
+    /* ── Projects and activities (domain/projects.php) ── */
+    $cd = static fn($s, $d, $st = 'open') => project_countdown($s, $d, $T, $st);
+    chk('projects: the countdown — days left, finishing today, past the date, not started, finished',
+        $cd('2026-10-05', '2026-10-20')['label'] === '10 days left' && $cd('2026-10-05', '2026-10-20')['tone'] === 'ok'
+        && $cd('2026-10-01', '2026-10-10')['label'] === 'Finishes today' && $cd('2026-10-01', '2026-10-08')['label'] === '2 days past the finish date'
+        && $cd('2026-10-01', '2026-10-08')['tone'] === 'over' && $cd('2026-10-12', '2026-10-30')['label'] === 'Starts in 2 days'
+        && $cd('2026-10-01', '2026-10-13')['tone'] === 'due' && $cd('2026-10-01', '2026-10-30', 'closed')['label'] === 'Finished'
+        && $cd('2026-10-01', '2026-10-21')['elapsedPct'] === 45);
+    $podV = backend_dispatch('member.mentor.projects', $p('NGG-MP1'));
+    chk('projects: a pod mentor may assign the children in their caseload, and no mentors',
+        !empty($podV['ok']) && $podV['canAssignMentors'] === false && $podV['mentors'] === []
+        && array_column($podV['children'], 'id') == ['NGG-MPK1', 'NGG-MPK2', 'NGG-MPK3', 'NGG-MPK4', 'NGG-MPK5']
+        && !array_filter($podV['children'], static fn($c) => !$c['mentee']));
+    $leadV = backend_dispatch('member.mentor.projects', $p('NGG-MPL'));
+    $kidIds = array_column($leadV['children'], 'id');
+    chk('projects: a lead may assign the mentors they lead and the children at their centre — never a colleague as a child',
+        $leadV['canAssignMentors'] === true && !array_diff(['MEN-MPP', 'MEN-MP1'], array_column($leadV['mentors'], 'id')) && !in_array('MEN-MPL', array_column($leadV['mentors'], 'id'), true)
+        && in_array('NGG-MPK6', $kidIds, true) && !array_intersect(['NGG-MP1', 'NGG-MPL', 'NGG-MPP'], $kidIds));
+    $n0 = (int)db_row('SELECT COUNT(*) c FROM projects')['c'];
+    $save = static fn(string $who, array $x) => backend_dispatch('member.mentor.project.save', $p($who, $x));
+    $base = ['title' => 'Clean-up day', 'detail' => 'Clear the yard and plant the beds.', 'startOn' => '2026-10-05', 'dueOn' => '2026-10-20'];
+    chk('projects: a project needs a name, a finish date after its start, and at most a year',
+        ($save('NGG-MPL', ['title' => 'x'] + $base)['error'] ?? '') === 'name_the_project'
+        && ($save('NGG-MPL', ['dueOn' => ''] + $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPK1']]])['error'] ?? '') === 'set_a_finish_date'
+        && ($save('NGG-MPL', ['dueOn' => '2026-10-01'] + $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPK1']]])['error'] ?? '') === 'finish_before_start'
+        && ($save('NGG-MPL', ['dueOn' => '2027-12-01'] + $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPK1']]])['error'] ?? '') === 'project_too_long'
+        && ($save('NGG-MPL', $base)['error'] ?? '') === 'choose_people');
+    $bad = $save('NGG-MP1', $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPK1'], ['kind' => 'member', 'id' => 'NGG-MPK6'], ['kind' => 'mentor', 'id' => 'MEN-MPP']]]);
+    chk('projects: anyone out of reach is named and nothing is written — an assignment is all or nothing',
+        ($bad['error'] ?? '') === 'not_yours_to_assign' && array_column($bad['refused'], 'reason', 'id') === ['NGG-MPK6' => 'out_of_reach', 'MEN-MPP' => 'not_in_team']
+        && (int)db_row('SELECT COUNT(*) c FROM projects')['c'] === $n0);
+    $ppl = [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Team A'], ['kind' => 'member', 'id' => 'NGG-MPK1', 'group' => 'Team A'], ['kind' => 'member', 'id' => 'NGG-MPK2', 'group' => 'Team  A '],
+            ['kind' => 'member', 'id' => 'NGG-MPK3', 'group' => 'Team B'], ['kind' => 'mentor', 'id' => 'MEN-MPP', 'group' => 'Team B']];
+    $sv = $save('NGG-MPL', $base + ['people' => $ppl]);
+    $PID = (string)($sv['projectId'] ?? '');
+    chk('projects: a lead assigns mentors and children in groups (spaces in a group name are tidied)',
+        !empty($sv['ok']) && $sv['added'] === 5 && (string)db_row("SELECT groupName FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK2'", [$PID])['groupName'] === 'Team A');
+    $nt = db_row("SELECT title, body, kind, linkPage FROM notifications WHERE memberId = 'NGG-MPK1' ORDER BY id DESC LIMIT 1");
+    chk('projects: each child is told, with the finish date, their group, and who set it — as a title, never a first name',
+        $nt && $nt['title'] === 'New project: Clean-up day' && $nt['kind'] === 'project' && $nt['linkPage'] === 'community'
+        && str_contains($nt['body'], 'Tuesday 20 October') && str_contains($nt['body'], 'You are in Team A') && !str_contains($nt['body'], 'Lara'));
+    chk('projects: each mentor is told in their own portal', (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MP1' AND title = 'New project: Clean-up day' AND linkPage = 'mentor'"));
+    $kp = backend_dispatch('member.projects', ['memberId' => 'NGG-MPK1', 'today' => $T]);
+    $k1 = $kp['projects'][0] ?? [];
+    chk('projects: the child sees the project, their group, the countdown, and who set it as a title',
+        count($kp['projects'] ?? []) === 1 && $k1['group'] === 'Team A' && $k1['countdown']['label'] === '10 days left' && $k1['countdown']['daysLeft'] === 10
+        && $k1['by'] === staff_public_name('NGG-MPL') && $k1['me']['status'] === 'assigned');
+    chk('projects: …their groupmates by first name only, the adults in it by title, and nobody from the other group',
+        array_column($k1['mates'] ?? [], 'name') === ['Kid2'] && ($k1['staff'] ?? []) === [staff_public_name('NGG-MP1')] && !str_contains(json_encode($k1), 'Kid3')
+        && !str_contains(json_encode($k1), 'Lara') && !str_contains(json_encode($k1), 'Tunde'));
+    chk('projects: a child on no project has an empty list, and one outside it cannot see it',
+        backend_dispatch('member.projects', ['memberId' => 'NGG-MPK5'])['projects'] === []);
+    $mv = backend_dispatch('member.mentor.projects', $p('NGG-MP1'));
+    chk('projects: a mentor on it sees their own group only', count($mv['mine']) === 1 && $mv['mine'][0]['myGroup'] === 'Team A'
+        && array_column($mv['mine'][0]['groups'], 'name') === ['Team A'] && !isset($mv['mine'][0]['people']) && $mv['led'] === []);
+    $lv = backend_dispatch('member.mentor.projects', $p('NGG-MPL'));
+    chk('projects: the lead who set it sees every group with its tally', array_column($lv['led'][0]['groups'], 'name') === ['Team A', 'Team B']
+        && $lv['led'][0]['groups'][0]['tally'] === ['done' => 0, 'of' => 3] && $lv['led'][0]['tally'] === ['done' => 0, 'of' => 5]);
+    $mark = static fn(string $who, array $x) => backend_dispatch('member.mentor.project.mark', $p($who, ['projectId' => $PID] + $x));
+    chk('projects: a mentor marks their own part; not a child\'s, and not "excused" for themselves',
+        !empty($mark('NGG-MP1', ['status' => 'done', 'note' => 'Brought the tools'])['ok'])
+        && ($mark('NGG-MP1', ['kind' => 'member', 'personId' => 'NGG-MPK1', 'status' => 'done'])['error'] ?? '') === 'forbidden'
+        && ($mark('NGG-MP1', ['status' => 'excused'])['error'] ?? '') === 'ask_your_lead'
+        && ($mark('NGG-MPP', ['kind' => 'member', 'personId' => 'NGG-MPK3', 'status' => 'done'])['error'] ?? '') === 'forbidden');
+    chk('projects: the lead who set it may excuse a part; a person not on it is refused',
+        !empty($mark('NGG-MPL', ['kind' => 'member', 'personId' => 'NGG-MPK3', 'status' => 'excused', 'note' => 'Away that week'])['ok'])
+        && ($mark('NGG-MPL', ['kind' => 'member', 'personId' => 'NGG-MPK6', 'status' => 'done'])['error'] ?? '') === 'not_on_project');
+    $kmark = static fn(string $kid, array $x) => backend_dispatch('member.project.mark', ['memberId' => $kid, 'projectId' => $PID] + $x);
+    chk('projects: a child marks their own part done, with what they did; an excused part and a stranger are refused',
+        !empty($kmark('NGG-MPK1', ['status' => 'done', 'note' => 'Planted three beds'])['ok'])
+        && ($kmark('NGG-MPK3', ['status' => 'done'])['error'] ?? '') === 'excused' && ($kmark('NGG-MPK6', ['status' => 'done'])['error'] ?? '') === 'not_on_project'
+        && ($kmark('NGG-MPK1', ['status' => 'excused'])['error'] ?? '') === 'bad_status');
+    $k2 = backend_dispatch('member.projects', ['memberId' => 'NGG-MPK2', 'today' => $T])['projects'][0];
+    chk('projects: a groupmate sees who has finished, and the group\'s tally', $k2['mates'][0] === ['name' => 'Kid1', 'done' => true] && $k2['groupTally'] === ['done' => 1, 'of' => 2]);
+    $role = static fn(string $who) => array_values(array_filter(backend_dispatch('member.mentor.commitments', $p($who))['commitments'] ?? [], static fn($r) => $r['key'] === 'projects'))[0] ?? [];
+    $r1 = $role('NGG-MP1');
+    chk('projects: My role counts the mentor\'s projects instead of a fixed "None assigned"', ($r1['statusText'] ?? '') === '1 of 1 done' && $r1['status'] === 'ok'
+        && ($r1['action']['route'] ?? '') === 'projects');
+    $rp = $role('NGG-MPP');
+    chk('projects: …an open part says when the next one finishes', ($rp['statusText'] ?? '') === '0 of 1 done · next finishes 20 Oct' && $rp['status'] === 'ok');
+    $late = $save('NGG-MPL', ['title' => 'Book drive', 'startOn' => '2026-09-20', 'dueOn' => '2026-10-08', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MPP'], ['kind' => 'member', 'id' => 'NGG-MPK4']]]);
+    $rp = $role('NGG-MPP');
+    chk('projects: a part past its finish date makes the commitment a warning, and says so',
+        !empty($late['ok']) && $rp['status'] === 'warn' && str_contains($rp['statusText'], '1 past the finish date'));
+    $td = member_project_todos('NGG-MPK4', $T);
+    chk('projects: a project that is due (or past due) and not done is on the child\'s Today, pointing at Community',
+        count($td) === 1 && $td[0]['title'] === 'Book drive' && $td[0]['route'] === '/member/community' && str_contains($td[0]['subtitle'] ?? json_encode($td[0]), 'past the finish date'));
+    chk('projects: …one finishing in more than a week is not, yet', member_project_todos('NGG-MPK2', $T) === []);
+    $ed = $save('NGG-MPL', $base + ['projectId' => $PID, 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Team A'], ['kind' => 'member', 'id' => 'NGG-MPK3', 'group' => 'Team A'],
+        ['kind' => 'mentor', 'id' => 'MEN-MPP', 'group' => 'Team B']]]);
+    chk('projects: editing who is on it removes an unfinished part, keeps a finished one on the record, and moves a group',
+        !empty($ed['ok']) && $ed['removed'] === 1 && $ed['kept'] === 1 && $ed['moved'] === 1 && $ed['added'] === 0
+        && (bool)db_row("SELECT 1 FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK1' AND status = 'done'", [$PID])
+        && !db_row("SELECT 1 FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK2'", [$PID]));
+    chk('projects: only the person who set a project may edit it', ($save('NGG-MP1', $base + ['projectId' => $PID, 'people' => [['kind' => 'member', 'id' => 'NGG-MPK1']]])['error'] ?? '') === 'not_found');
+    $save('NGG-MPL', $base + ['projectId' => $PID, 'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Team A'], ['kind' => 'member', 'id' => 'NGG-MPK3', 'group' => 'Team A'], ['kind' => 'mentor', 'id' => 'MEN-MPP', 'group' => 'Team B']]]);
+    chk('projects: a closed project reads Finished, and a child can no longer change their part',
+        backend_dispatch('member.projects', ['memberId' => 'NGG-MPK1'])['projects'][0]['countdown']['label'] === 'Finished'
+        && ($kmark('NGG-MPK1', ['status' => 'assigned'])['error'] ?? '') === 'project_closed');
+    chk('projects: saving and marking wait for the Academy, as the portal\'s other saves do',
+        in_array('member.mentor.project.save', ACADEMY_GATED_MENTOR_OPS, true) && in_array('member.mentor.project.mark', ACADEMY_GATED_MENTOR_OPS, true));
+    chk('projects: one audit event per save', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.save' AND subject = ?", [$PID])['c'] === 3);
     setting_set('mentor_automation', null);   // portalLive does not outlive these tests
 })();
 

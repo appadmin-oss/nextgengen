@@ -64,6 +64,10 @@ function mp15First(name) { return String(name || '').trim().split(/\s+/)[0] || '
 /* What an API refusal means, in the portal's words. Unknown codes are shown
    as themselves rather than as a reassurance. */
 const MP15_ERR = {
+  name_the_project: 'Give the project a name (three letters or more).', set_a_finish_date: 'Set a finish date.', finish_before_start: 'The finish date is before the start.',
+  project_too_long: 'A project runs a year at most.', choose_people: 'Choose at least one person.', not_yours_to_assign: 'Someone on the list isn’t yours to assign any more. Reload and try again.',
+  too_many_groups: 'Twenty groups at most.', too_many: 'Two hundred people at most on one project.', ask_your_lead: 'Only the person who set the project can excuse a part.',
+  not_on_project: 'That person isn’t on this project.', project_closed: 'This project has finished.',
   not_in_caseload: 'That child isn’t in your caseload.', peer_no_family: 'Peer mentors don’t contact families. Your lead will.',
   say_what_happened: 'Write what happened first.', reviewed_by_another: 'Another mentor already reviewed this week. Ask your lead if it needs changing.', not_a_saturday: 'The register and reviews are for a Saturday the pod met.', family_daily_limit: 'This family has had two messages today already. Send it tomorrow.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.', choose_a_mentee: 'Choose a mentee first.', nobody_here: 'Nobody was marked here on Saturday.',
   bad_date: 'That date isn’t right.', date_out_of_range: 'That Saturday is outside the two-week window for writing it up.',
@@ -363,7 +367,7 @@ class Mp15Portal extends React.Component {
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
     /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
     const oriL = this.oriLocked(), ori = this.orientation() || {};
-    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ['projects', 'Projects'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -374,7 +378,7 @@ class Mp15Portal extends React.Component {
     const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? hue(a) : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => goId(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? hueOn : '#5a5a60', fw: on ? 600 : 500, bar: on ? hueOn : 'transparent', b, hasB: !!b, go: () => goId(id) }; });
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
-    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['projects', 'Projects', 'ph ph-flag-checkered'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
     if (oriL) navDef.unshift(navDef.splice(navDef.findIndex(n => n[0] === 'academy'), 1)[0]);   // the Academy first in More while it is due
     const tabIds = ['week', 'list', 'sat', 'msg'];
@@ -418,6 +422,7 @@ class Mp15Portal extends React.Component {
       if (a.route === 'saturday:before') return () => this.go('sat', { step: 'before' });
       if (a.route === 'saturday:after') return () => this.go('sat', { step: 'after' });
       if (a.route === 'messages') return () => this.go('msg');
+      if (a.route === 'projects') return () => this.go('projects');
       if (a.route === 'mentees:family') return () => this.go('list', { filter: 'family' });
       if (a.route === 'action:retreat.book') return () => this.act('retreatBook', { retreatId: a.retreatId }, r => 'Place booked for ' + mp15Fmt(r.date)).then(r => r && this.refresh(['role', 'week']));
       return () => this.askLead(R);
@@ -441,12 +446,12 @@ class Mp15Portal extends React.Component {
     const nmServer = (S.nmRes || []).filter(r => !nmLocal.some(l => l.id === r.id)).map(r => ({ id: r.id, name: r.name, sub: (r.mentee ? 'Your mentee' : 'At ' + r.centre) }));
     const nmAll = nmLocal.concat(nmServer).slice(0, 8);
 
-    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
+    const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', projects: 'Projects', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
     const nTeam = ((D.team || {}).mentors || []).length;
     const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged',
       week: mp15Fmt(today, { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '',
       sat: 'Musing & mentor breakout at 8:30am · ' + mp15Fmt(S.step === 'before' ? (satN.date || this.satNextDate()) : this.satLastDate(), { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ' + all.length + ' mentees',
-      msg: unreadN + ' unread', growth: 'Last 8 Saturdays', academy: acMods.filter(modDone).length + ' of ' + acMods.length + ' modules complete', role: 'NGGC Mentorship Commitment and Conduct Policy', mentors: nTeam + ' mentors', concern: 'Goes straight to the safeguarding officer' };
+      msg: unreadN + ' unread', growth: 'Last 8 Saturdays', academy: acMods.filter(modDone).length + ' of ' + acMods.length + ' modules complete', role: 'NGGC Mentorship Commitment and Conduct Policy', projects: 'Projects and activities, in groups, with a countdown to the finish', mentors: nTeam + ' mentors', concern: 'Goes straight to the safeguarding officer' };
     const pill = on => ({ bw: on ? '2px' : '1px', ring: on ? '#0b0b0c' : '#d6d4cc' });
     const chip = on => ({ line: on ? '#0b0b0c' : '#d6d4cc', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c' });
     const seg = on => ({ bg: on ? '#fff' : 'transparent', sh: on ? '0 1px 2px rgba(0,0,0,.1)' : 'none' });
@@ -694,6 +699,7 @@ class Mp15Portal extends React.Component {
     if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
     if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
     if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'projects') return <div className={cls}><Mp15Projects act={(a, b, ok) => this.act(a, b, ok).then(r => { if (r) this.refresh(['role']); return r; })} today={this.today()}/></div>;
     if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
     return null;
   }
@@ -1223,5 +1229,148 @@ function Mp15PodGrowth({ centre, open }) {
         </table></div>
       )}
     </section>
+  );
+}
+
+/* Projects and activities (domain/projects.php; My role → Projects).
+   A lead or coordinator assigns a project to the mentors they lead and the
+   children at their centre; any mentor, to the children in their caseload.
+   People are split into named groups and everyone sees the same countdown.
+   Writes go through the portal's act(), so the Academy lock and the toasts
+   are the portal's own. */
+const MP15_PJ_TONE = { ok: 'is-ok', soon: 'is-soon', due: 'is-soon', over: 'is-over', neutral: '', done: '' };
+const MP15_PJ_PART = { assigned: 'Not done yet', done: 'Done', excused: 'Excused' };
+function mp15PjBlank(today) { return { projectId: '', title: '', detail: '', startOn: today, dueOn: '', sel: {}, groups: [], q: '', newGroup: '' }; }
+function Mp15Projects({ act, today }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [form, setForm] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [notes, setNotes] = React.useState({});
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('projects', {}).then(setD).catch(setErr); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load projects ({err.code || err.message}).</span><button type="button" className="grw-btn" onClick={load}>Retry</button></div>;
+  if (!d) return <div className="grw-msg" role="status" aria-live="polite">Loading projects…</div>;
+  const canAssign = d.mentors.length > 0 || d.children.length > 0;
+  const F = form, setF = o => setForm(f => Object.assign({}, f, o));
+  const key = (k, id) => k + ':' + id;
+  const run = (action, body, ok) => { setBusy(true); return act(action, body, ok).then(r => { setBusy(false); if (r) load(); return r; }); };
+  const edit = p => setForm({ projectId: p.projectId, title: p.title, detail: p.detail || '', startOn: p.startOn, dueOn: p.dueOn, q: '', newGroup: '',
+    groups: Array.from(new Set(p.people.map(x => x.group).filter(Boolean))), sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])) });
+  const save = (status, from) => {
+    const f = from || F;
+    const people = Object.keys(f.sel).map(k => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), group: f.sel[k] }; });
+    return run('projectSave', { projectId: f.projectId, title: f.title, detail: f.detail, startOn: f.startOn, dueOn: f.dueOn, status: status || 'open', people },
+      r => status === 'closed' ? 'Project marked finished.' : status === 'cancelled' ? 'Project cancelled.' : f.projectId ? 'Project saved' + (r.added ? ' · ' + r.added + ' added and told' : '') + (r.kept ? ' · ' + r.kept + ' who finished stay on the record' : '') + '.' : 'Project set · ' + r.added + ' people told.')
+      .then(r => { if (r && !from) setForm(null); return r; });
+  };
+  const asSave = p => ({ projectId: p.projectId, title: p.title, detail: p.detail || '', startOn: p.startOn, dueOn: p.dueOn, sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])) });
+  const cd = c => <span className={'mpj-cd ' + (MP15_PJ_TONE[c.tone] || '')}>{c.label}</span>;
+  const bar = c => <span className="mpj-bar" role="progressbar" aria-label={'Time gone: ' + c.elapsedPct + '%'} aria-valuemin="0" aria-valuemax="100" aria-valuenow={c.elapsedPct}><span style={{ width: c.elapsedPct + '%' }}/></span>;
+  const head = p => (
+    <div className="mpj-head">
+      <h4>{p.title}</h4>
+      <p className="mpj-when">{cd(p.countdown)} <span>{mp15Fmt(p.startOn, { day: 'numeric', month: 'short' })} – {mp15Fmt(p.dueOn, { weekday: 'short', day: 'numeric', month: 'short' })}</span></p>
+      {bar(p.countdown)}
+      {p.detail && <p className="mpj-detail">{p.detail}</p>}
+    </div>
+  );
+
+  /* The form: what, when, and who, in which group. */
+  if (F) {
+    const q = F.q.trim().toLowerCase();
+    const pick = (list, kind) => list.filter(x => !q || x.name.toLowerCase().includes(q) || F.sel[key(kind, x.id)] !== undefined);
+    const kids = pick(d.children, 'member').sort((a, b) => (b.mentee - a.mentee) || a.name.localeCompare(b.name));
+    const mentors = pick(d.mentors, 'mentor');
+    const n = Object.keys(F.sel).length;
+    const toggle = k => { const s = Object.assign({}, F.sel); if (s[k] !== undefined) delete s[k]; else s[k] = ''; setF({ sel: s }); };
+    const row = (x, kind, tag) => { const k = key(kind, x.id), on = F.sel[k] !== undefined; return (
+      <li key={k} className={'mpj-pick' + (on ? ' is-on' : '')}>
+        <label><input type="checkbox" checked={on} onChange={() => toggle(k)}/><span>{x.name}</span>{tag && <em>{tag}</em>}</label>
+        {on && F.groups.length > 0 && <select aria-label={'Group for ' + x.name} value={F.sel[k]} onChange={e => setF({ sel: Object.assign({}, F.sel, { [k]: e.target.value }) })}>
+          <option value="">No group</option>{F.groups.map(g => <option key={g} value={g}>{g}</option>)}</select>}
+      </li>); };
+    const addGroup = () => { const g = F.newGroup.trim().replace(/\s+/g, ' ').slice(0, 40); if (!g || F.groups.includes(g)) return setF({ newGroup: '' }); setF({ groups: F.groups.concat([g]), newGroup: '' }); };
+    const ok = F.title.trim().length >= 3 && F.dueOn && n > 0 && !busy;
+    return (
+      <section className="grw-card mpj" aria-labelledby="mpj-f">
+        <h3 id="mpj-f">{F.projectId ? 'Edit the project' : 'New project'}</h3>
+        <form className="mpj-form" onSubmit={e => { e.preventDefault(); if (ok) save('open'); }}>
+          <label className="mpj-f">What it is<input value={F.title} maxLength={160} onChange={e => setF({ title: e.target.value })} placeholder="e.g. Clean-up day at the centre" required/></label>
+          <label className="mpj-f">What to do<textarea rows={3} maxLength={2000} value={F.detail} onChange={e => setF({ detail: e.target.value })} placeholder="What each person does, and what done looks like"/></label>
+          <div className="mpj-dates">
+            <label className="mpj-f">Starts<input type="date" value={F.startOn} onChange={e => setF({ startOn: e.target.value })}/></label>
+            <label className="mpj-f">Finishes<input type="date" value={F.dueOn} min={F.startOn || undefined} onChange={e => setF({ dueOn: e.target.value })} required/></label>
+          </div>
+          <fieldset className="mpj-groups"><legend>Groups <small>optional · {F.groups.length} of {d.max.groups}</small></legend>
+            {F.groups.map(g => <span key={g} className="mpj-chip">{g}<button type="button" aria-label={'Remove group ' + g} onClick={() => setF({ groups: F.groups.filter(x => x !== g), sel: Object.fromEntries(Object.entries(F.sel).map(([k, v]) => [k, v === g ? '' : v])) })}><i className="ph ph-x" aria-hidden="true"/></button></span>)}
+            {F.groups.length < d.max.groups && <span className="mpj-addg"><input aria-label="New group name" placeholder="e.g. Team Kola" value={F.newGroup} maxLength={40} onChange={e => setF({ newGroup: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGroup(); } }}/><button type="button" className="grw-btn" onClick={addGroup}>Add group</button></span>}
+          </fieldset>
+          <fieldset className="mpj-who"><legend>Who is on it <small aria-live="polite">{n} chosen · {d.max.people} at most</small></legend>
+            <div className="mpj-search" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input type="search" aria-label="Find a person" placeholder="Find a person" value={F.q} onChange={e => setF({ q: e.target.value })}/></div>
+            {mentors.length > 0 && <><h5>Mentors</h5><ul className="mpj-list">{mentors.map(x => row(x, 'mentor'))}</ul></>}
+            <h5>Children</h5>
+            {kids.length ? <ul className="mpj-list">{kids.map(x => row(x, 'member', x.mentee ? 'Your mentee' : ''))}</ul> : <p className="grw-note">{q ? 'Nobody called “' + F.q + '”.' : 'No children you can assign yet.'}</p>}
+          </fieldset>
+          <div className="mpj-acts">
+            <button type="submit" className="mpj-go" disabled={!ok} title={ok ? undefined : 'A name, a finish date and at least one person'}>{busy ? 'Saving…' : F.projectId ? 'Save' : 'Set the project'}</button>
+            <button type="button" className="grw-btn" onClick={() => setForm(null)}>Cancel</button>
+          </div>
+        </form>
+      </section>
+    );
+  }
+
+  const markOwn = (p, status) => run('projectMark', { projectId: p.projectId, status, note: status === 'done' ? (notes[p.projectId] || '') : '' }, status === 'done' ? 'Marked your part done.' : 'Marked not done yet.')
+    .then(r => { if (r) setNotes(o => Object.assign({}, o, { [p.projectId]: '' })); });
+  return (
+    <div className="mpj">
+      <div className="mpj-top">
+        <p className="grw-note">Projects and activities, each with a finish date everyone on it sees counting down.</p>
+        {canAssign && <button type="button" className="mpj-go" onClick={() => setForm(mp15PjBlank(today))}><i className="ph ph-plus" aria-hidden="true"/>New project</button>}
+      </div>
+      <section className="grw-card" aria-labelledby="mpj-mine">
+        <h3 id="mpj-mine">Projects you’re on <small>{d.mine.length ? d.mine.length + ' open or recent' : ''}</small></h3>
+        {!d.mine.length ? <p className="grw-note">None at the moment. When your lead puts you on one, it shows here and on My role.</p> : d.mine.map(p => (
+          <article key={p.projectId} className="mpj-card">
+            {head(p)}
+            <p className="mpj-meta">Set by {p.by || 'your lead'}{p.myGroup ? ' · your group: ' + p.myGroup : ''}</p>
+            {p.groups.map(g => <ul key={g.name} className="mpj-people" aria-label={(g.name || 'Everyone') + ', ' + g.tally.done + ' of ' + g.tally.of + ' done'}>{g.people.map(x => <li key={x.kind + x.id} className={'is-' + x.status}><i className={x.status === 'done' ? 'ph-fill ph-check-circle' : 'ph ph-circle'} aria-hidden="true"/>{x.name}<span className="grw-sr"> · {MP15_PJ_PART[x.status]}</span></li>)}</ul>)}
+            {p.me && p.status === 'open' && p.me.status === 'assigned' && <div className="mpj-mark">
+              <label className="mpj-f">What you did <small>optional</small><input value={notes[p.projectId] || ''} maxLength={500} onChange={e => setNotes(o => Object.assign({}, o, { [p.projectId]: e.target.value }))}/></label>
+              <button type="button" className="mpj-go" disabled={busy} onClick={() => markOwn(p, 'done')}>Mark my part done</button>
+            </div>}
+            {p.me && p.me.status === 'done' && <p className="mpj-done"><i className="ph-fill ph-check-circle" aria-hidden="true"/>Your part is done{p.me.note ? ' · “' + p.me.note + '”' : ''}{p.status === 'open' && <button type="button" className="grw-btn" disabled={busy} onClick={() => markOwn(p, 'assigned')}>Not done yet</button>}</p>}
+            {p.me && p.me.status === 'excused' && <p className="grw-note">You’re excused from this one{p.me.note ? ': ' + p.me.note : '.'}</p>}
+          </article>
+        ))}
+      </section>
+      {(d.led.length > 0 || canAssign) && <section className="grw-card" aria-labelledby="mpj-led">
+        <h3 id="mpj-led">Projects you set <small>{d.led.length ? d.led.length + ' open or recent' : ''}</small></h3>
+        {!d.led.length ? <p className="grw-note">You haven’t set one yet. “New project” puts mentors and children on one, in groups, with a finish date.</p> : d.led.map(p => (
+          <article key={p.projectId} className="mpj-card">
+            {head(p)}
+            <p className="mpj-meta">{p.tally.done} of {p.tally.of} done{p.status === 'closed' ? ' · finished' : ''}</p>
+            {p.groups.map(g => (
+              <div key={g.name} className="mpj-group">
+                <h5>{g.name || 'No group'} <small>{g.tally.done} of {g.tally.of} done</small></h5>
+                <ul className="mpj-parts">{g.people.map(x => (
+                  <li key={x.kind + x.id}>
+                    <span className="mpj-who-n">{x.name}{x.kind === 'mentor' && <em>Mentor</em>}{x.note && <small>“{x.note}”</small>}</span>
+                    <select aria-label={'Part for ' + x.name} value={x.status} disabled={busy || p.status !== 'open'} onChange={e => run('projectMark', { projectId: p.projectId, kind: x.kind, personId: x.id, status: e.target.value }, x.name + ': ' + MP15_PJ_PART[e.target.value].toLowerCase() + '.')}>
+                      {Object.keys(MP15_PJ_PART).map(s => <option key={s} value={s}>{MP15_PJ_PART[s]}</option>)}
+                    </select>
+                  </li>))}</ul>
+              </div>
+            ))}
+            {p.status === 'open' && <div className="mpj-acts">
+              <button type="button" className="grw-btn" disabled={busy} onClick={() => edit(p)}>Edit</button>
+              <button type="button" className="grw-btn" disabled={busy} onClick={() => save('closed', asSave(p))}>Mark finished</button>
+              <button type="button" className="grw-btn mpj-danger" disabled={busy} onClick={() => { if (window.confirm('Cancel “' + p.title + '”? It disappears for everyone on it.')) save('cancelled', asSave(p)); }}>Cancel project</button>
+            </div>}
+          </article>
+        ))}
+      </section>}
+    </div>
   );
 }

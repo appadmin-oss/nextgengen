@@ -748,6 +748,25 @@ button,input,textarea,select{font:inherit;color:inherit}
 </sc-if>
 
 <sc-if value="{{ onCommunity }}" hint-placeholder-val="{{ false }}">
+  <sc-if value="{{ prjErr }}" hint-placeholder-val="{{ false }}"><section role="alert" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><i class="ph ph-warning-circle" style="color:#b0361c;font-size:20px"></i><span style="flex:1;min-width:180px;font-size:14px;line-height:1.45">Your projects couldn’t load.</span><button onClick="{{ prjRetry }}" style="height:44px;padding:0 16px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">Try again</button></section></sc-if>
+  <sc-if value="{{ hasAssigned }}" hint-placeholder-val="{{ true }}">
+  <section aria-labelledby="pj-h" style="display:flex;flex-direction:column;gap:10px">
+    <h2 id="pj-h" style="margin:0;font-size:16px;font-weight:600">Your projects</h2>
+    <sc-for list="{{ assigned }}" as="a" hint-placeholder-count="1">
+      <article style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">{{ a.eyebrow }}</span><h3 style="margin:0;font-size:18px;font-weight:700">{{ a.t }}</h3><sc-if value="{{ a.hasD }}" hint-placeholder-val="{{ true }}"><p style="margin:0;font-size:14.5px;line-height:1.5;color:#4a4a50">{{ a.d }}</p></sc-if></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span style="font-size:22px;font-weight:700;color:{{ a.cdFg }}">{{ a.cdLabel }}</span><span style="font-size:13px;color:#6b6b72">{{ a.dueL }}</span></div>
+          <div role="progressbar" aria-label="{{ a.barL }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ a.pctN }}" style="height:8px;border-radius:999px;background:#ecebe6;overflow:hidden"><span style="display:block;height:100%;border-radius:999px;width:{{ a.pct }};background:{{ a.cdFg }}"></span></div>
+        </div>
+        <sc-if value="{{ a.hasMates }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:600">{{ a.groupL }}</span><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ a.mates }}" as="m" hint-placeholder-count="2"><span style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;background:#f4f4f2;font-size:13.5px"><i class="{{ m.icon }}" style="color:{{ m.fg }}"></i>{{ m.name }}</span></sc-for></div></div></sc-if>
+        <sc-if value="{{ a.canMark }}" hint-placeholder-val="{{ true }}"><textarea value="{{ a.note }}" onChange="{{ a.onNote }}" aria-label="What you did" placeholder="What did you do? A line is enough." rows="2" style="padding:10px 12px;border:1px solid #d6d4cc;border-radius:12px;font-size:16px;line-height:1.45;background:#fcfcfb;resize:vertical"></textarea><button onClick="{{ a.mark }}" style="align-self:flex-start;height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">Mark my part done</button></sc-if>
+        <sc-if value="{{ a.isDone }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:#e9f6ec;color:#1d6b30;font-size:14px;line-height:1.45"><i class="ph-fill ph-check-circle"></i><span style="flex:1;min-width:160px">{{ a.doneL }}</span><sc-if value="{{ a.canUndo }}" hint-placeholder-val="{{ true }}"><button onClick="{{ a.undo }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #1d6b30;background:#fff;color:#1d6b30;font-size:14px;font-weight:600;cursor:pointer">Not done yet</button></sc-if></div></sc-if>
+        <sc-if value="{{ a.isExcused }}" hint-placeholder-val="{{ false }}"><span style="font-size:14px;color:#4a4a50;line-height:1.45">{{ a.excusedL }}</span></sc-if>
+      </article>
+    </sc-for>
+  </section>
+  </sc-if>
   <section aria-labelledby="fd-h" style="display:flex;flex-direction:column;gap:8px">
     <h2 id="fd-h" style="margin:0;font-size:16px;font-weight:600">From NGG</h2>
     <sc-for list="{{ feed }}" as="p" hint-placeholder-count="3">
