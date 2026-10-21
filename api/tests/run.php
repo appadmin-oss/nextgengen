@@ -29587,5 +29587,31 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $GLOBALS['__academy_gate_off'] = true;
 })();
 
+/* ── No back door to a session ──────────────────────────────────────────────
+   _mint.php sat at the repo root and printed a signed super-admin cookie
+   (adminOk = true) to any request: no password, no TOTP. Uploading the repo
+   root put it on the web. These checks are static, so they hold for a file
+   nobody runs. */
+(function () {
+    $root = dirname(__DIR__, 2);
+    $rootPhp = array_map('basename', glob($root . '/*.php') ?: []);
+    chk('no back door · the only PHP at the repo root is the php -S dev router', $rootPhp === ['_router.php']);
+    $ht = (string)@file_get_contents($root . '/.htaccess');
+    $deny = strpos($ht, 'RewriteRule ^[^/]+\.php$ - [F,L]');
+    chk('no back door · the root .htaccess refuses any .php at the document root, before the real-file pass',
+        $deny !== false && $deny < strpos($ht, 'RewriteCond %{REQUEST_FILENAME} -f'));
+    $callers = [];
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $f) {
+        $rel = substr($f->getPathname(), strlen($root) + 1);
+        if (!str_ends_with($rel, '.php') || preg_match('#^(node_modules|dist|\.git|api/tests)/#', $rel)) continue;
+        if (preg_match('/\bsession_issue\s*\(/', (string)file_get_contents($f->getPathname()))) $callers[] = $rel;
+    }
+    $odd = array_values(array_filter($callers, static fn($r) => !preg_match('#^api/(auth|admin|_lib)/#', $r)));
+    chk('no back door · a session is issued only by api/auth, api/admin and the library (' . implode(', ', $odd) . ')', !$odd && $callers);
+    $open = array_values(array_filter(glob($root . '/api/tools/*.php') ?: [], static fn($f) => !preg_match("/PHP_SAPI\s*!==\s*'cli'/", (string)file_get_contents($f))));
+    chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

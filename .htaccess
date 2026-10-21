@@ -257,6 +257,13 @@ object-src 'none'"
   RewriteEngine On
   RewriteBase /
 
+  # No PHP runs at the document root. Every endpoint lives under api/, and a
+  # .php file beside index.html is a dev helper or a stray upload — _mint.php
+  # was one, and it printed a signed super-admin session to anyone who asked.
+  # Checked BEFORE the real-file pass below, which would otherwise serve it.
+  # Relative to this directory, so it holds when the site is in a subfolder.
+  RewriteRule ^[^/]+\.php$ - [F,L]
+
   # Don't rewrite real files / directories
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d

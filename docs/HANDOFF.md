@@ -2071,3 +2071,29 @@ evaluations and the criteria that moved, courage, goal, lessons, school, and
 plain sentences with the conversation each suggests. Mentor: the profile's
 Growth tab and the Pod growth table (`member_mp_growth_pod`, grouped queries).
 Family: a Growth screen (`family_ward.growth`, no wellbeing data).
+
+## 2026-10-21 — Security: `_mint.php` removed (a super-admin session for anyone)
+
+`_mint.php` was a dev helper at the repo root. A GET to it read `api/config.php`,
+took the first `super_admin` row and printed `session_issue($row, true)` — a
+signed cookie with `adminOk = true`: no password, no TOTP. `build.js` never
+copied it into `dist/`, but a deploy made by uploading the repo root (or a zip
+of it) put it on the web.
+
+- Deleted. Nothing referenced it.
+- The root `.htaccess` now refuses any `.php` at the document root
+  (`RewriteRule ^[^/]+\.php$ - [F,L]`), placed before the real-file pass that
+  would otherwise serve it — the same rule `api/.htaccess` already had for
+  `/api/`. Relative, so it holds in a subfolder too.
+- `api/tools/check-cloudinary.php` was the one tool without a CLI guard; it
+  has one now.
+- PHP suite, "no back door": the only root PHP is `_router.php`; the root
+  deny exists and precedes the real-file pass; `session_issue(` is called only
+  under `api/auth`, `api/admin` and `api/_lib`; every `api/tools` script
+  refuses a web request. Proven red with the file restored (2 failures naming
+  `_mint.php`), green without (4925/0).
+
+**On any host that ever had the repo root uploaded:** delete `_mint.php` from
+the server, rotate `cookie_secret` in `api/config.php` (every session signs
+out — that is the point: a minted cookie stays valid until it expires), and
+search the access logs for `_mint.php`.
