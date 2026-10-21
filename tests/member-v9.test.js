@@ -279,6 +279,7 @@ async function as(memberId, admin, viewport) {
 
     // ── Classic stays reachable ──
     await mb.goto(BASE + '/dashboard?classic=1', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mb);   // a dev boot is ~60s; a bare 60s selector wait was a coin flip
     await mb.waitForSelector('.page.dashboard', { timeout: 60000 }).catch(() => {});
     chk('?classic=1 still opens the older dashboard, with the site header', await mb.isVisible('.page.dashboard'));
 
