@@ -548,7 +548,7 @@ class Mp9Portal extends React.Component {
     const badges = (stats.badges || []).map(b => (stats.badgeLabels || {})[b] || b);
     return {
       ladder: ladderL.map((l, i) => ({ n: i + 1, l, on: i + 1 === now, bg: i + 1 <= now ? "#0b0b0c" : "#e6e5e0", nfg: i + 1 <= now ? "#fff" : "#4a4a50", fg: i + 1 === now ? "#0b0b0c" : "#6b6b72", fw: i + 1 === now ? 600 : 400 })).reverse(),
-      courage: { by: last ? (last.by || last.byName || "your mentor") : "your mentor", date: last ? mp9Date(last.observedOn) : "not yet", label: c.rung ? c.rung.label : "Not observed yet",
+      courage: { by: last ? (last.markedByName || "your mentor") : "your mentor", date: last ? mp9Date(last.observedOn) : "not yet", label: c.rung ? c.rung.label : "Not observed yet",
         note: last ? (last.evidence || "") : "Your mentor adds to this when they see you do something difficult, own a mistake or stand up for someone." },
       courageHist: (c.marks || []).slice(0, 8).reverse().map(m => ({ h: (m.score / 5 * 100) + "%" })),
       tally: { rank: mom.levelName || "Seedling", level: stats.level || mom.level || 1, next: mom.xpToNext ? mom.xpToNext + " XP to the next level" : "Keep going", xp: 0, xpW: "0%", streak: stats.streak || 0, badges: stats.badgeCount || badges.length, best: badges[0] || "–" },

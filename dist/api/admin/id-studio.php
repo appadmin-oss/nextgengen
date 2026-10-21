@@ -26,7 +26,7 @@ if ($method === 'GET') {
         case 'avFaces':   $res = gs_call('admin.ids.av.faces', $base + ['ids' => $b['ids'] ?? []]); break;
         case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? [], 'codesOnly' => !empty($b['codesOnly'])]); break;
         // Print from a prompt: read the request into a plan the studio applies. Reads and selects nothing itself.
-        case 'plan':      rate_limit_check('ids.plan'); $res = gs_call('admin.ids.plan', $base + ['prompt' => (string)($b['prompt'] ?? ''), 'current' => is_array($b['current'] ?? null) ? $b['current'] : null]); break;
+        case 'plan':      rate_limit_check('ids.plan'); $res = gs_call('admin.ids.plan', $base + ['prompt' => (string)($b['prompt'] ?? ''), 'current' => is_array($b['current'] ?? null) ? $b['current'] : null, 'provider' => (string)($b['provider'] ?? '')]); break;
         default: json_error('unknown_action', 400);
     }
 } else {

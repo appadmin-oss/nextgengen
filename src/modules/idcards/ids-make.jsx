@@ -699,8 +699,9 @@ function IdsSettings({ M }) {
    the sheet. The count is shown before anything runs, and the result says who
    was changed, who already looked like this, and who could not be. */
 const IDS_FOCUS = [["face", "Face"], ["center", "Centre"], ["north", "Top"], ["south", "Bottom"]];
-function IdsImproveDialog({ run, onCancel, onStart }) {
-  const [spec, setSpec] = React.useState({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false });
+function IdsImproveDialog({ run, preset, onCancel, onStart }) {
+  // The assistant opens it with what was asked ("remove their backgrounds") already set; the operator still presses Improve.
+  const [spec, setSpec] = React.useState(Object.assign({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false }, preset || {}));
   const set = (k, v) => setSpec(x => Object.assign({}, x, { [k]: v }));
   return (
     <IdsDialog alert width={500} title={"Improve " + idsN(run.n, "photo") + "?"}

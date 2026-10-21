@@ -1423,6 +1423,15 @@ address per programme so NGG members and Summer School participants never share 
 `/mentor` sends a person with one portal straight to it and shows a chooser to anyone who
 covers both programmes. A coordinator over several centres switches centre at the top of every screen.
 
+**Messages with children.** In the portal's **Messages**, each child is one
+**conversation** with the whole exchange in it, whoever wrote first. **New
+message** starts one: a pod or peer mentor picks from their own mentees; a
+**lead mentor** (and a coordinator) can type the name of **any child at their
+centre**, mentee or not — not a colleague and not another centre's child. A
+mentee's profile also has **Message {name}**. Messages to children written
+between 8pm and 8am wait and go at 8am; the child answers in their own chat,
+and the answer comes back into the same conversation.
+
 **Saturday Formation Schedule** (Control Room → Learning → Saturday formation, `content`):
 the 8:00–2:00 day, block by block, with what members do, what mentors watch for, what
 instructors deliver, what admin must have ready and what families are told. Every portal
@@ -1432,6 +1441,21 @@ Saturday register a mentor ticks, per child, the values seen and the duties: On 
 (up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
 opens the weekly review ("Noted: …") and joins the child's timeline. A child's name on the register
 opens their profile; **Go to the weekly review** takes the mentor straight to After.
+
+**The Saturday plan (Before).** The mentor's part of the day is the
+**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+default), so its window — and what follows it — come from Control Room →
+Learning → Saturday formation, never from a fixed number. The *Pod huddle*
+always opens it (the register is taken there) and the *Close* always ends it;
+between them the mentor times every item in five-minute steps, moves items up
+or down, renames them and says what happens (*Edit*), adds an activity from
+the library or one of their own, removes any but the huddle, one-to-ones and
+close, or puts back the standard plan. The summary line keeps count: *"85 of
+90 min planned · 5 min spare"*, or what an overrun runs into. **One-to-ones**
+are picked on the same screen (up to six; longest since their last first) and
+each child gets a time. It saves as they go and says so (*Saved*, or why not
+with *Retry*); *Share with {lead}* sends the lead the running order with times
+and names.
 
 **A pod** is one mentor and the members matched to them, at one centre: at
 least **five** (the Commitment Policy) and at most **eight**. Every match moves
@@ -1465,11 +1489,15 @@ job ("five families need an update → All mentees, filter, select, Family
 update"; "a child arrives after you closed the roll → reopen it"). Each ends
 with a few questions, checked by the server.
 
-- **Compulsory.** Until somebody has passed all six, their portal opens on the
-  Academy and nothing else: the menu holds only the Academy (and Support for
-  instructors), and the server refuses that portal's writes with "Finish
-  “Start here” first". **Report a concern always works.** When the last guide
-  is passed the whole portal opens at once.
+- **Compulsory, but the portal stays open to look around.** Until somebody
+  has completed their **whole Academy** — the "Start here" guides and every
+  required module for the portals they work in (an NGG mentor 19, a Summer
+  School mentor 16, an instructor 9) — every screen of their portal opens, but
+  a banner on each one says *"Your Academy: N of M done … nothing you do here
+  saves until it's complete"*, and the server refuses that portal's writes
+  (sessions, reviews, the register, stars, messages to children). **Report a
+  concern always works.** The moment the last module is passed, saves go
+  through. A yearly renewal that lapses puts the banner back until it is renewed.
 - **Not clearance.** The guides are separate from the 13 modules that clear a
   mentor to be matched; finishing them doesn't clear anybody, and adding a guide
   never un-clears anybody.
@@ -1482,6 +1510,14 @@ with a few questions, checked by the server.
   the portal — the Academy and Curriculum — with the class empty and the reason
   said.
 - Three tries at one module a day; then it says when to come back.
+- **How children see them.** The Academy page opens with *How children see
+  you*: a mentor or instructor picks their title (Mr, Mrs, Ms, Miss, Dr, Prof,
+  Engr, Coach, Aunty, Uncle, Pastor). Children and families see every adult as
+  **title + surname** — "Mrs Adeyemi", never "Funmi" — in the chat, *My
+  mentor*, the timetable, courage marks, results notes, Saturday evaluations,
+  Community posts and the family's Saturday summary. With no title chosen it is
+  **Coach**. You can set it for them too: Control Room → Mentors → the mentor →
+  *Title*, or Volunteers → *Edit details* → *Title*. Staff screens keep full names.
 - The content is `api/_lib/seeds/mentor-academy.json` and
   `api/_lib/seeds/instructor-academy.json`. When a portal screen changes, change
   its guide in the same commit.
@@ -1761,6 +1797,38 @@ Groq or OpenRouter; System → Service keys) and always with the studio's own
 rules, which work with no key at all. The result says which read it. It only
 selects from the people the studio already shows you and changes the studio's
 own settings: it never prints, sends or changes a record by itself.
+
+**Named lists, said plainly.** When you name people, the count says why it is
+short of the names (*"3 cards · 4 named: 1 no photo yet"*). Somebody kept off
+by the plan's own filter is named with the reason (*"Taiwo Ayomide is a Summer
+School participant, and this is NGG members only"* — *Put Taiwo on too*), not
+reported as missing. Somebody on two lists (an NGG member who was also at
+Summer School) is flagged, with *Keep the NGG member card* / *Keep the Summer
+School card*; you can also say it: *"Badmus should be NGG, not summer"* (that
+picks his record and filters nobody else). *"Exclude summer"* leaves Summer
+School out — it no longer reads as "Summer School only". A name nobody has
+shows the closest names on the lists, with *Use …*.
+
+**Photo work in words, and photos in the chat.**
+- *"Improve the photos, remove their backgrounds"* opens **Improve photos** for
+  the people in that request (or the plan on screen) with *Plain grey
+  background* already on; you check the count and press Improve. Several acts
+  in one request run in order (*"…and ask the ones with no photo for theirs"*
+  then opens the photo request for just those people, not everyone waiting).
+- *"Help position the image"* opens the framing tool for the one card in
+  question, or lists the cards with *Position photo* / *Edit photo* buttons.
+- **📎 in the assistant** adds photos. Name each file after the person or
+  their ID (*Ada Obi.jpg*, *026-014.png*) and it matches them; one photo with
+  one card picked needs no name. Anyone not matched is chosen from a list (or
+  searched). *Save* checks each like any headshot and replaces the photo on
+  their record, with a verdict per photo; *Put them on the sheet* follows.
+  Saving photos needs the **Content** permission.
+
+**Which AI.** Say *"use Gemini"* (or Groq, Claude, OpenAI) to choose which
+reads your requests, *"which AI?"* to see what is set up, or *"use the rules"*
+for none. A provider that isn't set up is said so, and another reads it. If
+the AI is slow the studio's rules answer on their own after about 20 seconds,
+so a request never just times out.
 
 **Make cards.** The left column is everyone who needs a card: **New** (never
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press

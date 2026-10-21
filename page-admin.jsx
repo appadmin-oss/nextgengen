@@ -4086,10 +4086,11 @@ function AdminMentors() {
   const [editing, setEditing] = React.useState(null);
   const [promoting, setPromoting] = React.useState(false);
   const [centres, setCentres] = React.useState({});
+  const [titles, setTitles] = React.useState(null);
   const load = () => {
     setErr("");
     NGGApi.admin.mentorship.roster().then(r => setCentres(r.centres || {})).catch(() => {});
-    return NGGApi.admin.mentors.list().then(r => setList(r.mentors || [])).catch(e => setErr(e.code || e.message || "load_failed"));
+    return NGGApi.admin.mentors.list().then(r => { setList(r.mentors || []); setTitles({ list: r.titles || [], def: r.titleDefault || "" }); }).catch(e => setErr(e.code || e.message || "load_failed"));
   };
   React.useEffect(() => { load(); }, []);
   return (
@@ -4129,20 +4130,32 @@ function AdminMentors() {
           {list.length === 0 && <div className="admin-empty">No mentors yet.</div>}
         </div>
       }
-      {editing && <AdminMentorEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {editing && <AdminMentorEditor data={editing} titles={titles} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
-function AdminMentorEditor({ data, onClose, onSaved }) {
+function AdminMentorEditor({ data, titles: titlesIn, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
+  /* Opened from the Mentorship roster, whose rows are not the mentor record:
+     the titles and this mentor's own title come from the mentors list. */
+  const [titles, setTitles] = React.useState(titlesIn || null);
+  React.useEffect(() => {
+    if (titlesIn && data.honorific !== undefined) return;
+    NGGApi.admin.mentors.list().then(r => {
+      setTitles({ list: r.titles || [], def: r.titleDefault || "" });
+      const me = (r.mentors || []).find(m => m.mentorId === data.mentorId);
+      if (me && d.honorific === undefined) setD(o => Object.assign({ honorific: me.honorific || "" }, o));
+    }).catch(() => {});
+    /* eslint-disable-next-line */
+  }, []);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.mentors.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code === "bad_title" ? "Choose a title from the list." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -4154,6 +4167,9 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
         </div>
         <div className="admin-fields">
           <Field label="Full name" value={d.fullName||""} onChange={v => set("fullName", v)} required/>
+          {/* How a child addresses them: title and surname, never the first name. */}
+          {titles && titles.list.length > 0 && <FieldSelect label={"Title — children see “" + (d.honorific || titles.def) + " " + ((d.fullName || "").trim().split(/\s+/).pop() || "…") + "”"}
+            value={d.honorific || ""} onChange={v => set("honorific", v)} options={[{ value: "", label: "None (" + titles.def + ")" }].concat(titles.list.map(t => ({ value: t, label: t })))}/>}
           <Field label="Email" value={d.email||""} onChange={v => set("email", v)} required type="email"/>
           <Field label="Phone" value={d.phone||""} onChange={v => set("phone", v)}/>
           <Field label="Tracks (comma separated)" value={d.tracks||""} onChange={v => set("tracks", v)} placeholder="Music, Tech, Leadership"/>
@@ -10030,7 +10046,7 @@ function VolunteerNggMove({ v, onDone }) {
 const VOL_ROLE_OPTS = [["mentor", "Mentor"], ["instructor", "Instructor"], ["admin", "Admin / Ops"]];
 const VOL_PROG_OPTS = [["summer", "Summer School"], ["ngg", "NGG Club"], ["both", "Both"]];
 const VOL_STATUS_OPTS = [["active", "Active"], ["inactive", "Inactive"], ["archived", "Archived"]];
-const VOL_ERR_FIELD = { bad_email: ["email", "That email isn’t valid."], bad_dob: ["dob", "That date of birth isn’t a real date in the past."],
+const VOL_ERR_FIELD = { bad_title: ["honorific", "Choose a title from the list."], bad_email: ["email", "That email isn’t valid."], bad_dob: ["dob", "That date of birth isn’t a real date in the past."],
   bad_name: ["firstName", "Enter a first and last name."], bad_role: ["role", "Pick a role."], bad_programme: ["programme", "Pick a programme."],
   out_of_scope: ["centre", "That centre is outside the centres you manage."] };
 function volunteerNameParts(v) {
@@ -10039,9 +10055,12 @@ function volunteerNameParts(v) {
   const w = String(v.fullName || "").trim().split(/\s+/).filter(Boolean);
   return [w[0] || "", w.slice(1).join(" ")];
 }
-function volunteerEditForm(v, centres, onSaved) {
+function volunteerEditForm(v, centres, onSaved, titles) {
   const [first, last] = volunteerNameParts(v);
-  const init = { firstName: first, lastName: last, email: v.email || "", phone: v.phone || "", role: VOL_ROLE_OPTS.some(o => o[0] === v.role) ? v.role : "mentor",
+  /* The title is how a child addresses them ("Mrs Adeyemi"); the server's
+     list is the only list, and blank reads as its default. */
+  const tl = (titles && titles.list) || [];
+  const init = { honorific: v.honorific || "", firstName: first, lastName: last, email: v.email || "", phone: v.phone || "", role: VOL_ROLE_OPTS.some(o => o[0] === v.role) ? v.role : "mentor",
     programme: v.programme || "summer", status: v.status || "active", centre: v.centre || "", faculty: v.faculty || "",
     courses: (v.courses || []).join(", "), dob: /^\d{4}-\d{2}-\d{2}/.test(v.dob || "") ? String(v.dob).slice(0, 10) : "", visibilityConsent: !!Number(v.visibilityConsent) };
   const centreOpts = (v.centre && !centres.includes(v.centre) ? [v.centre].concat(centres) : centres).map(c => [c, c]);
@@ -10051,6 +10070,8 @@ function volunteerEditForm(v, centres, onSaved) {
     submit: "Save",
     values: init,
     fields: [
+      { id: "honorific", l: "Title", type: "select", opts: tl.map(t => [t, t]), ph: "None (" + ((titles && titles.def) || "Coach") + ")",
+        help: "Children and families see them as the title and surname — " + (v.honorific || (titles && titles.def) || "Coach") + " " + (last || "…") + " — never the first name." },
       { id: "firstName", l: "First name", req: true, max: 80, ac: "given-name" },
       { id: "lastName", l: "Last name", req: true, max: 80, ac: "family-name" },
       { id: "email", l: "Email", type: "email", email: true, max: 160, help: "Leave blank for someone who signs in with their ID card." },
@@ -10320,7 +10341,7 @@ function AdminVolunteers({ crCtx } = {}) {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        {crCtx && <button className="btn btn-ghost btn-sm" onClick={() => crCtx.form(volunteerEditForm(v, volCentres, load))}>Edit details</button>}
+                        {crCtx && <button className="btn btn-ghost btn-sm" onClick={() => crCtx.form(volunteerEditForm(v, volCentres, load, { list: data.titles, def: data.titleDefault }))}>Edit details</button>}
                         <button className="btn btn-ghost btn-sm" aria-expanded={editId === v.volunteerId} onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "More"}</button>
                         {(v.programme || "summer") === "summer" && v.status === "active" &&
                           <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === "ngg:" + v.volunteerId ? "" : "ngg:" + v.volunteerId)}>{editId === "ngg:" + v.volunteerId ? "Close" : "Bring into NGG"}</button>}

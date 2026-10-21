@@ -277,7 +277,7 @@ function community_channel_members(array $p): array {
     $members = [];
     foreach ($rows as $r) {
         $aid = (string)$r['authorId'];
-        $members[] = ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'],
+        $members[] = ['name' => community_staff_name($aid) ?? (string)$r['authorName'], 'centre' => (string)$r['authorCentre'], 'posts' => (int)$r['posts'],
                       'staff' => community_actor_is_staff($aid), 'photo' => community_photo_for($aid)];
     }
     return ['ok' => true, 'members' => $members, 'count' => count($members)];
@@ -334,7 +334,7 @@ function community_channel_files(array $p): array {
             'pages' => (int)($r['mediaPages'] ?? 0),
             'duration' => (int)($r['mediaDuration'] ?? 0),
             'pinned' => (int)$r['pinned'] === 1,
-            'author' => ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
+            'author' => ['name' => community_staff_name((string)$r['authorId']) ?? (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
                          'isMe' => (string)$r['authorId'] === $viewer,
                          'photo' => community_photo_for((string)$r['authorId'])],
             'note' => mb_substr(trim((string)$r['body']), 0, 120),
@@ -375,7 +375,19 @@ function community_search(array $p): array {
 
 /* ── Attribution (PII-safe: first name + last initial only) ───────────── */
 
+/** A staff author's child-facing name ("Coach Bello"), or null for a child. Memoised per request: a feed page repeats its authors. */
+function community_staff_name(string $id): ?string {
+    static $seen = [];
+    if ($id === '') return null;
+    if (!array_key_exists($id, $seen)) $seen[$id] = staff_public_names([$id])[$id] ?? null;
+    return $seen[$id];
+}
 function community_author(string $memberId): array {
+    // An adult posts as a child addresses them: title and surname, no initial.
+    if (($t = community_staff_name($memberId)) !== null) {
+        $c = db_row("SELECT centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
+        return ['name' => $t, 'initial' => '', 'centre' => (string)($c['centre'] ?? '')];
+    }
     $m = db_row("SELECT fullName, centre FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
     if (!$m) $m = db_row("SELECT fullName, centre FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId]); // student sessions
     // Volunteers have no `centre` column; they sign in with the same kind of
@@ -859,7 +871,7 @@ function community_post_shape(array $row, string $viewerId, ?array $pre = null):
          * was the one reading — inverting the single signal the design leans on
          * hardest ("is a mentor in this thread"), for exactly the people who
          * rely on it. Two different questions, so two different fields. */
-        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'],
+        'author' => ['name' => community_staff_name((string)$row['authorId']) ?? (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'],
                      'isMe' => $isMe, 'staff' => community_actor_is_staff((string)$row['authorId']),
                      'photo' => community_photo_for((string)$row['authorId'])],
         'body' => (string)$row['body'],
@@ -1365,7 +1377,7 @@ function community_post_on_published(string $postId): void {
     $body     = (string)$r['body'];
     $chSlug   = (string)(db_row("SELECT slug FROM community_channels WHERE channelId = ? LIMIT 1", [(string)$r['channelId']])['slug'] ?? '');
     // The stored authorName is "Ada O."; the notifier wants the first name.
-    $name = explode(' ', trim((string)$r['authorName']))[0] ?? 'A member';
+    $name = community_staff_name((string)$r['authorId']) ?? (explode(' ', trim((string)$r['authorName']))[0] ?? 'A member');
 
     community_notify_mentions($body, $authorId, $name, $postId, (string)$r['channelId']);
 
@@ -1573,7 +1585,7 @@ function community_comments(array $p): array {
                     WHERE postId = ? AND (status = 'published'" . ($viewer !== '' ? " OR memberId = ?" : "") . ") ORDER BY createdAt ASC",
         $viewer !== '' ? [$pid, $viewer] : [$pid]);
     $out = array_map(fn($r) => [
-        'commentId' => (string)$r['commentId'], 'name' => (string)$r['memberName'], 'body' => (string)$r['body'],
+        'commentId' => (string)$r['commentId'], 'name' => community_staff_name((string)$r['memberId']) ?? (string)$r['memberName'], 'body' => (string)$r['body'],
         'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'], 'isMe' => (string)$r['memberId'] === $viewer,
         'photo' => community_photo_for((string)$r['memberId']),
         'staff' => community_actor_is_staff((string)$r['memberId']),
@@ -2178,6 +2190,7 @@ function community_typing_says(array $names): string {
 
 /** A person's name as the community shows it, for members and card-holders alike. */
 function community_display_name(string $id): string {
+    if (($t = community_staff_name($id)) !== null) return $t;
     $m = db_row("SELECT fullName FROM members WHERE memberId = ? LIMIT 1", [$id]);
     if ($m) return (string)$m['fullName'];
     $s = db_row("SELECT fullName FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);

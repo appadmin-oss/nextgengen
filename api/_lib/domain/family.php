@@ -374,8 +374,10 @@ function family_ward(array $p): array {
                        'next' => array_map(static fn($u) => ['title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'],
                            'dueDate' => (string)$u['dueDate'], 'overdueDays' => (int)$u['overdueDays'],
                            'status' => $u['progress'] ? (string)$u['progress']['status'] : 'not_started'], array_slice($next, 0, 5))],
-        'timetable' => function_exists('tt_for_centre') ? tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? '')) : null,
+        'timetable' => function_exists('member_timetable') ? array_diff_key(member_timetable(['memberId' => $mid]), ['ok' => 1, 'course' => 1]) : null,   // instructors by title and surname
         'companion' => function_exists('companion_public') ? companion_public($comp ?: null) : null,
+        // Growth over the term, written to a parent (no staff-only records): mp_growth in mentor-portal.php.
+        'growth' => function_exists('mp_growth') ? mp_growth($mid, 'family') : null,
         'requests' => array_map('member_request_public', $reqs),
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
         'charges' => array_map(static fn($e) => ['entryId' => (string)$e['entryId'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'createdAt' => (string)$e['createdAt']],

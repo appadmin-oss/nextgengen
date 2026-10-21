@@ -1300,7 +1300,26 @@ function IdCardStudioPage({ setPage }) {
     const issues = (res.notes || []).map(t => ({ tone: "info", text: t }));
     if (sel.blocked.length) issues.push({ tone: "warn", text: idsN(sel.blocked.length, "person", "people") + " left out: no photo yet (" + sel.blocked.slice(0, 3).map(r => r.name).join(", ") + (sel.blocked.length > 3 ? "…" : "") + ").",
       action: "Ask for photos", onAction: () => setAskConfirm(sel.blocked.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX)) });
-    if (sel.missing.length) issues.push({ tone: "bad", text: "Not found: " + sel.missing.slice(0, 8).join(", ") + (sel.missing.length > 8 ? "…" : "") + "." });
+    /* Named but kept off by the plan's own narrowing: who they are and why,
+       with the one tap that puts them on (their own kind, for them alone). */
+    sel.filtered.forEach(f => issues.push({ tone: "warn", text: f.who + (f.who.toLowerCase() !== f.name.toLowerCase() ? " (“" + f.name + "”)" : "") + " " + f.why + ".",
+      action: "Put " + f.who.split(/\s+/)[0] + " on too", onAction: () => askDrop(q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf, { [f.name]: f.rec.kind });
+        if (!(n.names || []).includes(f.name) && !((n.also || {}).names || []).includes(f.name)) n.also = Object.assign({}, n.also, { names: ((n.also || {}).names || []).concat([f.name]) });
+        if (n.centre && f.rec.centre !== n.centre && (n.names || []).includes(f.name)) delete n.centre; return n; }) }));
+    sel.twoLists.forEach(t => issues.push({ tone: "warn", text: t.name + " is on two lists (" + t.kinds.map(k => (IDS_KIND_ONE[k] || k).replace(/^an? /, "")).join(" and ") + "), so both cards are on the sheet.",
+      actions: t.kinds.map(k => ({ label: "Keep the " + (IDS_KIND_PLURAL[k] || k).replace(/s$/, "") + " card", run: () => askDrop(q => Object.assign({}, q, { kindOf: Object.assign({}, q.kindOf, { [t.name]: k }) })) })) }));
+    sel.notWaiting.forEach(x => issues.push({ tone: "info", text: x.who + " isn’t waiting for a card: not on the new-card list and never printed here." }));
+    const sug = new Map(sel.suggest.map(x => [x.name, x.near]));
+    // An ID nobody holds is simply not found; a name gets the closest names on the lists.
+    const missIds = sel.missing.filter(x => /\d/.test(x)), missNames = sel.missing.filter(x => !/\d/.test(x));
+    if (missIds.length) issues.push({ tone: "bad", text: "Not found: " + missIds.slice(0, 8).join(", ") + (missIds.length > 8 ? "…" : "") + "." });
+    if (missNames.length) issues.push({ tone: "bad", text: "No one called " + missNames.slice(0, 8).map(n => "“" + n + "”" + (sug.has(n) ? " (closest: " + sug.get(n).map(r => r.name).join(" or ") + ")" : "")).join(", ") + (missNames.length > 8 ? "…" : "") + " is on the lists.",
+      actions: sel.suggest.slice(0, 3).flatMap(x => x.near.slice(0, 1).map(r => ({ label: "Use " + r.name, run: () => askDrop(q => {
+        const swap = list => (list || []).map(v => v === x.name ? r.name : v);
+        const n = Object.assign({}, q);
+        if (n.names) n.names = swap(n.names);
+        if (n.also && n.also.names) n.also = Object.assign({}, n.also, { names: swap(n.also.names) });
+        return n; }) }))) });
     sel.ambiguous.forEach(x => issues.push({ tone: "warn", text: "“" + x.name + "” matches " + x.n + " people. Add a surname or their ID number." }));
     if (sel.excluded.length) issues.push({ tone: "info", text: "Left out as asked: " + sel.excluded.slice(0, 4).map(r => r.name).join(", ") + (sel.excluded.length > 4 ? " +" + (sel.excluded.length - 4) : "") + "." });
     if (sel.cut) issues.push({ tone: "info", text: idsN(sel.cut, "more card") + " matched beyond the limit and " + (sel.cut === 1 ? "was" : "were") + " left for the next run." });
@@ -1316,7 +1335,7 @@ function IdCardStudioPage({ setPage }) {
           setAskRes(a => a && Object.assign({}, a, { n: a.n + add.length, issues: a.issues.filter(x => x.key !== "carded") }));
         } });
     }
-    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan), issues, n, applied: false });
+    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan), issues, n, applied: false, asked: sel.asked, gapNote: idsPlanGapNote(sel) });
     /* The first plan keeps the studio as it was, for Undo. A follow-up always
        re-applies, even to an empty sheet, so the sheet never shows a selection
        the card no longer describes; a fresh request that finds nobody leaves
@@ -1350,7 +1369,7 @@ function IdCardStudioPage({ setPage }) {
   const planSnap = res => {
     const plan = res.plan || {};
     const sel = idsPlanSelect(plan, { pool: recs, all: data.records, isBlocked });
-    return { n: sel.pick.length, what: idsPlanWhat(plan), refined: !!res.refined };
+    return { n: sel.pick.length, what: idsPlanWhat(plan), refined: !!res.refined, asked: sel.asked, gapNote: idsPlanGapNote(sel) };
   };
   const ranOf = (out, n) => {
     const ran = [];
@@ -1384,32 +1403,60 @@ function IdCardStudioPage({ setPage }) {
       else notes.push("It was already " + idsCmdLabel(k, plan[k], st) + ".");
     });
     if (Object.keys(patch).length) set(patch);
-    if (plan.do === "clear") {
+    const acts = idsPlanActs(plan);
+    /* Whose photos an act is about: the people the request names; else the
+       plan on screen (its sheet, and those it left out for want of a photo);
+       else the sheet. Never everybody waiting, unless nothing else is there. */
+    const pSel = Object.assign({}, plan); delete pSel.do; delete pSel.acts; delete pSel.photo;
+    const livePlan = askRes && askRes.plan && liveId ? askRes.plan : null;
+    const scopeSel = idsPlanHasSel(pSel) ? idsPlanSelect(pSel, { pool: recs, all: data.records, isBlocked }) : livePlan ? idsPlanSelect(livePlan, { pool: recs, all: data.records, isBlocked }) : null;
+    if (acts.includes("clear")) {
       if (!queue.length) notes.push("The sheet was already empty.");
       else { setQueue([]); setSel(null); ran.push("Took " + idsN(cards.length, "card") + " off the sheet"); }
     }
-    if (plan.do === "fill") {
+    if (acts.includes("fill")) {
       const k = Math.min(gap, fillable.length);
       if (!cards.length) notes.push("The sheet is empty, so there are no gaps to fill. Tell me who to put on it.");
       else if (!gap) notes.push("Every slot on the last sheet is already used.");
       else if (!k) notes.push("No card that is ready to print fits the " + idsN(gap, "empty slot") + ".");
       else { fillGap(); ran.push("Filled " + idsN(k, "empty slot") + " with cards that were waiting"); }
     }
-    if (plan.do === "askPhotos") {
-      const p = Object.assign({}, plan); delete p.do;
-      const pool = idsPlanHasSel(p) ? idsPlanSelect(p, { pool: recs, all: data.records, isBlocked }).blocked : recs.filter(isBlocked);
+    if (acts.includes("improvePhotos")) {
+      // Everybody in scope who has a photo on file; the Improve dialog opens with what was asked already set.
+      const base = scopeSel ? scopeSel.pick.concat(scopeSel.carded) : cards.map(c => c.rec).filter(Boolean);
+      const seen = new Set(), list = base.filter(r => r && IDS_IMPROVE_KIND[r.kind] && r.photoUrl && !seen.has(r.key) && seen.add(r.key));
+      const without = (scopeSel ? scopeSel.blocked : []).length;
+      const spec = Object.assign({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false }, plan.photo || {});
+      if (!list.length) notes.push(cards.length || scopeSel ? "Nobody " + (scopeSel ? "in that request" : "on the sheet") + " has a photo on file to improve yet." : "The sheet is empty. Tell me whose photos, or put cards on the sheet first.");
+      else {
+        setImprove({ n: list.length, recs: list, spec });
+        ran.push("Opened Improve photos for " + idsN(list.length, "person", "people") + [spec.removeBg && "plain grey background", spec.brighten && "brighter", spec.sharpen && "sharper", spec.zoom > 1 && "zoomed to the face"].filter(Boolean).map((x, i) => (i ? ", " : " with ") + x).join("") + ". Check it and press Improve");
+        if (without) notes.push(idsN(without, "person has", "people have") + " no photo yet, so there is nothing to improve for " + (without === 1 ? "them" : "them") + (acts.includes("askPhotos") ? "; the photo request is for them." : ". Say “ask them for photos”, or add one with 📎."));
+      }
+    }
+    if (acts.includes("adjustPhoto")) {
+      // One person: the framing tool, on their card. Several: each gets a button, since positioning is done by eye.
+      const base = scopeSel ? scopeSel.pick.concat(scopeSel.carded) : selCard && selCard.rec ? [selCard.rec] : cards.map(c => c.rec).filter(Boolean);
+      const seen = new Set(), list = base.filter(r => r && r.photoUrl && !seen.has(r.key) && seen.add(r.key));
+      if (!list.length) notes.push(base.length ? "No photo on file to position yet." : "Pick a card on the sheet, or tell me whose photo, and I’ll open the framing tool.");
+      else if (list.length === 1) { setFramePhoto(list[0]); ran.push("Opened the framing tool for " + list[0].name + ": move and zoom the photo inside the card’s frame, then Save"); }
+      else { ran.push("Choose whose photo to position"); notes.push("Positioning is done by eye, one photo at a time. Every photo is also framed on the face automatically before it prints."); }
+      return { ran, notes, undo: null, people: list.length > 1 ? list.slice(0, 12).map(r => r.key) : null, frame: true };
+    }
+    if (acts.includes("askPhotos")) {
+      const pool = scopeSel ? scopeSel.blocked : recs.filter(isBlocked);
       const list = pool.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX);
       const recent = pool.length - pool.filter(r => !idsAskedRecently(askedOf(r))).length;
-      if (!pool.length) notes.push("Nobody " + (idsPlanHasSel(p) ? "there " : "") + "is waiting for a photo.");
+      if (!pool.length) notes.push("Nobody " + (scopeSel ? "in that request " : "") + "is waiting for a photo.");
       else if (!list.length) notes.push("All " + pool.length + " were asked in the last 3 days. Ask one again from their row if you need to.");
-      else { setAskConfirm(list); ran.push("Opened the photo request for " + idsN(list.length, "person", "people") + ". Check the count and send it"); if (recent) notes.push(recent + " asked in the last 3 days " + (recent === 1 ? "is" : "are") + " left out."); }
+      else { setAskConfirm(list); ran.push("Opened the photo request for " + idsN(list.length, "person", "people") + (scopeSel ? "" : " waiting anywhere") + ". Check the count and send it"); if (recent) notes.push(recent + " asked in the last 3 days " + (recent === 1 ? "is" : "are") + " left out."); }
     }
-    return { ran, notes, undo: ran.length && plan.do !== "askPhotos" ? undo : null };
+    return { ran, notes, undo: ran.length && !acts.some(a => a === "askPhotos" || a === "improvePhotos") ? undo : null };
   };
   const commitCmd = (id, plan) => {
     const r = runCmd(plan);
     if (r.undo) setLastCmdId(id);
-    setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: r.ran, notes: r.notes, undo: r.undo }) : m));
+    setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: r.ran, notes: r.notes, undo: r.undo, people: r.people || m.people, frame: r.frame }) : m));
   };
   const undoCmd = m => {
     if (!m.undo) return;
@@ -1474,7 +1521,128 @@ function IdCardStudioPage({ setPage }) {
       if (IDS_PHOTO_EDIT[q.kind]) acts.push({ label: "Add a photo", run: () => setEditPhoto(q) });
     }
     if (!q && r.printedBefore) acts.push({ label: "Queue a reprint", run: () => reprintOne(r, "asked") });
+    // With a photo on file: position it in the card's frame, or edit the photo itself.
+    const withPhoto = q || r;
+    if (withPhoto.photoUrl) {
+      acts.push({ label: "Position photo", run: () => setFramePhoto(withPhoto) });
+      if (IDS_PHOTO_EDIT[withPhoto.kind]) acts.push({ label: "Edit photo", run: () => setEditPhoto(withPhoto) });
+    }
     return { name: r.name, acts };
+  };
+  /* ── Photos from the assistant (📎) ──────────────────────────────────────
+     Each file is matched to a person by its name: their printed ID in it
+     ("026-014.jpg"), else their name ("Ada Obi.png"), preferring the people
+     on the sheet or waiting for a photo. One file and one obvious person (the
+     card picked on the sheet, or the only one waiting) needs no name. Anyone
+     not matched is picked from a short list. Saving goes through the same
+     replace as the photo editor, one row at a time, each with its verdict. */
+  const IDS_UP_MAX = 30;
+  const upFiles = React.useRef({});
+  const upNorm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const upLikely = () => {
+    const seen = new Set(), out = [];
+    const add = (r, why) => { if (r && IDS_PHOTO_EDIT[r.kind] && !seen.has(r.key)) { seen.add(r.key); out.push({ key: r.key, name: r.name, displayId: r.displayId || "", why }); } };
+    cards.forEach(c => add(c.rec, "On the sheet"));
+    (askRes && askRes.plan && liveId ? idsPlanSelect(askRes.plan, { pool: recs, all: data.records, isBlocked }).blocked : []).forEach(r => add(r, "Waiting for a photo"));
+    recs.filter(isBlocked).forEach(r => add(r, "Waiting for a photo"));
+    return out;
+  };
+  const upMatch = (fileName, likely) => {
+    const stem = String(fileName || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_.]+/g, " ").replace(/\s*[-–]\s*(front|photo|headshot|pic|picture|passport)\s*$/i, "").trim();
+    const ns = upNorm(stem);
+    const byId = data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && ((r.displayId && ns.includes(upNorm(r.displayId))) || (r.id && ns === upNorm(r.id))));
+    if (byId.length === 1) return byId[0];
+    const words = stem.replace(/[^\p{L}\s'’-]/gu, " ").replace(/\s+/g, " ").trim();
+    if (words.split(" ").length < 2) return null;
+    const byName = data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && idsNameMatch(words, r.name));
+    if (byName.length === 1) return byName[0];
+    const pref = byName.filter(r => likely.some(l => l.key === r.key));
+    return pref.length === 1 ? pref[0] : null;
+  };
+  const askUpload = files => {
+    const list = Array.from(files || []).filter(f => /^image\//.test(f.type));
+    if (!list.length) { say2("studio", { kind: "answer", text: "Those weren’t photos. Choose JPEG, PNG or WebP images." }); return; }
+    const likely = upLikely();
+    const rows = list.slice(0, IDS_UP_MAX).map((f, i) => {
+      const uid = "p" + Date.now().toString(36) + i;
+      upFiles.current[uid] = f;
+      const m = upMatch(f.name, likely);
+      return { uid, file: f.name, thumb: URL.createObjectURL(f), key: m ? m.key : "", auto: !!m };
+    });
+    if (rows.length === 1 && !rows[0].key) {
+      const only = selCard && selCard.rec && IDS_PHOTO_EDIT[selCard.rec.kind] ? selCard.rec : likely.filter(l => l.why === "Waiting for a photo").length === 1 ? data.records.find(r => r.key === likely.find(l => l.why === "Waiting for a photo").key) : null;
+      if (only) { rows[0].key = only.key; rows[0].auto = true; }
+    }
+    say2("me", { text: "📎 " + idsN(rows.length, "photo") + (list.length > IDS_UP_MAX ? " (the first " + IDS_UP_MAX + " of " + list.length + ")" : "") });
+    say2("studio", { kind: "upload", rows, likely, status: "ready" });
+  };
+  const upSet = (id, uid, key) => setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { rows: m.rows.map(r => r.uid === uid ? Object.assign({}, r, { key, auto: false }) : r) }) : m));
+  const upSave = async m => {
+    const rows = m.rows.filter(r => r.key && upFiles.current[r.uid]);
+    if (!rows.length) return;
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { status: "saving", done: 0 }) : x));
+    const results = [];
+    for (const row of rows) {
+      const rec = data.records.find(r => r.key === row.key);
+      const file = upFiles.current[row.uid];
+      const name = rec ? rec.name : row.file;
+      try {
+        if (!rec || !IDS_PHOTO_EDIT[rec.kind]) throw Object.assign(new Error("not_editable"), { code: "not_editable" });
+        if (typeof loadImageEl === "function" && typeof validateHeadshot === "function") {
+          let check = { ok: true };
+          try { const im = await loadImageEl(row.thumb); check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight); } catch (_) {}
+          if (!check.ok) throw Object.assign(new Error(check.reason), { code: "headshot", reason: check.reason });
+        }
+        const up = await NGGApi.uploadOrInline(file, "headshot");
+        await NGGApi.admin.photos.replace(IDS_PHOTO_EDIT[rec.kind], rec.id, up.url);
+        results.push({ key: row.key, name, ok: true });
+      } catch (e) {
+        const c = (e && (e.code || e.message)) || "failed";
+        results.push({ key: row.key, name, ok: false, why: c === "forbidden" || (e && e.status === 403) ? "adding photos needs the Content permission" : c === "headshot" ? e.reason
+          : c === "photo_format" && typeof photoFormatHelp === "function" ? photoFormatHelp(e) : c === "not_editable" ? "photos for this kind of card aren’t kept here" : c });
+      }
+      setChat(cc => cc.map(x => x.id === m.id ? Object.assign({}, x, { done: results.length }) : x));
+    }
+    if (results.some(r => r.ok)) { _idsTplDone.clear(); idsFaceForget(); load(); }
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { status: "done", results }) : x));
+  };
+  /* After saving: put the people whose photos just arrived on the sheet (the list has reloaded by the time this is pressed). */
+  const upToSheet = keys => {
+    const add = recs.filter(r => keys.includes(r.key) && !isBlocked(r) && !inQ.has(r.key));
+    if (!add.length) { say(keys.length ? "They’re already on the sheet, or still waiting for the photo to be approved." : "Nobody to add."); return; }
+    setQueue(q => q.concat(add.map(r => ({ t: "r", key: r.key }))));
+    say(idsN(add.length, "card") + " added to the sheet");
+  };
+
+  /* Which AI reads requests: the operator's choice ("use Gemini"), kept in
+     this browser, sent with each request; the server says when it isn't set
+     up and who read it instead. The list of what is set up comes back with
+     every reading. */
+  const IDS_AI_PREF_KEY = "ngg.ids.ask.provider";
+  const [aiPref, setAiPrefS] = React.useState(() => { try { return localStorage.getItem(IDS_AI_PREF_KEY) || ""; } catch (_) { return ""; } });
+  const setAiPref = v => { setAiPrefS(v); try { v ? localStorage.setItem(IDS_AI_PREF_KEY, v) : localStorage.removeItem(IDS_AI_PREF_KEY); } catch (_) {} };
+  const aiKnown = React.useRef(null);      // providers set up for the studio, from the last reading
+  const IDS_AI_WORDS = { gemini: "gemini", google: "gemini", groq: "groq", llama: "groq", claude: "anthropic", anthropic: "anthropic", openai: "openai", chatgpt: "openai", gpt: "openai", openrouter: "openrouter" };
+  const aiTalk = prompt => {
+    const t = String(prompt || "").toLowerCase();
+    const named = (t.match(/\b(gemini|google|groq|llama|claude|anthropic|openai|chat ?gpt|gpt|openrouter)\b/) || [])[1];
+    const short = t.replace(/[^a-z ]/g, " ").trim().split(/\s+/).length <= 7;
+    const aboutAi = /\b(which|what|who)\b.*\b(ai|model|provider|reads?|reading|answer\w*)\b|\b(use|switch( to)?|try|change to|with|prefer)\b.*\b(ai|model)\b/.test(t);
+    if (!(named && short) && !(aboutAi && short)) return null;
+    const known = aiKnown.current;
+    const nameOf = k => IDS_ASK_PROVIDER[k] || k;
+    const lastBy = (chat.slice().reverse().find(m => m.who === "studio" && m.by) || {});
+    const usedNow = lastBy.by === "ai" ? nameOf(lastBy.provider) : lastBy.by === "rules" ? "the studio’s own rules" : "";
+    const setUp = known ? (known.length ? known.map(nameOf).join(", ") : "none — the studio’s own rules read every request") : "";
+    if (/\b(rules|no ai|without (the )?ai|plain)\b/.test(t)) { setAiPref("rules"); return "From your next request, the studio’s own rules read it, with no AI. Say “use " + (known && known[0] ? nameOf(known[0]) : "Groq") + "” to go back."; }
+    if (named) {
+      const want = IDS_AI_WORDS[named.replace(" ", "")] || named;
+      if (known && !known.includes(want)) return "**" + nameOf(want) + "** isn’t set up for the studio here" + (setUp ? " (set up: " + setUp + ")" : "") + ". An admin adds its key in Control Room → Settings → Integrations → AI. Until then " + (aiPref && aiPref !== "rules" ? nameOf(aiPref) : known && known[0] ? nameOf(known[0]) : "the studio’s rules") + " reads your requests.";
+      setAiPref(want);
+      return "From your next request I’ll ask **" + nameOf(want) + "** first" + (known ? "" : " (if it isn’t set up here, I’ll say so and another reads it)") + "." + (usedNow ? " The last one was read by " + usedNow + "." : "");
+    }
+    return (usedNow ? "Your last request was read by **" + usedNow + "**. " : "") + (aiPref ? "You asked for " + (aiPref === "rules" ? "the studio’s rules" : nameOf(aiPref)) + " first. " : "")
+      + (setUp ? "Set up for the studio: " + setUp + ". " : "") + "Say “use Gemini” (or Groq, Claude, OpenAI) to choose, or “use the rules” for no AI.";
   };
   const askPlan = prompt => {
     askLast.current = prompt;
@@ -1496,13 +1664,17 @@ function IdCardStudioPage({ setPage }) {
         .finally(() => setAskBusy(false));
       return;
     }
+    // About the AI itself ("Gemini?", "use Claude", "which AI?"): answered here, never read as a person's name.
+    const ai = aiTalk(prompt);
+    if (ai) { say2("studio", { kind: "answer", text: ai }); return; }
     // A question about the sheet or a person is answered here, from the studio's own data; nothing is sent.
     const local = idsAskAnswer(prompt, askCtx());
     if (local) { say2("studio", typeof local === "string" ? { kind: "answer", text: local } : { kind: "answer", text: local.text, people: local.people }); return; }
     setAskBusy(true);
     const current = askRes && askRes.plan ? askRes.plan : (chat.slice().reverse().find(m => m.kind === "plan" && m.res) || {}).res ? (chat.slice().reverse().find(m => m.kind === "plan" && m.res)).res.plan : null;
-    NGGApi.admin.idStudio.plan(prompt, current).then(res => {
-      const meta = { by: res.by, provider: res.provider, aiError: res.aiError };
+    NGGApi.admin.idStudio.plan(prompt, current, aiPref).then(res => {
+      if (Array.isArray(res.providers)) aiKnown.current = res.providers;
+      const meta = { by: res.by, provider: res.provider, aiError: res.aiError, notes0: res.notes || [] };
       if (!Object.keys(res.plan || {}).length) {
         const bad = checks.filter(c => c.tone === "bad").map(c => c.text), warn = checks.filter(c => c.tone === "warn").map(c => c.text);
         const answer = idsAskAnswer(prompt, { n: cards.length, sheets: nSheets, block: printBlock, bad, warn, blocked: recs.filter(isBlocked).length, ready: ready.length });
@@ -1515,13 +1687,14 @@ function IdCardStudioPage({ setPage }) {
          sheet first, and the act runs on the sheet it made (actAfter). Asking
          for photos with a "who" is one act over those people; clearing has
          nothing to follow. */
-      if (plan.do === "fill" && idsPlanHasSel(plan)) {
+      const acts0 = idsPlanActs(plan);
+      if (acts0.length === 1 && acts0[0] === "fill" && idsPlanHasSel(plan)) {
         const snap = planSnap(res);
         const id = say2("studio", Object.assign({ kind: "plan", res, prompt, snap, pending: askMode === "ask", then: "fill" }, meta));
         if (askMode === "act") commit(id, res, prompt);
         return;
       }
-      if (plan.do || (!idsPlanHasSel(plan) && !live0)) {
+      if (acts0.length || (!idsPlanHasSel(plan) && !live0)) {
         const id = say2("studio", Object.assign({ kind: "cmd", plan, preview: idsCmdPreview(plan, st), pending: askMode === "ask" }, meta));
         if (askMode === "act") commitCmd(id, plan);
         return;
@@ -1530,8 +1703,12 @@ function IdCardStudioPage({ setPage }) {
       const snap = planSnap(res);
       const id = say2("studio", Object.assign({ kind: "plan", res, prompt, snap, pending: askMode === "ask" }, meta));
       if (askMode === "act") commit(id, res, prompt);
-    }).catch(e => say2("studio", { kind: "error", retry: true, text: e && e.code === "rate_limited" ? "That’s a lot of requests in a few minutes. Wait a moment, then try again."
-      : e && e.code === "prompt_too_long" ? "Keep it under 400 characters." : idsErrText(e, "Couldn’t read that. Check your connection, then try again.") }))
+    }).catch(e => { const c = (e && (e.code || e.message)) || "";
+      say2("studio", { kind: "error", retry: true, text: c === "rate_limited" ? "That’s a lot of requests in a few minutes. Wait a moment, then try again."
+        : c === "prompt_too_long" ? "Keep it under 400 characters."
+        : c === "timeout" || /timed? ?out/i.test(c) ? "That took too long to read (the AI was slow to answer). Try again, or say “use the rules” to read requests without the AI."
+        : c === "network" || c === "offline" || /failed to fetch|network/i.test(c) ? "Couldn’t reach the site. Check your connection, then try again."
+        : idsErrText(e, "Couldn’t read that (" + (c || "error") + "). Try again; if it keeps happening, say “use the rules”.") }); })
       .finally(() => setAskBusy(false));
   };
   // A chip's ×: the same plan without that part, applied here — no second reading needed.
@@ -1610,7 +1787,8 @@ function IdCardStudioPage({ setPage }) {
     openRun: r => openRun(r),
     bindInput: ref => { aiInput.current = ref.current; },
     people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
-    print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill };
+    print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill,
+    upload: askUpload, upSet, upSave, upToSheet, upPeople: q => { const t = String(q || "").toLowerCase(); return t.length < 2 ? [] : data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 8); } };
 
   /* ── Everything the Make tab reads ── */
   const M = {
@@ -1728,7 +1906,7 @@ function IdCardStudioPage({ setPage }) {
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
           onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(); }} onClose={() => setEditPhoto(null)}/>
       )}
-      {improve && <IdsImproveDialog run={improve} onCancel={() => setImprove(null)} onStart={runImprove}/>}
+      {improve && <IdsImproveDialog run={improve} preset={improve.spec} onCancel={() => setImprove(null)} onStart={runImprove}/>}
       {improveRes && <IdsImproveResult res={improveRes} onClose={() => setImproveRes(null)}/>}
       {xconfirm && <IdsExportDialog run={xconfirm} onCancel={() => setXconfirm(null)} onStart={runExport}/>}
       {xresult && <IdsExportResult res={xresult} onClose={() => setXresult(null)} onRetry={xresult.retry} onDrop={xresult.drop}/>}

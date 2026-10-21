@@ -3911,3 +3911,7 @@ CREATE TABLE IF NOT EXISTS academy_attempts (
   KEY idx_acatt (track, personId, moduleId, at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (164) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE mentors ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+ALTER TABLE members ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (165) ON DUPLICATE KEY UPDATE version = version;

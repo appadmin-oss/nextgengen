@@ -2007,3 +2007,67 @@ screens; all now clear 44px.
 
 family-ui waited a bare 40s after page loads in dev mode; the Babel boot now
 takes longer than that, so every load waits on `waitForBoot` (CLAUDE.md §1).
+
+## 2026-10-21 — Academy gate, messages, titles, the Saturday plan, the ID assistant, the curriculum map, growth
+
+**Academy gate.** A mentor or instructor whose whole Academy (the "Start here"
+guides plus the required modules for their portals) is not complete can open
+every screen; a banner on each says nothing saves, and the server refuses the
+portal's writes (`ACADEMY_GATED_MENTOR_OPS`, `academy_intercept`). Report a
+concern always works. Renewals that lapse put the banner back.
+
+**Messages.** Each child is one conversation (`chat:<id>`) in the mentor's
+Messages with the whole thread, whoever wrote first; *New message* starts one.
+`mp_can_message`: the caseload, and for a lead (or coordinator) any active NGG
+member at the centres they lead — never a colleague (a mentor row) or another
+centre. `member.mentor.message.search` finds them by name.
+
+**Titles.** Children and families see adults as title + surname
+(`staff_public_name[s]` in util.php; `honorific` on members, mentors and
+volunteers, migration 165; blank is "Coach"). Applied to the child's chat and
+"my mentor", today, evaluations, courage marks, results notes and plans,
+timetable (member and family), community authors/comments/files/homework/
+typing, the family's Saturday summary, announcement notices, and the
+mentor-assigned notifications. Set in Control Room (mentor and volunteer
+editors) or by the person (the Academy's *How children see you*,
+`member.staff.title`). Staff screens keep full names. Client fields that never
+showed a name were fixed on the way (`markedByName`, `author.name`, comment
+`name`, timetable `instructor`).
+
+**The Saturday plan.** `Mp15Agenda` replaces the static list: the window is the
+formation schedule's breakout block (`mp_breakout_window`), huddle first and
+close last (server-normalised), five-minute timing, rename/describe, own
+activities, reorder, reset, one-to-ones picked on the screen (max 6) with a
+time each, autosave said out loud, and the share to the lead carries the
+running order. `member_mp_saturday_plan` validates the whole plan first.
+
+**The ID Card Studio assistant** (from a real conversation that went wrong):
+names in the request are read by the rules too (two words or more); a named
+person kept off by the plan's filter is named with the reason and a one-tap
+"put them on too" (`kindOf`), never "not found"; "X should be NGG" picks one
+record (`kindOf`) instead of filtering everyone; "exclude summer" is
+`notKinds`, not "Summer only"; a name nobody has suggests the closest; the
+count says why it is short of the names. Acts can be several (`acts`), and
+include `improvePhotos` (the Improve dialog preset, e.g. plain background)
+and `adjustPhoto` (the framing tool); photo requests are scoped to the plan,
+not everyone waiting. "Gemini?"/"use Claude"/"which AI?"/"use the rules" are
+answered locally and sent as `provider`; `ai_run` takes a preference and a
+time budget (22s) so a slow provider falls back to the rules instead of the
+browser timing out (the likely cause of the old "check your connection").
+📎 uploads photos, matched by file name (ID or name), saved through
+`admin.photo.replace` with a verdict each. An unreadable request no longer
+re-applies the plan on screen. Unit test: `tests/ids-ask-select.test.js`.
+
+**Curriculum map.** `StaffCurriculumMap` (components.jsx) is the one staff
+view in the mentor class tools, the classic panel and the instructor portal
+(which had a hard-coded "of 12 students"): course → year → term → week, the
+week the Club is on, due dates, average score and who is behind
+(`staff_curriculum` returns `weekNow`, `due`, `stats.behind[Names]`,
+`avgScore`).
+
+**Growth.** `mp_growth($id, 'mentor'|'family')`: twelve Saturdays against the
+ones the centre met, the Leadership Index by month with the skills that moved,
+evaluations and the criteria that moved, courage, goal, lessons, school, and
+plain sentences with the conversation each suggests. Mentor: the profile's
+Growth tab and the Pod growth table (`member_mp_growth_pod`, grouped queries).
+Family: a Growth screen (`family_ward.growth`, no wellbeing data).

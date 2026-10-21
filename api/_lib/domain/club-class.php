@@ -591,11 +591,11 @@ function member_today(array $p): array {
         'todo' => array_map(static fn($t) => array_diff_key($t, ['rank' => 1]), $todo),
         'checkin' => ['done' => (bool)$chk, 'wellbeing' => (string)($chk['wellbeing'] ?? ''), 'week' => $week],
         'week' => ['saturday' => $sat, 'isToday' => $sat === $today, 'centre' => (string)$m['centre'], 'track' => (string)$m['track'],
-            'mentor' => $mentor ? ['name' => (string)$mentor['fullName'], 'first' => mp_first((string)$mentor['fullName'])] : null],
+            'mentor' => $mentor ? ['name' => ($mt = staff_public_name((string)$mentor['mentorId'], 'Your mentor')), 'first' => $mt] : null],
         'promises' => $promises,
         // Who to call: the centre's safeguarding officer (the Get help screen's "Talk to someone now").
         'safeguarding' => (function () use ($m) { $o = function_exists('sg_officer') ? sg_officer((string)$m['centre']) : null;
-            return $o ? ['name' => (string)($o['fullName'] ?? ''), 'phone' => (string)($o['phone'] ?? ''), 'centre' => (string)$m['centre']] : null; })(),
+            return $o ? ['name' => staff_title_name((string)($o['fullName'] ?? ''), (string)($o['honorific'] ?? '')), 'phone' => (string)($o['phone'] ?? ''), 'centre' => (string)$m['centre']] : null; })(),
         'glance' => ['index' => $sc ? (int)$sc[0]['total'] : null, 'indexChange' => count($sc) === 2 ? (int)$sc[0]['total'] - (int)$sc[1]['total'] : null,
             'indexMonth' => (string)($sc[0]['month'] ?? ''), 'level' => (int)($stats['level'] ?? 1), 'streak' => (int)($stats['streak'] ?? 0), 'week' => (int)($stats['currentWeek'] ?? 0)],
         'badges' => (object)$badges];

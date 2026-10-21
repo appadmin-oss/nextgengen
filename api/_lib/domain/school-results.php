@@ -323,7 +323,8 @@ function results_plan_items(string $planId): array {
 }
 
 /** The plan as every reader sees it. $week: this week's ticks, per item. */
-function results_plan_public(?array $p, string $today): ?array {
+/** `$child`: the member's own screen, where adults are named by title and surname (staff_public_name). */
+function results_plan_public(?array $p, string $today, bool $child = false): ?array {
     if (!$p) return null;
     $items = results_plan_items((string)$p['planId']);
     $ws = results_week_start($today);
@@ -341,7 +342,7 @@ function results_plan_public(?array $p, string $today): ?array {
         'recipients' => results_recipients(json_decode((string)$p['recipientsJson'], true)),
         'draftedBy' => (string)$p['aiModel'] !== '' ? 'ai' : 'rules',
         'returnNote' => (string)$p['returnNote'],
-        'approvedByName' => (string)$p['approvedByName'], 'approvedAt' => (string)$p['approvedAt'],
+        'approvedByName' => $child && (string)$p['approvedByName'] !== '' ? staff_public_name((string)$p['approvedBy'], 'Your mentor') : (string)$p['approvedByName'], 'approvedAt' => (string)$p['approvedAt'],
         'sentAt' => (string)$p['sentAt'], 'familySentAt' => (string)$p['familySentAt'],
         'items' => $items, 'weekStart' => $ws,
         'adherence' => $live ? results_adherence($items, (string)$p['sentAt'], $today) : null];
@@ -353,31 +354,35 @@ function results_recipients($r): array {
     return ['mentor' => true, 'instructor' => true, 'admin' => true, 'family' => !empty($r['family'])];
 }
 
-function results_history(string $memberId, string $term = '', int $limit = 60): array {
-    $sql = 'SELECT actorName, actorRole, what, kind, at, term FROM results_log WHERE memberId = ?';
+function results_history(string $memberId, string $term = '', int $limit = 60, bool $child = false): array {
+    $sql = 'SELECT actorId, actorName, actorRole, what, kind, at, term FROM results_log WHERE memberId = ?';
     $args = [$memberId];
     if ($term !== '') { $sql .= ' AND term = ?'; $args[] = $term; }
-    return array_map(static fn($r) => ['at' => (string)$r['at'], 'who' => (string)$r['actorName'], 'role' => (string)$r['actorRole'],
-        'what' => (string)$r['what'], 'kind' => (string)$r['kind'], 'term' => (string)$r['term']],
-        db_all($sql . ' ORDER BY id DESC LIMIT ' . (int)$limit, $args));
+    $rows = db_all($sql . ' ORDER BY id DESC LIMIT ' . (int)$limit, $args);
+    $titled = $child ? staff_public_names(array_column($rows, 'actorId')) : [];
+    return array_map(static fn($r) => ['at' => (string)$r['at'], 'who' => !$child || (string)$r['actorRole'] === 'system' ? (string)$r['actorName']
+            : ((string)$r['actorId'] === $memberId ? 'You' : ($titled[(string)$r['actorId']] ?? 'The NGG team')), 'role' => (string)$r['actorRole'],
+        'what' => (string)$r['what'], 'kind' => (string)$r['kind'], 'term' => (string)$r['term']], $rows);
 }
 
 /** One member's term: upload, subjects (with last term), KPIs, plan, notes. */
-function results_record(array $m, string $term, string $today): array {
+function results_record(array $m, string $term, string $today, bool $child = false): array {
     $mid = (string)$m['memberId'];
     $u = db_row('SELECT * FROM results_uploads WHERE memberId = ? AND term = ? LIMIT 1', [$mid, $term]);
     $last = results_last_scores($mid, $term);
     $subjects = $u ? results_subjects_of((string)$u['uploadId'], $last) : [];
     $p = db_row('SELECT * FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [$mid, $term]);
-    $notes = $p ? array_map(static fn($n) => ['who' => (string)$n['authorName'], 'role' => (string)$n['authorRole'], 'text' => (string)$n['text'], 'at' => (string)$n['createdAt']],
-        db_all('SELECT * FROM plan_notes WHERE planId = ? ORDER BY id DESC LIMIT 40', [(string)$p['planId']])) : [];
+    $nrows = $p ? db_all('SELECT * FROM plan_notes WHERE planId = ? ORDER BY id DESC LIMIT 40', [(string)$p['planId']]) : [];
+    $titled = $child ? staff_public_names(array_column($nrows, 'authorId')) : [];
+    $notes = array_map(static fn($n) => ['who' => $child ? ($titled[(string)$n['authorId']] ?? ((string)$n['authorRole'] === 'instructor' ? 'Your instructor' : 'Your mentor')) : (string)$n['authorName'],
+        'role' => (string)$n['authorRole'], 'text' => (string)$n['text'], 'at' => (string)$n['createdAt']], $nrows);
     $t = results_term_parse($term);
     return ['term' => $term, 'termLabel' => $t['label'] ?? $term, 'dueOn' => $t['dueOn'] ?? '',
         'upload' => $u ? ['uploadId' => (string)$u['uploadId'], 'status' => (string)$u['status'], 'fileUrl' => (string)$u['fileUrl'],
             'fileMime' => (string)$u['fileMime'], 'ocrBy' => (string)$u['ocrBy'], 'confirmedAt' => (string)$u['confirmedAt'],
             'sentAt' => (string)$u['sentAt'], 'createdAt' => (string)$u['createdAt']] : null,
         'subjects' => $subjects, 'kpis' => results_kpis($subjects),
-        'plan' => results_plan_public($p, $today), 'notes' => $notes];
+        'plan' => results_plan_public($p, $today, $child), 'notes' => $notes];
 }
 
 /* ── Member ops ────────────────────────────────────────────────────────── */
@@ -403,8 +408,8 @@ function member_results_state(array $p): array {
     }
     return ['ok' => true, 'term' => $term,
         'terms' => array_map(static fn($t) => ['key' => $t['key'], 'label' => $t['label'], 'dueOn' => $t['dueOn']], $terms),
-        'due' => $due, 'record' => $term !== '' ? results_record($m, $term, $today) : null,
-        'history' => results_history((string)$m['memberId'], $term),
+        'due' => $due, 'record' => $term !== '' ? results_record($m, $term, $today, true) : null,
+        'history' => results_history((string)$m['memberId'], $term, 60, true),
         'past' => $past,
         'methods' => array_map(static fn($k, $v) => ['key' => $k] + $v, array_keys(RESULTS_METHODS), RESULTS_METHODS),
         'helpers' => array_map(static fn($k, $v) => ['key' => $k, 'label' => $v], array_keys(RESULTS_HELPERS), RESULTS_HELPERS),
@@ -562,7 +567,7 @@ function member_results_plan_draft(array $p): array {
     if ((string)$u['status'] === 'draft') return ['ok' => false, 'error' => 'check_first'];
     $today = results_today();
     $existing = db_row('SELECT * FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [(string)$m['memberId'], (string)$u['term']]);
-    if ($existing && empty($p['fresh'])) return ['ok' => true, 'plan' => results_plan_public($existing, $today), 'existing' => true];
+    if ($existing && empty($p['fresh'])) return ['ok' => true, 'plan' => results_plan_public($existing, $today, true), 'existing' => true];
     if ($existing && (string)$existing['status'] !== 'draft') return ['ok' => false, 'error' => 'already_sent'];
 
     $subjects = results_subjects_of((string)$u['uploadId'], results_last_scores((string)$m['memberId'], (string)$u['term']));
@@ -622,7 +627,7 @@ function member_results_plan_draft(array $p): array {
     });
     results_log((string)$m['memberId'], (string)$u['term'], ['id' => '', 'name' => $aiModel !== '' ? 'Drafted by AI' : 'NGG', 'role' => 'system'],
         'Drafted a plan for ' . (implode(', ', array_column($items, 'subject')) ?: 'no subjects'), 'draft');
-    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE planId = ?', [$planId]), results_today())];
+    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE planId = ?', [$planId]), results_today(), true)];
 }
 
 /** Validate a plan's items as written by the member. Returns [items, error]. */
@@ -684,7 +689,7 @@ function member_results_plan_save(array $p): array {
         db_update('growth_plans', ['habit' => $habit, 'recipientsJson' => json_encode(['family' => $fam]),
             'committed' => !empty($p['committed']) ? 1 : 0, 'updatedAt' => now_iso()], ['id' => (int)$plan['id']]);
     });
-    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE id = ?', [(int)$plan['id']]), results_today())];
+    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE id = ?', [(int)$plan['id']]), results_today(), true)];
 }
 
 /** The member's mentor (member row of the mentor) — the approver. */
@@ -753,7 +758,7 @@ function member_results_plan_send(array $p): array {
     if ($instr) $told[] = 'instructor';
     results_log((string)$m['memberId'], (string)$plan['term'], results_actor_member($m),
         'Sent the results and plan to ' . (implode(' and ', $told) ?: 'the NGG team') . ($mentor ? '' : ' (no mentor assigned yet)'), 'send');
-    return ['ok' => true, 'status' => 'sent', 'mentor' => $mentor ? (string)$mentor['fullName'] : '', 'instructors' => count($instr)];
+    return ['ok' => true, 'status' => 'sent', 'mentor' => $mentor ? staff_public_name((string)$mentor['mentorId'], 'your mentor') : '', 'instructors' => count($instr)];
 }
 
 /** member.results.tick — one session done (or undone) this week, for one plan item. */
@@ -854,11 +859,11 @@ function member_mp_plan_approve(array $p): array {
     $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
     if ($note !== '') db_insert('plan_notes', ['planId' => (string)$plan['planId'], 'authorId' => $actor['id'], 'authorName' => $actor['name'], 'authorRole' => 'mentor', 'text' => $note, 'createdAt' => $now]);
     $first = mp_first((string)$m['fullName']);
-    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => mp_first($actor['name']) . ' approved your plan.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
+    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => staff_public_name($actor['id'], 'Your mentor') . ' approved your plan.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
     results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Approved the plan' . ($note !== '' ? ' with a note' : ''), 'approve');
     $family = 0;
     if (json_decode((string)$plan['recipientsJson'], true)['family'] ?? false) {
-        $family = results_family_send($m, $plan, $actor['name']);
+        $family = results_family_send($m, $plan, staff_public_name($actor['id'], mp_first($actor['name'])));
         if ($family) {
             db_update('growth_plans', ['familySentAt' => $now], ['id' => (int)$plan['id']]);
             results_log((string)$m['memberId'], (string)$plan['term'], ['id' => '', 'name' => 'NGG', 'role' => 'system'], "Shared the plan with {$family} family contact" . ($family === 1 ? '' : 's'), 'family');
@@ -879,7 +884,7 @@ function results_family_send(array $m, array $plan, string $approver): int {
         $rows .= '<li style="margin:0 0 8px"><b>' . esc_html($it['subject']) . '</b>: aiming for ' . (int)$it['target'] . ' (now ' . (int)$it['current'] . '). '
             . esc_html($it['what']) . ' <i>' . esc_html($it['whenWhere']) . '</i>, ' . (int)$it['sessionsPerWeek'] . ' times a week.</li>';
     }
-    $html = '<p style="margin:0 0 10px">' . esc_html($first) . ' wrote a study plan for next term from their ' . esc_html(strtolower($t['label'] ?? 'term')) . ' results, and their mentor ' . esc_html(mp_first($approver)) . ' approved it.</p>'
+    $html = '<p style="margin:0 0 10px">' . esc_html($first) . ' wrote a study plan for next term from their ' . esc_html(strtolower($t['label'] ?? 'term')) . ' results, and their mentor ' . esc_html($approver) . ' approved it.</p>'
         . '<ul style="margin:0 0 12px;padding-left:18px">' . $rows . '</ul>'
         . ((string)$plan['habit'] !== '' ? '<p style="margin:0 0 10px">The habit for the term: ' . esc_html((string)$plan['habit']) . '</p>' : '')
         . '<p style="margin:0 0 10px"><b>A conversation worth having this week:</b> ask ' . esc_html($first) . ' which subject they chose first and why, and when in the week they plan to do it. Interest in the plan helps more than checking the homework.</p>';
@@ -1083,7 +1088,7 @@ function instructor_result_remind(array $p): array {
     if ($wait > 0) return ['ok' => false, 'error' => 'rate_limited', 'retryHours' => $wait];
     $actor = results_staff_actor($g);
     push_notification((string)$m['memberId'], ['kind' => 'reminder', 'title' => 'Your ' . strtolower($t['label']) . ' results',
-        'body' => mp_first($actor['name']) . ' asked for your results. Upload them in your dashboard → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
+        'body' => staff_public_name($actor['id'], 'Your mentor') . ' asked for your results. Upload them in your dashboard → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
     results_log((string)$m['memberId'], $term, $actor, 'Sent a reminder to upload the results', 'remind');
     return ['ok' => true];
 }

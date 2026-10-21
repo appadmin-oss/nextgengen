@@ -1596,9 +1596,9 @@ function staff_curriculum(array $p): array {
         $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
     }
     if ($courses !== null) { $mWhere .= ' AND track IN (' . implode(',', array_fill(0, count($courses), '?')) . ')'; $mArgs = array_merge($mArgs, $courses); }
-    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
     $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
-    $stats = []; $pending = [];
+    $stats = []; $pending = []; $doneBy = [];
     if ($units && $byId) {
         $uids = array_keys($units); $mids = array_keys($byId);
         $rows = db_all('SELECT * FROM curriculum_progress WHERE unitId IN (' . implode(',', array_fill(0, count($uids), '?')) . ')
@@ -1606,8 +1606,12 @@ function staff_curriculum(array $p): array {
         foreach ($rows as $r) {
             $s = &$stats[(string)$r['unitId']];
             $s['started'] = ($s['started'] ?? 0) + 1;
-            if ($r['status'] === 'completed') $s['completed'] = ($s['completed'] ?? 0) + 1;
+            if ($r['status'] === 'completed') {
+                $s['completed'] = ($s['completed'] ?? 0) + 1;
+                $s['scoreSum'] = ($s['scoreSum'] ?? 0) + (int)($r['bestPct'] ?? 0);
+            }
             unset($s);
+            if (in_array((string)$r['status'], ['completed', 'submitted'], true)) $doneBy[(string)$r['unitId']][(string)$r['memberId']] = true;
             if ((int)$r['pending'] > 0) {
                 $b = $units[(string)$r['unitId']];
                 $marks = json_decode((string)$r['marks'], true) ?: [];
@@ -1625,14 +1629,32 @@ function staff_curriculum(array $p): array {
             }
         }
     }
+    /* Where the term is: the week the Club is on (from the term's start date,
+       Control Room → Curriculum → Schedule), each lesson's due date, and who
+       is past it without having done it — all from the rows already read. */
+    $cfg = curriculum_schedule(); $today = gmdate('Y-m-d');
+    $weekNow = (string)$cfg['startDate'] !== '' && $today >= (string)$cfg['startDate'] ? intdiv((int)((strtotime($today . ' UTC') - strtotime($cfg['startDate'] . ' UTC')) / 86400), 7) + 1 : null;
     $out = [];
     foreach ($units as $id => $b) {
-        $audience = 0;
-        foreach ($members as $mm) if ((string)$b['unit']['course'] === '' || strcasecmp((string)$mm['track'], (string)$b['unit']['course']) === 0) $audience++;
+        $audience = 0; $behind = [];
+        $due = curriculum_due_date((string)$cfg['startDate'], (int)$b['unit']['week']);
+        foreach ($members as $mm) {
+            if ((string)$b['unit']['course'] !== '' && strcasecmp((string)$mm['track'], (string)$b['unit']['course']) !== 0) continue;
+            $audience++;
+            if ($due !== '' && $today > $due && $b['checks'] && empty($doneBy[$id][(string)$mm['memberId']])) {
+                // A member who joined after it fell due is not behind on it.
+                $start = curriculum_member_start($mm, $cfg);
+                if ($start !== '' && curriculum_due_date($start, (int)$b['unit']['week']) < $today) $behind[] = (string)$mm['fullName'];
+            }
+        }
+        $done = $stats[$id]['completed'] ?? 0;
         $out[] = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)
-            + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $stats[$id]['completed'] ?? 0]];
+            + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $done,
+                           'avgScore' => $done ? (int)round(($stats[$id]['scoreSum'] ?? 0) / $done) : null, 'behind' => count($behind), 'behindNames' => array_slice($behind, 0, 12)],
+               'due' => $due];
     }
     return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role'],
+            'weekNow' => $weekNow, 'termStart' => (string)$cfg['startDate'], 'termWeeks' => CURR_TERM_WEEKS,
             'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];

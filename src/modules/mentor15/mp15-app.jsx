@@ -74,15 +74,17 @@ const MP15_ERR = {
   answer_one: 'Answer at least one question.', not_agreed: 'Agree it with them first, then make it active.', no_wish: 'Write the wish first.',
   goals_locked_connect: 'The first weeks are for getting to know each other. Goals open in week 3.', active_needs_agreed: 'A live goal stays agreed. Pause it first.',
   progress_out_of_range: 'How close is 1 to 5.', fixed_item_missing: 'The huddle, one-to-ones and close stay on the agenda.',
+  name_every_item: 'Name the new activity first.', bad_minutes: 'Each activity is 5 to 120 minutes.', too_many_items: 'That’s the most a Saturday plan holds. Remove one first.',
+  too_many_one_to_ones: 'Six one-to-ones is the most for one Saturday.', duplicate_item: 'That item is already on the agenda.',
   choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', not_found: 'That record wasn’t found.',
-  orientation_required: 'Finish “Start here” in the Academy first. It opens the rest of your portal.',
+  orientation_required: 'Not saved: finish your Academy first. You can look around everything until then.',
   forbidden: 'That isn’t yours to do.', not_in_team: 'That mentor isn’t in your team.', answer_all: 'Answer every question first.', retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
   rate_limited: 'Too many in a row. Wait a minute and try again.', network: 'You’re offline. Nothing was saved.', too_long: 'That’s too long.',
 };
 function mp15ErrText(e) { const c = (e && (e.code || e.message)) || 'failed'; return MP15_ERR[c] || ('Couldn’t save (' + c + ').'); }
 
-/* The screens open before "Start here" is done. */
-const MP15_ORI_OPEN = ['academy', 'module', 'concern', 'hub'];
+/* The writes that go through before the Academy is complete: a concern, the Academy itself, marking a message read. */
+const MP15_ORI_OPEN_ACTS = ['concern', 'academyResult', 'messageRead'];
 
 const mp15Api = {
   view: (view, opts) => NGGApi.member.mentorView(view, opts),
@@ -114,12 +116,13 @@ class Mp15Portal extends React.Component {
 
   /* ── Data ─────────────────────────────────────────────────────────────── */
   me() { return ((this.state.d.week || {}).me) || {}; }
-  /* "Start here" (domain/academy.php): until a mentor has passed the portal
-     guides, the portal opens on the Academy and nothing else, bar Report a
-     concern. The Academy's own read is fresher than the shell's after a pass. */
+  /* The Academy (domain/academy.php): until a mentor's Academy is complete
+     they can open every screen and look around, but nothing saves — the
+     server refuses the portal's writes, act() says why before sending, and
+     every screen carries the banner (slot). Report a concern and the Academy
+     itself always work. The Academy's own read is fresher than the shell's. */
   orientation() { const a = this.state.d.academy; return (a && a.orientation) || this.me().orientation || null; }
   oriLocked() { const o = this.orientation(); return !!this.me().mentorId && !!o && o.ok === false; }
-  componentDidUpdate() { if (this.oriLocked() && !MP15_ORI_OPEN.includes(this.state.scr)) this.setState({ scr: 'academy', hist: [] }); }
   today() { return (this.state.d.week || {}).today || mp15Iso(new Date()); }
   role() { return this.me().role || 'pod'; }
   isLead() { return this.role() === 'lead' || this.role() === 'coord'; }
@@ -140,6 +143,11 @@ class Mp15Portal extends React.Component {
     if (this.isLead()) this.load('team', 'team');
   }
   loadKid(id) { if (id) return this.load('kid:' + id, 'mentee', { subjectId: id }); }
+  componentDidUpdate() {
+    // The Growth tab's report is read once per child, when the tab is first shown.
+    const S = this.state, k = 'grw:' + S.kid;
+    if (S.scr === 'kid' && S.ktab === 'prog' && S.kid && !S.d[k] && !S.ld[k] && !S.er[k]) this.load(k, 'growth', { subjectId: S.kid });
+  }
   /* After a write, re-read what it changed. The server is the record. */
   refresh(keys, kid) {
     const map = { week: ['week', 'week'], case: ['case', 'caseload'], goals: ['goals', 'goals'], sess: ['sess', 'sessions'], msgs: ['msgs', 'messages'],
@@ -152,6 +160,7 @@ class Mp15Portal extends React.Component {
   }
   /* One write. Resolves to the server's answer or null; a refusal is a toast. */
   act(action, body, okText) {
+    if (this.oriLocked() && !MP15_ORI_OPEN_ACTS.includes(action)) { this.say('Not saved: finish your Academy first. You can look around everything until then.'); return Promise.resolve(null); }
     return mp15Api.act(action, Object.assign({ centre: this.state.centre || '' }, body || {}))
       .then(r => { if (okText) this.say(typeof okText === 'function' ? okText(r) : okText); return r || {}; })
       .catch(e => { this.say(mp15ErrText(e)); return null; });
@@ -159,7 +168,6 @@ class Mp15Portal extends React.Component {
 
   say(t, undo) { clearTimeout(this.tt); this.setState({ toast: t, undo: undo || null }); this.tt = setTimeout(() => { this.setState({ toast: '', undo: null }); }, undo ? 6500 : 4000); }
   go(scr, extra) {
-    if (this.oriLocked() && !MP15_ORI_OPEN.includes(scr)) { this.say('Finish “Start here” in the Academy first — it opens the rest of your portal.'); scr = 'academy'; extra = {}; }
     const S = this.state; const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0;
     this.setState({ scr, more: false, hist: scr === S.scr ? S.hist : S.hist.concat([S.scr]).slice(-12), ...(scr !== S.scr ? { mOpen: false } : {}), ...(scr === 'concern' ? { cSent: null } : {}), ...(extra || {}) });
     /* The Class screens have an address of their own (/mentor/class[?tab=…]), so a reload or a shared link reopens them. */
@@ -226,12 +234,33 @@ class Mp15Portal extends React.Component {
     const a = (this.state.d.satNext || {}).agenda || [];
     return a.map(x => ({ t: x.title, s: x.sub || '', m: Number(x.minutes) || 0, fixed: !!x.fixed }));
   }
-  setAgenda(n) { this.setState({ agenda: n }); this.timers = this.timers || {}; clearTimeout(this.timers.plan); this.planDirty = true; this.timers.plan = setTimeout(() => this.flushPlan(), 900); }
+  /* The one-to-ones picked for Saturday: the mentor's edit, else the server's (which picks the longest-unseen three). */
+  picksNow() { const S = this.state; return S.oo || (S.d.satNext || {}).oneToOnes || []; }
+  setAgenda(n) { this.setState({ agenda: n }); this.queuePlan(); }
+  setPicks(ids) { this.setState({ oo: ids }); this.queuePlan(); }
+  queuePlan() { this.timers = this.timers || {}; clearTimeout(this.timers.plan); this.planDirty = true; this.setState({ agSave: { st: 'pending' } }); this.timers.plan = setTimeout(() => this.flushPlan(), 900); }
+  /* Saves the whole plan (agenda + one-to-ones) and says so: Saving…, Saved, or why not with a retry.
+     A new activity with no name yet stays on screen and waits; nothing half-written is sent. */
   flushPlan(share) {
     if (!this.planDirty && !share) return Promise.resolve(null);
-    this.planDirty = false;
+    const items = this.agendaNow();
+    if (items.some(a => !a.t.trim())) { this.setState({ agSave: { st: 'error', msg: 'Name the new activity, then it saves.' } }); return Promise.resolve(null); }
+    if (this.oriLocked()) { this.setState({ agSave: { st: 'error', msg: 'Not saved: finish your Academy first.' } }); return Promise.resolve(null); }
+    this.planDirty = false; this.setState({ agSave: { st: 'saving' } });
     const sat = this.state.d.satNext || {};
-    return this.act('saturdayPlan', { date: sat.date || this.satNextDate(), agenda: this.agendaNow().map(a => ({ title: a.t, sub: a.s, minutes: a.m, fixed: a.fixed })), oneToOnes: sat.oneToOnes || [], share: !!share });
+    return mp15Api.act('saturdayPlan', { centre: this.state.centre || '', date: sat.date || this.satNextDate(), agenda: items.map(a => ({ title: a.t.trim(), sub: a.s, minutes: a.m })), oneToOnes: this.picksNow(), share: !!share })
+      .then(r => {
+        const d = this.state.d; const dirty = this.planDirty;
+        this.setState({ d: { ...d, satNext: { ...(d.satNext || {}), agenda: r.agenda, oneToOnes: r.oneToOnes, sharedAt: r.sharedAt } },
+          ...(dirty ? {} : { agenda: null, oo: null }), agSave: { st: 'saved', at: new Date() } });
+        return r;
+      })
+      .catch(e => { this.planDirty = true; this.setState({ agSave: { st: 'error', msg: mp15ErrText(e) } }); return null; });
+  }
+  resetPlan() {
+    const def = (this.state.d.satNext || {}).agendaDefault || [];
+    if (!def.length || !window.confirm('Put back the standard plan? Your own activities and timings for this Saturday go.')) return;
+    this.setAgenda(def.map(x => ({ t: x.title, s: x.sub || '', m: Number(x.minutes) || 5, fixed: !!x.fixed })));
   }
 
   /* ── Goals: the WOOP fields save as they are typed ────────────────────── */
@@ -311,7 +340,12 @@ class Mp15Portal extends React.Component {
     const B = { wellbeing: k => !!k.flags.wellbeing, contact: k => !!k.flags.contact, rel: k => !!k.flags.rel, goal: k => !!k.flags.goal, family: k => !isPeer && !!k.flags.family };
     const FL = [['all', 'All'], ['wellbeing', 'Struggling'], ['contact', 'One-to-one overdue'], ['rel', 'Relationship check'], ['goal', 'Goal needs work'], ['family', 'Family update']].filter(f => !(isPeer && f[0] === 'family'));
     const wk = D.week || {}; const badgesSrv = wk.badges || {};
-    const msgRows = ((D.msgs || {}).messages) || [];
+    /* A conversation the mentor is starting (the child page's Message, or New
+       message): shown at the top until its first message makes it real. */
+    const msgRows0 = ((D.msgs || {}).messages) || [];
+    const msgRows = S.mNew && !msgRows0.some(m => m.id === 'chat:' + S.mNew.id)
+      ? [{ id: 'chat:' + S.mNew.id, threadId: 'chat:' + S.mNew.id, kind: 'New conversation', filter: 'chat', from: S.mNew.name, subjectId: S.mNew.id, thread: [], body: '', at: new Date().toISOString(), read: true, isNew: true }].concat(msgRows0)
+      : msgRows0;
     const unreadN = msgRows.filter(m => !m.read && !S.read[m.id] && m.kind !== 'From your lead').length;
 
     /* Saturday: Before plans the next one; During and After are the one just gone (or today). */
@@ -329,7 +363,7 @@ class Mp15Portal extends React.Component {
     const badges = { list: badgesSrv.mentees !== undefined ? badgesSrv.mentees : dueN, sat: revTotal - revDoneN, msg: unreadN, academy: badgesSrv.academy || 0 };
     /* The Academy is a mentor's own record: staff overseeing a centre with no mentor record have none to complete. */
     const oriL = this.oriLocked(), ori = this.orientation() || {};
-    const AREAS = (oriL ? [['Start here', 'ph ph-graduation-cap', [['academy', 'Academy']].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]] : [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]])
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Class', 'ph ph-star', [['stars', 'Stars'], ['results', 'School results'], ['curric', 'Curriculum']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['My role', 'ph ph-seal-check', [['role', 'My role'], ...(me.mentorId ? [['academy', 'Academy']] : [])].concat(this.props.onHub ? [['hub', 'Other portals']] : [])]]
       .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
     const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
     const goId = id => id === 'hub' ? this.props.onHub() : this.go(id);
@@ -342,7 +376,7 @@ class Mp15Portal extends React.Component {
     const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
     const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ...(me.mentorId ? [['academy', 'Academy', 'ph ph-graduation-cap']] : []), ['role', 'My role', 'ph ph-seal-check'], ['stars', 'Stars', 'ph ph-star'], ['results', 'School results', 'ph ph-exam'], ['curric', 'Curriculum', 'ph ph-book-open']].concat(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []);
     if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
-    if (oriL) navDef.splice(0, navDef.length, ['academy', 'Academy', 'ph ph-graduation-cap'], ...(this.props.onHub ? [['hub', 'Other portals', 'ph ph-squares-four']] : []));
+    if (oriL) navDef.unshift(navDef.splice(navDef.findIndex(n => n[0] === 'academy'), 1)[0]);   // the Academy first in More while it is due
     const tabIds = ['week', 'list', 'sat', 'msg'];
     const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => goId(id) }));
 
@@ -372,10 +406,10 @@ class Mp15Portal extends React.Component {
                fg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72', pts: pts.map((v, i) => ({ h: (v === null || v === undefined ? 0 : v) + '%', c: v === null || v === undefined ? '#f0efea' : i === pts.length - 1 ? '#0b0b0c' : '#d6d4cc' })) }; };
 
     const agenda = this.agendaNow();
-    let t0 = 510; /* the Musing & mentor breakout starts at 8:30 */ const total = agenda.reduce((n, a) => n + a.m, 0);
+    /* The breakout's window is the Saturday schedule's, from the server (Musing & mentor breakout, 8:30–10:00 by default). */
+    const win = satN.window || { start: '08:30', end: '10:00', minutes: 90 };
+    let t0 = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0); const total = agenda.reduce((n, a) => n + a.m, 0);
     const LIB = satN.activities || [];
-    const ooIds = satN.oneToOnes || [];
-    const ooKids = ooIds.map(id => (satN.mentees || []).find(m => m.id === id) || all.find(k => k.id === id)).filter(Boolean);
 
     /* My role: the twelve commitments, from the registers and records. */
     const R = D.role || {};
@@ -397,7 +431,15 @@ class Mp15Portal extends React.Component {
 
     const mList = msgRows.filter(m => S.mf === 'all' || m.filter === S.mf || (S.mf === 'journal' && /Journal/.test(m.kind)));
     const mSel0 = mList.find(m => m.id === S.msel) || mList[0];
-    const mView = m => m ? { ...m, who: m.from, when: mp15When(m.at, today), t: m.body } : {};
+    const mView = m => m ? { ...m, who: m.from, when: m.isNew ? 'New' : mp15When(m.at, today), t: m.body, isThread: !!m.thread, notThread: !m.thread, empty: !!m.thread && !m.thread.length,
+      thread: (m.thread || []).map((x, i) => ({ key: i, who: x.who, when: mp15When(x.at, today) + (x.queued ? ' · goes at 8am' : ''), t: x.body, align: x.mine ? 'flex-end' : 'flex-start',
+        bg: x.mine ? '#0b0b0c' : '#f4f4f2', fg: x.mine ? '#fff' : '#0b0b0c' })) } : {};
+    /* New message: the caseload by name, and — for a lead or a coordinator —
+       any child at their centre, searched on the server. */
+    const nmQ = (S.nmQ || '').trim().toLowerCase();
+    const nmLocal = nmQ.length >= 2 ? all.filter(k => k.name.toLowerCase().includes(nmQ)).map(k => ({ id: k.id, name: k.name, sub: 'Your mentee' })) : [];
+    const nmServer = (S.nmRes || []).filter(r => !nmLocal.some(l => l.id === r.id)).map(r => ({ id: r.id, name: r.name, sub: (r.mentee ? 'Your mentee' : 'At ' + r.centre) }));
+    const nmAll = nmLocal.concat(nmServer).slice(0, 8);
 
     const titles = { module: ((acMods.find(m => m.id === S.mod)) || {}).title || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck0.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern', stars: 'Stars', results: 'School results', curric: 'Curriculum' };
     const nTeam = ((D.team || {}).mentors || []).length;
@@ -430,8 +472,8 @@ class Mp15Portal extends React.Component {
       title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: inDetail, back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
       goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
       onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: S.scr === 'msg', onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', acLocked: oriL,
-      acLockH: 'Start here: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' portal guides done',
-      acLockT: 'Before your portal opens, take the short guides under “Start here: using the portal” (about ' + (ori.mins || 0) + ' minutes in all). Each shows you the right tool for one part of the job — your week, mentees, goals and sessions, Saturday, class and messages, and what to do when you’re worried about a child. Report a concern works the whole time.', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
+      acLockH: 'Your Academy: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' done',
+      acLockT: 'Start with the short guides under “Start here: using the portal” (' + ((ori.startHere || {}).done || 0) + ' of ' + ((ori.startHere || {}).required || 0) + ' done) — each shows the right tool for one part of the job — then the required modules. You can look around the whole portal meanwhile, but nothing you do there saves until the Academy is complete (about ' + (ori.mins || 0) + ' minutes left). Report a concern works the whole time.', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
       due: S.dueAll ? due : due.slice(0, 5), noDue: due.length === 0 && !!D.week, dueMore: due.length > 5 && !S.dueAll, dueRestL: 'Show ' + (due.length - 5) + ' more', seeAllDue: () => set({ dueAll: true }),
       week: (wk.week || []).map(x => ({ d: x.day, t: x.time, l: x.label, done: !!x.done })),
       filters: FL.map(([id, l]) => ({ l, n: (id === 'all' ? all : all.filter(B[id])).length, on: S.filter === id, ...chip(S.filter === id), go: () => set({ filter: id }) })),
@@ -454,8 +496,10 @@ class Mp15Portal extends React.Component {
       facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
               ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
               ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
-      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Progress']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
+      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
       kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
+      // Growth: the whole record as a trend (mp_growth), loaded when the tab opens; the four series below it stay.
+      growthBox: S.ktab === 'prog' && S.kid ? <GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/> : null,
       noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
       timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
       relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
@@ -468,12 +512,14 @@ class Mp15Portal extends React.Component {
       sBefore: S.step === 'before', sDuring: S.step === 'during', sAfter: S.step === 'after',
       agenda: agenda.map((a, i) => { const at = t0; t0 += a.m; return { ...a, at: Math.floor(at / 60) + ':' + String(at % 60).padStart(2, '0'), first: i === 0, upOp: i ? 1 : 0.3, rmOp: a.fixed ? 0.3 : 1,
         up: () => { if (!i) return; const n = agenda.slice(); [n[i - 1], n[i]] = [n[i], n[i - 1]]; this.setAgenda(n); }, rm: () => { if (a.fixed) return this.say('The huddle, one-to-ones and close stay on the agenda'); this.setAgenda(agenda.filter((_, j) => j !== i)); } }; }),
-      agTotal: total + ' of 90 min', agFg: total > 90 ? '#b0361c' : '#4a4a50',
-      ooN: ooKids.length, ooNames: ooKids.map(k => mp15First(k.name) + ' (' + (k.contactDays === null || k.contactDays === undefined ? (k.contact === null || k.contact === undefined ? 'never' : k.contact + ' days') : k.contactDays + ' days') + ')').join(' · ') || 'Nobody picked yet. Use “Add to Saturday one-to-ones” on Mentees.',
-      sharePlan: () => this.flushPlan(true).then(r => { if (r) this.say(me.lead ? 'Agenda shared with ' + lead : 'Agenda saved. There’s no lead on your record to share it with.'); }),
+      agTotal: total + ' of ' + win.minutes + ' min', agFg: total > win.minutes ? '#b0361c' : '#4a4a50',
+      agendaBox: <Mp15Agenda items={agenda} win={win} after={satN.after || ''} mentees={satN.mentees || []} picks={this.picksNow()} max={satN.agendaMax || 12} ooMax={satN.oneToOnesMax || 6}
+        save={S.agSave || { st: 'idle' }} sharedAt={satN.sharedAt || ''} lead={me.lead ? lead : ''} onItems={n => this.setAgenda(n)} onPicks={ids => this.setPicks(ids)}
+        onReset={() => this.resetPlan()} onRetry={() => { this.planDirty = true; this.flushPlan(); }}
+        onShare={() => { this.planDirty = true; this.flushPlan(true).then(r => { if (r) this.say(me.lead ? 'Plan shared with ' + lead : 'Plan saved. There’s no lead on your record to share it with.'); }); }}/>,
       aims: ['All'].concat(Array.from(new Set(LIB.map(x => x.aim)))).map(a => ({ l: a, on: S.aim === a, ...pill(S.aim === a), go: () => set({ aim: a }) })),
       lib: LIB.filter(x => S.aim === 'All' || x.aim === S.aim).map(x => { const added = agenda.some(a => a.t === x.title); return { t: x.title, d: x.sub, meta: x.aim + ' · ' + x.minutes + ' min', added, op: added ? 0.5 : 1, addL: added ? 'Added' : 'Add',
-        add: () => { if (added) return; const n = agenda.slice(); n.splice(Math.max(1, n.length - 2), 0, { t: x.title, s: x.aim, m: Number(x.minutes) || 15, fixed: false }); this.setAgenda(n); } }; }),
+        add: () => { if (added) return; if (agenda.length >= (satN.agendaMax || 12)) return this.say(MP15_ERR.too_many_items); const n = agenda.slice(); n.splice(Math.max(1, n.length - 2), 0, { t: x.title, s: x.sub || x.aim, m: Number(x.minutes) || 15, fixed: false }); this.setAgenda(n); } }; }),
       hereText: hereIds.length + ' of ' + satKidsAll.length + ' here',
       toAfter: () => { this.flushRegister(); set({ step: 'after' }); },
       reg: satKidsAll.map(k => { const h = this.hereOf(k.id); const o = this.obsOf(k.id); const VALS = satL.values || ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
@@ -492,11 +538,18 @@ class Mp15Portal extends React.Component {
               return { l: v === 'On time' && arr ? v + ' · ' + arr : v, on, ...pill(on), bg: on ? '#eef3fb' : '#fff', go: () => { if (!h) return this.say('Mark ' + k.first + ' here first'); const m = {}; cs.forEach(x => { m[x] = true; }); m[v] = !on; set({ chk: { ...(this.state.chk || {}), [k.id]: m } }); this.queueRegister(k.id); } }; })) }; }),
       revText: revDoneN + ' of ' + revTotal + ' evaluated · due Monday', revPct: (revTotal ? revDoneN / revTotal * 100 : 0) + '%', noReviews: revTotal === 0 && !!satL.date,
       reviews: revKids.map((k, ki) => this.evalCard(k, ki, revKids, satL, reviewed, pill)),
-      mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins'], ['chat', 'Mentees']].concat(isPeer ? [] : [['family', 'Families']]).concat([['lead', isLead ? 'Mentors' : 'From ' + lead]]).filter(([id]) => id === 'all' || msgRows.some(m => m.filter === id)).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
+      nmOpen: !!S.nmOpen, nmOpenA: S.nmOpen ? 'true' : 'false', nmToggle: () => set({ nmOpen: !S.nmOpen, nmQ: '', nmRes: [] }), nmQ: S.nmQ || '',
+      nmPh: isLead || roleId === 'coord' ? 'Type a child’s name — any child at your centre' : 'Type a mentee’s name',
+      nmOnQ: e => { const v = e.target.value; set({ nmQ: v });
+        if ((isLead || roleId === 'coord') && v.trim().length >= 2) { clearTimeout(this.nmT); this.nmT = setTimeout(() => mp15Api.view('messageSearch', { q: v.trim(), centre: S.centre || '' }).then(r => { if ((this.state.nmQ || '') === v) set({ nmRes: r.children || [] }); }).catch(() => {}), 220); } },
+      nmStatus: nmQ.length < 2 ? 'Type at least two letters.' : nmAll.length ? nmAll.length + ' found' : 'Nobody by that name you can write to.',
+      nmRes: nmAll.map(r => ({ ...r, go: () => set({ nmOpen: false, nmQ: '', nmRes: [], mNew: { id: r.id, name: r.name }, msel: 'chat:' + r.id, mOpen: true, mf: 'all', reply: '' }) })),
+      mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins'], ['chat', isLead || roleId === 'coord' ? 'Children' : 'Mentees']].concat(isPeer ? [] : [['family', 'Families']]).concat([['lead', isLead ? 'Mentors' : 'From ' + lead]]).filter(([id]) => id === 'all' || msgRows.some(m => m.filter === id)).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
       mCols: S.w >= 1000 ? 'minmax(0, 1fr) minmax(0, 1.2fr)' : 'minmax(0, 1fr)',
-      hasMsg: !!mSel0, mSel: mView(mSel0), reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel0 && /Journal/.test(mSel0.kind) ? 'Name what you noticed. One line is enough.' : 'Write a reply',
+      hasMsg: !!mSel0, mSel: mView(mSel0), reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel0 && /Journal/.test(mSel0.kind) ? 'Name what you noticed. One line is enough.' : mSel0 && mSel0.isNew ? 'Write to ' + mp15First(mSel0.from) : 'Write a reply',
+      replyL: mSel0 && mSel0.isNew ? 'Send' : 'Reply',
       sendReply: () => { if (!S.reply.trim() || !mSel0) return this.say('Write a reply first');
-        this.act('messageReply', { threadId: mSel0.threadId, subjectId: mSel0.subjectId || '', body: S.reply.trim() }, r => r.queued ? 'Reply saved. It goes at 8am.' : 'Reply sent to ' + mp15First(mSel0.from)).then(r => { if (r) { set({ reply: '', read: { ...S.read, [mSel0.id]: true } }); this.refresh(['msgs', 'week', 'role']); } }); },
+        this.act('messageReply', { threadId: mSel0.threadId, subjectId: mSel0.subjectId || '', body: S.reply.trim() }, r => r.queued ? 'Saved. It goes to ' + mp15First(mSel0.from) + ' at 8am.' : 'Sent to ' + mp15First(mSel0.from)).then(r => { if (r) { set({ reply: '', mNew: null, read: { ...S.read, [mSel0.id]: true } }); this.refresh(['msgs', 'week', 'role']); } }); },
       podOut: (((D.index || {}).outcomes || {}).items || []).map(it => mkOut(it, (((D.index || {}).outcomes || {}).saturdays || [])[0])),
       podReport: () => this.report('pod'),
       acPctT: Math.round(acMods.filter(modDone).length / Math.max(1, acMods.length) * 100) + '%', acPct: (acMods.filter(modDone).length / Math.max(1, acMods.length) * 100) + '%',
@@ -545,8 +598,18 @@ class Mp15Portal extends React.Component {
   }
 
   /* Loading and an honest error, inside <main>, for the screen on display. */
+  /* On every screen while the Academy is incomplete: what it holds back, and the way to it. */
+  academyBanner() {
+    if (!this.oriLocked() || ['academy', 'module'].includes(this.state.scr)) return null;
+    const o = this.orientation() || {};
+    return <div className="m15x-slot m15x-acad" role="note"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+      <span><b>Your Academy: {o.done || 0} of {o.required || 0} done.</b> Look around as much as you like — nothing you do here saves until it’s complete (about {o.mins || 0} minutes left).</span>
+      <button type="button" onClick={() => this.go('academy')}>Open the Academy</button></div>;
+  }
   slot() {
-    const inner = this.slotInner();
+    const banner = this.academyBanner();
+    const inner0 = this.slotInner();
+    const inner = banner ? <>{banner}{inner0}</> : inner0;
     const cs = this.me().centres || [];
     if (this.role() !== 'coord' || cs.length < 2) return inner;
     /* A coordinator over several centres works one at a time; switching re-reads every screen for that centre. */
@@ -631,6 +694,7 @@ class Mp15Portal extends React.Component {
     if (need && need.some(k => S.ld[k] || S.er[k] || !S.d[k])) return null;
     if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
     if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
+    if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
     return null;
   }
   slotInner() {
@@ -774,6 +838,7 @@ class Mp15Portal extends React.Component {
     const scMonth = mp15Month(((kd && kd.scorecard) || {}).month || today.slice(0, 7));
     const kActs = [['Log a session', 'ph ph-plus', () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck.id, goalId: ck.ag ? ck.ag.id : '' } }), true], ['Score ' + scMonth, 'ph ph-chart-bar', () => set({ ktab: 'score' })],
       c.isPeer ? ['Note for ' + c.lead, 'ph ph-note-pencil', () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck.id } })] : ['Family update', 'ph ph-house-line', () => set({ ktab: 'family' })],
+      ['Message ' + ck.first, 'ph ph-chat-circle-text', () => this.go('msg', { mNew: { id: ck.id, name: ck.name }, msel: 'chat:' + ck.id, mOpen: true, mf: 'all', reply: '' })],
       ['Report a concern', 'ph ph-shield-warning', () => this.go('concern', { cKid: ck.id })]].map(([l, icon, go, p]) => ({ l, icon, go, ...btn(p) }));
     const famHist = ((kd && kd.family) || []).map(s => ({ date: mp15Fmt(s.metOn, { day: 'numeric', month: 'short' }), kind: s.kind === 'update' ? 'Family update' + (s.status === 'queued' ? ' · goes at 8am' : s.status === 'failed' ? ' · not delivered' : ' sent') : s.kind === 'phone' ? 'Phone or message' : 'Family conversation', what: s.discussed || '' }));
     const wideMsg = S.w >= 1000;
@@ -933,10 +998,10 @@ function MentorHome() {
   React.useEffect(() => { const f = () => setSub(mp15Sub()); window.addEventListener('popstate', f); return () => window.removeEventListener('popstate', f); }, []);
   const go = to => { try { history.pushState({ page: 'mentor' }, '', '/mentor' + (to ? '/' + to : '')); } catch (_) {} setSub(to); try { window.scrollTo(0, 0); } catch (_) {} };
   const { v15, out } = mp15Portals(boot);
-  /* "Start here" follows a mentor into EVERY mentor portal, not only the NGG
+  /* The Academy follows a mentor into EVERY mentor portal, not only the NGG
      one: a Summer School mentor, a mentor with the class tools, or one whose
-     record names no programme all land here first until it is done. The NGG
-     portal gates itself (Mp15Portal.oriLocked), with its own Academy screen. */
+     record names no programme. The NGG portal carries its own banner and
+     Academy screen (Mp15Portal); the others get Mp15AcademyBar. */
   const me0 = (boot && boot.me) || {};
   const ori0 = me0.orientation;
   const oriLocked = !!me0.mentorId && !!ori0 && ori0.ok === false;
@@ -953,12 +1018,16 @@ function MentorHome() {
   /* Refused (not signed in, not cleared, no centre, not a mentor): the class
      portal owns those answers and its sign-in doors. */
   const hubBtn = out.includes('summer') && out.length > 1 && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Mentor portals</button>;
-  if (state === 'ready' && me0.mentorId && (sub === 'academy' || (oriLocked && !ownPortal)))
-    return <Mp15AcademyPage boot={boot} locked={oriLocked} onDone={() => { probe(); go(''); }} back={!oriLocked ? () => go('') : null}/>;
-  if (sub === 'summer') return <>{hubBtn}<MentorPortal key="summer" programme="summer"/></>;
+  if (state === 'ready' && me0.mentorId && sub === 'academy')
+    return <Mp15AcademyPage boot={boot} locked={oriLocked} onDone={() => probe()} back={() => go('')}/>;
+  /* The other mentor portals have no Academy screen of their own: while it is
+     incomplete they carry a banner to /mentor/academy, and their saves are
+     refused by the server with the reason. */
+  const acadBar = oriLocked && !ownPortal && <Mp15AcademyBar o={ori0} go={() => go('academy')}/>;
+  if (sub === 'summer') return <>{hubBtn}{acadBar}<MentorPortal key="summer" programme="summer"/></>;
   /* A v15 mentor's class tools open inside their portal; an instructor or an admin with no pod keeps the stand-alone class page. */
   if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onHub={out.includes('summer') ? () => go('') : null}/>;
-  if (sub === 'class') return <>{hubBtn}<MentorPortal key="class" programme="ngg"/></>;
+  if (sub === 'class') return <>{hubBtn}{acadBar}<MentorPortal key="class" programme="ngg"/></>;
   if (state === 'refused') return <MentorPortal key="any"/>;
   if (sub === 'ngg') {
     if (v15) return <Mp15Portal boot={boot} onHub={out.includes('summer') ? () => go('') : null}/>;
@@ -1024,3 +1093,135 @@ function Mp15AcademyPage({ boot, locked, onDone, back }) {
   );
 }
 
+/* The banner the Summer School portal and the class tools carry while a
+   mentor's Academy is incomplete: what it holds back, and the way to it. */
+function Mp15AcademyBar({ o, go }) {
+  return <div className="m15x-acad is-bar" role="note"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+    <span><b>Your Academy: {o.done || 0} of {o.required || 0} done.</b> Look around as much as you like — nothing you do here saves until it’s complete (about {o.mins || 0} minutes left).</span>
+    <a href="/mentor/academy" onClick={e => { e.preventDefault(); go(); }}>Open the Academy</a></div>;
+}
+
+/* ── The Saturday plan: the mentor's part of the formation day ─────────────
+   One running order inside the breakout's window (from the Saturday
+   schedule): the huddle opens it and the close ends it; everything between is
+   the mentor's to time (five-minute steps), rename, reorder, add or remove.
+   The one-to-ones are picked here, and each child gets a time. Saving is
+   automatic and said out loud; an overrun says what it runs into. */
+function mp15Clock(min) { return Math.floor(min / 60) + ':' + String(min % 60).padStart(2, '0'); }
+function Mp15Agenda({ items, win, after, mentees, picks, max, ooMax, save, sharedAt, lead, onItems, onPicks, onReset, onRetry, onShare }) {
+  const [edit, setEdit] = React.useState(-1);
+  const start = (parseInt(win.start, 10) || 8) * 60 + (parseInt(String(win.start).slice(3), 10) || 0);
+  const total = items.reduce((n, a) => n + a.m, 0), spare = win.minutes - total;
+  const pinned = a => a.t === 'Pod huddle' || a.t === 'Close';
+  const put = (i, patch) => onItems(items.map((a, j) => j === i ? { ...a, ...patch } : a));
+  const move = (i, d) => { const j = i + d; if (j < 1 || j > items.length - 2) return; const n = items.slice(); [n[i], n[j]] = [n[j], n[i]]; onItems(n); if (edit === i) setEdit(j); };
+  const remove = i => { onItems(items.filter((_, j) => j !== i)); setEdit(-1); };
+  const add = () => { if (items.length >= max) return; const n = items.slice(); const oo = n.findIndex(a => a.t === 'One-to-ones'); const at = oo > 0 ? oo : Math.max(1, n.length - 1); n.splice(at, 0, { t: '', s: '', m: 10, fixed: false }); onItems(n); setEdit(at); };
+  let at = start; const times = items.map(a => { const t = at; at += a.m; return t; });
+  const ooI = items.findIndex(a => a.t === 'One-to-ones'), ooMin = ooI >= 0 ? items[ooI].m : 0;
+  const per = picks.length ? Math.floor(ooMin / picks.length) : 0;
+  const kids = mentees.slice().sort((a, b) => (b.contactDays === null || b.contactDays === undefined ? 9999 : b.contactDays) - (a.contactDays === null || a.contactDays === undefined ? 9999 : a.contactDays));
+  const nameOf = id => { const k = mentees.find(m => m.id === id); return k ? (k.first || mp15First(k.name)) : 'A mentee'; };
+  const togglePick = id => onPicks(picks.includes(id) ? picks.filter(x => x !== id) : picks.length >= ooMax ? picks : picks.concat([id]));
+  const last = items[items.length - 1];
+  const sum = spare > 0 ? spare + ' min spare' : spare === 0 ? 'exactly on time' : (-spare) + ' min over: ' + (last ? last.t : 'the plan') + ' would run to ' + mp15Clock(start + total) + (after ? ', into ' + after : '');
+  const saveText = { pending: 'Unsaved changes…', saving: 'Saving…', saved: 'Saved', error: save.msg || 'Not saved.' }[save.st] || '';
+  return (
+    <div className="m15ag">
+      <p className={'m15ag-sum' + (spare < 0 ? ' is-over' : '')} role="status" aria-live="polite">{win.title ? win.title + ' · ' : ''}{mp15Clock(start)}–{win.end} · <b>{total} of {win.minutes} min planned</b> · {sum}</p>
+      <ol className="m15ag-list">
+        {items.map((a, i) => {
+          const editing = edit === i, label = a.t || 'the new activity';
+          return (
+            <li key={i} className={'m15ag-row' + (editing ? ' is-editing' : '')}>
+              <span className="m15ag-at">{mp15Clock(times[i])}</span>
+              <div className="m15ag-main">
+                {editing ? (
+                  <div className="m15ag-edit">
+                    <label><span>Activity</span><input value={a.t} maxLength={80} disabled={a.fixed} autoFocus={!a.fixed} placeholder="e.g. Debate: should phones be allowed at school?" onChange={e => put(i, { t: e.target.value })}/></label>
+                    {a.fixed && <small>Every pod’s Saturday has a {a.t.toLowerCase()}, so its name stays. Change its time and what happens.</small>}
+                    <label><span>What happens</span><input value={a.s} maxLength={160} placeholder="One line the pod will recognise" onChange={e => put(i, { s: e.target.value })}/></label>
+                    <button type="button" className="m15ag-btn" onClick={() => setEdit(-1)}>Done</button>
+                  </div>
+                ) : (
+                  <>
+                    <b>{a.t || 'New activity (name it)'}</b>
+                    {a.s && <span>{a.s}</span>}
+                    {i === ooI && <span className="m15ag-oo-line">{picks.length ? picks.map((id, k) => mp15Clock(times[i] + k * per) + ' ' + nameOf(id)).join(' · ') : 'Nobody picked yet: choose below.'}</span>}
+                  </>
+                )}
+              </div>
+              <div className="m15ag-mins" role="group" aria-label={'Minutes for ' + label}>
+                <button type="button" aria-label={'Five minutes less for ' + label} disabled={a.m <= 5} onClick={() => put(i, { m: Math.max(5, a.m - 5) })}><i className="ph ph-minus" aria-hidden="true"/></button>
+                <span>{a.m} min</span>
+                <button type="button" aria-label={'Five minutes more for ' + label} disabled={a.m >= 120} onClick={() => put(i, { m: Math.min(120, a.m + 5) })}><i className="ph ph-plus" aria-hidden="true"/></button>
+              </div>
+              <div className="m15ag-acts">
+                <button type="button" aria-label={(editing ? 'Finish editing ' : 'Edit ') + label} aria-pressed={editing} onClick={() => setEdit(editing ? -1 : i)}><i className="ph ph-pencil-simple" aria-hidden="true"/></button>
+                {!pinned(a) && <button type="button" aria-label={'Move ' + label + ' earlier'} disabled={i <= 1} onClick={() => move(i, -1)}><i className="ph ph-arrow-up" aria-hidden="true"/></button>}
+                {!pinned(a) && <button type="button" aria-label={'Move ' + label + ' later'} disabled={i >= items.length - 2} onClick={() => move(i, 1)}><i className="ph ph-arrow-down" aria-hidden="true"/></button>}
+                {!a.fixed && <button type="button" aria-label={'Remove ' + label} onClick={() => remove(i)}><i className="ph ph-x" aria-hidden="true"/></button>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="m15ag-tools">
+        <button type="button" className="m15ag-btn" onClick={add} disabled={items.length >= max}><i className="ph ph-plus" aria-hidden="true"/> Add your own activity</button>
+        <button type="button" className="m15ag-btn is-quiet" onClick={onReset}>Reset to the standard plan</button>
+      </div>
+      <section className="m15ag-oo" aria-labelledby="m15ag-oo-h">
+        <h3 id="m15ag-oo-h">One-to-ones · {ooMin} min{picks.length ? ', about ' + per + ' min each' : ''}</h3>
+        <p>Pick who you see one-to-one this Saturday, up to {ooMax}. Longest since their last one-to-one first.</p>
+        <div className="m15ag-kids">
+          {kids.map(k => { const on = picks.includes(k.id); const d = k.contactDays === null || k.contactDays === undefined ? 'never' : k.contactDays + ' days';
+            return <button type="button" key={k.id} className={'m15ag-kid' + (on ? ' is-on' : '')} aria-pressed={on} disabled={!on && picks.length >= ooMax} onClick={() => togglePick(k.id)}>
+              <i className={on ? 'ph-fill ph-check-circle' : 'ph ph-circle'} aria-hidden="true"/><span>{k.name}</span><small>{d}</small></button>; })}
+          {!kids.length && <span className="m15ag-empty">No mentees on your list yet.</span>}
+        </div>
+      </section>
+      <div className="m15ag-foot">
+        <button type="button" className="m15ag-btn is-primary" onClick={onShare}>{lead ? 'Share with ' + lead : 'Save the plan'}</button>
+        <span className={'m15ag-save is-' + save.st} role="status" aria-live="polite">{saveText}{save.st === 'error' && <button type="button" className="m15ag-link" onClick={onRetry}>Retry</button>}</span>
+        {sharedAt && <span className="m15ag-shared">Shared {new Date(sharedAt).toLocaleString('en-GB', { timeZone: 'Africa/Lagos', weekday: 'short', hour: 'numeric', minute: '2-digit' })}</span>}
+      </div>
+    </div>
+  );
+}
+
+/* Pod growth: every mentee's trend in one table (member_mp_growth_pod) —
+   Saturdays now against before, the Leadership Index's change, how many
+   evaluation criteria were shown last time and how that moved. A name opens
+   their Growth tab. */
+function Mp15PodGrowth({ centre, open }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('growth', { centre }).then(setD).catch(setErr); }, [centre]);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load the pod’s growth ({err.code || err.message}).</span><button type="button" className="grw-btn" onClick={load}>Retry</button></div>;
+  if (!d) return <div className="grw-msg" role="status" aria-live="polite">Loading the pod’s growth…</div>;
+  const ch = v => v === null || v === undefined ? "—" : (v > 0 ? "+" : "") + v;
+  const tone = v => v === null || v === undefined || v === 0 ? "" : v > 0 ? "is-up" : "is-down";
+  return (
+    <section className="grw-card mpg" aria-labelledby="mpg-h">
+      <h3 id="mpg-h">Growth, mentee by mentee <small>the last 12 Saturdays and 6 months</small></h3>
+      {!d.rows.length ? <p className="grw-note">No mentees yet.</p> : (
+        <div className="mpg-wrap"><table className="mpg-t">
+          <thead><tr><th scope="col">Mentee</th><th scope="col">Saturdays</th><th scope="col">Recently vs before</th><th scope="col">Leadership Index</th><th scope="col">Evaluation</th></tr></thead>
+          <tbody>{d.rows.map(r => {
+            const att = r.attendanceRecent !== null && r.attendanceBefore !== null ? r.attendanceRecent - r.attendanceBefore : null;
+            return (
+              <tr key={r.id}>
+                <th scope="row"><button type="button" className="mpg-name" onClick={() => open(r.id)}>{r.name}</button></th>
+                <td>{r.attendance === null ? "—" : r.attendance + "%"}</td>
+                <td className={tone(att)}>{att === null ? "—" : ch(att) + " pts"}</td>
+                <td>{r.index === null ? "Not scored" : r.index}<span className={"mpg-d " + tone(r.indexChange)}> {r.indexChange === null ? "" : ch(r.indexChange)}</span></td>
+                <td>{r.evalShown === null ? "None yet" : r.evalShown + " of " + r.evalOf}<span className={"mpg-d " + tone(r.evalChange)}> {r.evalChange === null ? "" : ch(r.evalChange)}</span></td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>
+      )}
+    </section>
+  );
+}

@@ -930,7 +930,8 @@ function staff_invite_email(string $memberId, string $role): void {
 function admin_mentors_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT * FROM mentors ORDER BY createdAt DESC');
-    return ['ok' => true, 'mentors' => array_map('mentor_full', $rows)];
+    return ['ok' => true, 'mentors' => array_map(static fn($r) => mentor_full($r) + ['honorific' => (string)($r['honorific'] ?? '')], $rows),
+            'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
 }
 
 function admin_mentors_upsert(array $p): array {
@@ -960,10 +961,13 @@ function admin_mentors_upsert(array $p): array {
         }
     }
 
+    // How children address them (staff_public_name); checked before any write.
+    if (array_key_exists('honorific', $data) && trim((string)$data['honorific']) !== '' && staff_honorific_clean((string)$data['honorific']) === '') return ['ok' => false, 'error' => 'bad_title'];
     if ($existing) {
         $patch = db_pick($data, $cols, [], ['maxMentees']);
         $patch['updatedAt'] = now_iso();
         db_update('mentors', $patch, ['id' => $existing['id']]);
+        if (array_key_exists('honorific', $data)) staff_honorific_set((string)($existing['memberId'] ?? ''), $mentorId, (string)($existing['volunteerId'] ?? ''), (string)$data['honorific']);
         audit('admin.mentor.update', $g['requester']['memberId'], $mentorId, [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'mentorId' => $mentorId];
     }
@@ -974,6 +978,7 @@ function admin_mentors_upsert(array $p): array {
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
     db_insert('mentors', $insert);
+    if (array_key_exists('honorific', $data)) staff_honorific_set('', $newId, '', (string)$data['honorific']);
     audit('admin.mentor.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'mentorId' => $newId];
 }

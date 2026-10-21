@@ -195,6 +195,37 @@ const SA_ERR = { answer_all: "Answer every question first.", retry_later: "That 
 function saErr(e) { const c = (e && (e.code || e.message)) || "failed"; return SA_ERR[c] || "Couldn’t save (" + c + ")."; }
 function saDate(iso, o) { const d = /^\d{4}-\d{2}-\d{2}/.test(String(iso || "")) ? new Date(String(iso).slice(0, 10) + "T12:00:00Z") : null; return d ? d.toLocaleDateString("en-GB", Object.assign({ timeZone: "UTC" }, o || { day: "numeric", month: "short" })) : ""; }
 
+/* How children and families address this adult: a title and the surname
+   ("Mrs Adeyemi"), never the first name. The list and the default are the
+   server's (STAFF_HONORIFICS); this card only lets the person pick one. */
+function StaffTitleCard({ toast }) {
+  const [t, setT] = React.useState(null);
+  const [err, setErr] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.member.staffTitle().then(r => { setT(r); setErr(''); }).catch(e => setErr(e.code || e.message || 'error'));
+  React.useEffect(() => { load(); }, []);
+  if (err === 'not_staff') return null;
+  if (err) return <section className="sa-card sa-title" role="alert"><span>Couldn’t load how children see you ({err}).</span><button type="button" className="sa-btn" onClick={load}>Retry</button></section>;
+  if (!t) return null;
+  const pick = async v => {
+    setBusy(true);
+    try { const r = await NGGApi.member.staffTitleSet(v); setT(r); toast && toast('Children now see you as ' + r.seenAs + '.'); }
+    catch (e) { toast && toast('Not saved (' + (e.code || e.message) + '). Try again.'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="sa-card sa-title" aria-labelledby="sa-title-h">
+      <div><h2 id="sa-title-h" className="sa-h">How children see you</h2>
+        <p>Children and their families see you as <b>{t.seenAs}</b> — a title and your surname, never your first name.</p></div>
+      <label className="sa-title-pick"><span>Your title</span>
+        <select value={t.honorific || ''} disabled={busy} onChange={e => pick(e.target.value)}>
+          <option value="">{t.titleDefault} (default)</option>
+          {(t.titles || []).filter(x => x !== t.titleDefault).map(x => <option key={x} value={x}>{x}</option>)}
+        </select></label>
+    </section>
+  );
+}
+
 function StaffAcademy({ data, err, reload, toast, submit, portal, jobs, lead }) {
   const [mod, setMod] = React.useState(null);
   const [step, setStep] = React.useState(0);
@@ -213,15 +244,16 @@ function StaffAcademy({ data, err, reload, toast, submit, portal, jobs, lead }) 
     return (
       <div className="sa">
         {!ori.ok && <section className="sa-lock" role="note" aria-labelledby="sa-lock-h"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
-          <div><h2 id="sa-lock-h">Start here: {ori.done} of {ori.required} portal guides done</h2>
-            <p>Before your portal opens, take the short guides under “Start here: using the portal” (about {ori.mins} minutes in all). Each shows you the right tool for one part of the job — {jobs}. {lead || "Report a concern works the whole time."}</p></div></section>}
+          <div><h2 id="sa-lock-h">Your Academy: {ori.done} of {ori.required} done</h2>
+            <p>Start with the short guides under “Start here: using the portal” ({(ori.startHere || {}).done || 0} of {(ori.startHere || {}).required || 0} done) — each shows you the right tool for one part of the job: {jobs}. Then the required modules. You can look around your whole portal meanwhile, but nothing you do there saves until the Academy is complete (about {ori.mins} minutes left). {lead || "Report a concern works the whole time."}</p></div></section>}
+        <StaffTitleCard toast={toast}/>
         <section className="sa-card sa-prog" aria-label="Your progress"><div><b>{n} of {mods.length} modules complete</b><span>{Math.round(n / Math.max(1, mods.length) * 100)}%</span></div>
           <div className="sa-bar"><span style={{ width: (n / Math.max(1, mods.length) * 100) + '%' }}/></div></section>
         {(data.groups || []).map((h, gi) => (
           <section key={gi} className="sa-card" aria-labelledby={'sa-g' + gi}><h2 id={'sa-g' + gi} className="sa-h">{h}</h2>
             <ul className="sa-list">{mods.filter(x => x.group === gi).map(x => { const d = done(x), lapsed = !!x.passedAt && !d;
               return <li key={x.id}><i className={d ? 'ph-fill ph-check-circle is-done' : 'ph ph-circle'} aria-hidden="true"/>
-                <span className="sa-t"><b>{x.title}</b><span>{d ? 'Passed ' + x.score + '%' + (x.renewBy ? ' · renew by ' + saDate(x.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + x.mins + ' min' + (x.orientation ? ' · opens your portal' : x.required ? ' · required' : '') + (x.note && !x.orientation ? ' · ' + x.note : '')}</span></span>
+                <span className="sa-t"><b>{x.title}</b><span>{d ? 'Passed ' + x.score + '%' + (x.renewBy ? ' · renew by ' + saDate(x.renewBy, { day: 'numeric', month: 'short', year: 'numeric' }) : '') : (lapsed ? 'Needs renewing · ' : '') + x.mins + ' min' + (x.orientation ? ' · start here' : x.required ? ' · required' : '') + (x.note && !x.orientation ? ' · ' + x.note : '')}</span></span>
                 <button type="button" className={'sa-btn' + (d ? '' : ' is-primary')} onClick={() => { setMod(x.id); setStep(0); setAns({}); setRes(null); }}>{d ? 'Review' : lapsed ? 'Renew' : 'Start'}<span className="m15x-sr"> {x.title}</span></button></li>; })}</ul></section>
         ))}
       </div>

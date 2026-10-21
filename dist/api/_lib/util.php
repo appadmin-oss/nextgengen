@@ -420,6 +420,80 @@ function admin_may_manage(array $requester, string $targetRole, ?string $newRole
 
 /** Every staff role name, most reach first. */
 function staff_role_names(): array { return array_keys(ADMIN_ROLES); }
+
+/* ── How a child sees an adult ─────────────────────────────────────────────
+ * A mentor, an instructor or a staff member is shown to a child (and their
+ * family) as a title and a surname, "Mrs Adeyemi", never "Funmi": it is how a
+ * child addresses an adult at the centre, and a first name on a screen a
+ * child holds is one more thing a stranger can use. The title is the
+ * person's own (`honorific`, migration 165, on whichever staff record they
+ * have); with none set it is "Coach". Staff screens keep full names. */
+const STAFF_HONORIFICS = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Engr', 'Coach', 'Aunty', 'Uncle', 'Pastor'];
+const STAFF_HONORIFIC_DEFAULT = 'Coach';
+
+/** A title from the allow-list, case and full stop forgiven; '' for anything else. */
+function staff_honorific_clean(string $h): string {
+    $h = strtolower(trim(rtrim(trim($h), '.')));
+    foreach (STAFF_HONORIFICS as $ok) if (strtolower($ok) === $h) return $ok;
+    return '';
+}
+/** The surname: the last word of the name, any title already in it set aside. */
+function staff_surname(string $fullName): string {
+    $p = preg_split('/\s+/', trim($fullName)) ?: [];
+    while ($p && staff_honorific_clean((string)$p[0]) !== '') array_shift($p);
+    return (string)($p ? end($p) : '');
+}
+/** "Mrs Adeyemi" from a name and a title (blank title → "Coach"). */
+function staff_title_name(string $fullName, string $honorific = ''): string {
+    $h = staff_honorific_clean($honorific) ?: STAFF_HONORIFIC_DEFAULT;
+    $s = staff_surname($fullName);
+    return $s === '' ? $h : $h . ' ' . $s;
+}
+/**
+ * Child-facing names for a set of people, by any id they are known by
+ * (memberId, mentorId or volunteerId). Only staff are renamed: an id that is
+ * not a mentor, a volunteer or a staff-role member is absent from the result,
+ * so a child's own name — or a classmate's — is never turned into "Coach X".
+ * Three queries for the whole set, never one per person.
+ */
+function staff_public_names(array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $ids), static fn($x) => $x !== '')));
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $out = []; $title = [];
+    // The title follows the person: a mentor who is also a member reads the
+    // same on every record, whichever one carries it.
+    $rows = [];
+    foreach (db_all("SELECT mentorId AS a, memberId AS b, volunteerId AS c, fullName, honorific FROM mentors WHERE mentorId IN ($ph) OR memberId IN ($ph)", array_merge($ids, $ids)) as $r) $rows[] = $r;
+    foreach (db_all("SELECT volunteerId AS a, memberId AS b, '' AS c, fullName, honorific FROM volunteers WHERE volunteerId IN ($ph) OR memberId IN ($ph)", array_merge($ids, $ids)) as $r) $rows[] = $r;
+    // A mentor record older than its member link is matched by email, as the mentor gate does.
+    foreach (db_all("SELECT m.memberId AS a, t.mentorId AS b, '' AS c, t.fullName, COALESCE(NULLIF(t.honorific, ''), m.honorific) AS honorific FROM members m
+                     JOIN mentors t ON t.email <> '' AND lower(t.email) = lower(m.email) AND COALESCE(t.memberId, '') = '' WHERE m.memberId IN ($ph)", $ids) as $r) $rows[] = $r;
+    foreach (db_all("SELECT memberId AS a, '' AS b, '' AS c, fullName, honorific FROM members WHERE memberId IN ($ph) AND COALESCE(role,'') IN ('" . implode("','", staff_role_names()) . "')", $ids) as $r) $rows[] = $r;
+    foreach ($rows as $r) foreach (['a', 'b', 'c'] as $k) { $v = (string)$r[$k]; if ($v !== '' && (string)$r['honorific'] !== '' && !isset($title[$v])) $title[$v] = (string)$r['honorific']; }
+    // A title set on the member row reaches their mentor and volunteer rows too.
+    $memberIds = array_values(array_filter(array_map(static fn($r) => (string)$r['b'], $rows)));
+    if ($memberIds) foreach (db_all('SELECT memberId, honorific FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($memberIds), '?')) . ") AND honorific <> ''", $memberIds) as $m) $title[(string)$m['memberId']] ??= (string)$m['honorific'];
+    foreach ($rows as $r) {
+        $h = '';
+        foreach (['a', 'b', 'c'] as $k) if ($h === '' && (string)$r[$k] !== '' && isset($title[(string)$r[$k]])) $h = $title[(string)$r[$k]];
+        $name = staff_title_name((string)$r['fullName'], $h);
+        foreach (['a', 'b', 'c'] as $k) { $v = (string)$r[$k]; if ($v !== '' && in_array($v, $ids, true) && !isset($out[$v])) $out[$v] = $name; }
+    }
+    return $out;
+}
+/** One person's child-facing name; `$fallback` (already child-safe) when they are not staff. */
+function staff_public_name(string $id, string $fallback = ''): string {
+    return staff_public_names([$id])[$id] ?? $fallback;
+}
+/** Record a person's title on every staff record they have (members, mentors, volunteers). */
+function staff_honorific_set(string $memberId, string $mentorId, string $volunteerId, string $honorific): string {
+    $h = staff_honorific_clean($honorific);
+    if ($memberId !== '') { db_exec('UPDATE members SET honorific = ? WHERE memberId = ?', [$h, $memberId]); db_exec('UPDATE mentors SET honorific = ? WHERE memberId = ?', [$h, $memberId]); db_exec('UPDATE volunteers SET honorific = ? WHERE memberId = ?', [$h, $memberId]); }
+    if ($mentorId !== '') db_exec('UPDATE mentors SET honorific = ? WHERE mentorId = ?', [$h, $mentorId]);
+    if ($volunteerId !== '') { db_exec('UPDATE volunteers SET honorific = ? WHERE volunteerId = ?', [$h, $volunteerId]); db_exec('UPDATE mentors SET honorific = ? WHERE volunteerId = ?', [$h, $volunteerId]); }
+    return $h;
+}
 function admin_role_label($role): string { return (string)(ADMIN_ROLES[strtolower((string)$role)]['label'] ?? $role); }
 function admin_role_scoped($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['scoped']); }
 function admin_role_queued($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['queued']); }

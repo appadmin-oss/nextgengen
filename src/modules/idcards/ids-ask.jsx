@@ -65,35 +65,80 @@ function idsNameMatch(typed, name) {
   return toks.length > 0 && toks.every(t => words.some(w => w.startsWith(t) || (t.length >= 4 && idsLev(t, w) <= (t.length >= 7 ? 2 : 1))));
 }
 
+/** The records whose names come closest to a name nobody has: for "did you mean". */
+function idsClosest(raw, all, max) {
+  const toks = String(raw || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!toks.length) return [];
+  const score = r => {
+    const words = String(r.name || "").toLowerCase().split(/\s+/).filter(Boolean);
+    let hit = 0, dist = 0;
+    toks.forEach(t => { const d = Math.min.apply(null, words.map(w => w.startsWith(t) ? 0 : idsLev(t, w)).concat([99])); if (d <= Math.max(1, Math.floor(t.length / 3))) hit++; dist += Math.min(d, 6); });
+    return hit ? hit * 10 - dist : -1;
+  };
+  const seen = new Set();
+  return all.map(r => [score(r), r]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0])
+    .filter(x => !seen.has(x[1].name) && seen.add(x[1].name)).slice(0, max || 2).map(x => x[1]);
+}
+/** A kind's plural in a sentence: lower case, except the programme's own name (NGG). */
+const idsKindWords = k => { const l = IDS_KIND_PLURAL[k] || k; return /^NGG\b/.test(l) ? l : l.toLowerCase(); };
+const IDS_KIND_ONE = { member: "an NGG member", summer: "a Summer School participant", volunteer: "a volunteer", afrovanguard: "an Afrovanguard member" };
+
 /** The plan applied to the studio's lists. Pure. */
 function idsPlanSelect(plan, ctx) {
   const p = plan || {};
   const pool = ctx.pool || [], all = ctx.all || [], blockedOf = ctx.isBlocked || (() => false);
   const norm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const okKind = r => !p.kind || r.kind === p.kind;
+  const notKinds = p.notKinds || [];
+  const okKind = r => (!p.kind || r.kind === p.kind) && !notKinds.includes(r.kind);
+  /* "Badmus should be NGG": a kind said of one named person decides which of
+     their records is meant, and nothing else. */
+  const kindOf = p.kindOf || {};
+  const kindFor = raw => { const k = Object.keys(kindOf).find(n => idsNameMatch(n, raw) || idsNameMatch(raw, n)); return k ? kindOf[k] : null; };
   const okCentre = r => !p.centre || (p.centre === "none" ? !r.centre : r.centre === p.centre);
   const okWhich = r => !p.which || p.which === "all" || r.reason === p.which;
   const okDate = r => (!p.dateFrom && !p.dateTo) || (!!r.day && (!p.dateFrom || r.day >= p.dateFrom) && (!p.dateTo || r.day <= p.dateTo));
   const okNum = r => (p.numFrom == null && p.numTo == null) || (r.seq != null && (p.numFrom == null || r.seq >= p.numFrom) && (p.numTo == null || r.seq <= p.numTo));
   const findId = (list, w) => list.filter(c => norm(c.displayId) === w || norm(c.id) === w || (/^\d+$/.test(w) && c.seq === parseInt(w, 10)));
-  const hits = [], missing = [], carded = [], ambiguous = [];
+  const hits = [], missing = [], carded = [], ambiguous = [], filtered = [], notWaiting = [], twoLists = [];
+  let asked = 0;
+  /* Somebody named but kept off by the plan's own narrowing (only NGG, only
+     Ijaiye): said as that, with who they are, never as "not found". */
+  const whyOff = (r, narrow) => !okKind(r) ? "is " + (IDS_KIND_ONE[r.kind] || r.kind) + (p.kind ? ", and this is " + idsKindWords(p.kind) + " only" : ", and those are left out")
+    : narrow && !okCentre(r) ? "is at " + (r.centre || "no centre") + ", and this is " + (p.centre === "none" ? "people with no centre" : p.centre) + " only" : "";
   /* Named people are wanted whatever the "new / reprint" filter says; the
      kind (and, for names, the centre) still narrows who a name can mean. */
   const named = (ids, names, narrow) => {
     (ids || []).forEach(raw => {
+      asked++;
       const w = norm(raw);
       const inPool = findId(pool.filter(okKind), w);
       if (inPool.length) return hits.push(...inPool);
       const had = findId(all.filter(okKind), w).filter(r => r.printedBefore);
-      if (had.length) carded.push(...had); else missing.push(raw);
+      if (had.length) return carded.push(...had);
+      const any = findId(all, w);
+      if (any.length && whyOff(any[0], false)) return filtered.push({ name: raw, who: any[0].name, why: whyOff(any[0], false), rec: any[0] });
+      if (any.length) return notWaiting.push({ name: raw, who: any[0].name });
+      missing.push(raw);
     });
     (names || []).forEach(raw => {
-      const near = r => okKind(r) && (!narrow || okCentre(r)) && idsNameMatch(raw, r.name);
-      const inPool = pool.filter(near);
+      asked++;
+      const want = kindFor(raw);
+      const near = r => (want ? r.kind === want : okKind(r)) && (!narrow || okCentre(r)) && idsNameMatch(raw, r.name);
+      let inPool = pool.filter(near);
       if (inPool.length > IDS_ASK_NAME_AMBIGUOUS) return ambiguous.push({ name: raw, n: inPool.length });
+      /* One person on two lists (an NGG member who was also at Summer School)
+         is one card, not two: say so, and which one to keep is theirs to say. */
+      const kinds = Array.from(new Set(inPool.map(r => r.kind)));
+      if (!want && kinds.length > 1 && new Set(inPool.map(r => r.name.toLowerCase())).size === 1) twoLists.push({ name: inPool[0].name, kinds });
       if (inPool.length) return hits.push(...inPool);
       const had = all.filter(r => near(r) && r.printedBefore);
-      if (had.length && had.length <= IDS_ASK_NAME_AMBIGUOUS) carded.push(...had); else if (had.length) ambiguous.push({ name: raw, n: had.length }); else missing.push(raw);
+      if (had.length && had.length <= IDS_ASK_NAME_AMBIGUOUS) return carded.push(...had);
+      if (had.length) return ambiguous.push({ name: raw, n: had.length });
+      const any = all.filter(r => idsNameMatch(raw, r.name));
+      const off = any.find(r => whyOff(r, narrow) || (want && r.kind !== want));
+      if (any.length && off) return filtered.push({ name: raw, who: off.name, why: want && off.kind !== want ? "is " + (IDS_KIND_ONE[off.kind] || off.kind) + ", not " + (IDS_KIND_ONE[want] || want) : whyOff(off, narrow), rec: off });
+      if (any.length) return notWaiting.push({ name: raw, who: any[0].name });
+      missing.push(raw);
     });
   };
   if ((p.ids || []).length || (p.names || []).length) named(p.ids, p.names, true);
@@ -113,7 +158,26 @@ function idsPlanSelect(plan, ctx) {
   const max = Math.min(p.limit || IDS_ASK_PICK_MAX, IDS_ASK_PICK_MAX);
   const cut = Math.max(0, pick.length - max);
   if (cut) pick = pick.slice(0, max);
-  return { pick, blocked, missing, carded: uniq(carded).filter(r => !out.has(r.key)), ambiguous, cut, excluded };
+  /* A name nobody has: the closest names on the lists, so a reversed or
+     misspelt name ("Taiwo Ayomide" for "Ayomide Taiwo-Bello") is one tap away. */
+  const suggest = missing.map(raw => ({ name: raw, near: idsClosest(raw, all, 2) })).filter(x => x.near.length);
+  return { pick, blocked, missing, carded: uniq(carded).filter(r => !out.has(r.key)), ambiguous, cut, excluded, filtered, notWaiting, twoLists, suggest, asked };
+}
+
+/* When fewer cards go on than people were named, the count says why in the
+   same line ("4 named: 1 has no photo yet"), so "3 cards" never reads as a
+   name the assistant lost. */
+function idsPlanGapNote(sel) {
+  if (!sel.asked || sel.pick.length >= sel.asked) return "";
+  const parts = [];
+  if (sel.blocked.length) parts.push(sel.blocked.length + " no photo yet");
+  if (sel.carded.length) parts.push(sel.carded.length + " already carded");
+  if (sel.filtered.length) parts.push(sel.filtered.length + " kept off by the filter");
+  if (sel.notWaiting.length) parts.push(sel.notWaiting.length + " not waiting for a card");
+  if (sel.missing.length) parts.push(sel.missing.length + " not found");
+  if (sel.ambiguous.length) parts.push(sel.ambiguous.length + " matching several people");
+  if (sel.excluded.length) parts.push(sel.excluded.length + " left out as asked");
+  return sel.asked + " named" + (parts.length ? ": " + parts.join(", ") : "");
 }
 
 /** "6–12 Oct", "since 6 Oct", "until 12 Oct". */
@@ -144,6 +208,8 @@ function idsPlanWhat(p) {
   out.push({ label: p.which === "reprint" ? "Reprints" : p.which === "all" ? "Every waiting card" : targeted ? "Named cards" : "New cards",
     drop: p.which && p.which !== "new" ? q => idsPlanWithout(q, ["which"]) : null });
   if (p.kind) out.push({ label: IDS_KIND_PLURAL[p.kind] || p.kind, drop: q => idsPlanWithout(q, ["kind"]) });
+  (p.notKinds || []).forEach(k => out.push({ label: "no " + idsKindWords(k), tone: "out", drop: q => { const n = Object.assign({}, q); n.notKinds = (n.notKinds || []).filter(x => x !== k); if (!n.notKinds.length) delete n.notKinds; return n; } }));
+  Object.keys(p.kindOf || {}).forEach(nm => out.push({ label: nm + " as " + (IDS_KIND_ONE[p.kindOf[nm]] || p.kindOf[nm]).replace(/^an? /, ""), drop: q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf); delete n.kindOf[nm]; if (!Object.keys(n.kindOf).length) delete n.kindOf; return n; } }));
   if (p.centre) out.push({ label: p.centre === "none" ? "no centre on the record" : p.centre, drop: q => idsPlanWithout(q, ["centre"]) });
   if (p.dateFrom || p.dateTo) out.push({ label: (p.kind === "member" ? "joined " : "registered ") + idsAskDays(p.dateFrom, p.dateTo), drop: q => idsPlanWithout(q, ["dateFrom", "dateTo"]) });
   if (p.numFrom != null || p.numTo != null) out.push({ label: "numbers " + (p.numFrom != null ? p.numFrom : "…") + "–" + (p.numTo != null ? p.numTo : "…"), drop: q => idsPlanWithout(q, ["numFrom", "numTo"]) });
@@ -162,7 +228,9 @@ function idsPlanWhat(p) {
    question this can answer; the request then goes to the planner.
    `c` is the studio's state, built in ids-app.jsx (askCtx). */
 const IDS_ASK_CAUSE = { lost: "lost: new QR", never_received: "never received: new QR", damaged: "damaged", name: "details changed" };
-const IDS_ASK_SEL_KEYS = ["kind", "centre", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "limit"];
+const IDS_ASK_SEL_KEYS = ["kind", "notKinds", "kindOf", "centre", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "limit"];
+/** The acts a plan asks for, in order ("improve the photos, then ask the rest for one"). */
+const idsPlanActs = p => (p && (p.acts || (p.do ? [].concat(p.do) : []))) || [];
 const idsPlanHasSel = p => IDS_ASK_SEL_KEYS.some(k => p && p[k] !== undefined);
 function idsAskIsQuestion(text) {
   const t = String(text || "").trim().toLowerCase();
@@ -229,11 +297,14 @@ function idsAskAnswer(text, c) {
   if (!idsAskIsQuestion(text)) return null;
   const t = String(text || "").toLowerCase();
   const n = c.n, sheets = c.sheets, cardsW = k => k + " " + (k === 1 ? "card" : "cards"), sheetsW = k => k + " " + (k === 1 ? "sheet" : "sheets");
-  if (/\b(what can you do|what do you do|help|how do (i|you) use|how does this work|what can i (say|ask))\b/.test(t)) {
+  // "Can you help position the image?" is a request about a photo, not a request for this list.
+  if (/\b(what can you do|what do you do|help|how do (i|you) use|how does this work|what can i (say|ask))\b/.test(t) && !/\b(photos?|pictures?|images?|pics?|faces?|backgrounds?|bg|cards?|sheet|print\w*|position|crop|zoom|move)\b/.test(t)) {
     return "I set up the sheet from what you write, and answer questions about it from the studio’s own records.\n\n"
       + "**Choose who**: “new cards for Egbeda members”, “reprint 026-003 and 026-014”, “participants who registered this week”, “volunteers, by name”.\n\n"
       + "**Change it**: “fronts only”, “only Ijaiye”, “add 026-010”, “not Ada”, “make it A3”, “margin 5mm”, “skip the first 3 slots”, “make it a proof”.\n\n"
-      + "**Act**: “fill the gaps”, “ask the ones with no photo for photos”, “clear the sheet”.\n\n"
+      + "**Act**: “fill the gaps”, “ask the ones with no photo for photos”, “improve the photos and remove their backgrounds”, “help position Ada’s photo”, “clear the sheet”.\n\n"
+      + "**Photos**: press 📎 to add photos. Name each file after the person or their ID (“Ada Obi.jpg”, “026-014.png”) and I match them; anyone I can’t match, you pick.\n\n"
+      + "**AI**: say “use Gemini” (or Groq, Claude, OpenAI) to choose who reads your requests, or “which AI?”.\n\n"
       + "**Ask**: “why can’t I print yet?”, “who’s blocked?”, “who’s on the sheet?”, “has Ada Obi got a card?”, “how much card stock?”.\n\n"
       + "I can’t print and I can’t mark anyone as printed: Print stays your press, with the count on it.";
   }
@@ -302,9 +373,12 @@ function idsCmdLabel(k, v, st) {
 }
 function idsCmdPreview(plan, st) {
   const out = IDS_ASK_SET_KEYS.filter(k => plan[k] !== undefined).map(k => "set " + idsCmdLabel(k, plan[k], st));
-  if (plan.do === "clear") out.push("take every card off the sheet");
-  if (plan.do === "fill") out.push("fill the empty slots on the last sheet");
-  if (plan.do === "askPhotos") out.push("open a photo request for the people with no photo" + (plan.centre ? " at " + plan.centre : "") + " (you confirm the count before it sends)");
+  const acts = idsPlanActs(plan), ph = plan.photo || {};
+  if (acts.includes("clear")) out.push("take every card off the sheet");
+  if (acts.includes("fill")) out.push("fill the empty slots on the last sheet");
+  if (acts.includes("improvePhotos")) out.push("open Improve photos" + [ph.removeBg && "a plain grey background", ph.brighten && "brighter", ph.sharpen && "sharper", ph.zoom > 1 && "closer on the face"].filter(Boolean).map((x, i) => (i ? ", " : " with ") + x).join("") + " (you check it and press Improve)");
+  if (acts.includes("adjustPhoto")) out.push("open the framing tool to position the photo");
+  if (acts.includes("askPhotos")) out.push("open a photo request for the people with no photo" + (plan.centre ? " at " + plan.centre : "") + " (you confirm the count before it sends)");
   return out;
 }
 
@@ -327,6 +401,7 @@ function IdsAssistant({ A, onClose }) {
   const [pick, setPick] = React.useState(0);
   const inputRef = React.useRef(null);
   const logRef = React.useRef(null);
+  const fileRef = React.useRef(null);
   React.useEffect(() => { A.bindInput(inputRef); }, []); // eslint-disable-line
   React.useEffect(() => { const el = logRef.current; if (el) el.scrollTop = el.scrollHeight; }, [A.chat.length, A.busy, A.liveId]);
   const send = t => {
@@ -448,6 +523,8 @@ function IdsAssistant({ A, onClose }) {
             <button type="button" aria-pressed={A.mode === "act"} className={A.mode === "act" ? "is-on" : ""} onClick={() => A.setMode("act")} title="Sets up the sheet straight away"><IdsIcon name="lightning"/>Act</button>
           </span>
           <span className="ids-grow"/>
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={e => { A.upload(e.target.files); e.target.value = ""; }}/>
+          <button type="button" className="ids-iconbtn" aria-label="Add photos" title="Add photos: name each file after the person or their ID" onClick={() => fileRef.current && fileRef.current.click()}><IdsIcon name="paperclip"/></button>
           {SR && <button type="button" className={"ids-iconbtn" + (listening ? " is-on" : "")} aria-pressed={listening} aria-label={listening ? "Stop listening" : "Speak your request"} title={listening ? "Listening… press to stop" : "Speak your request"} onClick={listen}><IdsIcon name={listening ? "microphone-slash" : "microphone"}/></button>}
           {A.chat.length > 0 && <button type="button" className="ids-iconbtn" aria-label="New conversation" title="New conversation" onClick={A.reset}><IdsIcon name="note-pencil"/></button>}
           <button type="submit" className="ids-ai-send" aria-label="Send" disabled={!text.trim() || A.busy}><IdsIcon name="arrow-up"/></button>
@@ -485,6 +562,7 @@ function IdsAskReply({ m, A }) {
       })}
     </div>
   );
+  if (m.kind === "upload") return <IdsAskUpload m={m} A={A}/>;
   if (m.kind === "cmd") return (
     <div className={"ids-ai-card" + (m.pending ? "" : " is-done")}>
       <span className="ids-ai-who">Assistant{m.undone ? " · undone" : ""}</span>
@@ -493,7 +571,16 @@ function IdsAskReply({ m, A }) {
         <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm ids-btn--outline" onClick={() => A.apply(m)}>Apply</button></div>
       </> : <>
         {m.ran && m.ran.length > 0 && <ul className="ids-ai-ran" aria-label="What it did">{m.ran.map((x, i) => <li key={i}><IdsIcon name="check"/>{x}</li>)}</ul>}
-        {(m.notes || []).map((x, i) => <p key={i} className="ids-ask-issue is-info"><IdsIcon name="info"/><span className="ids-grow">{x}</span></p>)}
+        {(m.notes0 || []).concat(m.notes || []).map((x, i) => <p key={i} className="ids-ask-issue is-info"><IdsIcon name="info"/><span className="ids-grow">{x}</span></p>)}
+        {(m.people || []).map(key => {
+          const P = A.person(key);
+          return P && P.acts.length > 0 && (
+            <div key={key} className="ids-ai-person" role="group" aria-label={"For " + P.name}>
+              <span className="ids-ai-person-n">{P.name}</span>
+              {P.acts.map(a => <button key={a.label} type="button" className="ids-btn ids-btn--sm" onClick={a.run}>{a.label}</button>)}
+            </div>
+          );
+        })}
         {m.undo && !m.undone && m.id === A.lastCmdId && <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm" onClick={() => A.undoCmd(m)}>Undo</button></div>}
       </>}
       {by && <p className="ids-ai-by">{by}</p>}
@@ -502,7 +589,8 @@ function IdsAskReply({ m, A }) {
   if (m.kind === "empty") return (
     <div className="ids-ai-card is-warn">
       <span className="ids-ai-who">Assistant</span>
-      <p className="ids-ai-p">I couldn’t tell what to print from that. Name who (members, Summer School, volunteers), where, or the ID numbers. Or ask me a question about the sheet.</p>
+      <p className="ids-ai-p">I couldn’t tell what to print or do from that. Name who (members, Summer School, volunteers), where, or the ID numbers; ask for something to be done (“improve the photos”, “fill the gaps”); or ask me a question about the sheet. “What can you do?” lists it all.</p>
+      {(m.notes0 || []).map((x, i) => <p key={i} className="ids-ask-issue is-info"><IdsIcon name="info"/><span className="ids-grow">{x}</span></p>)}
       {by && <p className="ids-ai-by">{by}</p>}
     </div>
   );
@@ -511,7 +599,7 @@ function IdsAskReply({ m, A }) {
   if (!live) return (
     <div className={"ids-ai-card is-past"}>
       <span className="ids-ai-who">Assistant{m.undone ? " · undone" : m.pending ? "" : " · superseded"}</span>
-      <p className="ids-ai-p"><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"}{r.what.length ? " · " + r.what.map(w => w.label).join(" · ") : ""}</p>
+      <p className="ids-ai-p"><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"}{r.gapNote ? " (" + r.gapNote + ")" : ""}{r.what.length ? " · " + r.what.map(w => w.label).join(" · ") : ""}</p>
       {m.pending && !m.undone && (
         <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm ids-btn--outline" onClick={() => A.apply(m)}>Apply</button></div>
       )}
@@ -526,6 +614,7 @@ function IdsAskReply({ m, A }) {
       <p className="ids-ai-h">
         {r.n ? <><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"} on the sheet</> : "Nothing to put on the sheet"}
         {r.n > 0 && L && <span className="ids-muted"> · {L.sheets} {L.sheets === 1 ? "sheet" : "sheets"}</span>}
+        {r.gapNote && <span className="ids-muted"> · {r.gapNote}</span>}
       </p>
       <ul className="ids-ask-what" aria-label="What it understood">
         {r.what.map((w, i) => (
@@ -541,6 +630,7 @@ function IdsAskReply({ m, A }) {
           <IdsIcon name={x.tone === "bad" ? "warning-octagon" : x.tone === "warn" ? "warning" : "info"}/>
           <span className="ids-grow">{x.text}</span>
           {x.action && <button type="button" className="ids-linkbtn" onClick={x.onAction}>{x.action}</button>}
+          {(x.actions || []).map(a => <button key={a.label} type="button" className="ids-linkbtn" onClick={a.run}>{a.label}</button>)}
         </p>
       ))}
       {L && L.fill > 0 && (
@@ -560,6 +650,71 @@ function IdsAskReply({ m, A }) {
       </div>
       {L && L.block && <p className="ids-help">{L.block}</p>}
       {by && <p className="ids-ai-by">{by}</p>}
+    </div>
+  );
+}
+
+/* Photos added in the conversation: each file, who it is for (matched by its
+   name, or picked here), then one Save for all of them with a verdict per
+   photo. A reply restored after a refresh shows what happened, not the files. */
+function IdsAskUpload({ m, A }) {
+  const [find, setFind] = React.useState({});
+  const rows = m.rows || [];
+  const likely = m.likely || [];
+  const ready = rows.filter(r => r.key).length;
+  const nameOf = key => { const l = likely.find(x => x.key === key); if (l) return l.name; const p = A.person(key); return p ? p.name : key; };
+  if (m.status === "done" || m.restored) {
+    const res = m.results || [];
+    const ok = res.filter(r => r.ok), bad = res.filter(r => !r.ok);
+    return (
+      <div className="ids-ai-card is-done">
+        <span className="ids-ai-who">Assistant · photos</span>
+        {!res.length && <p className="ids-ai-p">These photos weren’t saved before the page reloaded. Add them again with 📎.</p>}
+        {ok.length > 0 && <ul className="ids-ai-ran" aria-label="Saved">{ok.map(r => <li key={r.key}><IdsIcon name="check"/>Saved {r.name}’s photo</li>)}</ul>}
+        {bad.map(r => <p key={r.key} className="ids-ask-issue is-bad"><IdsIcon name="warning-octagon"/><span className="ids-grow">{r.name}: not saved — {r.why}.</span></p>)}
+        {ok.length > 0 && !m.restored && <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm" onClick={() => A.upToSheet(ok.map(r => r.key))}>Put {ok.length === 1 ? "them" : "them all"} on the sheet</button></div>}
+      </div>
+    );
+  }
+  return (
+    <div className="ids-ai-card">
+      <span className="ids-ai-who">Assistant · photos</span>
+      <p className="ids-ai-p">{ready === rows.length ? "I matched every photo. Check them, then save." : ready ? ready + " of " + rows.length + " matched by file name. Choose who the others are for." : "Choose who each photo is for."}</p>
+      <ul className="ids-ask-up" aria-label="Photos to save">
+        {rows.map(r => {
+          const q = find[r.uid] || "";
+          const hits = q ? A.upPeople(q) : [];
+          return (
+            <li key={r.uid} className="ids-ask-up-row">
+              <img src={r.thumb} alt={"Photo " + r.file} className="ids-ask-up-img"/>
+              <div className="ids-ask-up-main">
+                <span className="ids-ask-up-file ids-mono">{r.file}</span>
+                <label className="ids-ask-up-who"><span className="ids-sr">Who is this photo for</span>
+                  <select value={r.key} disabled={m.status === "saving"} onChange={e => A.upSet(m.id, r.uid, e.target.value)}>
+                    <option value="">Choose who…</option>
+                    {r.key && !likely.some(l => l.key === r.key) && <option value={r.key}>{nameOf(r.key)}</option>}
+                    {["On the sheet", "Waiting for a photo"].map(g => likely.some(l => l.why === g) && (
+                      <optgroup key={g} label={g}>{likely.filter(l => l.why === g).map(l => <option key={l.key} value={l.key}>{l.name}{l.displayId ? " · " + l.displayId : ""}</option>)}</optgroup>
+                    ))}
+                  </select>
+                </label>
+                {r.auto && r.key && <span className="ids-help">Matched from the file name</span>}
+                <input className="ids-ask-up-find" type="search" placeholder="Or search a name or ID" aria-label={"Search who " + r.file + " is for"} value={q} disabled={m.status === "saving"}
+                  onChange={e => setFind(f => Object.assign({}, f, { [r.uid]: e.target.value }))}/>
+                {hits.length > 0 && <div className="ids-ask-up-hits" role="group" aria-label="Matches">
+                  {hits.map(h => <button key={h.key} type="button" className="ids-btn ids-btn--sm" onClick={() => { A.upSet(m.id, r.uid, h.key); setFind(f => Object.assign({}, f, { [r.uid]: "" })); }}>{h.name}{h.displayId ? " · " + h.displayId : ""}</button>)}
+                </div>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="ids-ai-acts">
+        <button type="button" className="ids-btn ids-btn--sm ids-btn--outline" disabled={!ready || m.status === "saving"} onClick={() => A.upSave(m)}>
+          <IdsIcon name="upload-simple"/>{m.status === "saving" ? "Saving " + (m.done || 0) + " of " + ready + "…" : "Save " + ready + " " + (ready === 1 ? "photo" : "photos")}
+        </button>
+      </div>
+      <p className="ids-help" role="status" aria-live="polite">{rows.length - ready ? (rows.length - ready) + " not matched yet: those aren’t saved." : "Each photo replaces the one on their record; it is checked like any headshot first."}</p>
     </div>
   );
 }

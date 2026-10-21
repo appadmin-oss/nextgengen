@@ -503,7 +503,7 @@ function ms_choose(array $match, string $mentorId, string $chosenBy, string $act
     $match['mentorId'] = $mentorId;
     $tasks = ms_cadence_create($match, $start);
     push_notification((string)$match['memberId'], ['kind' => 'mentor', 'title' => 'You have a mentor',
-        'body' => (string)$mentor['fullName'] . ' is your mentor. Your first weeks are for getting to know each other.', 'linkPage' => 'dashboard']);
+        'body' => staff_public_name($mentorId, 'A mentor') . ' is your mentor. Your first weeks are for getting to know each other.', 'linkPage' => 'dashboard']);
     audit('mentorship.match.chosen', $actorId, (string)$match['memberId'], ['matchId' => $match['matchId'], 'mentorId' => $mentorId, 'by' => $chosenBy]);
     return ['ok' => true, 'matchId' => $match['matchId'], 'mentorId' => $mentorId, 'tasks' => $tasks];
 }

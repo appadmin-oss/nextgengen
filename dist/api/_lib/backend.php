@@ -114,6 +114,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.retreat.book'   => 'member_mp_retreat_book',
             'member.mentor.team'           => 'member_mp_team',
             'member.mentor.academy'        => 'member_mp_academy',
+            'member.staff.title'           => 'member_staff_title',
+            'member.mentor.growth'         => 'member_mp_growth',
             'member.mentor.academy.result' => 'member_mp_academy_result',
             'instructor.academy'             => 'instructor_academy',
             'instructor.academy.result'      => 'instructor_academy_result',
@@ -126,6 +128,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.messages'       => 'member_mp_messages',
             'member.mentor.message.read'   => 'member_mp_message_read',
             'member.mentor.message.reply'  => 'member_mp_message_reply',
+            'member.mentor.message.search'   => 'member_mp_message_search',
             'member.mentor.message.lead'   => 'member_mp_message_lead',
             'member.mentor.nudge.done'     => 'member_mp_nudge_done',
             // The member's own side of mentoring.

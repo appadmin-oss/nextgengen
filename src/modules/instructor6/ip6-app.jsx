@@ -49,7 +49,7 @@ const IP6_ERR = {
   aim_required: 'Write the lesson goal first.', question_and_two_options: 'The hinge needs a question and two options.', no_results: 'Mark at least one exit ticket.',
   summary_required: 'Write what you covered first.', roll_not_closed: 'Close the roll before filing the log.', evidence_required: 'Say what you saw for each child who moved up.',
   no_marks: 'Nothing to save.', not_found: 'That record wasn’t found.', network: 'You’re offline. It’s saved on this device and will send.', rate_limited: 'Too many in a row. Wait a minute.',
-  orientation_required: 'Finish “Start here” in the Academy first. It opens the rest of your portal.', answer_all: 'Answer every question first.',
+  orientation_required: 'Not saved: finish your Academy first. You can look around everything until then.', answer_all: 'Answer every question first.',
   retry_later: 'That is three tries at this module today. Read it again and try tomorrow.',
   choose_the_child: 'Choose the child first.', choose_the_kind: 'Choose what kind of concern.', say_what_happened: 'Write what happened first.', report_limit: 'You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.',
 };
@@ -62,8 +62,7 @@ function ip6Date(iso, o) { const d = /^\d{4}-\d{2}-\d{2}/.test(String(iso || '')
 function ip6Short(skill) { const w = String(skill || '').split(/\s+/); return w.length <= 3 ? skill : w.slice(0, 3).join(' '); }
 function ip6Slug(s) { return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
 
-/* The screens open before "Start here" is done. */
-const IP6_ORI_OPEN = ['academy', 'support', 'report'];
+
 
 const ip6Api = {
   today: o => NGGApi.member.teachToday(o), cls: o => NGGApi.member.teachClass(o), hist: o => NGGApi.member.classHistory(o),
@@ -122,6 +121,10 @@ class Ip6Portal extends React.Component {
   refreshClass() { const slot = this.slotArgs(); this.load('cls', () => ip6Api.cls(slot)); this.load('today', () => ip6Api.today(slot)); }
   /* Save, with the outbox. A queued write is not an error: it is safe and says so. */
   save(body, label, okText) {
+    /* Until the Academy is complete the portal can be explored but not saved
+       to (the server refuses it too). Said here, before the outbox would
+       bank a write the server will never take. */
+    if (this.oriLocked()) { this.toast('Not saved: finish your Academy first. You can look around everything until then.'); return Promise.resolve(null); }
     return ip6Api.act(Object.assign(this.slotArgs(), body), label)
       .then(r => { if (okText) this.toast(typeof okText === 'function' ? okText(r || {}) : okText); this.readQueue(); return r || {}; })
       .catch(e => { this.readQueue(); if (e && e.queued) { this.toast('Saved on this phone. It sends when the signal is back.'); return { queued: true }; } this.toast(ip6Err(e)); return null; });
@@ -133,10 +136,8 @@ class Ip6Portal extends React.Component {
   /* "Start here" (domain/academy.php): until the portal guides are passed the
      portal opens on the Academy, with Support and Report a concern. */
   oriLocked() { const a = this.state.d.acad; return !!(a && a.orientation && a.orientation.ok === false); }
-  oriGate(scr) { if (this.oriLocked() && !IP6_ORI_OPEN.includes(scr)) { this.toast('Finish “Start here” in the Academy first — it opens the rest of your portal.'); return 'academy'; } return scr; }
-  componentDidUpdate() { if (this.oriLocked() && !IP6_ORI_OPEN.includes(this.state.scr)) this.setState({ scr: 'academy', hist: [] }); }
-  goTop(scr) { scr = this.oriGate(scr); this.setState({ scr, hist: [] }); this.scrollTop(); }
-  goTo(scr, extra) { if (this.oriGate(scr) !== scr) return this.goTop('academy'); const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
+  goTop(scr) { this.setState({ scr, hist: [] }); this.scrollTop(); }
+  goTo(scr, extra) { const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
   goBack() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'today', hist: h.slice(0, -1) }); this.scrollTop(); }
   loadStu(id) { if (id && !this.state.d['stu:' + id]) this.load('stu:' + id, () => ip6Api.stu(id)); }
 
@@ -181,6 +182,15 @@ class Ip6Portal extends React.Component {
   /* ── Loading and an honest error, inside <main> ─────────────────────── */
   slot() {
     const S = this.state; const need = ['today', 'cls'];
+    const acadBar = this.oriLocked() && S.scr !== 'academy' ? (() => { const o = (S.d.acad || {}).orientation || {};
+      return <div className={'ip6-slot' + (S.w < 760 ? ' is-narrow' : '')}><div className="m15x-acad" role="note"><i className="ph-fill ph-graduation-cap" aria-hidden="true"/>
+        <span><b>Your Academy: {o.done || 0} of {o.required || 0} done.</b> Look around as much as you like — nothing you do here saves until it’s complete (about {o.mins || 0} minutes left).</span>
+        <button type="button" onClick={() => this.goTop('academy')}>Open the Academy</button></div></div>; })() : null;
+    const inner = this.slotInner();
+    return acadBar ? <>{acadBar}{inner}</> : inner;
+  }
+  slotInner() {
+    const S = this.state; const need = ['today', 'cls'];
     if (S.scr === 'assignments' || S.scr === 'academy') return null;   // the desk and the Academy load their own data, and say so
     const e = need.map(k => S.er[k]).find(Boolean);
     if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
@@ -218,7 +228,6 @@ class Ip6Portal extends React.Component {
       { h: 'Teach', items: [['analytics', 'Analytics', 'ph ph-chart-bar', ''], ['skills', 'Skills board', 'ph ph-ladder', ''], ['marking', 'Marking', 'ph ph-check-square', markLeft ? String(markLeft) : ''], ['assignments', 'Assignments', 'ph ph-clipboard-text', ''], ['curriculum', 'Curriculum', 'ph ph-books', '']] },
       { h: 'People', items: [['students', 'Students', 'ph ph-users-three', ''], ['results', 'School results', 'ph ph-exam', resAttn ? String(resAttn) : ''], ['community', 'Community', 'ph ph-chats-circle', cmNeed.length ? String(cmNeed.length) : ''], ['support', 'Support', 'ph ph-lifebuoy', ''], ['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : '']] },
     ];
-    if (oriL) groups.splice(0, groups.length, { h: 'Start here', items: [['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : ''], ['support', 'Support', 'ph ph-lifebuoy', '']] });
     const navCur = cur === 'student' ? 'students' : cur === 'report' ? 'support' : cur;
     const flat = [].concat(...groups.map(g => g.items));
     const tabIds = ['today', 'roll', 'teach', 'exit'];
@@ -227,12 +236,11 @@ class Ip6Portal extends React.Component {
     const AREAS = [['Today', 'ph ph-sun-horizon', [['today', 'Today']]], ['Saturday', 'ph ph-presentation-chart', [['roll', 'Roll'], ['plan', 'Plan'], ['teach', 'Teach'], ['exit', 'Exit ticket'], ['log', 'Session log']]], ['Progress', 'ph ph-chart-bar', [['marking', 'Marking'], ['assignments', 'Assignments'], ['skills', 'Skills board'], ['analytics', 'Analytics'], ['results', 'School results']]], ['Students', 'ph ph-users-three', [['students', 'Students'], ['community', 'Community']]], ['Resources', 'ph ph-books', [['curriculum', 'Curriculum'], ['support', 'Support'], ['academy', 'Academy']]]]
       .concat(this.props.onSummer ? [['Summer School', 'ph ph-sun', [['summer', 'Summer School']]]] : [])
       .map(([label, icon, kids]) => { const b = kids.filter(([id]) => bOf(id)).length; return { label, icon, kids, ids: kids.map(k => k[0]), b }; });
-    if (oriL) AREAS.splice(0, AREAS.length, { label: 'Start here', icon: 'ph ph-graduation-cap', kids: [['academy', 'Academy'], ['support', 'Support']], ids: ['academy', 'support'], b: acadTodo ? 1 : 0 });
     const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
     const IP6_HUE = { today: 'amber', roll: 'blue', marking: 'teal', students: 'violet', curriculum: 'slate', summer: 'amber' };
     const hue = a => PORTAL_HUE[IP6_HUE[a.ids[0]] || 'slate'], hueOn = hue(area);
     const inDetail = cur === 'student' || cur === 'report';
-    const toScr = id => { if (id === 'summer') return this.props.onSummer(); this.setState({ scr: this.oriGate(id) }); this.scrollTop(); };
+    const toScr = id => { if (id === 'summer') return this.props.onSummer(); this.setState({ scr: id }); this.scrollTop(); };
     const areaNav = [{ h: '', hasH: false, items: AREAS.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace('ph ', 'ph-fill ') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd' : 'none', fw: on ? 600 : 500, badge: a.b ? String(a.b) : '', hasBadge: !!a.b, go: () => a.ids[0] === 'summer' ? this.props.onSummer() : this.goTop(a.ids[0]) }; }) }];
     const areaTabbar = AREAS.filter(a => a.ids[0] !== 'summer').map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace('ph ', 'ph-fill ') : a.icon, cur: on ? 'page' : undefined, fw: on ? 600 : 500, fg: on ? hue(a) : '#626a6e', hasBadge: !!a.b, go: () => this.goTop(a.ids[0]) }; });
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const b = bOf(id); return { l, on: on ? 'true' : 'false', fg: on ? hueOn : '#5a5a60', fw: on ? 600 : 500, bar: on ? hueOn : 'transparent', badge: b, hasBadge: !!b, go: () => toScr(id) }; });
@@ -242,7 +250,7 @@ class Ip6Portal extends React.Component {
       exit: 'Find out who learned it, then give one piece of feedback to the whole class', analytics: course.name + ' · ' + L.length + ' students', today: course.name + (course.week ? ' · week ' + course.week : '') + ' · ' + ip6Date(cls.date || today.date, { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + time + (course.room ? ' · ' + course.room : ''),
       roll: hereN + ' of ' + L.length + ' here', log: course.name + (course.week ? ' · week ' + course.week : ''), skills: course.name + ' · ' + C.skills.length + ' skills · four levels, not scores', marking: markLeft + ' answers and ' + toGrade + ' homework to review',
       curriculum: course.name, students: L.length + ' in your class', student: [selM.age !== null && selM.age !== undefined ? 'Age ' + selM.age : '', selM.mentor ? 'mentor ' + selM.mentor : 'no mentor yet'].filter(Boolean).join(' · '), support: 'You’re not on your own', report: 'Goes straight to the safeguarding officer', more: '',
-      academy: oriL ? 'Start here: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' portal guides done' : 'How to use this portal, and the training for teaching at NGG' };
+      academy: oriL ? 'Your Academy: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' done' : 'How to use this portal, and the training for teaching at NGG' };
     const rem = S.timer ? Math.max(0, Math.ceil((S.timer - Date.now()) / 1000)) : 0;
     const out = {
       rootRef: this.rootRef, mainSlot: this.slot(), mainSlotEnd: cur === 'assignments' ? <div className={'ip6-asd' + (narrow ? ' is-narrow' : '')}><AssignmentDesk api={NGGApi.member.assignDesk()} title={false}/></div>
@@ -361,6 +369,8 @@ class Ip6Portal extends React.Component {
     o.assignments = hw ? [{ t: hw.title, div: course.name, due: ip6Date(hw.dueAt, { weekday: 'short', day: 'numeric', month: 'short' }), sub: (hw.submitted || []).length, of: (hw.submitted || []).length + (hw.outstanding || []).length, toGrade, w: Math.round((hw.submitted || []).length / Math.max(1, (hw.submitted || []).length + (hw.outstanding || []).length) * 100) + '%' }] : [];
     // curriculum (the same rows feed Analytics' unit table)
     const units = (((D.curr || {}).units) || []).filter(u => !u.course || String(u.course).toLowerCase() === String(C.cls.course).toLowerCase());
+    // The Curriculum screen: the course's lessons by year, term and week (StaffCurriculumMap, shared with the mentor portal).
+    o.currBox = <StaffCurriculumMap data={D.curr || { units: [] }} course={C.cls.course || ''} reload={() => this.load('curr', () => ip6Api.curr())}/>;
     o.units = units.map(u => { const st = u.stats || {}; const done = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0; return { w: u.week, t: u.title, st: 'Published', done, pct: done + '%', donePct: done + '%', avg: st.started ? st.completed + '/' + st.started : '—',
       mats: (u.materials || []).map(m => m.title || m.kind || 'Material'), hasMats: (u.materials || []).length > 0, fg: '#1d6b30', bg: '#e9f6ec', canPublish: false, pub: () => {},
       upload: () => this.uploadMaterial(u) }; });

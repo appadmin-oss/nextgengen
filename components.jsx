@@ -3743,6 +3743,173 @@ function CurriculumMaterials({ materials }) {
   );
 }
 
+/* ── Growth: one child over the term (mp_growth) ──────────────────────────
+   The mentor's profile tab and the family portal draw the same report; the
+   server decides what each audience may see and how the sentences are
+   written. Every chart is a row of marks in CSS — no chart library — and
+   every mark has its words for a screen reader. */
+function growthMonth(m) { return /^\d{4}-\d{2}$/.test(m || "") ? new Date(m + "-15T12:00:00Z").toLocaleDateString("en-GB", { month: "short" }) : m; }
+function growthDay(d) { return d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""; }
+function GrowthReport({ data, err, retry }) {
+  if (err) return <div className="grw-msg" role="alert"><span>Couldn’t load the growth report ({err.code || err.message || err}).</span>{retry && <button type="button" className="grw-btn" onClick={retry}>Retry</button>}</div>;
+  if (!data) return <div className="grw-msg" role="status" aria-live="polite">Loading the growth report…</div>;
+  const d = data, A = d.attendance || {}, L = d.leadership || {}, E = d.evaluations || {}, W = d.wellbeing;
+  const lMax = Math.max(1, ...(L.months || []).map(m => m.total));
+  const toneIcon = { up: "ph-trend-up", down: "ph-trend-down", steady: "ph-minus" };
+  return (
+    <div className="grw">
+      <section className="grw-card grw-ins" aria-labelledby="grw-ins-h">
+        <h3 id="grw-ins-h">What changed <small>{growthDay(d.from)} – {growthDay(d.to)}</small></h3>
+        <ul>{(d.insights || []).map((x, i) => (
+          <li key={i} className={"is-" + x.tone}><i className={"ph " + (toneIcon[x.tone] || "ph-minus")} aria-hidden="true"/>
+            <span><span className="grw-sr">{x.tone === "up" ? "Up: " : x.tone === "down" ? "Down: " : ""}</span>{x.text}{x.do && <em>{x.do}</em>}</span></li>
+        ))}</ul>
+      </section>
+      <div className="grw-grid">
+        <section className="grw-card" aria-labelledby="grw-att-h">
+          <h3 id="grw-att-h">Saturdays <small>{A.rate !== null && A.rate !== undefined ? A.rate + "% of the Saturdays the centre met" : "No Saturdays recorded yet"}</small></h3>
+          <ol className="grw-dots" aria-label="The last 12 Saturdays">{(A.series || []).map(s => (
+            <li key={s.date} className={s.beforeJoining ? "is-pre" : s.here === null ? "is-none" : s.here ? "is-here" : "is-away"}
+              title={growthDay(s.date) + ": " + (s.beforeJoining ? "before joining" : s.here === null ? "the centre did not meet" : s.here ? "here" : "away")}>
+              <span className="grw-sr">{growthDay(s.date)}: {s.beforeJoining ? "before joining" : s.here === null ? "no Saturday" : s.here ? "here" : "away"}</span></li>
+          ))}</ol>
+          {A.earlier !== null && A.recent !== null && A.earlier !== undefined && <p className="grw-note">Earlier {A.earlier}% · recently {A.recent}%</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-li-h">
+          <h3 id="grw-li-h">Leadership Index <small>{L.change === null || L.change === undefined ? (L.months || []).length ? "one month scored" : "not scored yet" : (L.change > 0 ? "+" : "") + L.change + " since " + growthMonth((L.months[0] || {}).month)}</small></h3>
+          {(L.months || []).length > 0 && <ol className="grw-bars" aria-label="Leadership Index by month">{L.months.map(m => (
+            <li key={m.month}><span className="grw-bar" style={{ height: Math.max(6, Math.round(m.total / lMax * 64)) + "px" }}/><b>{m.total}</b><small>{growthMonth(m.month)}</small></li>
+          ))}</ol>}
+          {((L.gains || []).length > 0 || (L.dips || []).length > 0) && <p className="grw-chips">
+            {(L.gains || []).map(g => <span key={g.skill} className="grw-chip is-up">{g.skill} {g.from}→{g.to}</span>)}
+            {(L.dips || []).map(g => <span key={g.skill} className="grw-chip is-down">{g.skill} {g.from}→{g.to}</span>)}</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-ev-h">
+          <h3 id="grw-ev-h">Saturday evaluations <small>{(E.series || []).length ? (E.series[E.series.length - 1].shown + " of " + E.series[E.series.length - 1].of + " shown last time") : "none yet"}</small></h3>
+          {(E.series || []).length > 0 && <ol className="grw-bars" aria-label="Criteria shown per evaluation">{E.series.map((x, i) => (
+            <li key={i}><span className="grw-bar is-ev" style={{ height: Math.max(6, Math.round(x.shown / Math.max(1, x.of) * 64)) + "px" }}/><b>{x.shown}</b><small>{growthDay(x.date)}</small></li>
+          ))}</ol>}
+          {(E.moved || []).length > 0 && <ul className="grw-list">{E.moved.map(x => <li key={x.label} className={x.up ? "is-up" : "is-down"}>{x.label}: {x.from.toLowerCase()} → {x.to.toLowerCase()}</li>)}</ul>}
+          {E.strength && <p className="grw-note"><b>A strength:</b> {E.strength}</p>}
+          {E.next && <p className="grw-note"><b>The next step:</b> {E.next}</p>}
+        </section>
+        <section className="grw-card" aria-labelledby="grw-more-h">
+          <h3 id="grw-more-h">Learning and goals</h3>
+          <dl className="grw-facts">
+            <div><dt>Lessons</dt><dd>{d.learning.total ? d.learning.completed + " of " + d.learning.total + " done" + (d.learning.overdue ? " · " + d.learning.overdue + " overdue" : "") : "None set yet"}</dd></div>
+            <div><dt>Goal</dt><dd>{d.goal ? d.goal.title + (d.audience === "mentor" ? " (" + d.goal.progress + " of 5)" : "") : "None agreed yet"}{d.goalsDone ? " · " + d.goalsDone + " achieved before" : ""}</dd></div>
+            <div><dt>Courage</dt><dd>{d.courage && d.courage.current !== null ? (d.courage.rung || d.courage.current) + (d.courage.direction ? ", " + d.courage.direction : "") : "Not observed yet"}</dd></div>
+            <div><dt>School</dt><dd>{d.school ? (d.school.average !== null ? d.school.average + "% average" : "Uploaded") + (d.school.change !== null ? " (" + (d.school.change > 0 ? "+" : "") + d.school.change + ")" : "") + " · " + d.school.term : "No report uploaded yet"}</dd></div>
+          </dl>
+        </section>
+        {W && <section className="grw-card" aria-labelledby="grw-wb-h">
+          <h3 id="grw-wb-h">Wellbeing check-ins <small>staff only</small></h3>
+          {W.length ? <ol className="grw-dots" aria-label="Weekly check-ins">{W.map(w => (
+            <li key={w.week} className={w.wellbeing === "Okay" ? "is-here" : "is-away"} title={w.week + ": " + w.wellbeing}><span className="grw-sr">{w.week}: {w.wellbeing}</span></li>
+          ))}</ol> : <p className="grw-note">No check-ins yet.</p>}
+        </section>}
+      </div>
+    </div>
+  );
+}
+
+/* ── The curriculum as staff read it: course → year → term → week ──────────
+   One map for the mentor's and the instructor's portal (staff_curriculum):
+   the year tabs and the terms within them, each lesson at its week with how
+   many of their members have done it, the week the Club is on, and who is
+   past a due date without it. A lesson opens in place: what it covers, the
+   lesson itself, its materials, its checks, and adding a material. */
+function staffCurrState(u, weekNow) {
+  const st = u.stats || {}, pct = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0;
+  if (weekNow && u.week === weekNow) return { k: "now", label: "This week" };
+  if (st.behind) return { k: "behind", label: st.behind + " behind" };
+  if (weekNow && u.week < weekNow) return pct >= 80 || !st.audience ? { k: "done", label: "Done" } : { k: "open", label: pct + "% done" };
+  return { k: "next", label: weekNow && u.week === weekNow + 1 ? "Next week" : "Coming" };
+}
+function StaffCurriculumMap({ data, course, reload, intro }) {
+  const units0 = (data && data.units) || [];
+  const courses = Array.from(new Set(units0.map(u => u.course || ""))).sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  const [cSel, setCSel] = React.useState(course || "");
+  const [q, setQ] = React.useState("");
+  const [open, setOpen] = React.useState("");
+  const weekNow = data && data.weekNow;
+  const curCourse = course !== undefined && course !== null && course !== "" ? course : cSel || (courses.find(c => c) || "");
+  const inCourse = units0.filter(u => !u.course || !curCourse || String(u.course).toLowerCase() === String(curCourse).toLowerCase());
+  const years = Array.from(new Set(inCourse.map(u => (u.path && u.path.year) || 0))).sort((a, b) => (a || 99) - (b || 99));
+  const yearNow = (inCourse.find(u => weekNow && u.week === weekNow && u.path) || {}).path;
+  const [ySel, setYSel] = React.useState(null);
+  const year = ySel !== null && years.includes(ySel) ? ySel : yearNow && years.includes(yearNow.year) ? yearNow.year : years[0];
+  const t = q.trim().toLowerCase();
+  const shown = inCourse.filter(u => ((u.path && u.path.year) || 0) === year && (!t || (u.title + " " + (u.summary || "")).toLowerCase().includes(t)));
+  const terms = Array.from(new Set(shown.map(u => (u.path && u.path.term) || 1))).sort((a, b) => a - b);
+  const now = inCourse.filter(u => weekNow && u.week === weekNow);
+  const pctOf = list => { const a = list.reduce((n, u) => n + ((u.stats || {}).audience || 0), 0); return a ? Math.round(list.reduce((n, u) => n + ((u.stats || {}).completed || 0), 0) / a * 100) : null; };
+  const dateW = d => d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+  if (!units0.length) return <p className="scm-empty">No published lessons for your courses yet. They appear here as a curriculum lead publishes them.</p>;
+  const row = u => {
+    const st = u.stats || {}, s = staffCurrState(u, weekNow), pct = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0, isOpen = open === u.unitId;
+    return (
+      <li key={u.unitId} className={"scm-row is-" + s.k}>
+        <button type="button" className="scm-row-btn" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? "" : u.unitId)}>
+          <span className="scm-wk" aria-label={"Week " + ((u.path && u.path.week) || u.week)}>W{(u.path && u.path.week) || u.week}</span>
+          <span className="scm-t"><b>{u.title}</b><small>{(u.due ? "Due " + dateW(u.due) + " · " : "") + (st.audience ? st.completed + " of " + st.audience + " done" : "Nobody in your class takes it") + (st.avgScore !== null && st.avgScore !== undefined ? " · average " + st.avgScore + "%" : "")}</small></span>
+          <span className="scm-bar" aria-hidden="true"><span style={{ width: pct + "%" }}/></span>
+          <span className={"scm-chip is-" + s.k}>{s.label}</span>
+          <i className={"ph ph-caret-" + (isOpen ? "up" : "down")} aria-hidden="true"/>
+        </button>
+        {isOpen && (
+          <div className="scm-lesson">
+            {u.path && u.path.label && <p className="scm-path">{u.path.label}{u.durationMins ? " · " + u.durationMins + " min" : ""}</p>}
+            {u.summary && <p>{u.summary}</p>}
+            {(u.objectives || []).length > 0 && <><h4 className="scm-h4">By the end, they can</h4><ul>{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul></>}
+            {st.behind > 0 && <p className="scm-behind" role="note"><i className="ph ph-warning" aria-hidden="true"/> Past its due date without it: {(st.behindNames || []).join(", ")}{st.behind > (st.behindNames || []).length ? " and " + (st.behind - st.behindNames.length) + " more" : ""}.</p>}
+            {typeof CurriculumText === "function" && u.body && <CurriculumText text={u.body}/>}
+            {typeof CurriculumMaterials === "function" && <CurriculumMaterials materials={u.materials || []}/>}
+            <p className="scm-path">{(u.checks || []).length ? u.checks.length + " check" + (u.checks.length === 1 ? "" : "s") + " · pass mark " + u.passMark + "%" : "No checks: nothing to mark for this one."}</p>
+            {typeof StaffMaterialForm === "function" && <StaffMaterialForm unitId={u.unitId} selfApprove={!!(data && data.selfApprove)} onDone={reload}/>}
+          </div>
+        )}
+      </li>
+    );
+  };
+  return (
+    <div className="scm">
+      {intro && <p className="scm-intro">{intro}</p>}
+      <div className="scm-bar-top">
+        {!course && courses.filter(Boolean).length > 1 && (
+          <div className="scm-seg" role="group" aria-label="Course">{courses.filter(Boolean).map(c => <button key={c} type="button" aria-pressed={c === curCourse} className={c === curCourse ? "is-on" : ""} onClick={() => { setCSel(c); setYSel(null); setOpen(""); }}>{c}</button>)}</div>
+        )}
+        {years.length > 1 && (
+          <div className="scm-seg" role="group" aria-label="Year">{years.map(y => <button key={y} type="button" aria-pressed={y === year} className={y === year ? "is-on" : ""} onClick={() => { setYSel(y); setOpen(""); }}>{y ? "Year " + y : "Any year"}</button>)}</div>
+        )}
+        <label className="scm-find" role="search"><span className="sr-only">Find a lesson</span><i className="ph ph-magnifying-glass" aria-hidden="true"/>
+          <input type="search" value={q} placeholder="Find a lesson" onChange={e => setQ(e.target.value)}/></label>
+      </div>
+      <p className="scm-status" role="status" aria-live="polite">{(curCourse || "Whole Club") + " · " + inCourse.length + " lesson" + (inCourse.length === 1 ? "" : "s") + (years.length > 1 ? " over " + years.filter(Boolean).length + " years" : "")
+        + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : data && data.termStart === "" ? " · no term start date set, so no due dates" : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
+      {now.length > 0 && !t && (
+        <section className="scm-now" aria-labelledby="scm-now-h">
+          <h3 id="scm-now-h">This week</h3>
+          <ul className="scm-list">{now.map(row)}</ul>
+        </section>
+      )}
+      {!shown.length && <p className="scm-empty">{t ? "No lesson in this year matches “" + q + "”." : "Nothing in this year yet."}</p>}
+      {terms.map(tm => {
+        const list = shown.filter(u => ((u.path && u.path.term) || 1) === tm).sort((a, b) => a.week - b.week || a.position - b.position);
+        const name = (list.find(u => u.path && u.path.termName) || { path: {} }).path.termName;
+        const p = pctOf(list), wks = list.map(u => (u.path && u.path.week) || u.week);
+        return (
+          <section key={tm} className="scm-term" aria-labelledby={"scm-t" + tm}>
+            <h3 id={"scm-t" + tm} className="scm-term-h">Term {tm}{name ? ": " + name : ""}<small>{list.length} lesson{list.length === 1 ? "" : "s"} · weeks {Math.min.apply(null, wks)}–{Math.max.apply(null, wks)}{p !== null ? " · " + p + "% done" : ""}</small></h3>
+            <ol className="scm-list">{list.map(row)}</ol>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+
 /* Where a member stands on one lesson, in words a chip can carry. */
 function curriculumStatusLabel(p) {
   if (!p) return { label: "New", tone: "" };

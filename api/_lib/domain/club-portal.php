@@ -1235,7 +1235,7 @@ function cp_ann_send(array $x, array $a): array {
     if (in_array('app', $ch, true)) {
         foreach ($aud['members'] as $m) { try { push_notification((string)$m['memberId'], ['kind' => 'announcement', 'title' => $title, 'body' => $body, 'linkPage' => 'dashboard']); $stats['app']++; } catch (Throwable $e) {} }
         // Guardians with a family account: one notice each, however many children.
-        foreach ($aud['guardianIds'] as $gid) if (family_notice_add($gid, 'announcement', (string)$a['annId'], $title, $body, (string)($a['approvedByName'] ?: $a['byName']))) $stats['family']++;
+        foreach ($aud['guardianIds'] as $gid) if (family_notice_add($gid, 'announcement', (string)$a['annId'], $title, $body, $annFrom ??= staff_public_name((string)($a['approvedById'] ?: $a['byId']), (string)($a['approvedByName'] ?: $a['byName'])))) $stats['family']++;
     }
     /* Telegram carries the whole message, free. A phone it reaches is not also
        texted, so a guardian with both on gets it once. */

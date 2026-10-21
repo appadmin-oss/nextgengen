@@ -6575,7 +6575,6 @@ function StaffMaterialForm({ unitId, selfApprove, onDone }) {
 function StaffCurriculumPanel() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [open, setOpen] = React.useState("");
   const [marks, setMarks] = React.useState({});
   const [busy, setBusy] = React.useState(0);
   const load = React.useCallback(() => {
@@ -6639,27 +6638,7 @@ function StaffCurriculumPanel() {
       )}
       <section className="cur-staff-sec" aria-label="Lessons">
         <h2 className="cur-staff-h">Lessons · {d.members} member{d.members === 1 ? "" : "s"}</h2>
-        {!d.units.length ? <p className="cur-staff-msg">No published lessons for your courses yet.</p> :
-          <ul className="cur-staff-list">
-            {d.units.map(u => (
-              <li key={u.unitId} className="cur-staff-unit">
-                <button type="button" className="cur-staff-unit-btn" aria-expanded={open === u.unitId} onClick={() => setOpen(open === u.unitId ? "" : u.unitId)}>
-                  <span><b>W{u.week}</b> · {u.title} <span className="cur-staff-course">{u.course || "Whole Club"}</span></span>
-                  <span className="cur-staff-stat">{u.stats.completed}/{u.stats.audience} done</span>
-                </button>
-                {open === u.unitId && (
-                  <div className="cur-staff-detail">
-                    {u.summary && <p>{u.summary}</p>}
-                    {u.objectives.length > 0 && <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>}
-                    <CurriculumText text={u.body}/>
-                    <CurriculumMaterials materials={u.materials}/>
-                    {u.checks.length > 0 && <p className="cur-note">{u.checks.length} check{u.checks.length === 1 ? "" : "s"} · pass mark {u.passMark}%</p>}
-                    <StaffMaterialForm unitId={u.unitId} selfApprove={!!d.selfApprove} onDone={load}/>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>}
+        <StaffCurriculumMap data={d} reload={load}/>
       </section>
     </div>
   );
@@ -6810,6 +6789,7 @@ function MentorPlan({ subjectId, term, onBack }) {
  * button is in the portal's header for every mentor, cleared or not. */
 /* What the record gate's refusals mean, in a mentor's words. */
 const MTR_GATE_ERR = {
+  orientation_required: "Not saved: finish your Academy first (Mentor portals → Mentor Academy). You can look around everything until then.",
   not_screened: "Your safeguarding check isn't recorded yet, so children's records stay closed to you. Ask your lead mentor — you can still report a concern.",
   not_your_centre: "That child isn't in your centre or class.",
   not_your_cohort: "That child is in a programme you don't mentor.",
@@ -7262,7 +7242,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
       setD(r); setState("ready"); setFlip({});
       setCovered((r.log && r.log.covered) || "");
       setRoom((r.log && r.log.roomScore) || 0);
-    }).catch(e => { setErr(e.code || e.message); setState("error"); });
+    }).catch(e => { setErr(MTR_GATE_ERR[e.code] || e.code || e.message); setState("error"); });
   }, [course, centre]);
   React.useEffect(() => { load(); }, [load]);
 
@@ -7289,7 +7269,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
     } catch (e) {
       setErr(e.code === "nothing_to_record" ? "Add a line about what you covered, or rate the room."
            : e.code === "not_your_course" ? "That isn't one of your courses."
-           : (e.code || e.message));
+           : (MTR_GATE_ERR[e.code] || e.code || e.message));
       setBusy(false);
     }
   };
@@ -7519,7 +7499,7 @@ function RemarksSheet({ student, onClose }) {
     if (!body.trim()) return;
     setBusy(true); setErr("");
     try { await NGGApi.member.remarkAdd(student.studentId, kind, body.trim()); setBody(""); setBusy(false); load(); }
-    catch (e) { setErr(e.code === "not_found" ? "That child isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "not_found" ? "That child isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
 
   return (
@@ -7631,7 +7611,7 @@ function MentorBulkSheet({ count, subjectIds, presets, categories, onClose, onDo
     } catch (e) {
       setErr(e.code === "too_many_subjects" ? "That is too many at once — select fewer."
         : e.code === "nothing_to_record" ? "Pick a preset or write a note first."
-        : (e.code || e.message));
+        : (MTR_GATE_ERR[e.code] || e.code || e.message));
       setBusy(false);
     }
   };
@@ -7738,7 +7718,7 @@ function MentorV3Sheet({ student, period, onClose, onDone }) {
   const submit = async () => {
     setBusy(true); setErr("");
     try { await NGGApi.member.v3Rate(student.studentId, v.verbal, v.vocal, v.visual, note.trim()); onDone(); }
-    catch (e) { setErr(e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "not_your_centre" ? "That student isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
   return (
     <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
@@ -7784,7 +7764,7 @@ function MentorStarSheet({ student, categories, onClose, onDone }) {
   const submit = async () => {
     setBusy(true); setErr("");
     try { await NGGApi.member.starGive(student.studentId, stars, category, note.trim()); onDone(); }
-    catch (e) { setErr(e.code === "already_starred_today" ? "This student already has a rating for today." : e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "already_starred_today" ? "This student already has a rating for today." : e.code === "not_your_centre" ? "That student isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
   return (
     <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}

@@ -9613,7 +9613,8 @@ chk('a member can read their own courage record', (function () {
     db_exec("DELETE FROM mentor_assignments WHERE memberId = 'NGG-2025-0510' AND mentorId = 'MEN-COURAGE'");
     return !empty($r['ok']) && (int)$r['courage']['inWindow'] === 1
         && count($r['ladder']) === 5 && $r['courage']['marks'][0]['score'] === 4
-        && $r['courage']['marks'][0]['markedByName'] === 'Nia NGG-Mentor';
+        // The child reads who marked it as they address that adult: title and surname.
+        && $r['courage']['marks'][0]['markedByName'] === 'Coach NGG-Mentor';
 })());
 /* The empty state is a real state: a child with no marks yet gets a valid
    record with nothing in it, not an error and not a zero pretending to be a
@@ -10383,10 +10384,9 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
 
     // An instructor who posts must read as themselves, and as staff.
-    chk('community: an instructor posting is resolved by name, not "Member"', (function () use ($cmVol) {
+    chk('community: an instructor posting is resolved by name — title and surname, as children address them — not "Member"', (function () use ($cmVol) {
         $a = community_author((string)$cmVol['volunteerId']);
-        $first = preg_split('/\s+/', trim((string)$cmVol['fullName']))[0];
-        return $a['name'] === $first && $a['name'] !== 'Member';
+        return $a['name'] === staff_title_name((string)$cmVol['fullName']) && $a['name'] !== 'Member';
     })());
     chk('community: …and a session resolves through auth.me instead of 404ing', (function () use ($cmVol) {
         $r = backend_dispatch('auth.me', ['memberId' => (string)$cmVol['volunteerId']]);
@@ -10398,7 +10398,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
             'authorId' => (string)$cmVol['volunteerId'], 'authorName' => 'Ins', 'authorCentre' => '',
             'body' => 'hello', 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
         foreach (backend_dispatch('community.channelMembers', ['channel' => 'commons'])['members'] as $m) {
-            if ($m['name'] === 'Ins') return $m['staff'] === true;
+            if ($m['name'] === staff_title_name((string)$cmVol['fullName'])) return $m['staff'] === true;
         }
         return false;
     })());
@@ -23953,6 +23953,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $mine[0]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
     chk('staff: marking the answer completes the lesson', !empty($mark['ok']) && $mark['status'] === 'completed' && $mark['pending'] === 0);
     chk('staff: …and a mentor can open the member\'s record', backend_dispatch('staff.curriculum.member', ['requesterId' => 'NGG-CUR-VN', 'memberId' => 'NGG-CUR-M1'])['completed'] === 2);
+    // The map staff read: the week the Club is on, each lesson's due date, the average score, and who is behind.
+    $schedKeep = setting_get('curriculum');
+    $start = gmdate('Y-m-d', time() - 30 * 86400);
+    setting_set('curriculum', ['startDate' => $start]);
+    db_update('members', ['joinDate' => '2025-01-01'], ['memberId' => 'NGG-CUR-M1']);
+    $mp = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']);
+    $byU = array_column($mp['units'], null, 'unitId');
+    $w1 = array_values(array_filter($mp['units'], fn($u) => $u['week'] === 1 && $u['checks']));
+    chk('curriculum map: the Club\'s week comes from the term start (30 days in = week 5), with the term length', $mp['weekNow'] === 5 && $mp['termStart'] === $start && $mp['termWeeks'] === CURR_TERM_WEEKS);
+    chk('curriculum map: each lesson carries its due date and an average score once somebody completes it',
+        $byU[$uid]['due'] === gmdate('Y-m-d', strtotime($start . ' UTC') + $byU[$uid]['week'] * 7 * 86400) && $byU[$uid]['stats']['avgScore'] === 100 && $byU[$uid]['stats']['completed'] >= 1);
+    chk('curriculum map: a member who has done a lesson is never listed as behind on it', !in_array('Curriculum Member', $byU[$uid]['stats']['behindNames'], true)
+        && is_int($byU[$uid]['stats']['behind']) && count($byU[$uid]['stats']['behindNames']) <= 12);
+    setting_set('curriculum', is_array($schedKeep) ? $schedKeep : []);
+    chk('curriculum map: with no term start there is no week and no due date, not a guess', ($n = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']))['weekNow'] === null && $n['units'][0]['due'] === '');
 
     // A lesson somebody has sat moves version when its checks change.
     $edit = $u1['unit']; $edit['checks'][0]['prompt'] = 'How many WHITE keys in one octave?';
@@ -24667,6 +24682,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $w = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
     chk('family: the ward\'s dashboard shows today, late and by how much', !empty($w['ok']) && $w['today']['in'] === '09:12' && $w['today']['status'] === 'late' && $w['today']['lateMinutes'] === 12);
     chk('family: …with attendance, conduct, fees and learning sections', isset($w['attendance'], $w['conduct'], $w['fees'], $w['learning']) && $w['member']['fullName'] === 'Tobi Adeyemi');
+    chk('family: …and the growth report written to a parent, with no wellbeing check-ins', ($w['growth']['audience'] ?? '') === 'family' && $w['growth']['wellbeing'] === null && count($w['growth']['insights']) >= 1);
     $flat = json_encode($w);
     chk('family: …and no journal, notes, email or Anchor code in it', strpos($flat, '482913') === false && strpos($flat, 'ngg-fa-kid@example.com') === false && !isset($w['journal']) && !isset($w['notes']));
     chk('family: another guardian cannot read the ward through this link', (backend_dispatch('family.ward', ['guardianId' => 'GDN-0000000000', 'linkId' => $lid])['error'] ?? '') === 'not_found');
@@ -25480,6 +25496,41 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id plan: a request that names who starts again', $r['refined'] === false && ((array)$r['plan'])['kind'] === 'volunteer' && !isset(((array)$r['plan'])['backs']));
     $pl = (array)$f('make it a proof', ['kind' => 'member', 'centre' => 'Atlantis', 'paper' => 'tabloid'])['plan'];
     chk('id plan: the plan sent back from the browser is cleaned before it is used', $pl['proof'] === true && !isset($pl['centre']) && !isset($pl['paper']));
+    // The assistant's second round: several acts at once, photo work, one person's kind, a kind left out, and the AI named.
+    $pl = (array)$plan($CARDADM, 'Improve the photos. Remove their BG. Ask the ones with no photo for their photos')['plan'];
+    chk('id plan: "improve the photos, remove their background, ask the rest" is two acts in order, with a plain background asked for',
+        $pl['do'] === 'improvePhotos' && $pl['acts'] === ['improvePhotos', 'askPhotos'] && $pl['photo'] === ['removeBg' => true]);
+    $pl = (array)$plan($CARDADM, 'Fix the photos')['plan'];
+    chk('id plan: "fix the photos" improves them — it is not a request for new ones', $pl['do'] === 'improvePhotos' && !isset($pl['acts']));
+    $pl = (array)$plan($CARDADM, 'Can you help position the image?')['plan'];
+    chk('id plan: "help position the image" opens the framing tool', $pl['do'] === 'adjustPhoto' && !isset($pl['names']));
+    $pl = (array)$plan($CARDADM, 'brighten and sharpen the photos, zoom in on their faces')['plan'];
+    chk('id plan: brighten, sharpen and "zoom in on their faces" set the edit', $pl['do'] === 'improvePhotos' && $pl['photo'] == ['brighten' => true, 'sharpen' => true, 'zoom' => 1.3, 'gravity' => 'face']);
+    $named = ['names' => ['Agbalaya Habeebat', 'Idi Oluwadarasimi', 'Badmus Onoopemipo', 'Taiwo Ayomide']];
+    $r = $f('The Badmus should be NGG, not summer', $named); $pl = (array)$r['plan'];
+    chk('id plan: "Badmus should be NGG, not summer" picks his record and refines — it never filters everyone to one kind',
+        $r['refined'] === true && ($pl['kindOf'] ?? null) === ['Badmus' => 'member'] && !isset($pl['kind']) && !isset($pl['notKinds']) && $pl['names'] === $named['names']);
+    $r = $f('It should exclude summer', $named); $pl = (array)$r['plan'];
+    chk('id plan: "exclude summer" leaves Summer School out — it is not "Summer School only"', $r['refined'] === true && ($pl['notKinds'] ?? null) === ['summer'] && !isset($pl['kind']));
+    $r = $f('Add Taiwo Abubakar', $named); $pl = (array)$r['plan'];
+    chk('id plan: "add <name>" to a named list adds the name', in_array('Taiwo Abubakar', $pl['names'], true) && count($pl['names']) === 5);
+    $r = $plan($CARDADM, 'Gemini?'); $pl = (array)$r['plan'];
+    chk('id plan: "Gemini?" is not read as a person called Gemini', !isset($pl['names']) && !isset($pl['ids']) && is_array($r['providers'] ?? null));
+    $r = backend_dispatch('admin.ids.plan', ['requesterId' => $CARDADM, 'prompt' => 'new cards for Planford members', 'provider' => 'gemini']);
+    chk('id plan: asking for an AI that isn\'t set up says so, and the rules still read it', !empty($r['ok']) && $r['by'] === 'rules' && ((array)$r['plan'])['centre'] === 'Planford'
+        && (bool)array_filter($r['notes'], static fn($n) => str_contains($n, 'Gemini isn’t set up')));
+    chk('id plan: a kind said of one person, and an unknown kind, are cleaned', ids_plan_clean(['kindOf' => ['Ada Obi' => 'ngg', 'Bo' => 'pirate', '1<x>' => 'member']], ['member', 'summer'], [])['plan']['kindOf'] === ['Ada Obi' => 'member']
+        && ids_plan_clean(['notKinds' => ['summer', 'pirates']], ['member', 'summer'], [])['plan']['notKinds'] === ['summer']
+        && !isset(ids_plan_clean(['do' => ['print', 'improvePhotos'], 'photo' => ['removeBg' => 'yes', 'zoom' => 9]], ['member'], [])['plan']['acts'])
+        && ids_plan_clean(['do' => ['print', 'improvePhotos'], 'photo' => ['removeBg' => 'yes', 'zoom' => 9]], ['member'], [])['plan']['photo'] === ['zoom' => 2.5]);
+    $r = $f('print them and mark them printed', $cur);
+    chk('id plan: a request nothing in it can be read leaves the plan on screen alone (it is not a refinement)', ((array)$r['plan']) === [] && $r['refined'] === false);
+    $GLOBALS['__ai_mock'] = fn($profile, $system) => ['ok' => true, 'provider' => 'groq', 'text' => json_encode(['kind' => 'member'])];
+    $r = backend_dispatch('admin.ids.plan', ['requesterId' => $CARDADM, 'prompt' => 'members at Planford', 'provider' => 'rules']);
+    chk('id plan: "use the rules" reads without the AI even when one is set up', $r['by'] === 'rules' && ((array)$r['plan'])['centre'] === 'Planford');
+    $r = backend_dispatch('admin.ids.plan', ['requesterId' => $CARDADM, 'prompt' => 'members at Planford', 'provider' => 'claude-ish']);
+    chk('id plan: an unknown provider name is ignored, never passed on', $r['by'] === 'ai' && $r['provider'] === 'groq');
+    unset($GLOBALS['__ai_mock']);
     $GLOBALS['__ai_mock'] = fn($profile, $system) => ['ok' => true, 'provider' => 'anthropic', 'text' => json_encode(['refine' => true, 'kind' => 'member', 'backs' => 'off',
         'sawCurrent' => str_contains($system, '"centre":"Planford"')])];
     $r = $f('just the fronts please, and drop the centre filter', $cur); $pl = (array)$r['plan'];
@@ -26551,6 +26602,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sat = backend_dispatch('member.mentor.saturday', $p('NGG-MP1'));
     chk('portal: Saturday picks the three longest since a one-to-one, never one seen this week', count($sat['oneToOnes']) === 3 && !in_array('NGG-MPK2', $sat['oneToOnes'], true) && count($sat['agenda']) === 4);
     chk('portal: the fixed agenda items cannot be removed', (backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => [['title' => 'Activity', 'minutes' => 30]]]))['error'] ?? '') === 'fixed_item_missing');
+    // The Saturday plan: the breakout's window, the huddle first and the close last, the mentor's own items timed in between.
+    chk('agenda: the window is the formation schedule\'s breakout (8:30–10:00, 90 minutes), with what follows it', ($sat['window'] ?? []) == ['start' => '08:30', 'end' => '10:00', 'minutes' => 90, 'title' => 'Musing & mentor breakout']
+        && ($sat['after'] ?? '') === 'Time out with Van BOJA' && count($sat['agendaDefault'] ?? []) === 4);
+    $base = [['title' => 'Close', 'minutes' => 5], ['title' => 'Debate: phones at school', 'sub' => 'Two sides, two minutes each', 'minutes' => 25], ['title' => 'One-to-ones', 'minutes' => 45], ['title' => 'Pod huddle', 'minutes' => 10, 'fixed' => false]];
+    $pl = backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => $base, 'oneToOnes' => ['NGG-MPK3', 'NGG-MPK4']]));
+    chk('agenda: a mentor\'s own activity is saved; the huddle is put first and the close last; "fixed" is the server\'s word, by name',
+        !empty($pl['ok']) && array_column($pl['agenda'], 'title') === ['Pod huddle', 'Debate: phones at school', 'One-to-ones', 'Close']
+        && $pl['agenda'][0]['fixed'] === true && $pl['agenda'][1]['fixed'] === false && $pl['total'] === 85 && $pl['over'] === 0 && $pl['oneToOnes'] === ['NGG-MPK3', 'NGG-MPK4']);
+    $rd = backend_dispatch('member.mentor.saturday', $p('NGG-MP1', ['date' => $T]));
+    chk('agenda: the saved plan and the chosen one-to-ones are what Saturday reads back', array_column($rd['agenda'], 'title') === ['Pod huddle', 'Debate: phones at school', 'One-to-ones', 'Close'] && $rd['oneToOnes'] === ['NGG-MPK3', 'NGG-MPK4']);
+    $before = db_row("SELECT agendaJson FROM mentor_saturdays WHERE mentorId = 'MEN-MP1' AND onDate = ?", [$T])['agendaJson'];
+    $bad = [
+        'name_every_item' => [['title' => 'Pod huddle', 'minutes' => 10], ['title' => '  ', 'minutes' => 10], ['title' => 'One-to-ones', 'minutes' => 45], ['title' => 'Close', 'minutes' => 5]],
+        'bad_minutes' => [['title' => 'Pod huddle', 'minutes' => 10], ['title' => 'Game', 'minutes' => 3], ['title' => 'One-to-ones', 'minutes' => 45], ['title' => 'Close', 'minutes' => 5]],
+        'duplicate_item' => [['title' => 'Pod huddle', 'minutes' => 10], ['title' => 'Pod huddle', 'minutes' => 10], ['title' => 'One-to-ones', 'minutes' => 45], ['title' => 'Close', 'minutes' => 5]],
+        'too_many_items' => array_merge([['title' => 'Pod huddle', 'minutes' => 10], ['title' => 'One-to-ones', 'minutes' => 45], ['title' => 'Close', 'minutes' => 5]], array_map(static fn($i) => ['title' => "Game $i", 'minutes' => 5], range(1, 10))),
+    ];
+    $errs = []; foreach ($bad as $want => $ag) $errs[$want] = backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => $ag]))['error'] ?? 'saved';
+    $errs['not_in_caseload'] = backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => $base, 'oneToOnes' => ['NGG-MPK6']]))['error'] ?? 'saved';
+    chk('agenda: the whole plan is checked before anything is written (a nameless item, under 5 minutes, a second huddle, too many items, someone else\'s child)',
+        $errs === ['name_every_item' => 'name_every_item', 'bad_minutes' => 'bad_minutes', 'duplicate_item' => 'duplicate_item', 'too_many_items' => 'too_many_items', 'not_in_caseload' => 'not_in_caseload']
+        && db_row("SELECT agendaJson FROM mentor_saturdays WHERE mentorId = 'MEN-MP1' AND onDate = ?", [$T])['agendaJson'] === $before);
+    $over = backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => [['title' => 'Pod huddle', 'minutes' => 10], ['title' => 'One-to-ones', 'minutes' => 90], ['title' => 'Close', 'minutes' => 5]]]));
+    chk('agenda: a plan longer than the window is saved and says by how much', !empty($over['ok']) && $over['over'] === 15 && $over['oneToOnes'] === []);
+    $sh = backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => $base, 'oneToOnes' => ['NGG-MPK3'], 'share' => true]));
+    $msg = db_row("SELECT body FROM mentor_messages WHERE kind = 'From your mentor' AND toId = 'NGG-MPL' AND body LIKE 'Saturday plan%' ORDER BY id DESC LIMIT 1");
+    chk('agenda: sharing sends the lead the running order with times and who is seen one-to-one', !empty($sh['ok']) && $sh['sharedAt'] !== '' && $msg
+        && str_contains($msg['body'], '8:30 Pod huddle (10 min)') && str_contains($msg['body'], '8:40 Debate: phones at school (25 min)') && str_contains($msg['body'], 'One-to-ones (45 min): Kid3'));
+
     $reg = backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'close' => true, 'rows' => [
         ['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage', 'Bogus']], ['subjectId' => 'NGG-MPK2', 'here' => false, 'observed' => ['Courage']], ['subjectId' => 'NGG-MPK6', 'here' => true]]]));
     chk('portal: the register saves only my children and only the four values; Away carries no values', $reg['saved'] === 2
@@ -26645,13 +26725,78 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('portal: reading an entry marks it read', mp_unread_count(mp_gate($p('NGG-MP1')), ['NGG-MPK2']) === $unread - 1);
     chk('portal: replying to someone outside the caseload is refused', (backend_dispatch('member.mentor.message.reply', $p('NGG-MP1', ['threadId' => 'journal:JMP1', 'subjectId' => 'NGG-MPK6', 'body' => 'Hi']))['error'] ?? '') === 'not_in_caseload');
 
+    // Conversations: a mentor starts one; a lead reaches any child at their centre.
+    $st = backend_dispatch('member.mentor.message.reply', $p('NGG-MP1', ['threadId' => 'chat:NGG-MPK4', 'subjectId' => 'NGG-MPK4', 'body' => 'How did the test go?']));
+    $cv = array_values(array_filter(backend_dispatch('member.mentor.messages', $p('NGG-MP1'))['messages'], static fn($m) => $m['id'] === 'chat:NGG-MPK4'))[0] ?? [];
+    chk('messages: a mentor starts a conversation with a mentee who never wrote, and it is listed with its thread', !empty($st['ok'])
+        && ($cv['kind'] ?? '') === 'Conversation' && count($cv['thread'] ?? []) === 1 && $cv['thread'][0]['mine'] === true && $cv['thread'][0]['body'] === 'How did the test go?' && $cv['mentee'] === true);
+    $mk('NGG-MPK7', 'Kemi Unpaired'); $mk('NGG-MPX1', 'Kayode Elsewhere', ['centre' => 'Otherton']);
+    chk('messages: a pod mentor cannot start a conversation with a child outside their caseload', (backend_dispatch('member.mentor.message.reply', $p('NGG-MP1', ['threadId' => 'chat:NGG-MPK7', 'subjectId' => 'NGG-MPK7', 'body' => 'Hi']))['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.message.search', $p('NGG-MP1', ['q' => 'Kemi']))['children'] ?? null) === []);
+    $fs = backend_dispatch('member.mentor.message.search', $p('NGG-MPL', ['q' => 'ke']));
+    chk('messages: a lead finds any child at their centre by name — not a colleague, not another centre', !empty($fs['ok'])
+        && in_array('NGG-MPK7', array_column($fs['children'], 'id'), true) && !in_array('NGG-MPX1', array_column($fs['children'], 'id'), true)
+        && !array_filter($fs['children'], static fn($c) => str_starts_with($c['id'], 'NGG-MP') && !str_starts_with($c['id'], 'NGG-MPK'))
+        && (backend_dispatch('member.mentor.message.search', $p('NGG-MPL', ['q' => 'Tunde']))['children'] ?? null) === []
+        && (backend_dispatch('member.mentor.message.search', $p('NGG-MPL', ['q' => 'k']))['children'] ?? null) === []);
+    $lw = backend_dispatch('member.mentor.message.reply', $p('NGG-MPL', ['threadId' => 'chat:NGG-MPK7', 'subjectId' => 'NGG-MPK7', 'body' => 'Welcome to the centre, Kemi.']));
+    chk('messages: a lead writes to a child at their centre who is nobody\'s mentee', !empty($lw['ok'])
+        && (backend_dispatch('member.mentor.message.reply', $p('NGG-MPL', ['threadId' => 'chat:NGG-MPX1', 'subjectId' => 'NGG-MPX1', 'body' => 'Hi']))['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.message.reply', $p('NGG-MPL', ['threadId' => 'chat:NGG-MP1', 'subjectId' => 'NGG-MP1', 'body' => 'Hi']))['error'] ?? '') === 'not_in_caseload');
+    db_exec("UPDATE mentor_messages SET status = 'sent', sendAfter = '' WHERE threadId = 'chat:NGG-MPK7'");
+    $kc = backend_dispatch('member.mentor.chat', ['memberId' => 'NGG-MPK7']);
+    chk('messages: the child reads the lead\'s message in their own chat', (bool)array_filter($kc['messages'] ?? [], static fn($m) => $m['body'] === 'Welcome to the centre, Kemi.' && !$m['mine']));
+    mp_message_put('chat:NGG-MPK7', 'From your mentee', 'NGG-MPK7', 'NGG-MPK7', 'Kemi Unpaired', 'NGG-MPL', 'Thank you!');
+    $lc = array_values(array_filter(backend_dispatch('member.mentor.messages', $p('NGG-MPL'))['messages'], static fn($m) => $m['id'] === 'chat:NGG-MPK7'))[0] ?? [];
+    chk('messages: the child\'s answer lands in the lead\'s conversation, unread, after the lead\'s own message', ($lc['mentee'] ?? null) === false
+        && array_column($lc['thread'] ?? [], 'body') === ['Welcome to the centre, Kemi.', 'Thank you!'] && ($lc['read'] ?? null) === false);
+    $rd = backend_dispatch('member.mentor.message.read', $p('NGG-MPL', ['threadId' => 'chat:NGG-MPK7']));
+    $lc2 = array_values(array_filter(backend_dispatch('member.mentor.messages', $p('NGG-MPL'))['messages'], static fn($m) => $m['id'] === 'chat:NGG-MPK7'))[0] ?? [];
+    chk('messages: opening the conversation marks the child\'s messages read; a pod mentor cannot mark another child\'s', !empty($rd['ok']) && ($lc2['read'] ?? null) === true
+        && (backend_dispatch('member.mentor.message.read', $p('NGG-MP1', ['threadId' => 'chat:NGG-MPK7']))['error'] ?? '') === 'not_in_caseload'
+        && !array_filter(backend_dispatch('member.mentor.messages', $p('NGG-MP1'))['messages'], static fn($m) => $m['id'] === 'chat:NGG-MPK7'));
+
     // Member's own check-in tells the mentor.
     $ci = backend_dispatch('member.checkin.save', ['requesterId' => 'NGG-MPK3', 'wellbeing' => 'Need help', 'sleep' => 2, 'note' => 'Bad week']);
     chk('portal: a member\'s Need help check-in reaches their mentor at once', !empty($ci['ok']) && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:wellbeingAlert' AND memberId = 'NGG-MPK3' AND mentorId = 'MEN-MP1'"));
     chk('portal: one check-in per member per week (the second amends it)', !empty(backend_dispatch('member.checkin.save', ['requesterId' => 'NGG-MPK3', 'wellbeing' => 'Okay'])['ok'])
         && (int)db_row("SELECT COUNT(*) c FROM member_checkins WHERE memberId = 'NGG-MPK3'")['c'] === 1);
     $mine = backend_dispatch('member.mentor.mine', ['requesterId' => 'NGG-MPK3']);
-    chk('portal: the member sees their agreed goal, mentor and this week\'s check-in', !empty($mine['ok']) && $mine['mentor']['first'] === 'Tunde' && $mine['goal']['goal'] === 'Speak up in class' && $mine['checkin']['wellbeing'] === 'Okay');
+    chk('portal: the member sees their agreed goal, mentor and this week\'s check-in', !empty($mine['ok']) && $mine['mentor']['first'] === 'Coach Pod' && $mine['goal']['goal'] === 'Speak up in class' && $mine['checkin']['wellbeing'] === 'Okay');
+
+    // Titles: a child sees an adult as a title and a surname, never a first name.
+    chk('titles: title + surname, a blank title is "Coach", a title already in the name is not doubled, an unknown one is refused',
+        staff_title_name('Funmi Adeyemi', 'mrs.') === 'Mrs Adeyemi' && staff_title_name('Tunde Pod') === 'Coach Pod' && staff_title_name('Dr Bola Ade', 'Dr') === 'Dr Ade'
+        && staff_honorific_clean('Sir') === '' && staff_honorific_clean('ENGR') === 'Engr');
+    chk('titles: only staff are retitled — a child\'s own name never becomes "Coach X"', staff_public_names(['NGG-MPK1', 'NGG-MP1', 'MEN-MPL'])
+        == ['NGG-MP1' => 'Coach Pod', 'MEN-MPL' => 'Coach Lead']);
+    chk('titles: a child cannot give themselves a title; a mentor cannot pick one off the list', (backend_dispatch('member.staff.title', ['memberId' => 'NGG-MPK1', 'honorific' => 'Dr'])['error'] ?? '') === 'not_staff'
+        && (backend_dispatch('member.staff.title', ['memberId' => 'NGG-MP1', 'honorific' => 'Sir'])['error'] ?? '') === 'bad_title');
+    $tt = backend_dispatch('member.staff.title', ['memberId' => 'NGG-MP1', 'honorific' => 'mr']);
+    chk('titles: a mentor sets their own title; it is kept on every record they have', !empty($tt['ok']) && $tt['seenAs'] === 'Mr Pod' && $tt['honorific'] === 'Mr'
+        && db_row("SELECT honorific FROM mentors WHERE mentorId = 'MEN-MP1'")['honorific'] === 'Mr' && db_row("SELECT honorific FROM members WHERE memberId = 'NGG-MP1'")['honorific'] === 'Mr');
+    db_exec("UPDATE mentor_messages SET status = 'sent', sendAfter = '' WHERE threadId = 'chat:NGG-MPK4'");   // past quiet hours
+    $kChat = backend_dispatch('member.mentor.chat', ['memberId' => 'NGG-MPK4']);
+    $kMine = backend_dispatch('member.mentor.mine', ['requesterId' => 'NGG-MPK4']);
+    chk('titles: the child\'s chat and "my mentor" read "Mr Pod", never "Tunde"', ($kChat['mentor']['name'] ?? '') === 'Mr Pod' && ($kMine['mentor']['first'] ?? '') === 'Mr Pod'
+        && !str_contains(json_encode([$kChat['mentor'], $kMine['mentor'], array_column($kChat['messages'] ?? [], 'from')]), 'Tunde')
+        && (bool)array_filter($kChat['messages'] ?? [], static fn($m) => !$m['mine'] && $m['from'] === 'Mr Pod'));
+    chk('titles: the mentor\'s own screens keep full names', str_contains(json_encode(backend_dispatch('member.mentor.caseload', $p('NGG-MPL'))), 'Kid1 Portal'));
+
+    // Growth: one mentee over the term, for the mentor and for the family.
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-MPK3', 'month' => '2026-08', 'scores' => '3,3,3,3,3,3,3,3,3,3', 'total' => 30, 'byKind' => 'mentor', 'mentorId' => 'MEN-MP1', 'centre' => 'Portalville', 'locked' => 1, 'createdAt' => $now]);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-MPK3', 'month' => '2026-10', 'scores' => '6,3,3,3,3,3,3,1,3,3', 'total' => 31, 'byKind' => 'mentor', 'mentorId' => 'MEN-MP1', 'centre' => 'Portalville', 'locked' => 0, 'createdAt' => $now]);
+    $gr = backend_dispatch('member.mentor.growth', $p('NGG-MP1', ['subjectId' => 'NGG-MPK3']));
+    chk('growth: twelve Saturdays, the index month by month, the skill that grew and the one that slipped', !empty($gr['ok']) && count($gr['attendance']['series']) === 12
+        && array_column($gr['leadership']['months'], 'total') === [30, 31] && $gr['leadership']['change'] === 1
+        && ($gr['leadership']['gains'][0]['skill'] ?? '') === 'Communication' && ($gr['leadership']['dips'][0]['skill'] ?? '') === 'Accountability');
+    chk('growth: the mentor reads what changed, with the conversation it suggests', (bool)array_filter($gr['insights'], static fn($x) => str_contains($x['text'], 'Leadership Index up 1') && str_contains($x['text'], 'Accountability slipped') && $x['do'] !== ''));
+    chk('growth: the mentor sees wellbeing check-ins; the family never does', is_array($gr['wellbeing']) && mp_growth('NGG-MPK3', 'family', $T)['wellbeing'] === null
+        && (bool)array_filter(mp_growth('NGG-MPK3', 'family', $T)['insights'], static fn($x) => str_contains($x['text'], 'leadership is growing, most of all in communication')));
+    chk('growth: another mentor\'s mentee is refused', (backend_dispatch('member.mentor.growth', $p('NGG-MP1', ['subjectId' => 'NGG-MPK6']))['error'] ?? '') === 'not_in_caseload');
+    $pod = backend_dispatch('member.mentor.growth', $p('NGG-MP1'));
+    $k3 = array_values(array_filter($pod['rows'] ?? [], static fn($r) => $r['id'] === 'NGG-MPK3'))[0] ?? [];
+    chk('growth: the pod at a glance has every mentee with the index and its change', !empty($pod['ok']) && count($pod['rows']) === 5 && $k3['index'] === 31 && $k3['indexChange'] === 1);
 
     // My role and the team.
     $role = backend_dispatch('member.mentor.commitments', $p('NGG-MP1'));
@@ -26915,7 +27060,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('results: sending needs the commitment ticked', ($send(['items' => $items, 'habit' => 'x', 'recipients' => ['family' => true]])['error'] ?? '') === 'commit_required');
     $notesBefore = (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSM'")['n'];
     $sn = $send(['items' => $items, 'habit' => 'Phone in the kitchen at 9pm', 'recipients' => ['family' => true], 'committed' => true]);
-    chk('results: the plan sends to the mentor and the instructor', !empty($sn['ok']) && $sn['mentor'] === 'Remi Mentor' && $sn['instructors'] === 1
+    chk('results: the plan sends to the mentor and the instructor', !empty($sn['ok']) && $sn['mentor'] === 'Coach Mentor' && $sn['instructors'] === 1
         && (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSM'")['n'] === $notesBefore + 1
         && (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSI' AND kind = 'teaching'")['n'] === 1);
     chk('results: a sent plan cannot be edited, and the report cannot be replaced', ($save($items)['error'] ?? '') === 'already_sent' && ($up([])['error'] ?? '') === 'already_sent');
@@ -27080,7 +27225,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (((array)$m['badges'])['grow/results'] ?? '') === 'due' && $m['week']['saturday'] === club_class_next_date(results_today()));
     $m1 = backend_dispatch('member.today', ['memberId' => 'NGG-RS-1']);
     chk('today (member): a live plan shows this week\'s promises and a row for the sessions left', !empty($m1['ok']) && $m1['promises']['status'] === 'live'
-        && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Remi');
+        && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Coach Mentor');
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
 })();
 
@@ -29372,8 +29517,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         'safeguarding' => 'cleared', 'centre' => 'Egbeda', 'courses' => json_encode(['Talking Drums']), 'createdAt' => $now]);
     $ins = ['requesterId' => 'VOL-ACI-1', 'course' => 'Talking Drums'];
     $r = backend_dispatch('instructor.session.save', $ins);
-    chk('academy · an instructor who hasn’t done “Start here” cannot file a session, and is told why and how long', ($r['error'] ?? '') === 'orientation_required'
-        && str_contains((string)$r['detail'], 'Start here') && $r['orientation']['done'] === 0 && $r['orientation']['mins'] > 0);
+    chk('academy · an instructor whose Academy isn’t complete cannot file a session, and is told why and how long', ($r['error'] ?? '') === 'orientation_required'
+        && str_contains((string)$r['detail'], 'until your Academy is complete') && str_contains((string)$r['detail'], 'look around') && $r['orientation']['done'] === 0 && $r['orientation']['mins'] > 0);
     chk('academy · …nor mark skills or close a roll', (backend_dispatch('instructor.skills.mark', $ins)['error'] ?? '') === 'orientation_required'
         && (backend_dispatch('instructor.class.roll', $ins)['error'] ?? '') === 'orientation_required');
     $v = backend_dispatch('instructor.academy', ['requesterId' => 'VOL-ACI-1']);
@@ -29384,12 +29529,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('academy · wrong answers are marked but not passed', !empty($w['ok']) && $w['passed'] === false && $w['score'] < 80);
     chk('academy · every question must be answered', (backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 'i01', 'answers' => [0]])['error'] ?? '') === 'answer_all');
     foreach (academy_orientation_ids('instructor') as $id) $last = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => $id, 'answers' => $right($byId('instructor', $id))]);
-    chk('academy · passing the six guides opens the portal', !empty($last['passed']) && $last['orientation']['ok'] === true
-        && (backend_dispatch('instructor.session.save', $ins)['error'] ?? '') !== 'orientation_required');
+    chk('academy · the six guides alone are not the Academy: the required modules still hold the portal’s saves', !empty($last['passed'])
+        && $last['orientation']['ok'] === false && $last['orientation']['startHere']['done'] === 6 && $last['orientation']['missing'] === ['t01', 't02', 's01']
+        && (backend_dispatch('instructor.session.save', $ins)['error'] ?? '') === 'orientation_required');
+    foreach (['t02', 's01'] as $id) $last = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => $id, 'answers' => $right($byId('instructor', $id))]);
     backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
     backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
     backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => [0, 0]]);
     chk('academy · the fourth try at a module in a day waits, with when', (($r = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => $right($byId('instructor', 't01'))]))['error'] ?? '') === 'retry_later' && !empty($r['retryAt']));
+    db_exec("DELETE FROM academy_attempts WHERE personId = 'VOL-ACI-1' AND moduleId = 't01'");   // the next day
+    $last = backend_dispatch('instructor.academy.result', ['requesterId' => 'VOL-ACI-1', 'moduleId' => 't01', 'answers' => $right($byId('instructor', 't01'))]);
+    chk('academy · with every guide and required module passed, the portal’s saves go through', ($last['orientation']['ok'] ?? false) === true
+        && (backend_dispatch('instructor.session.save', $ins)['error'] ?? '') !== 'orientation_required');
+    db_exec("UPDATE academy_passes SET passedAt = ? WHERE personId = 'VOL-ACI-1' AND moduleId = 's01'", [gmdate('Y-m-d\\TH:i:s', time() - 400 * 86400)]);
+    chk('academy · a lapsed yearly safeguarding module holds the saves again until it is renewed', (backend_dispatch('instructor.session.save', $ins)['error'] ?? '') === 'orientation_required');
 
     // Mentor: the same gate, from their mentor record; concern is never blocked; by-hand clearance exempts.
     db_insert('members', ['memberId' => 'ACM-M', 'fullName' => 'Gate Mentor', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Quizville', 'dob' => '1990-01-01', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -29398,12 +29551,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('academy · a new mentor cannot log a session before “Start here”', ($r['error'] ?? '') === 'orientation_required');
     chk('academy · …but Report a concern is never held back', (backend_dispatch('member.mentor.concern.create', ['requesterId' => 'ACM-M', 'subjectId' => 'X', 'category' => 'Other', 'body' => 'Something worried me today'])['error'] ?? '') !== 'orientation_required');
     $mv = backend_dispatch('member.mentor.academy', ['requesterId' => 'ACM-M']);
-    chk('academy · the mentor Academy reports “Start here” as not done', ($mv['orientation']['ok'] ?? true) === false && $mv['orientation']['required'] === 6);
+    chk('academy · the mentor Academy reports itself not done: six guides and thirteen required modules', ($mv['orientation']['ok'] ?? true) === false
+        && $mv['orientation']['startHere']['required'] === 6 && $mv['orientation']['required'] === 19);
     db_exec("UPDATE mentors SET academyClearedAt = ?, academyClearedBy = 'ADMIN' WHERE mentorId = 'ACMT'", [$now]);
     chk('academy · an Academy recorded as done in person opens the portal', (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
     db_exec("UPDATE mentors SET academyClearedAt = '' WHERE mentorId = 'ACMT'");
-    foreach (academy_orientation_ids('mentor') as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACM-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
-    chk('academy · a mentor who passes the six guides is let through', !empty($last['passed']) && ($last['orientation']['ok'] ?? false) === true
+    foreach (academy_orientation_ids('mentor', ['ngg']) as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACM-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
+    chk('academy · a mentor with only the guides done can look but not save', ($last['orientation']['ok'] ?? true) === false
+        && (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') === 'orientation_required');
+    foreach (ms_required_modules() as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACM-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
+    chk('academy · a mentor who completes the Academy is let through', !empty($last['passed']) && ($last['orientation']['ok'] ?? false) === true
         && (backend_dispatch('member.mentor.session.save', ['requesterId' => 'ACM-M', 'type' => 'one_to_one', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
 
     // A Summer School mentor — and one whose record names no programme, which counts as Summer School —
@@ -29413,14 +29570,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sv = backend_dispatch('member.mentor.academy', ['requesterId' => 'ACS-M']);
     $svIds = array_column(array_filter($sv['modules'] ?? [], static fn($m) => !empty($m['orientation'])), 'id');
     chk('academy · a Summer School mentor’s Academy holds the Summer School guides, not the NGG portal’s', !empty($sv['ok']) && $svIds === ['p07', 'p08', 'p06']
-        && $sv['orientation']['required'] === 3 && $sv['orientation']['ok'] === false);
+        && $sv['orientation']['startHere']['required'] === 3 && $sv['orientation']['required'] === 16 && $sv['orientation']['ok'] === false);
     chk('academy · …and the Summer School portal’s saves wait for them (a conversation, a weekly review, stars), concern does not',
         (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') === 'orientation_required'
         && (backend_dispatch('member.mentor.review.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') === 'orientation_required'
         && (backend_dispatch('behaviour.star.give', ['requesterId' => 'ACS-M', 'subjectId' => 'X', 'stars' => 1])['error'] ?? '') === 'orientation_required'
         && (backend_dispatch('member.mentor.concern.create', ['requesterId' => 'ACS-M', 'subjectId' => 'X', 'category' => 'Other', 'body' => 'Something worried me today'])['error'] ?? '') !== 'orientation_required');
-    foreach (['p07', 'p08', 'p06'] as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACS-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
-    chk('academy · passing their three opens the Summer School portal', ($last['orientation']['ok'] ?? false) === true
+    foreach (array_merge(['p07', 'p08', 'p06'], ms_required_modules()) as $id) $last = backend_dispatch('member.mentor.academy.result', ['requesterId' => 'ACS-M', 'moduleId' => $id, 'answers' => $right($byId('mentor', $id))]);
+    chk('academy · their three guides and the required modules open the Summer School portal’s saves', ($last['orientation']['ok'] ?? false) === true
         && (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'ACS-M', 'subjectId' => 'X'])['error'] ?? '') !== 'orientation_required');
     chk('academy · an instructor’s stars are not held by the mentor gate', (backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-ACI-1', 'subjectId' => 'X', 'stars' => 1])['error'] ?? '') !== 'orientation_required');
     db_exec("DELETE FROM mentor_academy WHERE mentorId = 'ACST'"); db_exec("DELETE FROM mentor_academy_attempts WHERE mentorId = 'ACST'"); db_exec("DELETE FROM mentors WHERE mentorId = 'ACST'"); db_exec("DELETE FROM members WHERE memberId = 'ACS-M'");

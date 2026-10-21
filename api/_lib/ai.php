@@ -135,6 +135,10 @@ function ai_enabled(string $profile = 'default'): bool {
 }
 
 /** Which provider would answer first for a profile (for status displays). */
+/** The providers a profile can reach, in the order they would be tried (names only, never keys). */
+function ai_providers_for(string $profile = 'default'): array {
+    return array_values(array_unique(array_map(static fn($c) => (string)$c['provider'], ai_profile_candidates($profile))));
+}
 function ai_provider(string $profile = 'default'): string {
     $c = ai_profile_candidates($profile);
     return $c ? $c[0]['provider'] : '';
@@ -401,14 +405,22 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
  *  which lens got which provider, what survives synthesis, what happens when one
  *  provider is down — are all above the HTTP call. Mirrors the __ai_photo_mock
  *  seam that already exists for the photo pipeline. */
-function ai_run(string $profile, string $system, array $turns, int $maxTokens, float $temp): array {
+/** `$prefer` puts one provider first when it is configured for the profile; the rest stay as fallbacks.
+ *  `$budget` (seconds, 0 = none) stops trying further fallbacks once spent, so a caller with a deadline
+ *  of its own — a browser waiting on a request — hears "the AI was slow" instead of timing out. */
+function ai_run(string $profile, string $system, array $turns, int $maxTokens, float $temp, string $prefer = '', int $budget = 0): array {
     if (isset($GLOBALS['__ai_mock']) && is_callable($GLOBALS['__ai_mock'])) {
-        return ($GLOBALS['__ai_mock'])($profile, $system, $turns);
+        $r = ($GLOBALS['__ai_mock'])($profile, $system, $turns);
+        if ($prefer !== '' && !empty($r['ok'])) $r['provider'] = $prefer;
+        return $r;
     }
     $cands = ai_profile_candidates($profile);
     if (!$cands) return ['ok' => false, 'error' => 'ai_disabled'];
+    if ($prefer !== '') usort($cands, static fn($a, $b) => ($b['provider'] === $prefer) <=> ($a['provider'] === $prefer));
     $last = ['ok' => false, 'error' => 'ai_disabled'];
-    foreach ($cands as $cand) {
+    $t0 = microtime(true);
+    foreach ($cands as $i => $cand) {
+        if ($budget > 0 && $i > 0 && microtime(true) - $t0 > $budget) return ['ok' => false, 'error' => 'ai_slow', 'tried' => $i];
         $r = ai_call_candidate($cand, $system, $turns, $maxTokens, $temp);
         if (!empty($r['ok'])) return $r;
         $last = $r;
@@ -438,9 +450,9 @@ function ai_chat(string $system, array $turns, int $maxTokens = 220, string $pro
  * monitor and registration analysis; callers must handle 'ok'=false with a
  * deterministic fallback.
  */
-function ai_classify(string $instructions, string $input, int $maxTokens = 300, string $profile = 'behaviour'): array {
+function ai_classify(string $instructions, string $input, int $maxTokens = 300, string $profile = 'behaviour', string $prefer = '', int $budget = 0): array {
     $system = $instructions . "\nRespond with ONLY a single JSON object — no prose, no markdown fences.";
-    $r = ai_run($profile, $system, [['role' => 'me', 'text' => $input]], $maxTokens, 0.1);
+    $r = ai_run($profile, $system, [['role' => 'me', 'text' => $input]], $maxTokens, 0.1, $prefer, $budget);
     if (empty($r['ok'])) return $r;
     $text = trim((string)$r['text']);
     // Tolerate accidental fences or leading text around the JSON object.

@@ -10,7 +10,7 @@ const MENTOR_PORTAL_VIEWS = [
     'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
-    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan',
+    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan', 'messageSearch' => 'member.mentor.message.search', 'growth' => 'member.mentor.growth',
 ];
 /** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
 const MENTOR_PORTAL_ACTIONS = [
@@ -70,7 +70,7 @@ if ($method === 'GET') {
         // The Mentor Portal's screens (design handoff v14). Every one is gated
         // by mentor_gate in the domain; these lines only carry the query.
         $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
-            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term'])));
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term', 'q'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.

@@ -391,7 +391,6 @@ function Mp15CPlan({ subjectId, term, onBack }) {
 function Mp15CCurric({ say }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState(null);
-  const [open, setOpen] = React.useState("");
   const [marks, setMarks] = React.useState({});
   const [busy, setBusy] = React.useState(0);
   const load = React.useCallback(() => { setErr(null); return NGGApi.member.curriculumStaff().then(setD).catch(setErr); }, []);
@@ -436,25 +435,7 @@ function Mp15CCurric({ say }) {
       </section>
       <section className="m15c-card">
         <div className="m15c-head"><div><h2 className="m15c-h">Lessons</h2><p className="m15c-sub">For your courses · {d.members} member{d.members === 1 ? "" : "s"}{d.clearance === "pending" ? " · learners appear once your safeguarding check is cleared" : ""}</p></div></div>
-        {!d.units.length ? <p className="m15c-empty">No published lessons for your courses yet.</p> : (
-          <ul className="m15c-list">{d.units.map(u => (
-            <li key={u.unitId}>
-              <button type="button" className="m15c-row" aria-expanded={open === u.unitId} onClick={() => setOpen(open === u.unitId ? "" : u.unitId)}>
-                <span><b>Week {u.week} · {u.title}</b><small>{u.course || "Whole Club"}</small></span>
-                <span className="m15c-tag">{u.stats.completed} of {u.stats.audience} done</span><i className={"ph ph-caret-" + (open === u.unitId ? "up" : "down")} aria-hidden="true"/></button>
-              {open === u.unitId && (
-                <div className="m15c-lesson">
-                  {u.summary && <p>{u.summary}</p>}
-                  {u.objectives.length > 0 && <ul>{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>}
-                  {typeof CurriculumText === "function" && <CurriculumText text={u.body}/>}
-                  {typeof CurriculumMaterials === "function" && <CurriculumMaterials materials={u.materials}/>}
-                  {u.checks.length > 0 && <p className="m15c-sub">{u.checks.length} check{u.checks.length === 1 ? "" : "s"} · pass mark {u.passMark}%</p>}
-                  {typeof StaffMaterialForm === "function" && <StaffMaterialForm unitId={u.unitId} selfApprove={!!d.selfApprove} onDone={load}/>}
-                </div>
-              )}
-            </li>
-          ))}</ul>
-        )}
+        <StaffCurriculumMap data={d} reload={load}/>
       </section>
     </>
   );

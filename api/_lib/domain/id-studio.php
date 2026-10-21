@@ -526,12 +526,27 @@ const IDS_PLAN_IDS_MAX = 600;
 const IDS_PLAN_NAMES_MAX = 50;
 const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
 const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
-    'margin', 'gap', 'skip', 'breakBy', 'packing', 'cause'];
+    'margin', 'gap', 'skip', 'breakBy', 'packing', 'cause', 'notKinds'];
+/* A kind said of ONE named person ("Badmus should be NGG, not summer"): which
+   of their records is meant, when a name is on more than one list. Never a
+   filter on everybody else. */
+const IDS_PLAN_KIND_WORDS = ['ngg' => 'member', 'member' => 'member', 'members' => 'member', 'summer' => 'summer', 'summer school' => 'summer',
+    'participant' => 'summer', 'participants' => 'summer', 'volunteer' => 'volunteer', 'volunteers' => 'volunteer', 'afrovanguard' => 'afrovanguard'];
 /* One-off acts the assistant may ask the studio to do (v4's whitelist). Each
    is carried out in the browser through the studio's own controls, and the
    ones that reach people (asking for photos) still go through the confirm
    that states the count. None of them prints, and none marks anyone printed. */
-const IDS_PLAN_DO = ['clear', 'fill', 'askPhotos'];
+const IDS_PLAN_DO = ['clear', 'fill', 'askPhotos', 'improvePhotos', 'adjustPhoto'];
+/* "Improve the photos, remove their backgrounds" is a Cloudinary edit (the
+   studio's Improve photos, admin.photo.edit.bulk); "help position the image"
+   opens the photo editor. Both still go through the studio's own dialog,
+   with the count, before anything changes. */
+const IDS_PLAN_PHOTO_GRAVITY = ['face', 'center', 'north', 'south'];
+const IDS_PLAN_ACTS_MAX = 3;
+// A request that only names an AI is about the assistant, not about a person called Gemini.
+const IDS_PLAN_PROVIDER_WORDS = ['Gemini', 'Groq', 'Claude', 'Anthropic', 'OpenAI', 'ChatGPT', 'GPT', 'OpenRouter', 'AI', 'Llama'];
+// The time the planner gives the AI before the rules answer alone (the browser waits 40s).
+const IDS_PLAN_AI_BUDGET = 22;
 const IDS_PLAN_MARGIN = [3, 30];
 const IDS_PLAN_GAP = [0, 20];
 const IDS_PLAN_SKIP_MAX = 60;
@@ -546,8 +561,8 @@ const IDS_PLAN_MONTH_RE = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may
 // Words that start a follow-up rather than a fresh request.
 const IDS_PLAN_REFINE_RE = '/^\s*(only|just|make (it|them)|and|also|add|plus|include|remove|drop|without|except|not|but|now|switch|change|instead|use|with|no|leave out|take (off|out))\b/u';
 // What introduces people to add, and people to leave out.
-const IDS_PLAN_ADD_RE = '/\b(?:add|also|plus|include|and also)\b(.*)$/u';
-const IDS_PLAN_EXCLUDE_RE = '/\b(?:except(?: for)?|excluding|apart from|other than|but not|leave out|take (?:off|out)|remove|drop|minus|not)\b(.*)$/u';
+const IDS_PLAN_ADD_RE = '/\b(?:add|also|plus|include|and also)\b(.*)$/iu';
+const IDS_PLAN_EXCLUDE_RE = '/\b(?:except(?: for)?|excluding|apart from|other than|but not|leave out|take (?:off|out)|remove|drop|minus|not)\b(.*)$/iu';
 
 /** The studio kinds this operator may print (a kind maps to the subject's owning capability). */
 function ids_plan_kinds(array $requester): array {
@@ -618,6 +633,11 @@ function ids_plan_clean_people($in): array {
 function ids_plan_clean(array $in, array $kinds, array $centres): array {
     $out = [];
     $notes = [];
+    if (isset($in['notKinds'])) {
+        $nk = array_values(array_unique(array_filter(array_map(static fn($k) => IDS_PLAN_KIND_WORDS[strtolower(trim((string)$k))] ?? strtolower(trim((string)$k)), (array)$in['notKinds']),
+            static fn($k) => in_array($k, IDS_PLAN_KINDS, true))));
+        if ($nk) $out['notKinds'] = $nk;
+    }
     $kind = strtolower(trim((string)($in['kind'] ?? '')));
     if (in_array($kind, ['student', 'participant', 'participants'], true)) $kind = 'summer';
     if (in_array($kind, ['members', 'ngg'], true)) $kind = 'member';
@@ -657,8 +677,29 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
     foreach (['breakBy', 'packing'] as $k) if (isset($in[$k]) && is_bool($in[$k])) $out[$k] = $in[$k];
     $cause = (string)($in['cause'] ?? '');
     if (in_array($cause, IDS_PLAN_CAUSES, true)) $out['cause'] = $cause;
-    $do = (string)($in['do'] ?? '');
-    if (in_array($do, IDS_PLAN_DO, true)) $out['do'] = $do;
+    // One act or several, in the order asked ("improve the photos, then ask the rest for one").
+    $acts = [];
+    foreach ((array)($in['acts'] ?? []) as $a) if (in_array((string)$a, IDS_PLAN_DO, true) && !in_array((string)$a, $acts, true)) $acts[] = (string)$a;
+    foreach ((array)($in['do'] ?? []) as $a) if (in_array((string)$a, IDS_PLAN_DO, true) && !in_array((string)$a, $acts, true)) $acts[] = (string)$a;
+    $acts = array_slice($acts, 0, IDS_PLAN_ACTS_MAX);
+    if ($acts) { $out['do'] = $acts[0]; if (count($acts) > 1) $out['acts'] = $acts; }
+    if (is_array($in['photo'] ?? null)) {
+        $ph = [];
+        foreach (['removeBg', 'brighten', 'sharpen'] as $k) if (isset($in['photo'][$k]) && is_bool($in['photo'][$k])) $ph[$k] = $in['photo'][$k];
+        if (in_array((string)($in['photo']['gravity'] ?? ''), IDS_PLAN_PHOTO_GRAVITY, true)) $ph['gravity'] = (string)$in['photo']['gravity'];
+        if (isset($in['photo']['zoom']) && is_numeric($in['photo']['zoom'])) $ph['zoom'] = round(max(1, min(2.5, (float)$in['photo']['zoom'])), 2);
+        if ($ph) $out['photo'] = $ph;
+    }
+    if (is_array($in['kindOf'] ?? null)) {
+        $ko = [];
+        foreach ($in['kindOf'] as $name => $k) {
+            $name = trim(preg_replace('/\s+/u', ' ', (string)$name)); $k = IDS_PLAN_KIND_WORDS[strtolower(trim((string)$k))] ?? strtolower(trim((string)$k));
+            if ($name === '' || mb_strlen($name) > 60 || !preg_match('/^[\p{L}][\p{L}\p{M}\'’\- .]*$/u', $name) || !in_array($k, $kinds, true)) continue;
+            $ko[$name] = $k;
+            if (count($ko) >= IDS_PLAN_NAMES_MAX) break;
+        }
+        if ($ko) $out['kindOf'] = $ko;
+    }
     return ['plan' => $out, 'notes' => $notes];
 }
 
@@ -672,7 +713,10 @@ function ids_plan_find_ids(string $t): array {
 function ids_plan_find_names(string $clause, array $centres): array {
     $skip = array_merge(['Add', 'Also', 'Plus', 'Include', 'Except', 'Not', 'But', 'And', 'Remove', 'Drop', 'Without', 'Leave', 'Take', 'Out', 'Off', 'Only', 'Just', 'The', 'For', 'At', 'In',
         'Members', 'Member', 'Summer', 'School', 'Participants', 'Volunteers', 'Afrovanguard', 'NGG', 'Reprint', 'Reprints', 'New', 'Cards', 'Card', 'Print', 'Proof', 'Monday', 'Tuesday',
-        'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'A4', 'A3', 'Letter'], array_map(fn($c) => $c['name'], $centres));
+        'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'A4', 'A3', 'Letter', 'Improve', 'Fix', 'Ask', 'Remove', 'Can', 'Please', 'Help', 'Photos', 'Photo',
+        'Front', 'Fronts', 'Back', 'Backs', 'Double', 'Single', 'Sided', 'Make', 'It', 'I', 'We', 'Need', 'Following', 'These', 'Them', 'They', 'Should', 'Use', 'Fill', 'Clear', 'Then',
+        'Crop', 'Marks', 'Long', 'Short', 'Edge', 'Sheet', 'Sheets', 'Name', 'Names', 'Is', 'Are', 'Who', 'What', 'Why', 'How', 'Where', 'When', 'Ok', 'OK', 'Yes', 'No', 'Club'],
+        IDS_PLAN_PROVIDER_WORDS, array_map(fn($c) => $c['name'], $centres));
     preg_match_all('/\b\p{Lu}[\p{Ll}\'’\-]+(?:\s+\p{Lu}[\p{Ll}\'’\-]+)*/u', $clause, $m);
     $out = [];
     foreach ($m[0] as $run) {
@@ -724,7 +768,25 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
         $addClause = $m[1][0];
         $main = substr($main, 0, $m[0][1]);
     }
+    /* "Badmus should be NGG, not summer": a kind said of one named person
+       picks which of their records is meant. The clause is taken out before
+       the kind is read, so it never becomes a filter on everyone. */
+    $kindRe = '/(\p{Lu}[\p{L}\'’\-]+(?:\s+\p{Lu}[\p{L}\'’\-]+)*)\s+(?:should be|must be|needs to be|is an?|is|are|as an?|as)\s+(?:an?\s+|the\s+)?((?i:ngg|members?|summer(?: school)?|participants?|volunteers?|afrovanguard))\b(?:[^.;!?]*?\b(?i:not)\s+(?:an?\s+|the\s+)?(?i:ngg|members?|summer(?: school)?|participants?|volunteers?)\b)?/u';
+    if (preg_match_all($kindRe, $main, $km, PREG_SET_ORDER)) {
+        foreach ($km as $k) {
+            $who = trim(preg_replace('/^(?:The|A|An|Make|Put|Print)\s+/u', '', $k[1]));
+            if ($who !== '' && !in_array($who, IDS_PLAN_PROVIDER_WORDS, true)) $p['kindOf'][$who] = IDS_PLAN_KIND_WORDS[mb_strtolower($k[2])] ?? 'member';
+            $main = str_replace($k[0], ' ', $main);
+        }
+    }
     $mt = mb_strtolower($main);
+    /* "It should exclude summer", "no volunteers": a kind left out, read before
+       the kind itself so "summer" here never means "Summer School only". */
+    $kindAlt = 'summer(?: school)?|participants?|campers?|volunteers?|members?|ngg|afrovanguard';
+    if (preg_match_all('/\b(?:exclud\w*|without|no|not|except|minus|leave out|drop|remove|skip)\s+(?:the\s+|any\s+)?(' . $kindAlt . ')\b(?:\s+(?:ones|people|records|cards))?/u', $mt, $nk, PREG_SET_ORDER)) {
+        foreach ($nk as $x) { $p['notKinds'][] = IDS_PLAN_KIND_WORDS[$x[1]] ?? (str_starts_with($x[1], 'camper') ? 'summer' : 'member'); $mt = str_replace($x[0], ' ', $mt); }
+        $p['notKinds'] = array_values(array_unique($p['notKinds']));
+    }
     if ($exClause !== '') { $ex = array_filter(['ids' => ids_plan_find_ids($exClause), 'names' => ids_plan_find_names($exClause, $centres)]); if ($ex) $p['exclude'] = $ex; }
     if ($addClause !== '') { $ad = array_filter(['ids' => ids_plan_find_ids($addClause), 'names' => ids_plan_find_names($addClause, $centres)]); if ($ad) $p['also'] = $ad; }
 
@@ -738,6 +800,11 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     elseif (preg_match('/\b(everyone|everybody|all of them|whole (list|queue)|all waiting)\b/u', $mt)) $p['which'] = 'all';
     $ids = ids_plan_find_ids($main);
     if ($ids) $p['ids'] = $ids;
+    /* People named in the request itself ("print these: 1. Agbalaya Habeebat
+       2. Idi Oluwadarasimi"). Two words at least: a capital at the start of a
+       sentence ("Front and back") is not a person. */
+    $people = array_values(array_filter(ids_plan_find_names($main, $centres), static fn($n) => count(preg_split('/\s+/u', $n)) >= 2));
+    if ($people) $p['names'] = $people;
     if (preg_match('/\b(?:cards?|numbers?|ids?|nos?\.?)\s*#?(\d{1,6})\s*(?:-|–|to|through|until)\s*#?(\d{1,6})\b/u', $mt, $r)) { $p['numFrom'] = (int)$r[1]; $p['numTo'] = (int)$r[2]; }
 
     $d = new DateTime($today);
@@ -804,10 +871,34 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     elseif (preg_match('/\b(damaged|broken|cracked|faded|torn|bent|smudged)\b/u', $t)) $p['cause'] = 'damaged';
     elseif (preg_match('/\b(name|details?|spelling)\b.*\b(changed|wrong|corrected|misspelt|misspelled|fixed)\b|\b(wrong|misspelt|misspelled) name\b/u', $t)) $p['cause'] = 'name';
     if (isset($p['cause']) && !isset($p['which']) && empty($p['ids']) && !ids_plan_find_names($prompt, $centres)) $p['which'] = 'reprint';
-    // Acts. Asked for in so many words, never inferred.
-    if (preg_match('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u', $t)) $p['do'] = 'clear';
-    elseif (preg_match('/\b(?:ask|chase|request|remind|nudge)\b.*\bphotos?\b/u', $t)) $p['do'] = 'askPhotos';
-    elseif (preg_match('/\bfill\b.*\b(?:gaps?|slots?|sheet|spaces?|blanks?)\b/u', $t)) $p['do'] = 'fill';
+    // Acts. Asked for in so many words, never inferred; several in one request run in the order written.
+    $acts = [];
+    $at = static function (string $re) use ($t): int { return preg_match($re, $t, $m, PREG_OFFSET_CAPTURE) ? (int)$m[0][1] : -1; };
+    $pic = '(?:photos?|pictures?|pics?|images?|headshots?|faces?)';
+    $bgRe = '/\b(?:remove|take (?:off|out)|cut (?:out)?|clear|change|replace|plain|grey|gray|white|clean)\b[^.?!;]*\b(?:bg|bgs|backgrounds?|backdrops?)\b|\b(?:bg|backgrounds?)\b[^.?!;]*\b(?:remov\w*|off|plain|grey|gray|white)\b/u';
+    $impRe = '/\b(?:improve|enhance|clean(?:\s|-)?up|fix|touch(?:\s|-)?up|retouch|brighten|sharpen|better)\b[^.?!;]*\b' . $pic . '\b/u';
+    $posRe = '/\b(?:position|reposition|move|centre|center|align|frame|reframe|crop|zoom|straighten|fit|adjust)\w*\b[^.?!;]*\b' . $pic . '\b|\b' . $pic . '\b[^.?!;]*\b(?:position|centred|centered|too (?:small|big|low|high)|off[- ]centre|off[- ]center)\b/u';
+    $askRe = '/\b(?:ask|chase|request|remind|nudge)\b[^.?!;]*\b' . $pic . '\b|\b(?:the ones|people|those|anyone|everyone) (?:with(?:out)?|who (?:have|has)n.?t (?:got )?)\s*(?:no |a |any )?' . $pic . '\b[^.?!;]*\bask\b/u';
+    $cand = ['clear' => $at('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u'),
+             'improvePhotos' => max($at($impRe), $at($bgRe)) >= 0 ? min(array_filter([$at($impRe), $at($bgRe)], static fn($x) => $x >= 0)) : -1,
+             'adjustPhoto' => $at($posRe),
+             'askPhotos' => $at($askRe),
+             'fill' => $at('/\bfill\b.*\b(?:gaps?|slots?|sheet|spaces?|blanks?)\b/u')];
+    // Positioning many photos at once is the bulk edit's reframe; one photo is the editor.
+    if ($cand['adjustPhoto'] >= 0 && $cand['improvePhotos'] >= 0) $cand['adjustPhoto'] = -1;
+    asort($cand);
+    foreach ($cand as $a => $pos) if ($pos >= 0) $acts[] = $a;
+    if ($acts) { $p['do'] = $acts; }
+    $photo = [];
+    if ($at($bgRe) >= 0) $photo['removeBg'] = true;
+    if (preg_match('/\b(?:brighten|brighter|too dark|lighter|light(?:en)? (?:them|it) up)\b/u', $t)) $photo['brighten'] = true;
+    if (preg_match('/\b(?:sharpen|sharper|blurr?y|blurred|soft|clearer)\b/u', $t)) $photo['sharpen'] = true;
+    if (preg_match('/\bzoom(?:ed)? in\b|\bcloser\b|\btoo small\b|\bbigger face\b/u', $t)) $photo['zoom'] = 1.3;
+    elseif (preg_match('/\bzoom(?:ed)? out\b|\btoo (?:big|close)\b|\bwhole (?:head|photo)\b/u', $t)) $photo['zoom'] = 1;
+    if (preg_match('/\b(?:on|to|around) (?:the|their) faces?\b|\bcentre (?:the|their) faces?\b|\bcenter (?:the|their) faces?\b/u', $t)) $photo['gravity'] = 'face';
+    elseif (preg_match('/\b(?:move|shift) (?:it|them|the (?:photo|image|picture)s?) (?:up|higher)\b|\btoo low\b/u', $t)) $photo['gravity'] = 'south';
+    elseif (preg_match('/\b(?:move|shift) (?:it|them|the (?:photo|image|picture)s?) (?:down|lower)\b|\btoo high\b/u', $t)) $photo['gravity'] = 'north';
+    if ($photo && $acts) $p['photo'] = $photo;
     $nw = implode('|', array_map(fn($w) => preg_quote($w, '/'), array_keys(IDS_PLAN_NUMBER_WORDS)));
     if (!preg_match('/\bskip\b/u', $mt) && preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
     return ids_plan_clean($p, $kinds, $centres)['plan'];
@@ -825,6 +916,7 @@ function ids_plan_is_refinement(string $prompt, array $current, array $read): bo
     if (!$current) return false;
     if (preg_match(IDS_PLAN_REFINE_RE, mb_strtolower($prompt))) return true;
     if (isset($read['do'])) return false;   // an act stands on its own; the browser applies it to what is on screen
+    if (!empty($read['kindOf'])) return true;
     // A fresh request names who: a kind, new/reprint, or a whole list of IDs. Anything else adjusts the plan on screen.
     return !isset($read['kind']) && !isset($read['which']) && empty($read['ids']);
 }
@@ -833,6 +925,10 @@ function ids_plan_is_refinement(string $prompt, array $current, array $read): bo
 function ids_plan_refine(array $current, array $read): array {
     $plan = $current;
     foreach (IDS_PLAN_SCALARS as $k) if (array_key_exists($k, $read)) $plan[$k] = $read[$k];
+    if (!empty($read['kindOf'])) $plan['kindOf'] = array_merge($plan['kindOf'] ?? [], $read['kindOf']);
+    // An act belongs to this request only; it is never carried into the plan on screen.
+    unset($plan['do'], $plan['acts'], $plan['photo']);
+    foreach (['do', 'acts', 'photo'] as $k) if (isset($read[$k])) $plan[$k] = $read[$k];
     $named = ids_plan_union(['ids' => $read['ids'] ?? [], 'names' => $read['names'] ?? []], $read['also'] ?? []);
     if ($named) {
         // Named people join a named list; on a filtered selection they go on top of it.
@@ -877,9 +973,13 @@ function ids_plan_instructions(array $kinds, array $centres, string $today, arra
         . "proof: true for a proof or test print, false to undo one.\n"
         . "margin: millimetres round the sheet (3-30). gap: millimetres between cards (0-20). skip: slots already used on the first sheet (0-60).\n"
         . "breakBy: true for a new sheet for each centre (or kind), false to let them share sheets. packing: true/false for a packing list.\n"
-        . "do: ONE act, only when asked in so many words: \"clear\" (take every card off the sheet), \"fill\" (fill the empty slots on the last sheet), \"askPhotos\" (ask the people with no photo for one). You can never print and never mark anyone printed; if asked to, leave do out.\n"
+        . "do: the acts asked for in so many words, as a list in the order written: \"clear\" (take every card off the sheet), \"fill\" (fill the empty slots on the last sheet), \"askPhotos\" (ask the people with no photo for one), \"improvePhotos\" (improve, fix, brighten, sharpen or remove the background of the photos already on file), \"adjustPhoto\" (help position, move, crop or zoom ONE person's photo). You can never print and never mark anyone printed; if asked to, leave do out.\n"
+        . "photo: with improvePhotos or adjustPhoto, what to do: {\"removeBg\": true for a plain background, \"brighten\": true, \"sharpen\": true, \"gravity\": \"face\"|\"center\"|\"north\"|\"south\", \"zoom\": 1 to 2.5}.\n"
+        . "notKinds: kinds to leave out (\"exclude summer\", \"no volunteers\") — a list; never set kind for that.\n"
+        . "kindOf: {\"<name as written>\": kind} when the request says which kind ONE named person is (\"Badmus should be NGG, not summer\"); do not set kind for that.\n"
         . "cause: why a card is reprinted, only when said: \"lost\" (lost or stolen; the reprint gets a new QR), \"never_received\", \"damaged\", \"name\" (details changed).\n"
         . "A request that only changes settings (\"make it A3\", \"margin 5mm\") holds only those fields.\n"
+        . "A question about which AI is answering, or a request to use a different AI, is not a person's name: return {}.\n"
         . "Never invent people, ids, centres or dates that the request does not support.";
 }
 
@@ -895,11 +995,21 @@ function admin_ids_plan(array $p): array {
     // The plan on screen comes from the browser: it is cleaned like anything else before it is used.
     $current = is_array($p['current'] ?? null) ? ids_plan_clean($p['current'], $kinds, $centres)['plan'] : [];
     $rules = ids_plan_rules($prompt, $kinds, $centres, $today);
-    $refine = ids_plan_is_refinement($prompt, $current, $rules);
+    // Nothing read is nothing to do: an unreadable request never re-applies the plan on screen.
+    $refine = $rules && ids_plan_is_refinement($prompt, $current, $rules);
     $plan = $refine ? ids_plan_refine($current, $rules) : $rules;
     $notes = []; $by = 'rules'; $provider = ''; $aiError = '';
-    if (ai_enabled('studio') || isset($GLOBALS['__ai_mock'])) {
-        $r = ai_classify(ids_plan_instructions($kinds, $centres, $today, $current), $prompt, 500, 'studio');
+    $providers = ai_providers_for('studio');
+    $want = strtolower(trim((string)($p['provider'] ?? '')));
+    // "Use the rules": the operator asked for no AI at all.
+    $rulesOnly = $want === 'rules';
+    if (!in_array($want, AI_PROVIDERS, true)) $want = '';
+    if ($want !== '' && !in_array($want, $providers, true) && !isset($GLOBALS['__ai_mock'])) {
+        $notes[] = ucfirst($want === 'anthropic' ? 'Claude' : $want) . ' isn’t set up for the studio here' . ($providers ? ', so ' . ucfirst($providers[0] === 'anthropic' ? 'Claude' : $providers[0]) . ' read it.' : '.');
+        $want = '';
+    }
+    if (!$rulesOnly && (ai_enabled('studio') || isset($GLOBALS['__ai_mock']))) {
+        $r = ai_classify(ids_plan_instructions($kinds, $centres, $today, $current), $prompt, 500, 'studio', $want, IDS_PLAN_AI_BUDGET);
         if (!empty($r['ok']) && is_array($r['data'])) {
             $c = ids_plan_clean($r['data'], $kinds, $centres);
             $aiRefine = $current && array_key_exists('refine', $r['data']) ? !empty($r['data']['refine']) : $refine;
@@ -910,12 +1020,15 @@ function admin_ids_plan(array $p): array {
             foreach (['also', 'exclude'] as $k) if (!empty($rules[$k])) $plan[$k] = ids_plan_union($plan[$k] ?? [], $rules[$k]);
             if (!$aiRefine && !empty($rules['ids'])) $plan['ids'] = array_values(array_unique(array_merge($c['plan']['ids'] ?? [], $rules['ids'])));
             $refine = $aiRefine;
-            $notes = $c['notes']; $by = 'ai'; $provider = (string)($r['provider'] ?? '');
+            $notes = array_merge($notes, $c['notes']); $by = 'ai'; $provider = (string)($r['provider'] ?? '');
+            // The rules see a kind said of one person, and the acts, word for word; the model's reading keeps them.
+            if (!empty($rules['kindOf'])) $plan['kindOf'] = array_merge($rules['kindOf'], $plan['kindOf'] ?? []);
+            if (!empty($rules['do']) && empty($plan['do'])) { $plan['do'] = $rules['do']; if (!empty($rules['acts'])) $plan['acts'] = $rules['acts']; if (!empty($rules['photo'])) $plan['photo'] = $rules['photo']; }
         } else {
             $aiError = (string)($r['error'] ?? 'ai_failed');
         }
     }
     audit('ids.plan', (string)$g['requester']['memberId'], '', ['by' => $by, 'provider' => $provider, 'refine' => $refine, 'fields' => array_keys($plan)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'plan' => (object)$plan, 'notes' => $notes, 'by' => $by, 'provider' => $provider, 'aiError' => $aiError,
-            'refined' => $refine, 'kinds' => $kinds, 'understood' => count($plan) > 0];
+            'refined' => $refine, 'kinds' => $kinds, 'understood' => count($plan) > 0, 'providers' => $providers];
 }

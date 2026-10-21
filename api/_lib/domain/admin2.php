@@ -702,7 +702,7 @@ function admin_assign_mentor(array $p): array {
     if ($mentor) {
         $track = $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
         db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => $now, 'endedAt' => '']);
-        push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => ($mentor['fullName'] ?? 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
+        push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => staff_public_name($mentorId, 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
     }
     $match = admin_assign_mentor_sync_match($memberId, $mentor, (string)$g['requester']['memberId']);
     audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId, 'match' => $match], (string)($p['ip'] ?? ''));

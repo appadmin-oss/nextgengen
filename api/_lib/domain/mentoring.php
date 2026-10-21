@@ -830,7 +830,11 @@ function member_courage(array $p): array {
     if (!db_row('SELECT memberId FROM members WHERE memberId = ? LIMIT 1', [$id])) {
         return ['ok' => false, 'error' => 'not_found'];
     }
-    return ['ok' => true, 'courage' => courage_index($id), 'ladder' => courage_ladder()] ;
+    // Who marked it, as the child addresses them (staff_public_names).
+    $c = courage_index($id);
+    $titled = staff_public_names(array_column($c['marks'] ?? [], 'markedById'));
+    foreach ($c['marks'] ?? [] as $i => $mk) $c['marks'][$i]['markedByName'] = $titled[$mk['markedById']] ?? 'Your mentor';
+    return ['ok' => true, 'courage' => $c, 'ladder' => courage_ladder()];
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

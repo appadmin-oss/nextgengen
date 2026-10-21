@@ -143,7 +143,9 @@ async function as(memberId, admin, viewport) {
     await shot(mb, 'mentor');
     await mb.click('main [role="tab"]:has-text("Sessions")');
     await mb.click('main button[aria-pressed]:has-text("My goal")');
-    await mb.click('main button:has-text("Send to Ngozi")');
+    // A child addresses their mentor by title and surname (staff_public_name), never by first name.
+    chk('Mentor: the mentor is “Coach Eke” on the child’s screen, never “Ngozi”', /Coach Eke/.test(await mb.innerText('main')) && !/Ngozi/.test(await mb.innerText('main')));
+    await mb.click('main button:has-text("Send to Coach Eke")');
     await mb.waitForTimeout(1200);
     chk('Mentor: “Prepare for Saturday” sends the topics to the mentor', q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-MV-K1' AND body LIKE 'Before Saturday%'")['c']`) === 1);
     await mb.click('main [role="tab"]:has-text("How it")');

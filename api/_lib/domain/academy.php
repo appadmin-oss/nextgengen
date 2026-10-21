@@ -2,22 +2,26 @@
 declare(strict_types=1);
 
 /* ============================================================================
-   The Academies' "Start here": how to use the portal, before the portal.
+   The staff Academies: the portal's writes wait until it is complete.
 
-   Each staff portal has an Academy (mentors: seeds/mentor-academy.json, the
-   v15 portal; instructors: seeds/instructor-academy.json, the v6 portal). Its
-   first group is "Start here: using the portal" — one short module per area
-   of the portal, naming the right tool for every job — and those modules are
-   flagged `orientation`. Until a person has passed them, the portal opens on
-   the Academy and nothing else, and the server refuses that portal's writes
-   with `orientation_required` (academy_intercept, at backend_dispatch's one
-   seam). Reading their own data and Report a concern are never blocked: a
-   worry about a child does not wait for training.
+   Each staff portal has an Academy (mentors: seeds/mentor-academy.json;
+   instructors: seeds/instructor-academy.json). Its first group is "Start
+   here: using the portal" — one short guide per area of the portal, naming
+   the right tool for every job, flagged `orientation`, per portal — and then
+   the required modules (safeguarding, practice).
 
-   Orientation is NOT clearance. Clearance (mentorship-pods.php) is what lets
-   a mentor be matched with children — screening, the policy, the required
-   safeguarding and practice modules — and orientation modules are not part
-   of it, so adding a guide never un-clears anybody.
+   Until a person's Academy is complete (every guide and required module for
+   their portals passed, renewals in date) they can open every screen of
+   their portal and look around, but nothing they do there saves: the server
+   refuses that portal's writes with `orientation_required`
+   (academy_intercept, at backend_dispatch's one seam) and the portal says
+   why on every screen. Report a concern is never held back: a worry about a
+   child does not wait for training.
+
+   Clearance (mentorship-pods.php) is a separate question — whether a mentor
+   may be matched with children: screening, the policy and the required
+   modules. A guide is not part of clearance, so adding one never un-clears
+   anybody; it only holds that person's own saves until they take it.
 
    Exempt: staff with admin access (they set the Academy's policy), and a
    mentor whose Academy an admin recorded as completed in person
@@ -67,16 +71,45 @@ function academy_orientation_ids(string $track, ?array $portals = null): array {
         array_filter(academy_track($track)['modules'], static fn($m) => !empty($m['orientation']) && academy_module_for($m, $portals))));
 }
 
-/** "Start here" for one person: {required, done, ok, exempt, mins, ids}. */
+/** The modules that make a person's Academy complete: the "Start here"
+ *  guides for their portals and every required module (for their portals). */
+function academy_required_ids(string $track, ?array $portals = null): array {
+    return array_values(array_map(static fn($m) => (string)$m['id'],
+        array_filter(academy_track($track)['modules'], static fn($m) => (!empty($m['orientation']) || !empty($m['required'])) && academy_module_for($m, $portals))));
+}
+
+/**
+ * The Academy for one person — what the portal's writes wait for. Until it
+ * is complete a mentor or instructor can open every screen of their portal
+ * and look around, but nothing they do there saves (academy_intercept).
+ * Complete means every "Start here" guide and every required module passed,
+ * and a module with a renewal period passed within it — a lapsed safeguarding
+ * module closes the portal's writes again until it is renewed.
+ *
+ * {required, done, ok, exempt, mins, ids, missing, startHere: {required, done}}.
+ * `mins` is the time still to do.
+ */
 function academy_orientation_state(string $track, string $personId, bool $exempt = false, ?array $portals = null): array {
-    $ids = academy_orientation_ids($track, $portals);
-    $mins = 0; foreach (academy_track($track)['modules'] as $m) if (in_array((string)$m['id'], $ids, true)) $mins += (int)($m['mins'] ?? 0);
-    if ($exempt || !$ids || $personId === '') return ['required' => count($ids), 'done' => count($ids), 'ok' => true, 'exempt' => $exempt, 'mins' => $mins, 'ids' => $ids];
+    $ids = academy_required_ids($track, $portals);
+    $orient = academy_orientation_ids($track, $portals);
+    $byId = []; foreach (academy_track($track)['modules'] as $m) $byId[(string)$m['id']] = $m;
+    $all = static fn($n) => ['required' => count($ids), 'done' => $n, 'ok' => true, 'exempt' => $exempt, 'mins' => 0, 'ids' => $ids, 'missing' => [],
+        'startHere' => ['required' => count($orient), 'done' => count($orient)]];
+    if ($exempt || !$ids || $personId === '') return $all(count($ids));
     $ph = implode(',', array_fill(0, count($ids), '?'));
-    $done = $track === 'mentor'
-        ? (int)(db_row("SELECT COUNT(DISTINCT moduleId) c FROM mentor_academy WHERE mentorId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$personId], $ids))['c'] ?? 0)
-        : (int)(db_row("SELECT COUNT(DISTINCT moduleId) c FROM academy_passes WHERE track = ? AND personId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$track, $personId], $ids))['c'] ?? 0);
-    return ['required' => count($ids), 'done' => $done, 'ok' => $done >= count($ids), 'exempt' => false, 'mins' => $mins, 'ids' => $ids];
+    $rows = $track === 'mentor'
+        ? db_all("SELECT moduleId, passedAt FROM mentor_academy WHERE mentorId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$personId], $ids))
+        : db_all("SELECT moduleId, passedAt FROM academy_passes WHERE track = ? AND personId = ? AND passedAt <> '' AND moduleId IN ($ph)", array_merge([$track, $personId], $ids));
+    $passed = [];
+    foreach ($rows as $r) {
+        $id = (string)$r['moduleId']; $renew = (int)($byId[$id]['renewDays'] ?? 0);
+        if ($renew > 0 && strtotime((string)$r['passedAt']) + $renew * 86400 < time()) continue;   // lapsed
+        $passed[$id] = true;
+    }
+    $missing = array_values(array_filter($ids, static fn($id) => !isset($passed[$id])));
+    $mins = 0; foreach ($missing as $id) $mins += (int)($byId[$id]['mins'] ?? 0);
+    return ['required' => count($ids), 'done' => count($ids) - count($missing), 'ok' => !$missing, 'exempt' => false, 'mins' => $mins, 'ids' => $ids, 'missing' => $missing,
+            'startHere' => ['required' => count($orient), 'done' => count(array_filter($orient, static fn($id) => isset($passed[$id])))]];
 }
 /** A mentor's "Start here", from their mentor row: staff and by-hand clearance are exempt. */
 function academy_mentor_orientation(?array $mentorRow): array {
@@ -92,7 +125,7 @@ function academy_mentor_portals(array $mentorRow): array {
 
 function academy_orientation_refusal(array $st, string $portal): array {
     return ['ok' => false, 'error' => 'orientation_required', 'orientation' => $st,
-            'detail' => 'Finish “Start here” in the Academy first (' . $st['done'] . ' of ' . $st['required'] . ' done, about ' . $st['mins'] . ' minutes in all). It shows you the right tool for each job in the ' . $portal . '. Report a concern always works.'];
+            'detail' => 'Nothing in the ' . $portal . ' saves until your Academy is complete (' . $st['done'] . ' of ' . $st['required'] . ' modules done, about ' . $st['mins'] . ' minutes left). You can look around everything meanwhile. Report a concern always works.'];
 }
 
 /**
@@ -168,4 +201,32 @@ function instructor_academy_result(array $p): array {
     $r = academy_result('instructor', (string)$p['requesterId'], $p);
     if (!empty($r['passed'])) audit('instructor.academy.pass', (string)$p['requesterId'], (string)($p['moduleId'] ?? ''), ['score' => $r['score']]);
     return $r;
+}
+
+/**
+ * member.staff.title — how children address this person, read and set by the
+ * person themselves. Offered at the top of their Academy, the first screen a
+ * new mentor or instructor opens. Only someone with a staff record (a mentor,
+ * a volunteer, a staff role) has one: a child's own name is never retitled.
+ */
+function member_staff_title(array $p): array {
+    $me = (string)($p['memberId'] ?? '');
+    if ($me === '') return ['ok' => false, 'error' => 'forbidden'];
+    $mentor = db_row("SELECT mentorId, volunteerId, fullName, honorific FROM mentors WHERE memberId = ? ORDER BY id DESC LIMIT 1", [$me]);
+    $vol = db_row("SELECT volunteerId, fullName, honorific FROM volunteers WHERE memberId = ? OR volunteerId = ? ORDER BY id DESC LIMIT 1", [$me, $me]);
+    $mem = db_row("SELECT fullName, role, honorific FROM members WHERE memberId = ? LIMIT 1", [$me]);
+    $staff = $mentor || $vol || ($mem && in_array(strtolower((string)$mem['role']), staff_role_names(), true));
+    if (!$staff) return ['ok' => false, 'error' => 'not_staff'];
+    $name = (string)($mem['fullName'] ?? $mentor['fullName'] ?? $vol['fullName'] ?? '');
+    if (array_key_exists('honorific', $p)) {
+        $want = trim((string)$p['honorific']);
+        if ($want !== '' && staff_honorific_clean($want) === '') return ['ok' => false, 'error' => 'bad_title'];
+        staff_honorific_set($mem ? $me : '', (string)($mentor['mentorId'] ?? ''), (string)($vol['volunteerId'] ?? $mentor['volunteerId'] ?? ''), $want);
+        audit('staff.title', $me, $me, ['title' => staff_honorific_clean($want)], (string)($p['ip'] ?? ''));
+    }
+    $h = (string)(db_row("SELECT honorific FROM members WHERE memberId = ? LIMIT 1", [$me])['honorific'] ?? '')
+        ?: (string)(db_row("SELECT honorific FROM mentors WHERE memberId = ? AND honorific <> '' LIMIT 1", [$me])['honorific'] ?? '')
+        ?: (string)(db_row("SELECT honorific FROM volunteers WHERE (memberId = ? OR volunteerId = ?) AND honorific <> '' LIMIT 1", [$me, $me])['honorific'] ?? '');
+    return ['ok' => true, 'honorific' => $h, 'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT,
+            'surname' => staff_surname($name), 'seenAs' => staff_title_name($name, $h)];
 }

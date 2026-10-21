@@ -265,7 +265,7 @@ async function contextFor(memberId, admin, viewport) {
     await ip.screenshot({ path: path.join(SHOTS, 'instructor.png'), fullPage: true });
 
     /* ── An instructor's material, approved ── */
-    await ip.click('.cur-staff-unit-btn:has-text("Finding middle C")');
+    await ip.click('.scm-row-btn:has-text("Finding middle C")');
     await ip.click('button:has-text("+ Add a material")');
     await ip.fill('.cur-staff-matform input[placeholder^="e.g. Bow hold"]', 'Middle C, slowed down');
     await ip.fill('.cur-staff-matform input[placeholder^="https://"]', 'https://www.youtube.com/watch?v=middlec');

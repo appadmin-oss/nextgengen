@@ -249,7 +249,11 @@ function tt_for_centre(string $centreName, bool $withInstructor, string $highlig
 function member_timetable(array $p): array {
     $m = db_row('SELECT memberId, centre, track FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'course' => (string)($m['track'] ?? '')] + tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? ''));
+    $tt = tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? ''));
+    // The member's own week names who teaches as a child addresses them.
+    $titled = staff_public_names(array_column($tt['slots'], 'instructorId'));
+    foreach ($tt['slots'] as $i => $sl) if ((string)($sl['instructorId'] ?? '') !== '') $tt['slots'][$i]['instructor'] = $titled[$sl['instructorId']] ?? 'Your instructor';
+    return ['ok' => true, 'course' => (string)($m['track'] ?? '')] + $tt;
 }
 
 /**

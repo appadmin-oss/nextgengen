@@ -273,8 +273,8 @@ function sf_day_lines(string $mid, string $date, array $blocks): array {
     $obs = $reg ? (json_decode((string)$reg['observed'], true) ?: []) : [];
     $chk = $reg ? (json_decode((string)($reg['checks'] ?? ''), true) ?: []) : [];
     if ($chk) $lines[] = 'Accountability: ' . (in_array('On time', $chk, true) ? 'on time' : 'not marked on time') . ', ' . (in_array('Assignment in', $chk, true) ? 'assignment handed in' : 'assignment not handed in') . (in_array('Checked out', $chk, true) ? ', checked out by their mentor.' : '.');
-    $mentor = db_row("SELECT t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$mid]);
-    $lines[] = 'Musing & mentor breakout' . ($mentor ? ' with ' . (string)$mentor['fullName'] : '') . ($obs ? ': their mentor saw ' . strtolower(implode(', ', $obs)) . '.' : '.');
+    $mentor = db_row("SELECT t.mentorId FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$mid]);
+    $lines[] = 'Musing & mentor breakout' . ($mentor ? ' with ' . staff_public_name((string)$mentor['mentorId'], 'their mentor') : '') . ($obs ? ': their mentor saw ' . strtolower(implode(', ', $obs)) . '.' : '.');
     $rev = db_row('SELECT line FROM mentor_reviews WHERE subjectId = ? AND period = ?', [$mid, iso_week_period(strtotime($date . 'T12:00:00Z'))]);
     if ($rev && trim((string)$rev['line']) !== '') $lines[] = 'From their mentor: “' . mb_substr(trim((string)$rev['line']), 0, 200) . '”';
     /* The latest Saturday evaluation: the strength their mentor saw and the one next step (never the ratings). */

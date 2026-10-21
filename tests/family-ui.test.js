@@ -147,8 +147,13 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('Today leads with what needs the parent, and one-tap messages to the centre',
       /Needs you|Nothing needs you/.test(await fp.innerText('#fx-needs-h')) && !!(await fp.$('button:has-text("will be away")')));
     await fp.screenshot({ path: path.join(SHOTS, 'family-today.png'), fullPage: true });
-    chk('the sidebar holds the five screens and the emails, one marked current',
-      (await fp.$$('.fx-nav-item')).length === 6 && (await fp.getAttribute('.fx-nav-item[aria-current="page"]', 'class')) !== null);
+    chk('the sidebar holds the six screens and the emails, one marked current',
+      (await fp.$$('.fx-nav-item')).length === 7 && (await fp.getAttribute('.fx-nav-item[aria-current="page"]', 'class')) !== null);
+    await fp.click('.fx-nav-item:has-text("Growth")');
+    await fp.waitForFunction(() => /What changed/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    const gTxt = await fp.innerText('main, body');
+    chk('Growth: the child’s term as a trend, written to a parent, with no wellbeing check-ins', /What changed/.test(gTxt) && /Saturdays/.test(gTxt) && !/Wellbeing check-ins/.test(gTxt) && /view=growth/.test(fp.url()));
+    await fp.click('.fx-nav-item:has-text("Today")');
     chk('…and the child is told', php(`echo db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-FU-KID' AND title = 'A family account is connected to you'")['c'];`) === '1');
 
     /* ── Ask for the sibling through the record ── */

@@ -215,10 +215,11 @@ function FamilyAccountMenu({ me, onChanged, onSignedOut }) {
   );
 }
 
-/* The five screens of one child's account, in the order a parent needs them.
+/* The six screens of one child's account, in the order a parent needs them.
    One registry: the sidebar, the phone tab bar and the breadcrumb all read it. */
 const FAMILY_VIEWS = [
   { id: "today",      label: "Today",                 short: "Today",    icon: "house" },
+  { id: "growth",     label: "Growth",                short: "Growth",   icon: "trend-up" },
   { id: "attendance", label: "Attendance & conduct",  short: "Attend",   icon: "calendar-check" },
   { id: "fees",       label: "Fees",                  short: "Fees",     icon: "wallet" },
   { id: "lessons",    label: "Lessons & timetable",   short: "Lessons",  icon: "book-open" },
@@ -474,6 +475,8 @@ function FamilyWard({ link, view, go, askKind, onRemoved }) {
     </section>
   );
 
+  // Growth over the term, the same report the mentor reads, written to a parent (mp_growth, audience 'family').
+  if (view === "growth") return <div className="fam-ward">{hero}{d.growth ? <GrowthReport data={d.growth}/> : <section className="fam-card"><h3 className="fam-h2">Growth</h3><p className="fam-hint">Nothing recorded for {first} yet.</p></section>}</div>;
   if (view === "attendance") return <div className="fam-ward">{hero}<FamilyAttendance d={d} first={first}/></div>;
   if (view === "fees") return <div className="fam-ward">{hero}<FamilyFees d={d} link={link} first={first} go={go}/></div>;
   if (view === "lessons") return <div className="fam-ward">{hero}<FamilyLessons d={d} first={first}/></div>;

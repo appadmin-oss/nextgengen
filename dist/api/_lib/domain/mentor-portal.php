@@ -1013,10 +1013,32 @@ function member_mp_messages(array $p): array {
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
                       'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t])];
         }
-        foreach (db_all("SELECT * FROM mentor_messages WHERE kind = 'From your mentee' AND subjectId IN ($ph) ORDER BY createdAt DESC LIMIT 60", $ids) as $mm) {
-            $out[] = ['id' => 'm:' . $mm['id'], 'threadId' => (string)$mm['threadId'], 'kind' => 'Message from your mentee', 'filter' => 'chat', 'from' => (string)$mm['fromName'],
-                      'subjectId' => (string)$mm['subjectId'], 'at' => (string)$mm['createdAt'], 'body' => (string)$mm['body'], 'read' => (string)$mm['readAt'] !== ''];
-        }
+    }
+    /* Conversations with children: ONE row per child, whoever started it —
+       the mentor's own first message included, which used to appear nowhere —
+       with the whole exchange in `thread`, oldest first. A lead's or
+       coordinator's conversations with children outside their caseload are
+       theirs too (mp_can_message). */
+    $chatRows = db_all("SELECT mm.*, m.fullName AS childName FROM mentor_messages mm JOIN members m ON m.memberId = mm.subjectId
+                        WHERE mm.threadId LIKE 'chat:%' AND mm.kind IN ('From your mentee', 'Reply')
+                          AND (mm.fromId = ? OR mm.subjectId IN (" . ($ids ? implode(',', array_fill(0, count($ids), '?')) : "''") . ")
+                               OR mm.threadId IN (SELECT threadId FROM mentor_messages WHERE fromId = ? AND threadId LIKE 'chat:%'))
+                        ORDER BY mm.createdAt, mm.id", array_merge([$g['me']], $ids, [$g['me']]));
+    $conv = [];
+    foreach ($chatRows as $mm) {
+        $sid = (string)$mm['subjectId']; $mine = (string)$mm['fromId'] === $g['me'];
+        if (!$mine && !in_array($sid, $ids, true) && !mp_can_message($g, $sid)) continue;
+        $c = &$conv[$sid];
+        if (!$c) $c = ['id' => 'chat:' . $sid, 'threadId' => 'chat:' . $sid, 'kind' => 'Conversation', 'filter' => 'chat', 'from' => (string)$mm['childName'], 'subjectId' => $sid,
+                       'mentee' => in_array($sid, $ids, true), 'thread' => [], 'read' => true];
+        $c['thread'][] = ['who' => $mine ? 'You' : (string)($mm['fromName'] ?: $mm['childName']), 'mine' => $mine, 'body' => (string)$mm['body'], 'at' => (string)$mm['createdAt'],
+                          'queued' => (string)$mm['status'] === 'queued'];
+        $c['at'] = (string)$mm['createdAt']; $c['body'] = (string)$mm['body'];
+        if (!$mine && (string)$mm['readAt'] === '') $c['read'] = false;
+        unset($c);
+    }
+    foreach ($conv as $c) $out[] = $c;
+    if ($ids) {
         if (!$peer) foreach (db_all("SELECT c.id, c.memberId, c.wellbeing, c.note, c.createdAt, m.fullName FROM member_checkins c JOIN members m ON m.memberId = c.memberId
                          WHERE c.memberId IN ($ph) AND (c.note <> '' OR c.wellbeing <> 'Okay') ORDER BY c.createdAt DESC LIMIT 40", $ids) as $c) {
             $t = 'checkin:' . $c['id'];
@@ -1044,6 +1066,12 @@ function member_mp_message_read(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $t = (string)($p['threadId'] ?? '');
     if (str_starts_with($t, 'm:')) { db_exec("UPDATE mentor_messages SET readAt = ? WHERE id = ? AND toId = ? AND readAt = ''", [now_iso(), (int)substr($t, 2), $g['me']]); return ['ok' => true]; }
+    if (preg_match('/^chat:([A-Za-z0-9_-]+)$/', $t, $mm)) {
+        // A conversation with a child: their messages in it are read.
+        if (!mp_can_message($g, $mm[1])) return ['ok' => false, 'error' => 'not_in_caseload'];
+        db_exec("UPDATE mentor_messages SET readAt = ? WHERE threadId = ? AND kind = 'From your mentee' AND readAt = ''", [now_iso(), $t]);
+        return ['ok' => true];
+    }
     if (!preg_match('/^(journal|checkin):[A-Za-z0-9_-]+$/', $t)) return ['ok' => false, 'error' => 'bad_thread'];
     if (!db_row("SELECT 1 FROM mentor_messages WHERE threadId = ? AND fromId = ? AND kind = 'read'", [$t, $g['me']])) mp_message_put($t, 'read', '', $g['me'], '', '', '-', 'sent');
     return ['ok' => true];
@@ -1068,13 +1096,49 @@ function member_mp_message_lead(array $p): array {
     return ['ok' => true];
 }
 /** Reply to a message. Between 8am and 8pm it goes now; otherwise it waits. Kept on record. */
+/**
+ * Who this person may write to. Their caseload — and, for a lead mentor or a
+ * coordinator, any active NGG member at the centres they lead: a lead is the
+ * adult a child in their centre can be pointed to, mentee or not.
+ */
+function mp_message_reach_centres(array $g): array {
+    if ($g['mpRole'] === 'lead') return array_values(array_filter([trim((string)($g['mentorRow']['centre'] ?? ''))]));
+    if ($g['mpRole'] === 'coord') return mp_centres($g)['centres'];
+    return [];
+}
+function mp_can_message(array $g, string $subject): bool {
+    if ($subject === '') return false;
+    if (in_array($subject, mp_caseload_ids($g), true)) return true;
+    $centres = mp_message_reach_centres($g);
+    if (!$centres) return false;
+    $m = db_row("SELECT centre, type, status, role FROM members WHERE memberId = ? LIMIT 1", [$subject]);
+    // A colleague is a member too: a mentor is never "a child at the centre".
+    return $m && (string)$m['status'] === 'active' && (string)($m['type'] ?: 'NGG') === 'NGG' && in_array((string)($m['role'] ?: 'member'), ['member', 'student', ''], true)
+        && in_array((string)$m['centre'], $centres, true) && !db_row("SELECT 1 FROM mentors WHERE memberId = ? LIMIT 1", [$subject]);
+}
+/** messageable — children this person may start a conversation with, by name (a lead's or coordinator's whole centre). */
+function member_mp_message_search(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    $q = trim((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 2) return ['ok' => true, 'children' => []];
+    $centres = mp_message_reach_centres($g); $ids = mp_caseload_ids($g);
+    $where = []; $args = [];
+    if ($ids) { $where[] = 'memberId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')'; $args = array_merge($args, $ids); }
+    if ($centres) { $where[] = "(centre IN (" . implode(',', array_fill(0, count($centres), '?')) . ") AND COALESCE(NULLIF(type,''),'NGG') = 'NGG' AND COALESCE(NULLIF(role,''),'member') IN ('member','student') AND memberId NOT IN (SELECT memberId FROM mentors WHERE memberId <> ''))"; $args = array_merge($args, $centres); }
+    if (!$where) return ['ok' => true, 'children' => []];
+    $rows = db_all("SELECT memberId, fullName, centre FROM members WHERE status = 'active' AND lower(fullName) LIKE ? AND (" . implode(' OR ', $where) . ") ORDER BY fullName LIMIT 8",
+        array_merge(['%' . mb_strtolower($q) . '%'], $args));
+    return ['ok' => true, 'children' => array_map(static fn($r) => ['id' => (string)$r['memberId'], 'name' => (string)$r['fullName'], 'centre' => (string)$r['centre'],
+        'mentee' => in_array((string)$r['memberId'], $ids, true)], $rows)];
+}
+
 function member_mp_message_reply(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $t = (string)($p['threadId'] ?? ''); $body = trim((string)($p['body'] ?? ''));
     if ($body === '') return ['ok' => false, 'error' => 'write_a_reply'];
     if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
     $subject = trim((string)($p['subjectId'] ?? ''));
-    if ($subject !== '' && !in_array($subject, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
+    if ($subject !== '' && !mp_can_message($g, $subject)) return ['ok' => false, 'error' => 'not_in_caseload'];
     if ($g['mpRole'] === 'peer' && (str_starts_with($t, 'family:') || str_starts_with($t, 'journal:') || str_starts_with($t, 'checkin:'))) return ['ok' => false, 'error' => 'peer_no_family'];
     /* The thread must belong to the child named — the one checked against
      * the caseload above. The thread id was taken as given, so a reply could
@@ -1143,17 +1207,20 @@ function member_mp_chat(array $p): array {
     $now = now_iso();
     $rows = db_all("SELECT id, threadId, kind, fromId, fromName, body, status, sendAfter, readAt, createdAt FROM mentor_messages
                     WHERE threadId IN ($ph) AND kind IN ('From your mentee', 'Reply') ORDER BY createdAt, id LIMIT 300", $threads);
+    // The adults in it are named as a child addresses them (staff_public_names).
+    $titled = staff_public_names(array_merge(array_column($rows, 'fromId'), $a ? [(string)$a['mentorId']] : []));
     $out = [];
     foreach ($rows as $r) {
         $mine = (string)$r['fromId'] === $me;
         // A reply held for quiet hours is not shown until it is due.
         if (!$mine && (string)$r['status'] === 'queued' && (string)$r['sendAfter'] > $now) continue;
-        $out[] = ['id' => (int)$r['id'], 'mine' => $mine, 'from' => $mine ? 'You' : (string)$r['fromName'], 'body' => (string)$r['body'], 'at' => (string)$r['createdAt'],
+        $out[] = ['id' => (int)$r['id'], 'mine' => $mine, 'from' => $mine ? 'You' : ($titled[(string)$r['fromId']] ?? 'Your mentor'), 'body' => (string)$r['body'], 'at' => (string)$r['createdAt'],
             'about' => str_starts_with((string)$r['threadId'], 'checkin:') ? 'Your check-in' : (str_starts_with((string)$r['threadId'], 'journal:') ? 'Your journal entry' : ''),
             'read' => $mine ? (string)$r['readAt'] !== '' : true];
     }
     db_exec("UPDATE notifications SET readAt = ? WHERE memberId = ? AND kind = 'mentor' AND (readAt = '' OR readAt IS NULL)", [$now, $me]);
-    return ['ok' => true, 'mentor' => $a ? ['name' => (string)$a['fullName'], 'first' => mp_first((string)$a['fullName'])] : null,
+    $mName = $a ? ($titled[(string)$a['mentorId']] ?? 'Your mentor') : '';
+    return ['ok' => true, 'mentor' => $a ? ['name' => $mName, 'first' => $mName] : null,
         'messages' => $out, 'quiet' => mp_in_quiet_hours(), 'max' => MP_CHAT_MAX];
 }
 
@@ -1234,7 +1301,7 @@ function member_mp_chat_send(array $p): array {
         if (function_exists('event_emit')) event_emit('behaviour.flagged', ['ref' => 'chat:' . $id, 'subject' => 'A child', 'category' => 'safeguarding', 'severity' => 'urgent', 'source' => 'member.chat']);
         audit('safeguarding.chat', $me, $me, ['messageId' => $id, 'reached' => $reached], (string)($p['ip'] ?? ''));
     }
-    return ['ok' => true, 'id' => $id, 'crisis' => $crisis, 'mentor' => mp_first((string)$a['fullName']),
+    return ['ok' => true, 'id' => $id, 'crisis' => $crisis, 'mentor' => staff_public_name((string)$a['mentorId'], 'your mentor'),
         'help' => $crisis ? mp_crisis_help((string)$m['centre']) : ''];
 }
 function mp_crisis_help(string $centre): string {
@@ -1268,6 +1335,7 @@ function member_mp_mine(array $p): array {
     if (!db_row("SELECT 1 FROM members WHERE memberId = ? AND status = 'active'", [$me])) return ['ok' => false, 'error' => 'no_member'];
     $o = mp_opts();
     $a = db_row("SELECT a.mentorId, a.startedAt, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [$me]);
+    $mName = $a ? staff_public_name((string)$a['mentorId'], 'Your mentor') : '';
     $week = iso_week_period(mp_lagos_now());
     $chk = db_row('SELECT wellbeing, sleep, stress, energy, note, createdAt FROM member_checkins WHERE memberId = ? AND week = ?', [$me, $week]);
     $cycle = mp_cycle(gmdate('Y-m-d', mp_lagos_now()), $o['relWeeks']);
@@ -1276,7 +1344,7 @@ function member_mp_mine(array $p): array {
     $goal = db_row("SELECT id, goal, outcome, obstacle, plan, area, reviewBy FROM mentor_goals WHERE subjectId = ? AND status = 'active' AND agreed = 1 ORDER BY id DESC LIMIT 1", [$me]);
     if ($goal) { $c = mentor_goal_checks_for([(int)$goal['id']])[(int)$goal['id']] ?? []; $goal['progress'] = $c ? (int)end($c)['progress'] : 0; }
     $self = db_row("SELECT month, scores FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'member' ORDER BY month DESC LIMIT 1", [$me]);
-    return ['ok' => true, 'week' => $week, 'checkin' => $chk, 'mentor' => $a ? ['name' => (string)$a['fullName'], 'first' => mp_first((string)$a['fullName']), 'since' => substr((string)($a['startedAt'] ?? ''), 0, 10)] : null,
+    return ['ok' => true, 'week' => $week, 'checkin' => $chk, 'mentor' => $a ? ['name' => $mName, 'first' => $mName, 'since' => substr((string)($a['startedAt'] ?? ''), 0, 10)] : null,
             'relAsked' => $a !== null && ($mentorSide !== null || ($childSide === null && db_row("SELECT 1 FROM mentor_nudges WHERE status = 'open' AND rule = 'J:relCheckDue' AND memberId = ?", [$me]) !== null)),
             'relDone' => $childSide !== null, 'relQuestions' => MP_REL_Q_CHILD, 'goal' => $goal,
             'selfScore' => $self ? ['month' => (string)$self['month'], 'scores' => array_map('intval', explode(',', (string)$self['scores']))] : null,
@@ -1365,33 +1433,85 @@ function member_mp_saturday(array $p): array {
     foreach ($reg as $sid => $r) $prefill[$sid] = mp_eval_prefill($r);
     return ['ok' => true, 'date' => $date, 'agenda' => $row && $row['agendaJson'] !== '' ? json_decode((string)$row['agendaJson'], true) : MP_AGENDA_DEFAULT,
         'oneToOnes' => $picks, 'sharedAt' => (string)($row['sharedAt'] ?? ''), 'registerClosedAt' => (string)($row['registerClosedAt'] ?? ''),
+        'window' => mp_breakout_window(), 'after' => mp_breakout_next(), 'agendaDefault' => MP_AGENDA_DEFAULT, 'agendaMax' => MP_AGENDA_MAX, 'oneToOnesMax' => MP_ONE_TO_ONES_MAX,
+        'lead' => $g['lead'] ? mp_first((string)($g['lead']['fullName'] ?? '')) : '',
         'activities' => MP_ACTIVITIES, 'values' => MP_VALUES, 'checks' => MP_CHECKS, 'levels' => MP_LEVELS,
         'mentees' => array_map(static fn($m) => ['id' => $m['id'], 'name' => $m['name'], 'first' => $m['first'], 'initials' => $m['initials'], 'contactDays' => $m['flags']['contactDays']], $ms),
         'register' => $reg, 'reviews' => $reviews, 'period' => $period,
         'evalScale' => MP_EVAL_SCALE, 'evalCriteria' => array_map(static fn($k, $c) => ['key' => $k, 'label' => $c[0], 'hint' => $c[1]], array_keys(MP_EVAL_CRITERIA), MP_EVAL_CRITERIA),
         'evalPrefill' => $prefill];
 }
-/** saturdayPlan — the agenda and the one-to-ones. Fixed items cannot be removed; total ≤ 90 is advised, not enforced. */
+/* The Saturday plan is the mentor's part of the formation day: the "Musing &
+ * mentor breakout" block of the Saturday schedule (Control Room → Learning →
+ * Saturday formation), so its window is read from there, never assumed. The
+ * huddle opens it (the register is taken there) and the close ends it; what
+ * sits between is the mentor's to order, time and name. */
+const MP_AGENDA_FIXED = ['Pod huddle', 'One-to-ones', 'Close'];
+const MP_AGENDA_MAX = 12;
+const MP_ONE_TO_ONES_MAX = 6;
+
+/** The breakout window from the formation schedule: start, end, minutes. */
+function mp_breakout_window(): array {
+    $b = null;
+    if (function_exists('sf_blocks')) foreach (sf_blocks() as $x) if ($x['key'] === 'musing') { $b = $x; break; }
+    $start = (string)($b['start'] ?? '08:30'); $end = (string)($b['end'] ?? '10:00');
+    $mins = (int)round((strtotime('2000-01-01T' . $end . ':00Z') - strtotime('2000-01-01T' . $start . ':00Z')) / 60);
+    return ['start' => $start, 'end' => $end, 'minutes' => $mins > 0 ? $mins : 90, 'title' => (string)($b['title'] ?? 'Musing & mentor breakout')];
+}
+/** What follows the breakout, so an overrun can say what it eats into. */
+function mp_breakout_next(): string {
+    if (!function_exists('sf_blocks')) return '';
+    $seen = false;
+    foreach (sf_blocks() as $x) { if ($seen) return (string)$x['title']; if ($x['key'] === 'musing') $seen = true; }
+    return '';
+}
+
+/** saturdayPlan — the agenda and the one-to-ones, validated whole before anything is written. */
 function member_mp_saturday_plan(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
     $date = (string)($p['date'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
-    $items = [];
-    foreach ((array)($p['agenda'] ?? []) as $it) {
-        $t = mb_substr(trim((string)($it['title'] ?? '')), 0, 80);
-        if ($t === '') continue;
-        $items[] = ['title' => $t, 'sub' => mb_substr(trim((string)($it['sub'] ?? '')), 0, 160), 'minutes' => max(0, min(120, (int)($it['minutes'] ?? 0))), 'fixed' => !empty($it['fixed'])];
+    $raw = array_values((array)($p['agenda'] ?? []));
+    if (count($raw) > MP_AGENDA_MAX) return ['ok' => false, 'error' => 'too_many_items', 'max' => MP_AGENDA_MAX];
+    $items = []; $seen = [];
+    foreach ($raw as $i => $it) {
+        $t = mb_substr(trim(preg_replace('/\s+/', ' ', (string)($it['title'] ?? ''))), 0, 80);
+        if ($t === '') return ['ok' => false, 'error' => 'name_every_item', 'index' => $i];
+        $m = (int)($it['minutes'] ?? 0);
+        if ($m < 5 || $m > 120) return ['ok' => false, 'error' => 'bad_minutes', 'item' => $t];
+        // Fixed is the server's word, by name — a client cannot pin, or unpin, an item.
+        $fixed = in_array($t, MP_AGENDA_FIXED, true);
+        if ($fixed && isset($seen[$t])) return ['ok' => false, 'error' => 'duplicate_item', 'item' => $t];
+        $seen[$t] = true;
+        $items[] = ['title' => $t, 'sub' => mb_substr(trim((string)($it['sub'] ?? '')), 0, 160), 'minutes' => $m, 'fixed' => $fixed];
     }
-    foreach (['Pod huddle', 'One-to-ones', 'Close'] as $fx) if (!array_filter($items, static fn($i) => $i['title'] === $fx)) return ['ok' => false, 'error' => 'fixed_item_missing', 'item' => $fx];
+    foreach (MP_AGENDA_FIXED as $fx) if (!isset($seen[$fx])) return ['ok' => false, 'error' => 'fixed_item_missing', 'item' => $fx];
+    // The huddle opens the breakout and the close ends it, wherever they were sent.
+    $huddle = array_values(array_filter($items, static fn($i) => $i['title'] === 'Pod huddle'));
+    $close = array_values(array_filter($items, static fn($i) => $i['title'] === 'Close'));
+    $items = array_merge($huddle, array_values(array_filter($items, static fn($i) => !in_array($i['title'], ['Pod huddle', 'Close'], true))), $close);
     $case = mp_caseload_ids($g);
-    $picks = array_values(array_intersect(array_map('strval', (array)($p['oneToOnes'] ?? [])), $case));
+    $want = array_values(array_unique(array_map('strval', (array)($p['oneToOnes'] ?? []))));
+    $out = array_values(array_diff($want, $case));
+    if ($out) return ['ok' => false, 'error' => 'not_in_caseload', 'ids' => $out];
+    if (count($want) > MP_ONE_TO_ONES_MAX) return ['ok' => false, 'error' => 'too_many_one_to_ones', 'max' => MP_ONE_TO_ONES_MAX];
     $key = (string)($g['mentorId'] ?: $g['me']); $now = now_iso();
-    db_upsert('mentor_saturdays', ['mentorId' => $key, 'onDate' => $date, 'agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($picks),
+    db_upsert('mentor_saturdays', ['mentorId' => $key, 'onDate' => $date, 'agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($want),
         'registerClosedAt' => '', 'sharedAt' => !empty($p['share']) ? $now : '', 'updatedAt' => $now], ['mentorId', 'onDate'],
-        ['agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($picks), 'updatedAt' => $now] + (!empty($p['share']) ? ['sharedAt' => $now] : []));
-    if (!empty($p['share']) && $g['lead']) mp_message_put('lead:' . $g['me'], 'From your mentor', '', $g['me'], (string)($g['mentorRow']['fullName'] ?? ''), (string)($g['lead']['memberId'] ?? ''),
-        'Saturday plan for ' . $date . ': ' . implode(' · ', array_map(static fn($i) => $i['title'] . ' (' . $i['minutes'] . ')', $items)));
-    return ['ok' => true, 'total' => array_sum(array_column($items, 'minutes'))];
+        ['agendaJson' => json_encode($items), 'oneToOnesJson' => json_encode($want), 'updatedAt' => $now] + (!empty($p['share']) ? ['sharedAt' => $now] : []));
+    $w = mp_breakout_window(); $total = array_sum(array_column($items, 'minutes'));
+    $sharedTo = '';
+    if (!empty($p['share']) && $g['lead']) {
+        $names = []; foreach (db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . ($want ? implode(',', array_fill(0, count($want), '?')) : "''") . ')', $want) as $r) $names[] = mp_first((string)$r['fullName']);
+        $at = (int)substr($w['start'], 0, 2) * 60 + (int)substr($w['start'], 3, 2);
+        $lines = [];
+        foreach ($items as $i) { $lines[] = sprintf('%d:%02d', intdiv($at, 60), $at % 60) . ' ' . $i['title'] . ' (' . $i['minutes'] . ' min)' . ($i['title'] === 'One-to-ones' && $names ? ': ' . implode(', ', $names) : ''); $at += $i['minutes']; }
+        mp_message_put('lead:' . $g['me'], 'From your mentor', '', $g['me'], (string)($g['mentorRow']['fullName'] ?? ''), (string)($g['lead']['memberId'] ?? ''),
+            'Saturday plan for ' . $date . ' (' . $total . ' of ' . $w['minutes'] . ' min)' . "\n" . implode("\n", $lines));
+        $sharedTo = (string)($g['lead']['fullName'] ?? '');
+    }
+    return ['ok' => true, 'agenda' => $items, 'oneToOnes' => $want, 'total' => $total, 'window' => $w, 'over' => max(0, $total - $w['minutes']),
+            'sharedAt' => !empty($p['share']) ? $now : (string)(db_row('SELECT sharedAt FROM mentor_saturdays WHERE mentorId = ? AND onDate = ?', [$key, $date])['sharedAt'] ?? ''), 'sharedTo' => $sharedTo];
 }
 /** oneToOnesAdd — the Mentees bulk bar: add children to the next Saturday's one-to-ones, keeping the agenda. */
 function member_mp_one_to_ones_add(array $p): array {
@@ -1487,7 +1607,7 @@ function member_mp_review(array $p): array {
     if (array_key_exists('eval', $p) && $p['eval'] !== null) {
         $ev = mp_eval_validate($p['eval']);
         if (empty($ev['ok'])) return $ev;
-        $eval = $ev['eval'] + ['date' => $date, 'by' => mp_first((string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? '')), 'at' => now_iso()];
+        $eval = $ev['eval'] + ['date' => $date, 'by' => mp_first((string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? '')), 'byId' => $g['me'], 'at' => now_iso()];
     }
     $period = iso_week_period(strtotime($date . 'T12:00:00Z'));
     $line = mb_substr(trim((string)($p['line'] ?? '')), 0, 600);
@@ -1558,9 +1678,13 @@ function member_saturday_evals(array $p): array {
     if ($me === '' || !db_row("SELECT 1 FROM members WHERE memberId = ? AND status = 'active'", [$me])) return ['ok' => false, 'error' => 'no_member'];
     $rows = db_all("SELECT period, evalJson FROM mentor_reviews WHERE subjectId = ? AND evalJson IS NOT NULL AND evalJson <> '' ORDER BY period DESC LIMIT 8", [$me]);
     $out = [];
-    foreach ($rows as $r) {
-        $e = json_decode((string)$r['evalJson'], true); if (!is_array($e)) continue;
-        $out[] = ['date' => (string)($e['date'] ?? ''), 'period' => (string)$r['period'], 'mentor' => (string)($e['by'] ?? ''),
+    // The member reads who evaluated them as they address that adult; an
+    // evaluation saved before the evaluator's id was kept reads "Your mentor".
+    $evs = array_map(static fn($r) => json_decode((string)$r['evalJson'], true), $rows);
+    $titled = staff_public_names(array_map(static fn($e) => is_array($e) ? (string)($e['byId'] ?? '') : '', $evs));
+    foreach ($rows as $i => $r) {
+        $e = $evs[$i]; if (!is_array($e)) continue;
+        $out[] = ['date' => (string)($e['date'] ?? ''), 'period' => (string)$r['period'], 'mentor' => $titled[(string)($e['byId'] ?? '')] ?? 'Your mentor',
                   'criteria' => array_map(static fn($k, $c) => ['key' => $k, 'label' => $c[0], 'level' => (string)($e['criteria'][$k] ?? '')], array_keys(MP_EVAL_CRITERIA), MP_EVAL_CRITERIA),
                   'strength' => (string)($e['strength'] ?? ''), 'next' => (string)($e['next'] ?? '')];
     }
@@ -1952,4 +2076,181 @@ function member_mp_summer_review(array $p): array {
     else db_insert('mentor_reviews', $row + ['subjectId' => $sid, 'subjectType' => 'student', 'period' => $period, 'createdAt' => $now]);
     audit('mentor.summer.review', $me, $sid, ['period' => $period], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'period' => $period];
+}
+
+/* ── Growth: one child over time, for their mentor and for their family ────
+ * Every record the programme keeps about a child, read as a trend rather than
+ * a snapshot: the Saturdays they came to (of the ones their centre met), the
+ * Leadership Index month by month and the skills that moved, the Saturday
+ * evaluations and the criteria that moved, courage, the goal, the lessons,
+ * school results. Then a few plain sentences about what changed, each with
+ * the conversation it suggests.
+ *
+ * `$audience` is 'mentor' or 'family'. The family's read leaves out what is
+ * staff-only (wellbeing check-ins, the relationship check, the mentor's
+ * notes) and its sentences are written to a parent. The whole report is a
+ * fixed number of queries for one child, never one per week or per month. */
+const MP_GROWTH_SATURDAYS = 12;
+const MP_GROWTH_MONTHS = 6;
+
+function mp_growth(string $id, string $audience = 'mentor', ?string $today = null): array {
+    $m = db_row('SELECT memberId, fullName, centre, track, joinDate, createdAt, dob, status, type, role FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $family = $audience === 'family';
+    $today = $today ?: gmdate('Y-m-d', mp_lagos_now());
+    $first = mp_first((string)$m['fullName']);
+    $last = mp_last_saturday($today);
+    $sats = []; for ($i = MP_GROWTH_SATURDAYS - 1; $i >= 0; $i--) $sats[] = gmdate('Y-m-d', strtotime($last . 'T12:00:00Z') - $i * 7 * 86400);
+    $joined = substr((string)(($m['joinDate'] ?? '') ?: ($m['createdAt'] ?? '')), 0, 10);
+
+    // Attendance: the Saturdays the centre met (anybody there), and whether they were.
+    $met = array_flip(array_column(db_all("SELECT DISTINCT a.date FROM attendance a JOIN members x ON x.memberId = a.studentId
+                                           WHERE x.centre = ? AND a.date >= ? AND a.date <= ?", [(string)$m['centre'], $sats[0], $last]), 'date'));
+    $here = array_flip(array_column(db_all('SELECT DISTINCT date FROM attendance WHERE studentId = ? AND date >= ? AND date <= ?', [$id, $sats[0], $last]), 'date'));
+    foreach (db_all('SELECT onDate FROM mentor_register WHERE subjectId = ? AND here = 1 AND onDate >= ?', [$id, $sats[0]]) as $r) $here[(string)$r['onDate']] = true;
+    $series = array_map(static fn($d) => ['date' => $d, 'here' => !isset($met[$d]) && !isset($here[$d]) ? null : isset($here[$d]), 'beforeJoining' => $joined !== '' && $d < $joined], $sats);
+    $rate = static function (array $part): ?int { $n = array_values(array_filter($part, static fn($s) => $s['here'] !== null && !$s['beforeJoining'])); return $n ? (int)round(100 * count(array_filter($n, static fn($s) => $s['here'])) / count($n)) : null; };
+    $half = intdiv(count($series), 2);
+    $attendance = ['series' => $series, 'rate' => $rate($series), 'earlier' => $rate(array_slice($series, 0, $half)), 'recent' => $rate(array_slice($series, $half))];
+    $missedRun = 0; foreach (array_reverse($series) as $s) { if ($s['here'] === null) continue; if ($s['here']) break; $missedRun++; }
+    $attendance['missedInARow'] = $missedRun;
+
+    // The Leadership Index, as their mentor scored it, month by month.
+    $sc = array_reverse(db_all("SELECT month, scores, total FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'mentor' ORDER BY month DESC LIMIT " . MP_GROWTH_MONTHS, [$id]));
+    $months = array_map(static fn($r) => ['month' => (string)$r['month'], 'total' => (int)$r['total']], $sc);
+    $moves = [];
+    if (count($sc) >= 2) {
+        $a = array_map('intval', explode(',', (string)$sc[0]['scores'])); $b = array_map('intval', explode(',', (string)end($sc)['scores']));
+        foreach (MP_SKILLS as $k => $s) if (isset($a[$k], $b[$k]) && $a[$k] !== $b[$k]) $moves[] = ['skill' => $s[0], 'from' => $a[$k], 'to' => $b[$k], 'change' => $b[$k] - $a[$k]];
+        usort($moves, static fn($x, $y) => $y['change'] <=> $x['change']);
+    }
+    $leadership = ['months' => $months, 'change' => count($months) >= 2 ? end($months)['total'] - $months[0]['total'] : null,
+                   'gains' => array_values(array_slice(array_filter($moves, static fn($x) => $x['change'] > 0), 0, 3)),
+                   'dips' => array_values(array_slice(array_reverse(array_filter($moves, static fn($x) => $x['change'] < 0)), 0, 3))];
+
+    // Saturday evaluations: how many of the criteria were shown, each time, and which moved.
+    $ev = array_reverse(db_all("SELECT period, evalJson FROM mentor_reviews WHERE subjectId = ? AND evalJson IS NOT NULL AND evalJson <> '' ORDER BY period DESC LIMIT 8", [$id]));
+    $evals = []; $lvl = static fn($v) => array_search((string)$v, MP_EVAL_SCALE, true);
+    foreach ($ev as $r) {
+        $e = json_decode((string)$r['evalJson'], true); if (!is_array($e)) continue;
+        $c = (array)($e['criteria'] ?? []);
+        $evals[] = ['date' => (string)($e['date'] ?? ''), 'shown' => count(array_filter($c, static fn($v) => in_array($v, ['Demonstrated', 'Strong'], true))), 'of' => count(MP_EVAL_CRITERIA),
+                    'criteria' => $c, 'strength' => (string)($e['strength'] ?? ''), 'next' => (string)($e['next'] ?? '')];
+    }
+    $moved = [];
+    if (count($evals) >= 2) foreach (MP_EVAL_CRITERIA as $k => $cr) {
+        $from = $evals[0]['criteria'][$k] ?? ''; $to = end($evals)['criteria'][$k] ?? '';
+        if ($from !== '' && $to !== '' && $from !== $to) $moved[] = ['label' => $cr[0], 'from' => $from, 'to' => $to, 'up' => $lvl($to) > $lvl($from)];
+    }
+    $latestEval = $evals ? end($evals) : null;
+    $evaluations = ['series' => array_map(static fn($x) => ['date' => $x['date'], 'shown' => $x['shown'], 'of' => $x['of']], $evals), 'moved' => $moved,
+                    'strength' => $latestEval['strength'] ?? '', 'next' => $latestEval['next'] ?? ''];
+
+    // Courage, the goal, the lessons, school.
+    $courage = function_exists('courage_index') ? courage_index($id, 40) : null;
+    $goal = db_row("SELECT id, goal, area FROM mentor_goals WHERE subjectId = ? AND status = 'active' AND agreed = 1 ORDER BY id DESC LIMIT 1", [$id]);
+    if ($goal) { $c = mentor_goal_checks_for([(int)$goal['id']])[(int)$goal['id']] ?? []; $goal['progress'] = $c ? (int)end($c)['progress'] : 0; $goal['checks'] = count($c); }
+    $goalsDone = (int)(db_row("SELECT COUNT(*) c FROM mentor_goals WHERE subjectId = ? AND status IN ('completed', 'achieved', 'done')", [$id])['c'] ?? 0);
+    $learn = function_exists('curriculum_for_member') ? curriculum_for_member($m) : ['total' => 0, 'completed' => 0, 'overdue' => 0, 'pct' => 0];
+    $school = null;
+    if (function_exists('results_subjects_of')) {
+        $up = db_all("SELECT uploadId, term FROM results_uploads WHERE memberId = ? AND status IN ('confirmed', 'sent') ORDER BY term DESC LIMIT 2", [$id]);
+        if ($up) {
+            $k0 = results_kpis(results_subjects_of((string)$up[0]['uploadId']));
+            $k1 = isset($up[1]) ? results_kpis(results_subjects_of((string)$up[1]['uploadId'])) : null;
+            $t = function_exists('results_term_parse') ? results_term_parse((string)$up[0]['term']) : null;
+            $school = ['term' => (string)($t['label'] ?? $up[0]['term']), 'average' => $k0['avg'], 'previous' => $k1['avg'] ?? null,
+                       'change' => $k0['avg'] !== null && $k1 && $k1['avg'] !== null ? $k0['avg'] - $k1['avg'] : null, 'best' => $k0['best'], 'lowest' => $k0['lowest']];
+        }
+    }
+    $wellbeing = null;
+    if (!$family) {
+        $wellbeing = array_reverse(array_map(static fn($r) => ['week' => (string)$r['week'], 'wellbeing' => (string)$r['wellbeing']],
+            db_all('SELECT week, wellbeing FROM member_checkins WHERE memberId = ? ORDER BY week DESC LIMIT 8', [$id])));
+    }
+
+    /* What changed, in a sentence each, with the conversation it suggests.
+       Only what the records show; nothing is inferred from one data point. */
+    $ins = [];
+    $say = static function (string $tone, string $mentor, string $parent, string $do = '', string $doParent = '') use (&$ins, $family) {
+        $ins[] = ['tone' => $tone, 'text' => $family ? $parent : $mentor, 'do' => $family ? $doParent : $do];
+    };
+    if ($missedRun >= 2) $say('down', $first . ' has missed the last ' . $missedRun . ' Saturdays the centre met.', $first . ' has not been at the last ' . $missedRun . ' Saturdays.',
+        'Call home this week: is something keeping them away?', 'If something is keeping them away, tell the centre: Requests → Tell the centre.');
+    elseif ($attendance['earlier'] !== null && $attendance['recent'] !== null && abs($attendance['recent'] - $attendance['earlier']) >= 25)
+        $attendance['recent'] > $attendance['earlier']
+            ? $say('up', 'Attendance is up: ' . $attendance['recent'] . '% of recent Saturdays, from ' . $attendance['earlier'] . '%.', $first . ' is coming more often: ' . $attendance['recent'] . '% of recent Saturdays.', 'Tell them you noticed.', 'Tell them you noticed.')
+            : $say('down', 'Attendance is down: ' . $attendance['recent'] . '% of recent Saturdays, from ' . $attendance['earlier'] . '%.', $first . ' is coming less often lately (' . $attendance['recent'] . '% of recent Saturdays).', 'Ask what changed.', 'Ask what changed, and tell the centre if you can help.');
+    if ($leadership['change'] !== null && $leadership['change'] !== 0) {
+        $g = $leadership['gains'][0] ?? null; $d = $leadership['dips'][0] ?? null;
+        $say($leadership['change'] > 0 ? 'up' : 'down',
+            'Leadership Index ' . ($leadership['change'] > 0 ? 'up ' : 'down ') . abs($leadership['change']) . ' since ' . $months[0]['month'] . ($g ? '; most in ' . $g['skill'] : '') . ($d ? '; ' . $d['skill'] . ' slipped' : '') . '.',
+            ($leadership['change'] > 0 ? $first . '’s leadership is growing' : $first . '’s leadership score dipped') . ($g ? ', most of all in ' . strtolower($g['skill']) : '') . '.',
+            $d ? 'Next goal could work on ' . strtolower($d['skill']) . '.' : 'Name the growth to them, specifically.', $g ? 'Ask them about a time they showed ' . strtolower($g['skill']) . ' this month.' : '');
+    }
+    foreach (array_slice($moved, 0, 2) as $x) $say($x['up'] ? 'up' : 'down', $x['label'] . ': ' . strtolower($x['from']) . ' → ' . strtolower($x['to']) . ' on Saturdays.',
+        $x['label'] . ' on Saturdays has gone from ' . strtolower($x['from']) . ' to ' . strtolower($x['to']) . '.', $x['up'] ? '' : 'Raise it gently at the next one-to-one.', '');
+    if (($learn['overdue'] ?? 0) > 0) $say('down', $learn['overdue'] . ' lesson' . ($learn['overdue'] === 1 ? ' is' : 's are') . ' overdue (' . $learn['completed'] . ' of ' . $learn['total'] . ' done).',
+        $learn['overdue'] . ' lesson' . ($learn['overdue'] === 1 ? ' is' : 's are') . ' overdue on the dashboard.', 'Ask what is in the way of the lessons.', 'Ask to see the dashboard together this week.');
+    if ($school && $school['change'] !== null && $school['change'] !== 0) $say($school['change'] > 0 ? 'up' : 'down',
+        'School average ' . ($school['change'] > 0 ? 'up ' : 'down ') . abs($school['change']) . ' points (' . $school['term'] . ').', 'School average ' . ($school['change'] > 0 ? 'up ' : 'down ') . abs($school['change']) . ' points this term.',
+        $school['change'] < 0 ? 'Look at the study plan together.' : '', $school['change'] < 0 ? 'Ask how the study plan is going.' : '');
+    if ($goal) $say('steady', 'Working on: ' . $goal['goal'] . ' (' . (int)$goal['progress'] . ' of 5).', 'Working on: ' . $goal['goal'] . '.', $goal['checks'] ? '' : 'No check on the goal yet: ask how close they are.', 'Ask how it is going.');
+    if ($courage && ($courage['direction'] ?? null)) $say($courage['direction'] === 'rising' ? 'up' : ($courage['direction'] === 'falling' ? 'down' : 'steady'),
+        'Courage is ' . $courage['direction'] . '.', 'Courage is ' . $courage['direction'] . ' on Saturdays.', '', '');
+    if (!$family && $wellbeing && count(array_filter(array_slice($wellbeing, -3), static fn($w) => in_array($w['wellbeing'], ['Struggling', 'Need help'], true))) >= 2)
+        $say('down', 'Two of their last three check-ins said they are struggling.', '', 'Talk to them, just the two of you, before Saturday.');
+    if (!$ins) $say('steady', 'Not enough has been recorded yet to see a trend. Scores, evaluations and attendance build the picture.', 'Not enough has been recorded yet to show a trend. It fills in as the term goes on.');
+
+    return ['ok' => true, 'audience' => $family ? 'family' : 'mentor', 'name' => (string)$m['fullName'], 'first' => $first, 'from' => $sats[0], 'to' => $last,
+        'attendance' => $attendance, 'leadership' => $leadership, 'evaluations' => $evaluations,
+        'courage' => $courage ? ['current' => $courage['current'] ?? null, 'direction' => $courage['direction'] ?? null, 'rung' => $courage['rung']['label'] ?? null] : null,
+        'goal' => $goal ? ['title' => (string)$goal['goal'], 'area' => (string)$goal['area'], 'progress' => (int)$goal['progress']] : null, 'goalsDone' => $goalsDone,
+        'learning' => ['total' => (int)($learn['total'] ?? 0), 'completed' => (int)($learn['completed'] ?? 0), 'overdue' => (int)($learn['overdue'] ?? 0), 'pct' => (int)($learn['pct'] ?? 0)],
+        'school' => $school, 'wellbeing' => $wellbeing, 'insights' => $ins];
+}
+
+/** growth — one mentee's growth report (the profile's Growth tab). */
+function member_mp_growth(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    $id = trim((string)($p['subjectId'] ?? ''));
+    if ($id === '') return member_mp_growth_pod($g, mp_today($p));
+    if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
+    return mp_growth($id, 'mentor', mp_today($p));
+}
+
+/* The pod at a glance: per mentee, attendance now against before, the index's
+ * change, evaluations' change and the lessons — grouped queries for the whole
+ * caseload, so a lead's sixty children are four reads, not two hundred. */
+function member_mp_growth_pod(array $g, string $today): array {
+    $ids = mp_caseload_ids($g);
+    if (!$ids) return ['ok' => true, 'rows' => []];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $last = mp_last_saturday($today); $from = gmdate('Y-m-d', strtotime($last . 'T12:00:00Z') - (MP_GROWTH_SATURDAYS - 1) * 7 * 86400);
+    $mid = gmdate('Y-m-d', strtotime($last . 'T12:00:00Z') - (intdiv(MP_GROWTH_SATURDAYS, 2) - 1) * 7 * 86400);
+    $members = db_all("SELECT memberId, fullName, centre FROM members WHERE memberId IN ($ph)", $ids);
+    $met = [];
+    foreach (db_all("SELECT DISTINCT x.centre, a.date FROM attendance a JOIN members x ON x.memberId = a.studentId WHERE a.date >= ? AND a.date <= ? AND x.centre IN (SELECT centre FROM members WHERE memberId IN ($ph))", array_merge([$from, $last], $ids)) as $r)
+        $met[(string)$r['centre']][(string)$r['date']] = true;
+    $here = [];
+    foreach (db_all("SELECT DISTINCT studentId, date FROM attendance WHERE date >= ? AND date <= ? AND studentId IN ($ph)", array_merge([$from, $last], $ids)) as $r) $here[(string)$r['studentId']][(string)$r['date']] = true;
+    $sc = [];
+    foreach (db_all("SELECT subjectId, month, total FROM mentor_scorecards WHERE byKind = 'mentor' AND subjectId IN ($ph) ORDER BY month", $ids) as $r) $sc[(string)$r['subjectId']][] = (int)$r['total'];
+    $ev = [];
+    foreach (db_all("SELECT subjectId, period, evalJson FROM mentor_reviews WHERE evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN ($ph) ORDER BY period", $ids) as $r) {
+        $e = json_decode((string)$r['evalJson'], true); if (!is_array($e)) continue;
+        $ev[(string)$r['subjectId']][] = count(array_filter((array)($e['criteria'] ?? []), static fn($v) => in_array($v, ['Demonstrated', 'Strong'], true)));
+    }
+    $rows = [];
+    foreach ($members as $m) {
+        $mid0 = (string)$m['memberId']; $days = array_keys($met[(string)$m['centre']] ?? []);
+        $r = static function (array $ds) use ($here, $mid0): ?int { return $ds ? (int)round(100 * count(array_filter($ds, static fn($d) => isset($here[$mid0][$d]))) / count($ds)) : null; };
+        $s = $sc[$mid0] ?? []; $e = $ev[$mid0] ?? [];
+        $rows[] = ['id' => $mid0, 'name' => (string)$m['fullName'],
+            'attendance' => $r($days), 'attendanceBefore' => $r(array_values(array_filter($days, static fn($d) => $d < $mid))), 'attendanceRecent' => $r(array_values(array_filter($days, static fn($d) => $d >= $mid))),
+            'index' => $s ? end($s) : null, 'indexChange' => count($s) >= 2 ? end($s) - $s[max(0, count($s) - MP_GROWTH_MONTHS)] : null,
+            'evalShown' => $e ? end($e) : null, 'evalChange' => count($e) >= 2 ? end($e) - $e[0] : null, 'evalOf' => count(MP_EVAL_CRITERIA)];
+    }
+    usort($rows, static fn($a, $b) => strcmp($a['name'], $b['name']));
+    return ['ok' => true, 'rows' => $rows, 'from' => $from, 'to' => $last];
 }

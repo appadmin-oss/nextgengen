@@ -634,7 +634,7 @@ function admin_volunteers_list(array $p): array {
     unset($a);
     /* photoUrl is on the row because the editor shows it: without it the
        photo read as empty, and a save wrote that empty back over the picture. */
-    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
     foreach ($roster as &$v) {
         $v['programme'] = volunteer_programme($v);
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
@@ -650,7 +650,8 @@ function admin_volunteers_list(array $p): array {
         $in = static fn($r) => in_array((string)($r['centre'] ?? ''), $scope, true);
         $pending = array_values(array_filter($pending, $in)); $roster = array_values(array_filter($roster, $in));
     }
-    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null];
+    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null,
+        'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
 }
 
 /** Edit an active volunteer's data — name, contact, role, centre, faculty,
@@ -722,7 +723,13 @@ function admin_volunteer_update(array $p): array {
         if (!in_array((string)$d['status'], ['active', 'inactive', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
         $row['status'] = (string)$d['status'];
     }
+    // How children address them (staff_public_name). Blank is "Coach".
+    if (array_key_exists('honorific', $d)) {
+        $h = trim((string)$d['honorific']);
+        if ($h !== '' && staff_honorific_clean($h) === '') return ['ok' => false, 'error' => 'bad_title'];
+    }
     db_update('volunteers', $row, ['volunteerId' => $volunteerId]);
+    if (array_key_exists('honorific', $d)) { staff_honorific_set((string)($v['memberId'] ?? ''), '', $volunteerId, (string)$d['honorific']); $row['honorific'] = true; }
     if (array_key_exists('photoUrl', $row) && function_exists('photo_supersede'))
         photo_supersede('volunteer', $volunteerId, (string)($v['photoUrl'] ?? ''), (string)$row['photoUrl'], (string)($g['requester']['memberId'] ?? ''));
     /* Moving someone onto (or off) the Club moves their card's clock with

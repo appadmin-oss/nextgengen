@@ -428,7 +428,7 @@ function community_v3_hw_board(array $p): array {
         $me = null; foreach ($state as $s) if ((string)$s['memberId'] === $viewer) $me = $s;
         $due = (string)$h['dueAt']; $dueT = $due !== '' ? strtotime(str_replace(' ', 'T', $due)) : 0;
         $meSt = !$me ? '' : ((string)$me['reviewedAt'] !== '' ? 'reviewed' : ((string)$me['submittedAt'] !== '' ? 'waiting' : ($dueT && $dueT < $today ? 'late' : 'todo')));
-        $setBy = (string)$h['createdByName'] ?: (community_author((string)$h['createdBy'])['name'] ?? 'Your instructor');
+        $setBy = community_staff_name((string)$h['createdBy']) ?? ((string)$h['createdByName'] ?: (community_author((string)$h['createdBy'])['name'] ?? 'Your instructor'));
         $row = ['id' => $hid, 'ch' => (string)$h['slug'], 'by' => cm3_key((string)$h['createdBy']), 'byName' => $setBy, 'title' => (string)$h['title'],
             'due' => $due !== '' ? 'Due ' . cm3_due_words($due) : 'No due date', 'dueShort' => $due !== '' ? 'Due ' . gmdate('D', (int)$dueT) : 'Any time',
             'set' => gmdate('D j M', strtotime((string)$h['createdAt']) ?: time()), 'detail' => (string)$h['detail'],
@@ -622,7 +622,7 @@ function community_v3_files(array $p): array {
               : ($kind === 'videos' ? ((string)($meta['title'] ?? '') ?: (mb_substr(trim((string)$r['body']), 0, 60) ?: 'Video'))
               : ((string)$r['altText'] ?: (mb_substr(trim((string)$r['body']), 0, 60) ?: ($kind === 'docs' ? 'Document' : 'Photo')))));
         $out[] = ['postId' => (string)$r['postId'], 'kind' => $kind, 'ch' => (string)$r['slug'], 'name' => $name,
-            'by' => cm3_key((string)$r['authorId']), 'byName' => (string)$r['authorName'], 'createdAt' => (string)$r['createdAt'],
+            'by' => cm3_key((string)$r['authorId']), 'byName' => community_staff_name((string)$r['authorId']) ?? (string)$r['authorName'], 'createdAt' => (string)$r['createdAt'],
             'size' => $kind === 'links' ? (string)($lp['site'] ?? parse_url((string)($lp['url'] ?? ''), PHP_URL_HOST) ?? '') : ($kind === 'code' ? strlen((string)$r['mediaCode']) . ' characters' : cm3_size((int)$r['mediaBytes'], (int)$r['mediaPages'], (int)$r['mediaDuration'], $kind)),
             'url' => $kind === 'links' ? (string)($lp['url'] ?? '') : (string)$r['mediaUrl'], 'poster' => (string)$r['mediaPoster'] ?: (string)($lp['image'] ?? ''),
             'format' => $fmt, 'peek' => $kind === 'code' ? implode("\n", array_slice(explode("\n", (string)$r['mediaCode']), 0, 6)) : ''];

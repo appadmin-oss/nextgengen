@@ -88,7 +88,7 @@ const confirm = async (pg, cta) => { await pg.waitForSelector('[role=dialog] but
       $mk('NGG-AD-INS', 'Tunde Teacher');
       db_insert('volunteers', ['volunteerId' => 'VOL-AD-1', 'fullName' => 'Tunde Teacher', 'email' => 'tunde.teacher@asd.example', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda',
         'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'memberId' => 'NGG-AD-INS', 'createdAt' => $now]);
-      foreach (academy_orientation_ids('instructor') as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-AD-INS', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
+      foreach (academy_required_ids('instructor') as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-AD-INS', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
       $mk('NGG-AD-M1', 'Zara Ibrahim', 'member', ['track' => 'Piano']);
       $mk('NGG-AD-M2', 'Kelechi Ike', 'member', ['track' => 'Coding']);
       db_insert('curriculum_units', ['unitId' => 'CU-AD-1', 'course' => 'Piano', 'level' => 'Year 1 · Foundation', 'week' => 2, 'position' => 1, 'title' => 'Building scales on C', 'status' => 'published', 'version' => 1,

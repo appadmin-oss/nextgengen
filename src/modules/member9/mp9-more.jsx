@@ -60,7 +60,9 @@ Object.assign(Mp9Portal.prototype, {
     const byDay = {};
     const DN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     slots.forEach(x => { const day = DN[x.weekday] || x.day || "Saturday"; (byDay[day] = byDay[day] || []).push([x.startTime || x.start || "", (x.course || x.title || "") + (x.level ? " · " + x.level : ""), x.room || x.where || ""]); });
-    if (slots[0] && slots[0].instructorName) division.instructor = slots[0].instructorName;
+    // Who teaches the member's own course, named as a child addresses them (the server's title + surname).
+    const mySlot = slots.find(x => x.mine && x.instructor) || slots.find(x => x.instructor);
+    if (mySlot) division.instructor = mySlot.instructor;
     if (slots[0] && slots[0].room) division.room = slots[0].room;
     const form = this.dd("form") || {};
     const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
@@ -236,11 +238,11 @@ Object.assign(Mp9Portal.prototype, {
       const base = R(p); const mine = s.cmts[id] || [];
       const loaded = (s.cmtsLoaded || {})[id] || [];
       const react = (emoji, key, on) => () => { this.setState({ [key]: { ...this.state[key], [id]: !on } }); NGGApi.member.community.react(id, emoji).catch(e => { this.setState({ [key]: { ...this.state[key], [id]: on } }); this.toast(mp9Err(e)); }); };
-      return { id, by: p.authorName || p.channelName || "NGG", when: mp9When(p.createdAt), t: p.body || p.title || "",
+      return { id, by: (p.author && p.author.name) || p.authorName || p.channelName || "NGG", when: mp9When(p.createdAt), t: p.body || p.title || "",
         likesN: (base["❤️"] || 0) - ((p.myReactions || []).includes("❤️") ? 1 : 0) + (lk ? 1 : 0), cheersN: (base["👏"] || 0) - ((p.myReactions || []).includes("👏") ? 1 : 0) + (ch ? 1 : 0),
         lkIcon: lk ? "ph-fill ph-heart" : "ph ph-heart", lkFg: lk ? "#b0361c" : "#4a4a50", chIcon: ch ? "ph-fill ph-hands-clapping" : "ph ph-hands-clapping", chFg: ch ? "#a07400" : "#4a4a50",
         like: react("❤️", "liked", lk), cheer: react("👏", "cheered", ch),
-        cmts: loaded.map(c => ({ w: c.authorName || "Member", t: c.body, pending: false })).concat(mine.map(t2 => ({ w: "You", t: t2, pending: true }))), cN: (p.commentCount || p.comments || 0) + mine.length, open: !!s.cOpen[id],
+        cmts: loaded.map(c => ({ w: c.name || c.authorName || "Member", t: c.body, pending: false })).concat(mine.map(t2 => ({ w: "You", t: t2, pending: true }))), cN: (p.commentCount || p.comments || 0) + mine.length, open: !!s.cOpen[id],
         toggle: () => { const o = !s.cOpen[id]; this.setState({ cOpen: { ...this.state.cOpen, [id]: o } }); if (o) NGGApi.member.community.comments(id).then(r => this.setState({ cmtsLoaded: { ...(this.state.cmtsLoaded || {}), [id]: (r && r.comments) || [] } })).catch(() => {}); },
         draft: s.cDraft[id] || "", onDraft: e => this.setState({ cDraft: { ...this.state.cDraft, [id]: e.target.value } }),
         send: e => { e.preventDefault(); const t2 = (this.state.cDraft[id] || "").trim(); if (!t2) return;
@@ -407,7 +409,7 @@ Object.assign(Mp9Portal.prototype, {
         if (!commit) return set({ rsSendTried: true });
         NGGApi.member.resultsSend(body()).then(r => { set({ rsSendTried: false, rsWhenTried: false, rsItems: null, rsHabit: undefined, rsCommit: undefined, rsFam: undefined }); reload();
           const m = this.rootRef.current && this.rootRef.current.querySelector("main"); if (m) m.scrollTop = 0;
-          this.toast(r && r.mentor ? "Sent to " + mp9First(r.mentor) + " for approval." : "Sent. Your mentor will see it when one is assigned."); }).catch(e => this.toast(mp9Err(e)));
+          this.toast(r && r.mentor ? "Sent to " + r.mentor + " for approval." : "Sent. Your mentor will see it when one is assigned."); }).catch(e => this.toast(mp9Err(e)));
       },
       reminders: (pp.items || []).map(x => ({ icon: "ph ph-bell-ringing", t: x.subject + " · " + (x.methodLabel || methodLabel(x.method)), s: (x.whenWhere || "No time set yet") + " · " + x.sessionsPerWeek + (x.sessionsPerWeek === 1 ? " session" : " sessions") + " a week" }))
         .concat([{ icon: "ph ph-calendar-check", t: "Weekly check-in", s: "Sunday evening · tick what you did" }]).concat(fam ? [{ icon: "ph ph-users", t: "Family update", s: "With the weekly family mail, once approved" }] : []),

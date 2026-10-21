@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 164;
+const NGG_SCHEMA_TARGET = 165;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4939,6 +4939,15 @@ function db_migrate(PDO $db): void {
               at TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_acatt ON academy_attempts(track, personId, moduleId, at);
+        ",
+        /* 165 — how a child addresses an adult: a title (Mr, Mrs, Dr, Coach…)
+         * and the surname, never the first name. Kept on the person's every
+         * staff record so whichever one a screen reads has it; staff_public_name()
+         * in util.php is the one reader. Blank means "Coach". */
+        165 => "
+            ALTER TABLE mentors ADD COLUMN honorific TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN honorific TEXT DEFAULT '';
+            ALTER TABLE members ADD COLUMN honorific TEXT DEFAULT '';
         ",
     ];
 

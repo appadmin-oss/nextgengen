@@ -236,10 +236,8 @@ button,input,textarea,select{font:inherit;color:inherit}
 </sc-if>
 
 <sc-if value="{{ on.curriculum }}" hint-placeholder-val="{{ false }}">
-  <sc-for list="{{ units }}" as="u" hint-placeholder-count="5">
-    <article style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-family:'Geist Mono',monospace;font-size:12.5px;color:#6b6b72">WEEK {{ u.w }}</span><span style="flex:1;min-width:160px;font-size:16px;font-weight:600">{{ u.t }}</span><span style="height:24px;padding:0 9px;border-radius:999px;background:{{ u.bg }};color:{{ u.fg }};font-size:12px;font-weight:600;display:inline-flex;align-items:center">{{ u.st }}</span></div>
-      <sc-if value="{{ u.hasMats }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ u.mats }}" as="m" hint-placeholder-count="2"><span style="height:28px;padding:0 10px;border-radius:999px;background:#f4f4f2;font-size:12.5px;display:inline-flex;align-items:center;gap:5px"><i class="ph ph-file"></i>{{ m }}</span></sc-for></div></sc-if>
+  {{ currBox }}
+</sc-if>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:12.5px;color:#6b6b72">{{ u.done }} of 12 students finished</span><button onClick="{{ u.upload }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-upload-simple"></i>Add material</button><sc-if value="{{ u.canPublish }}" hint-placeholder-val="{{ false }}"><button onClick="{{ u.pub }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c">Publish</button></sc-if></div>
     </article>
   </sc-for>

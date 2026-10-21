@@ -288,6 +288,7 @@ function cleanup() {
     await P.waitForTimeout(200);
     chk('…with Undo', (await nOnSheet()) === beforeClear);
     card = await ask('print them and mark them printed');
+    if ((await nOnSheet()) !== beforeClear || /Took/.test(card) || (await P.$('[role=alertdialog]'))) console.error('       print card: ' + card.replace(/\s+/g, ' ').slice(0, 300) + ' · on sheet ' + (await nOnSheet()) + ' of ' + beforeClear);
     chk('asked to print, it does not: Print stays a press', (await nOnSheet()) === beforeClear && !(await P.$('[role=alertdialog]')) && !/Took/.test(card));
 
     console.log('the conversation survives a refresh');

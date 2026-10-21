@@ -793,6 +793,8 @@
       mentorTeam:    (centre) => request('/member/mentor.php' + qs({ view: 'team', centre: centre || '' })),
       mentorSupervisionBook: (mentorId) => request('/member/mentor.php', { body: { action: 'supervisionBook', mentorId } }),
       mentorAcademy: () => request('/member/mentor.php' + qs({ view: 'academy' })),
+      // One mentee's growth report, or (no id) the pod at a glance.
+      mentorGrowth: (subjectId) => request('/member/mentor.php' + qs(subjectId ? { view: 'growth', subjectId } : { view: 'growth' })),
       mentorAcademyResult: (moduleId, answers) => request('/member/mentor.php', { body: { action: 'academyResult', moduleId, answers } }),
       mentorSaturday: (date, centre) => request('/member/mentor.php' + qs({ view: 'saturday', date: date || '', centre: centre || '' })),
       mentorMessages: () => request('/member/mentor.php' + qs({ view: 'messages' })),
@@ -826,6 +828,9 @@
       teachClass:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'class' }, o || {}))),
       /* The Instructor Academy: "Start here" (how to use this portal) and the training. */
       teachAcademy:       () => request('/member/teaching.php?view=academy'),
+      // How children address this staff member (title + surname). GET reads, POST sets.
+      staffTitle:         () => request('/member/staff-title.php'),
+      staffTitleSet:      (honorific) => request('/member/staff-title.php', { body: { honorific } }),
       teachAcademyResult: (moduleId, answers) => request('/member/teaching.php', { body: { action: 'academyResult', moduleId, answers } }),
       classRoll:   (slot, marks, close, awayRest) => request('/member/teaching.php', { body: Object.assign({ action: 'classRoll', marks: marks || {}, close: !!close, awayRest: !!awayRest }, slot || {}) }),
       classPlan:   (slot, plan) => request('/member/teaching.php', { body: Object.assign({ action: 'classPlan', plan }, slot || {}) }),
@@ -1532,7 +1537,8 @@
         design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
         // Printed IDs for those with none, and every member's secure card code; `codesOnly` for a proof.
         // Print from a prompt: the request read into a plan ({plan, notes, by, provider}); nothing is selected or printed by the server.
-        plan:      (prompt, current) => request('/admin/id-studio.php', { body: { action: 'plan', prompt, current: current || null }, timeout: 40000 }),
+        // `provider` asks for one AI first (Gemini, Groq…); the server says when it isn't set up and who read it instead.
+        plan:      (prompt, current, provider) => request('/admin/id-studio.php', { body: { action: 'plan', prompt, current: current || null, provider: provider || '' }, timeout: 40000 }),
         mintIds:   (memberIds, codesOnly) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds, codesOnly: !!codesOnly } }),
         // Afrovanguard member cards: who has one, the card's stylesheet (fonts inlined, ~3 MB, cached per design), each card's markup.
         avCards:   (q) => request('/admin/id-studio.php?view=av' + (q ? '&q=' + encodeURIComponent(q) : ''), { timeout: 40000 }),
