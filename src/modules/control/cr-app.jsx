@@ -274,7 +274,12 @@ function CrRoom({ auth, setPage, unlockNote }) {
     icon: a.icon, l: a.l, path: "Action",
     run: () => { const ix = CR_TAB_INDEX[a.tab]; pendingAct.current = a.act || null; go(ix.page, a.tab); },
   }));
+  /* ⌘K finds people, and a request by the REQ- id an alert or a webhook carried. */
   const searchPeople = has("people") ? async q => {
+    if (/^req-?[0-9a-f]{2,}/i.test(q.trim())) {
+      const r = await NGGApi.admin.requests.list({ status: "all", q: q.trim(), pageSize: 6 });
+      return (r.requests || []).map(x => ({ group: "Requests", icon: x.kind === "payment" ? "currency-ngn" : "hand", l: x.requestId + " · " + (x.subject || x.kindLabel), path: [x.fullName, (CR_REQ_STATUS[x.status] || [x.status])[0]].filter(Boolean).join(" · "), run: () => go("members", "request-log", x.requestId) }));
+    }
     const r = await NGGApi.admin.members.list({ q, pageSize: 6, page: 1 });
     return (r.members || r.rows || []).slice(0, 6).map(x => ({ icon: "user", l: x.fullName, path: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · "), run: () => go("members", "members", x.memberId) }));
   } : null;

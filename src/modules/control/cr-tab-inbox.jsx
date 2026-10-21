@@ -177,7 +177,7 @@ const CR_INBOX_SOURCES = {
         };
         return crItem({
           id: "req:" + x.requestId, cat: "requests", kind: (x.kindLabel || "Member request") + (x.byFamily ? " · From their family account" : ""), icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
-          title: x.subject || x.kindLabel, body: x.body || "", search: [x.displayId, x.centre, x.reference].join(" "),
+          title: x.subject || x.kindLabel, body: x.body || "", search: [x.requestId, x.displayId, x.memberId, x.centre, x.reference].join(" "),
           facts: f, thread: x.body ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body, mine: false }] : null,
           note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
           actions: [approve, { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "Say why — the member reads this."), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),

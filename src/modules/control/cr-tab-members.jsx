@@ -613,20 +613,21 @@ function crMbImportBlocks(d, ctx) {
    (member-detail, member-record, timeline, gate cards, card history). A part
    the server leaves out (money without `fees`, conduct outside policy scope)
    is one the reader may not see, and the page says so. */
-const CR_MB_REC_TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["conduct", "Conduct"], ["fees", "Fees"], ["curriculum", "Curriculum"],
+const CR_MB_REC_TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["conduct", "Conduct"], ["fees", "Fees"], ["requests", "Requests"], ["curriculum", "Curriculum"],
   ["companion", "Companion"], ["family", "Family & mentor"], ["classes", "Classes"], ["card", "ID card"], ["history", "History"]];
 const CR_MB_RATING = { on_track: ["On track", "ok"], watch: ["Watch", "warn"], at_risk: ["At risk", "bad"] };
 const CR_MB_ATT = { present: ["Present", "ok"], late: ["Late", "warn"], absent: ["Absent", "bad"] };
 
 async function crMbRecFetch(id) {
   const soft = p => p.catch(e => ({ _err: e }));
-  const [det, rec, tl, cards, hist, row] = await Promise.all([
+  const [det, rec, tl, cards, hist, row, reqs] = await Promise.all([
     NGGApi.admin.memberDetail(id), soft(NGGApi.admin.memberRecord(id)), soft(NGGApi.admin.memberTimeline(id)),
     soft(NGGApi.admin.members.cards.of(id)), soft(NGGApi.admin.registration.cardHistory(id, "member")),
     NGGApi.admin.members.list({ q: id, page: 1, pageSize: 200, sort: "memberId", dir: "asc" }).catch(() => ({ members: [] })),
+    soft(NGGApi.admin.requests.list({ memberId: id, status: "all", pageSize: 50 })),
   ]);
   const listRow = (row.members || []).find(x => x.memberId === id) || {};
-  return { id, detail: det.detail || {}, record: rec, timeline: tl, cards, hist, consent: listRow.consent || null };
+  return { id, detail: det.detail || {}, record: rec, timeline: tl, cards, hist, requests: reqs, consent: listRow.consent || null };
 }
 async function crMbRecReload(ctx, id) {
   try {
@@ -841,6 +842,17 @@ function crMbRecBlocks(d, ctx) {
     if (!tl || tl._err) return out.concat([recErr("the history", tl && tl._err)]);
     return out.concat([{ type: "list", span: 6, title: "History", sub: "Everything audited against this member", empty: "Nothing has been recorded against this member yet. Not “nothing happened” — nothing that was audited.",
       rows: (tl.events || []).map(e => ({ icon: "clock", t: e.what, s: e.by, m: crDate(e.at, true) })) }]);
+  }
+  if (tab === "requests") {
+    const q = rec.requests;
+    if (!q || q._err) return out.concat([recErr("this member’s requests", q && q._err)]);
+    const more = q.total > (q.requests || []).length;
+    return out.concat([{ type: "list", span: 6, title: "Requests", sub: more ? "The newest " + crNum(q.requests.length) + " of " + crNum(q.total) : crPlural(q.total || 0, "request"),
+      action: "Open request history", onAction: () => ctx.go("members", "request-log", rec.id),
+      empty: "This member has not raised a request. Members raise them from Records in their app; parents from the family account.",
+      rows: (q.requests || []).map(x => ({ icon: x.kind === "payment" ? "currency-ngn" : "hand", t: (x.subject || x.kindLabel) + " · " + x.requestId,
+        s: crDate(x.createdAt) + (x.decidedAt ? " · " + crReqStatus(x)[0].toLowerCase() + " by " + (x.decidedByName || "staff") + " " + crDate(x.decidedAt) : "") + (x.decision ? " · “" + x.decision.slice(0, 120) + "”" : ""),
+        m: crReqStatus(x)[0], onClick: () => crReqOpen(ctx, x) })) }]);
   }
   if (tab === "card") {
     const h = rec.hist;
@@ -1099,7 +1111,81 @@ function crMbCentreAdd() {
 }
 const crMbCentreCtx = { current: null };
 
+/* ── Request history (members/request-log) ──────────────────────────────────
+   The Inbox shows what is waiting; this is everything ever raised, so a
+   request that was decided or withdrawn can still be found — by the REQ- id
+   an alert carried, the member, or the reference on a bank statement. The
+   server searches, filters, scopes and pages (admin_requests_list); the
+   URL tail is a search, so /control/members/request-log/REQ-9EE53F1611 opens
+   on that one request. */
+const CR_REQ_STATUS = { open: ["Waiting", "warn"], approved: ["Approved", "ok"], declined: ["Declined", "bad"], withdrawn: ["Withdrawn", "neutral"] };
+const CR_REQ_SORTS = [["newest", "Newest first"], ["oldest", "Oldest first"], ["decided", "Recently decided"], ["amount", "Largest amount"]];
+function crReqStatus(x) { return CR_REQ_STATUS[x.status] || [String(x.status || "—"), "neutral"]; }
+function crReqOpen(ctx, x) {
+  const st = crReqStatus(x), pay = x.kind === "payment", open = x.status === "open";
+  const fields = [["Request", x.requestId], ["Kind", x.kindLabel || x.kind], ["Member", (x.fullName || x.memberId) + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]];
+  if (pay) fields.push(["Claimed", fmtMoney(x.amount)], ["Reference", x.reference || "—"], ["Paid on", x.paidAt ? crDate(x.paidAt) : "—"], ["Receipt", x.proofUrl ? "Attached" : "None attached"]);
+  if (x.kind === "leave") fields.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
+  if (x.byFamily) fields.push(["Raised by", (x.raisedByName || "Their family") + " · from the family account"]);
+  if (x.ledgerEntryId) fields.push(["Ledger entry", x.ledgerEntryId]);
+  ctx.drawer({
+    title: x.subject || x.kindLabel, sub: x.requestId + " · " + (x.kindLabel || x.kind),
+    stats: [["Status", st[0]], ["Raised", crDate(x.createdAt, true)], [x.status === "withdrawn" ? "Withdrawn" : "Decided", x.decidedAt ? crDate(x.decidedAt, true) + (x.decidedByName ? " · " + x.decidedByName : "") : x.status === "withdrawn" ? crDate(x.updatedAt, true) : "Not yet"]],
+    fields,
+    sections: [
+      { h: "What they wrote", text: x.body || "", empty: "Nothing beyond the subject." },
+      { h: "The reply", text: x.decision || "", empty: open ? "Not decided yet." : x.status === "withdrawn" ? "Withdrawn by the member before anyone decided it." : "Decided without a written reply." },
+    ],
+    actions: [
+      open ? { l: "Decide it in the Inbox", primary: true, run: () => { ctx.closeDrawer(); ctx.go("inbox", "requests"); } } : null,
+      x.proofUrl ? { l: "Open the receipt", run: () => window.open(x.proofUrl, "_blank", "noopener") } : null,
+      x.memberId ? { l: "Open the member’s record", primary: !open, run: () => { ctx.closeDrawer(); ctx.go("members", "members", x.memberId); } } : null,
+    ].filter(Boolean),
+  });
+}
+function crReqServer(ctx) {
+  return {
+    sortKeys: {},
+    fetch: async ({ q, filters, page, pageSize }) => {
+      const r = await NGGApi.admin.requests.list({ status: filters.status || "all", kind: filters.kind || "", sort: filters.sort || "newest", q: q || "", offset: page * pageSize, pageSize });
+      return { total: r.total || 0, rows: (r.requests || []).map(x => {
+        const st = crReqStatus(x);
+        return { key: x.requestId, open: () => crReqOpen(ctx, x), cells: [
+          { k: "mono", t: x.requestId },
+          { k: "person", t: x.fullName || x.memberId, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · ") },
+          { k: "strong", t: x.subject || x.kindLabel, s: (x.kindLabel || x.kind) + (x.byFamily ? " · from their family account" : "") + (x.reference ? " · ref " + x.reference : "") },
+          { k: "status", t: st[0], tone: st[1] },
+          { k: "text", t: crDate(x.createdAt) },
+          { k: "text", t: x.decidedAt ? crDate(x.decidedAt) : x.status === "withdrawn" ? crDate(x.updatedAt) : "—", s: x.decidedByName || "" },
+        ] };
+      }) };
+    },
+  };
+}
+
 Object.assign(CR_TAB_DEFS, {
+  "request-log": {
+    skeleton: ["table"],
+    load: async ctx => {
+      const r = await NGGApi.admin.requests.list({ status: "all", pageSize: 1 });
+      return { kinds: r.kinds || {}, statuses: r.statuses || Object.keys(CR_REQ_STATUS), open: r.openByKind || {}, total: r.total || 0, server: crReqServer(ctx) };
+    },
+    blocks: (d, ctx) => {
+      const waiting = Object.keys(d.open).reduce((n, k) => n + d.open[k], 0);
+      return [
+        waiting ? { type: "note", span: 6, icon: "tray", text: crPlural(waiting, "request") + " still waiting for a decision.", sub: "They are decided in the Inbox, where the actions are; this page is the record of all of them.", act: { l: "Open the Inbox", run: () => ctx.go("inbox", "requests") } } : null,
+        { type: "table", span: 6, title: "Every request", sub: crPlural(d.total, "request") + " raised", nosel: true, server: d.server, q: ctx.sub || "",
+          search: "Request ID, member, reference or subject",
+          cols: ["Request", "Member", { l: "What", wrap: true }, "Status", "Raised", "Decided"],
+          filters: [
+            { id: "status", l: "Status", opts: d.statuses.map(s => ({ v: s, l: crReqStatus({ status: s })[0] })) },
+            { id: "kind", l: "Kind", opts: Object.keys(d.kinds).map(k => ({ v: k, l: d.kinds[k] })) },
+            { id: "sort", l: "Sort", opts: CR_REQ_SORTS.map(o => ({ v: o[0], l: o[1] })) },
+          ],
+          emptyText: "No request matches. A request ID looks like REQ-9EE53F1611; a search also matches the member, their ID, the subject and a payment reference." },
+      ].filter(Boolean);
+    },
+  },
   quality: crPanel(() => <AdminMembers/>, { tab: "quality" }),   // v1's Data quality and Duplicates, and the rest of its member desk
   families: crPanel(() => <AdminFamilies/>),
   /* "Add a centre" in the header, as a labelled form: the directory's own

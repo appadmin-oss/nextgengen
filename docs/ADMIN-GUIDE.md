@@ -120,11 +120,24 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 | Behaviour monitor | Conduct incidents as they come in. |
 | Dues & fees | The fee ledger. Separate permission — see below. |
 | Conduct policy & fines | Thresholds, suspensions, fine amounts. Governs members **and** Summer School. |
-| Member requests | Things members have asked for and are waiting on. |
+| Member requests | Things members have asked for and are waiting on (Inbox). |
+| Request history | Every request ever raised — open, approved, declined, withdrawn — and who decided it. |
 | Staff activity | What staff accounts have been doing. |
 | Engagement | Participation figures. |
 | **Centres** | The centre directory. Add, edit, retire. |
 | **ID cards** | The print log, one person's card history, and the doors into both studios. |
+
+**Finding a request.** A request waiting for a decision is in **Inbox → Member
+requests**; that is where it is approved or declined. Once it is decided — or
+the member withdraws it — it leaves the Inbox, and it is in **Members →
+Request history** (`/control/members/request-log`). Search there by the
+request id an alert or a webhook carried (`REQ-9EE53F1611`), the member's name
+or ID, the subject, or the reference on a bank statement; filter by status and
+kind. Opening one shows what the member wrote, the reply, who decided it and
+when, and the ledger entry a payment was posted to. Typing a `REQ-` id into
+**Ctrl K** goes straight to it, and a member's own record has a **Requests**
+part with all of theirs. A centre admin sees, and can decide, only their own
+centres' requests.
 
 **Summer School** — the season, and only the season.
 

@@ -23156,6 +23156,56 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             return ($r['error'] ?? '') === 'already_decided';
         })());
 
+    // ── The history: every request, findable by the id an alert carries ──
+    $hist = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'pageSize' => 100]);
+    $byId = array_column($hist['requests'] ?? [], null, 'requestId');
+    $one = $byId[$claim['request']['requestId']] ?? null;
+    chk('requests history: status=all returns decided requests too, with who decided and the ledger entry',
+        !empty($hist['ok']) && $one && $one['status'] === 'approved' && $one['decidedByName'] === 'Self Admin'
+        && $one['ledgerEntryId'] !== '' && $hist['total'] === (int)db_row('SELECT COUNT(*) c FROM member_requests')['c']);
+    chk('requests history: the Inbox default is still the open queue only',
+        !array_filter(admin_requests_list(['requesterId' => $ADMIN])['requests'], static fn($x) => $x['status'] !== 'open'));
+    $rid = $claim['request']['requestId'];
+    $f = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'q' => strtolower(substr($rid, 4))]);
+    chk('requests history: a REQ- id finds its request, in any case', $f['total'] === 1 && $f['requests'][0]['requestId'] === $rid);
+    $refd = member_request_create(['memberId' => $OTHER, 'kind' => 'payment', 'amount' => 18000, 'reference' => 'GTB-778812']);
+    chk('requests history: the reference on a bank statement finds it',
+        array_column(admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'q' => 'gtb-7788'])['requests'], 'requestId') === [$refd['request']['requestId']]);
+    chk('requests history: LIKE wildcards in a search are literal, not "match everything"',
+        admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'q' => '%'])['total'] === 0
+        && admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'q' => '_'])['total'] === 0);
+    $mine = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'memberId' => $OTHER]);
+    chk('requests history: memberId narrows to one person\'s requests',
+        $mine['total'] >= 1 && !array_filter($mine['requests'], static fn($x) => $x['memberId'] !== $OTHER));
+    $hist = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'pageSize' => 100]);   // again: one was raised above
+    $p0 = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'pageSize' => 1, 'offset' => 0]);
+    $p1 = admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'pageSize' => 1, 'offset' => 1]);
+    chk('requests history: pages carry the true total, not the page length',
+        count($p0['requests']) === 1 && count($p1['requests']) === 1 && $p0['total'] === $hist['total'] && $p0['total'] > 1
+        && $p0['requests'][0]['requestId'] !== $p1['requests'][0]['requestId']);
+    chk('requests history: an unknown sort falls back to newest instead of failing',
+        array_column(admin_requests_list(['requesterId' => $ADMIN, 'status' => 'all', 'sort' => 'id; DROP TABLE x', 'pageSize' => 100])['requests'], 'requestId')
+        === array_column($hist['requests'], 'requestId'));
+    // Scope: a centre admin sees, counts and decides only their own centres' requests.
+    db_exec("DELETE FROM centres WHERE centreId IN ('SELF-C1','SELF-C2')");
+    db_insert('centres', ['centreId' => 'SELF-C1', 'name' => 'Selfton', 'code' => 'SF', 'status' => 'active', 'slug' => 'selfton', 'createdAt' => now_iso()]);
+    db_insert('centres', ['centreId' => 'SELF-C2', 'name' => 'Otherton', 'code' => 'OT', 'status' => 'active', 'slug' => 'otherton', 'createdAt' => now_iso()]);
+    db_exec("UPDATE members SET centre = 'Selfton' WHERE memberId = ?", [$OTHER]);
+    db_exec("DELETE FROM members WHERE memberId = 'SELF-SCP'");
+    db_insert('members', ['memberId' => 'SELF-SCP', 'fullName' => 'Scoped Admin', 'email' => 'scp@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'super_admin', 'centreScope' => json_encode(['SELF-C2']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $sc = admin_requests_list(['requesterId' => 'SELF-SCP', 'status' => 'all']);
+    chk('requests history: a scoped admin sees none of another centre\'s requests, and its tally is theirs too',
+        !empty($sc['ok']) && $sc['total'] === 0 && $sc['requests'] === [] && $sc['openByKind'] === []);
+    $dec = admin_request_decide(['requesterId' => 'SELF-SCP', 'requestId' => $refd['request']['requestId'], 'approve' => false, 'decision' => 'not ours']);
+    chk('requests history: …and cannot decide one either (out_of_scope, still open)',
+        ($dec['error'] ?? '') === 'out_of_scope' && (string)db_row('SELECT status FROM member_requests WHERE requestId = ?', [$refd['request']['requestId']])['status'] === 'open');
+    db_exec("UPDATE members SET centreScope = ? WHERE memberId = 'SELF-SCP'", [json_encode(['SELF-C1'])]);
+    chk('requests history: scoped to the member\'s centre, they see exactly that centre\'s requests',
+        array_unique(array_column(admin_requests_list(['requesterId' => 'SELF-SCP', 'status' => 'all', 'pageSize' => 100])['requests'], 'memberId')) === [$OTHER]);
+    db_exec("DELETE FROM members WHERE memberId = 'SELF-SCP'"); db_exec("DELETE FROM centres WHERE centreId IN ('SELF-C1','SELF-C2')");
+    db_exec("UPDATE members SET centre = 'Egbeda' WHERE memberId = ?", [$OTHER]);
+
     $wipe();
     db_exec("DELETE FROM notifications WHERE memberId LIKE 'SELF-%'");
     db_exec("DELETE FROM audit_log WHERE event LIKE 'member.request.%'");

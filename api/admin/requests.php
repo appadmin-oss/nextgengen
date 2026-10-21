@@ -6,7 +6,9 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $res = gs_call('admin.requests.list', ['requesterId' => $s['mid'],
-        'status' => $_GET['status'] ?? 'open', 'kind' => $_GET['kind'] ?? '']);
+        'status' => $_GET['status'] ?? 'open', 'kind' => $_GET['kind'] ?? '',
+        'q' => $_GET['q'] ?? '', 'memberId' => $_GET['memberId'] ?? '', 'sort' => $_GET['sort'] ?? '',
+        'offset' => $_GET['offset'] ?? 0, 'pageSize' => $_GET['pageSize'] ?? 0]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $res = gs_call('admin.requests.decide', ['requesterId' => $s['mid'],

@@ -2097,3 +2097,34 @@ of it) put it on the web.
 the server, rotate `cookie_secret` in `api/config.php` (every session signs
 out — that is the point: a minted cookie stays valid until it expires), and
 search the access logs for `_mint.php`.
+
+## 2026-10-21 — Request history: a decided request can be found again
+
+The owner got `member.request.raised` webhooks for three ₦18,000 claims and
+could not find them in `/control`. Reproduced on a throwaway database: the
+claims do show in Inbox → Member requests while open — but the Inbox lists
+**open** requests only, and nothing else in `/control` showed a request once it
+was approved, declined or withdrawn. The REQ- id in an alert led nowhere.
+
+- `admin_requests_list` (domain/member-self.php): `status` = open (default —
+  the Inbox is unchanged) | a decided status | `all`; `q` over request id,
+  member id, name, display id, subject and payment reference (LIKE wildcards
+  escaped with `!`, which MySQL accepts in a literal where `\` is not);
+  `memberId`; `sort` allow-listed (newest | oldest | decided | amount, unknown
+  → newest); `offset` + `pageSize` (≤ 100) with the true `total`;
+  `decidedByName` and `ledgerEntryId` per row, one lookup per page.
+- **Centre scope was missing** from both the list and the decision: a scoped
+  admin saw, counted and could decide every centre's requests. Both are
+  scoped now, in the query and per row (`out_of_scope`).
+- `/control`: **Members → Request history** (`request-log`, cap `people`) — a
+  server table with search, Status / Kind / Sort filters and a drawer (what
+  they wrote, the reply, who decided, the ledger entry, the receipt). The URL
+  tail is the search, so `/control/members/request-log/REQ-…` opens on one.
+  ⌘K: a `REQ-` id lists matching requests under "Requests". The member record
+  has a **Requests** part. The Inbox search matches a request id.
+- Tests: 11 in the PHP suite next to the desk tests (history, id/reference
+  search, literal wildcards, member filter, paging total, sort fallback,
+  scope for list and decide); `tests/request-history.test.js` (19, in
+  `test:all` and `npm run test:reqhist`) drives it in Chromium: raise through
+  the member route, decide through the admin route, then find each one by id,
+  reference, filter, deep link, ⌘K, the member record and the Inbox search.

@@ -464,7 +464,25 @@ function admin_account_unlock(array $p): array
     audit('account.unlock', (string)$g['requester']['memberId'], $mid, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'memberId' => $mid, 'fullName' => (string)$m['fullName']];
 }
-/** The queue. Open first, because that is the working list. */
+/** The queue, and the history behind it.
+ *
+ *  `status` is open (the working list, and the default so the Inbox is
+ *  unchanged), one of the decided statuses, or `all` / '' for every request
+ *  ever raised. A request that has been approved, declined or withdrawn is
+ *  a record somebody will come looking for — by its REQ- id from an alert,
+ *  by the member, or by the reference on a bank statement — so `q` matches
+ *  all of those, and `memberId` narrows to one person's history.
+ *
+ *  Centre scope is applied in the query, on the way in: a scoped admin's
+ *  page, total and tally are all of their centres only. Sort is allow-listed
+ *  by name; an unknown sort falls back to newest rather than failing. */
+const MEMBER_REQUEST_SORTS = [
+    'newest'  => 'r.id DESC',
+    'oldest'  => 'r.id ASC',
+    'decided' => "COALESCE(NULLIF(r.decidedAt, ''), '0') DESC, r.id DESC",
+    'amount'  => 'r.amount DESC, r.id DESC',
+];
+const MEMBER_REQUEST_PAGE_MAX = 100;
 function admin_requests_list(array $p): array
 {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -473,28 +491,50 @@ function admin_requests_list(array $p): array
     if (in_array($status, MEMBER_REQUEST_STATUSES, true)) { $where[] = 'r.status = ?'; $args[] = $status; }
     $kind = (string)($p['kind'] ?? '');
     if (isset(MEMBER_REQUEST_KINDS[$kind])) { $where[] = 'r.kind = ?'; $args[] = $kind; }
-    $sql = 'SELECT r.*, m.fullName, m.displayId, m.centre FROM member_requests r
-              LEFT JOIN members m ON m.memberId = r.memberId'
-         . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
-         . ' ORDER BY r.id DESC LIMIT ' . MEMBER_REQUEST_PAGE;
-    $rows = array_map(fn($r) => member_request_public($r) + [
-        'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
-        'centre' => (string)($r['centre'] ?? ''), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
-    ], $raw = db_all($sql, $args));
-    /* Who raised it, when a parent did — one lookup for the page, not one per row. */
-    $gids = array_values(array_unique(array_filter(array_map(static fn($r) => str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') ? substr((string)$r['raisedBy'], 9) : '', $raw))));
-    if ($gids) {
-        $names = [];
-        foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
-            $names['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
-        }
-        foreach ($rows as $i => $row) $rows[$i]['raisedByName'] = $names[(string)($raw[$i]['raisedBy'] ?? '')] ?? '';
+    $mid = trim((string)($p['memberId'] ?? ''));
+    if ($mid !== '') { $where[] = 'r.memberId = ?'; $args[] = $mid; }
+    $q = trim(mb_substr((string)($p['q'] ?? ''), 0, 80));
+    if ($q !== '') {
+        // '!' escapes LIKE's wildcards: a backslash is itself an escape inside a MySQL string literal.
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($q)) . '%';
+        $where[] = "(LOWER(r.requestId) LIKE ? ESCAPE '!' OR LOWER(r.memberId) LIKE ? ESCAPE '!' OR LOWER(COALESCE(m.fullName,'')) LIKE ? ESCAPE '!'"
+                 . " OR LOWER(COALESCE(m.displayId,'')) LIKE ? ESCAPE '!' OR LOWER(r.reference) LIKE ? ESCAPE '!' OR LOWER(r.subject) LIKE ? ESCAPE '!')";
+        array_push($args, $like, $like, $like, $like, $like, $like);
     }
+    $scopeSql = ''; $scopeArgs = [];
+    $names = admin_centre_names_in_scope($g['requester']);
+    if ($names !== null) {
+        $scopeSql = $names ? 'm.centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')' : '1 = 0';
+        $scopeArgs = $names;
+        $where[] = $scopeSql; $args = array_merge($args, $scopeArgs);
+    }
+    $from = ' FROM member_requests r LEFT JOIN members m ON m.memberId = r.memberId' . ($where ? ' WHERE ' . implode(' AND ', $where) : '');
+    $order = MEMBER_REQUEST_SORTS[(string)($p['sort'] ?? '')] ?? MEMBER_REQUEST_SORTS['newest'];
+    $limit = max(1, min(MEMBER_REQUEST_PAGE_MAX, (int)($p['pageSize'] ?? MEMBER_REQUEST_PAGE) ?: MEMBER_REQUEST_PAGE));
+    $offset = max(0, (int)($p['offset'] ?? 0));
+    $total = (int)(db_row('SELECT COUNT(*) c' . $from, $args)['c'] ?? 0);
+    $raw = db_all('SELECT r.*, m.fullName, m.displayId, m.centre' . $from . ' ORDER BY ' . $order . ' LIMIT ' . $limit . ' OFFSET ' . $offset, $args);
+    /* Who decided it, and who raised it when a parent did — one lookup each for the page, not one per row. */
+    $staff = array_values(array_unique(array_filter(array_map(static fn($r) => (string)($r['decidedBy'] ?? ''), $raw))));
+    $staffNames = $staff ? array_column(db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($staff), '?')) . ')', $staff), 'fullName', 'memberId') : [];
+    $gids = array_values(array_unique(array_filter(array_map(static fn($r) => str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') ? substr((string)$r['raisedBy'], 9) : '', $raw))));
+    $gNames = [];
+    if ($gids) foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
+        $gNames['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
+    }
+    $rows = array_map(static fn($r) => member_request_public($r) + [
+        'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
+        'centre' => (string)($r['centre'] ?? ''), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
+        'decidedByName' => (string)($staffNames[(string)($r['decidedBy'] ?? '')] ?? ''), 'ledgerEntryId' => (string)($r['ledgerEntryId'] ?? ''),
+        'updatedAt' => (string)($r['updatedAt'] ?? ''), 'raisedByName' => (string)($gNames[(string)($r['raisedBy'] ?? '')] ?? ''),
+    ], $raw);
     $tally = [];
-    foreach (db_all("SELECT kind, COUNT(*) c FROM member_requests WHERE status = 'open' GROUP BY kind") as $t) {
+    foreach (db_all("SELECT r.kind, COUNT(*) c FROM member_requests r LEFT JOIN members m ON m.memberId = r.memberId WHERE r.status = 'open'"
+                    . ($scopeSql !== '' ? ' AND ' . $scopeSql : '') . ' GROUP BY r.kind', $scopeArgs) as $t) {
         $tally[(string)$t['kind']] = (int)$t['c'];
     }
-    return ['ok' => true, 'requests' => $rows, 'openByKind' => $tally, 'kinds' => MEMBER_REQUEST_KINDS];
+    return ['ok' => true, 'requests' => $rows, 'total' => $total, 'offset' => $offset, 'pageSize' => $limit,
+            'openByKind' => $tally, 'kinds' => MEMBER_REQUEST_KINDS, 'statuses' => MEMBER_REQUEST_STATUSES];
 }
 
 /**
@@ -514,6 +554,9 @@ function admin_request_decide(array $p): array
     $rid = trim((string)($p['requestId'] ?? ''));
     $r = db_row('SELECT * FROM member_requests WHERE requestId = ? LIMIT 1', [$rid]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    // Scope, on the way in: the list hides another centre's requests, and so must the decision.
+    $owner = db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+    if (!admin_centre_allowed($g['requester'], (string)($owner['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
     if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
 
     $approve = !empty($p['approve']);

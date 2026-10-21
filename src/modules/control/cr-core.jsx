@@ -323,7 +323,7 @@ function crPaletteResults(q, scope, pages, actions, people) {
     if (a.length) out.push({ h: "Actions", items: a.slice(0, scope === "actions" ? 20 : 5) });
   }
   if ((scope === "all" && query) || scope === "people") {
-    if (people.length) out.push({ h: "Members", items: people.slice(0, 6) });
+    if (people.length) out.push({ h: people[0].group || "Members", items: people.slice(0, 6) });
   }
   return out;
 }
