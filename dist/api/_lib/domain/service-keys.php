@@ -90,6 +90,9 @@ const SERVICE_KEYS = [
     'cloudinary' => ['group' => 'photos', 'label' => 'Cloudinary', 'link' => 'https://console.cloudinary.com/settings/api-keys',
         'what' => 'Stores and edits headshots in the cloud. Without it, photos are kept on this server.', 'test' => 'cloudinary',
         'fields' => [['cloudinary.cloud_name', 'Cloud name', 'text', false, ''], ['cloudinary.api_key', 'API key', 'text', false, 'The number.'], ['cloudinary.api_secret', 'API secret', 'secret', false, '']]],
+    'cloudinary_backup' => ['group' => 'photos', 'label' => 'Cloudinary · backup account', 'link' => 'https://console.cloudinary.com/settings/api-keys',
+        'what' => 'A second Cloudinary account (a free one is fine). When the main account runs low on credits, new photos and edits move here on their own, and move back when the main account renews. Photos already on the main account keep showing.', 'test' => 'cloudinary_backup',
+        'fields' => [['cloudinary.backup.cloud_name', 'Cloud name', 'text', false, ''], ['cloudinary.backup.api_key', 'API key', 'text', false, 'The number.'], ['cloudinary.backup.api_secret', 'API secret', 'secret', false, ''], ['cloudinary.backup.unsigned_preset', 'Upload preset (unsigned)', 'text', true, 'Optional. For photos on the public application form. Blank: those go to this site while the backup is in use.']]],
     'storage' => ['group' => 'storage', 'label' => 'File storage (S3-compatible)', 'providers' => 'STORAGE_PROVIDERS', 'link' => 'https://dash.cloudflare.com/?to=/:account/r2',
         'what' => 'Where every new photo and file is kept once it is set: any S3-compatible bucket — Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, DigitalOcean Spaces, Supabase Storage, IDrive e2 or your own. Cloudflare R2 is recommended (10 GB free, and nobody pays for downloads). Pick your provider below for its step-by-step guide. What Cloudinary already holds stays there and keeps working. The bucket must allow uploads from this site: see docs/SETUP.md → File storage for the CORS rule.', 'test' => 'storage',
         'fields' => [['storage.endpoint', 'S3 endpoint', 'https', false, 'R2: https://<account id>.r2.cloudflarestorage.com · B2: https://s3.<region>.backblazeb2.com'],
@@ -186,6 +189,8 @@ function service_keys_apply(bool $force = false): void {
     static $done = false;
     if ($done && !$force) return;
     $done = true;
+    // Undo a Cloudinary failover swap first, so the main account's keys are what get re-laid (media-storage.php).
+    if (isset($GLOBALS['CLOUDINARY_PRIMARY'])) { $GLOBALS['CONFIG']['cloudinary'] = $GLOBALS['CLOUDINARY_PRIMARY']; unset($GLOBALS['CLOUDINARY_PRIMARY']); }
     if (!isset($GLOBALS['__config_file'])) {
         $GLOBALS['__config_file'] = [];
         foreach (SERVICE_KEYS as $d) foreach ($d['fields'] as $f) $GLOBALS['__config_file'][$f[0]] = service_cfg_read($GLOBALS['CONFIG'] ?? [], $f[0]);
@@ -196,6 +201,7 @@ function service_keys_apply(bool $force = false): void {
         if ($v !== '') service_cfg_write($f[0], $f[2] === 'port' ? (int)$v : $v);
         elseif (($GLOBALS['__config_file'][$f[0]] ?? null) !== null) service_cfg_write($f[0], $GLOBALS['__config_file'][$f[0]]);
     }
+    if (function_exists('cloudinary_account_apply')) cloudinary_account_apply();
 }
 
 /** The screen's view of one service. Secrets: whether set and how they end, never the value. */
@@ -375,6 +381,14 @@ function admin_keys_test(array $p): array {
             if (function_exists('cache_delete')) cache_delete('ops.cloudinary');
             $h = ops_cloudinary_health();
             return ['ok' => true] + $done(['pass' => !empty($h['ok']) && !empty($h['configured']), 'detail' => (string)($h['detail'] ?? '')]);
+        case 'cloudinary_backup':
+            if (!cloudinary_backup_cfg()) return ['ok' => true, 'pass' => false, 'detail' => 'Set all three: cloud name, API key and API secret.'];
+            $r = cloudinary_with_account('backup', fn() => media_api('GET', '/usage'));
+            $code = (int)($r['code'] ?? 0);
+            $pc = is_array($r['body'] ?? null) && ($cp = media_part($r['body'], 'credits')) ? $cp['pct'] : null;
+            return ['ok' => true] + $done(['pass' => $code >= 200 && $code < 300, 'detail' => $code >= 200 && $code < 300
+                ? 'Cloudinary accepted the backup account' . ($pc !== null ? ' (' . round((float)$pc) . '% of its credits used)' : '') . '. ' . (cloudinary_active() === 'backup' ? 'It is in use now.' : 'It takes over when the main account runs low.')
+                : 'Cloudinary refused the backup account (HTTP ' . $code . ').']);
         case 'telegram':
             return ['ok' => true] + $done(telegram_setup());
         case 'storage':

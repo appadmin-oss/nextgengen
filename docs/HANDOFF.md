@@ -2448,3 +2448,5 @@ chain in an edited URL re-runs inside every copy built on it):
   - Each switch sends one email, one ops record and one audit event (`media.storage.switch`).
 - **Editing old photos.** `cloudinary_adopt` copies a photo still on the spent main account into the backup before editing it there.
 - **Tests.** 13 checks in `api/tests/run.php`. `__cld_upload_http` is a new test seam for the upload's HTTP exchange.
+- **No duplicate copies.** A photo copied off the spent account is uploaded under a fixed name (`copy_<md5 of its base URL>`, `overwrite=false`), so editing it again returns the copy already there instead of storing a second one. The main account's original stays, so existing links keep working, and it costs nothing new there.
+- **Upload preset.** The main account's unsigned upload preset is never carried to the backup, because it doesn't exist there. The backup can name its own (`cloudinary.backup.unsigned_preset`, optional). Without one, application-form photos go to the site's own store while the backup is in use.

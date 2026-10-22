@@ -44,6 +44,67 @@ function media_configured(): bool {
     return !empty($c['cloud_name']) && !empty($c['api_key']) && !empty($c['api_secret']);
 }
 
+/* ── Two accounts: failover to a backup when the main one runs low ──────────
+   The main account's keys stay in $CONFIG['cloudinary']; the backup's sit in
+   $CONFIG['cloudinary']['backup'] (Settings → API keys). Which one is live is
+   one setting, `cloudinary_active`. While the backup is live its three keys
+   are laid over the main ones, so every caller — uploads, edits, the usage
+   monitor — reaches it with no change of its own. Photos already on the main
+   account keep their URLs and keep showing. */
+
+/** The backup account's keys, or [] when any of the three is missing. */
+function cloudinary_backup_cfg(): array {
+    $b = (array)((($GLOBALS['CLOUDINARY_PRIMARY'] ?? $GLOBALS['CONFIG']['cloudinary'] ?? [])['backup']) ?? []);
+    return !empty($b['cloud_name']) && !empty($b['api_key']) && !empty($b['api_secret']) ? $b : [];
+}
+/** The main config with the backup's keys laid over. An upload preset belongs to one account, so the main one's
+    is never carried across: the backup's own, or none (the application form's photo then goes to the site's store). */
+function cloudinary_backup_over(array $p): array {
+    $b = cloudinary_backup_cfg();
+    return array_merge($p, array_intersect_key($b, ['cloud_name' => 1, 'api_key' => 1, 'api_secret' => 1]), ['unsigned_preset' => (string)($b['unsigned_preset'] ?? '')]);
+}
+/** 'primary' or 'backup': which account new work goes to. */
+function cloudinary_active(): string {
+    return function_exists('setting_raw') && setting_raw('cloudinary_active') === 'backup' && cloudinary_backup_cfg() ? 'backup' : 'primary';
+}
+/** Lay the live account's keys into $CONFIG['cloudinary']. Idempotent; runs after the API keys are applied. */
+function cloudinary_account_apply(): void {
+    if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) $GLOBALS['CLOUDINARY_PRIMARY'] = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
+    $p = $GLOBALS['CLOUDINARY_PRIMARY'];
+    $GLOBALS['CONFIG']['cloudinary'] = cloudinary_active() === 'backup'
+        ? cloudinary_backup_over($p) : $p;
+}
+/** Run $fn with one account's keys live, whichever is active; restores after. */
+function cloudinary_with_account(string $which, callable $fn) {
+    $saved = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+    if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) cloudinary_account_apply();
+    $p = $GLOBALS['CLOUDINARY_PRIMARY'];
+    $GLOBALS['CONFIG']['cloudinary'] = $which === 'backup' ? cloudinary_backup_over($p) : $p;
+    try { return $fn(); } finally { $GLOBALS['CONFIG']['cloudinary'] = $saved; }
+}
+/** Switch the live account, tell the people who run it, and record it. */
+function cloudinary_switch(string $to, string $why): bool {
+    if ($to === 'backup' && !cloudinary_backup_cfg()) return false;
+    if (cloudinary_active() === $to) return false;
+    setting_set('cloudinary_active', $to, 'system');
+    cloudinary_account_apply();
+    $title = $to === 'backup' ? 'Cloudinary: switched to the backup account' : 'Cloudinary: back on the main account';
+    $body = $to === 'backup' ? 'The main account ' . $why . '. New photos and edits now go to the backup account; photos already on the main one keep showing.'
+                             : 'The main account ' . $why . ', so new work goes there again.';
+    if (function_exists('ops_record')) ops_record('warn', 'media.storage', $title, $body);
+    if (function_exists('intake_admin_alert')) intake_admin_alert('[NGG] ' . $title, ['title' => $title, 'intro' => $body, 'bodyHtml' => '<p>' . esc_html($body) . '</p>', 'footNote' => 'Automatic alert from the media storage monitor.']);
+    audit('media.storage.switch', null, $to, ['why' => $why], '');
+    return true;
+}
+/** The main account refused work (credits spent): move to the backup now rather than at the next check. */
+function cloudinary_failover(string $why): bool {
+    return cloudinary_active() === 'primary' && cloudinary_switch('backup', $why);
+}
+/** The cloud name a res.cloudinary.com URL lives on ('' for anything else). */
+function cloudinary_cloud_of(string $url): string {
+    return preg_match('#^https://res\.cloudinary\.com/([^/]+)/#', $url, $m) ? $m[1] : '';
+}
+
 /** Cloudinary Admin API call. Test seam: $GLOBALS['__media_api_mock'] = fn($method, $path, $query) => ['code'=>…, 'body'=>array]. */
 function media_api(string $method, string $path, array $query = []): array {
     if (isset($GLOBALS['__media_api_mock']) && is_callable($GLOBALS['__media_api_mock'])) return ($GLOBALS['__media_api_mock'])($method, $path, $query);
@@ -113,6 +174,24 @@ function media_usage_refresh(bool $force = false): array {
     setting_set('cloudinary_credits', MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['high'] ? 'exhausted' : 'ok', 'system');
     if ($state['pct'] !== null) setting_set('cloudinary_credits_pct', (string)(int)round((float)$state['pct']), 'system');
     if (MEDIA_LEVEL_ORDER[$state['level']] > MEDIA_LEVEL_ORDER[$prev['level'] ?? 'ok']) media_alert($state);
+    // Two accounts: from `high` on the main one, the backup takes over; when the main one renews, it comes back.
+    if (cloudinary_backup_cfg()) {
+        if (cloudinary_active() === 'primary' && MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['high']) {
+            if (cloudinary_switch('backup', 'is ' . ($state['pct'] === null ? 'out of' : round((float)$state['pct']) . '% through its') . ' credits')) return media_usage_refresh(true);
+        } elseif (cloudinary_active() === 'backup' && empty($GLOBALS['__media_probe'])) {
+            $GLOBALS['__media_probe'] = true;
+            try {
+                $r = cloudinary_with_account('primary', fn() => media_api('GET', '/usage'));
+                $code = (int)($r['code'] ?? 0);
+                if ($code >= 200 && $code < 300 && is_array($r['body'])) {
+                    $pc = array_values(array_filter(array_map(static fn($k) => ($p = media_part($r['body'], $k)) ? $p['pct'] : null, ['credits', 'storage', 'bandwidth', 'transformations']), static fn($v) => $v !== null));
+                    if (MEDIA_LEVEL_ORDER[media_level_for($pc ? max($pc) : null)] < MEDIA_LEVEL_ORDER['high'] && cloudinary_switch('primary', 'has credits again')) return media_usage_refresh(true);
+                }
+            } finally { unset($GLOBALS['__media_probe']); }
+        }
+    }
+    $state['account'] = cloudinary_active();
+    setting_set('media.usage', $state, 'system');
     return $state;
 }
 

@@ -2637,5 +2637,5 @@ Short list. Everything on it is hard or impossible to undo.
 Settings → API keys → Photos → **Cloudinary · backup account** takes a second account's cloud name, API key and API secret. A free account is fine. **Test** checks it and shows how much of its credits are used.
 
 - **When the main account runs low** (the image-storage monitor reads it every 6 hours and it reaches *high*), or the moment it **refuses an upload for credits**, new photos and edits move to the backup on their own. You get an email and a Diagnostics entry, and AI photo edits start again.
-- **Photos already on the main account keep showing.** One that is edited while the backup is in use is first copied across, so the edit doesn't spend the main account.
+- **Photos already on the main account keep showing.** One that is edited while the backup is in use is copied across once (editing it again reuses that copy), so the edit doesn't spend the main account. The optional **Upload preset** is for photos on the public application form; without it those go to this site while the backup is in use.
 - **When the main account renews,** work moves back to it with another email.

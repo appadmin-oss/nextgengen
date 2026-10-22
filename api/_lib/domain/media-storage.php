@@ -57,6 +57,12 @@ function cloudinary_backup_cfg(): array {
     $b = (array)((($GLOBALS['CLOUDINARY_PRIMARY'] ?? $GLOBALS['CONFIG']['cloudinary'] ?? [])['backup']) ?? []);
     return !empty($b['cloud_name']) && !empty($b['api_key']) && !empty($b['api_secret']) ? $b : [];
 }
+/** The main config with the backup's keys laid over. An upload preset belongs to one account, so the main one's
+    is never carried across: the backup's own, or none (the application form's photo then goes to the site's store). */
+function cloudinary_backup_over(array $p): array {
+    $b = cloudinary_backup_cfg();
+    return array_merge($p, array_intersect_key($b, ['cloud_name' => 1, 'api_key' => 1, 'api_secret' => 1]), ['unsigned_preset' => (string)($b['unsigned_preset'] ?? '')]);
+}
 /** 'primary' or 'backup': which account new work goes to. */
 function cloudinary_active(): string {
     return function_exists('setting_raw') && setting_raw('cloudinary_active') === 'backup' && cloudinary_backup_cfg() ? 'backup' : 'primary';
@@ -66,14 +72,14 @@ function cloudinary_account_apply(): void {
     if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) $GLOBALS['CLOUDINARY_PRIMARY'] = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
     $p = $GLOBALS['CLOUDINARY_PRIMARY'];
     $GLOBALS['CONFIG']['cloudinary'] = cloudinary_active() === 'backup'
-        ? array_merge($p, array_intersect_key(cloudinary_backup_cfg(), ['cloud_name' => 1, 'api_key' => 1, 'api_secret' => 1])) : $p;
+        ? cloudinary_backup_over($p) : $p;
 }
 /** Run $fn with one account's keys live, whichever is active; restores after. */
 function cloudinary_with_account(string $which, callable $fn) {
     $saved = $GLOBALS['CONFIG']['cloudinary'] ?? [];
     if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) cloudinary_account_apply();
     $p = $GLOBALS['CLOUDINARY_PRIMARY'];
-    $GLOBALS['CONFIG']['cloudinary'] = $which === 'backup' ? array_merge($p, array_intersect_key(cloudinary_backup_cfg(), ['cloud_name' => 1, 'api_key' => 1, 'api_secret' => 1])) : $p;
+    $GLOBALS['CONFIG']['cloudinary'] = $which === 'backup' ? cloudinary_backup_over($p) : $p;
     try { return $fn(); } finally { $GLOBALS['CONFIG']['cloudinary'] = $saved; }
 }
 /** Switch the live account, tell the people who run it, and record it. */
