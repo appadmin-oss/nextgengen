@@ -3969,3 +3969,5 @@ ALTER TABLE member_requests ADD COLUMN topic VARCHAR(12) DEFAULT '';
 ALTER TABLE member_requests ADD COLUMN centre VARCHAR(120) DEFAULT '';
 ALTER TABLE member_requests ADD COLUMN passedAt VARCHAR(32) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (169) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE member_requests ADD COLUMN rating TINYINT DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (170) ON DUPLICATE KEY UPDATE version = version;

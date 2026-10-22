@@ -910,7 +910,7 @@
       saveMyTimetable: (doc) => request('/member/my-timetable.php', { body: doc }),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
       // An idea, a change, something they love (member_feedback_create); anonymous keeps their name off it.
-      feedback: (topic, body, anonymous) => request('/member/self.php', { body: { action: 'feedback', topic, body, anonymous: !!anonymous } }),
+      feedback: (topic, body, anonymous, rating) => request('/member/self.php', { body: { action: 'feedback', topic, body, anonymous: !!anonymous, rating: rating || 0 } }),
       // Projects and activities a mentor or lead put me on (domain/projects.php).
       projects:     () => request('/member/projects.php'),
       projectMark:  (projectId, status, note) => request('/member/projects.php', { body: { projectId, status, note: note || '' } }),

@@ -1,5 +1,7 @@
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
-const MP9_IDEA_TOPICS = { "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love" };
+const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
+/* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
+const MP9_RATINGS = [[1, "Not good", "ph ph-smiley-sad"], [2, "Not great", "ph ph-smiley-meh"], [3, "Okay", "ph ph-smiley-blank"], [4, "Good", "ph ph-smiley"], [5, "Great", "ph ph-smiley-wink"]];
 
 /* ── Member Portal v9 — the rest of the screens, the sheets, navigation and
  * render (see mp9-app.jsx for the data layer and Today / mentor / growth). ── */
@@ -487,7 +489,7 @@ Object.assign(Mp9Portal.prototype, {
     const mf = this.mentorInfo().first;
     const items = this.oppItems();
     return { opps: items.length ? items.map(o => ({ ...o, on: o.saved ? "true" : "false", icon: o.saved ? "ph-fill ph-bookmark-simple" : "ph ph-bookmark-simple", label: o.saved ? "Saved" : "Save",
-      ask: () => { if (!this.mentorInfo().has) return this.toast("You don’t have a mentor yet."); NGGApi.member.chatSend("Can we talk about “" + o.t + "” (" + o.org + ")? It " + o.close.toLowerCase() + ".").then(() => { this.refresh(["chat"]); this.toast("Sent to " + mf + ". See it in My mentor."); }).catch(e => this.toast(mp9Err(e))); },
+      ask: () => { this.sendToMentor("Can we talk about “" + o.t + "” (" + o.org + ")? It " + o.close.toLowerCase() + ".").then(r => { if (r) this.toast("Sent to " + mf + ". See it in My mentor."); }); },
       save: () => { this.setState({ oppSaved: { ...(this.state.oppSaved || {}), [o.id]: !o.saved } }); NGGApi.member.oppsSave(o.id).catch(e => { this.setState({ oppSaved: { ...(this.state.oppSaved || {}), [o.id]: o.saved } }); this.toast(mp9Err(e)); }); } }))
       : [{ t: "Nothing open right now", org: "NGG", type: "Opportunities", close: "check back soon", why: "Staff add bootcamps, competitions and volunteering here. They’re matched to your age.", on: "false", icon: "ph ph-bookmark-simple", label: "Save", ask: () => this.toast("Nothing to ask about yet."), save: () => this.toast("Nothing to save yet.") }] };
   },
@@ -520,10 +522,10 @@ Object.assign(Mp9Portal.prototype, {
     const lPart = lDone ? parts.length : Math.min(s.lPart || 0, parts.length);
     const checkAt = parts.indexOf("Check your understanding");
     const P = this.st("mp9.project", null);
-    const titles = { lesson: U ? U.title : s.lessonErr ? "Lesson" : "Loading the lesson…", assign: A ? A.title : "Assignment", idea: "Share an idea", request: "New request to the desk", change: "Ask for a change", gate: "Gate pass",
-      team: P ? "Update for your team" : "Start a team project", portfolio: "Add to my portfolio", profile: "Edit profile", proof: "Add proof" };
+    const titles = { lesson: U ? U.title : s.lessonErr ? "Lesson" : "Loading the lesson…", assign: A ? A.title : "Assignment", idea: "Tell us what you think", request: "New request to the desk", change: "Ask for a change", gate: "Gate pass",
+      team: P ? "Update for your team" : "Start a team project", portfolio: "Add to my portfolio", profile: "Edit profile", proof: "Add proof", password: s.pwCode ? "Set a new password" : (this.dd("sec") || {}).hasPassword ? "Change your password" : "Set a password" };
     const proofText = s.sPick === "text", proofLink = s.sPick === "link";
-    const sendable = !s.sBusy && { proof: !!s.sPick && (proofText ? txt.length > 5 : proofLink ? /^https?:\/\//i.test(txt) : !!s.sFile), idea: !!s.sPick && txt.trim().length >= 6, request: !!s.sPick, change: !!s.sPick,
+    const sendable = !s.sBusy && { proof: !!s.sPick && (proofText ? txt.length > 5 : proofLink ? /^https?:\/\//i.test(txt) : !!s.sFile), idea: !!s.sPick && (MP9_IDEA_TOPICS[s.sPick] === "experience" ? !!s.sRate : txt.trim().length >= 6), request: !!s.sPick, change: !!s.sPick,
       team: txt.length > 3, portfolio: !!s.sPick && txt.length > 1, assign: A && A.proof === "file" ? !!s.sFile : A && A.proof === "text" ? txt.length > 10 : txt.length > 10 || !!s.sFile }[sh.k];
     const busy = p => { set({ sBusy: true }); return p.then(r => { set({ sBusy: false }); return r; }, e => { set({ sBusy: false }); this.toast(mp9Err(e)); return null; }); };
     const send = () => {
@@ -532,7 +534,7 @@ Object.assign(Mp9Portal.prototype, {
         .then(r => { if (!r) return; set({ sheet: null, mState: { ...(this.state.mState || {}), [sh.id]: "submitted" } }); this.refresh(["dash"]); this.toast("Sent to " + mf + " for review"); });
       if (sh.k === "idea") {
         /* Its own kind (member_feedback_create), so ideas never fill the cap that "I need help" shares. */
-        busy(NGGApi.member.feedback(MP9_IDEA_TOPICS[s.sPick] || "idea", txt, !!s.sAnon))
+        busy(NGGApi.member.feedback(MP9_IDEA_TOPICS[s.sPick] || "idea", txt, !!s.sAnon, MP9_IDEA_TOPICS[s.sPick] === "experience" ? s.sRate || 0 : 0))
           .then(r => { if (!r) return; this.closeSheet(); this.toast(s.sAnon ? "Sent without your name. Thank you." : "Sent to the NGG team. They’ll reply here."); if (!s.sAnon) this.refresh(["reqs"]); });
       }
       if (sh.k === "request") {
@@ -570,7 +572,7 @@ Object.assign(Mp9Portal.prototype, {
     const qr = sh.k === "gate" ? this.gateQr() : "";
     return {
       sheetOn: !!s.sheet, closeSheet: () => this.closeSheet(), sheetTitle: titles[sh.k] || "", sendSheet: send, cantSend: !sendable, sendOp: sendable ? 1 : 0.4,
-      shLesson: sh.k === "lesson", shAssign: sh.k === "assign", shIdea: sh.k === "idea", shRequest: sh.k === "request", shChange: sh.k === "change", shGate: sh.k === "gate", shTeam: sh.k === "team", shPortfolio: sh.k === "portfolio", shProfile: sh.k === "profile", shProof: sh.k === "proof",
+      shLesson: sh.k === "lesson", shAssign: sh.k === "assign", shIdea: sh.k === "idea", shRequest: sh.k === "request", shChange: sh.k === "change", shGate: sh.k === "gate", shTeam: sh.k === "team", shPortfolio: sh.k === "portfolio", shProfile: sh.k === "profile", shPassword: sh.k === "password", shProof: sh.k === "proof",
       openGate: () => this.openSheet({ k: "gate" }), openRequest: () => this.openSheet({ k: "request" }), openIdea: () => this.openSheet({ k: "idea" }), openTeam: () => this.openSheet({ k: "team" }), openPortfolio: () => this.openSheet({ k: "portfolio" }), openChange: () => this.openSheet({ k: "change" }),
       proofMission: sh.k === "proof" ? sh.t || "" : "",
       proofTypes: [["photo", "Upload a photo", "ph ph-camera"], ["audio", "Upload an audio clip", "ph ph-microphone"], ["video", "Upload a video", "ph ph-video-camera"], ["file", "Upload a file", "ph ph-file"], ["link", "Paste a link", "ph ph-link"], ["text", "Describe what you did", "ph ph-pencil-simple-line"]]
@@ -584,11 +586,14 @@ Object.assign(Mp9Portal.prototype, {
       pfPw1: e => set({ pf: { ...this.state.pf, pw1: e.target.value }, pfErr: "" }), pfPw2: e => set({ pf: { ...this.state.pf, pw2: e.target.value }, pfErr: "" }),
       pfCur: e => set({ pf: { ...this.state.pf, cur: e.target.value }, pfErr: "" }), pfCode: e => set({ pf: { ...this.state.pf, code: e.target.value.replace(/\D/g, "").slice(0, 6) }, pfErr: "" }),
       /* Changing it needs the current password; forgetting it is answered by a code to the email on the record (auth.resetRequest / resetConfirm), not by a dead end. */
-      askCur: hasPw && !s.pwCode, pwCodeSent: !!s.pwCode, pwCodeTo: (s.pwCode && s.pwCode.masked) || "the email on your record",
+      signin: { email: acct.email || ((this.dd("today") || {}).profile || {}).email || "No email on your record. Ask the desk to add one.",
+        pwState: !this.dd("sec") ? "Checking…" : hasPw ? "You have a password. You can change it here." : "No password yet: you sign in with a code sent by email." },
+      askCur: hasPw && !s.pwCode, openPassword: () => this.openSheet({ k: "password" }),
+      pwIntro: s.pwCode ? "Type the code from the email, then your new password." : hasPw ? "Type the password you use now, then the new one. You stay signed in." : "You sign in with a code sent by email. Set a password if you’d like to sign in with one instead.", pwCodeSent: !!s.pwCode, pwCodeTo: (s.pwCode && s.pwCode.masked) || "the email on your record",
       pwBtnL: s.pwCode ? "Set my new password" : hasPw ? "Change password" : "Set a password",
       sendPwCode: () => NGGApi.auth.resetRequest(pwId).then(r => { set({ pwCode: { masked: (r && r.masked) || "" }, pfErr: "" }); this.toast("Code sent. Check your email (or your guardian’s)."); }).catch(e => set({ pfErr: mp9Err(e) })),
       savePw: () => { const a = s.pf.pw1 || "", b = s.pf.pw2 || ""; if (a.length < 8) return set({ pfErr: "Your new password needs 8 or more characters." }); if (a !== b) return set({ pfErr: "The two new passwords don’t match." });
-        const done = () => { set({ pf: { ...this.state.pf, pw1: "", pw2: "", cur: "", code: "" }, pwCode: null, pfErr: "" }); this.refresh(["sec"]); this.toast("Password changed"); };
+        const done = () => { set({ pf: { ...this.state.pf, pw1: "", pw2: "", cur: "", code: "" }, pwCode: null, pfErr: "" }); this.refresh(["sec"]); if (sh.k === "password") this.closeSheet(); this.toast(hasPw || s.pwCode ? "Password changed. You’re still signed in." : "Password set. You can sign in with it next time."); };
         if (s.pwCode) { if ((s.pf.code || "").length !== 6) return set({ pfErr: "Type the 6-digit code from the email." });
           /* "invalid" and "expired" mean the code here, and only here, so they are read here rather than in mp9Err. */
           const CODE = { invalid: "That code isn’t right. Check the email and try again.", expired: "That code has run out. Send a new one.", already_used: "That code was used already. Send a new one." };
@@ -623,6 +628,9 @@ Object.assign(Mp9Portal.prototype, {
       sAssign: A ? { div: (A.track || me.track || "Club") + (A.points ? " · " + A.points + " points" : ""), due: A.dueAt ? mp9Date(A.dueAt, { weekday: "short", day: "numeric", month: "short" }) : "no date", s: mp9AsgState(A),
         brief: A.instructions || A.brief || "", tips: mp9AsgTips(A), hasTips: mp9AsgTips(A).length > 0, done: aDone, open: !aDone } : {},
       ideaChips: chips(Object.keys(MP9_IDEA_TOPICS)),
+      ideaRate: MP9_IDEA_TOPICS[s.sPick] === "experience",
+      ideaPh: MP9_IDEA_TOPICS[s.sPick] === "experience" ? "What makes it that way? (you can leave this empty)" : MP9_IDEA_TOPICS[s.sPick] === "app" ? "What were you trying to do, and what happened?" : "Tell us about it",
+      rates: MP9_RATINGS.map(([n, l, icon]) => { const on = s.sRate === n; return { l, icon: on ? icon.replace("ph ", "ph-fill ") : icon, on: on ? "true" : "false", ring: on ? "#0b0b0c" : "#d6d4cc", bw: on ? "2px" : "1px", pick: () => set({ sRate: n }) }; }),
       /* Feeling unsafe is not an idea: that goes to the people who keep young people safe, not the ideas box. */
       ideaToHelp: () => { this.closeSheet(); this.go("help"); },
       reqChips: chips(["Change my ID card photo", "Correct my details", "Ask about a fine", "Ask about dues", "Something else"]),
@@ -665,7 +673,7 @@ Object.assign(Mp9Portal.prototype, {
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
     const actions = [["Write in my journal", "ph ph-pencil-simple-line", () => { location.href = "/journal/"; }], ["Upload my school results", "ph ph-exam", () => this.go("results")], ["Add proof for a mission", "ph ph-camera", () => this.go("sat")],
       ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["I've made a payment", "ph ph-currency-ngn", () => this.go("records", { rKind: "I've made a payment", rF: {} })],
-      ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Share an idea or tell us what to improve", "ph ph-lightbulb", () => this.openSheet({ k: "idea" })], ["Sign out", "ph ph-sign-out", () => nggPortalSignOut(this.props.onSignOut)], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
+      ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Share an idea or tell us what to improve", "ph ph-lightbulb", () => this.openSheet({ k: "idea" })], ["Change my password", "ph ph-key", () => this.openSheet({ k: "password" })], ["Sign out", "ph ph-sign-out", () => nggPortalSignOut(this.props.onSignOut)], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
       simple ? ["Switch to the full view", "ph ph-squares-four", () => this.setView("full")] : ["Switch to the simple view", "ph ph-hand-pointing", () => this.setView("simple")]]
       .filter(a => !(simple && /payment/.test(a[0])));
     const q = s.palQ.trim().toLowerCase();

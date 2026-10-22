@@ -113,8 +113,23 @@ async function as(memberId, admin, viewport) {
     // ── Password: changing it asks for the current one ──
     const mb = await as('NGG-PA-K1', false);
     await boot(mb);
-    await palette(mb, 'Edit my profile');
-    await mb.waitForSelector(sheet + ' input[aria-label="New password"]', { timeout: 20000 });
+    // ── Messages: written straight from a deep link, before any other screen has drawn ──
+    await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mb); await mb.waitForSelector('.m9-app main input[aria-label="Message"]', { timeout: 60000 });
+    await mb.fill('main input[aria-label="Message"]', 'Hello coach, straight from the link');
+    await mb.click('main button[aria-label="Send"]');
+    await mb.waitForTimeout(1500);
+    const chatT = await mb.innerText('body');
+    chk('Messages: a member with a mentor can write the moment the page opens — never “you don’t have a mentor”',
+      q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1' AND body = 'Hello coach, straight from the link'")['c']`) === 1 && !/don’t have a mentor/.test(chatT));
+
+    // The password has its own place on Me: no searching, no signing out.
+    await mb.goto(BASE + '/dashboard/me', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
+    await mb.waitForSelector('main h2:has-text("Sign-in and password")', { timeout: 40000 }).catch(async e => { console.error('DEBUG me:', (await mb.innerText('body')).slice(0, 900), mb.errs); throw e; });
+    await mb.waitForFunction(() => /You have a password/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('Password: Me has a “Sign-in and password” section saying whether there is a password', /You have a password/.test(await mb.innerText('main')));
+    const openPw = async () => { await mb.click('main section:has(h2:has-text("Sign-in and password")) button:has-text("Change password")'); await mb.waitForSelector(sheet + ' input[aria-label="New password"]', { timeout: 20000 }); };
+    await openPw();
     // The sheet reads the security record (hasPassword) itself; that read decides whether "Current password" is asked.
     await mb.waitForSelector(sheet + ' input[aria-label="Current password"]', { timeout: 15000 }).catch(() => {});
     chk('Password: a member who has one is asked for the current password', await mb.isVisible(sheet + ' input[aria-label="Current password"]'));
@@ -131,10 +146,13 @@ async function as(memberId, admin, viewport) {
     await mb.fill(sheet + ' input[aria-label="Current password"]', 'first-pass-1');
     await mb.click(sheet + ' button:has-text("Change password")');
     await mb.waitForFunction(() => /Password changed/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
-    chk('Password: with the right current password it changes', pwIs('second-pass-2'));
+    const meNow = await mb.evaluate(() => fetch('/api/auth/me.php', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})));
+    chk('Password: with the right current password it changes, the sheet closes, and the member is still signed in',
+      pwIs('second-pass-2') && !(await mb.isVisible(sheet + ' input[aria-label="New password"]')) && !!(meNow && meNow.member));
     await shot(mb, 'password-changed');
 
     // ── Password: forgotten, reset from a code emailed to the record ──
+    await openPw();
     await mb.waitForSelector(sheet + ' button:has-text("Forgot it?")', { timeout: 10000 });
     await mb.click(sheet + ' button:has-text("Forgot it?")');
     await mb.waitForSelector(sheet + ' input[aria-label="Code from the email"]', { timeout: 15000 });
@@ -151,12 +169,10 @@ async function as(memberId, admin, viewport) {
     await mb.click(sheet + ' button:has-text("Set my new password")');
     await mb.waitForFunction(() => /Password changed/.test(document.body.innerText), null, { timeout: 10000 }).catch(() => {});
     chk('Reset: the right code sets the new password, and the member stays in their portal', pwIs('third-pass-3') && await mb.isVisible('.m9-app main'));
-    await mb.keyboard.press('Escape').catch(() => {});
-    await mb.click(sheet + ' button[aria-label="Close"]').catch(() => {});
 
     // ── Ideas: their own kind, never filling the help cap ──
     await mb.click('aside button:has-text("Get help")');
-    await mb.waitForFunction(() => /Have an idea, or something we should change/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
+    await mb.waitForFunction(() => /How is NGG going for you\?/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
     chk('Help: the Help screen has “Share an idea” next to “Tell us about something”', /Tell us about something/.test(await mb.innerText('main')));
     for (let i = 0; i < 4; i++) {
       await mb.click('main button:has-text("Share an idea")');
@@ -178,6 +194,17 @@ async function as(memberId, admin, viewport) {
     chk('Ideas: none of them is a “help” request, so the help cap is untouched', q(`(int)db_row("SELECT COUNT(*) c FROM member_requests WHERE kind = 'help'")['c']`) === 0);
     const help = q(`backend_dispatch('member.request.create', ['memberId' => 'NGG-PA-K1', 'kind' => 'help', 'body' => 'Something happened at school'])`);
     chk('Ideas: with three ideas waiting, “I need help” still goes through', !!help.ok);
+    // ── Experience: how NGG is going, as a rating ──
+    await mb.click('main button:has-text("Share an idea")');
+    await mb.waitForSelector(sheet + ' textarea[aria-label="Your idea"]', { timeout: 10000 });
+    await mb.click(sheet + ' button:has-text("How NGG is going for me")');
+    const sendBtn = sheet + ' button:text-is("Send")';
+    chk('Experience: choosing “How NGG is going for me” asks for a rating, and Send waits for one', await mb.isVisible(sheet + ' [role="group"][aria-label="How is NGG going for you"]') && await mb.isDisabled(sendBtn));
+    await mb.click(sheet + ' [role="group"] button:text-is("Good")');
+    await mb.click(sendBtn);
+    await mb.waitForTimeout(1200);
+    chk('Experience: the rating alone is sent, as an experience row the desk can read',
+      q(`(int)(db_row("SELECT rating FROM member_requests WHERE kind = 'feedback' AND topic = 'experience' ORDER BY id DESC LIMIT 1")['rating'] ?? 0)`) === 4);
 
     // ── Errors: never a raw code ──
     const codeShown = await mb.evaluate(() => [mp9Err({ code: 'missing_field:email' }), mp9Err({ code: 'no_member' }), mp9Err({ code: 'too_many_open', detail: 'You have 6 ideas waiting.' })]);

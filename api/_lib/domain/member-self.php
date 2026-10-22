@@ -47,7 +47,11 @@ const MEMBER_REQUEST_KINDS = [
 ];
 
 /** What a piece of feedback is about, and what the desk sees for each. */
-const MEMBER_FEEDBACK_TOPICS = ['idea' => 'An idea', 'change' => 'Something to change', 'love' => 'Something I love'];
+const MEMBER_FEEDBACK_TOPICS = ['experience' => 'How NGG is going for me', 'idea' => 'An idea', 'change' => 'Something to change',
+    'love' => 'Something I love', 'app' => 'Something in the portal isn’t working'];
+
+/** The words for an experience rating, 1 to 5 — what the desk reads beside the number. */
+const MEMBER_FEEDBACK_RATINGS = [1 => 'Not good', 2 => 'Not great', 3 => 'Okay', 4 => 'Good', 5 => 'Great'];
 
 /** Feedback is cheap to give and should be: more of it may wait than requests. */
 const MEMBER_FEEDBACK_OPEN_MAX = 6;
@@ -102,6 +106,8 @@ function member_request_public(array $r): array
         'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
         'topic'     => (string)($r['topic'] ?? ''),
         'topicLabel' => MEMBER_FEEDBACK_TOPICS[(string)($r['topic'] ?? '')] ?? '',
+        'rating'    => (int)($r['rating'] ?? 0),
+        'ratingLabel' => MEMBER_FEEDBACK_RATINGS[(int)($r['rating'] ?? 0)] ?? '',
         'anonymous' => (string)$r['kind'] === 'feedback' && (string)($r['memberId'] ?? '') === '',
         'passedAt'  => (string)($r['passedAt'] ?? ''),
     ];
@@ -369,9 +375,15 @@ function member_feedback_create(array $p): array
     $topic = (string)($p['topic'] ?? '');
     if (!isset(MEMBER_FEEDBACK_TOPICS[$topic])) $topic = 'idea';
     $body = trim(mb_substr((string)($p['body'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
-    if (mb_strlen($body) < MEMBER_FEEDBACK_MIN) {
+    $rating = $topic === 'experience' ? (int)($p['rating'] ?? 0) : 0;
+    if ($topic === 'experience' && !isset(MEMBER_FEEDBACK_RATINGS[$rating])) {
+        return ['ok' => false, 'error' => 'need_rating', 'detail' => 'Pick how it is going, from “Not good” to “Great”.'];
+    }
+    // A rating says enough on its own; words are what every other kind of feedback is.
+    if ($topic !== 'experience' && mb_strlen($body) < MEMBER_FEEDBACK_MIN) {
         return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Tell us a little more, so the team knows what you mean.'];
     }
+    if ($topic === 'experience' && $body !== '' && mb_strlen($body) < 2) $body = '';
     $anon = !empty($p['anonymous']);
     if (!$anon) {
         $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = 'feedback' AND status = 'open'", [$id])['c'] ?? 0);
@@ -384,7 +396,7 @@ function member_feedback_create(array $p): array
     $row = [
         'requestId' => 'REQ-' . strtoupper(bin2hex(random_bytes(5))),
         'memberId' => $anon ? '' : $id, 'kind' => 'feedback', 'status' => 'open',
-        'subject' => MEMBER_FEEDBACK_TOPICS[$topic], 'body' => $body, 'topic' => $topic, 'centre' => $centre,
+        'subject' => MEMBER_FEEDBACK_TOPICS[$topic] . ($rating ? ' · ' . MEMBER_FEEDBACK_RATINGS[$rating] : ''), 'body' => $body, 'topic' => $topic, 'centre' => $centre, 'rating' => $rating,
         'amount' => 0, 'reference' => '', 'proofUrl' => '', 'paidAt' => '',
         'fromDate' => '', 'toDate' => '', 'refEntryId' => '',
         'decision' => '', 'decidedBy' => '', 'decidedAt' => '', 'ledgerEntryId' => '', 'raisedBy' => '', 'passedAt' => '',
@@ -392,11 +404,14 @@ function member_feedback_create(array $p): array
     ];
     db_insert('member_requests', $row);
     // The audit names nobody when the child asked not to be named.
-    audit('member.feedback.create', $anon ? '' : $id, $row['requestId'], ['topic' => $topic, 'anonymous' => $anon, 'centre' => $centre], '');
+    audit('member.feedback.create', $anon ? '' : $id, $row['requestId'], ['topic' => $topic, 'anonymous' => $anon, 'centre' => $centre, 'rating' => $rating], '');
+    /* A child who says it is "not good" or "not great" is somebody to talk to,
+       so the title says so rather than reading like one more suggestion. */
+    $low = $rating > 0 && $rating <= 2;
     notify_people(staff_with_cap('people', $anon ? [] : [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
-        'kind' => 'approval', 'title' => 'New feedback from a member: ' . MEMBER_FEEDBACK_TOPICS[$topic],
+        'kind' => 'approval', 'title' => ($low ? 'A member says NGG is ' . strtolower(MEMBER_FEEDBACK_RATINGS[$rating]) . ' for them' : 'New feedback from a member: ' . MEMBER_FEEDBACK_TOPICS[$topic]),
         'intro' => $anon ? 'A member at ' . ($centre !== '' ? $centre : 'a centre') . ' sent this without their name.' : (string)$m['fullName'] . ' sent this.',
-        'body' => mb_substr($body, 0, 400) . "\n\nThank them or pass it on in Control Room → Inbox → Member requests.",
+        'body' => ($rating ? 'Rating: ' . $rating . ' of 5 (' . MEMBER_FEEDBACK_RATINGS[$rating] . ")\n" : '') . mb_substr($body !== '' ? $body : '(No words, just the rating.)', 0, 400) . "\n\nThank them or pass it on in Control Room → Inbox → Member requests.",
         'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Read it →']);
     $out = member_request_public($row);
     return ['ok' => true, 'request' => $out];
@@ -641,7 +656,8 @@ function admin_feedback_answer(array $g, array $r, string $centre, array $p): ar
         audit('member.feedback.thank', $by, $rid, ['centre' => $centre], (string)($p['ip'] ?? ''));
         $mm = (string)$r['memberId'] !== '' ? db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
         if ($mm) notify_people([$mm], ['kind' => 'request', 'eyebrow' => 'NGG · Your ideas',
-            'title' => 'Thank you for your idea', 'intro' => 'You told us: “' . mb_substr((string)$r['body'], 0, 120) . '”', 'body' => $reply,
+            'title' => in_array((string)($r['topic'] ?? ''), ['idea', 'change'], true) ? 'Thank you for your idea' : 'Thank you for telling us',
+            'intro' => (string)$r['body'] !== '' ? 'You told us: “' . mb_substr((string)$r['body'], 0, 120) . '”' : 'You told us: ' . (string)$r['subject'] . '.', 'body' => $reply,
             'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See what you sent →']);
     } else {
         return ['ok' => false, 'error' => 'bad_answer', 'detail' => 'Feedback is thanked or passed to the centre lead.'];

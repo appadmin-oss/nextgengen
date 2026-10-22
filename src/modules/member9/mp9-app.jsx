@@ -82,7 +82,7 @@ function mp9Week(d) {
 }
 function mp9Err(e) {
   const c = e && (e.code || e.message);
-  const T = { network: "You’re offline. It will send when you’re back.", rate_limited: "That’s a lot at once. Wait a moment and try again.", no_mentor: "You don’t have a mentor yet.",
+  const T = { network: "You’re offline. It will send when you’re back.", rate_limited: "That’s a lot at once. Wait a moment and try again.", no_mentor: "You don’t have a mentor yet. Your centre matches one to you.",
     quiet_hours: "Messages open at 8am.", uploads_disabled: "Uploads aren’t switched on here yet.", answer_all_four: "Answer all four first.", too_short: "Say a little more first.",
     managed_by_ngg: "NGG keeps that on your record. Ask the desk to change it.", not_ngg_member: "This portal is for NGG members.",
     bad_current_password: "That isn’t your current password. Forgot it? Get a code by email instead.", too_many_attempts: "Too many tries. Wait 15 minutes, or get a code by email.",
@@ -99,7 +99,7 @@ class Mp9Portal extends React.Component {
   state = {
     scr: mp9ScreenFromPath(), w: 1200, hist: [], d: {}, ld: {}, er: {},
     mood: null, wbStage: null, wbHelp: false, draft: {}, share: "mentor", msg: "", sending: false, fb: {}, fbSent: false, cat: null, cText: "", cRef: "", concernSent: false,
-    toast: null, notif: false, read: false, sheet: null, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0,
+    toast: null, notif: false, read: false, sheet: null, sText: "", sPick: null, sRate: 0, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0,
     pal: false, palQ: "", palI: 0, mState: {}, qMood: null, qText: "", qSaved: [], liked: {}, cheered: {}, cmts: {}, cDraft: {}, cOpen: {}, daysAll: false, ledgerAll: false,
     rKind: null, rF: {}, nUnread: false, codeShown: false, evType: null, evText: "", evFile: null, evSent: false,
   };
@@ -176,8 +176,16 @@ class Mp9Portal extends React.Component {
   }
   goF(scr, extra) { return () => this.go(scr, extra); }
   goBack() { const h = this.state.hist; if (!h.length) return this.go("today"); const to = h[h.length - 1]; this.go(to); this.setState({ hist: h.slice(0, -1) }); }
-  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) , pwCode: null }); if (sheet && sheet.k === "profile" && !this.dd("sec")) this.load("sec"); }
+  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) , pwCode: null }); if (sheet && (sheet.k === "profile" || sheet.k === "password") && !this.dd("sec")) this.load("sec"); }
   closeSheet() { this.setState({ sheet: null }); }
+  /* One way to write to the mentor, from every screen. The server decides
+     whether there is one (an active pairing): a has-a-mentor flag captured
+     while rendering one screen went stale, and told children who had a
+     mentor that they had none. */
+  sendToMentor(text, ok) {
+    return NGGApi.member.chatSend(text).then(r => { this.refresh(["chat", "mine"]); if (r && r.crisis) this.toast(r.help || "Help is coming. If you’re in danger, call 112."); else if (ok) this.toast(ok); return r || {}; })
+      .catch(e => { if (e && (e.code || e.message) === "no_mentor") this.refresh(["chat", "mine"]); this.toast(mp9Err(e)); return null; });
+  }
 
   /* ── Who is who ──────────────────────────────────────────────────────── */
   me() {
@@ -288,11 +296,7 @@ class Mp9Portal extends React.Component {
       .concat(goal.plan ? [["My plan: " + goal.plan, "Each week"]] : []).concat(goal.obstacle ? [["If “" + goal.obstacle + "” gets in the way, use my plan", "When it happens"]] : []) : [];
     const key = i => (goal ? goal.id : 0) + ":" + i;
     const left = STEPS.filter((_, i) => !stepsDone[key(i)]).length;
-    const send = (t2, ok) => {
-      if (!M.has) return this.toast("You don’t have a mentor yet. Your centre matches one to you.");
-      return NGGApi.member.chatSend(t2).then(r => { this.refresh(["chat"]); if (r && r.crisis) this.toast(r.help || "Help is coming. If you’re in danger, call 112."); else if (ok) this.toast(ok); return r; }).catch(e => { this.toast(mp9Err(e)); return null; });
-    };
-    this._chatSend = send;
+    const send = (t2, ok) => this.sendToMentor(t2, ok);
     return {
       tabs: [["chat", "Chat", "ph ph-chat-circle-text", 0], ["sess", "Sessions", "ph ph-calendar-check", tsent ? 0 : 1], ["steps", "Next steps", "ph ph-list-checks", left], ["fb", "How it’s going", "ph ph-heart", mine.relAsked && !mine.relDone ? 1 : 0]]
         .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, on: tab === k ? "true" : "false", bg: tab === k ? "#fff" : "transparent", sh: tab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: tab === k ? 700 : 500, go: () => set({ mvTab: k }) })),
@@ -322,7 +326,7 @@ class Mp9Portal extends React.Component {
     const s = this.state, c = this.dd("chat") || {}, M = this.mentorInfo();
     const msgs = (c.messages || []).map(m => ({ t: m.body, when: (m.about ? m.about + " · " : "") + mp9When(m.at) + (m.mine && !m.read ? "" : ""), mine: m.mine, al: m.mine ? "flex-end" : "flex-start", bg: m.mine ? "#0b0b0c" : "#fff", fg: m.mine ? "#fff" : "#0b0b0c", bd: m.mine ? "#0b0b0c" : "#e8e5dd" }));
     if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
-    const sendMsg = () => { const t = s.msg.trim(); if (!t || s.sending) return; this.setState({ sending: true }); (this._chatSend ? this._chatSend(t) : Promise.resolve(null)).then(r => this.setState(r ? { msg: "", sending: false } : { sending: false })); };
+    const sendMsg = () => { const t = s.msg.trim(); if (!t || s.sending) return; this.setState({ sending: true }); this.sendToMentor(t).then(r => this.setState(r ? { msg: "", sending: false } : { sending: false })); };
     const mine = this.dd("mine") || {};
     const qs = mine.relQuestions || [];
     const fbOpts = [["Not really", 1], ["A bit", 3], ["Yes", 5]];
@@ -364,8 +368,8 @@ class Mp9Portal extends React.Component {
       strongNote: cur && LI.length ? mentor + " sees you " + (LI[hi][1] || LI[hi][0]).toLowerCase() + ". Use it to help someone else this week." : "When " + mentor + " scores your first month, your strongest skill shows here.",
       focusNote: cur && LI.length ? "Lowest right now at " + cur[focusI] + " / 10: " + (LI[focusI][1] || LI[focusI][0]).toLowerCase() + ". Small steps count." : "Score yourself in My view while you wait.",
       fL: s.liAsked ? "Sent to " + mentor : "Make it my next goal", fBd: s.liAsked ? "1px solid #cfe8d5" : "0", fBg: s.liAsked ? "#f3faf4" : "#0b0b0c", fFg: s.liAsked ? "#1d6b30" : "#fff",
-      pickFocus: () => { if (s.liAsked || !LI.length) return; if (!this.mentorInfo().has) return this.toast("You don’t have a mentor yet.");
-        NGGApi.member.chatSend("Can we make " + LI[focusI][0] + " my next goal? We can write it together on Saturday.").then(() => { set({ liAsked: true }); this.refresh(["chat"]); this.toast("Sent to " + mentor + ". You’ll write the goal together on Saturday."); }).catch(e => this.toast(mp9Err(e))); },
+      pickFocus: () => { if (s.liAsked || !LI.length) return;
+        this.sendToMentor("Can we make " + LI[focusI][0] + " my next goal? We can write it together on Saturday.").then(r => { if (!r) return; set({ liAsked: true }); this.toast("Sent to " + mentor + ". You’ll write the goal together on Saturday."); }).catch(e => this.toast(mp9Err(e))); },
       modes: [["mentor", mentor + "’s view"], ["mine", "My view"], ["both", "Side by side"]].map(([id, l]) => ({ l, on: mode === id ? "true" : "false", bg: mode === id ? "#fff" : "transparent", sh: mode === id ? "0 1px 2px rgba(11,11,12,.1)" : "none", go: () => set({ liMode: id }) })),
       isMine: mode === "mine", notMine: mode !== "mine", isBoth: mode === "both", showBars: true,
       // Name | bars | the score (or the − + buttons): the row's three columns, which the design leaves to the controller.

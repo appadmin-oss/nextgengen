@@ -23374,6 +23374,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $odd = $mk(['kind' => 'feedback', 'topic' => 'zzz', 'body' => 'A coding club on Fridays', 'anonymous' => true]);
     chk('feedback: an unknown topic is kept as an idea, not refused', !empty($odd['ok']) && $odd['request']['topic'] === 'idea');
     db_exec('DELETE FROM member_requests WHERE requestId = ?', [$odd['request']['requestId'] ?? '']);
+    $ex0 = $mk(['kind' => 'feedback', 'topic' => 'experience', 'body' => '', 'anonymous' => true]);
+    $ex = $mk(['kind' => 'feedback', 'topic' => 'experience', 'rating' => 2, 'body' => '', 'anonymous' => true]);
+    $exN = db_row("SELECT title, body FROM notifications WHERE memberId = ? ORDER BY id DESC LIMIT 1", [$ADMIN]);
+    chk('feedback: “how it is going” needs a rating, and the rating alone is enough (no words needed)',
+        ($ex0['error'] ?? '') === 'need_rating' && !empty($ex['ok']) && $ex['request']['rating'] === 2 && $ex['request']['ratingLabel'] === 'Not great'
+        && str_contains($ex['request']['subject'], 'Not great'));
+    chk('feedback: a low rating reaches the desk as somebody to talk to, with the rating in it',
+        $exN && str_contains((string)$exN['title'], 'not great for them') && str_contains((string)$exN['body'], '2 of 5'));
+    chk('feedback: a rating on any other topic is ignored', (int)($mk(['kind' => 'feedback', 'topic' => 'app', 'rating' => 5, 'body' => 'The upload button does nothing', 'anonymous' => true])['request']['rating'] ?? -1) === 0);
+    db_exec("DELETE FROM member_requests WHERE kind = 'feedback' AND topic IN ('experience','app') AND memberId = ''");
     $dl = admin_requests_list(['requesterId' => $ADMIN, 'kind' => 'feedback', 'pageSize' => 100]);
     $ar = array_column($dl['requests'], null, 'requestId')[$arow['requestId']] ?? null;
     chk('feedback (desk): the anonymous one is in the queue, with its centre and no name',
@@ -28890,6 +28900,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         !empty($n['ok']) && (bool)db_row("SELECT 1 FROM mentor_messages WHERE subjectId = 'AL-K3'") && (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'mentor.no_signin'"));
     chk('chat · the mentor resolver: member, else volunteer, else one account with that email', mp_mentor_principal(['memberId' => 'M1', 'volunteerId' => 'V1']) === 'M1'
         && mp_mentor_principal(['memberId' => '', 'volunteerId' => 'V1']) === 'V1' && mp_mentor_principal(['email' => 'al-vol@example.org']) === 'AL-VOL' && mp_mentor_principal(['email' => '']) === '');
+    // A pairing whose mentors row is gone: every other screen shows the mentor (LEFT JOIN), so chat must agree.
+    db_insert('members', ['memberId' => 'AL-K4', 'fullName' => 'K4 Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'AL-K4', 'mentorId' => 'AL-VOL', 'status' => 'active', 'startedAt' => $now]);
+    $g4 = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-K4', 'body' => 'Are you there?']);
+    chk('chat · a pairing with no mentors row (the id is the mentor\'s own account) still sends, and the mentor is told — no "you have no mentor"',
+        !empty($g4['ok']) && (bool)db_row("SELECT 1 FROM mentor_messages WHERE subjectId = 'AL-K4' AND toId = 'AL-VOL'")
+        && (backend_dispatch('member.mentor.mine', ['requesterId' => 'AL-K4'])['mentor'] ?? null) !== null);
     db_exec("DELETE FROM volunteers WHERE volunteerId = 'AL-VOL'"); db_exec("DELETE FROM notifications WHERE memberId = 'AL-VOL'"); db_exec("DELETE FROM ops_events WHERE source = 'mentor.no_signin'");
     $wipe();
 })();

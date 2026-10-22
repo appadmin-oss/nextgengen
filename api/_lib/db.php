@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 169;
+const NGG_SCHEMA_TARGET = 170;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5023,6 +5023,11 @@ function db_migrate(PDO $db): void {
             ALTER TABLE member_requests ADD COLUMN topic TEXT DEFAULT '';
             ALTER TABLE member_requests ADD COLUMN centre TEXT DEFAULT '';
             ALTER TABLE member_requests ADD COLUMN passedAt TEXT DEFAULT '';
+        ",
+        /* How a member rates their time at NGG, 1 (bad) to 5 (great), on an
+           "experience" feedback row; 0 everywhere else. */
+        170 => "
+            ALTER TABLE member_requests ADD COLUMN rating INTEGER DEFAULT 0;
         ",
     ];
 

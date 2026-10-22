@@ -544,3 +544,5 @@ One row per AI call (`api/_lib/ai.php` `ai_log_usage`): `at`, `month` (`YYYY-MM`
 
 ## `members.feesSettledThrough` (migration 168)
 `YYYY-MM-DD` or ''. The last day the member's membership and dues are settled outside this system. `fees_accrue_member` never charges a membership period due, or a dues month, on or before it; `fees_settle_through()` sets it (never backwards) and posts one `waiver` with periodKey `settle:<date>` for what was still unpaid on those periods (payments applied oldest first).
+
+`member_requests.rating` (migration 170) — 1–5 on an `experience` feedback row (`MEMBER_FEEDBACK_RATINGS`: Not good … Great); 0 everywhere else.

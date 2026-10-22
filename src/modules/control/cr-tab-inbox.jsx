@@ -166,8 +166,9 @@ const CR_INBOX_SOURCES = {
           const who = x.anonymous ? "A member (no name given)" : (x.fullName || x.displayId || "A member");
           return crItem({
             id: "req:" + x.requestId, cat: "requests", kind: "Idea or feedback · " + (x.topicLabel || "An idea"), icon: "lightbulb", who, at: x.createdAt, unread: true,
-            title: x.topicLabel || x.subject, body: x.body || "", search: [x.requestId, x.displayId, x.memberId, x.centre, "feedback idea"].join(" "),
-            facts: [["From", x.anonymous ? "Sent without their name" : who + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]].concat(x.passedAt ? [["Passed to the centre lead", crDate(x.passedAt)]] : []),
+            title: x.subject || x.topicLabel, body: x.body || (x.rating ? "No words, just the rating." : ""), search: [x.requestId, x.displayId, x.memberId, x.centre, "feedback idea"].join(" "),
+            facts: [["From", x.anonymous ? "Sent without their name" : who + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]]
+              .concat(x.rating ? [["How it’s going", x.rating + " of 5 · " + x.ratingLabel]] : []).concat(x.passedAt ? [["Passed to the centre lead", crDate(x.passedAt)]] : []),
             thread: [{ who, at: x.createdAt, body: x.body || "", mine: false }],
             note: x.anonymous ? "Sent without a name, so a thank-you closes it but reaches nobody." : "",
             actions: [

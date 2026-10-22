@@ -1208,9 +1208,20 @@ function mp_mentor_principal(array $mentor): string {
 }
 /** The child's active mentor, with who to tell ('mentorMember', possibly '' when the mentor has no sign-in yet). */
 function mp_chat_mentor(string $memberId): ?array {
-    $a = db_row("SELECT a.mentorId, t.memberId, t.volunteerId, t.email, t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId
+    /* LEFT JOIN, like every other read of the pairing (member.mentor.mine, the
+       record): an inner join here meant a pairing whose mentor row had gone
+       showed the child a mentor on one screen and "you don't have one" when
+       they wrote. With no mentors row, the pairing's id may itself be the
+       mentor's account (a member or volunteer id). */
+    $a = db_row("SELECT a.mentorId, t.mentorId AS tId, t.memberId, t.volunteerId, t.email, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId
                  WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id DESC LIMIT 1", [$memberId]);
     if (!$a) return null;
+    if ((string)($a['tId'] ?? '') === '') {
+        $id = (string)$a['mentorId'];
+        $who = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$id]);
+        if (!$who) { $v = db_row('SELECT volunteerId, fullName FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]); $who = $v ? ['memberId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName']] : null; }
+        return ['mentorId' => $id, 'fullName' => (string)($who['fullName'] ?? ''), 'mentorMember' => (string)($who['memberId'] ?? '')];
+    }
     return ['mentorId' => (string)$a['mentorId'], 'fullName' => (string)$a['fullName'], 'mentorMember' => mp_mentor_principal($a)];
 }
 

@@ -2267,3 +2267,26 @@ periods were settled, and the screen offered no exact figure to waive.
 - **mp9Err** never shows a raw code: a server sentence (detail with spaces)
   wins, then the known-code map, else "That didn't work. Try again."
 - Tests: PHP +16 (5014); `tests/portal-account.test.js` (22) in `test:all`.
+
+## Follow-up: "no mentor" with a mentor, password reach, experience feedback (2026-10-22)
+
+- **"You don't have a mentor" for children who have one.** The message box
+  sent through `this._chatSend`, a closure built while rendering the Mentor
+  screen that captured `mentorInfo().has` at that moment. Rendered before
+  chat/mine/today had loaded, or used from a screen that did not re-render it,
+  it refused with the stale "no mentor". Replaced by one method,
+  `Mp9Portal.sendToMentor()`, used by every send (message box, opportunity
+  "ask", Leadership Index focus); the server decides. Server side,
+  `mp_chat_mentor()` was an inner JOIN on `mentors` while `member.mentor.mine`
+  and the record are LEFT JOINs: now a LEFT JOIN too, resolving the pairing's
+  id as the mentor's own member/volunteer account when the mentors row is gone.
+- **Password "has to log out".** The form was at the bottom of the long Edit
+  profile sheet, reachable only by searching, so people used Forgot password
+  at sign-in. It is now its own sheet (`k: "password"`), opened from Me →
+  Sign-in and password, Edit profile and the palette; it closes on success and
+  the session stays.
+- **Feedback covers experience.** Topics `experience` (1–5 rating,
+  `MEMBER_FEEDBACK_RATINGS`, migration 170 `rating`; words optional) and `app`
+  join idea/change/love. A 1–2 rating is titled to the desk as somebody to
+  talk to. Inbox shows "How it's going".
+- Tests: PHP 5018/0; `tests/portal-account.test.js` 26/0.

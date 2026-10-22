@@ -2436,17 +2436,23 @@ the top bar opens **More**, where Sign out sits under Get help; in the mentor
 and instructor portals it is at the bottom of **More**. Signing out on a
 shared centre computer also clears any half-written community post.
 
-**Passwords, from inside the portal.** Profile → Sign-in. A member who has a
-password is asked for the current one before setting a new one; five wrong
-tries lock it for 15 minutes. A member who has forgotten it presses
-**Forgot it? Email me a code**: a 6-digit code goes to the email on their
-record (or their guardian's), and they set the new password with it without
-leaving the portal. Nobody at the desk needs to reset it for them.
+**Passwords, from inside the portal.** Me → **Sign-in and password** (also
+"Change my password" in the search box, and a button in Edit profile). It
+says whether the member has a password. **Change password** asks for the one
+they use now, then the new one, and they stay signed in; five wrong tries lock
+it for 15 minutes. A member who has forgotten it presses **Forgot it? Email me
+a code**: a 6-digit code goes to the email on their record (or their
+guardian's), and they set the new password with it without leaving the
+portal. Nobody needs to sign out, and nobody at the desk needs to reset it.
 
 **Ideas and feedback.** Help → **Share an idea** (also in the search box,
-and on My mentor → Community). A member picks *An activity idea*,
-*Something NGG should change* or *Something I love*, writes at least six
-characters, and may send it **without their name**. Ideas are their own kind
+and on My mentor → Community). A member picks *How NGG is going for me*,
+*An activity idea*, *Something NGG should change*, *Something I love* or
+*Something in the portal isn't working*. "How NGG is going" is a rating from
+*Not good* to *Great* (words are optional); the others need at least six
+characters. Any of them may be sent **without their name**. A rating of *Not
+good* or *Not great* reaches the desk titled as somebody to talk to, not as a
+suggestion. Ideas are their own kind
 of request, so a child with ideas waiting can still ask for help. "Something
 feels wrong?" is not an idea: the sheet sends it to Help, where it goes to
 safeguarding.
