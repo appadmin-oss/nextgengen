@@ -1356,7 +1356,10 @@ function cloudinary_hosted(string $url): bool {
 function cloudinary_adopt(string $url): array {
     $url = trim($url);
     if ($url === '') return ['ok' => false, 'error' => 'no_photo'];
-    if (cloudinary_hosted($url)) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    // On the backup account, a photo still on the spent main one is copied across (by URL) before it is edited there.
+    $onSpent = cloudinary_hosted($url) && cloudinary_active() === 'backup' && cloudinary_cloud_of($url) === (string)(($GLOBALS['CLOUDINARY_PRIMARY'] ?? [])['cloud_name'] ?? '');
+    if (cloudinary_hosted($url) && !$onSpent) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    if ($onSpent) $url = cloudinary_base($url);
     if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
     // Storage full: the photo stays on the site's own store rather than tipping the plan over.
     if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return ['ok' => false, 'error' => 'media_storage_full'];
@@ -1383,18 +1386,29 @@ function cloudinary_upload_signed(string $file): array {
         $secure = (string)($GLOBALS['__cloudinary_upload_mock'])($file, $folder);
         return $secure !== '' ? ['ok' => true, 'url' => $secure] : ['ok' => false, 'error' => 'upload_failed'];
     }
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
     $ts = time();
     $sig = sha1('folder=' . $folder . '&timestamp=' . $ts . $cfg['api_secret']);
-    $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/upload');
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_POSTFIELDS => ['file' => $file, 'api_key' => (string)$cfg['api_key'], 'timestamp' => $ts, 'folder' => $folder, 'signature' => $sig]]);
-    $raw = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    $j = is_string($raw) ? json_decode($raw, true) : null;
+    // Test seam for the HTTP exchange itself: $GLOBALS['__cld_upload_http'] = fn() => [code, body array].
+    if (isset($GLOBALS['__cld_upload_http']) && is_callable($GLOBALS['__cld_upload_http'])) {
+        [$code, $j] = ($GLOBALS['__cld_upload_http'])();
+    } else {
+        if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
+        $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/upload');
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_POSTFIELDS => ['file' => $file, 'api_key' => (string)$cfg['api_key'], 'timestamp' => $ts, 'folder' => $folder, 'signature' => $sig]]);
+        $raw = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $j = is_string($raw) ? json_decode($raw, true) : null;
+    }
     $secure = is_array($j) ? (string)($j['secure_url'] ?? '') : '';
-    if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => is_array($j) ? (string)($j['error']['message'] ?? '') : ''];
+    $msg = is_array($j) ? (string)($j['error']['message'] ?? '') : '';
+    // The main account is out of credits: move to the backup and try once more there.
+    if (($code === 420 || $code === 429 || ($code >= 400 && preg_match('/limit|quota|credit/i', $msg))) && empty($GLOBALS['__cld_retry']) && cloudinary_failover('refused an upload (' . ($msg ?: 'HTTP ' . $code) . ')')) {
+        $GLOBALS['__cld_retry'] = true;
+        try { return cloudinary_upload_signed($file); } finally { unset($GLOBALS['__cld_retry']); }
+    }
+    if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => $msg];
     return ['ok' => true, 'url' => $secure];
 }
 

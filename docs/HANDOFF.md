@@ -2434,3 +2434,17 @@ chain in an edited URL re-runs inside every copy built on it):
   - The Community menu gains "My NGG" and "NGG website" links (`.cm3-out`), so the way out is kept.
   - The signed-out public page keeps the site chrome. Desktop never showed the site header here.
 - `tests/community-v3.test.js` adds checks for both, on desktop and phone (49/0).
+
+### Cloudinary multi-account failover (handoff item)
+
+- **Keys.** The backup's keys are `cloudinary.backup.{cloud_name,api_key,api_secret}`, entered in Settings → API keys (`SERVICE_KEYS['cloudinary_backup']`, with its own key test).
+- **Which account is live.** That is the setting `cloudinary_active` (`primary` | `backup`). `cloudinary_account_apply()` (media-storage.php) lays the live account's three keys over `$CONFIG['cloudinary']`, so every caller reaches the right account unchanged.
+  - The main account's own config is kept in `$GLOBALS['CLOUDINARY_PRIMARY']`.
+  - `service_keys_apply()` undoes the swap before re-laying the keys and redoes it after.
+- **Switching.**
+  - `media_usage_refresh` switches to the backup once the main account reaches `high`.
+  - While on the backup, it probes the main account (`cloudinary_with_account`) and switches back once that is below `high`.
+  - `cloudinary_upload_signed` fails over immediately on HTTP 420/429 or a limit/quota/credit refusal, and retries once on the backup.
+  - Each switch sends one email, one ops record and one audit event (`media.storage.switch`).
+- **Editing old photos.** `cloudinary_adopt` copies a photo still on the spent main account into the backup before editing it there.
+- **Tests.** 13 checks in `api/tests/run.php`. `__cld_upload_http` is a new test seam for the upload's HTTP exchange.

@@ -6330,6 +6330,49 @@ chk('credit guard flips to exhausted past the threshold', !empty($ru['exhausted'
 setting_set('cloudinary_credits', 'ok', 'system');
 unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
 
+// ── Cloudinary: a backup account takes over when the main one runs low ──
+(function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? []; $keepP = $GLOBALS['CLOUDINARY_PRIMARY'] ?? null; unset($GLOBALS['CLOUDINARY_PRIMARY']);
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'mainacct', 'api_key' => '111', 'api_secret' => 'mainsecret', 'folder' => 'ngg'];
+    setting_set('cloudinary_active', 'primary', 'system'); setting_set('media.usage', null, 'system');
+    cloudinary_account_apply();
+    $use = ['mainacct' => 95, 'spareacct' => 10];
+    $GLOBALS['__media_api_mock'] = function ($m, $path) use (&$use) { $c = $GLOBALS['CONFIG']['cloudinary']['cloud_name']; return ['code' => 200, 'body' => ['credits' => ['usage' => $use[$c], 'limit' => 100]]]; };
+    $r = media_usage_refresh(true);
+    chk('cloudinary: with no backup set, a spent main account stays put (nothing to move to)', cloudinary_active() === 'primary' && $r['level'] === 'critical');
+    $GLOBALS['CLOUDINARY_PRIMARY']['backup'] = ['cloud_name' => 'spareacct', 'api_key' => '222', 'api_secret' => 'sparesecret'];
+    $GLOBALS['__mail_sink'] = [];
+    $r = media_usage_refresh(true);
+    chk('cloudinary: past the line on the main account, the backup takes over', cloudinary_active() === 'backup' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct' && $GLOBALS['CONFIG']['cloudinary']['api_secret'] === 'sparesecret');
+    chk('…the usage shown is the backup\'s, and AI edits run again', ($r['account'] ?? '') === 'backup' && (int)round((float)$r['pct']) === 10 && cloudinary_credits_ok());
+    chk('…the folder and other settings carry over', ($GLOBALS['CONFIG']['cloudinary']['folder'] ?? '') === 'ngg');
+    chk('…and the people who run it are told', count(array_filter($GLOBALS['__mail_sink'], fn($m) => strpos($m['subject'], 'backup account') !== false)) >= 1);
+    chk('…recorded in the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.storage.switch' LIMIT 1"));
+    service_keys_apply(true);
+    chk('cloudinary: re-applying the API keys keeps the backup live (no silent swap back)', $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
+    $seen = cloudinary_with_account('primary', fn() => $GLOBALS['CONFIG']['cloudinary']['cloud_name']);
+    chk('cloudinary: a probe of the main account restores the backup after', $seen === 'mainacct' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
+    $use['mainacct'] = 95;
+    media_usage_refresh(true);
+    chk('cloudinary: while the main account is still spent, the backup stays', cloudinary_active() === 'backup');
+    $use['mainacct'] = 3;
+    media_usage_refresh(true);
+    chk('cloudinary: when the main account renews, work goes back to it', cloudinary_active() === 'primary' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'mainacct');
+    // An upload the main account refuses moves to the backup at once and is retried there.
+    $tries = [];
+    $GLOBALS['__cloudinary_upload_mock'] = null; unset($GLOBALS['__cloudinary_upload_mock']);
+    $GLOBALS['__cld_upload_http'] = function () use (&$tries) { $c = $GLOBALS['CONFIG']['cloudinary']['cloud_name']; $tries[] = $c; return $c === 'mainacct' ? [420, ['error' => ['message' => 'Monthly credit limit reached']]] : [200, ['secure_url' => 'https://res.cloudinary.com/spareacct/image/upload/v1/ngg/photos/x.jpg']]; };
+    $up = cloudinary_upload_signed('https://example.com/a.jpg');
+    chk('cloudinary: an upload refused for credits switches to the backup and is retried once there', !empty($up['ok']) && $tries === ['mainacct', 'spareacct'] && cloudinary_active() === 'backup');
+    $ad = cloudinary_adopt('https://res.cloudinary.com/mainacct/image/upload/c_fill,w_400/v1/ngg/photos/old.jpg');
+    chk('cloudinary: on the backup, a photo still on the spent account is copied across before editing', !empty($ad['adopted']) && strpos((string)$ad['url'], 'spareacct') !== false && end($tries) === 'spareacct');
+    $ad2 = cloudinary_adopt('https://res.cloudinary.com/spareacct/image/upload/v1/ngg/photos/x.jpg');
+    chk('…and one already on the backup is edited where it is', empty($ad2['adopted']));
+    unset($GLOBALS['__cld_upload_http'], $GLOBALS['__media_api_mock'], $GLOBALS['__mail_sink'], $GLOBALS['CLOUDINARY_PRIMARY']);
+    setting_set('cloudinary_active', 'primary', 'system'); setting_set('media.usage', null, 'system'); setting_set('cloudinary_credits', 'ok', 'system');
+    $GLOBALS['CONFIG']['cloudinary'] = $keep; if ($keepP !== null) $GLOBALS['CLOUDINARY_PRIMARY'] = $keepP;
+})();
+
 // ── Geo-fencing: distance math, centre mapping, auto-select + anti-cheat ──
 chk('geo: haversine ~111m per 0.001° latitude', (function () { $d = geo_distance_m(6.600, 3.300, 6.601, 3.300); return $d > 108 && $d < 114; })());
 chk('geo: identical points are ~0m apart', geo_distance_m(6.6, 3.3, 6.6, 3.3) < 0.5);
