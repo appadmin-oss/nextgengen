@@ -3965,3 +3965,7 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 INSERT INTO schema_version (version) VALUES (167) ON DUPLICATE KEY UPDATE version = version;
 ALTER TABLE members ADD COLUMN feesSettledThrough VARCHAR(10) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (168) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE member_requests ADD COLUMN topic VARCHAR(12) DEFAULT '';
+ALTER TABLE member_requests ADD COLUMN centre VARCHAR(120) DEFAULT '';
+ALTER TABLE member_requests ADD COLUMN passedAt VARCHAR(32) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (169) ON DUPLICATE KEY UPDATE version = version;

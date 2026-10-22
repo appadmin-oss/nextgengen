@@ -1188,10 +1188,30 @@ function member_mp_message_reply(array $p): array {
  */
 const MP_CHAT_MAX = 1200;
 
+/**
+ * Whoever a mentor signs in as, which is where their alerts go: their member
+ * account, else their volunteer account (mentor_gate lets either in), else the
+ * one active member or volunteer with the same email. '' when there is none.
+ *
+ * The chat used to require mentors.memberId, so a mentor promoted from a
+ * volunteer, or made in the directory, read to the child as "You don't have a
+ * mentor yet" under a header naming them — and the message was dropped.
+ */
+function mp_mentor_principal(array $mentor): string {
+    foreach (['memberId', 'volunteerId'] as $k) if (trim((string)($mentor[$k] ?? '')) !== '') return trim((string)$mentor[$k]);
+    $email = strtolower(trim((string)($mentor['email'] ?? '')));
+    if ($email === '') return '';
+    $m = db_all("SELECT memberId FROM members WHERE lower(email) = ? AND status = 'active' LIMIT 2", [$email]);
+    if (count($m) === 1) return (string)$m[0]['memberId'];
+    $v = db_all("SELECT volunteerId FROM volunteers WHERE lower(email) = ? LIMIT 2", [$email]);
+    return count($v) === 1 ? (string)$v[0]['volunteerId'] : '';
+}
+/** The child's active mentor, with who to tell ('mentorMember', possibly '' when the mentor has no sign-in yet). */
 function mp_chat_mentor(string $memberId): ?array {
-    $a = db_row("SELECT a.mentorId, t.memberId mentorMember, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId
+    $a = db_row("SELECT a.mentorId, t.memberId, t.volunteerId, t.email, t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId
                  WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id DESC LIMIT 1", [$memberId]);
-    return ($a && (string)$a['mentorMember'] !== '') ? $a : null;
+    if (!$a) return null;
+    return ['mentorId' => (string)$a['mentorId'], 'fullName' => (string)$a['fullName'], 'mentorMember' => mp_mentor_principal($a)];
 }
 
 /** member.mentor.chat — the conversation, oldest first; marks the mentor's messages read. */
@@ -1292,8 +1312,14 @@ function member_mp_chat_send(array $p): array {
     }
     $a = mp_chat_mentor($me);
     if (!$a) return ['ok' => false, 'error' => 'no_mentor'];
+    // Kept in the child's conversation whatever happens: the mentor's inbox reads it by the child, not by a recipient.
     $id = mp_message_put('chat:' . $me, 'From your mentee', $me, $me, (string)$m['fullName'], (string)$a['mentorMember'], $body);
-    push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => ($crisis ? 'Urgent: ' : '') . $first . ' wrote to you', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'mentor']);
+    if ((string)$a['mentorMember'] !== '') {
+        push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => ($crisis ? 'Urgent: ' : '') . $first . ' wrote to you', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'mentor']);
+    } elseif (function_exists('ops_record')) {
+        // A mentor with no way to sign in cannot be told; staff are, so the child is not left waiting on nobody.
+        ops_record('warn', 'mentor.no_signin', 'A child’s message is waiting for a mentor with no sign-in', 'Mentor ' . (string)$a['mentorId'] . ' has no member or volunteer account linked. Link one in Mentors & volunteers.');
+    }
     if ($crisis) {
         $reached = mp_urgent_alert((string)$m['centre'], 'Urgent: a member may be at risk',
             '<p>A message ' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' sent to their mentor matched the safeguarding phrases. Their mentor has it too. Read it in the Control Room → People → Mentorship today.</p>',
@@ -1360,8 +1386,7 @@ function member_mp_mine(array $p): array {
 
 /** wellbeingAlert (event job): tell the mentor now, and the safeguarding lead when they asked for help. */
 function mp_job_wellbeing_alert(array $m, string $w): void {
-    $a = db_row("SELECT a.mentorId, t.memberId mentorMember, t.fullName mentorName, t.email FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId
-                 WHERE a.memberId = ? AND a.status = 'active' LIMIT 1", [(string)$m['memberId']]);
+    $a = mp_chat_mentor((string)$m['memberId']);
     $first = mp_first((string)$m['fullName']);
     if ($a && function_exists('ms_nudge')) {
         ms_nudge('J:wellbeingAlert:' . $m['memberId'] . ':' . iso_week_period(), 'J:wellbeingAlert', ['audience' => 'mentor', 'mentorId' => (string)$a['mentorId'], 'memberId' => (string)$m['memberId'],

@@ -468,7 +468,7 @@ class Mp15Portal extends React.Component {
       mainSlotEnd: MP15_CLASS_SCREENS.includes(S.scr)
         ? <div className="m15x-slot m15x-slot-class m15c"><Mp15Class key={S.scr + ':' + this.classCentre()} screen={S.scr} centre={this.classCentre()} say={t => this.say(t)}
             onOpenChild={id => all.some(k => k.id === id) && this.go('kid', { kid: id, ktab: 'overview', pBody: null })}/></div>
-        : this.slotEnd(narrow), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), meId: me.memberId || '', nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+        : this.slotEnd(narrow), roleLabel, centre: me.centreOnScreen || me.centre || '', meName: me.name || '', meIni: mp15Initials(me.name), meId: me.memberId || '', signOutMe: () => nggPortalSignOut(this.props.onSignOut), nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
       areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
       glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')],
                ['Seen in last 14 days', N ? Math.round((N - overdue.length) / N * 100) + '%' : '—', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })],
@@ -1032,11 +1032,11 @@ function MentorHome() {
   const acadBar = oriLocked && !ownPortal && <Mp15AcademyBar o={ori0} go={() => go('academy')}/>;
   if (sub === 'summer') return <>{hubBtn}{acadBar}<MentorPortal key="summer" programme="summer"/></>;
   /* A v15 mentor's class tools open inside their portal; an instructor or an admin with no pod keeps the stand-alone class page. */
-  if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onHub={out.includes('summer') ? () => go('') : null}/>;
+  if (sub === 'class' && v15) return <Mp15Portal key="ngg" boot={boot} initial="classic" onSignOut={auth && auth.signOut} onHub={out.includes('summer') ? () => go('') : null}/>;
   if (sub === 'class') return <>{hubBtn}{acadBar}<MentorPortal key="class" programme="ngg"/></>;
   if (state === 'refused') return <MentorPortal key="any"/>;
   if (sub === 'ngg') {
-    if (v15) return <Mp15Portal boot={boot} onHub={out.includes('summer') ? () => go('') : null}/>;
+    if (v15) return <Mp15Portal boot={boot} onSignOut={auth && auth.signOut} onHub={out.includes('summer') ? () => go('') : null}/>;
     return <div className="m15x-hub"><div className="m15x-hub-in"><h1>The NGG mentor portal isn’t yours</h1>
       <p>It opens for NGG pod, peer and lead mentors and for coordinators.{out.length ? ' These are open to you:' : ' Ask your coordinator if you think that’s wrong.'}</p>
       <Mp15HubCards out={out.concat(me0.mentorId ? ['academy'] : [])} go={go}/></div></div>;

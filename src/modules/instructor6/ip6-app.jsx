@@ -260,6 +260,7 @@ class Ip6Portal extends React.Component {
           lead="Support and Report a concern work the whole time."/></div> : null, narrow, wide, outerPad: '0', frameW: '100%', frameH: '100%', frameR: '0', frameSh: 'none',
       // The assignment desk follows the column, so the column keeps no bottom padding above it.
       mainPad: narrow ? (cur === 'assignments' || cur === 'academy' ? '16px 16px 0' : '16px 16px 28px') : (cur === 'assignments' || cur === 'academy' ? '32px 40px 0' : '32px 40px 56px'), toastBottom: narrow ? '92px' : '24px',
+      signOutMe: () => nggPortalSignOut(this.props.onSignOut),
       me, course, navGroups: areaNav, tabbar: areaTabbar, moreList, areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.label, title: area.kids.length > 1 && !inDetail ? area.label : titles[cur], subtitle: subs[cur] || '', showBack: S.hist.length > 0, back: () => this.goBack(),
       goReport: () => this.goTo('report'), go: id => () => this.goTo(id),
       timerOn: !!S.timer, timerText: Math.floor(rem / 60) + ':' + String(rem % 60).padStart(2, '0'), stopTimer: () => set({ timer: null }),
@@ -569,7 +570,7 @@ class Ip6Portal extends React.Component {
     o.rw = { netBar: !!nb, netIcon: nb ? nb[0] : '', netBg: nb ? nb[1] : '', netBd: nb ? nb[2] : '', netFg: nb ? nb[3] : '', netT: nb ? nb[4] : '',
       hasQueue: q.length > 0, queue: q, queueL: q.length + ' waiting', queueOpen: !!S.qOpen && q.length > 0, queueOpenA: S.qOpen ? 'true' : 'false', toggleQueue: () => set({ qOpen: !S.qOpen }),
       retry: () => { if (!S.online) return this.toast('Still offline. We’ll keep trying.'); if (window.outbox) window.outbox.flush(); this.loadAll(); this.toast(q.length ? 'Sending ' + q.length + ' change' + (q.length === 1 ? '' : 's') + '…' : 'Reloaded'); },
-      roBar: false, roT: '', sessOn: false, stay: () => {}, signOut: () => {} };
+      roBar: false, roT: '', sessOn: false, stay: () => {}, signOut: () => nggPortalSignOut(this.props.onSignOut) };
     const AN = ['Needs step-by-step help to do this.', 'Does it with a prompt or an example to copy. Some slips.', 'Does it alone and correctly, more than once.', 'Explains it to a classmate and spots their mistakes.'];
     o.skAnchors = IP6_LEVELS.map((l, i) => ({ l, d: AN[i], bg: IP6_LVBG[i], fg: IP6_LVFG[i] }));
     o.skAnchOpen = S.anch !== false; o.skAnchA = o.skAnchOpen ? 'true' : 'false'; o.skAnchChev = o.skAnchOpen ? 'ph ph-caret-up' : 'ph ph-caret-down'; o.toggleAnch = () => set({ anch: S.anch === false });
@@ -657,7 +658,7 @@ function InstructorHome() {
   if (sub === 'summer') return <>{hub && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Instructor portals</button>}<MentorPortal key="i-summer" programme="summer"/></>;
   /* Not signed in, not cleared, or teaching nothing: the class portal owns those answers and its sign-in doors. */
   if (st.state !== 'ready' || (!st.ngg && !st.summer)) return <MentorPortal key="i-any"/>;
-  if (sub === 'ngg' || (!hub && st.ngg)) return st.ngg ? <Ip6Portal onSummer={st.summer ? () => go('summer') : null}/> : <MentorPortal key="i-any2"/>;
+  if (sub === 'ngg' || (!hub && st.ngg)) return st.ngg ? <Ip6Portal onSignOut={auth && auth.signOut} onSummer={st.summer ? () => go('summer') : null}/> : <MentorPortal key="i-any2"/>;
   return <div className="m15x-hub"><div className="m15x-hub-in"><img src="/assets/logo.png" alt="" width="40" height="40"/><h1>Which class?</h1>
     <p>You teach in both programmes. NGG and Summer School are separate, so each has its own portal and its own class.</p>
     <ul className="m15x-cards">

@@ -23347,6 +23347,70 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'SELF-SCP'"); db_exec("DELETE FROM centres WHERE centreId IN ('SELF-C1','SELF-C2')");
     db_exec("UPDATE members SET centre = 'Egbeda' WHERE memberId = ?", [$OTHER]);
 
+    // ── Feedback: its own kind, thanked or passed on, and anonymous without an email ──
+    db_exec("DELETE FROM centres WHERE centreId IN ('SELF-FB1','SELF-FB2')");
+    db_insert('centres', ['centreId' => 'SELF-FB1', 'name' => 'Feedton', 'code' => 'FT', 'status' => 'active', 'slug' => 'feedton', 'createdAt' => now_iso()]);
+    db_insert('centres', ['centreId' => 'SELF-FB2', 'name' => 'Farton', 'code' => 'FR', 'status' => 'active', 'slug' => 'farton', 'createdAt' => now_iso()]);
+    $keepCentre = (string)(db_row('SELECT centre FROM members WHERE memberId = ?', [$MEM])['centre'] ?? '');
+    db_exec("UPDATE members SET centre = 'Feedton' WHERE memberId = ?", [$MEM]);
+    db_exec("DELETE FROM member_requests WHERE memberId = ? AND kind IN ('feedback','help')", [$MEM]);
+    chk('feedback: too short to act on is refused with a sentence, not the "what happened" of a help request',
+        ($mk(['kind' => 'feedback', 'topic' => 'idea', 'body' => 'Chess'])['error'] ?? '') === 'need_reason'
+        && !str_contains((string)($mk(['kind' => 'feedback', 'body' => 'Chess'])['detail'] ?? ''), 'what happened'));
+    $fb = []; for ($i = 0; $i < MEMBER_FEEDBACK_OPEN_MAX; $i++) $fb[] = $mk(['kind' => 'feedback', 'topic' => 'change', 'body' => 'Longer Saturday sessions please ' . $i]);
+    chk('feedback: stored as kind feedback with its topic and the member\'s centre',
+        !array_filter($fb, static fn($r) => empty($r['ok'])) && $fb[0]['request']['kind'] === 'feedback' && $fb[0]['request']['topic'] === 'change'
+        && (string)db_row('SELECT centre FROM member_requests WHERE requestId = ?', [$fb[0]['request']['requestId']])['centre'] === 'Feedton');
+    chk('feedback: its cap is its own (MEMBER_FEEDBACK_OPEN_MAX waiting)…', ($mk(['kind' => 'feedback', 'body' => 'One more idea'])['error'] ?? '') === 'too_many_open');
+    chk('feedback: …so a child with ideas waiting can still ask for help', !empty($mk(['kind' => 'help', 'body' => 'Something happened at school'])['ok']));
+    $anon = backend_dispatch('member.request.create', ['memberId' => $MEM, 'kind' => 'feedback', 'topic' => 'love', 'body' => 'I love the robotics table', 'anonymous' => true]);
+    $arow = db_row('SELECT * FROM member_requests WHERE requestId = ?', [$anon['request']['requestId'] ?? '']);
+    chk('feedback: anonymous is stored with no member, only the centre — and the cap does not count it',
+        !empty($anon['ok']) && $arow && $arow['memberId'] === '' && $arow['centre'] === 'Feedton' && $anon['request']['anonymous'] === true
+        && !in_array($anon['request']['requestId'], array_column(member_requests_list(['memberId' => $MEM])['requests'], 'requestId'), true));
+    chk('feedback: …and its audit event names nobody',
+        (function () use ($arow, $MEM) { $a = db_row("SELECT actorId, meta FROM audit_log WHERE event = 'member.feedback.create' AND subject = ? LIMIT 1", [$arow['requestId']]);
+            return $a && $a['actorId'] === 'system' && !str_contains((string)$a['meta'], $MEM); })());
+    $odd = $mk(['kind' => 'feedback', 'topic' => 'zzz', 'body' => 'A coding club on Fridays', 'anonymous' => true]);
+    chk('feedback: an unknown topic is kept as an idea, not refused', !empty($odd['ok']) && $odd['request']['topic'] === 'idea');
+    db_exec('DELETE FROM member_requests WHERE requestId = ?', [$odd['request']['requestId'] ?? '']);
+    $dl = admin_requests_list(['requesterId' => $ADMIN, 'kind' => 'feedback', 'pageSize' => 100]);
+    $ar = array_column($dl['requests'], null, 'requestId')[$arow['requestId']] ?? null;
+    chk('feedback (desk): the anonymous one is in the queue, with its centre and no name',
+        $ar && $ar['anonymous'] === true && $ar['centre'] === 'Feedton' && $ar['fullName'] === '' && $ar['topicLabel'] === 'Something I love'
+        && (int)$dl['openByKind']['feedback'] === MEMBER_FEEDBACK_OPEN_MAX + 1);
+    db_exec("DELETE FROM members WHERE memberId IN ('SELF-FSC','SELF-LEAD')");
+    db_insert('members', ['memberId' => 'SELF-FSC', 'fullName' => 'Far Admin', 'email' => 'fsc@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'super_admin', 'centreScope' => json_encode(['SELF-FB2']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('feedback (desk): a scoped admin elsewhere sees no anonymous feedback from this centre, and cannot answer it',
+        !in_array($arow['requestId'], array_column(admin_requests_list(['requesterId' => 'SELF-FSC', 'status' => 'all', 'pageSize' => 100])['requests'], 'requestId'), true)
+        && (admin_request_decide(['requesterId' => 'SELF-FSC', 'requestId' => $arow['requestId'], 'answer' => 'thank'])['error'] ?? '') === 'out_of_scope');
+    db_exec("UPDATE members SET centreScope = ? WHERE memberId = 'SELF-FSC'", [json_encode(['SELF-FB1'])]);
+    chk('feedback (desk): scoped to Feedton, they do see it',
+        in_array($arow['requestId'], array_column(admin_requests_list(['requesterId' => 'SELF-FSC', 'kind' => 'feedback', 'pageSize' => 100])['requests'], 'requestId'), true));
+    chk('feedback (desk): it is answered, not approved or declined', (admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $fb[0]['request']['requestId'], 'approve' => false, 'decision' => 'no'])['error'] ?? '') === 'bad_answer');
+    chk('feedback (desk): passing it with no centre lead says so', (admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $fb[0]['request']['requestId'], 'answer' => 'pass'])['error'] ?? '') === 'no_centre_lead');
+    db_insert('members', ['memberId' => 'SELF-LEAD', 'fullName' => 'Feed Lead', 'email' => 'lead@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'centre_lead', 'centreScope' => json_encode(['SELF-FB1']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $ps = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $fb[0]['request']['requestId'], 'answer' => 'pass', 'decision' => 'Worth a look']);
+    $leadN = db_row("SELECT title, body FROM notifications WHERE memberId = 'SELF-LEAD' ORDER BY id DESC LIMIT 1");
+    chk('feedback (desk): passed to the centre lead, it stays open with passedAt, and the lead gets it with the desk\'s note',
+        !empty($ps['ok']) && $ps['request']['status'] === 'open' && $ps['request']['passedAt'] !== ''
+        && $leadN && str_contains((string)$leadN['body'], 'Worth a look') && str_contains((string)$leadN['body'], 'Longer Saturday'));
+    chk('feedback (desk): …and is not passed twice', (admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $fb[0]['request']['requestId'], 'answer' => 'pass'])['error'] ?? '') === 'already_passed');
+    $th = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $fb[0]['request']['requestId'], 'answer' => 'thank']);
+    $memN = db_row("SELECT title FROM notifications WHERE memberId = ? ORDER BY id DESC LIMIT 1", [$MEM]);
+    chk('feedback (desk): thanking closes it with a plain thank-you when the desk writes none, and tells the member',
+        !empty($th['ok']) && $th['request']['status'] === 'approved' && $th['request']['decision'] === MEMBER_FEEDBACK_THANKS
+        && $memN && $memN['title'] === 'Thank you for your idea');
+    chk('feedback (desk): the anonymous one can be thanked too — it closes and reaches nobody',
+        !empty(admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $arow['requestId'], 'answer' => 'thank', 'decision' => 'Glad you like it'])['ok'])
+        && (string)db_row('SELECT status FROM member_requests WHERE requestId = ?', [$arow['requestId']])['status'] === 'approved');
+    db_exec("DELETE FROM member_requests WHERE kind = 'feedback' AND (memberId = ? OR (memberId = '' AND centre = 'Feedton'))", [$MEM]);
+    db_exec("DELETE FROM members WHERE memberId IN ('SELF-FSC','SELF-LEAD')"); db_exec("DELETE FROM centres WHERE centreId IN ('SELF-FB1','SELF-FB2')");
+    db_exec("DELETE FROM audit_log WHERE event LIKE 'member.feedback.%'");
+    db_exec("UPDATE members SET centre = ? WHERE memberId = ?", [$keepCentre, $MEM]);
+
     $wipe();
     db_exec("DELETE FROM notifications WHERE memberId LIKE 'SELF-%'");
     db_exec("DELETE FROM audit_log WHERE event LIKE 'member.request.%'");
@@ -28807,6 +28871,26 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $ok = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-KID', 'body' => 'See you on Saturday']);
     chk('chat · an active member\'s message goes to their mentor as before', !empty($ok['ok']) && empty($ok['crisis']));
     chk('chat · the number a child is told to call is the centre officer\'s, else the setting, else the programme line', mp_helpline('Nowhere-' . rand_hex(3)) !== '');
+    // A mentor with no member account: promoted from a volunteer, or made in the directory.
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'AL-VOL'");
+    db_insert('volunteers', ['volunteerId' => 'AL-VOL', 'fullName' => 'Vol Mentor', 'email' => 'al-vol@example.org', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'ALT-V', 'fullName' => 'Vol Mentor', 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'volunteerId' => 'AL-VOL', 'memberId' => '', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'ALT-N', 'fullName' => 'No Signin', 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'memberId' => '', 'email' => '', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    foreach ([['AL-K2', 'ALT-V'], ['AL-K3', 'ALT-N']] as [$k, $t]) {
+        db_insert('members', ['memberId' => $k, 'fullName' => $k . ' Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('mentor_assignments', ['memberId' => $k, 'mentorId' => $t, 'status' => 'active', 'startedAt' => $now]);
+    }
+    $v = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-K2', 'body' => 'Hello coach']);
+    chk('chat · a child whose mentor was promoted from a volunteer (no member account) can message them, and the mentor is told',
+        !empty($v['ok']) && (bool)db_row("SELECT 1 FROM mentor_messages WHERE subjectId = 'AL-K2' AND toId = 'AL-VOL'") && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'AL-VOL' AND kind = 'mentor'")
+        && (backend_dispatch('member.mentor.chat', ['memberId' => 'AL-K2'])['mentor'] ?? null) !== null);
+    db_exec("DELETE FROM ops_events WHERE source = 'mentor.no_signin'");
+    $n = backend_dispatch('member.mentor.chat.send', ['memberId' => 'AL-K3', 'body' => 'Hello coach']);
+    chk('chat · a mentor with no sign-in at all: the message is kept for them, and staff are told — the child is not refused',
+        !empty($n['ok']) && (bool)db_row("SELECT 1 FROM mentor_messages WHERE subjectId = 'AL-K3'") && (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'mentor.no_signin'"));
+    chk('chat · the mentor resolver: member, else volunteer, else one account with that email', mp_mentor_principal(['memberId' => 'M1', 'volunteerId' => 'V1']) === 'M1'
+        && mp_mentor_principal(['memberId' => '', 'volunteerId' => 'V1']) === 'V1' && mp_mentor_principal(['email' => 'al-vol@example.org']) === 'AL-VOL' && mp_mentor_principal(['email' => '']) === '');
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'AL-VOL'"); db_exec("DELETE FROM notifications WHERE memberId = 'AL-VOL'"); db_exec("DELETE FROM ops_events WHERE source = 'mentor.no_signin'");
     $wipe();
 })();
 

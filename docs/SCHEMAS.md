@@ -517,6 +517,8 @@ Family accounts (`api/_lib/domain/family.php`). `guardians`: `guardianId` (`GDN-
 
 `member_requests.raisedBy` — `guardian:<guardianId>` when a parent raised the request from their family account; empty otherwise. Only `family_request_create()` sets it.
 
+`member_requests.topic`, `.centre`, `.passedAt` (migration 169) — feedback only (`kind = 'feedback'`). `topic` is `idea | change | love` (`MEMBER_FEEDBACK_TOPICS`). `centre` is the member's centre at the time, and the only scope an anonymous row has: an anonymous feedback row stores `memberId = ''`. `passedAt` is when the desk passed it to the centre lead; it stays `open` until thanked (`status = 'approved'`, `decision` = the thank-you).
+
 ## `timetable_slots` (migration 129)
 A centre's weekly timetable (`api/_lib/domain/timetable.php`). `slotId` (`TT-` + hex), `centreId`, `course` (a curriculum/catalogue course), `level`, `weekday` 1 (Mon)–7 (Sun), `startTime` / `endTime` `HH:MM` (end after start, at most 8 hours), `room`, `instructorId` (a volunteer), `note`, `status` `active` | `removed`, `createdAt`, `updatedAt`, `updatedBy`. Indexed on (`centreId`, `status`) and (`instructorId`, `status`). Clashes (room, instructor across centres, course+level, centre day, centre hours) are refused on save by `tt_clashes()`; rows saved before a rule are reported, not rewritten.
 

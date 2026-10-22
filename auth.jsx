@@ -11,6 +11,14 @@ const AuthCtx = React.createContext({
   refresh: async () => {},
 });
 
+/* A portal's own Sign out. The page passes the app's signOut (it clears the
+   drafts a shared centre computer would hand to the next child, and leaves
+   for home); without one, the bare logout and a reload of the front door. */
+function nggPortalSignOut(fn) {
+  if (typeof fn === "function") return fn();
+  return NGGApi.auth.logout().catch(() => {}).then(() => { try { location.assign("/"); } catch (_) {} });
+}
+
 function useAuth() {
   return React.useContext(AuthCtx);
 }

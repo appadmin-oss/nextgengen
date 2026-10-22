@@ -84,8 +84,13 @@ function mp9Err(e) {
   const c = e && (e.code || e.message);
   const T = { network: "You’re offline. It will send when you’re back.", rate_limited: "That’s a lot at once. Wait a moment and try again.", no_mentor: "You don’t have a mentor yet.",
     quiet_hours: "Messages open at 8am.", uploads_disabled: "Uploads aren’t switched on here yet.", answer_all_four: "Answer all four first.", too_short: "Say a little more first.",
-    managed_by_ngg: "NGG keeps that on your record. Ask the desk to change it.", not_ngg_member: "This portal is for NGG members." };
-  return T[c] || (e && e.detail) || (typeof c === "string" && c.length < 80 && !/^[a-z_]+$/.test(c) ? c : "That didn’t work. Try again.");
+    managed_by_ngg: "NGG keeps that on your record. Ask the desk to change it.", not_ngg_member: "This portal is for NGG members.",
+    bad_current_password: "That isn’t your current password. Forgot it? Get a code by email instead.", too_many_attempts: "Too many tries. Wait 15 minutes, or get a code by email.",
+    password_too_short: "Your new password needs 8 or more characters.", password_too_long: "That password is too long. Try a shorter one.",
+    too_many_open: "You already have some of these waiting. The team will answer them soon." };
+  /* A sentence from the server is shown; a code never is (“missing_field:email” means nothing to a child). */
+  const d = e && typeof e.detail === "string" && /\s/.test(e.detail) ? e.detail : "";
+  return d || T[c] || (typeof c === "string" && c.length < 120 && /\s/.test(c) ? c : "That didn’t work. Try again.");
 }
 
 class Mp9Portal extends React.Component {
@@ -171,7 +176,7 @@ class Mp9Portal extends React.Component {
   }
   goF(scr, extra) { return () => this.go(scr, extra); }
   goBack() { const h = this.state.hist; if (!h.length) return this.go("today"); const to = h[h.length - 1]; this.go(to); this.setState({ hist: h.slice(0, -1) }); }
-  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) }); }
+  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) , pwCode: null }); if (sheet && sheet.k === "profile" && !this.dd("sec")) this.load("sec"); }
   closeSheet() { this.setState({ sheet: null }); }
 
   /* ── Who is who ──────────────────────────────────────────────────────── */
@@ -617,7 +622,7 @@ class Mp9Portal extends React.Component {
       : anyNetErr ? ["ph ph-wifi-medium", "#fdf6e3", "#f1e3b8", "#5c4100", "Weak signal. Some parts didn’t load; nothing you saved is lost."] : null;
     return { netBar: !!N, icon: N ? N[0] : "", bg: N ? N[1] : "", bd: N ? N[2] : "", fg: N ? N[3] : "", t: N ? N[4] : "",
       retry: () => { if (typeof navigator !== "undefined" && navigator.onLine === false) return this.toast("Still offline. We’ll keep trying."); this.setState({ net: "online", er: {} }); Object.keys(this.state.d).concat(MP9_CORE).forEach(k => this.load(k)); this.toast("Connected. Everything is up to date."); },
-      sessOn: false, stay: () => {}, signOut: () => {} };
+      sessOn: false, stay: () => {}, signOut: () => nggPortalSignOut(this.props.onSignOut) };
   }
 }
 

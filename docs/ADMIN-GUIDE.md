@@ -2429,11 +2429,47 @@ Saturday, Timetable, Study tools) wrap onto a second line as buttons on a
 narrow screen, so every one is visible. They used to scroll sideways out of
 sight. The same is true in the mentor and instructor portals.
 
+**Signing out.** Every portal now has its own **Sign out**: the member,
+mentor and instructor portals carry it at the foot of the sidebar (the icon
+next to your name). On a phone, the member portal's round initials button in
+the top bar opens **More**, where Sign out sits under Get help; in the mentor
+and instructor portals it is at the bottom of **More**. Signing out on a
+shared centre computer also clears any half-written community post.
+
+**Passwords, from inside the portal.** Profile → Sign-in. A member who has a
+password is asked for the current one before setting a new one; five wrong
+tries lock it for 15 minutes. A member who has forgotten it presses
+**Forgot it? Email me a code**: a 6-digit code goes to the email on their
+record (or their guardian's), and they set the new password with it without
+leaving the portal. Nobody at the desk needs to reset it for them.
+
+**Ideas and feedback.** Help → **Share an idea** (also in the search box,
+and on My mentor → Community). A member picks *An activity idea*,
+*Something NGG should change* or *Something I love*, writes at least six
+characters, and may send it **without their name**. Ideas are their own kind
+of request, so a child with ideas waiting can still ask for help. "Something
+feels wrong?" is not an idea: the sheet sends it to Help, where it goes to
+safeguarding.
+
+In the Control Room, ideas arrive in **Inbox → Member requests** as *Idea or
+feedback*. They are not approved or declined:
+
+- **Thank and close** closes it with your reply, or a plain thank-you if you
+  write none. The member is told — unless they sent it without a name, in
+  which case the thank-you reaches nobody, and the inbox says so.
+- **Pass to centre lead** sends it, with your note, to whoever holds the
+  centre lead role for that centre, and leaves it open marked *Passed*. If no
+  one holds that role there, it says so.
+
+An idea sent without a name keeps only its centre, so it is seen by the staff
+of that centre (and by unscoped admins), never by another centre's.
+
 ## Things that go wrong, and what they mean
 
 | What you see | What it means | What to do |
 |---|---|---|
 | A section is missing from the sidebar | You do not have its capability | Ask a super admin; check **Access & roles** |
+| "Nobody holds the centre lead role for …" when passing an idea | That centre has no centre lead account | Thank it yourself, or give someone the Centre lead role in **Access & roles** |
 | "Out of scope" on a bulk run | Those rows are at centres you are not scoped to | Have someone unscoped do it, or get your scope widened |
 | "Centre in use" when deleting a centre | Members, participants, groups or volunteers still point at it | **Retire** it instead |
 | "Group not empty" when deleting a group | It still has participants | Reassign them, or unassign them explicitly |

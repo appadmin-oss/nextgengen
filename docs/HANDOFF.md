@@ -2231,3 +2231,39 @@ periods were settled, and the screen offered no exact figure to waive.
   one `admin.members.bulk` event). Control Room: Roster bulk "Clear dues they
   don't own" and the record's Fees part.
 - Tests: PHP suite +12; `tests/fees-settle-ui.test.js` (8) in `test:all`.
+
+## Member portal P0s from the audit: password, sign-out, feedback, mentor reach (2026-10-22)
+
+- **Messaging a mentor said "you don't have one"** for mentors whose `mentors`
+  row has no `memberId` (volunteer-only or email-only). `mp_mentor_principal()`
+  resolves the mentor's sign-in (memberId, else volunteerId, else a unique
+  member or volunteer by email); `mp_chat_mentor()` uses it. A message is
+  always stored; the push goes only to a principal, and a mentor with none is
+  recorded as `ops_record('warn', 'mentor.no_signin')` for staff to fix. The
+  wellbeing alert job uses the same resolver.
+- **Password.** The profile sheet sent `current: ""`, so every member who had a
+  password was refused. It now asks for the current password when the
+  security read says `hasPassword` (the sheet loads it itself), and offers
+  "Forgot it? Email me a code": `auth.resetRequest` + `auth.resetConfirm`
+  keyed by the record's memberId, inside the portal.
+- **Sign out.** None of the member, mentor or instructor portals had one.
+  `nggPortalSignOut(fn)` (auth.jsx) calls the app's `auth.signOut` passed in as
+  `onSignOut` (it clears shared-machine drafts), else the bare logout. Sidebar
+  icon in all three; the member portal's phone header gained an initials
+  button to **More** (the phone tab bar had no route there at all); mentor and
+  instructor More screens carry it; the palette has "Sign out". The mentor
+  sidebar's hard-coded `NGG-M-0142` is now the mentor's own id.
+- **Feedback** is request kind `feedback` (`member_feedback_create`, migration
+  169: `topic`, `centre`, `passedAt`). Own cap (`MEMBER_FEEDBACK_OPEN_MAX` 6),
+  so ideas no longer fill the `help` cap; minimum 6 characters, matched on the
+  client. Anonymous = `memberId ''` + centre, from a signed-in session (so the
+  per-member rate limit holds), never the public contact form (which needed
+  an email and failed with `missing_field:email`). Desk answers via
+  `admin_feedback_answer`: `thank` (closes, notifies unless anonymous) or
+  `pass` (centre leads of that centre, stays open, `already_passed`,
+  `no_centre_lead`); approve/decline is refused (`bad_answer`). The list
+  scopes anonymous rows by their own centre. "Makes me uncomfortable" left the
+  idea chips for a link to Help.
+- **mp9Err** never shows a raw code: a server sentence (detail with spaces)
+  wins, then the known-code map, else "That didn't work. Try again."
+- Tests: PHP +16 (5014); `tests/portal-account.test.js` (22) in `test:all`.

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 168;
+const NGG_SCHEMA_TARGET = 169;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5015,6 +5015,14 @@ function db_migrate(PDO $db): void {
          * and fees_settle_through() clears what was already charged. */
         168 => "
             ALTER TABLE members ADD COLUMN feesSettledThrough TEXT DEFAULT '';
+        ",
+        /* Feedback is its own request kind (member_feedback_create): what it is
+           about, the centre it came from (an anonymous one has no member to
+           read it from), and when the desk passed it to that centre's lead. */
+        169 => "
+            ALTER TABLE member_requests ADD COLUMN topic TEXT DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN centre TEXT DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN passedAt TEXT DEFAULT '';
         ",
     ];
 

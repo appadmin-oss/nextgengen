@@ -45,7 +45,7 @@ button,input,textarea,select{font:inherit;color:inherit}
         </sc-for>
       </nav>
       <button onClick="{{ goHelp }}" style="height:44px;border-radius:12px;border:1.5px solid #0b0b0c;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><i class="ph ph-lifebuoy"></i>Get help</button>
-      <div style="display:flex;align-items:center;gap:10px;padding:6px"><span style="width:32px;height:32px;border-radius:50%;background:#0b0b0c;color:#f5b026;font-size:12px;font-weight:700;display:grid;place-items:center">{{ me.ini }}</span><span style="display:flex;flex-direction:column;min-width:0"><span style="font-size:13.5px;font-weight:600">{{ me.name }}</span><span style="font-family:'Geist Mono',monospace;font-size:11px;color:#6b6b72">{{ me.id }}</span></span></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:6px"><span style="width:32px;height:32px;border-radius:50%;background:#0b0b0c;color:#f5b026;font-size:12px;font-weight:700;display:grid;place-items:center">{{ me.ini }}</span><span style="flex:1;display:flex;flex-direction:column;min-width:0"><span style="font-size:13.5px;font-weight:600">{{ me.name }}</span><span style="font-family:'Geist Mono',monospace;font-size:11px;color:#6b6b72">{{ me.id }}</span></span><button onClick="{{ signOutMe }}" aria-label="Sign out" title="Sign out" style="width:40px;height:40px;flex-shrink:0;border:0;border-radius:10px;background:none;cursor:pointer;font-size:20px;color:#3a3a40;display:grid;place-items:center" style-hover="background:#efefed"><i class="ph ph-sign-out" aria-hidden="true"></i></button></div>
     </aside>
   </sc-if>
 
@@ -57,6 +57,7 @@ button,input,textarea,select{font:inherit;color:inherit}
         <button onClick="{{ openPal }}" aria-label="Search or jump to" style="width:44px;height:44px;border:0;background:none;cursor:pointer;font-size:22px;display:grid;place-items:center"><i class="ph ph-magnifying-glass"></i></button>
         <button onClick="{{ toggleNotif }}" aria-label="Notifications" aria-expanded="{{ notifOpen }}" style="position:relative;width:44px;height:44px;border:0;background:none;cursor:pointer;font-size:22px;display:grid;place-items:center"><i class="ph ph-bell"></i><sc-if value="{{ hasUnread }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:8px;right:8px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#f5b026;font-size:10.5px;font-weight:700;display:grid;place-items:center">{{ unread }}</span></sc-if></button>
         <button onClick="{{ goHelp }}" aria-label="Get help" style="width:44px;height:44px;border:0;background:none;cursor:pointer;font-size:22px;display:grid;place-items:center"><i class="ph ph-lifebuoy"></i></button>
+        <button onClick="{{ goMore }}" aria-label="Everything else, and sign out" aria-current="{{ onMoreCur }}" style="width:44px;height:44px;border:0;background:none;cursor:pointer;display:grid;place-items:center"><span aria-hidden="true" style="width:32px;height:32px;border-radius:50%;background:#0b0b0c;color:#f5b026;font-size:12px;font-weight:700;display:grid;place-items:center">{{ me.ini }}</span></button>
       </header>
     </sc-if>
     <main style="flex:1;min-height:0;overflow-y:auto">
@@ -835,6 +836,11 @@ button,input,textarea,select{font:inherit;color:inherit}
       <button onClick="{{ resetConcern }}" style="align-self:flex-start;height:40px;padding:0 4px;border:0;background:none;font-size:14px;text-decoration:underline;cursor:pointer">Tell us something else</button>
     </sc-if>
   </section>
+  <section aria-labelledby="fb-h" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:8px">
+    <h2 id="fb-h" style="margin:0;font-size:16px;font-weight:600">Have an idea, or something we should change?</h2>
+    <span style="font-size:14px;color:#4a4a50;line-height:1.45">The NGG team reads every one and replies. You can send it without your name.</span>
+    <button onClick="{{ openIdea }}" style="align-self:flex-start;height:44px;padding:0 16px;margin-top:4px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px"><i class="ph ph-lightbulb" aria-hidden="true"></i>Share an idea</button>
+  </section>
 </sc-if>
 
 <sc-if value="{{ onMore }}" hint-placeholder-val="{{ false }}">
@@ -848,6 +854,7 @@ button,input,textarea,select{font:inherit;color:inherit}
     </section>
   </sc-for>
   <button onClick="{{ goHelp }}" style="min-height:52px;border-radius:14px;border:1.5px solid #0b0b0c;background:#fff;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><i class="ph ph-lifebuoy"></i>Get help</button>
+  <button onClick="{{ signOutMe }}" style="min-height:52px;border-radius:14px;border:1px solid #d6d4cc;background:#fff;font-size:15px;font-weight:600;color:#0b0b0c;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><i class="ph ph-sign-out" aria-hidden="true"></i>Sign out</button>
 </sc-if>
       </div>
     </main>
@@ -933,6 +940,7 @@ button,input,textarea,select{font:inherit;color:inherit}
           <div style="display:flex;flex-direction:column;gap:6px"><sc-for list="{{ ideaChips }}" as="c" hint-placeholder-count="4"><button aria-pressed="{{ c.on }}" onClick="{{ c.pick }}" style="min-height:48px;padding:0 14px;border-radius:12px;border:{{ c.bw }} solid {{ c.ring }};background:#fff;font-size:15px;cursor:pointer;text-align:left">{{ c.t }}</button></sc-for></div>
           <textarea value="{{ sText }}" onChange="{{ onSText }}" rows="4" aria-label="Your idea" placeholder="Tell us about it" style="border-radius:12px;border:1px solid #d6d4cc;padding:12px;font-size:16px;line-height:1.45;resize:vertical;outline:0;background:#fff"></textarea>
           <button onClick="{{ toggleAnon }}" aria-pressed="{{ sAnon }}" style="align-self:flex-start;min-height:44px;border:0;background:none;padding:0;font-size:15px;cursor:pointer;display:flex;align-items:center;gap:8px"><i class="{{ anonIcon }}" style="font-size:22px"></i>Send without my name</button>
+          <button onClick="{{ ideaToHelp }}" style="align-self:flex-start;min-height:44px;border:0;background:none;padding:0;font-size:14.5px;color:#1e4fae;text-decoration:underline;cursor:pointer;display:flex;align-items:center;gap:8px"><i class="ph ph-shield-check" aria-hidden="true" style="font-size:18px"></i>Something feels wrong? Tell us privately</button>
         </sc-if>
         <sc-if value="{{ shRequest }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:6px"><sc-for list="{{ reqChips }}" as="c" hint-placeholder-count="4"><button aria-pressed="{{ c.on }}" onClick="{{ c.pick }}" style="min-height:48px;padding:0 14px;border-radius:12px;border:{{ c.bw }} solid {{ c.ring }};background:#fff;font-size:15px;cursor:pointer;text-align:left">{{ c.t }}</button></sc-for></div>
@@ -974,10 +982,12 @@ button,input,textarea,select{font:inherit;color:inherit}
           <div style="border-top:1px solid #f0efea;padding-top:14px;display:flex;flex-direction:column;gap:10px">
             <span style="font-size:15px;font-weight:600">Sign-in</span>
             <div style="display:flex;align-items:center;gap:10px;font-size:14px"><i class="ph ph-envelope-simple" style="font-size:18px"></i><span style="flex:1">{{ acct.email }}</span><button onClick="{{ changeEmail }}" style="height:40px;padding:0 10px;border:0;background:none;font-size:13.5px;font-weight:600;text-decoration:underline;cursor:pointer">Change email</button></div>
-            <input type="password" value="{{ pf.pw1 }}" onChange="{{ pfPw1 }}" aria-label="New password" placeholder="New password (8 or more characters)" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input>
-            <input type="password" value="{{ pf.pw2 }}" onChange="{{ pfPw2 }}" aria-label="Confirm password" placeholder="Type it again" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input>
+            <sc-if value="{{ askCur }}" hint-placeholder-val="{{ true }}"><input type="password" autocomplete="current-password" value="{{ pf.cur }}" onChange="{{ pfCur }}" aria-label="Current password" placeholder="Current password" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input><button onClick="{{ sendPwCode }}" style="align-self:flex-start;min-height:44px;padding:0 4px;border:0;background:none;font-size:14px;color:#1e4fae;text-decoration:underline;cursor:pointer">Forgot it? Email me a code</button></sc-if>
+            <sc-if value="{{ pwCodeSent }}" hint-placeholder-val="{{ false }}"><span style="font-size:14px;color:#4a4a50;line-height:1.45">We sent a 6-digit code to {{ pwCodeTo }}. Type it here with your new password.</span><input inputMode="numeric" autocomplete="one-time-code" value="{{ pf.code }}" onChange="{{ pfCode }}" aria-label="Code from the email" placeholder="6-digit code" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0;letter-spacing:.2em"></input></sc-if>
+            <input type="password" autocomplete="new-password" value="{{ pf.pw1 }}" onChange="{{ pfPw1 }}" aria-label="New password" placeholder="New password (8 or more characters)" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input>
+            <input type="password" autocomplete="new-password" value="{{ pf.pw2 }}" onChange="{{ pfPw2 }}" aria-label="Confirm password" placeholder="Type it again" style="height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0"></input>
             <sc-if value="{{ hasPfErr }}" hint-placeholder-val="{{ false }}"><span role="alert" style="font-size:13px;color:#b0361c">{{ pfErr }}</span></sc-if>
-            <button onClick="{{ savePw }}" style="align-self:flex-start;height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">Change password</button>
+            <button onClick="{{ savePw }}" style="align-self:flex-start;height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ pwBtnL }}</button>
           </div>
           <div style="border-top:1px solid #f0efea;padding-top:14px;display:flex;flex-direction:column;gap:10px">
             <span style="font-size:15px;font-weight:600">Your data</span>

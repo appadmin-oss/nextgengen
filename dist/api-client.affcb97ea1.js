@@ -909,6 +909,8 @@
       myTimetable:  () => request('/member/my-timetable.php'),
       saveMyTimetable: (doc) => request('/member/my-timetable.php', { body: doc }),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
+      // An idea, a change, something they love (member_feedback_create); anonymous keeps their name off it.
+      feedback: (topic, body, anonymous) => request('/member/self.php', { body: { action: 'feedback', topic, body, anonymous: !!anonymous } }),
       // Projects and activities a mentor or lead put me on (domain/projects.php).
       projects:     () => request('/member/projects.php'),
       projectMark:  (projectId, status, note) => request('/member/projects.php', { body: { projectId, status, note: note || '' } }),
@@ -1303,6 +1305,8 @@
         list:   (q) => request('/admin/requests.php' + qs(q || {})),
         decide: (requestId, approve, decision, amount) => request('/admin/requests.php',
           { body: Object.assign({ requestId, approve, decision }, amount !== undefined ? { amount } : {}) }),
+        // Feedback is answered, not decided: 'thank' closes it with a reply, 'pass' sends it to the centre lead.
+        answer: (requestId, answer, note) => request('/admin/requests.php', { body: { requestId, answer, decision: note || '' } }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),

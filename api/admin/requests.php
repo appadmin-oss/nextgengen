@@ -12,7 +12,7 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $res = gs_call('admin.requests.decide', ['requesterId' => $s['mid'],
-        'requestId' => $b['requestId'] ?? '', 'approve' => !empty($b['approve']),
+        'requestId' => $b['requestId'] ?? '', 'approve' => !empty($b['approve']), 'answer' => (string)($b['answer'] ?? ''),
         'decision' => $b['decision'] ?? '', 'amount' => $b['amount'] ?? null, 'ip' => client_ip()]);
 } else {
     json_error('method_not_allowed', 405);

@@ -39,7 +39,21 @@ const MEMBER_REQUEST_KINDS = [
     'details' => 'Correct my details',
     'mentor'  => 'Change of mentor',
     'help'    => 'Tell us about something',
+    /* An idea, a change, something they love. Its own kind so it has its own
+       cap: three ideas once filled the `help` cap and the fourth thing that
+       child sent — "something happened at school" — was refused. Raised only
+       through member_feedback_create(), never member_request_create(). */
+    'feedback' => 'Idea or feedback',
 ];
+
+/** What a piece of feedback is about, and what the desk sees for each. */
+const MEMBER_FEEDBACK_TOPICS = ['idea' => 'An idea', 'change' => 'Something to change', 'love' => 'Something I love'];
+
+/** Feedback is cheap to give and should be: more of it may wait than requests. */
+const MEMBER_FEEDBACK_OPEN_MAX = 6;
+
+/** Shorter than this is not something the desk can act on ("Chess"). */
+const MEMBER_FEEDBACK_MIN = 6;
 
 const MEMBER_REQUEST_STATUSES = ['open', 'approved', 'declined', 'withdrawn'];
 
@@ -86,6 +100,10 @@ function member_request_public(array $r): array
         'decidedAt' => (string)($r['decidedAt'] ?? ''),
         'createdAt' => (string)($r['createdAt'] ?? ''),
         'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
+        'topic'     => (string)($r['topic'] ?? ''),
+        'topicLabel' => MEMBER_FEEDBACK_TOPICS[(string)($r['topic'] ?? '')] ?? '',
+        'anonymous' => (string)$r['kind'] === 'feedback' && (string)($r['memberId'] ?? '') === '',
+        'passedAt'  => (string)($r['passedAt'] ?? ''),
     ];
 }
 
@@ -252,6 +270,7 @@ function member_request_create(array $p): array
 
     $kind = (string)($p['kind'] ?? '');
     if (!isset(MEMBER_REQUEST_KINDS[$kind])) return ['ok' => false, 'error' => 'unknown_kind'];
+    if ($kind === 'feedback') return member_feedback_create($p);
 
     $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = ? AND status = 'open'",
                          [$id, $kind])['c'] ?? 0);
@@ -330,6 +349,57 @@ function member_request_create(array $p): array
             'kind' => $kind, 'subject' => $row['subject'], 'fullName' => (string)$m['fullName']]);
     }
     return ['ok' => true, 'request' => member_request_public($row)];
+}
+
+/**
+ * Feedback from a member: an idea, something to change, something they love.
+ *
+ * `anonymous` keeps the member off the row: memberId is blank and only their
+ * centre is kept, so the desk of that centre still sees it and a scoped admin
+ * elsewhere does not. It is still raised from a signed-in session, so the
+ * per-member rate limit on the route holds for it; what anonymity removes is
+ * the name, not the limit. It never goes through the public contact form,
+ * which needs an email address a child sending it without a name has not got.
+ */
+function member_feedback_create(array $p): array
+{
+    $id = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $topic = (string)($p['topic'] ?? '');
+    if (!isset(MEMBER_FEEDBACK_TOPICS[$topic])) $topic = 'idea';
+    $body = trim(mb_substr((string)($p['body'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
+    if (mb_strlen($body) < MEMBER_FEEDBACK_MIN) {
+        return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Tell us a little more, so the team knows what you mean.'];
+    }
+    $anon = !empty($p['anonymous']);
+    if (!$anon) {
+        $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = 'feedback' AND status = 'open'", [$id])['c'] ?? 0);
+        if ($open >= MEMBER_FEEDBACK_OPEN_MAX) {
+            return ['ok' => false, 'error' => 'too_many_open',
+                    'detail' => 'You have ' . $open . ' ideas waiting for the team to read. They will answer, and then you can send more.'];
+        }
+    }
+    $centre = (string)($m['centre'] ?? '');
+    $row = [
+        'requestId' => 'REQ-' . strtoupper(bin2hex(random_bytes(5))),
+        'memberId' => $anon ? '' : $id, 'kind' => 'feedback', 'status' => 'open',
+        'subject' => MEMBER_FEEDBACK_TOPICS[$topic], 'body' => $body, 'topic' => $topic, 'centre' => $centre,
+        'amount' => 0, 'reference' => '', 'proofUrl' => '', 'paidAt' => '',
+        'fromDate' => '', 'toDate' => '', 'refEntryId' => '',
+        'decision' => '', 'decidedBy' => '', 'decidedAt' => '', 'ledgerEntryId' => '', 'raisedBy' => '', 'passedAt' => '',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+    ];
+    db_insert('member_requests', $row);
+    // The audit names nobody when the child asked not to be named.
+    audit('member.feedback.create', $anon ? '' : $id, $row['requestId'], ['topic' => $topic, 'anonymous' => $anon, 'centre' => $centre], '');
+    notify_people(staff_with_cap('people', $anon ? [] : [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
+        'kind' => 'approval', 'title' => 'New feedback from a member: ' . MEMBER_FEEDBACK_TOPICS[$topic],
+        'intro' => $anon ? 'A member at ' . ($centre !== '' ? $centre : 'a centre') . ' sent this without their name.' : (string)$m['fullName'] . ' sent this.',
+        'body' => mb_substr($body, 0, 400) . "\n\nThank them or pass it on in Control Room → Inbox → Member requests.",
+        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Read it →']);
+    $out = member_request_public($row);
+    return ['ok' => true, 'request' => $out];
 }
 
 /** Withdraw one. Only their own, only while it is still open — a decided
@@ -504,7 +574,8 @@ function admin_requests_list(array $p): array
     $scopeSql = ''; $scopeArgs = [];
     $names = admin_centre_names_in_scope($g['requester']);
     if ($names !== null) {
-        $scopeSql = $names ? 'm.centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')' : '1 = 0';
+        // An anonymous feedback row has no member to join: its own centre scopes it.
+        $scopeSql = $names ? "COALESCE(m.centre, NULLIF(r.centre,'')) IN (" . implode(',', array_fill(0, count($names), '?')) . ')' : '1 = 0';
         $scopeArgs = $names;
         $where[] = $scopeSql; $args = array_merge($args, $scopeArgs);
     }
@@ -513,7 +584,7 @@ function admin_requests_list(array $p): array
     $limit = max(1, min(MEMBER_REQUEST_PAGE_MAX, (int)($p['pageSize'] ?? MEMBER_REQUEST_PAGE) ?: MEMBER_REQUEST_PAGE));
     $offset = max(0, (int)($p['offset'] ?? 0));
     $total = (int)(db_row('SELECT COUNT(*) c' . $from, $args)['c'] ?? 0);
-    $raw = db_all('SELECT r.*, m.fullName, m.displayId, m.centre' . $from . ' ORDER BY ' . $order . ' LIMIT ' . $limit . ' OFFSET ' . $offset, $args);
+    $raw = db_all('SELECT r.*, m.fullName, m.displayId, m.centre AS mCentre' . $from . ' ORDER BY ' . $order . ' LIMIT ' . $limit . ' OFFSET ' . $offset, $args);
     /* Who decided it, and who raised it when a parent did — one lookup each for the page, not one per row. */
     $staff = array_values(array_unique(array_filter(array_map(static fn($r) => (string)($r['decidedBy'] ?? ''), $raw))));
     $staffNames = $staff ? array_column(db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($staff), '?')) . ')', $staff), 'fullName', 'memberId') : [];
@@ -524,7 +595,7 @@ function admin_requests_list(array $p): array
     }
     $rows = array_map(static fn($r) => member_request_public($r) + [
         'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
-        'centre' => (string)($r['centre'] ?? ''), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
+        'centre' => (string)(($r['mCentre'] ?? '') !== '' ? $r['mCentre'] : ($r['centre'] ?? '')), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
         'decidedByName' => (string)($staffNames[(string)($r['decidedBy'] ?? '')] ?? ''), 'ledgerEntryId' => (string)($r['ledgerEntryId'] ?? ''),
         'updatedAt' => (string)($r['updatedAt'] ?? ''), 'raisedByName' => (string)($gNames[(string)($r['raisedBy'] ?? '')] ?? ''),
     ], $raw);
@@ -535,6 +606,48 @@ function admin_requests_list(array $p): array
     }
     return ['ok' => true, 'requests' => $rows, 'total' => $total, 'offset' => $offset, 'pageSize' => $limit,
             'openByKind' => $tally, 'kinds' => MEMBER_REQUEST_KINDS, 'statuses' => MEMBER_REQUEST_STATUSES];
+}
+
+/**
+ * Answer a piece of feedback. Feedback is not approved or declined — an
+ * "approved idea" means nothing to a child. Two answers:
+ *   - `thank`: close it with a thank-you (the staff's words, or a plain one),
+ *     which reaches the member unless they sent it without their name;
+ *   - `pass`: send it to the centre lead(s) of that centre, and leave it open
+ *     with `passedAt` set, so the desk can see where it went.
+ */
+const MEMBER_FEEDBACK_THANKS = 'Thank you for telling us. The team read it, and it helps us make NGG better.';
+
+function admin_feedback_answer(array $g, array $r, string $centre, array $p): array
+{
+    $by = (string)($g['requester']['memberId'] ?? '');
+    $rid = (string)$r['requestId'];
+    $answer = (string)($p['answer'] ?? (!empty($p['approve']) ? 'thank' : ''));
+    $note = trim(mb_substr((string)($p['decision'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
+    if ($answer === 'pass') {
+        if ((string)($r['passedAt'] ?? '') !== '') return ['ok' => false, 'error' => 'already_passed'];
+        $leads = array_values(array_filter(db_all("SELECT memberId, fullName, email, role, centreScope FROM members WHERE role = 'centre_lead' AND COALESCE(status,'') NOT IN ('suspended','deleted','merged')"),
+            static fn($s) => $centre !== '' && admin_centre_allowed($s, $centre)));
+        if (!$leads) return ['ok' => false, 'error' => 'no_centre_lead', 'detail' => 'Nobody holds the centre lead role for ' . ($centre !== '' ? $centre : 'this centre') . '.'];
+        notify_people($leads, ['kind' => 'approval', 'title' => 'Member feedback passed to you: ' . ((string)$r['subject']),
+            'intro' => 'From a member at ' . $centre . ((string)$r['memberId'] === '' ? ', sent without their name.' : '.'),
+            'body' => (string)$r['body'] . ($note !== '' ? "\n\nFrom the desk: " . $note : ''),
+            'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Open it →']);
+        db_update('member_requests', ['passedAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$r['id']]);
+        audit('member.feedback.pass', $by, $rid, ['centre' => $centre, 'leads' => count($leads)], (string)($p['ip'] ?? ''));
+    } elseif ($answer === 'thank') {
+        $reply = $note !== '' ? $note : MEMBER_FEEDBACK_THANKS;
+        db_update('member_requests', ['status' => 'approved', 'decision' => $reply, 'decidedBy' => $by, 'decidedAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$r['id']]);
+        audit('member.feedback.thank', $by, $rid, ['centre' => $centre], (string)($p['ip'] ?? ''));
+        $mm = (string)$r['memberId'] !== '' ? db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
+        if ($mm) notify_people([$mm], ['kind' => 'request', 'eyebrow' => 'NGG · Your ideas',
+            'title' => 'Thank you for your idea', 'intro' => 'You told us: “' . mb_substr((string)$r['body'], 0, 120) . '”', 'body' => $reply,
+            'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See what you sent →']);
+    } else {
+        return ['ok' => false, 'error' => 'bad_answer', 'detail' => 'Feedback is thanked or passed to the centre lead.'];
+    }
+    $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
+    return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }
 
 /**
@@ -555,9 +668,11 @@ function admin_request_decide(array $p): array
     $r = db_row('SELECT * FROM member_requests WHERE requestId = ? LIMIT 1', [$rid]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
     // Scope, on the way in: the list hides another centre's requests, and so must the decision.
-    $owner = db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
-    if (!admin_centre_allowed($g['requester'], (string)($owner['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $owner = (string)$r['memberId'] !== '' ? db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
+    $rCentre = (string)($owner['centre'] ?? ($r['centre'] ?? ''));
+    if (!admin_centre_allowed($g['requester'], $rCentre)) return ['ok' => false, 'error' => 'out_of_scope'];
     if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
+    if ((string)$r['kind'] === 'feedback') return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
     /* Approving a payment claim posts money to the fees ledger, and money is

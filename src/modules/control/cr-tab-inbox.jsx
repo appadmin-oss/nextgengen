@@ -161,6 +161,23 @@ const CR_INBOX_SOURCES = {
       const r = await NGGApi.admin.requests.list({ status: "open" });
       const canMoney = ctx.can("fees");
       return (r.requests || []).map(x => {
+        /* Feedback is thanked or passed on, never approved: an "approved idea" means nothing to a child. */
+        if (x.kind === "feedback") {
+          const who = x.anonymous ? "A member (no name given)" : (x.fullName || x.displayId || "A member");
+          return crItem({
+            id: "req:" + x.requestId, cat: "requests", kind: "Idea or feedback · " + (x.topicLabel || "An idea"), icon: "lightbulb", who, at: x.createdAt, unread: true,
+            title: x.topicLabel || x.subject, body: x.body || "", search: [x.requestId, x.displayId, x.memberId, x.centre, "feedback idea"].join(" "),
+            facts: [["From", x.anonymous ? "Sent without their name" : who + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]].concat(x.passedAt ? [["Passed to the centre lead", crDate(x.passedAt)]] : []),
+            thread: [{ who, at: x.createdAt, body: x.body || "", mine: false }],
+            note: x.anonymous ? "Sent without a name, so a thank-you closes it but reaches nobody." : "",
+            actions: [
+              { l: "Thank and close", tone: "primary", note: CR_REASON_NOTE("Your reply", x.anonymous ? "Kept with the record." : "The member reads this. Leave it empty for a plain thank-you.", false),
+                run: async (it, v) => { await NGGApi.admin.requests.answer(x.requestId, "thank", v.why || ""); return { text: x.anonymous ? "Closed" : "Thanked · " + who }; } },
+              x.passedAt ? null : { l: "Pass to centre lead", note: CR_REASON_NOTE("A note for the lead", "Optional. The lead reads this with the feedback.", false),
+                run: async (it, v) => { await NGGApi.admin.requests.answer(x.requestId, "pass", v.why || ""); return { text: "Passed to the " + (x.centre || "centre") + " lead" }; } },
+            ].filter(Boolean),
+          });
+        }
         const pay = x.kind === "payment";
         const f = [["Member", (x.fullName || "") + (x.displayId ? " · " + x.displayId : "")], ["Centre", x.centre || "—"]];
         if (pay) f.push(["Claims", fmtMoney(x.amount)], ["Reference", x.reference || "—"], ["Paid on", x.paidAt ? crDate(x.paidAt) : "—"]);

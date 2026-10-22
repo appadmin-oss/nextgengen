@@ -27,7 +27,11 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
-    if ($action === 'withdraw') {
+    if ($action === 'feedback') {
+        rate_limit_check('member.request', $s['mid']);
+        $res = gs_call('member.request.create', ['memberId' => $s['mid'], 'kind' => 'feedback',
+            'topic' => $b['topic'] ?? '', 'body' => $b['body'] ?? '', 'anonymous' => !empty($b['anonymous'])]);
+    } elseif ($action === 'withdraw') {
         $res = gs_call('member.request.withdraw', ['memberId' => $s['mid'],
             'requestId' => $b['requestId'] ?? '', 'ip' => client_ip()]);
     } else {
