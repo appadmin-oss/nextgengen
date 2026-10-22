@@ -65,6 +65,14 @@ function mp9Date(iso, o) {
   const d = new Date(String(iso).length === 10 ? iso + "T12:00:00Z" : iso);
   return isNaN(d) ? String(iso) : d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, o || {}));
 }
+/* A message's own clock time, and the day it belongs under ("Today", "Yesterday", "Mon 19 Oct"). */
+function mp9Clock(iso) { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }); }
+function mp9DayLabel(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  const k = x => x.getFullYear() + "-" + x.getMonth() + "-" + x.getDate(), t = new Date(), y = new Date(Date.now() - 864e5);
+  if (k(d) === k(t)) return "Today"; if (k(d) === k(y)) return "Yesterday";
+  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) + (d.getFullYear() !== t.getFullYear() ? " " + d.getFullYear() : "");
+}
 function mp9When(iso) {
   if (!iso) return "";
   const d = new Date(iso); if (isNaN(d)) return String(iso);
@@ -93,11 +101,21 @@ function mp9Err(e) {
   return d || T[c] || (typeof c === "string" && c.length < 120 && /\s/.test(c) ? c : "That didn’t work. Try again.");
 }
 
+/* The rows that scroll sideways on a narrow screen (tabs, area pills, quick replies). */
+const MP9_ROWS = '.m9-app .tabscroll, .m9-app nav[aria-label="Mentor"], .m9-app main nav, .m9-app .m9c-quick';
+function mp9MarkRow(r) {
+  const more = r.scrollWidth - r.clientWidth > 4;
+  const v = !more ? "" : r.scrollLeft < 4 ? "end" : r.scrollLeft + r.clientWidth >= r.scrollWidth - 4 ? "start" : "both";
+  if ((r.getAttribute("data-more") || "") !== v) { if (v) r.setAttribute("data-more", v); else r.removeAttribute("data-more"); }
+}
+function mp9MarkRows() { try { document.querySelectorAll(MP9_ROWS).forEach(mp9MarkRow); } catch (_) {} }
+
 /** How often an open Mentor screen looks for new messages. */
 const MP9_CHAT_POLL_MS = 30000;
 
 class Mp9Portal extends React.Component {
   rootRef = React.createRef();
+  chatLogRef = React.createRef();
   palRef = React.createRef();
   state = {
     scr: mp9ScreenFromPath(), w: 1200, hist: [], d: {}, ld: {}, er: {},
@@ -133,8 +151,30 @@ class Mp9Portal extends React.Component {
        30 seconds while the Mentor screen is showing and the tab is visible, and
        at once when the child comes back to the tab. Quietly — no spinner. */
     this._chatPoll = setInterval(() => this.pollChat(), MP9_CHAT_POLL_MS);
+    this._fit = () => { this.chatFit(); mp9MarkRows(); }; window.addEventListener("resize", this._fit);
+    // A row that scrolls sideways shows a fade at the edge while there is more of it to see.
+    this._rowScroll = e => { const t = e.target; if (t && t.matches && t.matches(MP9_ROWS)) mp9MarkRow(t); };
+    document.addEventListener("scroll", this._rowScroll, true);
     this._vis = () => { if (!document.hidden) { this.pollChat(); this.load("notifs"); } };
     document.addEventListener("visibilitychange", this._vis); window.addEventListener("focus", this._vis);
+  }
+  /* The conversation fills the screen down to the bottom bar, and opens on
+     the newest message; a new message scrolls into view unless the child has
+     scrolled up to read older ones. The height is geometry, set on the element. */
+  chatFit(ps) {
+    const log = this.chatLogRef.current; if (!log) { this._chatN = 0; return; }
+    const convo = log.closest(".m9c-convo");
+    if (convo) {
+      const bar = document.querySelector('.m9-app nav[aria-label="My NGG"]');
+      const barH = this.state.w < 760 && bar ? bar.getBoundingClientRect().height : 0;
+      const top = convo.getBoundingClientRect().top;
+      const h = Math.max(440, Math.round(window.innerHeight - Math.max(0, top) - barH - 16));
+      if (convo.style.getPropertyValue("--m9c-h") !== h + "px") convo.style.setProperty("--m9c-h", h + "px");
+    }
+    const n = ((this.dd("chat") || {}).messages || []).length;
+    const near = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+    if (n !== this._chatN && (this._chatN === undefined || !this._chatN || near)) log.scrollTop = log.scrollHeight;
+    this._chatN = n;
   }
   pollChat() {
     if (document.hidden || this.state.scr !== "mentor" || this._polling) return;
@@ -143,6 +183,13 @@ class Mp9Portal extends React.Component {
   }
   componentDidUpdate(pp, ps) {
     this.rsEffects();
+    this.chatFit(ps);
+    // A tab row scrolls sideways on a phone: the chosen tab is brought into view, never left off the edge.
+    mp9MarkRows();
+    if (ps.scr !== this.state.scr || ps.mvTab !== this.state.mvTab || ps.cpTab !== this.state.cpTab) {
+      document.querySelectorAll('.m9-app [role="tablist"] [aria-selected="true"], .m9-app nav button[aria-current="true"]').forEach(b => {
+        const row = b.parentElement; if (row && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, b.offsetLeft - (row.clientWidth - b.offsetWidth) / 2); });
+    }
     this.markArea();
     if (this.state.pal && !ps.pal) setTimeout(() => this.palRef.current && this.palRef.current.focus(), 30);
     if (ps.sheet && !this.state.sheet && this._sheetFrom) { const el = this._sheetFrom; this._sheetFrom = null; setTimeout(() => { try { el.focus(); } catch (_) {} }, 0); }
@@ -151,7 +198,7 @@ class Mp9Portal extends React.Component {
     clearInterval(this._tick); clearTimeout(this._t); this.ro && this.ro.disconnect();
     window.removeEventListener("keydown", this._k); window.removeEventListener("popstate", this._pop);
     window.removeEventListener("online", this._online); window.removeEventListener("offline", this._online);
-    clearInterval(this._chatPoll); document.removeEventListener("visibilitychange", this._vis); window.removeEventListener("focus", this._vis);
+    clearInterval(this._chatPoll); window.removeEventListener("resize", this._fit); document.removeEventListener("scroll", this._rowScroll, true); document.removeEventListener("visibilitychange", this._vis); window.removeEventListener("focus", this._vis);
   }
 
   /* ── Data ─────────────────────────────────────────────────────────────── */
@@ -334,14 +381,17 @@ class Mp9Portal extends React.Component {
         .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, on: tab === k ? "true" : "false", bg: tab === k ? "#fff" : "transparent", sh: tab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: tab === k ? 700 : 500, go: () => set({ mvTab: k }) })),
       support: ((this.dd("chat") || {}).supporting || []).map(x => ({ name: x.name, focus: x.focus, until: x.until ? " · until " + mp9Date(x.until, { day: "numeric", month: "short" }) : "" })),
       hasSupport: ((this.dd("chat") || {}).supporting || []).length > 0,
+      notChat: tab !== "chat", openCls: quiet ? "is-closed" : "is-open",
+      sideLinks: [["sess", "Prepare for Saturday", "ph ph-calendar-check", tsent ? 0 : 1], ["steps", "Next steps", "ph ph-list-checks", left], ["fb", "How it’s going", "ph ph-heart", mine.relAsked && !mine.relDone ? 1 : 0]]
+        .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, go: () => set({ mvTab: k }) })),
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
-      cd: sat ? (dd > 0 ? "in " + dd + "d " + hh + "h" : "in " + hh + "h") : "", prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
+      cd: sat ? (dd > 0 ? "in " + dd + "d " + hh + "h" : "in " + hh + "h") : "", hasCd: !!sat, prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
       /* A quick reply starts the message; it never sends it. "I need help" is
          not a message to the mentor only: it opens Help, where the people who
          keep children safe are. */
       quick: ["Thank you!", "Can we talk on Saturday?", "I finished my step", "I need help with something"].map(l => ({ l, go: l === "I need help with something" ? () => this.go("help") : () => {
-        this.setState({ msg: l + " " }); setTimeout(() => { const el = document.querySelector('.m9-app input[aria-label="Message"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {} } }, 0); } })),
+        this.setState({ msg: l + " " }); setTimeout(() => { const el = document.querySelector('.m9-app [aria-label="Message"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {} } }, 0); } })),
       prepMeta: tsent ? "Sent to " + mf : "Takes a minute · helps you both",
       topics: T.map(l => { const on = topics.includes(l); return { l, on: on ? "true" : "false", off: !on && full, op: !on && full ? 0.45 : 1, bw: on ? "2px" : "1px", ring: on ? "#0b0b0c" : "#d6d4cc", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c",
         go: () => set({ mvTopics: on ? topics.filter(x => x !== l) : topics.concat([l]) }) }; }),
@@ -377,6 +427,29 @@ class Mp9Portal extends React.Component {
     const cr = s.cRec || { rec: "idle" }, upR = (k, p) => this.setState(st => ({ cRec: { ...(st.cRec || {}), ...p } }));
     const canVoice = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
     const len = (s.msg || "").length;
+    /* The conversation as a messaging app draws it: a divider for each day,
+       a run of messages from one person grouped (their name and initials once,
+       the time once, at the end), and each bubble's corner shaped by where it
+       sits in the run. */
+    const src = c.messages || [], crows = [];
+    let lastDay = "";
+    src.forEach((m, i) => {
+      const day = mp9DayLabel(m.at);
+      if (day && day !== lastDay) { crows.push({ key: "d" + i, isDay: true, isMsg: false, isEmpty: false, day }); lastDay = day; }
+      const prev = src[i - 1], next = src[i + 1];
+      const same = x => x && !!x.mine === !!m.mine && (x.from || "") === (m.from || "") && mp9DayLabel(x.at) === day && Math.abs(new Date(x.at) - new Date(m.at)) < 10 * 60000;
+      const first = !same(prev), last = !same(next), a = audioOf(m);
+      crows.push({ key: "m" + (m.id || i), isDay: false, isMsg: true, isEmpty: false,
+        cls: "m9c-row " + (m.mine ? "is-mine" : "is-them") + (first ? " is-first" : "") + (last ? " is-last" : ""),
+        showAv: !m.mine && first, ini: mp9Ini(m.from || M.name), showWho: !m.mine && first && (m.from || "") !== M.name, who: m.from || "",
+        t: m.body, hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
+        audio: mp9Abs(a), hasAudio: !!a, showMeta: last,
+        when: mp9Clock(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""),
+        canRead: !m.mine && this.canSpeak() && !a, readL: s.speaking === "msg" + m.id ? "Stop reading" : "Read aloud",
+        readIcon: s.speaking === "msg" + m.id ? "ph-fill ph-stop-circle" : "ph ph-speaker-high", read: () => this.speak(m.body, "msg" + m.id) });
+    });
+    if (!src.length) crows.push({ key: "empty", isDay: false, isMsg: false, isEmpty: true,
+      t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here." });
     const sendMsg = () => { const t = s.msg.trim(); if (!t || s.sending) return; this.setState({ sending: true }); this.sendToMentor(t).then(r => this.setState(r ? { msg: "", sending: false } : { sending: false })); };
     const mine = this.dd("mine") || {};
     const qs = mine.relQuestions || [];
@@ -385,7 +458,7 @@ class Mp9Portal extends React.Component {
     const fbCount = Object.keys(s.fb).length, fbLow = Object.values(s.fb).includes("Not really");
     const done = s.fbSent || (!!mine.relDone && !Object.keys(s.fb).length);
     return {
-      msgs, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, MAX) }), sendMsg,
+      msgs, crows, chatLogRef: this.chatLogRef, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, MAX) }), sendMsg,
       canVoice, vIdle: canVoice && cr.rec === "idle", vRec: cr.rec === "rec", vDone: cr.rec === "done",
       vReady: cr.rec === "done" && !!cr.recUrl, vUploading: cr.rec === "done" && !cr.recUrl, vUrl: cr.recUrl || "",
       vSecs: (cr.recSecs ? Math.floor(cr.recSecs / 60) + ":" + String(cr.recSecs % 60).padStart(2, "0") : "0:00"),
@@ -395,6 +468,8 @@ class Mp9Portal extends React.Component {
           .then(r => this.setState(r ? { sending: false, msg: "", cRec: { rec: "idle" } } : { sending: false })); },
       msgCount: len + " / " + MAX, msgNear: len > MAX * 0.8, msgCountFg: len >= MAX ? "#b0361c" : "#4a4a50",
       quietNote: c.quiet ? "It’s after 8pm. Your message is kept and " + M.first + " will see it in the morning. If you need help now, tap Get help." : "",
+      /* Quick replies are for answering: shown while there is something to answer and nothing typed, gone once the child is writing. */
+      showQuick: !(s.msg || "").trim() && cr.rec !== "rec" && cr.rec !== "done" && (!src.length || !src[src.length - 1].mine),
       hasQuietNote: !!c.quiet, onMsgKey: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } },
       agreement: ["Meet on Saturdays at the musing and mentor breakout (8:30)", "Messages through the portal only, 8am to 8pm", mine.goal ? "Work on: " + mine.goal.goal : "Agree one goal together, and check it every few weeks", "If something isn’t working, either of us tells the coordinator"],
       feedback, fbReady: qs.length > 0 && fbCount === qs.length && !done, fbSent: done, fbNotSent: !done, fbLow: s.fbSent ? fbLow : false,

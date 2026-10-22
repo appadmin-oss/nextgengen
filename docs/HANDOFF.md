@@ -2395,3 +2395,31 @@ chain in an edited URL re-runs inside every copy built on it):
   reveal whether a photo exists). Phase 2 (in-browser MODNet cut-out with a
   quality gate, Cloudinary only as the operator's paid fallback) is next.
 - Tests: PHP 5048/0 (+9 credits); card-photo 45/0.
+
+## Messages as a messaging screen; tab rows scroll (2026-10-22)
+
+- "It feels small": the chat was a card at the bottom of a long page under
+  the mentor card. The chat tab is now `.m9c` (styles-app.css): a full-height
+  conversation (`--m9c-h`, measured by `Mp9Portal.chatFit` from its top to the
+  bottom bar) with its own scrolling log (`role=log`), day separators
+  (`mp9DayLabel`), runs grouped by sender within 10 minutes (initials and time
+  once), bubble corners by position, a growing textarea composer, and a 300px
+  side panel. The column widens to 1180px on that tab (`colW`). The side panel
+  is a flex child so the container query can drop it below 820px of its own
+  width (a query cannot restyle its own container's grid — that broke the
+  first attempt on phones). Narrow: one-line next session, short safety line.
+- Tab rows scroll horizontally instead of wrapping (owner's request): the
+  member Mentor/Companion tablists and mentor-portal Saturday tablist become
+  `.tabscroll` flex rows; the area pills in all three portals and
+  `.admin-anchor-tabs/.wis-tabs/.mr-tabs/.asd-tabs` go nowrap + overflow-x.
+  `mp9MarkRow` sets `data-more` for an edge fade while more is off-screen; the
+  selected tab is scrolled into view. The earlier 2×2 mentor-tab rule is gone.
+
+### Messages on a phone: less clutter (stopped mid-batch at the user's request)
+
+- The next-session strip is now one quiet row (a button that opens Sessions): "Next session · in 1d 19h" over the date, with a "Prepare ›" link. The solid black Prepare button went: Send is the only solid action on the screen.
+- Quick replies only show while there is something to answer: the last message is not the child's own, nothing is typed, and no voice note is being made. A quick reply now focuses the composer again (it targeted an `<input>` the textarea replaced).
+- On phones the chat header is smaller (40px avatar, 17px name), and the footnote is one line: "Checked for safety. Something wrong? Tell us".
+- `tests/a11y.test.js`: the phone Mentor check waits for the composer, not a "Messages" heading phones don't draw.
+- **Left open:** the a11y run was stopped before it finished. The last full run reported `aria-prohibited-attr` ×1 on Member · Community. The node is not yet identified.
+- The known `instructor-v6` "Curriculum … week 3" failure is pre-existing.

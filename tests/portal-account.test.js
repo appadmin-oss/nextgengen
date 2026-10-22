@@ -129,20 +129,30 @@ async function as(memberId, admin, viewport) {
     chk('Getting started: answering the check-in ticks itself off', /1 of 5 done/.test(await mb.innerText('.m9x-start').catch(() => '')));
     // ── Messages: written straight from a deep link, before any other screen has drawn ──
     await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(mb); await mb.waitForSelector('.m9-app main input[aria-label="Message"]', { timeout: 60000 });
-    await mb.fill('main input[aria-label="Message"]', 'Hello coach, straight from the link');
+    await waitForBoot(mb); await mb.waitForSelector('.m9-app main [aria-label="Message"]', { timeout: 60000 });
+    await mb.fill('main [aria-label="Message"]', 'Hello coach, straight from the link');
     await mb.click('main button[aria-label="Send"]');
     await mb.waitForTimeout(1500);
     const chatT = await mb.innerText('body');
     chk('Messages: a member with a mentor can write the moment the page opens — never “you don’t have a mentor”',
       q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1' AND body = 'Hello coach, straight from the link'")['c']`) === 1 && !/don’t have a mentor/.test(chatT));
 
+    // The structure: a full-height conversation with the composer on screen, days marked, the side panel beside it.
+    const lay = async pg => pg.evaluate(() => {
+      const c = document.querySelector('.m9c-convo'), box = document.querySelector('.m9-app [aria-label="Message"]'), side = document.querySelector('.m9c-side');
+      const r = box && box.getBoundingClientRect(), cr = c && c.getBoundingClientRect(), log = document.querySelector('.m9c-log');
+      return { composerOnScreen: !!r && r.bottom <= window.innerHeight && r.top > 0, tall: !!cr && cr.height >= 440, days: [...document.querySelectorAll('.m9c-day')].map(d => d.innerText.trim()),
+        sideShown: !!side && side.offsetParent !== null, logScrolls: !!log && getComputedStyle(log).overflowY === 'auto' };
+    });
+    const L1 = await lay(mb);
+    chk('Messages (desktop): a full-height conversation, the message box on screen without scrolling, days marked, the mentor panel beside it',
+      L1.composerOnScreen && L1.tall && L1.days.includes('Today') && L1.sideShown && L1.logScrolls);
     const sentBefore = q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`);
     await mb.click('main button:has-text("Can we talk on Saturday?")');
     await mb.waitForTimeout(500);
     chk('Messages: a quick reply starts the message in the box; it does not send it',
-      /Can we talk on Saturday\?/.test(await mb.inputValue('main input[aria-label="Message"]')) && q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`) === sentBefore);
-    await mb.fill('main input[aria-label="Message"]', '');
+      /Can we talk on Saturday\?/.test(await mb.inputValue('main [aria-label="Message"]')) && q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`) === sentBefore);
+    await mb.fill('main [aria-label="Message"]', '');
     chk('Messages: the child’s own message says “Sent” until the mentor reads it', /Sent/.test(await mb.innerText('main')));
     php(`db_exec("UPDATE mentor_messages SET readAt = ? WHERE threadId = 'chat:NGG-PA-K1' AND fromId = 'NGG-PA-K1'", [now_iso()]);
       db_insert('mentor_messages', ['threadId' => 'chat:NGG-PA-K1', 'kind' => 'Reply', 'subjectId' => 'NGG-PA-K1', 'fromId' => 'NGG-PA-MEN', 'fromName' => 'Ngozi Eke', 'toId' => 'NGG-PA-K1', 'body' => 'Yes, see you at 8:30.', 'status' => 'sent', 'readAt' => '', 'createdAt' => now_iso()]);`);
@@ -337,9 +347,9 @@ async function as(memberId, admin, viewport) {
     const sp = await ad.evaluate(() => NGGApi.admin.mentorSupport({ memberId: 'NGG-PA-K1', mentorId: 'MEN-PA-2', focus: 'Coding' }).then(r => r, e => ({ err: e.code || e.message })));
     chk('Supporting mentor: the Control Room adds one beside the main mentor', !!(sp && sp.added) && q(`(int)db_row("SELECT COUNT(*) c FROM mentor_assignments WHERE memberId = 'NGG-PA-K1' AND status = 'active'")['c']`) === 1);
     await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
-    await mb.waitForFunction(() => /Also helping you/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 40000 }).catch(() => {});
+    await mb.waitForFunction(() => /Also helping you/i.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 40000 }).catch(() => {});
     const spT = await mb.innerText('main').catch(() => '');
-    chk('Supporting mentor: the child sees who is also helping, with what, and that their mentor sees everything', /Also helping you/.test(spT) && /Coding/.test(spT) && /sees everything/.test(spT));
+    chk('Supporting mentor: the child sees who is also helping, with what, and that their mentor sees everything', /Also helping you/i.test(spT) && /Coding/.test(spT) && /sees everything/.test(spT));
 
     // ── Sign out, from inside the portal ──
     chk('Sign out: the member portal has a Sign out control in its sidebar', await mb.isVisible('aside button[aria-label="Sign out"]'));
@@ -349,6 +359,12 @@ async function as(memberId, admin, viewport) {
     chk('Sign out: it ends the session and leaves the portal', !(await mb.$('.m9-app')) && !(me1 && me1.member));
     const mbN = await as('NGG-PA-K1', false, { width: 390, height: 844 });
     await boot(mbN);
+    await mbN.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mbN);
+    await mbN.waitForSelector('.m9c-log', { timeout: 40000 }).catch(() => {});
+    await mbN.waitForTimeout(600);
+    const L2 = await mbN.evaluate(() => { const box = document.querySelector('.m9-app [aria-label="Message"]'), r = box && box.getBoundingClientRect(), side = document.querySelector('.m9c-side');
+      return { composerOnScreen: !!r && r.bottom <= window.innerHeight && r.top > 0, sideHidden: !side || side.offsetParent === null }; });
+    chk('Messages (phone): the conversation is the screen — message box on screen, no side panel squeezing it', L2.composerOnScreen && L2.sideHidden);
     await mbN.click('header button[aria-label="Everything else, and sign out"]');
     await mbN.waitForTimeout(800);
     chk('Sign out: on a phone, the account button in the header opens More, where Sign out is', await mbN.isVisible('main button:has-text("Sign out")'));

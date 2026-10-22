@@ -2489,6 +2489,24 @@ feedback*. They are not approved or declined:
 An idea sent without a name keeps only its centre, so it is seen by the staff
 of that centre (and by unscoped admins), never by another centre's.
 
+**The Mentor screen is a messaging screen.** The conversation fills the
+height of the screen, scrolls on its own, opens on the newest message, and
+keeps the message box at the bottom. Messages are grouped by day ("Today",
+"Yesterday") and by sender, with the mentor's initials beside theirs. On a
+computer a side panel shows the mentor, who else is helping, links to
+Prepare for Saturday / Next steps / How it's going, and what was agreed; on a
+phone the conversation takes the screen and the next session is one line at
+the top. The message box grows as you type (Enter sends, Shift+Enter starts a
+new line).
+
+**Messages on a phone** keep only what is needed: the next session is one row (tap it to prepare), quick replies appear only when there is a message to answer, and the safety note is one line.
+
+**Rows of tabs scroll sideways on a phone** instead of wrapping onto a second
+line: the Mentor, Companion and area tabs (My mentor / Companion / Community)
+in all three portals, the mentor portal's Saturday tabs, the quick replies, and
+the Control Room's tab rows. A fade at the edge shows there is more to swipe
+to, and the chosen tab is scrolled into view.
+
 **Messages between a member and their mentor.** The Mentor screen refreshes
 by itself every 30 seconds while it is open (and when the member comes back
 to the tab), so a reply appears without reloading. Each of the member's own
