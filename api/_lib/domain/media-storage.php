@@ -48,7 +48,11 @@ function media_configured(): bool {
 /** Cloudinary Admin API call, on one account (default: the one uploads go to).
  *  Test seam: $GLOBALS['__media_api_mock'] = fn($method, $path, $query, $accountId) => ['code'=>…, 'body'=>array]. */
 function media_api(string $method, string $path, array $query = [], ?array $acc = null): array {
-    if (isset($GLOBALS['__media_api_mock']) && is_callable($GLOBALS['__media_api_mock'])) return ($GLOBALS['__media_api_mock'])($method, $path, $query, $acc ? (string)$acc['id'] : media_active_id());
+    if (isset($GLOBALS['__media_api_mock']) && is_callable($GLOBALS['__media_api_mock'])) {
+        // The account's keys are live while the mock answers, as they would be for the real call.
+        return $acc ? cloudinary_with_account((string)$acc['id'], fn() => ($GLOBALS['__media_api_mock'])($method, $path, $query, (string)$acc['id']))
+                    : ($GLOBALS['__media_api_mock'])($method, $path, $query, media_active_id());
+    }
     $c = $acc ?? media_cfg();
     if (empty($c['cloud_name']) || empty($c['api_key']) || empty($c['api_secret']) || !function_exists('curl_init')) return ['code' => 0, 'body' => null, 'error' => 'not_configured'];
     $url = 'https://api.cloudinary.com/v1_1/' . rawurlencode((string)$c['cloud_name']) . $path . ($query ? '?' . http_build_query($query) : '');
@@ -82,7 +86,8 @@ function media_usage_state(?string $accountId = null): array {
     $out = is_array($s) ? $s + $base : $base;
     if ($accountId === null && count(media_accounts()) > 1) {
         $acc = media_account($id);
-        $out['account'] = ['id' => $id, 'label' => $acc ? $acc['label'] : '', 'cloud' => $acc ? $acc['cloud_name'] : ''];
+        $out['account'] = $id;
+        $out['accountLabel'] = $acc ? $acc['label'] : '';
         $out['accounts'] = count(media_accounts());
     }
     return $out;
@@ -121,7 +126,11 @@ function media_usage_refresh(bool $force = false): array {
     $was = media_active_id();
     media_activate();
     $now = media_active_id();
-    if ($now !== $was && function_exists('audit')) audit('media.account.switched', null, $now, ['from' => $was, 'to' => $now], '');
+    if ($now !== $was) {
+        $st = media_state_raw($was) ?? [];
+        media_switch_notice($was, $now, $now === 'primary' ? 'has credits again'
+            : 'is ' . (($st['pct'] ?? null) === null ? 'out of' : round((float)$st['pct']) . '% through its') . ' credits');
+    }
     return media_usage_state();
 }
 
@@ -282,10 +291,16 @@ function admin_media_purge_derived(array $p): array {
  */
 const MEDIA_ACCOUNTS_MAX = 8;
 
-/** The main account's keys: config.php with Settings → API keys laid over it. */
+/** The main account's keys: config.php with Settings → API keys laid over it.
+ *  While another account takes uploads, the main one's own config is kept in
+ *  $GLOBALS['CLOUDINARY_PRIMARY'] (service_keys_apply restores from it). */
 function media_primary_cfg(): array {
-    $c = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
-    return isset($c['__primary']) && is_array($c['__primary']) ? $c['__primary'] + $c : $c;
+    return (array)($GLOBALS['CLOUDINARY_PRIMARY'] ?? $GLOBALS['CONFIG']['cloudinary'] ?? []);
+}
+/** The backup account set in Settings → API keys (cloudinary.backup.*), or [] when any of its three keys is missing. */
+function cloudinary_backup_cfg(): array {
+    $b = (array)(media_primary_cfg()['backup'] ?? []);
+    return !empty($b['cloud_name']) && !empty($b['api_key']) && !empty($b['api_secret']) ? $b : [];
 }
 function media_extra_rows(): array {
     $rows = function_exists('setting_get') ? setting_get('media.accounts') : null;
@@ -297,12 +312,18 @@ function media_accounts(): array {
     $out = [];
     $p = media_primary_cfg();
     if (!empty($p['cloud_name']) && !empty($p['api_key']) && !empty($p['api_secret']))
-        $out[] = ['id' => 'primary', 'label' => 'Main account', 'cloud_name' => (string)$p['cloud_name'], 'api_key' => (string)$p['api_key'], 'api_secret' => (string)$p['api_secret'], 'primary' => true, 'enabled' => true];
+        $out[] = ['id' => 'primary', 'label' => 'Main account', 'cloud_name' => (string)$p['cloud_name'], 'api_key' => (string)$p['api_key'], 'api_secret' => (string)$p['api_secret'],
+                  'unsigned_preset' => (string)($p['unsigned_preset'] ?? ''), 'primary' => true, 'enabled' => true];
+    // The backup from Settings → API keys is the second in line: one list of accounts, wherever its keys were typed.
+    if ($b = cloudinary_backup_cfg())
+        $out[] = ['id' => 'backup', 'label' => 'Backup account', 'cloud_name' => (string)$b['cloud_name'], 'api_key' => (string)$b['api_key'], 'api_secret' => (string)$b['api_secret'],
+                  'unsigned_preset' => (string)($b['unsigned_preset'] ?? ''), 'primary' => false, 'settings' => true, 'enabled' => true];
     foreach (media_extra_rows() as $r) {
         if (empty($r['enabled']) || empty($r['cloudName'])) continue;
         $sec = function_exists('ai_ui_open') ? ai_ui_open((string)($r['secret'] ?? '')) : '';
         if ($sec === '') continue;
-        $out[] = ['id' => (string)$r['id'], 'label' => (string)($r['label'] ?: $r['cloudName']), 'cloud_name' => (string)$r['cloudName'], 'api_key' => (string)$r['apiKey'], 'api_secret' => $sec, 'primary' => false, 'enabled' => true];
+        $out[] = ['id' => (string)$r['id'], 'label' => (string)($r['label'] ?: $r['cloudName']), 'cloud_name' => (string)$r['cloudName'], 'api_key' => (string)$r['apiKey'], 'api_secret' => $sec,
+                  'unsigned_preset' => '', 'primary' => false, 'enabled' => true];
     }
     return $out;
 }
@@ -338,21 +359,52 @@ function media_active_id(): string {
  * again after a usage reading. With one account it changes nothing.
  */
 function media_activate(): void {
-    $cfg = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
-    $primary = media_primary_cfg();
+    if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) $GLOBALS['CLOUDINARY_PRIMARY'] = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
+    $primary = $GLOBALS['CLOUDINARY_PRIMARY'];
     $id = media_pick_id() ?? 'primary';
     $acc = $id === 'primary' ? null : media_account($id);
-    if (!$acc) { $id = 'primary'; }
+    if (!$acc) $id = 'primary';
     $GLOBALS['__media_active'] = $id;
-    if ($id === 'primary') {
-        if (isset($cfg['__primary'])) { $GLOBALS['CONFIG']['cloudinary'] = array_diff_key($primary, ['__primary' => 1]); }
-        return;
-    }
-    $keep = ['cloud_name' => $primary['cloud_name'] ?? '', 'api_key' => $primary['api_key'] ?? '', 'api_secret' => $primary['api_secret'] ?? ''];
-    $GLOBALS['CONFIG']['cloudinary'] = array_merge(array_diff_key($primary, ['__primary' => 1]),
-        ['cloud_name' => $acc['cloud_name'], 'api_key' => $acc['api_key'], 'api_secret' => $acc['api_secret'], '__primary' => $keep]);
-    // An unsigned preset belongs to the main account; on another cloud it would not exist.
-    unset($GLOBALS['CONFIG']['cloudinary']['unsigned_preset']);
+    $GLOBALS['CONFIG']['cloudinary'] = media_cfg_for($acc);
+}
+/** The config with one account's keys live: the main one's folder and settings, that account's keys and its own
+ *  upload preset (a preset belongs to one account; the main one's never carries across). */
+function media_cfg_for(?array $acc): array {
+    $primary = media_primary_cfg();
+    if (!$acc || $acc['id'] === 'primary') return $primary;
+    return array_merge($primary, ['cloud_name' => $acc['cloud_name'], 'api_key' => $acc['api_key'], 'api_secret' => $acc['api_secret'], 'unsigned_preset' => (string)($acc['unsigned_preset'] ?? '')]);
+}
+/* Names the photo pipeline and the API-keys screen use. */
+function cloudinary_account_apply(): void { media_activate(); }
+function cloudinary_active(): string { return media_active_id(); }
+function cloudinary_cloud_of(string $url): string { return media_cloud_of($url); }
+/** Run $fn with one account's keys live; the account uploads go to is restored after. */
+function cloudinary_with_account(string $id, callable $fn) {
+    $saved = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+    if (!isset($GLOBALS['CLOUDINARY_PRIMARY'])) $GLOBALS['CLOUDINARY_PRIMARY'] = $saved;
+    $GLOBALS['CONFIG']['cloudinary'] = media_cfg_for($id === 'primary' ? null : media_account($id));
+    try { return $fn(); } finally { $GLOBALS['CONFIG']['cloudinary'] = $saved; }
+}
+/** The account uploads go to refused work (credits spent): mark it full now rather than at the next reading, and move on. */
+function cloudinary_failover(string $why): bool {
+    $from = media_active_id();
+    $st = media_usage_state($from);
+    media_state_put($from, ['level' => 'critical', 'pct' => 100.0, 'checkedAt' => gmdate('c'), 'error' => 'Cloudinary ' . $why . '.'] + $st);
+    media_activate(); media_credit_flags();
+    $to = media_active_id();
+    if ($to === $from) return false;
+    media_switch_notice($from, $to, $why);
+    return true;
+}
+/** Each switch is told to the people who run it, and recorded. */
+function media_switch_notice(string $from, string $to, string $why): void {
+    $fa = media_account($from); $ta = media_account($to);
+    $title = $to === 'primary' ? 'Cloudinary: back on the main account' : ($to === 'backup' ? 'Cloudinary: switched to the backup account' : 'Cloudinary: new uploads now go to ' . ($ta ? $ta['label'] : $to));
+    $body = $to === 'primary' ? 'The main account ' . $why . ', so new photos and edits go there again.'
+        : ($fa ? $fa['label'] : 'The account in use') . ' ' . $why . '. New photos and edits now go to ' . ($ta ? $ta['label'] : $to) . '; photos already uploaded keep showing.';
+    if (function_exists('ops_record')) ops_record('warn', 'media.storage', $title, $body);
+    if (function_exists('intake_admin_alert')) intake_admin_alert('[NGG] ' . $title, ['title' => $title, 'intro' => $body, 'bodyHtml' => '<p>' . esc_html($body) . '</p>', 'footNote' => 'Automatic alert from the media storage monitor.']);
+    audit('media.storage.switch', null, $to, ['from' => $from, 'why' => $why], '');
 }
 
 /** The keys to act on an image with: the account its URL names, else the one uploads go to. */
@@ -366,7 +418,7 @@ function media_account_for_url(string $url): ?array {
 /** How one account reads on screen: never its secret. */
 function media_account_view(array $a, array $row = []): array {
     $st = media_usage_state((string)$a['id']);
-    return ['id' => $a['id'], 'label' => $a['label'], 'cloudName' => $a['cloud_name'], 'keyEnds' => substr((string)$a['api_key'], -4), 'primary' => !empty($a['primary']),
+    return ['id' => $a['id'], 'label' => $a['label'], 'cloudName' => $a['cloud_name'], 'keyEnds' => substr((string)$a['api_key'], -4), 'primary' => !empty($a['primary']), 'settings' => !empty($a['primary']) || !empty($a['settings']),
             'enabled' => $row ? !empty($row['enabled']) : true, 'active' => media_active_id() === $a['id'],
             'level' => $st['level'], 'pct' => $st['pct'], 'parts' => $st['parts'], 'plan' => $st['plan'] ?? '', 'checkedAt' => $st['checkedAt'], 'error' => $st['error'],
             'addedAt' => (string)($row['addedAt'] ?? ''), 'addedBy' => (string)($row['addedBy'] ?? '')];
@@ -406,7 +458,7 @@ function admin_media_account_save(array $p): array {
     $i = null;
     foreach ($rows as $k => $r) if ((string)$r['id'] === $id) $i = $k;
     if ($id !== '' && $i === null) return ['ok' => false, 'error' => 'not_found'];
-    if ($id === 'primary') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'The main account is set in Settings → API keys → Cloudinary.'];
+    if ($id === 'primary' || $id === 'backup') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'That account is set in Settings → API keys → Cloudinary.'];
     $cur = $i !== null ? $rows[$i] : [];
     // On a change, a field left empty keeps what is saved.
     $keep = static fn($k, $ck) => trim((string)($p[$k] ?? '')) !== '' ? trim((string)$p[$k]) : (string)($cur[$ck] ?? '');
@@ -445,7 +497,7 @@ function admin_media_account_save(array $p): array {
 function admin_media_account_remove(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $id = (string)($p['id'] ?? '');
-    if ($id === 'primary') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'The main account is removed in Settings → API keys → Cloudinary.'];
+    if ($id === 'primary' || $id === 'backup') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'That account is removed in Settings → API keys → Cloudinary.'];
     $rows = media_extra_rows(); $gone = null;
     $rows = array_values(array_filter($rows, static function ($r) use ($id, &$gone) { if ((string)$r['id'] === $id) { $gone = $r; return false; } return true; }));
     if (!$gone) return ['ok' => false, 'error' => 'not_found'];

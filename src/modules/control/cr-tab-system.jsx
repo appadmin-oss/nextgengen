@@ -65,24 +65,24 @@ function crSyAccountBlocks(A, ctx) {
     rows: accs.map((a, i) => {
       const lv = CR_SY_MEDIA_LEVEL[a.level] || CR_SY_MEDIA_LEVEL.ok;
       const state = !a.enabled ? ["Paused", "neutral"] : a.active ? ["Uploads go here", "ok"] : a.level === "critical" ? ["Full", "bad"] : [lv[1], lv[0] || "neutral"];
-      return { key: a.id, cells: [{ k: "strong", t: a.label, s: a.primary ? "Main account · Settings → API keys" : "Added " + (a.addedAt ? crAgo(a.addedAt) + " ago" : "") },
+      return { key: a.id, cells: [ { k: "strong", t: a.label, s: a.settings ? (a.primary ? "Main account" : "Backup") + " · Settings → API keys" : "Added " + (a.addedAt ? crAgo(a.addedAt) + " ago" : "") },
         { k: "mono", t: a.cloudName, s: "Key ends " + a.keyEnds }, { k: "num", t: a.pct == null ? "—" : Math.round(a.pct) + "%", v: a.pct == null ? -1 : a.pct },
         { k: "status", t: state[0], tone: state[1] }],
         open: () => crSyAccountDrawer(a, i, accs, ctx) };
     }), emptyText: "No Cloudinary account yet." }];
-  if (accs.filter(a => !a.primary).length < (A.max || 8)) out.push({ type: "note", span: 6, icon: "plus-circle",
+  if (accs.filter(a => !a.settings).length < (A.max || 8)) out.push({ type: "note", span: 6, icon: "plus-circle",
     text: "Add a Cloudinary account: a free one from cloudinary.com, signed up with another email address, adds its own credits and storage.",
     sub: "You need its cloud name, API key and API secret, from the Cloudinary console → Settings → API Keys. The keys are checked before they are kept.",
     act: { l: "Add an account…", run: () => crSyAccountForm(null, ctx) } });
   return out;
 }
 function crSyAccountDrawer(a, i, accs, ctx) {
-  const extras = accs.filter(x => !x.primary), xi = extras.findIndex(x => x.id === a.id);
+  const extras = accs.filter(x => !x.settings), xi = extras.findIndex(x => x.id === a.id);
   const act = (l, fn, okMsg) => ({ l, run: async () => { try { await fn(); ctx.closeDrawer(); ctx.toast(okMsg); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "That didn’t work."), null, true); } } });
   const parts = a.parts || {}, name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth", transformations: "Transformations" };
   const actions = [];
   if (a.enabled) actions.push(Object.assign(act("Check usage now", () => NGGApi.admin.media.accountCheck(a.id), "Checked " + a.label + "."), { primary: true }));
-  if (!a.primary) {
+  if (!a.settings) {
     if (xi > 0) actions.push(act("Move up", () => NGGApi.admin.media.accountMove(a.id, "up"), a.label + " moved up."));
     if (xi >= 0 && xi < extras.length - 1) actions.push(act("Move down", () => NGGApi.admin.media.accountMove(a.id, "down"), a.label + " moved down."));
     actions.push({ l: "Change name or keys…", run: () => { ctx.closeDrawer(); crSyAccountForm(a, ctx); } });

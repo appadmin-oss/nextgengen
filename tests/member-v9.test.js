@@ -136,7 +136,7 @@ async function as(memberId, admin, viewport) {
 
     // ── My mentor ──
     await nav(mb, 'Mentor');
-    await mb.fill('main input[aria-label="Message"]', 'Can we practise my talk on Saturday?');
+    await mb.fill('main [aria-label="Message"]', 'Can we practise my talk on Saturday?');
     await mb.click('main button[aria-label="Send"]');
     await mb.waitForFunction(() => /Can we practise my talk/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
     chk('Mentor: a message lands in the mentor thread', q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-MV-K1' AND fromId = 'NGG-MV-K1'")['c']`) >= 1);

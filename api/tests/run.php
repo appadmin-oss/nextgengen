@@ -6330,6 +6330,54 @@ chk('credit guard flips to exhausted past the threshold', !empty($ru['exhausted'
 setting_set('cloudinary_credits', 'ok', 'system');
 unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
 
+// ── Cloudinary: a backup account takes over when the main one runs low ──
+(function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? []; $keepP = $GLOBALS['CLOUDINARY_PRIMARY'] ?? null; unset($GLOBALS['CLOUDINARY_PRIMARY']);
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'mainacct', 'api_key' => '111', 'api_secret' => 'mainsecret', 'folder' => 'ngg', 'unsigned_preset' => 'main_preset'];
+    setting_set('cloudinary_active', 'primary', 'system'); setting_set('media.usage', null, 'system');
+    cloudinary_account_apply();
+    $use = ['mainacct' => 95, 'spareacct' => 10];
+    $GLOBALS['__media_api_mock'] = function ($m, $path) use (&$use) { $c = $GLOBALS['CONFIG']['cloudinary']['cloud_name']; return ['code' => 200, 'body' => ['credits' => ['usage' => $use[$c], 'limit' => 100]]]; };
+    $r = media_usage_refresh(true);
+    chk('cloudinary: with no backup set, a spent main account stays put (nothing to move to)', cloudinary_active() === 'primary' && $r['level'] === 'critical');
+    $GLOBALS['CLOUDINARY_PRIMARY']['backup'] = ['cloud_name' => 'spareacct', 'api_key' => '222', 'api_secret' => 'sparesecret'];
+    $GLOBALS['__mail_sink'] = [];
+    $r = media_usage_refresh(true);
+    chk('cloudinary: past the line on the main account, the backup takes over', cloudinary_active() === 'backup' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct' && $GLOBALS['CONFIG']['cloudinary']['api_secret'] === 'sparesecret');
+    chk('…the usage shown is the backup\'s, and AI edits run again', ($r['account'] ?? '') === 'backup' && (int)round((float)$r['pct']) === 10 && cloudinary_credits_ok());
+    chk('…the folder and other settings carry over', ($GLOBALS['CONFIG']['cloudinary']['folder'] ?? '') === 'ngg');
+    chk('…but never the main account\'s upload preset (it does not exist on the backup)', ($GLOBALS['CONFIG']['cloudinary']['unsigned_preset'] ?? 'x') === '');
+    chk('…and the people who run it are told', count(array_filter($GLOBALS['__mail_sink'], fn($m) => strpos($m['subject'], 'backup account') !== false)) >= 1);
+    chk('…recorded in the audit log', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.storage.switch' LIMIT 1"));
+    service_keys_apply(true);
+    chk('cloudinary: re-applying the API keys keeps the backup live (no silent swap back)', $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
+    $seen = cloudinary_with_account('primary', fn() => $GLOBALS['CONFIG']['cloudinary']['cloud_name']);
+    chk('cloudinary: a probe of the main account restores the backup after', $seen === 'mainacct' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
+    $use['mainacct'] = 95;
+    media_usage_refresh(true);
+    chk('cloudinary: while the main account is still spent, the backup stays', cloudinary_active() === 'backup');
+    $use['mainacct'] = 3;
+    media_usage_refresh(true);
+    chk('cloudinary: when the main account renews, work goes back to it', cloudinary_active() === 'primary' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'mainacct' && $GLOBALS['CONFIG']['cloudinary']['unsigned_preset'] === 'main_preset');
+    // An upload the main account refuses moves to the backup at once and is retried there.
+    $tries = [];
+    $GLOBALS['__cloudinary_upload_mock'] = null; unset($GLOBALS['__cloudinary_upload_mock']);
+    $names = [];
+    $GLOBALS['__cld_upload_http'] = function ($named = []) use (&$tries, &$names) { $names[] = $named['public_id'] ?? ''; if ($named) chk('cloudinary: a copy never overwrites (the existing one is returned)', ($named['overwrite'] ?? '') === 'false'); $c = $GLOBALS['CONFIG']['cloudinary']['cloud_name']; $tries[] = $c; return $c === 'mainacct' ? [420, ['error' => ['message' => 'Monthly credit limit reached']]] : [200, ['secure_url' => 'https://res.cloudinary.com/spareacct/image/upload/v1/ngg/photos/x.jpg']]; };
+    $up = cloudinary_upload_signed('https://example.com/a.jpg');
+    chk('cloudinary: an upload refused for credits switches to the backup and is retried once there', !empty($up['ok']) && $tries === ['mainacct', 'spareacct'] && cloudinary_active() === 'backup');
+    $ad = cloudinary_adopt('https://res.cloudinary.com/mainacct/image/upload/c_fill,w_400/v1/ngg/photos/old.jpg');
+    chk('cloudinary: on the backup, a photo still on the spent account is copied across before editing', !empty($ad['adopted']) && strpos((string)$ad['url'], 'spareacct') !== false && end($tries) === 'spareacct');
+    $ad2 = cloudinary_adopt('https://res.cloudinary.com/spareacct/image/upload/v1/ngg/photos/x.jpg');
+    chk('…and one already on the backup is edited where it is', empty($ad2['adopted']));
+    cloudinary_adopt('https://res.cloudinary.com/mainacct/image/upload/e_sharpen/v1/ngg/photos/old.jpg');
+    $copies = array_values(array_filter($names));
+    chk('cloudinary: editing the same old photo again reuses its one copy (same fixed name), never a second', count($copies) === 2 && $copies[0] === $copies[1] && strpos($copies[0], 'copy_') === 0);
+    unset($GLOBALS['__cld_upload_http'], $GLOBALS['__media_api_mock'], $GLOBALS['__mail_sink'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active'], $GLOBALS['__media_states']); setting_set('media.usage.accounts', null, 'system');
+    setting_set('cloudinary_active', 'primary', 'system'); setting_set('media.usage', null, 'system'); setting_set('cloudinary_credits', 'ok', 'system');
+    $GLOBALS['CONFIG']['cloudinary'] = $keep; if ($keepP !== null) $GLOBALS['CLOUDINARY_PRIMARY'] = $keepP;
+})();
+
 // ── Geo-fencing: distance math, centre mapping, auto-select + anti-cheat ──
 chk('geo: haversine ~111m per 0.001° latitude', (function () { $d = geo_distance_m(6.600, 3.300, 6.601, 3.300); return $d > 108 && $d < 114; })());
 chk('geo: identical points are ~0m apart', geo_distance_m(6.6, 3.3, 6.6, 3.3) < 0.5);
@@ -27319,7 +27367,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $s = photo_supersede('member', 'NGG-PHR-1', $c['url'], $d['url']);
     chk('photo replace: a file another person still uses is kept, and says who', $s['deleted'] === false && str_contains($s['keptFor'], 'members') && photo_store_find($c['id']) !== '');
     // A hosted (Cloudinary) original on our cloud is deleted too — never when the new photo is an edit of the same upload.
-    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null; $keepPrim = $GLOBALS['CLOUDINARY_PRIMARY'] ?? null; unset($GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active']);
     $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggtest', 'api_key' => 'k', 'api_secret' => 's'];
     $destroyed = []; $GLOBALS['__cloudinary_destroy_mock'] = function ($pid) use (&$destroyed) { $destroyed[] = $pid; return true; };
     chk('photo replace: a Cloudinary URL gives its public id, transformations and version skipped',
@@ -27332,7 +27380,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     photo_set_subject('member', 'NGG-PHR-1', 'https://res.cloudinary.com/nggtest/image/upload/v3/ngg/kids/new222.jpg');
     chk('photo replace: a new hosted photo deletes the old hosted original', $destroyed === ['ngg/kids/old111']);
     unset($GLOBALS['__cloudinary_destroy_mock']);
-    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
+    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg; unset($GLOBALS['CLOUDINARY_PRIMARY']); if ($keepPrim !== null) $GLOBALS['CLOUDINARY_PRIMARY'] = $keepPrim;
     $GLOBALS['__photo_ref_force_fail'] = false;
 })();
 
@@ -28984,7 +29032,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
     $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'maincloud', 'api_key' => '111111', 'api_secret' => 'mainsecret123', 'folder' => 'ngg'];
     setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
-    unset($GLOBALS['__media_active']);
+    unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
     $use = ['primary' => 40.0]; $codes = []; $calls = [];
     $GLOBALS['__media_api_mock'] = function ($m, $path, $q, $acc) use (&$use, &$codes, &$calls) {
         $calls[] = $acc . ' ' . $m . ' ' . $path;
@@ -29011,11 +29059,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $use['primary'] = 97.0;
     $r = media_usage_refresh(true);
     chk('accounts · the main plan full: uploads move to the next account by themselves', media_active_id() === $xid && media_cfg()['cloud_name'] === 'extra-one'
-        && media_cfg()['api_secret'] === 'extrasecret1' && media_uploads_allowed() && ($r['account']['id'] ?? '') === $xid);
+        && media_cfg()['api_secret'] === 'extrasecret1' && media_uploads_allowed() && ($r['account'] ?? '') === $xid);
     chk('accounts · …the main account\'s own keys are kept beside them', media_primary_cfg()['cloud_name'] === 'maincloud' && media_account('primary')['api_secret'] === 'mainsecret123');
     chk('accounts · …the alert says where uploads went, and the switch is audited',
-        str_contains((string)(db_row("SELECT detail FROM ops_events WHERE source = 'media.storage' ORDER BY id DESC LIMIT 1")['detail'] ?? ''), 'new uploads now go to Second plan')
-        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.account.switched' AND subject = ?", [$xid]));
+        (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'media.storage' AND detail LIKE '%new uploads now go to Second plan%'")
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.storage.switch' AND subject = ?", [$xid]));
     chk('accounts · …and the paid AI edits follow the account uploads go to (it has room)', cloudinary_credits_ok());
     chk('accounts · an image on either account is ours; another cloud is not',
         cloudinary_public_id('https://res.cloudinary.com/extra-one/image/upload/v1/ngg/photos/a1.jpg') === 'ngg/photos/a1'
@@ -29046,7 +29094,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         !empty($rm['ok']) && $rm['photosStillThere'] === 1 && !media_account($xid) && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.account.remove' AND subject = ?", [$xid]));
     chk('accounts · the main account is never removed from here', (backend_dispatch('admin.media.accountRemove', ['requesterId' => $SU, 'id' => 'primary'])['error'] ?? '') === 'primary_is_settings');
     db_exec("DELETE FROM members WHERE memberId = 'MEDIA-X1'");
-    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_active']);
+    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
     setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
 })();

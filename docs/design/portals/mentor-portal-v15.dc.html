@@ -288,8 +288,8 @@ button,input,textarea,select{font:inherit;color:inherit}
 
     <!-- SATURDAY -->
     <sc-if value="{{ onSat }}" hint-placeholder-val="{{ false }}">
-      <div role="tablist" aria-label="Saturday" style="display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; padding:4px; background:#e9e8e3; border-radius:14px; max-width:560px;">
-        <sc-for list="{{ steps }}" as="t" hint-placeholder-count="3"><button role="tab" aria-selected="{{ t.on }}" onClick="{{ t.go }}" style="min-height:52px; padding:6px 10px; border:0; border-radius:11px; background:{{ t.bg }}; box-shadow:{{ t.sh }}; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;"><span style="font-size:14px; font-weight:600;">{{ t.l }}</span><span style="font-size:12px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ t.s }}</span></button></sc-for>
+      <div role="tablist" aria-label="Saturday" class="tabscroll" style="display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch; gap:6px; padding:4px; background:#e9e8e3; border-radius:14px; max-width:560px;">
+        <sc-for list="{{ steps }}" as="t" hint-placeholder-count="3"><button role="tab" aria-selected="{{ t.on }}" onClick="{{ t.go }}" style="flex:1 0 auto;white-space:nowrap;scroll-snap-align:start;min-height:52px; padding:6px 10px; border:0; border-radius:11px; background:{{ t.bg }}; box-shadow:{{ t.sh }}; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;"><span style="font-size:14px; font-weight:600;">{{ t.l }}</span><span style="font-size:12px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ t.s }}</span></button></sc-for>
       </div>
       <sc-if value="{{ sBefore }}" hint-placeholder-val="{{ true }}">
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start;">

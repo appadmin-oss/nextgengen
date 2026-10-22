@@ -2395,3 +2395,58 @@ chain in an edited URL re-runs inside every copy built on it):
   reveal whether a photo exists). Phase 2 (in-browser MODNet cut-out with a
   quality gate, Cloudinary only as the operator's paid fallback) is next.
 - Tests: PHP 5048/0 (+9 credits); card-photo 45/0.
+
+## Messages as a messaging screen; tab rows scroll (2026-10-22)
+
+- "It feels small": the chat was a card at the bottom of a long page under
+  the mentor card. The chat tab is now `.m9c` (styles-app.css): a full-height
+  conversation (`--m9c-h`, measured by `Mp9Portal.chatFit` from its top to the
+  bottom bar) with its own scrolling log (`role=log`), day separators
+  (`mp9DayLabel`), runs grouped by sender within 10 minutes (initials and time
+  once), bubble corners by position, a growing textarea composer, and a 300px
+  side panel. The column widens to 1180px on that tab (`colW`). The side panel
+  is a flex child so the container query can drop it below 820px of its own
+  width (a query cannot restyle its own container's grid — that broke the
+  first attempt on phones). Narrow: one-line next session, short safety line.
+- Tab rows scroll horizontally instead of wrapping (owner's request): the
+  member Mentor/Companion tablists and mentor-portal Saturday tablist become
+  `.tabscroll` flex rows; the area pills in all three portals and
+  `.admin-anchor-tabs/.wis-tabs/.mr-tabs/.asd-tabs` go nowrap + overflow-x.
+  `mp9MarkRow` sets `data-more` for an edge fade while more is off-screen; the
+  selected tab is scrolled into view. The earlier 2×2 mentor-tab rule is gone.
+
+### Messages on a phone: less clutter (stopped mid-batch at the user's request)
+
+- The next-session strip is now one quiet row (a button that opens Sessions): "Next session · in 1d 19h" over the date, with a "Prepare ›" link. The solid black Prepare button went: Send is the only solid action on the screen.
+- Quick replies only show while there is something to answer: the last message is not the child's own, nothing is typed, and no voice note is being made. A quick reply now focuses the composer again (it targeted an `<input>` the textarea replaced).
+- On phones the chat header is smaller (40px avatar, 17px name), and the footnote is one line: "Checked for safety. Something wrong? Tell us".
+- `tests/a11y.test.js`: the phone Mentor check waits for the composer, not a "Messages" heading phones don't draw.
+- **Left open:** the a11y run was stopped before it finished. The last full run reported `aria-prohibited-attr` ×1 on Member · Community. The node is not yet identified.
+- The known `instructor-v6` "Curriculum … week 3" failure is pre-existing.
+
+### Community: the post box follows you down; one navigation on a phone
+
+- **Post box.** The full box stays where it was, at the top of the feed. When it scrolls out of view, a slim pill slides up at the bottom: avatar, prompt and a pencil button. On a phone it sits just above the tab bar. Pressing it opens the same full composer.
+  - Driven by `Cm3App.watchPrompt`, a capture-phase scroll listener that measures against the scroller's own top edge. An IntersectionObserver missed a jump straight past the box.
+  - While hidden, the pill is `aria-hidden` and `tabIndex -1`.
+  - The phone's floating New post button hides while the pill shows, so there is one, not two.
+- **Double navigation on phones.** A signed-in phone showed the site header *and* the Community's own header, each with a menu. Below 760px, `body[data-page="community"]:has(.cm3-app)` now hides the site `.topnav` and `.footer`.
+  - The Community menu gains "My NGG" and "NGG website" links (`.cm3-out`), so the way out is kept.
+  - The signed-out public page keeps the site chrome. Desktop never showed the site header here.
+- `tests/community-v3.test.js` adds checks for both, on desktop and phone (49/0).
+
+### Cloudinary multi-account failover (handoff item)
+
+- **Keys.** The backup's keys are `cloudinary.backup.{cloud_name,api_key,api_secret}`, entered in Settings → API keys (`SERVICE_KEYS['cloudinary_backup']`, with its own key test).
+- **Which account is live.** That is the setting `cloudinary_active` (`primary` | `backup`). `cloudinary_account_apply()` (media-storage.php) lays the live account's three keys over `$CONFIG['cloudinary']`, so every caller reaches the right account unchanged.
+  - The main account's own config is kept in `$GLOBALS['CLOUDINARY_PRIMARY']`.
+  - `service_keys_apply()` undoes the swap before re-laying the keys and redoes it after.
+- **Switching.**
+  - `media_usage_refresh` switches to the backup once the main account reaches `high`.
+  - While on the backup, it probes the main account (`cloudinary_with_account`) and switches back once that is below `high`.
+  - `cloudinary_upload_signed` fails over immediately on HTTP 420/429 or a limit/quota/credit refusal, and retries once on the backup.
+  - Each switch sends one email, one ops record and one audit event (`media.storage.switch`).
+- **Editing old photos.** `cloudinary_adopt` copies a photo still on the spent main account into the backup before editing it there.
+- **Tests.** 13 checks in `api/tests/run.php`. `__cld_upload_http` is a new test seam for the upload's HTTP exchange.
+- **No duplicate copies.** A photo copied off the spent account is uploaded under a fixed name (`copy_<md5 of its base URL>`, `overwrite=false`), so editing it again returns the copy already there instead of storing a second one. The main account's original stays, so existing links keep working, and it costs nothing new there.
+- **Upload preset.** The main account's unsigned upload preset is never carried to the backup, because it doesn't exist there. The backup can name its own (`cloudinary.backup.unsigned_preset`, optional). Without one, application-form photos go to the site's own store while the backup is in use.

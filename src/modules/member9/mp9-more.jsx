@@ -905,6 +905,8 @@ Object.assign(Mp9Portal.prototype, {
     const endEl = this.slotEnd();
     const end = endEl ? <div className={"m9x-end" + (narrow ? " is-narrow" : "")}>{endEl}</div> : null;
     const vals = Object.assign({
+      // The Mentor chat is a messaging screen: wider, with its side panel. Everything else keeps the reading column.
+      colW: cur === "mentor" && (s.mvTab || "chat") === "chat" && wide ? "1180px" : "880px",
       rootRef: this.rootRef, narrow, wide, outerPad: "0", frameW: "100%", frameH: "100%", frameR: "0", frameSh: "none",
       mainPad: narrow ? (end ? "16px 16px 0" : "16px 16px 28px") : (end ? "32px 40px 0" : "32px 40px 56px"), toastBottom: narrow ? "92px" : "24px",
       greeting: "Good " + mp9Greeting() + ", " + me.first,

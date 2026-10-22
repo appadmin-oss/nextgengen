@@ -153,7 +153,7 @@ async function as(memberId, admin, viewport) {
       await boot(ph, '/dashboard/more');
       await audit(ph, 'Member · phone · More', mainReady('Sign out'));
       await boot(ph, '/dashboard/mentor');
-      await audit(ph, 'Member · phone · Mentor', mainReady('Messages'));
+      await audit(ph, 'Member · phone · Mentor', pg => pg.waitForSelector('main textarea[aria-label="Message"]', { timeout: 40000 }));
       const kid = await as('NGG-AX-K2', false);
       await boot(kid, '/dashboard');
       await audit(kid, 'Member · simple view (age 11)', pg => pg.waitForSelector('.m9x-kid', { timeout: 40000 }));

@@ -154,8 +154,6 @@ require_once __DIR__ . '/webcron.php';
 // Keys entered in Control Room → Settings → API keys, laid over config.php
 // (domain/service-keys.php). Never fatal: config.php alone still works.
 try { service_keys_apply(); } catch (Throwable $e) { error_log('[service_keys_apply] ' . $e->getMessage()); }
-// Uploads go to the Cloudinary account with room (media-storage.php); with one account this changes nothing.
-try { media_activate(); } catch (Throwable $e) { error_log('[media_activate] ' . $e->getMessage()); }
 
 // CSRF check happens once per request, for every write method. The
 // individual endpoint then validates further (session, role, input).
