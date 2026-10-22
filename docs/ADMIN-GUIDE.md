@@ -389,6 +389,38 @@ so "who suspended forty people on Tuesday" has a readable answer.
 needs the *Members* (`people`) permission. **Add a centre** is at the top of
 the page.
 
+### Centres come from CACENTRE
+
+CACENTRE owns the buildings, so **CACENTRE's locations list is the one list of
+places** (CACENTRE → *Attendance → Desks and settings → Locations*). The
+CACENTRE gate sends that list to NGG whenever it changes, and NGG's centres
+follow it. You will see a note at the top of this page once the list has
+arrived, and a **From CACENTRE** chip on each centre that comes from it.
+
+| In CACENTRE you… | In NGG this happens |
+|---|---|
+| add a location | a centre is added, with a code made from its name (change the code here before any card is printed) |
+| rename a location | the same centre is renamed, and every member, participant, volunteer and other record that names it moves with it |
+| take a location off the list | the centre is retired here (never deleted) |
+| change a location's days, hours or terms | kept on the centre for reference; NGG's own attendance policy still decides lateness and NGG's days |
+
+What you can no longer do here, once the list has arrived: **add** a centre,
+**rename** a CACENTRE centre, change whether it is **open**, or **remove** it.
+The screen and the server both refuse (`managed_by_cacentre`) and say where to
+do it instead. Everything else is still NGG's: the **code**, the **colour**,
+the address and map, the lead, the contacts, the public page, and which
+programmes run there.
+
+A centre NGG already had is matched to its CACENTRE location by name (or a
+name the location had before), so its code, colour and every record keep
+working. A centre NGG has that CACENTRE does not shows **Not a CACENTRE
+location**: retire it here, or ask CACENTRE to add it.
+
+**Check-ins through the CACENTRE gate** now record which location the person
+came in at (the *centre* on the attendance record). The gate also judges
+lateness at the desk by **NGG's own policy** (resumption and grace from
+*Settings → Attendance*), so the desk shows what NGG records.
+
 **NGG centres and Summer School centres are separate records.** NGG is where a
 member belongs for years; Summer School is a season. In October 2026 the two
 were split, once, automatically:

@@ -11000,6 +11000,9 @@ function AdminCentres() {
   const [centres, setCentres] = React.useState(null);
   const [leadOptions, setLeadOptions] = React.useState([]);
   const [canWrite, setCanWrite] = React.useState(true);
+  /* Set once CACENTRE's locations list has arrived: centres are then added,
+     renamed and retired in CACENTRE, and arrive here (domain/cac-locations.php). */
+  const [cac, setCac] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [q, setQ] = React.useState("");
   const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "", programmes: "ngg" });
@@ -11010,7 +11013,7 @@ function AdminCentres() {
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState("");   // "" | "<id>:edit" | "<id>:map"
   const load = () => NGGApi.admin.registration.centres()
-    .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setErr(""); })
+    .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setCac(r.cacentre || null); setErr(""); })
     .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   // A centre added from the Control Room's own "Add a centre" form appears here at once.
@@ -11110,8 +11113,16 @@ function AdminCentres() {
           to add or amend one.
         </p>
       )}
-      {canWrite && <h3 className="admin-h3">Add a centre</h3>}
-      {canWrite && (
+      {cac && (
+        <p className="admin-hint centres-cac-note" role="status">
+          <b>Centres come from CACENTRE.</b> Its locations list is the only list of places: a location added, renamed or
+          taken off in CACENTRE → Attendance → Desks and settings → Locations is added, renamed (with every record that
+          names it) or retired here within minutes. The code, colour, address, lead and page are still set here.
+          {cac.at ? <> Last update from CACENTRE: <span className="mono">{fmtDateTime(cac.at)}</span>.</> : null}
+        </p>
+      )}
+      {canWrite && !cac && <h3 className="admin-h3">Add a centre</h3>}
+      {canWrite && !cac && (
         <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }} aria-label="Add a centre">
           <input className="admin-input" placeholder="Centre name" aria-label="New centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
           <input className="admin-input" placeholder="CODE" aria-label="New centre code (1–4 letters, the printed ID prefix)" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
@@ -11160,6 +11171,9 @@ function AdminCentres() {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
                 {c.status === "retired" && <span className="chip status-archived" style={{ marginLeft: 8 }} title="Kept so existing records still resolve; no longer offered anywhere">retired</span>}
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
+                {c.cacLocationId
+                  ? <span className="chip chip-cac" title="A CACENTRE location: its name and whether it is open are set in CACENTRE">From CACENTRE</span>
+                  : cac ? <span className="chip chip-cac-not" title="Not on CACENTRE's locations list. Retire it here, or add it in CACENTRE.">Not a CACENTRE location</span> : null}
                 <span className="chip" style={{ marginLeft: 8 }} title="Which programme's forms, desks and lists offer this centre">{centreProgrammes(c).length === 2 ? "NGG + Summer" : centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>
                 {c.pageStatus === "published"
                   ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
@@ -11184,7 +11198,7 @@ function AdminCentres() {
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":map"} onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":summer"} onClick={() => toggle(c, "summer")}
                     title="Where Summer School meets, when it is not the Club's building">{openId === c.centreId + ":summer" ? "Close" : (c.summerLat != null || c.summerAddress ? "Summer venue ✓" : "Summer venue")}</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
+                  {!c.cacLocationId && <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>}
                 </> : <span className="admin-cell-sub">read-only</span>}
               </td>
             </tr>
@@ -11281,10 +11295,14 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
       <div>
         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>IDENTITY</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end" }}>
-          {field("name", "Centre name", { max: 80, min: 200 })}
+          {c.cacLocationId
+            ? <div className="centre-cac-fixed"><span className="centre-cac-lbl">Centre name</span><p className="centre-cac-val">{c.name} <span className="chip chip-cac">From CACENTRE</span></p></div>
+            : field("name", "Centre name", { max: 80, min: 200 })}
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Code</span><input className="admin-input" value={f.code} maxLength={4} onChange={e => set("code", e.target.value.toUpperCase())} style={{ width: 90 }}/></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Colour</span><input type="color" value={f.color} onChange={e => set("color", e.target.value)} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/></div>
-          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
+          {c.cacLocationId
+            ? <div className="centre-cac-fixed"><span className="centre-cac-lbl">Status</span><p className="centre-cac-val">{f.status === "active" ? "Open" : "Retired"} — set in CACENTRE</p></div>
+            : <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>}
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Capacity</span><input className="admin-input" type="number" min="0" placeholder="0 = ∞" value={f.capacity} onChange={e => set("capacity", e.target.value)} style={{ width: 120 }}/></div>
         </div>
         <fieldset className="centre-progs">

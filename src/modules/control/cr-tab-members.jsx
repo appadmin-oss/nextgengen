@@ -1035,6 +1035,10 @@ Object.assign(CR_TAB_DEFS, {
   families: crPanel(() => <AdminFamilies/>),
   /* "Add a centre" in the header, as a labelled form: the directory's own
      inline row reads as a filter bar, and people looked for it in Settings. */
-  centres: crPanel(() => <AdminCentres/>, { actions: (d, ctx) => { crMbCentreCtx.current = ctx; return ctx.can("people") ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; } }),
+  /* Once CACENTRE's locations list has arrived, centres are added there, not
+     here (domain/cac-locations.php): the directory says so, and the header
+     offers no button the server would refuse. */
+  centres: Object.assign(crPanel(() => <AdminCentres/>, { actions: (d, ctx) => { crMbCentreCtx.current = ctx; return ctx.can("people") && !(d && d.cacentre) ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; } }),
+    { load: () => NGGApi.admin.registration.centres().catch(() => null) }),
   idcards: crPanel(() => <AdminIdCards/>),
 });

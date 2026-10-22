@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 136;
+const NGG_SCHEMA_TARGET = 137;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -4041,6 +4041,15 @@ function db_migrate(PDO $db): void {
                   updatedAt TEXT NOT NULL DEFAULT '',
                   updatedBy TEXT NOT NULL DEFAULT ''
                 );",
+        /* 137 — CACENTRE's locations decide NGG's centres (domain/cac-locations.php).
+         * A centre is linked to its location by the location's id, which stays
+         * when the name changes; the location's calendar is kept for reading.
+         * And a check-in through the gate records which location it was at. */
+        137 => "ALTER TABLE centres ADD COLUMN cacLocationId TEXT NOT NULL DEFAULT '';
+                ALTER TABLE centres ADD COLUMN cacCalendar TEXT NOT NULL DEFAULT '';
+                ALTER TABLE centres ADD COLUMN cacSyncedAt TEXT NOT NULL DEFAULT '';
+                ALTER TABLE attendance ADD COLUMN centre TEXT NOT NULL DEFAULT '';
+                CREATE INDEX IF NOT EXISTS idx_centres_cac ON centres(cacLocationId);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

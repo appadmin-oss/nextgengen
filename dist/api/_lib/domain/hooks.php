@@ -121,7 +121,7 @@ function hooks_attendance(array $p): array {
         try {
             $row = [
                 'cohortId' => $cohortId, 'studentId' => $sid, 'token' => $token,
-                'date' => $date, 'checkInAt' => $scanIso, 'method' => 'webhook',
+                'date' => $date, 'checkInAt' => $scanIso, 'method' => 'webhook', 'centre' => hooks_event_centre($e),
                 'byId' => 'hook:' . $source, 'device' => substr($source, 0, 64), 'createdAt' => now_iso(),
             ];
             if ($punc) {
@@ -163,6 +163,38 @@ function hooks_attendance(array $p): array {
  * they may not — why in words. No guardian, no phone, no photo.
  */
 
+/**
+ * NGG's own rule for when this person is late today, for the gate to judge
+ * the scan by — so the desk says what NGG will record, not what the
+ * location's hours would say. null: NGG marks no lateness for them today
+ * (attendance off, NGG's member policy off, or not one of their programme
+ * days), and the desk shows them in, on time.
+ *
+ * @return array{resumption:string,grace_minutes:int}|null
+ */
+function gate_person_punctuality(string $type, string $personId): ?array {
+    $cfg = attendance_settings();
+    if (empty($cfg['enabled'])) return null;
+    if ($type === 'member' && !policy_enabled_for('member')) return null;
+    if (!policy_is_day_for($personId, attendance_today(), $type)) return null;
+    $byType = (array)$cfg['resumptionByType'];
+    $hhmm = (string)($byType[$type] ?? $byType['default'] ?? '09:00');
+    [$h, $m] = array_pad(array_map('intval', explode(':', $hhmm)), 2, 0);
+    return ['resumption' => sprintf('%02d:%02d', $h, $m), 'grace_minutes' => (int)$cfg['graceMinutes']];
+}
+
+/** CACENTRE's locations, passed on by the gate: NGG's centres follow them (domain/cac-locations.php). */
+function hooks_gate_locations(array $p): array {
+    return cac_locations_sync($p);
+}
+
+/** The NGG centre a gate check-in was at: by the location's id when NGG has it, else the name the gate sent. */
+function hooks_event_centre(array $e): string {
+    $loc = (string)($e['location'] ?? '');
+    if ($loc !== '' && ($c = db_row('SELECT name FROM centres WHERE cacLocationId = ? LIMIT 1', [$loc]))) return (string)$c['name'];
+    return mb_substr(trim((string)($e['centre'] ?? '')), 0, 80);
+}
+
 /** What the gate is told about a summer student. */
 function gate_person_student(array $s, ?array $qr = null): array {
     $status = 'active';
@@ -174,7 +206,8 @@ function gate_person_student(array $s, ?array $qr = null): array {
     $detail = trim(implode(' · ', array_filter([(string)($s['track'] ?? ''), (string)($s['centre'] ?? '')])));
     $exp = $qr ? substr((string)($qr['expiresAt'] ?? ''), 0, 10) : '';
     return ['ref' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'kind' => 'student',
-            'status' => $status, 'detail' => $detail ?: 'Summer School', 'expires_on' => $exp !== '' ? $exp : null];
+            'status' => $status, 'detail' => $detail ?: 'Summer School', 'expires_on' => $exp !== '' ? $exp : null,
+            'punctuality' => gate_person_punctuality('student', (string)$s['studentId'])];
 }
 
 /** What the gate is told about a volunteer. */
@@ -184,7 +217,8 @@ function gate_person_volunteer(array $v, ?array $qr = null): array {
             . ((string)($v['safeguarding'] ?? '') !== 'cleared' ? ' · safeguarding not yet cleared' : '');
     $exp = $qr ? substr((string)($qr['expiresAt'] ?? ''), 0, 10) : '';
     return ['ref' => (string)$v['volunteerId'], 'name' => (string)$v['fullName'], 'kind' => 'volunteer',
-            'status' => $status, 'detail' => $detail, 'expires_on' => $exp !== '' ? $exp : null];
+            'status' => $status, 'detail' => $detail, 'expires_on' => $exp !== '' ? $exp : null,
+            'punctuality' => gate_person_punctuality('volunteer', (string)$v['volunteerId'])];
 }
 
 /** What the gate is told about an NGG member. $how: how the card was read. */
@@ -203,7 +237,8 @@ function gate_person_member(array $m, string $how = ''): array {
         $how === 'printed' ? 'old printed card' : '',
     ])));
     return ['ref' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'kind' => 'member',
-            'status' => $status, 'detail' => $detail, 'expires_on' => null];
+            'status' => $status, 'detail' => $detail, 'expires_on' => null,
+            'punctuality' => gate_person_punctuality('member', (string)$m['memberId'])];
 }
 
 /** A card token or a reference, to the person the gate may show. */

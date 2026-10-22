@@ -842,3 +842,32 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   and Excel serials; duplicates by name + guardian phone/email; centres matched
   to Summer records, unknown ones created retired. Control Room → Summer School
   → Past editions.
+
+## 2026-10-22 — NGG's centres follow CACENTRE's locations
+
+- CACENTRE's locations list is the one list of places. CACENTRE publishes it to
+  its gate (`PUT /v1/admin/locations`); the gate offers it to NGG at
+  `api/hooks/gate.php` `{op:"locations", version, tz, locations}`, signed with
+  `hooks.attendance_secret`, and retries every five minutes until NGG answers
+  `{ok:true}` for that version.
+- `domain/cac-locations.php` `cac_locations_sync`: validated whole, one
+  transaction, one audit event (`centre.cacentre_sync`). A location is linked to
+  a centre by its id (`centres.cacLocationId`, migration 137), first by id,
+  then by exact name or a former name (`aliases`). New → created with
+  `cac_centre_code()` (never `ST`, never all digits). Renamed → the centre and
+  every table in `CAC_CENTRE_NAMED_BY` follow (a row that would collide with a
+  one-per-day unique key keeps the old name, counted as `kept`). Removed →
+  retired. The calendar is kept in `cacCalendar` for reading only.
+- `admin_centres_upsert` refuses a new centre once the list has arrived, and a
+  linked centre's name or status; `admin_centres_delete` refuses a linked
+  centre (`managed_by_cacentre`). Code, colour, page and the rest are still NGG's.
+- `hooks_attendance` stores the check-in's location in `attendance.centre`
+  (migration 137), by the location id when NGG has it.
+- Lateness is NGG's: `gate_person_punctuality()` adds `punctuality`
+  `{resumption, grace_minutes}` (or null: attendance off, member policy off, or
+  not their programme day) to every person the gate resolves, and the gate
+  grades the scan by it instead of the desk's location hours.
+- Tests: `api/tests/run.php` "cacentre:" block; CACENTRE's
+  `tests/integration/gate-e2e.php` drives a rename from CACENTRE through the
+  real gate into NGG and the portal.
+

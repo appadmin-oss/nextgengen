@@ -2821,7 +2821,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes, cacLocationId, cacCalendar, cacSyncedAt FROM centres ORDER BY name");
     // A scoped admin's directory is their centres.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['name'], $scopeNames, true)));
@@ -2869,6 +2869,9 @@ function admin_centres_list(array $p): array {
             // So the screen can show a read-only directory rather than buttons
             // that 403. The server still refuses either way.
             'canWrite' => $canWrite,
+            /* Once CACENTRE's list has arrived, centres are added, renamed and
+               retired there; the screen says so instead of offering it. */
+            'cacentre' => function_exists('cac_locations_active') && cac_locations_active() ? (setting_get('cacLocations') ?: null) : null,
             'summerEditionId' => (string)$c['cohortId']];
 }
 
@@ -2975,6 +2978,19 @@ function admin_centres_upsert(array $p): array {
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) return ['ok' => false, 'error' => 'bad_color'];
     $id = (string)($d['centreId'] ?? '');
     $existing = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
+    /* CACENTRE decides the places (domain/cac-locations.php). Once its list
+       has arrived, a centre is not added here, and a linked centre's name and
+       status are CACENTRE's: they change there and arrive here. Everything
+       else about the centre is NGG's to edit. */
+    if (!$existing && function_exists('cac_locations_active') && cac_locations_active()) {
+        return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => 'Centres come from CACENTRE’s locations. Add the place in CACENTRE → Attendance → Desks and settings → Locations; it appears here within minutes.'];
+    }
+    if ($existing && centre_is_cac_managed($existing)) {
+        if ($name !== (string)$existing['name']) return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => (string)$existing['name'] . ' is a CACENTRE location. Rename it in CACENTRE → Attendance → Desks and settings → Locations; NGG follows.'];
+        if (array_key_exists('status', $d) && (string)$d['status'] !== (string)$existing['status']) {
+            return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => 'Whether ' . $existing['name'] . ' is open is decided in CACENTRE.'];
+        }
+    }
     // The code is the printed ID prefix — it must stay unique across centres.
     $clash = db_row('SELECT centreId FROM centres WHERE code = ? LIMIT 1', [$code]);
     if ($clash && (!$existing || $clash['centreId'] !== $id)) return ['ok' => false, 'error' => 'code_taken'];
@@ -3138,6 +3154,9 @@ function admin_centres_delete(array $p): array {
     $c = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
     if (!$c) return ['ok' => false, 'error' => 'not_found'];
     if (!admin_centre_allowed($g['requester'], (string)$c['name'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (centre_is_cac_managed($c)) {
+        return ['ok' => false, 'error' => 'managed_by_cacentre', 'detail' => (string)$c['name'] . ' is a CACENTRE location. Take it off CACENTRE’s list and it is retired here.'];
+    }
     $name = (string)$c['name'];
     $uses = [
         'members'       => (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ?", [$name])['c'] ?? 0),

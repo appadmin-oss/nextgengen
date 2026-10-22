@@ -3117,3 +3117,11 @@ CREATE TABLE IF NOT EXISTS photo_framing (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (136) ON DUPLICATE KEY UPDATE version = version;
+
+-- 137: CACENTRE's locations decide NGG's centres (domain/cac-locations.php), and
+-- a check-in through the gate records which location it was at.
+ALTER TABLE centres ADD COLUMN cacLocationId VARCHAR(16) NOT NULL DEFAULT '', ADD COLUMN cacCalendar TEXT NULL, ADD COLUMN cacSyncedAt VARCHAR(32) NOT NULL DEFAULT '';
+CREATE INDEX idx_centres_cac ON centres (cacLocationId);
+ALTER TABLE attendance ADD COLUMN centre VARCHAR(80) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (137) ON DUPLICATE KEY UPDATE version = version;

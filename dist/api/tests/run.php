@@ -4777,7 +4777,8 @@ chk('gate: a student card resolves to the least a desk needs — no guardian, no
     $st = db_row("SELECT studentId, token, fullName FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
     $r = backend_dispatch('hooks.gate.resolve', ['token' => strtolower($st['token'])]);
     if (empty($r['ok']) || $r['person']['ref'] !== $st['studentId'] || $r['person']['name'] !== $st['fullName'] || $r['person']['kind'] !== 'student') return false;
-    return array_keys($r['person']) === ['ref', 'name', 'kind', 'status', 'detail', 'expires_on'];
+    /* punctuality is NGG's own lateness rule for the desk (gate_person_punctuality): a time and a grace, nothing about the child. */
+    return array_keys($r['person']) === ['ref', 'name', 'kind', 'status', 'detail', 'expires_on', 'punctuality'];
 })());
 chk('gate: a withdrawn student is resolved with the reason, not as active', (function () {
     $st = db_row("SELECT studentId, token FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
@@ -25298,6 +25299,96 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ($keep['members'] as $m) db_update('members', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
     foreach ($keep['ss'] as $m) db_update('summer_students', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
     setting_set('centres_split_seed', (string)$keep['seed'], 'test');
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NGG's centres follow CACENTRE's locations (domain/cac-locations.php)
+   ═══════════════════════════════════════════════════════════════════════════ */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $keep = ['centres' => db_all('SELECT * FROM centres'), 'members' => db_all('SELECT id, centre FROM members'), 'ss' => db_all('SELECT id, centre FROM summer_students'),
+             'vols' => db_all('SELECT id, centre FROM volunteers'), 'cac' => setting_get('cacLocations'), 'att' => setting_get('attendance')];
+    db_exec('DELETE FROM centres');
+    db_exec("DELETE FROM settings WHERE settingKey = 'cacLocations'");
+    $mk = fn($id, $name, $code, $extra = []) => db_insert('centres', array_merge(['centreId' => $id, 'name' => $name, 'code' => $code, 'color' => '#336699', 'status' => 'active', 'slug' => strtolower(str_replace(' ', '-', $name)), 'createdAt' => now_iso()], $extra));
+    $mk('T-EG', 'Egbeda', 'EG');
+    $mk('T-AYH', 'Ayobo Hub', 'AYH');
+    $mk('T-OLD', 'Old Hall', 'OH');
+    db_insert('members', ['memberId' => 'NGG-CL-1', 'fullName' => 'Lola Location', 'email' => 'lola-loc@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo Hub', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $EG = 'L0123456789'; $AY = 'Labcdefabcd'; $IK = 'L1111111111'; $OH = 'L2222222222';
+    $cal = ['weekdays' => [6], 'resumption' => '10:00', 'grace_minutes' => 5, 'terms' => [], 'term_start' => '', 'term_end' => '', 'holidays' => []];
+    $list = fn($v, $locs) => ['version' => $v, 'tz' => 'Africa/Lagos', 'locations' => $locs];
+
+    chk('cacentre: before CACENTRE’s list arrives, centres are added here as before', !cac_locations_active());
+    chk('cacentre: a list with a bad id changes nothing', !cac_locations_sync($list('v0-xxxxxxxx', [['id' => 'nope', 'name' => 'X', 'status' => 'active']]))['ok'] && !db_row("SELECT id FROM centres WHERE name = 'X'"));
+
+    $r = cac_locations_sync($list('v1-aaaaaaaa', [
+        ['id' => $EG, 'name' => 'Egbeda', 'status' => 'active', 'aliases' => [], 'calendar' => $cal],
+        ['id' => $AY, 'name' => 'Ayobo', 'status' => 'active', 'aliases' => ['Ayobo Hub'], 'calendar' => null],
+        ['id' => $IK, 'name' => 'Ikotun', 'status' => 'active', 'aliases' => [], 'calendar' => null],
+        ['id' => $OH, 'name' => 'Old Hall', 'status' => 'retired', 'aliases' => [], 'calendar' => null],
+    ]));
+    $c = fn($id) => db_row('SELECT * FROM centres WHERE cacLocationId = ?', [$id]);
+    chk('cacentre: the centre NGG already had under the same name is linked, keeping its code', ($c($EG)['centreId'] ?? '') === 'T-EG' && $c($EG)['code'] === 'EG');
+    chk('cacentre: …and one NGG had under a former name is linked and renamed, and its members move with it',
+        ($c($AY)['centreId'] ?? '') === 'T-AYH' && $c($AY)['name'] === 'Ayobo' && db_row("SELECT centre FROM members WHERE memberId = 'NGG-CL-1'")['centre'] === 'Ayobo' && in_array('Ayobo Hub → Ayobo', $r['renamed'], true));
+    chk('cacentre: a location NGG never had becomes a centre, with a code made from its name', ($c($IK)['name'] ?? '') === 'Ikotun' && $c($IK)['code'] === 'IKO' && $c($IK)['status'] === 'active');
+    chk('cacentre: a location CACENTRE took off is retired here, never deleted', ($c($OH)['status'] ?? '') === 'retired' && (bool)db_row("SELECT id FROM centres WHERE centreId = 'T-OLD'"));
+    chk('cacentre: the location’s calendar is kept for reading', (json_decode((string)$c($EG)['cacCalendar'], true)['resumption'] ?? '') === '10:00');
+    chk('cacentre: the list is now in charge', cac_locations_active());
+    chk('cacentre: the change is one audit event, saying what happened', (bool)db_row("SELECT id FROM audit_log WHERE event = 'centre.cacentre_sync' AND subject = 'v1-aaaaaaaa'"));
+
+    /* Rename in CACENTRE: the same place, a new name, every record follows. */
+    db_insert('volunteers', ['volunteerId' => 'VOL-CL-1', 'fullName' => 'Vic Vol', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    cac_locations_sync($list('v2-bbbbbbbb', [
+        ['id' => $EG, 'name' => 'Egbeda Centre', 'status' => 'active', 'aliases' => ['Egbeda'], 'calendar' => $cal],
+        ['id' => $AY, 'name' => 'Ayobo', 'status' => 'active', 'aliases' => ['Ayobo Hub'], 'calendar' => null],
+        ['id' => $IK, 'name' => 'Ikotun', 'status' => 'retired', 'aliases' => [], 'calendar' => null],
+    ]));
+    chk('cacentre: renamed in CACENTRE, renamed here — same centre, same code', ($c($EG)['centreId'] ?? '') === 'T-EG' && $c($EG)['name'] === 'Egbeda Centre' && $c($EG)['code'] === 'EG');
+    chk('cacentre: …and the records that named it follow', db_row("SELECT centre FROM volunteers WHERE volunteerId = 'VOL-CL-1'")['centre'] === 'Egbeda Centre');
+    chk('cacentre: a location retired in CACENTRE is retired here', $c($IK)['status'] === 'retired');
+    chk('cacentre: the same list twice changes nothing', cac_locations_sync($list('v2-bbbbbbbb', [['id' => $EG, 'name' => 'Egbeda Centre', 'status' => 'active', 'aliases' => [], 'calendar' => $cal]]))['renamed'] === []);
+
+    /* NGG cannot then change what CACENTRE decides. */
+    $up = fn($data) => backend_dispatch('admin.centres.upsert', ['requesterId' => $SU, 'data' => $data]);
+    chk('cacentre: a linked centre cannot be renamed here', ($up(['centreId' => 'T-EG', 'name' => 'Egbeda West', 'code' => 'EG', 'color' => '#336699'])['error'] ?? '') === 'managed_by_cacentre');
+    chk('cacentre: …nor its status changed here', ($up(['centreId' => 'T-EG', 'name' => 'Egbeda Centre', 'code' => 'EG', 'color' => '#336699', 'status' => 'archived'])['error'] ?? '') === 'managed_by_cacentre');
+    chk('cacentre: …but its colour, code and page still are NGG’s', !empty($up(['centreId' => 'T-EG', 'name' => 'Egbeda Centre', 'code' => 'EGB', 'color' => '#E9A21B', 'area' => 'Egbeda'])['ok']) && $c($EG)['color'] === '#E9A21B');
+    chk('cacentre: no centre is added here by hand once the list is in charge', ($up(['name' => 'Agege', 'code' => 'AGE', 'color' => '#336699'])['error'] ?? '') === 'managed_by_cacentre');
+    chk('cacentre: a linked centre is not removed or retired here', (backend_dispatch('admin.centres.delete', ['requesterId' => $SU, 'centreId' => 'T-EG', 'retire' => true])['error'] ?? '') === 'managed_by_cacentre');
+    $l = backend_dispatch('admin.centres.list', ['requesterId' => $SU]);
+    chk('cacentre: the directory says the centres come from CACENTRE, and which ones', ($l['cacentre']['version'] ?? '') === 'v2-bbbbbbbb'
+        && count(array_filter($l['centres'], fn($x) => $x['cacLocationId'] !== '')) === 4);   // Egbeda, Ayobo, and Ikotun and Old Hall, retired
+
+    /* The gate's list arrives through the hook. */
+    chk('cacentre: the gate hook takes the list', !empty(backend_dispatch('hooks.gate.locations', $list('v3-cccccccc', [['id' => $EG, 'name' => 'Egbeda Centre', 'status' => 'active', 'aliases' => [], 'calendar' => $cal]]))['ok']));
+
+    /* A gate check-in records where it was. */
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-CL-1'");
+    $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-CL-1', 'date' => attendance_today(), 'scannedAt' => gmdate('Y-m-d\TH:i:s\Z'), 'centre' => 'Egbeda', 'location' => $EG, 'desk' => 'TG5MZQC339QA']]]);
+    chk('cacentre: a gate check-in records the location it was at, by its id — under its name now', ($h['results'][0]['status'] ?? '') === 'marked'
+        && db_row("SELECT centre FROM attendance WHERE studentId = 'NGG-CL-1'")['centre'] === 'Egbeda Centre');
+
+    /* The gate is told NGG's own rule for lateness. */
+    setting_set('attendance', ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 7, 'resumptionByType' => ['volunteer' => '8:15']], 'test');
+    $pv = gate_person_volunteer(db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-CL-1'"));
+    chk('cacentre: the gate is told NGG’s own resumption and grace, so the desk says what NGG records',
+        array_key_exists('punctuality', $pv) && ($pv['punctuality'] === null || $pv['punctuality'] === ['resumption' => '08:15', 'grace_minutes' => 7]));
+    setting_set('attendance', ['enabled' => false], 'test');
+    chk('cacentre: …and none at all when NGG’s attendance rules are off', gate_person_volunteer(db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-CL-1'"))['punctuality'] === null);
+
+    // Put things back.
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-CL-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-CL-1'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-CL-1'");
+    db_exec('DELETE FROM centres');
+    foreach ($keep['centres'] as $row) { unset($row['id']); db_insert('centres', $row); }
+    foreach ($keep['members'] as $m) db_update('members', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
+    foreach ($keep['ss'] as $m) db_update('summer_students', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
+    foreach ($keep['vols'] as $m) db_update('volunteers', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
+    if (is_array($keep['cac'])) setting_set('cacLocations', $keep['cac'], 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'cacLocations'");
+    if (is_array($keep['att'])) setting_set('attendance', $keep['att'], 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'attendance'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

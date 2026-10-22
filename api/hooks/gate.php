@@ -11,6 +11,8 @@
  *   POST {op:"resolve", ref}            a person picked from search
  *   POST {op:"search", q, centre}       find by name, active people only
  *   POST {op:"formats"}                 the shapes NGG's printed member cards come in
+ *   POST {op:"locations", version, tz, locations:[…]}
+ *                                       CACENTRE's locations: NGG's centres follow them
  *
  * Signed exactly like hooks/attendance.php, with the same secret:
  *   X-NGG-Timestamp: unix seconds (±300 s)
@@ -38,6 +40,9 @@ if ($op === 'resolve') {
         'format' => (string)($body['format'] ?? ''), 'value' => (string)($body['value'] ?? '')]);
 } elseif ($op === 'formats') {
     $res = ['ok' => true, 'formats' => member_card_gate_formats()];
+} elseif ($op === 'locations') {
+    $res = gs_call('hooks.gate.locations', ['version' => (string)($body['version'] ?? ''), 'tz' => (string)($body['tz'] ?? ''),
+        'locations' => is_array($body['locations'] ?? null) ? $body['locations'] : null]);
 } elseif ($op === 'search') {
     $res = gs_call('hooks.gate.search', ['q' => (string)($body['q'] ?? ''), 'centre' => (string)($body['centre'] ?? '')]);
 } else {

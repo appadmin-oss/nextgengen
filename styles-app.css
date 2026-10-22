@@ -148,6 +148,13 @@
 .chip-lime { background: var(--lime); color: var(--lime-ink); }
 .chip-coral { background: var(--coral); color: white; }
 .chip-plum { background: var(--plum); color: white; }
+/* A centre that follows CACENTRE's locations list (domain/cac-locations.php). */
+.chip-cac { margin-left: 8px; background: var(--navy-900); color: white; }
+.chip-cac-not { margin-left: 8px; background: rgba(12, 20, 50, 0.06); color: var(--ink-700); }
+.centres-cac-note { max-width: 72ch; background: rgba(12, 20, 50, 0.04); border: 1px solid rgba(12, 20, 50, 0.12); border-radius: 10px; padding: 10px 12px; }
+.centre-cac-fixed { flex: 1 1 200px; }
+.centre-cac-lbl { display: block; font-size: 12px; font-weight: 600; color: var(--ink-700); margin-bottom: 4px; }
+.centre-cac-val { margin: 0; min-height: 38px; display: flex; align-items: center; gap: 8px; color: var(--ink-900); }
 
 /* Cards — soft, intentional shadow */
 .card {

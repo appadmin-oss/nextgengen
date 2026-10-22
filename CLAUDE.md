@@ -117,7 +117,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **135**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **137**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -260,7 +260,11 @@ Summer School (`api/_lib/domain/summer-editions.php`, each with a test in
 
 Centres (`api/_lib/domain/registration.php`):
 
-6. A centre in use cannot be deleted silently. `admin_centres_delete` reports
+6. **Centres follow CACENTRE's locations** (`domain/cac-locations.php`). Once
+   the list has arrived over the gate hook, a centre is added, renamed and
+   retired in CACENTRE, not here (`managed_by_cacentre`); a rename cascades to
+   every table in `CAC_CENTRE_NAMED_BY`. Code, colour and page stay NGG's.
+   A centre in use cannot be deleted silently. `admin_centres_delete` reports
    `uses` and refuses with `centre_in_use` unless `retire` (checked **first** —
    retiring is the answer to the refusal) or `force`. Retire keeps every
    record resolving; that is the intended path.
