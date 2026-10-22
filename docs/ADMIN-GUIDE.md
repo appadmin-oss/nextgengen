@@ -1866,6 +1866,15 @@ picks his record and filters nobody else). *"Exclude summer"* leaves Summer
 School out — it no longer reads as "Summer School only". A name nobody has
 shows the closest names on the lists, with *Use …*.
 
+**More ways to say who.** These are read even with no AI key (the studio's own rules):
+- *"The volunteers from Ijaiye and Ikorodu"* — several centres at once; each shows as its own chip.
+- *"Print 026-001 to 026-040"* — the forty in that block, and only 2026's (025-007 stays off). *"Cards 40 to 80"* without a prefix is every year's.
+- *"The last 20 members who joined"* — the twenty most recent, not the first twenty on the list. (*"The last 7 days"* is still a date.)
+- *"Everyone at Yaba except those already printed"*, *"who still needs a card in Ikorodu?"* — the people still waiting for a card.
+- *"Without a photo"* / *"only the ones with photos"* — a photo filter. *"…without a photo, ask them for one"* opens the photo request for exactly them.
+- *"Volunteers and members together, one sheet per centre"* — both lists, each centre on its own sheet. *"Print the backs too"* turns the backs on.
+- *"Ada Okafor's card"* means Ada Okafor; a two-word centre (*Yaba Hub*) is never read as a person.
+
 **Photo work in words, and photos in the chat.**
 - *"Improve the photos, remove their backgrounds"* opens **Improve photos** for
   the people in that request (or the plan on screen) with *Plain grey

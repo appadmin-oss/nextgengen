@@ -95,10 +95,15 @@ function idsPlanSelect(plan, ctx) {
      their records is meant, and nothing else. */
   const kindOf = p.kindOf || {};
   const kindFor = raw => { const k = Object.keys(kindOf).find(n => idsNameMatch(n, raw) || idsNameMatch(raw, n)); return k ? kindOf[k] : null; };
-  const okCentre = r => !p.centre || (p.centre === "none" ? !r.centre : r.centre === p.centre);
+  const centres = p.centres || [];
+  const okCentre = r => centres.length ? centres.includes(r.centre) : !p.centre || (p.centre === "none" ? !r.centre : r.centre === p.centre);
+  const centreWords = centres.length ? centres.slice(0, -1).join(", ") + " and " + centres[centres.length - 1] : p.centre === "none" ? "people with no centre" : p.centre;
+  const okPhoto = r => p.hasPhoto == null || !!r.hasPhoto === p.hasPhoto;
   const okWhich = r => !p.which || p.which === "all" || r.reason === p.which;
   const okDate = r => (!p.dateFrom && !p.dateTo) || (!!r.day && (!p.dateFrom || r.day >= p.dateFrom) && (!p.dateTo || r.day <= p.dateTo));
-  const okNum = r => (p.numFrom == null && p.numTo == null) || (r.seq != null && (p.numFrom == null || r.seq >= p.numFrom) && (p.numTo == null || r.seq <= p.numTo));
+  /* "026-001 to 026-040" keeps to 2026's numbers: the prefix is the printed ID's own. */
+  const okNum = r => (p.numFrom == null && p.numTo == null) || (r.seq != null && (p.numFrom == null || r.seq >= p.numFrom) && (p.numTo == null || r.seq <= p.numTo)
+    && (!p.numPrefix || String(r.displayId || "").toUpperCase().startsWith(p.numPrefix + "-")));
   const findId = (list, w) => list.filter(c => norm(c.displayId) === w || norm(c.id) === w || (/^\d+$/.test(w) && c.seq === parseInt(w, 10)));
   const hits = [], missing = [], carded = [], ambiguous = [], filtered = [], notWaiting = [], twoLists = [];
   let asked = 0;
@@ -110,7 +115,7 @@ function idsPlanSelect(plan, ctx) {
   /* Somebody named but kept off by the plan's own narrowing (only NGG, only
      Ijaiye): said as that, with who they are, never as "not found". */
   const whyOff = (r, narrow) => !okKind(r) ? "is " + (IDS_KIND_ONE[r.kind] || r.kind) + (p.kind ? ", and this is " + idsKindWords(p.kind) + " only" : ", and those are left out")
-    : narrow && !okCentre(r) ? "is at " + (r.centre || "no centre") + ", and this is " + (p.centre === "none" ? "people with no centre" : p.centre) + " only" : "";
+    : narrow && !okCentre(r) ? "is at " + (r.centre || "no centre") + ", and this is " + centreWords + " only" : "";
   /* Named people are wanted whatever the "new / reprint" filter says; the
      kind (and, for names, the centre) still narrows who a name can mean. */
   const named = (ids, names, narrow) => {
@@ -148,7 +153,7 @@ function idsPlanSelect(plan, ctx) {
     });
   };
   if ((p.ids || []).length || (p.names || []).length) named(p.ids, p.names, true);
-  else pool.forEach(r => { if (okKind(r) && okCentre(r) && okWhich(r) && okDate(r) && okNum(r)) hits.push(r); });
+  else pool.forEach(r => { if (okKind(r) && okCentre(r) && okWhich(r) && okDate(r) && okNum(r) && okPhoto(r)) hits.push(r); });
   if (p.also) named(p.also.ids, p.also.names, false);
   // Left out as asked: matched across everyone, so "not Ada" works however Ada got in.
   const out = new Set();
@@ -161,6 +166,8 @@ function idsPlanSelect(plan, ctx) {
   const kept = found.filter(r => !out.has(r.key));
   const blocked = kept.filter(blockedOf);
   let pick = kept.filter(r => !blockedOf(r));
+  // "The last 20 who joined": the most recent first, so the limit keeps the newest.
+  if (p.latest) pick = pick.slice().sort((a, b) => String(b.day || "").localeCompare(String(a.day || "")));
   const max = Math.min(p.limit || IDS_ASK_PICK_MAX, IDS_ASK_PICK_MAX);
   const cut = Math.max(0, pick.length - max);
   if (cut) pick = pick.slice(0, max);
@@ -220,13 +227,18 @@ function idsPlanWhat(p, sel) {
   (p.notKinds || []).forEach(k => out.push({ label: "no " + idsKindWords(k), tone: "out", drop: q => { const n = Object.assign({}, q); n.notKinds = (n.notKinds || []).filter(x => x !== k); if (!n.notKinds.length) delete n.notKinds; return n; } }));
   Object.keys(p.kindOf || {}).forEach(nm => out.push({ label: (rn[nm] || nm) + " as " + (IDS_KIND_ONE[p.kindOf[nm]] || p.kindOf[nm]).replace(/^an? /, ""), drop: q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf); delete n.kindOf[nm]; if (!Object.keys(n.kindOf).length) delete n.kindOf; return n; } }));
   if (p.centre) out.push({ label: p.centre === "none" ? "no centre on the record" : p.centre, drop: q => idsPlanWithout(q, ["centre"]) });
+  (p.centres || []).forEach(c => out.push({ label: c, drop: q => { const n = idsPlanDropFrom(q, "centres", null, c); if ((n.centres || []).length === 1) { n.centre = n.centres[0]; delete n.centres; } return n; } }));
+  if (p.hasPhoto != null) out.push({ label: p.hasPhoto ? "with a photo" : "no photo yet", drop: q => idsPlanWithout(q, ["hasPhoto"]) });
   if (p.dateFrom || p.dateTo) out.push({ label: (p.kind === "member" ? "joined " : "registered ") + idsAskDays(p.dateFrom, p.dateTo), drop: q => idsPlanWithout(q, ["dateFrom", "dateTo"]) });
-  if (p.numFrom != null || p.numTo != null) out.push({ label: "numbers " + (p.numFrom != null ? p.numFrom : "…") + "–" + (p.numTo != null ? p.numTo : "…"), drop: q => idsPlanWithout(q, ["numFrom", "numTo"]) });
+  if (p.numFrom != null || p.numTo != null) {
+    const pad = v => p.numPrefix ? p.numPrefix + "-" + String(v).padStart(3, "0") : v;
+    out.push({ label: "numbers " + (p.numFrom != null ? pad(p.numFrom) : "…") + "–" + (p.numTo != null ? pad(p.numTo) : "…"), drop: q => idsPlanWithout(q, ["numFrom", "numTo", "numPrefix"]) });
+  }
   (p.ids || []).forEach(v => out.push({ label: idl(v), drop: q => idsPlanDropFrom(q, "ids", null, v) }));
   (p.names || []).forEach(v => out.push({ label: nm(v), drop: q => idsPlanDropFrom(q, "names", null, v) }));
   ["ids", "names"].forEach(k => ((p.also || {})[k] || []).forEach(v => out.push({ label: "+ " + (k === "ids" ? idl(v) : nm(v)), tone: "add", drop: q => idsPlanDropFrom(q, "also", k, v) })));
   ["ids", "names"].forEach(k => ((p.exclude || {})[k] || []).forEach(v => out.push({ label: "not " + (k === "ids" ? idl(v) : nm(v)), tone: "out", drop: q => idsPlanDropFrom(q, "exclude", k, v) })));
-  if (p.limit) out.push({ label: "at most " + p.limit, drop: q => idsPlanWithout(q, ["limit"]) });
+  if (p.limit) out.push({ label: (p.latest ? "the " + p.limit + " most recent" : "at most " + p.limit), drop: q => idsPlanWithout(q, ["limit", "latest"]) });
   if (p.cause) out.push({ label: IDS_ASK_CAUSE[p.cause] || p.cause, drop: q => idsPlanWithout(q, ["cause"]) });
   return out;
 }
@@ -237,7 +249,7 @@ function idsPlanWhat(p, sel) {
    question this can answer; the request then goes to the planner.
    `c` is the studio's state, built in ids-app.jsx (askCtx). */
 const IDS_ASK_CAUSE = { lost: "lost: new QR", never_received: "never received: new QR", damaged: "damaged", name: "details changed" };
-const IDS_ASK_SEL_KEYS = ["kind", "notKinds", "kindOf", "centre", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "limit"];
+const IDS_ASK_SEL_KEYS = ["kind", "notKinds", "kindOf", "centre", "centres", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "numPrefix", "limit", "latest", "hasPhoto"];
 /** The acts a plan asks for, in order ("improve the photos, then ask the rest for one"). */
 const idsPlanActs = p => (p && (p.acts || (p.do ? [].concat(p.do) : []))) || [];
 const idsPlanHasSel = p => IDS_ASK_SEL_KEYS.some(k => p && p[k] !== undefined);
@@ -386,7 +398,7 @@ function idsCmdPreview(plan, st) {
   if (acts.includes("fill")) out.push("fill the empty slots on the last sheet");
   if (acts.includes("improvePhotos")) out.push("open Improve photos" + [ph.removeBg && "a plain grey background", ph.brighten && "brighter", ph.sharpen && "sharper", ph.zoom > 1 && "closer on the face"].filter(Boolean).map((x, i) => (i ? ", " : " with ") + x).join("") + " (you check it and press Improve)");
   if (acts.includes("adjustPhoto")) out.push("open the framing tool to position the photo");
-  if (acts.includes("askPhotos")) out.push("open a photo request for the people with no photo" + (plan.centre ? " at " + plan.centre : "") + " (you confirm the count before it sends)");
+  if (acts.includes("askPhotos")) out.push("open a photo request for the people with no photo" + ((plan.centres || []).length ? " at " + plan.centres.join(" and ") : plan.centre && plan.centre !== "none" ? " at " + plan.centre : "") + " (you confirm the count before it sends)");
   return out;
 }
 

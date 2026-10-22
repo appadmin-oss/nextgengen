@@ -87,6 +87,34 @@ const R = T.idsAskPasteList('1\tAgbalaya Habeebat\tJSS2\n2\tBola Ade\tSS1', null
 chk('rows copied from a spreadsheet read the name column', R && R.text === 'Cards for Agbalaya Habeebat and Bola Ade');
 chk('one line is not a list', T.idsAskPasteList('Bola Ade', null) === null);
 
+console.log('filters the rules now read');
+{
+  const R2 = [
+    rec('a1', 'Ade One', 'member', { displayId: '026-001', seq: 1, day: '2026-01-10' }),
+    rec('a2', 'Ade Two', 'member', { displayId: '026-040', seq: 40, day: '2026-03-02' }),
+    rec('a3', 'Ade Three', 'member', { displayId: '025-007', seq: 7, day: '2025-05-01' }),
+    rec('a4', 'Ade Four', 'member', { displayId: '026-041', seq: 41, day: '2026-09-30', centre: 'Ijaiye' }),
+    rec('v1', 'Vol One', 'volunteer', { centre: 'Ikorodu', day: '2026-02-01' }),
+    rec('v2', 'Vol Two', 'volunteer', { centre: 'Yaba Hub', day: '2026-02-01' }),
+    rec('n1', 'No Photo', 'member', { photoUrl: '', hasPhoto: false, day: '2026-10-01' }),
+  ].map(r => Object.assign(r, { hasPhoto: r.hasPhoto === undefined ? true : r.hasPhoto }));
+  const c2 = { pool: R2, all: R2, isBlocked: r => !r.photoUrl };
+  const k2 = sel => sel.pick.map(r => r.key).sort().join(',');
+  chk('"026-001 to 026-040" is that year\'s block, not 025-007', k2(T.idsPlanSelect({ kind: 'member', numFrom: 1, numTo: 40, numPrefix: '026' }, c2)) === 'a1,a2');
+  chk('…without a prefix, a block is every year\'s', k2(T.idsPlanSelect({ kind: 'member', numFrom: 1, numTo: 40 }, c2)) === 'a1,a2,a3');
+  chk('several centres: people at any of them', k2(T.idsPlanSelect({ centres: ['Ijaiye', 'Ikorodu'] }, c2)) === 'a4,v1');
+  const off = T.idsPlanSelect({ names: ['Vol Two'], centres: ['Ijaiye', 'Ikorodu'] }, c2);
+  chk('…and somebody named elsewhere is told which centres this is', off.filtered.length === 1 && /Ijaiye and Ikorodu only/.test(off.filtered[0].why));
+  chk('"the last 2 who joined": the newest two, not the first two', k2(T.idsPlanSelect({ kind: 'member', limit: 2, latest: true, hasPhoto: true }, c2)) === 'a2,a4');
+  chk('"with a photo" leaves out who has none', !T.idsPlanSelect({ kind: 'member', hasPhoto: true }, c2).pick.some(r => r.key === 'n1'));
+  chk('"without a photo" is who has none (held back from printing, ready to be asked)', T.idsPlanSelect({ hasPhoto: false }, c2).blocked.map(r => r.key).join() === 'n1');
+  const what = T.idsPlanWhat({ centres: ['Ijaiye', 'Ikorodu'], hasPhoto: false, numFrom: 1, numTo: 40, numPrefix: '026', limit: 20, latest: true }, null).map(x => x.label);
+  chk('the plan reads back in words: both centres, the photo filter, the block and the newest', what.includes('Ijaiye') && what.includes('Ikorodu') && what.includes('no photo yet')
+    && what.includes('numbers 026-001–026-040') && what.includes('the 20 most recent'));
+  const one = T.idsPlanWhat({ centres: ['Ijaiye', 'Ikorodu'] }, null).find(x => x.label === 'Ijaiye').drop({ centres: ['Ijaiye', 'Ikorodu'] });
+  chk('…and removing one of two centres leaves a plain one-centre plan', one.centre === 'Ikorodu' && !one.centres);
+}
+
 console.log('questions answered here');
 const c = { n: 2, sheets: 1, lookup: () => [], blockedList: [], onSheet: [], byCentre: [], stock: { sheets: 1, sides: 2, used: 20 }, bad: [], warn: [] };
 chk('"what can you do?" is the help', /I set up the sheet/.test(T.idsAskAnswer('What can you do?', c)));

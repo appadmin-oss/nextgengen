@@ -25762,6 +25762,27 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $x = $rd('new cards for Egbda kids, the first ten');
     chk('id plan rules: a misspelt centre, "kids" and "the first ten" are read', $x['centre'] === 'Egbeda' && $x['kind'] === 'member' && $x['limit'] === 10 && $x['which'] === 'new');
     chk('id plan rules: a short word is never a misspelt centre', !isset($rd('print the card for Iya')['centre']));
+    // The upgrade: the requests the rules used to misread (each was read wrongly before).
+    chk('id plan rules: "Ada Okafor\'s card" is Ada Okafor', ($rd("reprint Ada Okafor's card, she lost it")['names'] ?? []) === ['Ada Okafor']);
+    chk('id plan rules: two centres are both kept, in the order said', ($rd('print the volunteers from Ijaiye and Egbeda')['centres'] ?? []) === ['Ijaiye', 'Egbeda']);
+    chk('id plan rules: a range written as two printed IDs is the block between, kept to its year',
+        ($x = $rd('print 026-001 to 026-040')) && $x['numFrom'] === 1 && $x['numTo'] === 40 && $x['numPrefix'] === '026' && empty($x['ids']) && $x['kind'] === 'member');
+    chk('id plan rules: "the last 20 members who joined" is the newest twenty', ($x = $rd('the last 20 members who joined')) && $x['limit'] === 20 && !empty($x['latest']));
+    chk('id plan rules: "the last 7 days" is still a date, not a count', ($x = $rd('members in the last 7 days')) && !isset($x['limit']) && $x['dateFrom'] === '2026-10-08');
+    chk('id plan rules: "except those already printed" is the people still waiting, not a name', ($x = $rd('all members at Egbeda except those already printed')) && $x['which'] === 'new' && $x['centre'] === 'Egbeda' && empty($x['exclude']));
+    chk('id plan rules: "who still needs a card" is the people still waiting', ($rd('who still needs a card in Ijaiye?')['which'] ?? '') === 'new');
+    chk('id plan rules: "without a photo, ask them for one" is the filter and the act', ($x = $rd('summer school participants without a photo, ask them for one')) && $x['hasPhoto'] === false && $x['do'] === 'askPhotos' && $x['kind'] === 'summer');
+    chk('id plan rules: "only the ones with photos" is a filter', ($rd('only the ones with photos')['hasPhoto'] ?? null) === true);
+    chk('id plan rules: "improve the photos" is an edit, not a photo filter', !isset($rd('improve the photos of the summer kids')['hasPhoto']));
+    chk('id plan rules: "volunteers and members together, one sheet per centre" is both lists and a sheet each',
+        ($x = $rd("print Ijaiye's volunteers and members together, one sheet per centre")) && !isset($x['kind']) && $x['notKinds'] === ['summer', 'afrovanguard'] && $x['breakBy'] === true && $x['centre'] === 'Ijaiye');
+    chk('id plan rules: "print the backs too" turns backs on', ($rd('print the backs too')['backs'] ?? '') === 'long');
+    chk('id plan rules: the first word of a longer centre name is that centre ("at Planwick")', ($rd('members at Planwick')['centre'] ?? '') === 'Planwick Hall');
+    chk('id plan rules: a two-word centre is never read as a person', !isset($rd('print Planwick Hall members')['names']));
+    $cl = ids_plan_clean(['centres' => ['Ijaiye', 'Nowhere', 'egbda'], 'hasPhoto' => 'yes', 'numFrom' => 3, 'numPrefix' => 'x; drop'], $K, $C);
+    chk('id plan: a model\'s centres are checked one by one, an unknown one said; a non-boolean photo filter and a bad prefix are dropped',
+        $cl['plan']['centres'] === ['Ijaiye', 'Egbeda'] && count($cl['notes']) === 1 && !isset($cl['plan']['hasPhoto']) && !isset($cl['plan']['numPrefix']));
+    chk('id plan: one centre said in a follow-up replaces several said before', !isset(ids_plan_refine(['centres' => ['Ijaiye', 'Egbeda']], ['centre' => 'Egbeda'])['centres']));
     $x = $rd('Egbeda members except 026-002 and Bayo Ade');
     chk('id plan rules: "except" leaves people out, and never puts them on the sheet', $x['exclude'] === ['ids' => ['026-002'], 'names' => ['Bayo Ade']] && !isset($x['ids']) && $x['centre'] === 'Egbeda');
     $x = $rd('members at Ijaiye, add 026-010 and Ada Obi');

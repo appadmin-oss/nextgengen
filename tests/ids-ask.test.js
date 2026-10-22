@@ -149,6 +149,17 @@ function cleanup() {
 
     console.log('Ask mode suggests; Act mode applies');
     chk('Ask is the mode it starts in', (await P.getAttribute('.ids-ai-mode button:has-text("Ask")', 'aria-pressed')) === 'true');
+    console.log('requests the rules used to misread (read in Ask mode, before anything is printed)');
+    {
+      const r1 = await ask('print 026-001 to 026-003');
+      chk('"026-001 to 026-003" is the three in that block, not two people and not 2025\'s', /^Assistant\s*3 cards\b/.test(r1.trim()) && /numbers 026-001–026-003/.test(r1) && (await nOnSheet()) <= 0);
+      await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+      const r2 = await ask('Egbeda and Ijaiye members who still need a card');
+      chk('two centres at once, only the people still waiting: Egbeda\'s six with photos and Ijaiye\'s two without a card', /^Assistant\s*8 cards\b/.test(r2.trim()) && /Egbeda/.test(r2) && /Ijaiye/.test(r2));
+      await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+      chk('…and nothing went on the sheet: Ask mode waits for Apply', (await nOnSheet()) <= 0);
+    }
+
     card = await ask('New cards for Egbeda members, front and back, with crop marks');
     chk('in Ask mode a plan says what it would do and waits for Apply; the sheet is untouched', /6\s*cards/.test(card) && /Apply/.test(card) && (await nOnSheet()) <= 0);
     await P.click('.ids-ai-card:last-child button:has-text("Apply")');
@@ -174,7 +185,7 @@ function cleanup() {
     chk('…and the earlier reply stays in the transcript, marked superseded', /superseded/.test(await P.innerText('.ids-ai-log')) && (await P.$$('.ids-ai-card.is-live')).length === 1);
     card = await ask('not Ada Obbi');
     chk('"not <name>", misspelt, leaves that person out and says so', /5\s*cards on the sheet/.test(card) && /Left out as asked: Ada Obi/.test(card) && (await nOnSheet()) === 5);
-    await P.click('.ids-ai-card.is-live .ids-ask-what li:has-text("not Ada Obbi") .ids-ask-x');
+    await P.click('.ids-ai-card.is-live .ids-ask-what li:has-text("not Ada Obi") .ids-ask-x');
     await P.waitForFunction(() => /6\s*cards on the sheet/.test((document.querySelector('.ids-ai-card.is-live') || {}).innerText || ''), null, { timeout: 5000 });
     chk('a chip’s × takes that part out on the spot', (await nOnSheet()) === 6 && !(await P.$('.ids-ai-card.is-live .ids-ask-what li:has-text("not Ada")')));
     card = await ask('add 025-101');
@@ -319,6 +330,7 @@ function cleanup() {
     chk('"undo" in words undoes the newest change', /back as it was/.test(card) && (await nOnSheet()) <= 0);
     card = await ask('undo');
     chk('…and says so when there is nothing left to undo', /nothing of mine to undo/.test(card));
+
 
     console.log('a request it cannot read, and the keys');
     await P.click('.ids-ai-bar button[aria-label="New conversation"]');
