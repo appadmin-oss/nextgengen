@@ -59,13 +59,19 @@ function member_dashboard(array $p): array {
     $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR $bc) AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", array_merge([$memberId], $bcp));
     $notes = array_map('public_notification', $notes);
 
-    // Assigned mentor for the current session.
+    /* The member's mentor: the active pairing, this session's first. Reading
+       only this session's pairing told every child paired by a match, or in an
+       earlier term, that they had no mentor — the Anchor Journal hid its
+       "share with my mentor" from them because of it. */
     $mentor = null;
-    if ($session) {
-        $link = db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND sessionId = ? AND status='active' LIMIT 1", [$memberId, $sessionId]);
-        if ($link) {
-            $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$link['mentorId']]);
-            if ($m) $mentor = public_mentor($m);
+    $link = ($session ? db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND sessionId = ? AND status='active' ORDER BY id DESC LIMIT 1", [$memberId, $sessionId]) : null)
+        ?: db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND status='active' ORDER BY id DESC LIMIT 1", [$memberId]);
+    if ($link) {
+        $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$link['mentorId']]);
+        if ($m) {
+            $mentor = public_mentor($m);
+            // How a child addresses them ("Coach Eke"), never a bare first name.
+            if (function_exists('staff_public_name')) $mentor['displayName'] = staff_public_name((string)$m['mentorId'], (string)($mentor['fullName'] ?? ''));
         }
     }
 

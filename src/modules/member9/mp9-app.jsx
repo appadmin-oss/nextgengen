@@ -24,9 +24,9 @@
 /* Which reads a screen needs before it can draw. The core set loads at once. */
 const MP9_CORE = ["today", "dash", "mine", "chat", "notifs", "state"];
 const MP9_NEED = {
-  today: ["today", "dash", "mine", "chat", "form", "mom"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
+  today: ["today", "dash", "mine", "chat", "form", "mom", "jm", "circle"], mentor: ["chat", "mine"], growth: ["mine", "courage", "mom", "jm", "evals"],
   results: ["res"], companion: ["comp"], sat: ["form", "dash", "evals"], learn: ["cur", "dash", "opps"], timetable: ["tt", "cur"],
-  journal: [], opps: ["opps"], community: ["feed", "prj"], passport: ["rec"], me: ["circle", "sec", "rec"],
+  journal: ["jm", "chat"], opps: ["opps"], community: ["feed", "prj"], passport: ["rec"], me: ["circle", "sec", "rec"],
   money: ["stmt", "comp9"], records: ["rec", "reqs"], help: [], more: [],
 };
 const MP9_LOADERS = {
@@ -50,7 +50,7 @@ const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", com
    so a colour never says two things: Grow is teal, not green. Today is the NGG amber, deepened to
    pass 4.5:1 as text. Each is used in small doses — the tab, the icon, a tint — never as a page fill. */
 const MP9_ACCENT = { today: PORTAL_HUE.amber, mentor: PORTAL_HUE.violet, grow: PORTAL_HUE.teal, learn: PORTAL_HUE.blue, account: PORTAL_HUE.slate };
-const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view"];
+const MP9_STATE_KEYS = ["mp9.grow", "mp9.dare", "mp9.review", "mp9.cc", "mp9.portfolio", "mp9.project", "mp9.steps", "mp9.prep", "mp9.ticks", "mp9.lb", "mp9.view", "mp9.startHidden"];
 const MP9_TONE = { danger: "#b0361c", warning: "#7a5600", info: "#1e4fae", neutral: "#4a4a50", success: "#1d6b30" };
 /* A To do row's route (the server's) → the screen that answers it. */
 const MP9_ROUTE = { "/member/account/money": "money", "/member/grow/results": "results", "/member/learn": "learn", "/member/mentor": "mentor",
@@ -93,6 +93,9 @@ function mp9Err(e) {
   return d || T[c] || (typeof c === "string" && c.length < 120 && /\s/.test(c) ? c : "That didn’t work. Try again.");
 }
 
+/** How often an open Mentor screen looks for new messages. */
+const MP9_CHAT_POLL_MS = 30000;
+
 class Mp9Portal extends React.Component {
   rootRef = React.createRef();
   palRef = React.createRef();
@@ -126,6 +129,17 @@ class Mp9Portal extends React.Component {
     window.addEventListener("popstate", this._pop);
     this._online = () => this.setState({ net: navigator.onLine ? "online" : "offline" });
     window.addEventListener("online", this._online); window.addEventListener("offline", this._online);
+    /* Messages arrive while the screen is open: the chat is fetched again every
+       30 seconds while the Mentor screen is showing and the tab is visible, and
+       at once when the child comes back to the tab. Quietly — no spinner. */
+    this._chatPoll = setInterval(() => this.pollChat(), MP9_CHAT_POLL_MS);
+    this._vis = () => { if (!document.hidden) { this.pollChat(); this.load("notifs"); } };
+    document.addEventListener("visibilitychange", this._vis); window.addEventListener("focus", this._vis);
+  }
+  pollChat() {
+    if (document.hidden || this.state.scr !== "mentor" || this._polling) return;
+    this._polling = true;
+    NGGApi.member.chat().then(r => { if (r) this.setState(s => ({ d: { ...s.d, chat: r } })); }).catch(() => {}).then(() => { this._polling = false; });
   }
   componentDidUpdate(pp, ps) {
     this.rsEffects();
@@ -137,6 +151,7 @@ class Mp9Portal extends React.Component {
     clearInterval(this._tick); clearTimeout(this._t); this.ro && this.ro.disconnect();
     window.removeEventListener("keydown", this._k); window.removeEventListener("popstate", this._pop);
     window.removeEventListener("online", this._online); window.removeEventListener("offline", this._online);
+    clearInterval(this._chatPoll); document.removeEventListener("visibilitychange", this._vis); window.removeEventListener("focus", this._vis);
   }
 
   /* ── Data ─────────────────────────────────────────────────────────────── */
@@ -178,12 +193,29 @@ class Mp9Portal extends React.Component {
   goBack() { const h = this.state.hist; if (!h.length) return this.go("today"); const to = h[h.length - 1]; this.go(to); this.setState({ hist: h.slice(0, -1) }); }
   openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) , pwCode: null }); if (sheet && (sheet.k === "profile" || sheet.k === "password") && !this.dd("sec")) this.load("sec"); }
   closeSheet() { this.setState({ sheet: null }); }
+  /* Read aloud, with the voices the phone already has (works offline on
+     Android). Pressing it again stops. A Nigerian English voice when the
+     phone has one, else any English voice. */
+  speak(text, key) {
+    const ss = typeof window !== "undefined" && window.speechSynthesis;
+    if (!ss) return this.toast("This phone can’t read aloud.");
+    if (this.state.speaking === key) { ss.cancel(); return this.setState({ speaking: null }); }
+    ss.cancel();
+    const u = new SpeechSynthesisUtterance(String(text || "").slice(0, 3000));
+    const vs = ss.getVoices ? ss.getVoices() : [];
+    const v = vs.find(x => /en-NG/i.test(x.lang)) || vs.find(x => /^en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang));
+    if (v) u.voice = v;
+    u.lang = v ? v.lang : "en-NG"; u.rate = 0.92;
+    u.onend = u.onerror = () => { if (this.state.speaking === key) this.setState({ speaking: null }); };
+    this.setState({ speaking: key }); ss.speak(u);
+  }
+  canSpeak() { return typeof window !== "undefined" && !!window.speechSynthesis; }
   /* One way to write to the mentor, from every screen. The server decides
      whether there is one (an active pairing): a has-a-mentor flag captured
      while rendering one screen went stale, and told children who had a
      mentor that they had none. */
-  sendToMentor(text, ok) {
-    return NGGApi.member.chatSend(text).then(r => { this.refresh(["chat", "mine"]); if (r && r.crisis) this.toast(r.help || "Help is coming. If you’re in danger, call 112."); else if (ok) this.toast(ok); return r || {}; })
+  sendToMentor(text, ok, media) {
+    return NGGApi.member.chatSend(text, media).then(r => { this.refresh(["chat", "mine"]); if (r && r.crisis) this.toast(r.help || "Help is coming. If you’re in danger, call 112."); else if (ok) this.toast(ok); return r || {}; })
       .catch(e => { if (e && (e.code || e.message) === "no_mentor") this.refresh(["chat", "mine"]); this.toast(mp9Err(e)); return null; });
   }
 
@@ -300,10 +332,16 @@ class Mp9Portal extends React.Component {
     return {
       tabs: [["chat", "Chat", "ph ph-chat-circle-text", 0], ["sess", "Sessions", "ph ph-calendar-check", tsent ? 0 : 1], ["steps", "Next steps", "ph ph-list-checks", left], ["fb", "How it’s going", "ph ph-heart", mine.relAsked && !mine.relDone ? 1 : 0]]
         .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, on: tab === k ? "true" : "false", bg: tab === k ? "#fff" : "transparent", sh: tab === k ? "0 1px 2px rgba(11,11,12,.12)" : "none", fw: tab === k ? 700 : 500, go: () => set({ mvTab: k }) })),
+      support: ((this.dd("chat") || {}).supporting || []).map(x => ({ name: x.name, focus: x.focus, until: x.until ? " · until " + mp9Date(x.until, { day: "numeric", month: "short" }) : "" })),
+      hasSupport: ((this.dd("chat") || {}).supporting || []).length > 0,
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
       cd: sat ? (dd > 0 ? "in " + dd + "d " + hh + "h" : "in " + hh + "h") : "", prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
-      quick: ["Thank you!", "Can we talk on Saturday?", "I finished my step", "I need help with something"].map(l => ({ l, go: () => send(l) })),
+      /* A quick reply starts the message; it never sends it. "I need help" is
+         not a message to the mentor only: it opens Help, where the people who
+         keep children safe are. */
+      quick: ["Thank you!", "Can we talk on Saturday?", "I finished my step", "I need help with something"].map(l => ({ l, go: l === "I need help with something" ? () => this.go("help") : () => {
+        this.setState({ msg: l + " " }); setTimeout(() => { const el = document.querySelector('.m9-app input[aria-label="Message"]'); if (el) { el.focus(); try { el.setSelectionRange(el.value.length, el.value.length); } catch (_) {} } }, 0); } })),
       prepMeta: tsent ? "Sent to " + mf : "Takes a minute · helps you both",
       topics: T.map(l => { const on = topics.includes(l); return { l, on: on ? "true" : "false", off: !on && full, op: !on && full ? 0.45 : 1, bw: on ? "2px" : "1px", ring: on ? "#0b0b0c" : "#d6d4cc", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c",
         go: () => set({ mvTopics: on ? topics.filter(x => x !== l) : topics.concat([l]) }) }; }),
@@ -324,8 +362,21 @@ class Mp9Portal extends React.Component {
   }
   chatVals() {
     const s = this.state, c = this.dd("chat") || {}, M = this.mentorInfo();
-    const msgs = (c.messages || []).map(m => ({ t: m.body, when: (m.about ? m.about + " · " : "") + mp9When(m.at) + (m.mine && !m.read ? "" : ""), mine: m.mine, al: m.mine ? "flex-end" : "flex-start", bg: m.mine ? "#0b0b0c" : "#fff", fg: m.mine ? "#fff" : "#0b0b0c", bd: m.mine ? "#0b0b0c" : "#e8e5dd" }));
-    if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
+    const MAX = c.max || 1200;
+    /* Each of the child's own messages says whether the mentor has seen it.
+       A reply to a check-in or a journal entry is labelled as one, so the
+       stream reads as conversations, not one undivided list. */
+    const audioOf = m => ((m.media || []).find(x => x.type === "audio") || {}).url || "";
+    const msgs = (c.messages || []).map((m, i) => ({ t: m.body, when: mp9When(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""), mine: m.mine,
+      audio: mp9Abs(audioOf(m)), hasAudio: !!audioOf(m), canRead: !m.mine && this.canSpeak() && !audioOf(m),
+      readL: s.speaking === "msg" + m.id ? "Stop reading" : "Read aloud", readIcon: s.speaking === "msg" + m.id ? "ph-fill ph-stop-circle" : "ph ph-speaker-high", read: () => this.speak(m.body, "msg" + m.id),
+      hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
+      al: m.mine ? "flex-end" : "flex-start", bg: m.mine ? "#0b0b0c" : "#fff", fg: m.mine ? "#fff" : "#0b0b0c", bd: m.mine ? "#0b0b0c" : "#e8e5dd" }));
+    if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", hasAbout: false, about: "", hasAudio: false, audio: "", canRead: false, al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
+    /* A voice note: record (up to two minutes), listen back, then send — never sent by the recorder itself. */
+    const cr = s.cRec || { rec: "idle" }, upR = (k, p) => this.setState(st => ({ cRec: { ...(st.cRec || {}), ...p } }));
+    const canVoice = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    const len = (s.msg || "").length;
     const sendMsg = () => { const t = s.msg.trim(); if (!t || s.sending) return; this.setState({ sending: true }); this.sendToMentor(t).then(r => this.setState(r ? { msg: "", sending: false } : { sending: false })); };
     const mine = this.dd("mine") || {};
     const qs = mine.relQuestions || [];
@@ -334,7 +385,17 @@ class Mp9Portal extends React.Component {
     const fbCount = Object.keys(s.fb).length, fbLow = Object.values(s.fb).includes("Not really");
     const done = s.fbSent || (!!mine.relDone && !Object.keys(s.fb).length);
     return {
-      msgs, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, c.max || 1200) }), sendMsg, onMsgKey: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } },
+      msgs, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, MAX) }), sendMsg,
+      canVoice, vIdle: canVoice && cr.rec === "idle", vRec: cr.rec === "rec", vDone: cr.rec === "done",
+      vReady: cr.rec === "done" && !!cr.recUrl, vUploading: cr.rec === "done" && !cr.recUrl, vUrl: cr.recUrl || "",
+      vSecs: (cr.recSecs ? Math.floor(cr.recSecs / 60) + ":" + String(cr.recSecs % 60).padStart(2, "0") : "0:00"),
+      vStart: () => this.recStart("chat", upR), vStop: () => this.recStop(), vRedo: () => this.setState({ cRec: { rec: "idle" } }),
+      vSend: () => { if (!cr.recUrl || s.sending) return; this.setState({ sending: true });
+        this.sendToMentor((s.msg || "").trim(), null, [{ type: "audio", url: cr.recUrl.replace(location.origin, ""), secs: cr.recSecs || 0 }])
+          .then(r => this.setState(r ? { sending: false, msg: "", cRec: { rec: "idle" } } : { sending: false })); },
+      msgCount: len + " / " + MAX, msgNear: len > MAX * 0.8, msgCountFg: len >= MAX ? "#b0361c" : "#4a4a50",
+      quietNote: c.quiet ? "It’s after 8pm. Your message is kept and " + M.first + " will see it in the morning. If you need help now, tap Get help." : "",
+      hasQuietNote: !!c.quiet, onMsgKey: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } },
       agreement: ["Meet on Saturdays at the musing and mentor breakout (8:30)", "Messages through the portal only, 8am to 8pm", mine.goal ? "Work on: " + mine.goal.goal : "Agree one goal together, and check it every few weeks", "If something isn’t working, either of us tells the coordinator"],
       feedback, fbReady: qs.length > 0 && fbCount === qs.length && !done, fbSent: done, fbNotSent: !done, fbLow: s.fbSent ? fbLow : false,
       sendFb: () => NGGApi.member.pod.act("relChild", { answers: qs.map((_, k) => (fbOpts.find(o => o[0] === s.fb[k]) || [0, 3])[1]) })
@@ -486,7 +547,10 @@ class Mp9Portal extends React.Component {
   recStart(k, upC) {
     if (this._rec) return;
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
-      const chunks = []; const rec = new MediaRecorder(stream); this._rec = rec; const t0 = Date.now();
+      const chunks = [];
+      /* About 24 kbps Opus: a minute is roughly 180 KB, which a child on mobile data can send. */
+      const opus = window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus");
+      const rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 24000 }, opus ? { mimeType: "audio/webm;codecs=opus" } : {})); this._rec = rec; const t0 = Date.now();
       rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop()); this._rec = null; clearInterval(this._recT);
@@ -566,7 +630,7 @@ class Mp9Portal extends React.Component {
         return { t, s: st, ev: "", hasEv: false, bar: st === "Done" ? "#1d6b30" : st === "Now" ? "#f5b026" : "#e6e5e0", dot: st === "Done" ? "#1d6b30" : st === "Now" ? "#f5b026" : "#d6d4cc", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "Now" ? "ph-fill ph-circle-half" : "ph ph-circle", fg: st === "Done" ? "#1d6b30" : st === "Now" ? "#7a5600" : "#8a8a90", tag: st === "Now" ? "Working on it" : st === "Done" ? "Done" : "", hasTag: st !== "Later" }; }) : [],
       indicators, growingText: growing.length ? growing.join(", ") : "nothing yet, which is normal early on",
       trail: notes.length ? notes.map(n => ({ icon: "ph ph-" + (/mentor/.test(n.kind) ? "chat-circle-text" : /badge|award/.test(n.kind) ? "medal" : "bell"), t: n.title, when: mp9When(n.createdAt) })) : [{ icon: "ph ph-path", t: "Your trail starts with your first mission or journal entry", when: "" }],
-      shortcuts: [["ph ph-notebook", "Anchor Journal", "Daily reflection · install it as an app", "/journal/", "_blank"], ["ph ph-book-bookmark", "Anchor", "The twelve-week programme", "/anchor", "_self"],
+      shortcuts: [["ph ph-notebook", "Anchor Journal", "Daily reflection · install it as an app", "/journal/", ""], ["ph ph-book-bookmark", "Anchor", "The twelve-week programme", "/anchor", "_self"],
         ["ph ph-images", "Media", "Photos and videos from NGG", "/media", "_self"], ["ph ph-article", "Blog", "Stories from the centres", "/blog", "_self"]].map(([icon, t, d0, href, target]) => ({ icon, t, d: d0, href, target })),
     };
   }

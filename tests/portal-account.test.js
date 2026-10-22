@@ -46,7 +46,7 @@ function cleanup() {
 }
 async function as(memberId, admin, viewport) {
   const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${memberId}'"), ${admin ? 'true' : 'false'});`);
-  const ctx = await browser.newContext({ viewport: viewport || { width: 1280, height: 1000 } });
+  const ctx = await browser.newContext({ viewport: viewport || { width: 1280, height: 1000 }, permissions: ['microphone'] });
   await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
                         { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
   const pg = await ctx.newPage();
@@ -84,6 +84,9 @@ async function as(memberId, admin, viewport) {
       db_insert('mentors', ['mentorId' => 'MEN-PA-1', 'fullName' => 'Ngozi Eke', 'email' => 'ngozi.eke@pa.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
         'programme' => 'ngg', 'memberId' => 'NGG-PA-MEN', 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
       foreach (array_merge(ms_required_modules(), academy_orientation_ids('mentor')) as $mod) db_insert('mentor_academy', ['mentorId' => 'MEN-PA-1', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
+      $mk('NGG-PA-MEN2', 'Ada Coding');
+      db_insert('mentors', ['mentorId' => 'MEN-PA-2', 'fullName' => 'Ada Coding', 'email' => 'ada.coding@pa.example', 'status' => 'active', 'centre' => 'Egbeda', 'tracks' => 'Coding',
+        'programme' => 'ngg', 'memberId' => 'NGG-PA-MEN2', 'checkedAt' => $now, 'maxMentees' => 8, 'createdAt' => $now]);
       db_insert('mentor_policy', ['mentorId' => 'MEN-PA-1', 'policyVersion' => MS_POLICY_VERSION, 'signedName' => 'x', 'acceptedAt' => $now]);
       $a = backend_dispatch('admin.ms.match.approve', ['requesterId' => 'NGG-PA-ADM', 'memberId' => 'NGG-PA-K1', 'mentorIds' => ['MEN-PA-1']]);
       backend_dispatch('admin.ms.match.choose', ['requesterId' => 'NGG-PA-ADM', 'matchId' => $a['matchId'], 'mentorId' => 'MEN-PA-1', 'chosenBy' => 'mentee']);
@@ -92,7 +95,9 @@ async function as(memberId, admin, viewport) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    // A fake microphone, so a voice note can be recorded headless.
+    const media = { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] };
+    browser = await chromium.launch(Object.assign(media, process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {}));
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const shot = (pg, n) => pg.screenshot({ path: (process.env.PA_SHOTS || TMP) + '/' + n + '.png' });
     const pwIs = pw => q(`password_verify(${JSON.stringify(pw)}, (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-PA-K1'")['passwordHash'])`);
@@ -113,6 +118,15 @@ async function as(memberId, admin, viewport) {
     // ── Password: changing it asks for the current one ──
     const mb = await as('NGG-PA-K1', false);
     await boot(mb);
+    // ── Getting started: a new member is told what to do first, from the record ──
+    await mb.waitForSelector('.m9x-start', { timeout: 30000 }).catch(() => {});
+    const gs = await mb.innerText('.m9x-start').catch(() => '');
+    chk('Getting started: a new member sees the first steps, read from their record, with one button each',
+      /Getting started/.test(gs) && /0 of 5 done/.test(gs) && /Add your photo/.test(gs) && /Say hello to/.test(gs) && /Write your first reflection/.test(gs) && /Link a parent or guardian/.test(gs)
+      && (await mb.$$('.m9x-start .m9x-start-go')).length === 5);
+    await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
+    await mb.waitForFunction(() => /1 of 5 done/.test((document.querySelector('.m9x-start') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    chk('Getting started: answering the check-in ticks itself off', /1 of 5 done/.test(await mb.innerText('.m9x-start').catch(() => '')));
     // ── Messages: written straight from a deep link, before any other screen has drawn ──
     await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mb); await mb.waitForSelector('.m9-app main input[aria-label="Message"]', { timeout: 60000 });
@@ -123,11 +137,94 @@ async function as(memberId, admin, viewport) {
     chk('Messages: a member with a mentor can write the moment the page opens — never “you don’t have a mentor”',
       q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1' AND body = 'Hello coach, straight from the link'")['c']`) === 1 && !/don’t have a mentor/.test(chatT));
 
+    const sentBefore = q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`);
+    await mb.click('main button:has-text("Can we talk on Saturday?")');
+    await mb.waitForTimeout(500);
+    chk('Messages: a quick reply starts the message in the box; it does not send it',
+      /Can we talk on Saturday\?/.test(await mb.inputValue('main input[aria-label="Message"]')) && q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`) === sentBefore);
+    await mb.fill('main input[aria-label="Message"]', '');
+    chk('Messages: the child’s own message says “Sent” until the mentor reads it', /Sent/.test(await mb.innerText('main')));
+    php(`db_exec("UPDATE mentor_messages SET readAt = ? WHERE threadId = 'chat:NGG-PA-K1' AND fromId = 'NGG-PA-K1'", [now_iso()]);
+      db_insert('mentor_messages', ['threadId' => 'chat:NGG-PA-K1', 'kind' => 'Reply', 'subjectId' => 'NGG-PA-K1', 'fromId' => 'NGG-PA-MEN', 'fromName' => 'Ngozi Eke', 'toId' => 'NGG-PA-K1', 'body' => 'Yes, see you at 8:30.', 'status' => 'sent', 'readAt' => '', 'createdAt' => now_iso()]);`);
+    await mb.waitForFunction(() => /Yes, see you at 8:30\./.test(document.querySelector('main').innerText), null, { timeout: 45000 }).catch(() => {});
+    const live = await mb.innerText('main');
+    chk('Messages: the mentor’s reply appears on an open screen without a reload, and the child’s message now says “Seen”', /Yes, see you at 8:30\./.test(live) && /Seen/.test(live));
+    await mb.click('main button:has-text("I need help with something")');
+    await mb.waitForFunction(() => /Talk to someone now/.test(document.querySelector('main').innerText), null, { timeout: 10000 }).catch(() => {});
+    chk('Messages: “I need help with something” opens Help instead of only messaging the mentor', /Talk to someone now/.test(await mb.innerText('main')));
+
+    // ── Voice notes and reading aloud ──
+    await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
+    await mb.waitForSelector('main button[aria-label="Record a voice note"]', { timeout: 40000 }).catch(() => {});
+    chk('Voice: the message box has a microphone, and the mentor’s messages can be read aloud',
+      await mb.isVisible('main button[aria-label="Record a voice note"]') && (await mb.$$('main button[aria-label="Read aloud"]')).length >= 1);
+    // The test server has no storage bucket: the upload is answered with a path the site would have stored.
+    await mb.evaluate(() => { window.NGGApi.uploadFile = () => Promise.resolve({ url: '/api/public/photo.php?id=vn-test.webm' }); });
+    await mb.click('main button[aria-label="Record a voice note"]');
+    await mb.waitForSelector('main button:text-is("Stop")', { timeout: 10000 });
+    await mb.waitForTimeout(1500);
+    await mb.click('main button:text-is("Stop")');
+    await mb.waitForSelector('main button:has-text("Send voice note")', { timeout: 15000 });
+    const before = q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1' AND mediaJson <> ''")['c']`);
+    chk('Voice: recording never sends by itself — the child listens, then sends', before === 0 && await mb.isVisible('main audio[aria-label="Listen to your voice note"]'));
+    await mb.click('main button:has-text("Send voice note")');
+    await mb.waitForTimeout(1500);
+    const vn = q(`db_row("SELECT body, mediaJson FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1' AND mediaJson <> '' ORDER BY id DESC LIMIT 1")`);
+    chk('Voice: the voice note reaches the mentor’s thread, with its length as the words', !!vn && /^Voice note/.test(vn.body) && /vn-test\.webm/.test(vn.mediaJson) && /"type":"audio"/.test(vn.mediaJson));
+    await mb.waitForSelector('main audio[aria-label="Voice note"]', { timeout: 15000 }).catch(() => {});
+    chk('Voice: it plays in the child’s own thread', await mb.isVisible('main audio[aria-label="Voice note"]'));
+    const thread = q(`backend_dispatch('member.mentor.messages', ['requesterId' => 'NGG-PA-MEN'])`);
+    const conv = (thread.messages || []).find(x => x.threadId === 'chat:NGG-PA-K1') || {};
+    chk('Voice: the mentor’s inbox carries the clip to play', (conv.thread || []).some(x => (x.media || []).some(m => m.type === 'audio')));
+
+    // ── The journal: one tap from Today, one timeline with the portal ──
+    await mb.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
+    await mb.waitForSelector('.m9x-hero-j', { timeout: 40000 }).catch(() => {});
+    const jl = await mb.$('.m9x-hero-j');
+    chk('Journal: Today has “Write today’s reflection”, opening the journal’s writer in the same tab',
+      !!jl && /Write today’s reflection/.test(await jl.innerText()) && (await jl.getAttribute('href')) === '/journal/?write=1' && !(await jl.getAttribute('target')));
+    const apps = await mb.innerText('aside nav [role="group"][aria-label="Your apps"]').catch(() => '');
+    chk('Sidebar: on a wide screen, “Your apps” holds the Anchor Journal and the Community', /Anchor Journal/.test(apps) && /Community/.test(apps));
+    await mb.click('aside nav [role="group"][aria-label="Your apps"] button:has-text("Anchor Journal")');
+    await mb.waitForURL(/\/journal\//, { timeout: 15000 }).catch(() => {});
+    chk('Sidebar: Anchor Journal opens the journal in the same tab', /\/journal\//.test(mb.url()));
+    await mb.evaluate(() => { try { localStorage.setItem('ngg_aj_onb', '1'); } catch (_) {} });
+    await mb.goto(BASE + '/journal/?write=1', { waitUntil: 'domcontentloaded' });
+    await mb.waitForSelector('textarea.aj-musing', { timeout: 60000 }).catch(async e => { console.error('DEBUG journal:', (await mb.innerText('body')).slice(0, 600), mb.errs); throw e; });
+    await mb.fill('textarea.aj-musing', 'I led the warm-up and nobody laughed.');
+    const shareBtn = await mb.$('button.aj-share');
+    chk('Journal: the writer offers “Share with my mentor”, off until the member turns it on', !!shareBtn && (await shareBtn.getAttribute('aria-pressed')) === 'false');
+    await mb.click('button.aj-share');
+    await mb.click('button.btn-a:has-text("Anchor it")');
+    await mb.waitForFunction(() => true, null, { timeout: 500 }).catch(() => {});
+    await mb.waitForTimeout(2500);
+    const jr = q(`db_row("SELECT entryId, visibility, mood FROM journal WHERE memberId = 'NGG-PA-K1' AND body LIKE 'I led the warm-up%' ORDER BY id DESC LIMIT 1")`);
+    chk('Journal: the app saves through the portal’s journal, shared as chosen, with the mood on the portal’s 1–5 scale',
+      !!jr && jr.visibility === 'mentor' && String(jr.mood) === '4');
+    chk('Journal: the mentor is told a journal entry was shared', q(`(int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-PA-MEN' AND title LIKE '%shared a journal entry%'")['c']`) === 1);
+    chk('Journal: the app’s home has a way back to My NGG', await mb.isVisible('a.aj-back-ngg[href="/dashboard"]'));
+    php(`db_insert('mentor_messages', ['threadId' => 'journal:${jr ? jr.entryId : ''}', 'kind' => 'Reply', 'subjectId' => 'NGG-PA-K1', 'fromId' => 'NGG-PA-MEN', 'fromName' => 'Ngozi Eke', 'toId' => 'NGG-PA-K1', 'body' => 'That took courage. Well done.', 'status' => 'sent', 'readAt' => '', 'createdAt' => now_iso()]);`);
+    await mb.goto(BASE + '/dashboard/journal', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
+    await mb.waitForFunction(() => /That took courage/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 40000 }).catch(() => {});
+    const jT = await mb.innerText('main');
+    chk('Journal: the portal’s Journal screen lists the entry written in the app, shared, with the mentor’s reply under it',
+      /I led the warm-up/.test(jT) && /Shared with/.test(jT) && /That took courage/.test(jT) && /Today’s prompt/.test(jT));
+
     // The password has its own place on Me: no searching, no signing out.
     await mb.goto(BASE + '/dashboard/me', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
     await mb.waitForSelector('main h2:has-text("Sign-in and password")', { timeout: 40000 }).catch(async e => { console.error('DEBUG me:', (await mb.innerText('body')).slice(0, 900), mb.errs); throw e; });
     await mb.waitForFunction(() => /You have a password/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
     chk('Password: Me has a “Sign-in and password” section saying whether there is a password', /You have a password/.test(await mb.innerText('main')));
+    const meT = await mb.innerText('main');
+    chk('Profile: Me shows the whole record (ID, date of birth, centre, school, guardian) and an Edit profile button',
+      /NGG ID/.test(meT) && /026-014/.test(meT) && /Date of birth/.test(meT) && /Centre/.test(meT) && /Guardian/.test(meT) && await mb.isVisible('main button:has-text("Edit profile")'));
+    await mb.click('main button:has-text("Edit profile")');
+    await mb.waitForSelector(sheet + ' textarea', { timeout: 15000 });
+    await mb.fill(sheet + ' textarea', 'I like robots and football.');
+    await mb.click(sheet + ' button:has-text("Save profile")');
+    await mb.waitForFunction(() => /I like robots and football\./.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('Profile: Edit profile saves the bio, and Me shows it', /I like robots and football\./.test(await mb.innerText('main'))
+      && q(`(string)db_row("SELECT bio FROM members WHERE memberId = 'NGG-PA-K1'")['bio']`) === 'I like robots and football.');
     const openPw = async () => { await mb.click('main section:has(h2:has-text("Sign-in and password")) button:has-text("Change password")'); await mb.waitForSelector(sheet + ' input[aria-label="New password"]', { timeout: 20000 }); };
     await openPw();
     // The sheet reads the security record (hasPassword) itself; that read decides whether "Current password" is asked.
@@ -235,6 +332,14 @@ async function as(memberId, admin, viewport) {
     chk('Control Room: “Thank and close” closes it with a plain thank-you the member reads',
       thanked.status === 'approved' && /Thank you for telling us/.test(thanked.decision)
       && q(`(int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-PA-K1' AND title = 'Thank you for your idea'")['c']`) === 1);
+
+    // ── A supporting mentor, added from the Control Room ──
+    const sp = await ad.evaluate(() => NGGApi.admin.mentorSupport({ memberId: 'NGG-PA-K1', mentorId: 'MEN-PA-2', focus: 'Coding' }).then(r => r, e => ({ err: e.code || e.message })));
+    chk('Supporting mentor: the Control Room adds one beside the main mentor', !!(sp && sp.added) && q(`(int)db_row("SELECT COUNT(*) c FROM mentor_assignments WHERE memberId = 'NGG-PA-K1' AND status = 'active'")['c']`) === 1);
+    await mb.goto(BASE + '/dashboard/mentor', { waitUntil: 'domcontentloaded' }); await waitForBoot(mb);
+    await mb.waitForFunction(() => /Also helping you/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 40000 }).catch(() => {});
+    const spT = await mb.innerText('main').catch(() => '');
+    chk('Supporting mentor: the child sees who is also helping, with what, and that their mentor sees everything', /Also helping you/.test(spT) && /Coding/.test(spT) && /sees everything/.test(spT));
 
     // ── Sign out, from inside the portal ──
     chk('Sign out: the member portal has a Sign out control in its sidebar', await mb.isVisible('aside button[aria-label="Sign out"]'));

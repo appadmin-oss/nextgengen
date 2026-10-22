@@ -1,3 +1,7 @@
+/* The Anchor Journal app. Opened in the same tab, always. */
+const MP9_JOURNAL_URL = "/journal/";
+/* The apps beside the portal, in the desktop sidebar: [label, icon, address]. */
+const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -21,7 +25,7 @@ const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "
   results: "Add your school report", help: "Ask a grown-up at NGG for help", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
-const MP9_SIMPLE_TILES = [["mentor", "Talk to my mentor", "ph ph-chat-circle-text"], ["learn", "My lessons", "ph ph-book-open-text"], ["sat", "This Saturday", "ph ph-calendar-star"], ["growth", "My goals", "ph ph-target"]];
+const MP9_SIMPLE_TILES = [["mentor", "Talk to my mentor", "ph ph-chat-circle-text"], ["learn", "My lessons", "ph ph-book-open-text"], ["sat", "This Saturday", "ph ph-calendar-star"], ["growth", "My goals", "ph ph-target"], ["journal", "My journal", "ph ph-notebook"]];
 
 Object.assign(Mp9Portal.prototype, {
   /* ── Learn, timetable, companion, money, records, me, community ───────── */
@@ -225,7 +229,15 @@ Object.assign(Mp9Portal.prototype, {
       signOut: () => NGGApi.member.securityRevoke(x.sid || x.sessionId).then(() => { this.refresh(["sec"]); this.toast("Signed out of that device"); }).catch(e => this.toast(mp9Err(e))) }));
     const ngv = d.ngv || null;
     return {
-      profile: { phone: p.guardianPhone || "Not on record", school: p.school || "Not on record", cls: m.level || "–", pronoun: "" },
+      profile: { phone: p.guardianPhone || "Not on record", school: p.school || "Not on record", cls: p.level || m.level || "–", pronoun: "" },
+      /* The whole record, as the desk holds it. What a member may change
+         themselves (photo, bio) is under Edit profile; the rest is asked for. */
+      profileRows: [["Full name", p.fullName || m.fullName], ["NGG ID", p.displayId || m.displayId || "Not printed yet"], ["Date of birth", p.dob ? mp9Date(p.dob, { day: "numeric", month: "long", year: "numeric" }) + ((this.dd("today") || {}).age ? " · " + this.dd("today").age + " years old" : "") : ""],
+        ["Centre", p.centre], ["Course", p.track], ["Class", p.level || m.level], ["School", p.school], ["Joined NGG", p.joinDate ? mp9Date(p.joinDate, { month: "long", year: "numeric" }) : (p.intakeYear ? String(p.intakeYear) : "")],
+        ["Email", p.email], ["Your phone", p.phone], ["Guardian", p.guardianName], ["Guardian phone", p.guardianPhone]]
+        .map(([l, v]) => ({ l, v: v ? String(v) : "Not on record", none: !v })),
+      bioShown: p.bio || m.bio || "", hasBio: !!(p.bio || m.bio),
+      openProfile: () => this.openSheet({ k: "profile" }),
       ngv: { on: !!ngv, note: ngv ? (ngv.note || ngv.status || "You’re on the NGV volunteer track.") : "You can apply to join NGV, the volunteer track, once your centre opens it." }, ngvOff: !ngv,
       circle: { code: cir.code || "", linked: linked.length ? linked : ["Nobody linked yet"] },
       codeText: s.codeShown ? (cir.code || "–") : "••••••", codeLabel: s.codeShown ? "Hide" : "Show code", toggleCode: () => this.setState({ codeShown: !s.codeShown }),
@@ -605,11 +617,13 @@ Object.assign(Mp9Portal.prototype, {
       delAsk: s.delStep === 0, delConfirm: s.delStep === 1, startDel: () => set({ delStep: 1 }), cancelDel: () => set({ delStep: 0 }),
       doDel: () => NGGApi.member.deleteAccount().then(() => { set({ delStep: 0, sheet: null }); this.toast("Request sent. Your centre lead will call your guardian before anything is deleted."); }).catch(e => this.toast(mp9Err(e))),
       onBio: e => set({ pf: { ...this.state.pf, bio: e.target.value } }), bioV: s.pf.bio !== undefined ? s.pf.bio : acct.bio || "",
-      saveProfile: () => NGGApi.member.updateProfile({ bio: s.pf.bio !== undefined ? s.pf.bio : acct.bio || "" }).then(() => { this.closeSheet(); this.refresh(["dash"]); this.toast("Profile saved"); }).catch(e => this.toast(mp9Err(e))),
+      saveProfile: () => NGGApi.member.updateProfile({ bio: s.pf.bio !== undefined ? s.pf.bio : acct.bio || "" }).then(() => { this.closeSheet(); this.refresh(["dash", "today"]); this.toast("Profile saved"); }).catch(e => this.toast(mp9Err(e))),
       photoL: s.sBusy ? "Uploading…" : "Change photo",
       onPhoto: e => { const f = e.target.files && e.target.files[0]; if (!f) return; set({ sBusy: true }); NGGApi.uploadOrInline(f, "headshot").then(u => NGGApi.member.updateProfile({ photoUrl: u.url })).then(() => { set({ sBusy: false }); this.refresh(["dash"]); this.toast("Photo changed"); }).catch(er => { set({ sBusy: false }); this.toast(mp9Err(er)); }); },
       shForm: ["proof", "assign", "idea", "request", "change", "team", "portfolio"].includes(sh.k) && !(sh.k === "assign" && aDone),
       sText: s.sText, onSText: e => set({ sText: e.target.value }), sAnon: s.sAnon ? "true" : "false", toggleAnon: () => set({ sAnon: !s.sAnon }), anonIcon: s.sAnon ? "ph-fill ph-check-square" : "ph ph-square",
+      lRead: () => this.speak(U ? [U.title, (U.objectives || []).join(". "), U.body || ""].filter(Boolean).join(". ") : "", "lesson"),
+      lReadL: this.state.speaking === "lesson" ? "Stop reading" : "Read the lesson aloud", canReadL: !!U && this.canSpeak(),
       sLesson: U ? { div: U.course + " · week " + U.week + (U.durationMins ? " · about " + U.durationMins + " min" : ""),
         parts: parts.map((p, pi) => ({ p, n: pi + 1, done: pi < lPart, now: pi === lPart, icon: pi < lPart ? "ph-fill ph-check-circle" : pi === lPart ? "ph-fill ph-circle-half" : "ph ph-circle", ic: pi < lPart ? "#1d6b30" : pi === lPart ? "#a07400" : "#c9c6bc", fw: pi === lPart ? 600 : 400 })),
         finished: lPart >= parts.length, notFinished: lPart < parts.length && lPart !== checkAt, nowPart: (parts[lPart] || "").toLowerCase(),
@@ -658,13 +672,17 @@ Object.assign(Mp9Portal.prototype, {
     const bdg = id => BADGE[id] || "";
     const simple = this.simple();
     const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
-      ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Anchor Journal"]]],
+      ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Journal"]]],
       ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
       ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
-    const navGroups = [{ h: "", hasH: false, items: areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, bg: on ? "#fff" : "transparent", sh: on ? "0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)" : "none", fw: on ? 600 : 500, badge: a.badge, hasBadge: !!a.badge, go: () => this.go(a.ids[0]) }; }) }];
+    const navGroups = [{ h: "", hasH: false, items: areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, bg: on ? "#fff" : "transparent", sh: on ? "0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)" : "none", fw: on ? 600 : 500, badge: a.badge, hasBadge: !!a.badge, go: () => this.go(a.ids[0]) }; }) }, {
+      /* The two places a member goes outside the portal, always one click away on
+         a wide screen: the Anchor Journal and the NGG Community. Same tab. */
+      h: "Your apps", hasH: true, items: MP9_APPS.map(([label, icon, url]) => ({ label, icon, cur: undefined, bg: "transparent", sh: "none", fw: 500, badge: "", hasBadge: false,
+        go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
     const subs = { sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
@@ -713,9 +731,45 @@ Object.assign(Mp9Portal.prototype, {
     if (s.scr !== "today" || !this.dd("today")) return null;
     return <>
       {rec && rec.asked && typeof RecordDrive === "function" ? <div className="m9x-rec"><RecordDrive status={rec} onSaved={this.props.onRecSaved}/></div> : null}
+      {this.startCard()}
       {this.hero()}
       {this.simple() ? this.simpleTiles() : null}
     </>;
+  },
+  /* Getting started: the first things a new member does, each read from the
+     record (never a ticked box), each with one button. It is gone once every
+     step is done, so it never nags someone who has settled in. */
+  startSteps() {
+    const me = this.me(), c = this.dd("chat") || {}, jm = this.dd("jm") || {}, cir = this.dd("circle"), t = this.dd("today") || {}, M = this.mentorInfo();
+    const wrote = ((jm.stats || {}).entries || 0) > 0 || (jm.entries || []).some(e => (e.body || "").trim());
+    const linked = cir ? (cir.family || cir.links || []).length > 0 : null;
+    return [
+      { k: "photo", t: "Add your photo", s: "It goes on your NGG card and your profile.", done: !!me.hasPhoto, cta: "Add a photo", go: () => this.openSheet({ k: "profile" }) },
+      { k: "hello", t: M.has ? "Say hello to " + M.first : "Meet your mentor", s: M.has ? "Send your first message. They usually reply within a day." : "Your centre matches you with a mentor. We’ll tell you when.",
+        done: (c.messages || []).some(m => m.mine), wait: !M.has, cta: "Write a message", go: () => this.go("mentor") },
+      { k: "journal", t: "Write your first reflection", s: "One line is enough. It starts your streak.", done: wrote, cta: "Write it", href: MP9_JOURNAL_URL + "?write=1" },
+      { k: "checkin", t: "Answer this week’s check-in", s: "How you’re doing, in one tap, on this page.", done: !!(t.checkin && t.checkin.done), cta: "Answer it", go: () => {
+        const el = document.querySelector('.m9-app main [role="radiogroup"][aria-label="How are you doing"]'); if (el) { el.scrollIntoView({ block: "center" }); const b = el.querySelector("button"); if (b) b.focus(); } } },
+      { k: "family", t: "Link a parent or guardian", s: "Give them your Anchor Circle code so they can follow your progress.", done: linked === true, unknown: linked === null, cta: "Get my code", go: () => this.go("me") },
+    ].filter(x => !x.unknown || !x.done);
+  },
+  startCard() {
+    if (this.st("mp9.startHidden", false)) return null;
+    const steps = this.startSteps(), done = steps.filter(x => x.done).length;
+    if (!steps.length || done === steps.length) return null;
+    return <section className="m9x-start" aria-labelledby="m9x-start-h">
+      <div className="m9x-start-top">
+        <h2 id="m9x-start-h" className="m9x-start-h">Getting started</h2>
+        <span className="m9x-start-n" aria-live="polite">{done} of {steps.length} done</span>
+      </div>
+      <div className="m9x-start-bar" role="progressbar" aria-label="Getting started" aria-valuemin="0" aria-valuemax={steps.length} aria-valuenow={done}><span style={{ width: Math.round(done / steps.length * 100) + "%" }}/></div>
+      <ol className="m9x-start-list">{steps.map(x => <li key={x.k} className={"m9x-start-i" + (x.done ? " is-done" : "")}>
+        <i className={x.done ? "ph-fill ph-check-circle" : x.wait ? "ph ph-hourglass-medium" : "ph ph-circle"} aria-hidden="true"/>
+        <span className="m9x-start-tx"><b>{x.t}</b><span>{x.done ? "Done" : x.s}</span></span>
+        {x.done || x.wait ? null : x.href ? <a className="m9x-start-go" href={x.href}>{x.cta}</a> : <button type="button" className="m9x-start-go" onClick={x.go}>{x.cta}</button>}
+      </li>)}</ol>
+      <button type="button" className="m9x-start-hide" onClick={() => this.saveSt("mp9.startHidden", true)}>Hide this list</button>
+    </section>;
   },
   hero() {
     const t = this.dd("today") || {}, mom = (this.dd("mom") || {}).momentum || null, stats = (this.dd("dash") || {}).stats || {};
@@ -727,6 +781,7 @@ Object.assign(Mp9Portal.prototype, {
     const scrOf = x => MP9_ROUTE[x.route] || (/results/.test(x.route) ? "results" : /money|account/.test(x.route) ? "money" : /learn/.test(x.route) ? "learn" : /mentor/.test(x.route) ? "mentor" : "today");
     const nudge = mom && mom.nudges && mom.nudges[0] ? mom.nudges[0].text : "";
     const left = (t.todo || []).length;
+    const jm = this.dd("jm") || {}, wrote = !!(jm.todayEntry && ((jm.todayEntry.body || "").trim() || (jm.todayEntry.title || "").trim()));
     return <section className="m9x-hero" aria-labelledby="m9x-hero-h">
       <div className="m9x-hero-top">
         <span className="m9x-hero-lvl"><i className="ph-fill ph-plant" aria-hidden="true"/>Level {level} · {name}</span>
@@ -745,9 +800,32 @@ Object.assign(Mp9Portal.prototype, {
         <span className="m9x-hero-eyebrow" id="m9x-hero-h">All caught up</span>
         <b className="m9x-hero-t">Nothing waiting for you. Nice work.</b>
         {nudge ? <span className="m9x-hero-s">{nudge}</span> : null}
-        <button type="button" className="m9x-hero-go" onClick={() => this.go("tools")}>Practise something<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+        {(() => { const nx = this.startSteps().find(x => !x.done && !x.wait);
+          return nx ? (nx.href ? <a className="m9x-hero-go" href={nx.href}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></a> : <button type="button" className="m9x-hero-go" onClick={nx.go}>{nx.t}<i className="ph ph-arrow-right" aria-hidden="true"/></button>)
+            : <button type="button" className="m9x-hero-go" onClick={() => this.go("tools")}>Practise something<i className="ph ph-arrow-right" aria-hidden="true"/></button>; })()}
       </div>}
+      {/* The journal, one tap from Today, in the same tab (a new tab on Android loses the portal). */}
+      {wrote ? <a className="m9x-hero-j is-done" href={MP9_JOURNAL_URL}><i className="ph-fill ph-check-circle" aria-hidden="true"/>You wrote in your journal today · open it</a>
+        : <a className="m9x-hero-j" href={MP9_JOURNAL_URL + "?write=1"}><i className="ph-fill ph-notebook" aria-hidden="true"/>Write today’s reflection<i className="ph ph-arrow-right" aria-hidden="true"/></a>}
     </section>;
+  },
+  /* The Journal screen: today's prompt, a same-tab way in, and the member's
+     own recent entries — private or shared — with the mentor's replies under
+     the shared ones. One timeline: the portal and the app write one table. */
+  journalVals() {
+    const jm = this.dd("jm") || {}, c = this.dd("chat") || {}, M = this.mentorInfo();
+    const rep = {};
+    (c.messages || []).forEach(m => { if (!m.mine && m.entryId) (rep[m.entryId] = rep[m.entryId] || []).push({ from: m.from, t: m.body, when: mp9When(m.at) }); });
+    const ent = (jm.entries || []).filter(e => (e.body || "").trim() || (e.title || "").trim()).slice(0, 6).map(e => {
+      const shared = e.visibility === "mentor", rs = rep[e.entryId] || [];
+      return { t: e.title || e.excerpt || "", when: mp9Date(e.occurredOn || e.createdAt, { weekday: "short", day: "numeric", month: "short" }),
+        visIcon: shared ? "ph-fill ph-users" : "ph-fill ph-lock-simple", visL: shared ? "Shared with " + M.first + (rs.length ? "" : " · waiting for a reply") : "Private: only you",
+        replies: rs, hasReplies: rs.length > 0 };
+    });
+    const jp = jm.prompt || "What did you try today that you couldn’t do last month?";
+    return { jRead: () => this.speak(jp, "jprompt"), jReadL: this.state.speaking === "jprompt" ? "Stop reading" : "Read aloud", canReadJ: this.canSpeak(),
+      jPrompt: jp, jWrite: MP9_JOURNAL_URL + "?write=1", jEntries: ent, hasJEntries: ent.length > 0, noJEntries: !ent.length,
+      jStreak: (jm.stats || {}).streak ? jm.stats.streak + "-day streak" : "", hasJStreak: !!(jm.stats || {}).streak };
   },
   simpleTiles() {
     const first = this.me().first;
@@ -834,6 +912,8 @@ Object.assign(Mp9Portal.prototype, {
       sessEnds: me.sessEnds,
       lastMsg: last ? "“" + last.body.slice(0, 140) + "”" : M.has ? "No message yet. Say hello." : "A mentor is matched to you by your centre.",
       kpis: [["Session", sess ? sess.name + " · week " + sess.weekOf + " of " + sess.totalWeeks : "Between sessions"], ["Level", "Level " + (stats.level || 1) + (((this.dd("mom") || {}).momentum || {}).levelName ? " · " + this.dd("mom").momentum.levelName : "")], ["Streak", (stats.streak || 0) + (stats.streak === 1 ? " day" : " days")]].map(([k, v]) => ({ k, v, fg: "#0b0b0c" })),
+      takeTour: () => { if (typeof window.nggGuide === "function") window.nggGuide("member"); else this.toast("The tour isn’t available right now."); },
+      showStart: () => { this.saveSt("mp9.startHidden", false); this.go("today"); },
       signOutMe: () => nggPortalSignOut(this.props.onSignOut), goMore: go("more"), onMoreCur: cur === "more" ? "page" : undefined,
       goHelp: go("help"), goSat: go("sat"), goMentor: go("mentor"), goGrowth: go("growth"), goOpps: go(this.older() ? "opps" : "sat"), goJournal: go("journal"), goMe: go("me"), goLearn: go("learn"),
       goMoney: go("money"), goRecords: go("records"), goTimetable: go("timetable"), goCompanion: go("companion"), goResults: go("results"), goLearnT: go("learn"),
@@ -842,7 +922,7 @@ Object.assign(Mp9Portal.prototype, {
       ntRight: narrow ? "8px" : "24px", ntLeft: narrow ? "8px" : "auto", ntTop: narrow ? "60px" : "84px", ntW: narrow ? "auto" : "380px",
       moreList: [], jUrl: "/journal/",
       jRules: [["ph ph-lock-simple", "Private entries", "stay yours. Nobody at NGG can read them."], ["ph ph-handshake", "Shared entries", "go to " + M.first + ", who replies within a week."], ["ph ph-shield-check", "If you write about harm or danger,", "the safeguarding officer is told so you get help quickly."]].map(([icon, k, tt]) => ({ icon, k, t: tt })),
-      shares: [], entries: [],
+      shares: [], entries: [], ...this.journalVals(),
       stLoading: coreLoading, stError: coreErr, stOut: false, stOverlay: coreLoading || coreErr, perks: [],
       retry: () => { this.setState({ er: {} }); MP9_CORE.forEach(k => this.load(k)); }, signIn: () => {},
       toastOn: !!s.toast, toastText: s.toast ? s.toast.text : "", toastUndo: !!(s.toast && s.toast.undo), toastUndoFn: () => { s.toast && s.toast.undo && s.toast.undo(); this.setState({ toast: null }); },

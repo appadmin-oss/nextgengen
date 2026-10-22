@@ -3971,3 +3971,19 @@ ALTER TABLE member_requests ADD COLUMN passedAt VARCHAR(32) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (169) ON DUPLICATE KEY UPDATE version = version;
 ALTER TABLE member_requests ADD COLUMN rating TINYINT DEFAULT 0;
 INSERT INTO schema_version (version) VALUES (170) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE mentor_messages ADD COLUMN mediaJson TEXT;
+INSERT INTO schema_version (version) VALUES (171) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS mentor_supports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(40) NOT NULL,
+  mentorId VARCHAR(40) NOT NULL,
+  focus VARCHAR(60) DEFAULT '',
+  endsOn VARCHAR(10) DEFAULT '',
+  status VARCHAR(12) DEFAULT 'active',
+  startedAt VARCHAR(32) DEFAULT '',
+  endedAt VARCHAR(32) DEFAULT '',
+  createdBy VARCHAR(40) DEFAULT '',
+  KEY idx_mentor_supports_member (memberId, status),
+  KEY idx_mentor_supports_mentor (mentorId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (172) ON DUPLICATE KEY UPDATE version = version;

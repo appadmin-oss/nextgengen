@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 170;
+const NGG_SCHEMA_TARGET = 172;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5028,6 +5028,28 @@ function db_migrate(PDO $db): void {
            "experience" feedback row; 0 everywhere else. */
         170 => "
             ALTER TABLE member_requests ADD COLUMN rating INTEGER DEFAULT 0;
+        ",
+        /* A voice note on a message between a child and their mentor:
+           journal_media_clean's shape, audio only. */
+        171 => "
+            ALTER TABLE mentor_messages ADD COLUMN mediaJson TEXT DEFAULT '';
+        ",
+        /* Supporting mentors (domain/mentor-supports.php): beside the primary
+           in mentor_assignments, never in it. */
+        172 => "
+            CREATE TABLE IF NOT EXISTS mentor_supports (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              focus TEXT DEFAULT '',
+              endsOn TEXT DEFAULT '',
+              status TEXT DEFAULT 'active',
+              startedAt TEXT DEFAULT '',
+              endedAt TEXT DEFAULT '',
+              createdBy TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mentor_supports_member ON mentor_supports(memberId, status);
+            CREATE INDEX IF NOT EXISTS idx_mentor_supports_mentor ON mentor_supports(mentorId, status);
         ",
     ];
 

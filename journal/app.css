@@ -550,3 +550,22 @@ i[class^="ph"] { line-height: 1; }
 }
 
 .aj-quote-tr { margin: 6px 0 0; font-style: italic; opacity: .9; }
+
+/* ---- Sharing with the mentor, and the way back to My NGG ---- */
+.aj-share { width: 100%; display: flex; align-items: flex-start; gap: 12px; min-height: 56px; margin: 0 0 14px; padding: 12px 14px; border-radius: 16px;
+  border: 1px solid var(--line); background: var(--card); color: var(--tx); text-align: left; cursor: pointer; font: inherit; }
+.aj-share i { font-size: 22px; margin-top: 1px; }
+.aj-share > span { display: flex; flex-direction: column; gap: 2px; }
+.aj-share > span > span { font-size: 13px; color: var(--tx-70); }
+.aj-share.on { border-color: var(--a); }
+.aj-entry-vis { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--tx-70); }
+.aj-vis-note { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--tx-70); }
+.aj-reply { margin-top: 12px; padding: 14px 16px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
+.aj-reply p { margin: 6px 0 0; font-size: 15px; line-height: 1.55; color: var(--tx); white-space: pre-wrap; }
+.aj-back-ngg { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: calc(var(--st, 0px) + 8px) 0 0 16px; padding: 0 14px;
+  border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--tx); font-size: 14px; font-weight: 600; text-decoration: none; }
+.aj-voice { margin-top: 10px; }
+.aj-voice-b { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--tx); font: 600 14px inherit; cursor: pointer; }
+.aj-voice-rec { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); color: var(--tx); font-size: 14px; }
+.aj-voice-rec audio { height: 40px; max-width: 100%; }
+.aj-voice-x { min-height: 44px; padding: 0 8px; border: 0; background: none; color: var(--tx-70); text-decoration: underline; font: inherit; cursor: pointer; }

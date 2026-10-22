@@ -256,7 +256,7 @@ async function as(memberId, admin, viewport) {
     await waitForBoot(kid);
     await kid.waitForSelector('.m9x-kid', { timeout: 60000 }).catch(() => {});
     const kidNav = await kid.innerText('aside nav').catch(() => '');
-    chk('Simple view: on by default for an 11-year-old, with big buttons on Today', await kid.isVisible('.m9x-kid') && (await kid.$$('.m9x-kid-tile')).length === 4);
+    chk('Simple view: on by default for an 11-year-old, with big buttons on Today (the journal among them)', await kid.isVisible('.m9x-kid') && (await kid.$$('.m9x-kid-tile')).length === 5 && /My journal/.test(await kid.innerText('.m9x-kid')));
     chk('Simple view: five plainly named areas, no Money or Account in the nav', /My mentor/.test(kidNav) && /Help/.test(kidNav) && /\bMe\b/.test(kidNav) && !/Money|Account/.test(kidNav));
     await kid.click('.m9x-kid-tile:has-text("My lessons")'); await settle(kid);
     chk('Simple view: a big button opens its page, with plain tab names', /My lessons/.test(await kid.innerText('main nav').catch(() => '')));

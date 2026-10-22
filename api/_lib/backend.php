@@ -754,6 +754,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'analytics.activity.add'   => 'analytics_activity_add',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',
+            'admin.mentor.support'    => 'admin_mentor_support',
             'admin.applications.list' => 'admin_applications_list',
             'admin.applications.status' => 'admin_applications_set_status',
             'admin.volunteers.list'     => 'admin_volunteers_list',

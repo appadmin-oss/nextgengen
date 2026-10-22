@@ -436,9 +436,12 @@ class Mp15Portal extends React.Component {
 
     const mList = msgRows.filter(m => S.mf === 'all' || m.filter === S.mf || (S.mf === 'journal' && /Journal/.test(m.kind)));
     const mSel0 = mList.find(m => m.id === S.msel) || mList[0];
+    // A voice note from a child plays where it was sent (domain/mentor-portal.php mp_media).
+    const aud = list => (((list || []).find(y => y.type === 'audio') || {}).url) || '';
     const mView = m => m ? { ...m, who: m.from, when: m.isNew ? 'New' : mp15When(m.at, today), t: m.body, isThread: !!m.thread, notThread: !m.thread, empty: !!m.thread && !m.thread.length,
+      audio: aud(m.media), hasAudio: !!aud(m.media),
       thread: (m.thread || []).map((x, i) => ({ key: i, who: x.who, when: mp15When(x.at, today) + (x.queued ? ' · goes at 8am' : ''), t: x.body, align: x.mine ? 'flex-end' : 'flex-start',
-        bg: x.mine ? '#0b0b0c' : '#f4f4f2', fg: x.mine ? '#fff' : '#0b0b0c' })) } : {};
+        bg: x.mine ? '#0b0b0c' : '#f4f4f2', fg: x.mine ? '#fff' : '#0b0b0c', audio: aud(x.media), hasAudio: !!aud(x.media) })) } : {};
     /* New message: the caseload by name, and — for a lead or a coordinator —
        any child at their centre, searched on the server. */
     const nmQ = (S.nmQ || '').trim().toLowerCase();

@@ -29988,6 +29988,95 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $GLOBALS['__academy_gate_off'] = true;
 })();
 
+/* ── One journal: the Anchor Journal app writes through journal.mine.save ── */
+(function () {
+    $now = now_iso();
+    foreach (['OJ-KID', 'OJ-MEN'] as $id) db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+    db_exec("DELETE FROM journal WHERE memberId = 'OJ-KID'"); db_exec("DELETE FROM mentor_assignments WHERE memberId = 'OJ-KID'"); db_exec("DELETE FROM mentors WHERE mentorId = 'OJ-T'");
+    db_exec("DELETE FROM notifications WHERE memberId = 'OJ-MEN'"); db_exec("DELETE FROM mentor_messages WHERE subjectId = 'OJ-KID'");
+    db_insert('members', ['memberId' => 'OJ-KID', 'fullName' => 'Oja Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'OJ-MEN', 'fullName' => 'Oja Mentor', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'OJ-T', 'fullName' => 'Oja Mentor', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => 'OJ-MEN', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'OJ-KID', 'mentorId' => 'OJ-T', 'status' => 'active', 'startedAt' => $now]);
+    $a = backend_dispatch('journal.mine.save', ['memberId' => 'OJ-KID', 'data' => ['body' => 'A quick line from the portal.']]);
+    $b = backend_dispatch('journal.mine.save', ['memberId' => 'OJ-KID', 'data' => ['new' => true, 'body' => 'An evening reflection from the app.', 'mood' => 4, 'visibility' => 'private']]);
+    chk('one journal · a reflection saved with `new` is its own entry: the line written earlier today is not overwritten',
+        !empty($b['ok']) && $b['entryId'] !== $a['entryId'] && (string)db_row('SELECT body FROM journal WHERE entryId = ?', [$a['entryId']])['body'] === 'A quick line from the portal.');
+    $c = backend_dispatch('journal.mine.save', ['memberId' => 'OJ-KID', 'data' => ['new' => true, 'body' => 'I want my mentor to read this.', 'mood' => 2, 'visibility' => 'mentor']]);
+    $n = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'OJ-MEN' AND title LIKE '%shared a journal entry%'")['c'];
+    chk('one journal · a shared entry tells the mentor, once', !empty($c['ok']) && $c['visibility'] === 'mentor' && $n === 1);
+    backend_dispatch('journal.mine.save', ['memberId' => 'OJ-KID', 'data' => ['entryId' => $c['entryId'], 'body' => 'I want my mentor to read this. Edited.', 'visibility' => 'mentor']]);
+    chk('one journal · …editing an entry already shared does not tell them again', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'OJ-MEN' AND title LIKE '%shared a journal entry%'")['c'] === 1);
+    db_insert('mentor_messages', ['threadId' => 'journal:' . $c['entryId'], 'kind' => 'Reply', 'subjectId' => 'OJ-KID', 'fromId' => 'OJ-T', 'fromName' => 'Oja Mentor', 'toId' => 'OJ-KID', 'body' => 'Thank you for telling me.', 'status' => 'sent', 'readAt' => '', 'createdAt' => $now]);
+    db_insert('mentor_messages', ['threadId' => 'journal:' . $c['entryId'], 'kind' => 'Reply', 'subjectId' => 'OJ-KID', 'fromId' => 'OJ-T', 'fromName' => 'Oja Mentor', 'toId' => 'OJ-KID', 'body' => 'Held until morning.', 'status' => 'queued', 'sendAfter' => '2999-01-01T07:00:00Z', 'readAt' => '', 'createdAt' => $now]);
+    $list = array_column(backend_dispatch('anchor.journal.list', ['memberId' => 'OJ-KID', 'requesterId' => 'OJ-KID'])['entries'], null, 'entryId');
+    chk('one journal · the app\'s list is every entry (portal and app), with visibility and the mentor\'s replies — never a reply still held for quiet hours',
+        isset($list[$a['entryId']], $list[$b['entryId']], $list[$c['entryId']]) && $list[$b['entryId']]['visibility'] === 'private' && $list[$c['entryId']]['visibility'] === 'mentor'
+        && array_column($list[$c['entryId']]['replies'], 'body') === ['Thank you for telling me.'] && $list[$b['entryId']]['replies'] === []);
+    $chat = backend_dispatch('member.mentor.chat', ['memberId' => 'OJ-KID']);
+    chk('one journal · the portal\'s chat names the journal entry a reply is about', in_array($c['entryId'], array_column($chat['messages'] ?? [], 'entryId'), true));
+    chk('one journal · the app\'s mood words and the portal\'s 1–5 are one scale', (string)db_row('SELECT mood FROM journal WHERE entryId = ?', [$b['entryId']])['mood'] === '4');
+    db_exec("DELETE FROM journal WHERE memberId = 'OJ-KID'"); db_exec("DELETE FROM mentor_assignments WHERE memberId = 'OJ-KID'"); db_exec("DELETE FROM mentors WHERE mentorId = 'OJ-T'");
+    db_exec("DELETE FROM notifications WHERE memberId IN ('OJ-MEN','OJ-KID')"); db_exec("DELETE FROM mentor_messages WHERE subjectId = 'OJ-KID'");
+    foreach (['OJ-KID', 'OJ-MEN'] as $id) db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+})();
+
+/* ── Supporting mentors: one primary, at most two with a focus ─────────────── */
+(function () {
+    $now = now_iso();
+    $ids = ['SP-KID', 'SP-ADM', 'SP-M1', 'SP-M2', 'SP-M3', 'SP-M4', 'SP-PEER'];
+    $clean = function () use ($ids) {
+        foreach ($ids as $id) db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'SPT-%'"); db_exec("DELETE FROM mentor_assignments WHERE memberId = 'SP-KID'");
+        db_exec("DELETE FROM mentor_supports WHERE memberId = 'SP-KID'"); db_exec("DELETE FROM mentor_messages WHERE subjectId = 'SP-KID'");
+        db_exec("DELETE FROM notifications WHERE memberId LIKE 'SP-%'");
+    };
+    $clean();
+    db_insert('members', ['memberId' => 'SP-ADM', 'fullName' => 'Sp Admin', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SP-KID', 'fullName' => 'Sp Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach (['1', '2', '3', '4'] as $n) {
+        db_insert('members', ['memberId' => 'SP-M' . $n, 'fullName' => 'Mentor ' . $n, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('mentors', ['mentorId' => 'SPT-' . $n, 'fullName' => 'Mentor ' . $n, 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => 'SP-M' . $n, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    }
+    db_insert('mentors', ['mentorId' => 'SPT-P', 'fullName' => 'Peer One', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'peer', 'memberId' => 'SP-PEER', 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    $sup = fn($m, $o = []) => backend_dispatch('admin.mentor.support', $o + ['requesterId' => 'SP-ADM', 'memberId' => 'SP-KID', 'mentorId' => $m, 'focus' => 'Coding']);
+    chk('supporting mentors · not before the child has a mentor of their own', ($sup('SPT-2')['error'] ?? '') === 'no_primary');
+    backend_dispatch('admin.mentor.assign', ['requesterId' => 'SP-ADM', 'memberId' => 'SP-KID', 'mentorId' => 'SPT-1']);
+    chk('supporting mentors · the primary cannot also be a supporter', ($sup('SPT-1')['error'] ?? '') === 'is_primary');
+    chk('supporting mentors · a peer mentor (a young person) is never one', ($sup('SPT-P')['error'] ?? '') === 'peer_mentor');
+    chk('supporting mentors · each needs a focus the child will see', ($sup('SPT-2', ['focus' => ''])['error'] ?? '') === 'need_focus');
+    chk('supporting mentors · an end date in the past, or more than a year ahead, is refused',
+        ($sup('SPT-2', ['endsOn' => '2020-01-01'])['error'] ?? '') === 'bad_end' && ($sup('SPT-2', ['endsOn' => gmdate('Y-m-d', time() + 400 * 86400)])['error'] ?? '') === 'bad_end');
+    $a = $sup('SPT-2', ['endsOn' => gmdate('Y-m-d', time() + 60 * 86400)]); $b = $sup('SPT-3', ['focus' => 'Exams']);
+    chk('supporting mentors · two are added, and the child is told who and for what', !empty($a['added']) && !empty($b['added']) && count($b['supports']) === 2
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'SP-KID' AND title LIKE '%helping you with Exams%'"));
+    chk('supporting mentors · a third is refused, naming the limit', ($sup('SPT-4')['error'] ?? '') === 'too_many_supports' && ($sup('SPT-4')['max'] ?? 0) === MS_SUPPORT_MAX);
+    chk('supporting mentors · the primary pairing is untouched: one active row in mentor_assignments, the primary',
+        array_column(db_all("SELECT mentorId FROM mentor_assignments WHERE memberId = 'SP-KID' AND status = 'active'"), 'mentorId') === ['SPT-1']
+        && (backend_dispatch('member.mentor.chat', ['memberId' => 'SP-KID'])['mentor'] ?? null) !== null);
+    $chat = backend_dispatch('member.mentor.chat', ['memberId' => 'SP-KID']);
+    chk('supporting mentors · the child sees them, with what they help with', array_column($chat['supporting'] ?? [], 'focus') === ['Coding', 'Exams']);
+    // The supporter writes in the child's one conversation; the primary sees it.
+    $gS = mp_gate(['requesterId' => 'SP-M2']);
+    chk('supporting mentors · a supporter may write to the child, but the child is not in their caseload (no wellbeing, scores or family)',
+        !empty($gS['ok']) && mp_can_message($gS, 'SP-KID') && !in_array('SP-KID', mp_caseload_ids($gS), true));
+    db_insert('mentor_messages', ['threadId' => 'chat:SP-KID', 'kind' => 'Reply', 'subjectId' => 'SP-KID', 'fromId' => 'SP-M2', 'fromName' => 'Mentor 2', 'toId' => 'SP-KID', 'body' => 'Try the loops lesson first.', 'status' => 'sent', 'readAt' => '', 'createdAt' => $now]);
+    $prim = backend_dispatch('member.mentor.messages', ['requesterId' => 'SP-M1']);
+    $supv = backend_dispatch('member.mentor.messages', ['requesterId' => 'SP-M2']);
+    $find = fn($r) => (array_values(array_filter($r['messages'] ?? [], static fn($x) => ($x['threadId'] ?? '') === 'chat:SP-KID'))[0] ?? null);
+    chk('supporting mentors · the primary sees what the supporter wrote (the second adult), and the supporter sees the conversation marked as supporting',
+        ($t1 = $find($prim)) && in_array('Try the loops lesson first.', array_column($t1['thread'], 'body'), true)
+        && ($t2 = $find($supv)) && ($t2['supporting'] ?? '') === 'Coding');
+    $e = $sup('SPT-3', ['end' => true]);
+    chk('supporting mentors · ending one leaves the other', !empty($e['ok']) && array_column($e['supports'], 'mentorId') === ['SPT-2']);
+    db_exec("UPDATE mentor_supports SET endsOn = ? WHERE memberId = 'SP-KID' AND mentorId = 'SPT-2'", [gmdate('Y-m-d', time() - 86400)]);
+    chk('supporting mentors · an end date that has passed ends the link without a nightly job', ms_supports_of('SP-KID') === [] && !mp_can_message(mp_gate(['requesterId' => 'SP-M2']), 'SP-KID'));
+    $sup('SPT-4');
+    backend_dispatch('admin.mentor.assign', ['requesterId' => 'SP-ADM', 'memberId' => 'SP-KID', 'mentorId' => 'SPT-4']);
+    chk('supporting mentors · a supporter made the primary stops being a supporter: one person, one role', ms_supports_of('SP-KID') === []);
+    $clean();
+})();
+
 /* ── No back door to a session ──────────────────────────────────────────────
    _mint.php sat at the repo root and printed a signed super-admin cookie
    (adminOk = true) to any request: no password, no TOTP. Uploading the repo

@@ -1007,11 +1007,12 @@ function member_mp_messages(array $p): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $read = [];
         foreach (db_all("SELECT threadId FROM mentor_messages WHERE fromId = ? AND (kind = 'read' OR kind = 'Reply')", [$g['me']]) as $r) $read[$r['threadId']] = true;
-        foreach (db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
+        foreach (db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, j.mediaJson, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
                          WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $peer ? [] : $ids) as $j) {
             $t = 'journal:' . $j['entryId'];
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
-                      'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t])];
+                      'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t]),
+                      'media' => mp_media((string)($j['mediaJson'] ?? ''))];
         }
     }
     /* Conversations with children: ONE row per child, whoever started it —
@@ -1019,20 +1020,24 @@ function member_mp_messages(array $p): array {
        with the whole exchange in `thread`, oldest first. A lead's or
        coordinator's conversations with children outside their caseload are
        theirs too (mp_can_message). */
+    // The children this mentor supports: their conversation, and only that.
+    $sup = function_exists('ms_supported_by') && !$peer ? ms_supported_by((string)($g['mentorId'] ?? '')) : [];
+    $chatIds = array_values(array_unique(array_merge($ids, array_keys($sup))));
     $chatRows = db_all("SELECT mm.*, m.fullName AS childName FROM mentor_messages mm JOIN members m ON m.memberId = mm.subjectId
                         WHERE mm.threadId LIKE 'chat:%' AND mm.kind IN ('From your mentee', 'Reply')
-                          AND (mm.fromId = ? OR mm.subjectId IN (" . ($ids ? implode(',', array_fill(0, count($ids), '?')) : "''") . ")
+                          AND (mm.fromId = ? OR mm.subjectId IN (" . ($chatIds ? implode(',', array_fill(0, count($chatIds), '?')) : "''") . ")
                                OR mm.threadId IN (SELECT threadId FROM mentor_messages WHERE fromId = ? AND threadId LIKE 'chat:%'))
-                        ORDER BY mm.createdAt, mm.id", array_merge([$g['me']], $ids, [$g['me']]));
+                        ORDER BY mm.createdAt, mm.id", array_merge([$g['me']], $chatIds, [$g['me']]));
     $conv = [];
     foreach ($chatRows as $mm) {
         $sid = (string)$mm['subjectId']; $mine = (string)$mm['fromId'] === $g['me'];
-        if (!$mine && !in_array($sid, $ids, true) && !mp_can_message($g, $sid)) continue;
+        if (!$mine && !in_array($sid, $ids, true) && !isset($sup[$sid]) && !mp_can_message($g, $sid)) continue;
         $c = &$conv[$sid];
-        if (!$c) $c = ['id' => 'chat:' . $sid, 'threadId' => 'chat:' . $sid, 'kind' => 'Conversation', 'filter' => 'chat', 'from' => (string)$mm['childName'], 'subjectId' => $sid,
-                       'mentee' => in_array($sid, $ids, true), 'thread' => [], 'read' => true];
+        if (!$c) $c = ['id' => 'chat:' . $sid, 'threadId' => 'chat:' . $sid, 'kind' => isset($sup[$sid]) && !in_array($sid, $ids, true) ? 'Conversation · you support them with ' . $sup[$sid] : 'Conversation',
+                       'filter' => 'chat', 'from' => (string)$mm['childName'], 'subjectId' => $sid,
+                       'mentee' => in_array($sid, $ids, true), 'supporting' => isset($sup[$sid]) ? $sup[$sid] : '', 'thread' => [], 'read' => true];
         $c['thread'][] = ['who' => $mine ? 'You' : (string)($mm['fromName'] ?: $mm['childName']), 'mine' => $mine, 'body' => (string)$mm['body'], 'at' => (string)$mm['createdAt'],
-                          'queued' => (string)$mm['status'] === 'queued'];
+                          'queued' => (string)$mm['status'] === 'queued', 'media' => mp_media((string)($mm['mediaJson'] ?? ''))];
         $c['at'] = (string)$mm['createdAt']; $c['body'] = (string)$mm['body'];
         if (!$mine && (string)$mm['readAt'] === '') $c['read'] = false;
         unset($c);
@@ -1109,6 +1114,8 @@ function mp_message_reach_centres(array $g): array {
 function mp_can_message(array $g, string $subject): bool {
     if ($subject === '') return false;
     if (in_array($subject, mp_caseload_ids($g), true)) return true;
+    // A supporting mentor writes in the child's one conversation, which the primary sees.
+    if (function_exists('ms_supported_by') && isset(ms_supported_by((string)($g['mentorId'] ?? ''))[$subject])) return true;
     $centres = mp_message_reach_centres($g);
     if (!$centres) return false;
     $m = db_row("SELECT centre, type, status, role FROM members WHERE memberId = ? LIMIT 1", [$subject]);
@@ -1207,6 +1214,21 @@ function mp_mentor_principal(array $mentor): string {
     return count($v) === 1 ? (string)$v[0]['volunteerId'] : '';
 }
 /** The child's active mentor, with who to tell ('mentorMember', possibly '' when the mentor has no sign-in yet). */
+/** Stored media JSON → the clips a screen plays (audio, image). Never throws on a bad row. */
+/** The child's supporting mentors, as the child addresses them: [{name, focus, until}]. */
+function mp_supporting_public(string $memberId): array {
+    if (!function_exists('ms_supports_of')) return [];
+    $s = ms_supports_of($memberId);
+    $names = $s && function_exists('staff_public_names') ? staff_public_names(array_column($s, 'mentorId')) : [];
+    return array_map(static fn($x) => ['name' => $names[$x['mentorId']] ?? $x['fullName'], 'focus' => $x['focus'], 'until' => $x['endsOn']], $s);
+}
+
+function mp_media(string $json): array {
+    if ($json === '') return [];
+    $d = json_decode($json, true);
+    return is_array($d) ? array_values(array_filter($d, static fn($x) => is_array($x) && ($x['url'] ?? '') !== '')) : [];
+}
+
 function mp_chat_mentor(string $memberId): ?array {
     /* LEFT JOIN, like every other read of the pairing (member.mentor.mine, the
        record): an inner join here meant a pairing whose mentor row had gone
@@ -1236,7 +1258,7 @@ function member_mp_chat(array $p): array {
     foreach (db_all("SELECT entryId FROM journal WHERE memberId = ? AND visibility = 'mentor' ORDER BY createdAt DESC LIMIT 20", [$me]) as $j) $threads[] = 'journal:' . $j['entryId'];
     $ph = implode(',', array_fill(0, count($threads), '?'));
     $now = now_iso();
-    $rows = db_all("SELECT id, threadId, kind, fromId, fromName, body, status, sendAfter, readAt, createdAt FROM mentor_messages
+    $rows = db_all("SELECT id, threadId, kind, fromId, fromName, body, status, sendAfter, readAt, createdAt, mediaJson FROM mentor_messages
                     WHERE threadId IN ($ph) AND kind IN ('From your mentee', 'Reply') ORDER BY createdAt, id LIMIT 300", $threads);
     // The adults in it are named as a child addresses them (staff_public_names).
     $titled = staff_public_names(array_merge(array_column($rows, 'fromId'), $a ? [(string)$a['mentorId']] : []));
@@ -1247,11 +1269,14 @@ function member_mp_chat(array $p): array {
         if (!$mine && (string)$r['status'] === 'queued' && (string)$r['sendAfter'] > $now) continue;
         $out[] = ['id' => (int)$r['id'], 'mine' => $mine, 'from' => $mine ? 'You' : ($titled[(string)$r['fromId']] ?? 'Your mentor'), 'body' => (string)$r['body'], 'at' => (string)$r['createdAt'],
             'about' => str_starts_with((string)$r['threadId'], 'checkin:') ? 'Your check-in' : (str_starts_with((string)$r['threadId'], 'journal:') ? 'Your journal entry' : ''),
+            // Which journal entry a reply is about, so the Journal screen can show it under that entry.
+            'entryId' => str_starts_with((string)$r['threadId'], 'journal:') ? substr((string)$r['threadId'], 8) : '',
+            'media' => mp_media((string)($r['mediaJson'] ?? '')),
             'read' => $mine ? (string)$r['readAt'] !== '' : true];
     }
     db_exec("UPDATE notifications SET readAt = ? WHERE memberId = ? AND kind = 'mentor' AND (readAt = '' OR readAt IS NULL)", [$now, $me]);
     $mName = $a ? ($titled[(string)$a['mentorId']] ?? 'Your mentor') : '';
-    return ['ok' => true, 'mentor' => $a ? ['name' => $mName, 'first' => $mName] : null,
+    return ['ok' => true, 'mentor' => $a ? ['name' => $mName, 'first' => $mName] : null, 'supporting' => mp_supporting_public($me),
         'messages' => $out, 'quiet' => mp_in_quiet_hours(), 'max' => MP_CHAT_MAX];
 }
 
@@ -1304,6 +1329,10 @@ function member_mp_chat_send(array $p): array {
     $m = db_row("SELECT memberId, fullName, centre, status FROM members WHERE memberId = ? LIMIT 1", [$me]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $body = trim((string)($p['body'] ?? ''));
+    // A voice note is one audio clip; the words beside it (if any) are what the safeguarding check reads.
+    $media = function_exists('journal_media_clean') ? array_values(array_filter(journal_media_clean($p['media'] ?? []), static fn($x) => $x['type'] === 'audio')) : [];
+    $media = array_slice($media, 0, 1);
+    if ($body === '' && $media) $body = 'Voice note' . ($media[0]['secs'] ? ' (' . intdiv($media[0]['secs'], 60) . ':' . str_pad((string)($media[0]['secs'] % 60), 2, '0', STR_PAD_LEFT) . ')' : '');
     if ($body === '') return ['ok' => false, 'error' => 'write_a_message'];
     if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
     $crisis = defined('COACH_CRISIS_RE') && preg_match(COACH_CRISIS_RE, $body) === 1;
@@ -1325,6 +1354,7 @@ function member_mp_chat_send(array $p): array {
     if (!$a) return ['ok' => false, 'error' => 'no_mentor'];
     // Kept in the child's conversation whatever happens: the mentor's inbox reads it by the child, not by a recipient.
     $id = mp_message_put('chat:' . $me, 'From your mentee', $me, $me, (string)$m['fullName'], (string)$a['mentorMember'], $body);
+    if ($media) db_update('mentor_messages', ['mediaJson' => json_encode($media, JSON_UNESCAPED_SLASHES)], ['id' => $id]);
     if ((string)$a['mentorMember'] !== '') {
         push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => ($crisis ? 'Urgent: ' : '') . $first . ' wrote to you', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'mentor']);
     } elseif (function_exists('ops_record')) {

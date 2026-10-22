@@ -709,6 +709,7 @@ function admin_member_detail(array $p): array {
         'progress' => ['total' => (int)($prog['total'] ?? 0), 'verified' => (int)($prog['verified'] ?? 0), 'submitted' => (int)($prog['submitted'] ?? 0)],
         'submissions' => array_map(fn($s) => ['assignmentId' => $s['assignmentId'], 'title' => $s['title'] ?: $s['assignmentId'], 'points' => (int)($s['points'] ?? 0), 'status' => $s['status'], 'grade' => $s['grade'] === null ? null : (int)$s['grade'], 'submittedAt' => $s['submittedAt']], $subs),
         'mentor' => $mentorLink ? ['mentorId' => $mentorLink['mentorId'], 'fullName' => $mentorLink['fullName'], 'sessionId' => $mentorLink['sessionId']] : null,
+        'supporting' => function_exists('ms_supports_of') ? ms_supports_of($id) : [],
         'state' => $state,
     ]];
 }
@@ -736,6 +737,7 @@ function admin_assign_mentor(array $p): array {
     if ($mentor) {
         $track = $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
         db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => $now, 'endedAt' => '']);
+        if (function_exists('ms_support_end_for_primary')) ms_support_end_for_primary($memberId, $mentorId);
         push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => staff_public_name($mentorId, 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
     }
     $match = admin_assign_mentor_sync_match($memberId, $mentor, (string)$g['requester']['memberId']);

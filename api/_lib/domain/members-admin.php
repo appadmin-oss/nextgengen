@@ -300,6 +300,7 @@ function member_merge_policy(): array {
         'journal'                => 'MOVE',
         'assignment_submissions' => 'MOVE',
         'mentor_assignments'     => 'MOVE',
+        'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',
         'guardian_wards'         => 'MOVE',           // a parent's link follows the child
         'circle_confirmations'   => 'MOVE',

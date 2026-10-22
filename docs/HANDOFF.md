@@ -2290,3 +2290,62 @@ periods were settled, and the screen offered no exact figure to waive.
   join idea/change/love. A 1–2 rating is titled to the desk as somebody to
   talk to. Inbox shows "How it's going".
 - Tests: PHP 5018/0; `tests/portal-account.test.js` 26/0.
+
+## Messages, profile, one journal, voice and read-aloud (2026-10-22)
+
+- **Messages.** Quick replies fill the input; "I need help" opens Help;
+  `pollChat()` refetches `member.chat` every `MP9_CHAT_POLL_MS` (30s) while the
+  Mentor screen is visible and on `visibilitychange`/focus; own messages show
+  Sent/Seen from `read`; replies to check-ins/journal entries carry a label;
+  timestamps at #5f5f66; 44px chips; a counter near the 1200 limit; honest
+  quiet-hours and safeguarding copy (the "AI checks them" line was not true
+  with AI off).
+- **Profile.** Me lists the whole record (`member_today.profile` gained
+  level, gender, bio, intakeYear). The dead School/Class inputs in Edit
+  profile (no handler) became read-only text with "Ask for a change".
+- **One journal.** `journal_mine_save` takes `new` (always a fresh row, never
+  the day's upsert — the app writes several a day; without it the portal's
+  quick line would have been overwritten). The Anchor Journal app now writes
+  through it (`journalWrite`), with a share switch, numeric mood (`MOOD_NUM`,
+  `moodKey` for display) and voice media; a first share notifies the mentor.
+  `anchor_journal_list` returns visibility, title, media and the mentor's
+  replies (one grouped query; quiet-hours replies held back). `member.chat`
+  carries `entryId` for journal replies. Portal Journal screen: prompt, same-tab
+  Write (`/journal/?write=1` opens the writer), entries with replies.
+  `member_dashboard` read the mentor only from the current session's pairing,
+  so the journal hid sharing from matched members; it now uses the active
+  pairing and adds `displayName` (Coach Eke).
+- **Voice notes.** Migration 171 `mentor_messages.mediaJson`; chat send
+  accepts one audio clip (`media`), its body "Voice note (m:ss)" when there are
+  no words; mentor inbox and member chat return `media` (`mp_media`). Recorder
+  at 24 kbps Opus. `journal_media_clean` allows audio and own-site paths, and
+  `journal_mine`'s voice count read `kind` instead of `type`.
+- **Read aloud** (`Mp9Portal.speak`, en-NG voice when present): mentor
+  messages, journal prompt, lesson; journal app prompt and entries. The lesson
+  body was a 140px box of 12px grey monospace; it is now 16px readable text.
+- **Sidebar.** "Your apps" group: Anchor Journal, Community (same tab).
+- Tests: PHP 5024/0; portal-account 45/0; member-v9 simple-view check now
+  expects five tiles (My journal added).
+
+## Getting started, supporting mentors (2026-10-22)
+
+- **Getting started** (`startSteps`/`startCard` in mp9-more.jsx): photo,
+  hello to the mentor, first reflection, this week's check-in, a linked
+  guardian — each derived from loaded data (dash, chat, jm, today, circle);
+  gone when all done; hideable (`mp9.startHidden`, added to MP9_STATE_KEYS).
+  The all-caught-up hero offers the next step instead of "Practise something".
+  Help gained "Take the tour again" and "Show Getting started".
+- **Supporting mentors** (`domain/mentor-supports.php`, migration 172
+  `mentor_supports`, op `admin.mentor.support`, route
+  `api/admin/mentor-support.php`). Deliberately a separate table: the 47 reads
+  of `mentor_assignments` all mean "the mentor", so the primary stays there
+  untouched and a supporter can never be read as it. `MS_SUPPORT_MAX` 2; needs a
+  primary; never the primary; never a peer-rank mentor; focus required; end
+  date ≤ a year, effective at read time. Supporters: `mp_can_message` allows
+  the child; the inbox includes the child's `chat:` thread (kind says "you
+  support them with …"); `mp_caseload_ids` unchanged, so no wellbeing, scores
+  or family. `admin_assign_mentor` ends a support link for the new primary.
+  Member chat payload `supporting`; Control Room record lists, adds and ends.
+  The design follows the audit's research (MENTOR Elements of Effective
+  Practice; Raposa et al. 2019; second-adult messaging).
+- Tests: PHP 5038/0 (+14 supports); portal-account 49/0.

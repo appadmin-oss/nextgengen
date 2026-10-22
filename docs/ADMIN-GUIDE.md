@@ -2470,12 +2470,63 @@ feedback*. They are not approved or declined:
 An idea sent without a name keeps only its centre, so it is seen by the staff
 of that centre (and by unscoped admins), never by another centre's.
 
+**Messages between a member and their mentor.** The Mentor screen refreshes
+by itself every 30 seconds while it is open (and when the member comes back
+to the tab), so a reply appears without reloading. Each of the member's own
+messages says **Sent** or **Seen**. A reply to a check-in or a journal entry
+is labelled as one. Quick replies ("Thank you!", "Can we talk on Saturday?")
+start the message in the box; they never send it on their own. "I need help
+with something" opens Help, not just a message to the mentor. After 8pm the
+box says the message is kept and the mentor will see it in the morning.
+
+**Voice notes and reading aloud.** A member can record a voice note (up to
+two minutes, small enough for mobile data) in the message box, listen to it,
+then send it; the mentor plays it in their inbox. The Anchor Journal records
+voice notes too. Mentor messages, the journal prompt, a lesson and a journal
+entry each have **Read aloud**, using the phone's own voices (it works
+offline). A voice note on its own has no words for the safeguarding check to
+read: the words "Voice note (0:42)" are what it carries, so a mentor should
+listen to one within the usual reply window.
+
+**The Anchor Journal and the portal are one journal.** The desktop sidebar
+has **Your apps → Anchor Journal / Community**; Today has **Write today's
+reflection**; the simple view has a **My journal** tile. All open in the same
+tab, and the journal has a **My NGG** link back. In the journal, **Share
+with [mentor]** (off by default) shares that entry with the mentor, who is
+told; their reply shows under the entry in the journal and on the portal's
+Journal screen, which lists recent entries as Private or Shared.
+
+**Me → Profile** shows the whole record: name, NGG ID, date of birth, centre,
+course, class, school, when they joined, email, phone, guardian and guardian
+phone. **Edit profile** changes the photo and bio; everything else is asked
+for through **Ask for a change**.
+
+**Getting started (Today).** A new member sees up to five first steps, each
+read from their record, never a box they tick: add a photo, say hello to
+their mentor (or "your centre will match you" while they have none), write a
+first reflection, answer the week's check-in, link a parent or guardian with
+the Anchor Circle code. Each has one button. The card disappears when all
+are done, and a member can hide it (Help → Show "Getting started" brings it
+back). Help also has **Take the tour again**.
+
+**Supporting mentors.** A member has one mentor, plus at most **two**
+supporting mentors, each for one thing (Coding, Exams) and optionally until a
+date. Add them in the member's record → Mentor → **Add a supporting mentor**;
+tap one to end it. Rules: the member must have a main mentor first; the main
+mentor cannot also be a supporter; a peer mentor never supports another child;
+an end date passes on its own. A supporting mentor writes in the child's one
+conversation, which the main mentor always sees, and gets nothing else of the
+child's: wellbeing, scores and family details stay with the main mentor, as do
+the relationship checks and alerts. Making a supporter the main mentor ends
+their supporting role. The child sees "Also helping you: … · Coding".
+
 ## Things that go wrong, and what they mean
 
 | What you see | What it means | What to do |
 |---|---|---|
 | A section is missing from the sidebar | You do not have its capability | Ask a super admin; check **Access & roles** |
 | "Nobody holds the centre lead role for …" when passing an idea | That centre has no centre lead account | Thank it yourself, or give someone the Centre lead role in **Access & roles** |
+| "Give them a mentor first" / "At most 2 supporting mentors" | A supporting mentor needs a main mentor, and there is a limit of two | Assign the main mentor, or end a supporting one |
 | "Out of scope" on a bulk run | Those rows are at centres you are not scoped to | Have someone unscoped do it, or get your scope widened |
 | "Centre in use" when deleting a centre | Members, participants, groups or volunteers still point at it | **Retire** it instead |
 | "Group not empty" when deleting a group | It still has participants | Reassign them, or unassign them explicitly |

@@ -586,6 +586,9 @@ function member_today(array $p): array {
         'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'school' => (string)($m['school'] ?? ''),
         'dob' => (string)($m['dob'] ?? ''), 'joinDate' => (string)($m['joinDate'] ?? ''), 'email' => (string)($m['email'] ?? ''),
         'phone' => (string)($m['phone'] ?? ''), 'guardianName' => (string)($m['parentName'] ?? ''),
+        'level' => (string)($m['level'] ?? ''), 'gender' => (string)($m['gender'] ?? ''), 'bio' => (string)($m['bio'] ?? ''),
+        // The year that starts the printed ID (026- ⇒ 2026), never called a cohort on screen.
+        'intakeYear' => function_exists('member_intake_year') ? member_intake_year($m) : 0,
         // Masked: the member's own screen does not need a guardian's full number on display.
         'guardianPhone' => function_exists('mp_mask_phone') ? mp_mask_phone((string)($m['parentPhone'] ?? '')) : ''];
     return ['ok' => true, 'today' => $today, 'firstName' => mp_first((string)$m['fullName']), 'age' => $age, 'profile' => $profile,

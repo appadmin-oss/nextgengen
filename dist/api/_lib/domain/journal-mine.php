@@ -151,7 +151,7 @@ function journal_mine(array $p): array {
     foreach ($entries as $e) {
         $words += $e['words'];
         if ($e['visibility'] === 'private') $private++;
-        foreach ($e['media'] as $m) { if (($m['kind'] ?? '') === 'audio') { $voice++; break; } }
+        foreach ($e['media'] as $m) { if ((($m['type'] ?? $m['kind'] ?? '')) === 'audio') { $voice++; break; } }
         foreach ($e['tags'] as $t) $tagCount[$t] = ($tagCount[$t] ?? 0) + 1;
     }
     arsort($tagCount);
@@ -215,9 +215,14 @@ function journal_mine_save(array $p): array {
     $words = jm_words($body);
 
     $existingId = trim((string)($d['entryId'] ?? ''));
-    $row = $existingId !== ''
+    /* `new` is a reflection of its own (the Anchor Journal app writes several
+       a day): it is never folded into the day's entry, which would overwrite
+       the line the member wrote earlier. Without it, one entry per day. */
+    $fresh = !empty($d['new']) && $existingId === '';
+    $row = $fresh ? null : ($existingId !== ''
         ? db_row("SELECT * FROM journal WHERE entryId = ? AND memberId = ? LIMIT 1", [$existingId, $me])
-        : db_row("SELECT * FROM journal WHERE memberId = ? AND occurredOn = ? LIMIT 1", [$me, $day]);
+        : db_row("SELECT * FROM journal WHERE memberId = ? AND occurredOn = ? LIMIT 1", [$me, $day]));
+    $wasShared = $row && (string)($row['visibility'] ?? '') === 'mentor';
 
     $fields = [
         'title' => $title, 'body' => $body, 'mood' => $mood ? (string)$mood : '',
@@ -241,7 +246,17 @@ function journal_mine_save(array $p): array {
                                         'week' => 0, 'createdAt' => now_iso()]);
     }
     audit('journal.save', $me, $me, ['visibility' => $vis], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'entryId' => $id, 'words' => $words, 'created' => !$row];
+    /* Shared with the mentor for the first time: the mentor is told, the way a
+       message is, so a shared entry is read within the week it was promised. */
+    if ($vis === 'mentor' && !$wasShared && function_exists('mp_chat_mentor')) {
+        $a = mp_chat_mentor($me);
+        if ($a && (string)$a['mentorMember'] !== '' && function_exists('push_notification')) {
+            $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$me]);
+            push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => mp_first((string)($who['fullName'] ?? 'Your mentee')) . ' shared a journal entry with you',
+                'body' => mb_substr($title !== '' ? $title : $body, 0, 140), 'linkPage' => 'mentor']);
+        }
+    }
+    return ['ok' => true, 'entryId' => $id, 'words' => $words, 'created' => !$row, 'visibility' => $vis];
 }
 
 /** Log today's mood on its own, without opening the writer. */

@@ -806,7 +806,7 @@
       /* School results and the growth plan — the member's own (Grow → School results). */
       today:          () => request('/member/today.php'),
       chat:           () => request('/member/chat.php'),
-      chatSend:       (body) => request('/member/chat.php', { body: { body } }),
+      chatSend:       (body, media) => request('/member/chat.php', { body: Object.assign({ body }, media && media.length ? { media } : {}) }),
       results:        (term) => request('/member/results.php' + qs({ term: term || '' })),
       resultsUpload:  (term, fileUrl, mime, size) => request('/member/results.php', { body: { action: 'upload', term, fileUrl, mime, size } }),
       resultsRead:    (uploadId) => request('/member/results.php', { body: { action: 'read', uploadId } }),
@@ -1509,6 +1509,8 @@
       // Printed IDs held by two records, and one person holding two IDs.
       membersIdDuplicates: () => request('/admin/members-id-duplicates.php'),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
+      // A supporting mentor beside the primary (domain/mentor-supports.php): {memberId, mentorId, focus, endsOn} or {memberId, mentorId, end: true}.
+      mentorSupport: (data) => request('/admin/mentor-support.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
         status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),

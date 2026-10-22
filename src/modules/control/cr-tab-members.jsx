@@ -696,6 +696,33 @@ function crMbStatusSet(ctx, m, status) {
     } catch (e) { ctx.toast(crErr(e, "Couldn’t change the status."), null, true); }
   };
 }
+/* A supporting mentor: up to two beside the main one, each with what they help
+   with and, if it is for a while, an end date. They join the child's one
+   conversation, which the main mentor sees; nothing else of the child's. */
+async function crMbSupport(ctx, m, det) {
+  let mentors = [];
+  try { mentors = (await NGGApi.admin.mentors.list()).mentors || []; }
+  catch (e) { return ctx.toast(crErr(e, "Couldn’t load the mentors."), null, true); }
+  const taken = [(det.mentor || {}).mentorId].concat((det.supporting || []).map(x => x.mentorId));
+  const opts = mentors.filter(x => !taken.includes(x.mentorId) && x.rank !== "peer").map(x => [x.mentorId, x.fullName + (x.tracks && x.tracks.length ? " · " + x.tracks.join(", ") : "")]);
+  ctx.form({
+    title: "Add a supporting mentor for " + (m.fullName || "this member"), submit: "Add", busyLabel: "Adding…",
+    intro: "They help with one thing, beside " + ((det.mentor || {}).fullName || "the main mentor") + ". They write in the child’s conversation, which the main mentor sees; wellbeing, scores and family details stay with the main mentor. Peer mentors are not listed.",
+    values: { mentorId: "", focus: "", endsOn: "" },
+    fields: [{ id: "mentorId", l: "Mentor", type: "select", req: true, ph: "Choose a mentor", opts },
+      { id: "focus", l: "What they help with", req: true, max: 60, ph: "e.g. Coding, Exams", help: "The child sees this." },
+      { id: "endsOn", l: "Until (optional)", type: "date", help: "Leave empty to keep it until you end it. At most a year ahead." }],
+    onSubmit: async v => { await NGGApi.admin.mentorSupport({ memberId: m.memberId, mentorId: v.mentorId, focus: v.focus, endsOn: v.endsOn || "" }); await crMbRecReload(ctx, m.memberId); return v; },
+    done: () => "Supporting mentor added",
+  });
+}
+async function crMbSupportEnd(ctx, m, x) {
+  const ok = await ctx.confirm({ title: "End " + (x.fullName || "this") + "’s support?", danger: true, cta: "End support",
+    body: "They stop being part of " + (m.fullName || "the member") + "’s conversation from now. What they wrote stays on record." });
+  if (!ok) return;
+  try { await NGGApi.admin.mentorSupport({ memberId: m.memberId, mentorId: x.mentorId, end: true }); await crMbRecReload(ctx, m.memberId); ctx.toast("Support ended"); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t end it."), null, true); }
+}
 async function crMbMentor(ctx, m, cur) {
   let mentors = [];
   try { mentors = (await NGGApi.admin.mentors.list()).mentors || []; }
@@ -817,7 +844,9 @@ function crMbRecBlocks(d, ctx) {
     out.push({ type: "list", span: 3, title: "Standing", sub: crMemStatusLabel(m.status),
       rows: STATUS_ACT.filter(s => s[0] !== m.status).map(s => ({ icon: s[2], t: s[1], s: s[0] === "suspended" ? "Revokes their access until they are activated again." : "", onClick: crMbStatusSet(ctx, m, s[0]) })) });
     out.push({ type: "list", span: 3, title: "Mentor", action: "Change", onAction: () => crMbMentor(ctx, m, det.mentor),
-      rows: [det.mentor ? { icon: "handshake", t: det.mentor.fullName, s: "Their mentor" } : { icon: "handshake", t: "No mentor", s: "Assign one so the weekly review happens.", onClick: () => crMbMentor(ctx, m, null) }] });
+      rows: [det.mentor ? { icon: "handshake", t: det.mentor.fullName, s: "Their mentor" } : { icon: "handshake", t: "No mentor", s: "Assign one so the weekly review happens.", onClick: () => crMbMentor(ctx, m, null) }]
+        .concat((det.supporting || []).map(x => ({ icon: "users", t: x.fullName || x.mentorId, s: "Supporting · " + x.focus + (x.endsOn ? " · until " + crDate(x.endsOn) : "") + " · tap to end", onClick: () => crMbSupportEnd(ctx, m, x) })))
+        .concat(det.mentor && (det.supporting || []).length < 2 ? [{ icon: "plus-circle", t: "Add a supporting mentor", s: "Up to two, each for one thing", onClick: () => crMbSupport(ctx, m, det) }] : []) });
     const eligible = isNgg && m.status === "active";
     out.push({ type: "list", span: 3, title: "Chain of command", rows: m.ngvVolunteerId ? [
       { icon: "shield-check", t: "Promoted to NGV · " + m.ngvVolunteerId, s: (m.ngvAt ? crDate(m.ngvAt) + " · " : "") + "Their NGV dashboard is active." },
