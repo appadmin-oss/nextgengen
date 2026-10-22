@@ -261,9 +261,9 @@ class Mp15Portal extends React.Component {
       })
       .catch(e => { this.planDirty = true; this.setState({ agSave: { st: 'error', msg: mp15ErrText(e) } }); return null; });
   }
-  resetPlan() {
+  async resetPlan() {
     const def = (this.state.d.satNext || {}).agendaDefault || [];
-    if (!def.length || !window.confirm('Put back the standard plan? Your own activities and timings for this Saturday go.')) return;
+    if (!def.length || !(await dialog.confirm({ title: 'Put back the standard plan?', body: 'Your own activities and timings for this Saturday go.', cta: 'Put it back', danger: true }))) return;
     this.setAgenda(def.map(x => ({ t: x.title, s: x.sub || '', m: Number(x.minutes) || 5, fixed: !!x.fixed })));
   }
 
@@ -1369,7 +1369,7 @@ function Mp15Projects({ act, today }) {
             {p.status === 'open' && <div className="mpj-acts">
               <button type="button" className="grw-btn" disabled={busy} onClick={() => edit(p)}>Edit</button>
               <button type="button" className="grw-btn" disabled={busy} onClick={() => save('closed', asSave(p))}>Mark finished</button>
-              <button type="button" className="grw-btn mpj-danger" disabled={busy} onClick={() => { if (window.confirm('Cancel “' + p.title + '”? It disappears for everyone on it.')) save('cancelled', asSave(p)); }}>Cancel project</button>
+              <button type="button" className="grw-btn mpj-danger" disabled={busy} onClick={async () => { if (await dialog.confirm({ title: 'Cancel “' + p.title + '”?', body: 'It disappears for everyone on it.', cta: 'Cancel project', cancel: 'Keep it', danger: true })) save('cancelled', asSave(p)); }}>Cancel project</button>
             </div>}
           </article>
         ))}
