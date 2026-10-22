@@ -137,12 +137,12 @@
   {
     "name": "26-nggc-member-id",
     "label": "NGGC member ID · both sizes, with and without a headshot on file",
-    "kb": 558
+    "kb": 561
   },
   {
     "name": "27-roster-import",
     "label": "Importing the members workbook without a shell — the dry run, before anything is written",
-    "kb": 111
+    "kb": 108
   },
   {
     "name": "28-id-preflight",
