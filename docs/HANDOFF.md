@@ -2423,3 +2423,14 @@ chain in an edited URL re-runs inside every copy built on it):
 - `tests/a11y.test.js`: the phone Mentor check waits for the composer, not a "Messages" heading phones don't draw.
 - **Left open:** the a11y run was stopped before it finished. The last full run reported `aria-prohibited-attr` ×1 on Member · Community. The node is not yet identified.
 - The known `instructor-v6` "Curriculum … week 3" failure is pre-existing.
+
+### Community: the post box follows you down; one navigation on a phone
+
+- **Post box.** The full box stays where it was, at the top of the feed. When it scrolls out of view, a slim pill slides up at the bottom: avatar, prompt and a pencil button. On a phone it sits just above the tab bar. Pressing it opens the same full composer.
+  - Driven by `Cm3App.watchPrompt`, a capture-phase scroll listener that measures against the scroller's own top edge. An IntersectionObserver missed a jump straight past the box.
+  - While hidden, the pill is `aria-hidden` and `tabIndex -1`.
+  - The phone's floating New post button hides while the pill shows, so there is one, not two.
+- **Double navigation on phones.** A signed-in phone showed the site header *and* the Community's own header, each with a menu. Below 760px, `body[data-page="community"]:has(.cm3-app)` now hides the site `.topnav` and `.footer`.
+  - The Community menu gains "My NGG" and "NGG website" links (`.cm3-out`), so the way out is kept.
+  - The signed-out public page keeps the site chrome. Desktop never showed the site header here.
+- `tests/community-v3.test.js` adds checks for both, on desktop and phone (49/0).

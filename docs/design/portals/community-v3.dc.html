@@ -73,6 +73,7 @@ button:disabled{cursor:default!important}
       </div>
     </div>
     </sc-if>
+    <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}"><nav aria-label="Leave Community" class="cm3-out"><sc-for list="{{ outLinks }}" as="o" hint-placeholder-count="2"><button onClick="{{ o.go }}" class="cm3-out-btn"><i class="{{ o.icon }}" aria-hidden="true"></i>{{ o.l }}</button></sc-for></nav></sc-if>
   </div>
 </aside>
 </sc-if>
@@ -164,7 +165,7 @@ button:disabled{cursor:default!important}
     <button onClick="{{ hwStrip.go }}" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:14px;border:1px solid #f1d58f;background:#fdf6e3;text-align:left;cursor:pointer;width:100%"><span style="width:40px;height:40px;border-radius:11px;background:#f5b026;display:grid;place-items:center;font-size:20px;flex-shrink:0"><i class="ph ph-backpack"></i></span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-size:12px;color:#6b4b00;font-weight:600">{{ hwStrip.due }} · {{ hwStrip.ch }}</span><span style="font-size:15px;font-weight:600">{{ hwStrip.title }}</span></span><span style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:4px;flex-shrink:0">Hand in<i class="ph ph-arrow-right"></i></span></button>
   </sc-if>
 
-  <div style="background:#fff;border:1px solid #e8e5dd;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px">
+  <div ref="{{ promptRef }}" style="background:#fff;border:1px solid #e8e5dd;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px">
     <div style="display:flex;gap:10px;align-items:center"><span style="width:36px;height:36px;border-radius:50%;background:{{ meTone }};display:grid;place-items:center;font-size:12px;font-weight:600;flex-shrink:0">{{ meIni }}</span><button onClick="{{ newPost }}" style="flex:1;min-width:0;height:44px;border:1px solid #e8e5dd;border-radius:999px;background:#faf9f6;text-align:left;padding:0 16px;color:#6b6b72;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" style-hover="border-color:#d2d2ce">{{ promptPh }}</button></div>
     <div style="display:flex;gap:2px;flex-wrap:wrap;padding-left:42px">
       <sc-for list="{{ quickTypes }}" as="t" hint-placeholder-count="3"><button onClick="{{ t.go }}" style="height:36px;padding:0 10px;border:0;border-radius:8px;background:transparent;display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:500;color:#3a3a40" style-hover="background:#f4f4f2"><i class="{{ t.icon }}" style="font-size:17px;color:{{ t.ic }}"></i>{{ t.label }}</button></sc-for>
@@ -210,6 +211,10 @@ button:disabled{cursor:default!important}
   </sc-for>
   {{ moreEl }}
   <sc-if value="{{ feedEmpty }}" hint-placeholder-val="{{ false }}"><div style="text-align:center;padding:40px 16px;color:#6b6b72;display:flex;flex-direction:column;align-items:center;gap:6px"><i class="ph ph-sun-horizon" style="font-size:30px"></i><p style="margin:0;font-weight:600;color:#0b0b0c;font-size:15px">{{ emptyT }}</p><p style="margin:0;text-wrap:pretty">{{ emptyD }}</p></div></sc-if>
+  <div class="cm3-dock {{ dockCls }}" aria-hidden="{{ dockHidden }}">
+    <span class="cm3-dock-av" style="background:{{ meTone }}" aria-hidden="true">{{ meIni }}</span>
+    <button onClick="{{ newPost }}" tabIndex="{{ dockTab }}" class="cm3-dock-prompt"><span>{{ promptPh }}</span><i class="ph ph-pencil-simple-line" aria-hidden="true"></i></button>
+  </div>
 </sc-if>
 
 <sc-if value="{{ onHwStudent }}" hint-placeholder-val="{{ false }}">
@@ -1124,7 +1129,7 @@ class Component extends DCLogic {
       showAdminStrip: admin && s.view === "home" && s.filter === "all", queueN: String(queue.length), casesN: String(openCases), goQueue: goView("mod", { modTab: "queue" }), goSg: goView("mod", { modTab: "sg" }),
       showWaiting: role === "instructor" && s.view === "home" && s.filter === "all", waiting, waitEmpty: !waiting.length, waitMeta: waiting.length ? waiting.length + " in " + chBy[V.teaches].name : "",
       showHwStrip: !staff && !!nextTodo && s.view === "home" && s.filter === "all" && !rail, hwStrip,
-      promptPh: s.view === "channel" ? "Share something with " + cur.name + "…" : "Share something, ask a question, or show your work…", quickTypes,
+      promptPh: s.view === "channel" ? "Share something with " + cur.name + "…" : "Share something, ask a question, or show your work…", quickTypes, outLinks: [["My NGG", "ph ph-house", "/dashboard"], ["NGG website", "ph ph-globe-simple", "/"]].map(([l, icon, to]) => ({ l, icon, go: () => { try { history.pushState({}, "", to); dispatchEvent(new PopStateEvent("popstate")); } catch (e) { location.assign(to); } } })), promptRef: this.promptRef, dockCls: (s.dockOn ? "is-on" : "") + (narrow ? " is-tabbed" : ""), dockHidden: s.dockOn ? "false" : "true", dockTab: s.dockOn ? "0" : "-1",
       typing: s.view === "channel" && s.ch === "practical-coding" && role !== "instructor", typingText: "Ife and Halima are typing…",
       feed, feedEmpty: !feed.length, emptyT: q ? "Nothing matches “" + s.q.trim() + "”" : F === "unread" ? "You’re all caught up" : F === "saved" ? "Nothing saved yet" : F === "mentions" ? "No mentions yet" : "Nothing here yet", emptyD: q ? "Try a name, a channel, or fewer words." : F === "saved" ? "Tap the bookmark on any post to keep it here." : F === "unread" ? "New posts in your channels will show up here." : "Be the first to post.",
       onHwStudent: onHw && !staff, hwList, hwEmpty: !hwList.length, hwNote: s.hwNote, onHwNote: e => set({ hwNote: e.target.value }), toggleAttach: () => set({ hwAttach: !s.hwAttach }), attachPressed: s.hwAttach ? "true" : "false", attachBd: s.hwAttach ? "#f5b026" : "#e8e5dd", attachBg: s.hwAttach ? "#fdf6e3" : "#fff", attachIcon: s.hwAttach ? "ph-fill ph-check-circle" : "ph ph-camera", attachLabel: s.hwAttach ? "Screenshot added" : "Add a photo or link",

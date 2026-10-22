@@ -2499,6 +2499,8 @@ phone the conversation takes the screen and the next session is one line at
 the top. The message box grows as you type (Enter sends, Shift+Enter starts a
 new line).
 
+**Community on a phone** has one navigation: the Community's own header, menu and tab bar. The menu has **My NGG** and **NGG website** to leave. Scroll past the post box at the top and a slim **Share something…** bar appears at the bottom; tap it to write.
+
 **Messages on a phone** keep only what is needed: the next session is one row (tap it to prepare), quick replies appear only when there is a message to answer, and the safety note is one line.
 
 **Rows of tabs scroll sideways on a phone** instead of wrapping onto a second

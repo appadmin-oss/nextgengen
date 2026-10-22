@@ -119,6 +119,38 @@ function cleanup() {
     chk('a question shows it is waiting for an answer', /Waiting for an answer/.test(t));
     await shot(s.page, '01-home');
 
+    console.log('\n── The post box follows you down the feed ──────────────────');
+    for (const [vp, nm] of [[{ width: 1320, height: 560 }, 'desktop'], [{ width: 390, height: 640 }, 'phone']]) {
+      const d = await openAs(STUDENT, undefined, vp);
+      await waitText(d.page, /Wiring a button/, 20000);
+      await d.page.waitForTimeout(400);
+      const dock = d.page.locator('.cm3-dock');
+      chk(nm + ': the bottom bar is hidden while the post box is in view', !(await dock.evaluate(e => e.classList.contains('is-on'))) && (await dock.getAttribute('aria-hidden')) === 'true');
+      await d.page.evaluate(() => { const a = document.querySelectorAll('.cm3-app article'); a[a.length - 1].scrollIntoView({ block: 'end' }); });
+      await d.page.waitForTimeout(700);
+      chk(nm + ': scrolled past it, the slim bar slides in at the bottom', await dock.evaluate(e => e.classList.contains('is-on') && getComputedStyle(e).opacity === '1'));
+      const r = await dock.evaluate(e => { const b = e.getBoundingClientRect(); const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return { bottom: b.bottom, vh: innerHeight, hit: !!(top && e.contains(top)) }; });
+      chk(nm + ': the bar sits on screen, above anything else at the bottom', r.bottom <= r.vh && r.hit);
+      await shot(d.page, '01b-dock-' + nm);
+      await dock.locator('button').click();
+      chk(nm + ': pressing it opens the full composer', await d.page.waitForSelector('.cm3-app div[role=dialog] textarea', { timeout: 8000 }).then(() => true, () => false));
+      await d.page.context().close();
+    }
+
+    console.log('\n── One navigation on a phone ───────────────────────────────');
+    {
+      const m = await openAs(STUDENT, undefined, { width: 390, height: 760 });
+      await waitText(m.page, /Wiring a button/, 20000);
+      chk('phone: the site header steps aside (one header, not two)', await m.page.evaluate(() => { const n = document.querySelector('.topnav'); return !n || !n.getClientRects().length; }));
+      chk('phone: the Community header starts at the top of the screen', await m.page.evaluate(() => { const b = document.querySelector('.cm3-app button[aria-label="Open menu"]'); return !!b && b.getBoundingClientRect().top < 40; }));
+      await shot(m.page, '01c-phone-one-nav');
+      await m.page.click('.cm3-app button[aria-label="Open menu"]');
+      chk('phone: the menu carries the way back to My NGG and the website', await waitText(m.page, /My NGG[\s\S]*NGG website/, 5000));
+      await m.page.click('.cm3-out-btn:has-text("My NGG")');
+      chk('…and My NGG goes there', await m.page.waitForFunction(() => location.pathname.startsWith('/dashboard'), null, { timeout: 8000 }).then(() => true, () => false));
+      await m.page.context().close();
+    }
+
     console.log('\n── The safety check, as you type ───────────────────────────');
     await click(s.page, /^New post$/);
     await s.page.waitForTimeout(400);

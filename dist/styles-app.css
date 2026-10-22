@@ -13265,6 +13265,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-12f66eb{font-size:30px}
 .cm3-b3289d6{margin:0;font-weight:600;color:#0b0b0c;font-size:15px}
 .cm3-f1b3045{margin:0;text-wrap:pretty}
+.cm3-e7fa75b{background:var(--dc-background, unset)}
 .cm3-c3369db{background:#fff;border:1px solid #e8e5dd;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
 .cm3-df03393{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
 .cm3-ceb0776{width:40px;height:40px;border-radius:11px;background:var(--dc-background, unset);color:#fff;display:grid;place-items:center;font-size:19px;flex-shrink:0}
@@ -14176,3 +14177,39 @@ button.m9x-ev-sum { cursor: pointer; }
 [data-more="end"] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
 [data-more="start"] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
 [data-more="both"] { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
+
+/* ══ Community · the post box follows you down the feed ══════════════════════
+   The full box stays at the top of the feed. Once it has scrolled away, this
+   slim copy rises in at the bottom like a chat input (.is-on, set by
+   watchPrompt in cm3-app); pressing it opens the full composer. While hidden
+   it is out of the tab order and the accessibility tree. */
+.cm3-dock { position: sticky; bottom: 12px; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 6px; margin-top: 4px;
+  background: #fff; border: 1px solid #e8e5dd; border-radius: 999px; box-shadow: 0 8px 28px rgba(11,11,12,.12), 0 1px 3px rgba(11,11,12,.06);
+  opacity: 0; transform: translateY(16px); visibility: hidden; pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s; }
+/* On a phone the Community's tab bar owns the bottom edge; the bar rides just above it, where the New post button was. */
+.cm3-dock.is-tabbed { bottom: 80px; }
+.cm3-dock.is-on { opacity: 1; transform: none; visibility: visible; pointer-events: auto; transition: opacity .2s ease, transform .2s ease, visibility 0s; }
+.cm3-dock-av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex-shrink: 0; color: #0b0b0c; }
+.cm3-dock-prompt { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 14px; border: 0; border-radius: 999px;
+  background: #f4f4f2; color: #5f5f66; font: 400 15px 'Geist', system-ui, sans-serif; text-align: left; cursor: text; }
+.cm3-dock-prompt > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm3-dock-prompt > i { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #0b0b0c; color: #fff; font-size: 16px; flex-shrink: 0; }
+.cm3-dock-prompt:hover { background: #ecebe6; }
+.cm3-dock-prompt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .cm3-dock, .cm3-dock.is-on { transform: none; transition: none; } }
+.cm3-out { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cm3-out-btn { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #e8e5dd; border-radius: 10px; background: #fff; color: #0b0b0c;
+  font: 500 13.5px 'Geist', system-ui, sans-serif; cursor: pointer; }
+.cm3-out-btn:hover { background: #f4f4f2; }
+.cm3-out-btn:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+
+/* One navigation on a phone, not two. Signed in, the Community is an app with
+   its own header, menu and tab bar, so the site's header and footer step
+   aside below its phone width (760px, Cm3App's `narrow`); the menu carries
+   the way back to My NGG and the website. Signed out (the public page) keeps
+   the site chrome. */
+@media (max-width: 759px) {
+  body[data-page="community"]:has(.cm3-app) .topnav,
+  body[data-page="community"]:has(.cm3-app) .footer { display: none; }
+}

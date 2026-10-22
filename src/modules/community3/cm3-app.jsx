@@ -59,6 +59,32 @@ class Cm3App extends React.Component {
   rootRef = React.createRef();
   vStageRef = React.createRef();
   vRef = React.createRef();
+  promptRef = React.createRef();
+
+  /* The post box lives at the top of the feed. Once it has scrolled out of
+     view, a slim copy slides in at the bottom, like a chat input, and opens
+     the same full composer. A capture-phase scroll listener hears whichever
+     element scrolls (the window here, the portal's main in My NGG), and a
+     jump straight past the box counts as much as a slow scroll. */
+  watchPrompt() {
+    if (this.onDockScr) return;
+    const check = () => {
+      this.dockRaf = 0;
+      const el = this.promptRef.current;
+      const on = !!el && el.getBoundingClientRect().bottom < this.dockTop;
+      if (on !== !!this.state.dockOn) this.setState({ dockOn: on });
+    };
+    /* The scroller's own top edge, not the window's: on a phone the feed scrolls under a header. */
+    this.dockTop = 0;
+    this.onDockScr = e => {
+      const t = e && e.target && e.target.getBoundingClientRect ? e.target.getBoundingClientRect().top : 0;
+      if (this.promptRef.current && e && e.target && e.target.contains && !e.target.contains(this.promptRef.current)) return;
+      this.dockTop = t + 4;
+      if (!this.dockRaf) this.dockRaf = requestAnimationFrame(check);
+    };
+    document.addEventListener("scroll", this.onDockScr, true);
+  }
+
 
   /* ── lifecycle ───────────────────────────────────────────────────────── */
   componentDidMount() {
@@ -73,6 +99,7 @@ class Cm3App extends React.Component {
     this.onNet = () => this.setState({ offline: navigator.onLine === false });
     window.addEventListener("online", this.onNet); window.addEventListener("offline", this.onNet); this.onNet();
     this.boot();
+    this.watchPrompt();
     /* Who is typing — polled only while a channel is open and the tab is
        visible; shared hosting has no push (domain/community.php §typing). */
     this.typT = setInterval(() => { const s = this.state; if (s.view !== "channel" || document.visibilityState !== "visible" || !s.boot) return; this.api().typingWho(s.ch).then(r => { if ((r.says || "") !== this.state.typing) this.setState({ typing: r.says || "" }); }).catch(() => {}); }, 6000);
@@ -82,6 +109,7 @@ class Cm3App extends React.Component {
   componentWillUnmount() {
     window.removeEventListener("resize", this.onWin); document.removeEventListener("keydown", this.onKey);
     document.removeEventListener("paste", this.onPaste);
+    document.removeEventListener("scroll", this.onDockScr, true); cancelAnimationFrame(this.dockRaf);
     window.removeEventListener("online", this.onNet); window.removeEventListener("offline", this.onNet);
     clearInterval(this.carT); clearTimeout(this.tt); clearTimeout(this.tb); clearInterval(this.typT); this.vOff(); this.flushUndo();
   }
@@ -714,7 +742,7 @@ class Cm3App extends React.Component {
       showAdminStrip: admin && s.view === "home" && s.filter === "all", queueN: String(s.stats ? s.stats.counts.held + s.stats.counts.video + s.stats.counts.reported : "…"), casesN: String(openCases), goQueue: goView("mod", { modTab: "queue" }), goSg: goView("mod", { modTab: me0.canSafeguard ? "sg" : "queue" }),
       showWaiting: role === "instructor" && s.view === "home" && s.filter === "all", waiting, waitEmpty: !waiting.length, waitMeta: waiting.length ? waiting.length + " waiting" : "",
       showHwStrip: !staff && !!nextTodo && s.view === "home" && s.filter === "all" && !rail, hwStrip,
-      promptPh: s.view === "channel" ? "Share something with " + cur.name + "…" : "Share something, ask a question, or show your work…", quickTypes,
+      promptPh: s.view === "channel" ? "Share something with " + cur.name + "…" : "Share something, ask a question, or show your work…", quickTypes, outLinks: [["My NGG", "ph ph-house", "/dashboard"], ["NGG website", "ph ph-globe-simple", "/"]].map(([l, icon, to]) => ({ l, icon, go: () => { try { history.pushState({}, "", to); dispatchEvent(new PopStateEvent("popstate")); } catch (e) { location.assign(to); } } })), promptRef: this.promptRef, dockCls: (s.dockOn ? "is-on" : "") + (narrow ? " is-tabbed" : ""), dockHidden: s.dockOn ? "false" : "true", dockTab: s.dockOn ? "0" : "-1",
       typing: s.view === "channel" && !!s.typing, typingText: s.typing,
       feed, feedEmpty: !feed.length,
       emptyT: emptyLoading ? "Loading posts…" : s.feedErr ? "Couldn’t load the posts" : q ? "Nothing matches “" + s.q.trim() + "”" : F === "unread" ? "You’re all caught up" : F === "saved" ? "Nothing saved yet" : F === "mentions" ? "No mentions yet" : F === "questions" ? "No questions yet" : s.view === "channel" ? "Nothing here yet. Be the first to post in " + cur.name + "." : "Nothing here yet",
@@ -739,7 +767,7 @@ class Cm3App extends React.Component {
       ...compV, closeComp: () => set({ comp: null }), submit: () => this.submit(),
       modalAlign: narrow ? "flex-end" : "center", modalPad: narrow ? "0" : "24px", modalR: narrow ? "20px 20px 0 0" : "16px",
       reportOpen: !!rp, reasons, reportSafety: !!rp && rp.reason === "safety", reportOff: !(rp && rp.reason), reportBtnBg: rp && rp.reason ? (rp.reason === "safety" ? "#b42318" : "#0b0b0c") : "#b9b9b4", closeReport: () => set({ report: null }), sendReport: () => this.sendReport(),
-      ...VW, tabbar, showFab: onFeed, cardOpen: !!pc.name, pc, closeCard: () => set({ card: null }), stop: e => e.stopPropagation(),
+      ...VW, tabbar, showFab: onFeed && !s.dockOn, cardOpen: !!pc.name, pc, closeCard: () => set({ card: null }), stop: e => e.stopPropagation(),
       hasToast: !!s.toast, toast: s.toast, toastBottom: narrow ? "86px" : "24px",
       editEl, moreEl: onFeed && s.hasMore ? React.createElement("button", { className: "cm3x-more", onClick: () => this.loadFeed(false), disabled: s.loading }, s.loading ? "Loading…" : "Show older posts") : null,
       undoEl: s.toastUndo ? React.createElement("button", { className: "cm3x-undo", onClick: () => { s.toastUndo(); this.setState({ toast: "", toastUndo: null }); } }, "Undo") : null
