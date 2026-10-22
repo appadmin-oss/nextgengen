@@ -1496,9 +1496,12 @@ function CertificatePage() {
   const isCompletion = c.type === "completion";
   const issued = fmtDateLong(c.issuedAt);
   return (
-    <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
-      <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
-      <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
+    <div className="cert-page">
+      <style>{`.cert-page { min-height: 100vh; background: #0a1130; padding: 48px 20px; display: grid; place-items: center; }
+.cert-card { width: min(760px, 100%); background: #fff; border-radius: 20px; padding: clamp(32px, 6vw, 64px); box-shadow: 0 30px 80px -20px rgba(0,0,0,0.5); position: relative; overflow: hidden; }
+.cert-actions { margin-top: 24px; display: flex; gap: 12px; }
+@media print { .cert-page { background: #fff; padding: 0; } .cert-noprint { display: none; } .cert-card { box-shadow: none; border: 1px solid #ddd; } }`}</style>
+      <div className="cert-card">
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
         {c.revoked && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}><span style={{ transform: "rotate(-18deg)", border: "4px solid rgba(228,21,95,0.5)", color: "rgba(228,21,95,0.5)", fontWeight: 800, fontSize: "clamp(40px,9vw,90px)", letterSpacing: 6, padding: "6px 28px", borderRadius: 12 }}>REVOKED</span></div>}
         <div style={{ position: "relative" }}>
@@ -1527,7 +1530,7 @@ function CertificatePage() {
           {c.revoked && <p style={{ margin: "20px 0 0", color: "#E4155F", fontWeight: 600, fontSize: 14 }}>This certificate has been revoked and is no longer valid.</p>}
         </div>
       </div>
-      <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
+      <div className="cert-noprint cert-actions">
         <button className="btn btn-gold" onClick={() => window.print()}>Print / Save PDF</button>
         <a className="btn btn-on-dark-ghost" href="/">Home</a>
       </div>

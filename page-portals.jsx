@@ -1823,7 +1823,7 @@ function consentDocumentHtml(c) {
   .sign { margin-top: 26pt; display: flex; gap: 26pt; }
   .sign div { flex: 1; border-top: 0.5pt solid #14181f; padding-top: 4pt; font: 8.5pt "Helvetica Neue", Arial, sans-serif; color: #5a6488; }
   footer { margin-top: 20pt; border-top: 0.5pt solid #d7dbe6; padding-top: 6pt; font-size: 8pt; color: #6b7280; }
-  @media print { .noprint { display: none !important; } }
+  @media print { .noprint { display: none; } }
 </style></head><body>
   <div class="head">
     <div><div class="org">${esc(prog.name) || "Next Generation Genius"}</div>

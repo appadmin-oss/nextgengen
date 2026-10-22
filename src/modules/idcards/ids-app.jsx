@@ -1335,7 +1335,7 @@ function IdCardStudioPage({ setPage }) {
           setAskRes(a => a && Object.assign({}, a, { n: a.n + add.length, issues: a.issues.filter(x => x.key !== "carded") }));
         } });
     }
-    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan), issues, n, applied: false, asked: sel.asked, gapNote: idsPlanGapNote(sel) });
+    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan, sel), issues, n, applied: false, asked: sel.asked, gapNote: idsPlanGapNote(sel) });
     /* The first plan keeps the studio as it was, for Undo. A follow-up always
        re-applies, even to an empty sheet, so the sheet never shows a selection
        the card no longer describes; a fresh request that finds nobody leaves
@@ -1369,7 +1369,7 @@ function IdCardStudioPage({ setPage }) {
   const planSnap = res => {
     const plan = res.plan || {};
     const sel = idsPlanSelect(plan, { pool: recs, all: data.records, isBlocked });
-    return { n: sel.pick.length, what: idsPlanWhat(plan), refined: !!res.refined, asked: sel.asked, gapNote: idsPlanGapNote(sel) };
+    return { n: sel.pick.length, what: idsPlanWhat(plan, sel), refined: !!res.refined, asked: sel.asked, gapNote: idsPlanGapNote(sel) };
   };
   const ranOf = (out, n) => {
     const ran = [];
@@ -1787,6 +1787,8 @@ function IdCardStudioPage({ setPage }) {
     openRun: r => openRun(r),
     bindInput: ref => { aiInput.current = ref.current; },
     people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
+    say,
+    exact: q => { const t = String(q || "").trim().toLowerCase().replace(/\s+/g, " "); return t ? data.records.filter(r => String(r.name || "").toLowerCase().replace(/\s+/g, " ") === t || String(r.displayId || "").toLowerCase() === t) : []; },
     print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill,
     upload: askUpload, upSet, upSave, upToSheet, upPeople: q => { const t = String(q || "").toLowerCase(); return t.length < 2 ? [] : data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 8); } };
 

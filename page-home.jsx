@@ -1052,7 +1052,7 @@ function StatusPage({ setPage, previewConfig }) {
             </div>
           </div>
 
-          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+          <div className="hero-cols" style={{ marginTop: 26 }}>
             <div>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(111,220,157,0.14)", border: "1px solid rgba(111,220,157,0.4)" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#6fdc9d", animation: "statuspulse 1.8s infinite" }}/>
@@ -1128,7 +1128,7 @@ function StatusPage({ setPage, previewConfig }) {
               <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#8088a6" }}>Every sign-up, including withdrawn</span>
             </div>
 
-            <div className="reg-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 16, alignItems: "stretch" }}>
+            <div className="reg-cols">
               {/* Headline: total signed up, against capacity when it is set. */}
               <div style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "26px 26px 24px", display: "flex", flexDirection: "column" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Registered</span>
@@ -1197,7 +1197,7 @@ function StatusPage({ setPage, previewConfig }) {
               <div style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#8088a6", marginBottom: 16 }}>How each centre is filling</div>
               <div style={{ display: "grid", gap: 14 }}>
                 {regCentres.map(c => (
-                  <div key={c.code} className="reg-centre-row" style={{ display: "grid", gridTemplateColumns: "1.2fr 2.6fr 96px 118px", alignItems: "center", gap: 16 }}>
+                  <div key={c.code} className="reg-centre-row">
                     <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                       <span style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flex: "0 0 auto" }}/>
                       <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</b>
@@ -1205,7 +1205,7 @@ function StatusPage({ setPage, previewConfig }) {
                     <span style={{ display: "block", height: 9, borderRadius: 99, background: "rgba(12,20,50,0.07)", overflow: "hidden" }}>
                       <span style={{ display: "block", height: "100%", borderRadius: 99, width: Math.min(100, c.fill) + "%", transformOrigin: "left", transition: "transform .8s cubic-bezier(.2,.7,.2,1)", transform: "scaleX(" + t.toFixed(3) + ")", background: fillTone(c.fill) }}/>
                     </span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#2a335c", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{ci(c.registered)} / {c.capacity}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: "#2a335c", fontVariantNumeric: "tabular-nums" }}>{ci(c.registered)} / {c.capacity}</span>
                     <span style={{ justifySelf: "end", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "'JetBrains Mono'", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
                       <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, color: fillTone(c.fill), fontVariantNumeric: "tabular-nums" }}>{ci(c.fill)}%</span>
                       {(c.pending || 0) > 0 ? <span style={{ color: "#a07400" }}>· {c.pending} pending</span> : null}
@@ -1293,14 +1293,14 @@ function StatusPage({ setPage, previewConfig }) {
               </div>
 
               {retCentres.length > 1 && <>
-                <div className="ret-head">{["Centre", "Still coming", "Stopped", "Never started", "Stopped %"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                <div className="ret-head">{["Centre", "Still coming", "Stopped", "Never started", "Stopped %"].map((h, i) => <span key={i}>{h}</span>)}</div>
                 {retCentres.map(c => (
                   <div key={c.centre} className="ret-row">
                     <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15, color: "#0a1130" }}>{c.centre}</b>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2f9e44", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stillComing}</span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.stopped || 0) > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.stopped}</span>
-                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.neverCame || 0) > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.neverCame}</span>
-                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, textAlign: "right", fontVariantNumeric: "tabular-nums", color: retTone(c.stoppedPct || 0) }}>{c.stoppedPct}%</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: "#2f9e44", fontVariantNumeric: "tabular-nums" }}>{c.stillComing}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.stopped || 0) > 0 ? "#c02c2c" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{c.stopped}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 13, color: (c.neverCame || 0) > 0 ? "#5a6488" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{c.neverCame}</span>
+                    <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17, fontVariantNumeric: "tabular-nums", color: retTone(c.stoppedPct || 0) }}>{c.stoppedPct}%</span>
                   </div>
                 ))}
               </>}
@@ -1565,20 +1565,21 @@ function StatusPage({ setPage, previewConfig }) {
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
       {err && <div role="alert" className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
-.hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
 /* auto-fit, not repeat(4): the retention card makes five when there is a term
    to measure over, and a fixed four columns would leave the fifth stranded on a
    row of its own — the one card most worth reading, looking like an afterthought. */
 .insight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}
-@media(max-width:920px){.reg-cols{grid-template-columns:1fr!important}}
-@media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto!important;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left!important}.reg-centre-row>*:nth-child(4){grid-area:pct}}
+.reg-cols{display:grid;grid-template-columns:1fr 1.25fr;gap:16px;align-items:stretch}@media(max-width:920px){.reg-cols{grid-template-columns:1fr}}
+.reg-centre-row{display:grid;grid-template-columns:1.2fr 2.6fr 96px 118px;align-items:center;gap:16px}.reg-centre-row>*:nth-child(3){text-align:right}
+@media(max-width:700px){.reg-centre-row{grid-template-columns:1fr auto;grid-template-areas:"name pct" "bar bar" "count count";row-gap:7px}.reg-centre-row>*:nth-child(1){grid-area:name}.reg-centre-row>*:nth-child(2){grid-area:bar}.reg-centre-row>*:nth-child(3){grid-area:count;text-align:left}.reg-centre-row>*:nth-child(4){grid-area:pct}}
 .ret-head,.ret-row{display:grid;grid-template-columns:1.6fr 100px 84px 108px 92px;align-items:center;gap:12px;padding:0 22px}
 .ret-head{height:38px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
 .ret-row{min-height:52px;border-bottom:1px solid #eef0f4}.ret-row:last-child{border-bottom:none}
+.ret-head>*+*,.ret-row>*+*{text-align:right}
 /* Narrow: the headers go, so each figure carries its own label rather than
    becoming an unlabelled column of numbers. */
-@media(max-width:700px){.ret-head{display:none}.ret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.ret-row>*{text-align:left!important}.ret-row>*:nth-child(2)::after{content:" still coming"}.ret-row>*:nth-child(3)::after{content:" stopped"}.ret-row>*:nth-child(4)::after{content:" never came"}.ret-row>*:nth-child(5)::after{content:" of them stopped"}}
+@media(max-width:700px){.ret-head{display:none}.ret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.ret-row>*,.ret-row>*+*{text-align:left}.ret-row>*:nth-child(2)::after{content:" still coming"}.ret-row>*:nth-child(3)::after{content:" stopped"}.ret-row>*:nth-child(4)::after{content:" never came"}.ret-row>*:nth-child(5)::after{content:" of them stopped"}}
 .centre-head,.centre-row{display:grid;grid-template-columns:46px 1.5fr 96px 2.3fr 66px 140px;align-items:center;gap:16px;padding:0 20px}
 .centre-head{height:46px;background:#faf6ec;border-bottom:1px solid #e5e8ee}.centre-row{min-height:66px;border-bottom:1px solid #eef0f4}.centre-row:last-child{border-bottom:none}
 @media(max-width:820px){.centre-head{display:none}.centre-row{grid-template-columns:38px 1fr auto;grid-template-areas:"rank name rate" "rank present status" "bar bar bar";row-gap:10px;padding:16px 18px;min-height:0}.c-rank{grid-area:rank}.c-name{grid-area:name}.c-present{grid-area:present;justify-self:start}.c-bar{grid-area:bar}.c-rate{grid-area:rate;justify-self:end}.c-status{grid-area:status;justify-self:end}}
@@ -1850,7 +1851,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
             </div>
           </div>
 
-          <div className="hero-cols" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 44, alignItems: "center", marginTop: 26 }}>
+          <div className="hero-cols" style={{ marginTop: 26 }}>
             <div>
               <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#d0ff3a", animation: "volpulse 1.8s infinite" }}/>
@@ -2259,7 +2260,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                         {vret.new > 0 ? " (" + vret.new + " " + (vret.new === 1 ? "is" : "are") + " too new)" : ""}.
                       </p>
                     </div>
-                    <div className="vret-head">{["", "Still coming", "Stopped", "Never started"].map((h, i) => <span key={i} style={{ textAlign: i ? "right" : "left" }}>{h}</span>)}</div>
+                    <div className="vret-head">{["", "Still coming", "Stopped", "Never started"].map((h, i) => <span key={i}>{h}</span>)}</div>
                     {[["centre", vret.byCentre || []], ["role", vret.byRole || []]].map(([dim, rows]) =>
                       (rows || []).filter(r => r.people > 0).map((r, i) => (
                         <div key={dim + i} className="vret-row">
@@ -2267,9 +2268,9 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
                             <b style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 14.5, color: "#0a1130", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: dim === "role" ? "capitalize" : "none" }}>{r[dim]}</b>
                             <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, color: "#8088a6" }}>{dim === "role" ? "role" : "centre"} · {r.people} volunteer{r.people === 1 ? "" : "s"}</span>
                           </span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.coming > 0 ? "#2f9e44" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.coming}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: r.stopped > 0 ? 700 : 400, color: r.stopped > 0 ? "#c02c2c" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.stopped || "—"}</span>
-                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.never > 0 ? "#5a6488" : "#8088a6", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.never || "—"}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.coming > 0 ? "#2f9e44" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.coming}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, fontWeight: r.stopped > 0 ? 700 : 400, color: r.stopped > 0 ? "#c02c2c" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.stopped || "—"}</span>
+                          <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 12.5, color: r.never > 0 ? "#5a6488" : "#8088a6", fontVariantNumeric: "tabular-nums" }}>{r.never || "—"}</span>
                         </div>
                       )))}
                   </div>
@@ -2418,9 +2419,10 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
 .vret-head,.vret-row{display:grid;grid-template-columns:1.5fr 104px 88px 108px;align-items:center;gap:12px;padding:0 22px}
 .vret-head{height:34px;background:#faf6ec;border-top:1px solid #e5e8ee;border-bottom:1px solid #e5e8ee;font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:#8088a6}
 .vret-row{min-height:50px;border-bottom:1px solid #eef0f4}.vret-row:last-child{border-bottom:none}
+.vret-head>*+*,.vret-row>*+*{text-align:right}
 /* Narrow: the headers go, so each figure labels itself rather than becoming a
    column of unexplained numbers. */
-@media(max-width:620px){.vret-head{display:none}.vret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.vret-row>*{text-align:left!important}.vret-row>*:nth-child(2)::after{content:" still coming"}.vret-row>*:nth-child(3)::after{content:" stopped"}.vret-row>*:nth-child(4)::after{content:" never started"}}`}</style>
+@media(max-width:620px){.vret-head{display:none}.vret-row{grid-template-columns:1fr;row-gap:4px;padding:14px 18px}.vret-row>*,.vret-row>*+*{text-align:left}.vret-row>*:nth-child(2)::after{content:" still coming"}.vret-row>*:nth-child(3)::after{content:" stopped"}.vret-row>*:nth-child(4)::after{content:" never started"}}`}</style>
     </div>
   );
 }

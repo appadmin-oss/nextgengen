@@ -19,7 +19,7 @@ const js = f => esbuild.transformSync(read(f), { loader: 'jsx' }).code;
 const T = { React: { useState: () => [] } };
 vm.createContext(T);
 vm.runInContext(js('src/modules/idcards/ids-core.jsx') + '\n' + js('src/modules/idcards/ids-ask.jsx')
-  + '\n;Object.assign(this, { idsPlanSelect, idsPlanGapNote, idsPlanActs, idsAskAnswer, idsClosest, idsPlanWhat });', T);
+  + '\n;Object.assign(this, { idsPlanSelect, idsPlanGapNote, idsPlanActs, idsAskAnswer, idsClosest, idsPlanWhat, idsAskNameFrag, idsAskPasteList });', T);
 
 let passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
@@ -67,6 +67,25 @@ chk('one act or several, in order', T.idsPlanActs({ do: 'improvePhotos', acts: [
   && T.idsPlanActs({ do: 'fill' }).join() === 'fill' && T.idsPlanActs({}).length === 0);
 const what = T.idsPlanWhat({ names: ['Ada'], notKinds: ['summer'], kindOf: { Badmus: 'member' } }).map(w => w.label);
 chk('the chips say "no Summer School" and "Badmus as NGG member", each with a ×', what.includes('no summer school') && what.includes('Badmus as NGG member'));
+s = T.idsPlanSelect({ names: ['ayomide abubakar'], ids: ['m2'] }, ctx);
+const typed = T.idsPlanWhat({ names: ['ayomide abubakar'], ids: ['m2'] }, s).map(w => w.label);
+chk('a typed name that matched one person is shown as the record has it, not as typed', typed.includes('Ayomide Abubakar') && !typed.includes('ayomide abubakar'));
+chk('a number is shown with whose it is', typed.includes('m2 · Idi Oluwadarasimi'));
+s = T.idsPlanSelect({ names: ['Badmus Onoopemipo', 'nobody here'] }, ctx);
+const two = T.idsPlanWhat({ names: ['Badmus Onoopemipo', 'nobody here'] }, s).map(w => w.label);
+chk('a name nobody has stays as typed', two.includes('nobody here'));
+
+console.log('the composer');
+const fr = T.idsAskNameFrag('Reprint ayomide ab');
+chk('a name being typed is looked up without an @, request words left out', fr.length && fr[0].q === 'ayomide ab' && fr[0].at === 8);
+chk('nothing is looked up while a request word is being typed', T.idsAskNameFrag('New cards for every member').length === 0);
+const ex = q => all.filter(r => r.name.toLowerCase() === q.toLowerCase()).map(r => Object.assign({ displayId: '026-' + r.key }, r));
+const L = T.idsAskPasteList('Reprint these:\n1. Idi Oluwadarasimi\n2) Taiwo Ayomide\n- Someone New', ex);
+chk('a pasted numbered list becomes one request, numbering gone, the instruction leading', L && /^Reprint these /.test(L.text) && L.n === 3 && !/\d\./.test(L.text));
+chk('…a line naming exactly one record becomes its ID, an unknown name stays as typed', /026-m2/.test(L.text) && /026-s4/.test(L.text) && /Someone New/.test(L.text) && L.matched === 2);
+const R = T.idsAskPasteList('1\tAgbalaya Habeebat\tJSS2\n2\tBola Ade\tSS1', null);
+chk('rows copied from a spreadsheet read the name column', R && R.text === 'Cards for Agbalaya Habeebat and Bola Ade');
+chk('one line is not a list', T.idsAskPasteList('Bola Ade', null) === null);
 
 console.log('questions answered here');
 const c = { n: 2, sheets: 1, lookup: () => [], blockedList: [], onSheet: [], byCentre: [], stock: { sheets: 1, sides: 2, used: 20 }, bad: [], warn: [] };

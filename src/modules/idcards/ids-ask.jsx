@@ -30,7 +30,8 @@ const IDS_ASK_EXAMPLES = [
   "Volunteers, fronts only, by name",
 ];
 const IDS_ASK_REFINE_HINT = "Change it — “fronts only”, “only Ijaiye”, “add 026-010”, “not Ada”…";
-const IDS_ASK_PICK_MAX = 600;   // one run's ceiling (IDS_BATCH_MAX on the server)
+const IDS_ASK_PICK_MAX = 600;
+const IDS_ASK_TEXT_MAX = 400;   // IDS_PLAN_PROMPT_MAX on the server   // one run's ceiling (IDS_BATCH_MAX on the server)
 const IDS_ASK_NAME_AMBIGUOUS = 3;
 const IDS_ASK_RECENT_KEY = "ngg.ids.ask.recent";
 const IDS_ASK_RECENT_MAX = 6;
@@ -101,6 +102,11 @@ function idsPlanSelect(plan, ctx) {
   const findId = (list, w) => list.filter(c => norm(c.displayId) === w || norm(c.id) === w || (/^\d+$/.test(w) && c.seq === parseInt(w, 10)));
   const hits = [], missing = [], carded = [], ambiguous = [], filtered = [], notWaiting = [], twoLists = [];
   let asked = 0;
+  /* What each typed name or number turned out to be: the record's own name,
+     when it means one person, so the chip reads "Ayomide Abubakar" rather
+     than what was typed ("ayomide abubakar"). */
+  const resolved = {};
+  const resolve = (raw, recs) => { const n = Array.from(new Set((recs || []).map(r => r.name).filter(Boolean))); if (n.length === 1) resolved[raw] = n[0]; return recs; };
   /* Somebody named but kept off by the plan's own narrowing (only NGG, only
      Ijaiye): said as that, with who they are, never as "not found". */
   const whyOff = (r, narrow) => !okKind(r) ? "is " + (IDS_KIND_ONE[r.kind] || r.kind) + (p.kind ? ", and this is " + idsKindWords(p.kind) + " only" : ", and those are left out")
@@ -111,11 +117,11 @@ function idsPlanSelect(plan, ctx) {
     (ids || []).forEach(raw => {
       asked++;
       const w = norm(raw);
-      const inPool = findId(pool.filter(okKind), w);
+      const inPool = resolve(raw, findId(pool.filter(okKind), w));
       if (inPool.length) return hits.push(...inPool);
-      const had = findId(all.filter(okKind), w).filter(r => r.printedBefore);
+      const had = resolve(raw, findId(all.filter(okKind), w).filter(r => r.printedBefore));
       if (had.length) return carded.push(...had);
-      const any = findId(all, w);
+      const any = resolve(raw, findId(all, w));
       if (any.length && whyOff(any[0], false)) return filtered.push({ name: raw, who: any[0].name, why: whyOff(any[0], false), rec: any[0] });
       if (any.length) return notWaiting.push({ name: raw, who: any[0].name });
       missing.push(raw);
@@ -130,9 +136,9 @@ function idsPlanSelect(plan, ctx) {
          is one card, not two: say so, and which one to keep is theirs to say. */
       const kinds = Array.from(new Set(inPool.map(r => r.kind)));
       if (!want && kinds.length > 1 && new Set(inPool.map(r => r.name.toLowerCase())).size === 1) twoLists.push({ name: inPool[0].name, kinds });
-      if (inPool.length) return hits.push(...inPool);
+      if (inPool.length) return hits.push(...resolve(raw, inPool));
       const had = all.filter(r => near(r) && r.printedBefore);
-      if (had.length && had.length <= IDS_ASK_NAME_AMBIGUOUS) return carded.push(...had);
+      if (had.length && had.length <= IDS_ASK_NAME_AMBIGUOUS) return carded.push(...resolve(raw, had));
       if (had.length) return ambiguous.push({ name: raw, n: had.length });
       const any = all.filter(r => idsNameMatch(raw, r.name));
       const off = any.find(r => whyOff(r, narrow) || (want && r.kind !== want));
@@ -147,8 +153,8 @@ function idsPlanSelect(plan, ctx) {
   // Left out as asked: matched across everyone, so "not Ada" works however Ada got in.
   const out = new Set();
   const ex = p.exclude || {};
-  (ex.ids || []).forEach(raw => findId(all, norm(raw)).forEach(r => out.add(r.key)));
-  (ex.names || []).forEach(raw => all.filter(r => idsNameMatch(raw, r.name)).forEach(r => out.add(r.key)));
+  (ex.ids || []).forEach(raw => resolve(raw, findId(all, norm(raw))).forEach(r => out.add(r.key)));
+  (ex.names || []).forEach(raw => resolve(raw, all.filter(r => idsNameMatch(raw, r.name))).forEach(r => out.add(r.key)));
   const uniq = list => { const seen = new Set(); return list.filter(r => !seen.has(r.key) && seen.add(r.key)); };
   const found = uniq(hits);
   const excluded = found.filter(r => out.has(r.key));
@@ -161,7 +167,7 @@ function idsPlanSelect(plan, ctx) {
   /* A name nobody has: the closest names on the lists, so a reversed or
      misspelt name ("Taiwo Ayomide" for "Ayomide Taiwo-Bello") is one tap away. */
   const suggest = missing.map(raw => ({ name: raw, near: idsClosest(raw, all, 2) })).filter(x => x.near.length);
-  return { pick, blocked, missing, carded: uniq(carded).filter(r => !out.has(r.key)), ambiguous, cut, excluded, filtered, notWaiting, twoLists, suggest, asked };
+  return { pick, blocked, missing, carded: uniq(carded).filter(r => !out.has(r.key)), ambiguous, cut, excluded, filtered, notWaiting, twoLists, suggest, asked, resolved };
 }
 
 /* When fewer cards go on than people were named, the count says why in the
@@ -202,21 +208,24 @@ const idsPlanDropFrom = (p, field, sub, value) => {
   }
   return n;
 };
-function idsPlanWhat(p) {
+function idsPlanWhat(p, sel) {
   const out = [];
+  /* A matched name shows as the record has it; a number shows with whose it is. */
+  const rn = (sel && sel.resolved) || {};
+  const nm = v => rn[v] || v, idl = v => rn[v] ? v + " · " + rn[v] : v;
   const targeted = (p.ids || []).length || (p.names || []).length;
   out.push({ label: p.which === "reprint" ? "Reprints" : p.which === "all" ? "Every waiting card" : targeted ? "Named cards" : "New cards",
     drop: p.which && p.which !== "new" ? q => idsPlanWithout(q, ["which"]) : null });
   if (p.kind) out.push({ label: IDS_KIND_PLURAL[p.kind] || p.kind, drop: q => idsPlanWithout(q, ["kind"]) });
   (p.notKinds || []).forEach(k => out.push({ label: "no " + idsKindWords(k), tone: "out", drop: q => { const n = Object.assign({}, q); n.notKinds = (n.notKinds || []).filter(x => x !== k); if (!n.notKinds.length) delete n.notKinds; return n; } }));
-  Object.keys(p.kindOf || {}).forEach(nm => out.push({ label: nm + " as " + (IDS_KIND_ONE[p.kindOf[nm]] || p.kindOf[nm]).replace(/^an? /, ""), drop: q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf); delete n.kindOf[nm]; if (!Object.keys(n.kindOf).length) delete n.kindOf; return n; } }));
+  Object.keys(p.kindOf || {}).forEach(nm => out.push({ label: (rn[nm] || nm) + " as " + (IDS_KIND_ONE[p.kindOf[nm]] || p.kindOf[nm]).replace(/^an? /, ""), drop: q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf); delete n.kindOf[nm]; if (!Object.keys(n.kindOf).length) delete n.kindOf; return n; } }));
   if (p.centre) out.push({ label: p.centre === "none" ? "no centre on the record" : p.centre, drop: q => idsPlanWithout(q, ["centre"]) });
   if (p.dateFrom || p.dateTo) out.push({ label: (p.kind === "member" ? "joined " : "registered ") + idsAskDays(p.dateFrom, p.dateTo), drop: q => idsPlanWithout(q, ["dateFrom", "dateTo"]) });
   if (p.numFrom != null || p.numTo != null) out.push({ label: "numbers " + (p.numFrom != null ? p.numFrom : "…") + "–" + (p.numTo != null ? p.numTo : "…"), drop: q => idsPlanWithout(q, ["numFrom", "numTo"]) });
-  (p.ids || []).forEach(v => out.push({ label: v, drop: q => idsPlanDropFrom(q, "ids", null, v) }));
-  (p.names || []).forEach(v => out.push({ label: v, drop: q => idsPlanDropFrom(q, "names", null, v) }));
-  ["ids", "names"].forEach(k => ((p.also || {})[k] || []).forEach(v => out.push({ label: "+ " + v, tone: "add", drop: q => idsPlanDropFrom(q, "also", k, v) })));
-  ["ids", "names"].forEach(k => ((p.exclude || {})[k] || []).forEach(v => out.push({ label: "not " + v, tone: "out", drop: q => idsPlanDropFrom(q, "exclude", k, v) })));
+  (p.ids || []).forEach(v => out.push({ label: idl(v), drop: q => idsPlanDropFrom(q, "ids", null, v) }));
+  (p.names || []).forEach(v => out.push({ label: nm(v), drop: q => idsPlanDropFrom(q, "names", null, v) }));
+  ["ids", "names"].forEach(k => ((p.also || {})[k] || []).forEach(v => out.push({ label: "+ " + (k === "ids" ? idl(v) : nm(v)), tone: "add", drop: q => idsPlanDropFrom(q, "also", k, v) })));
+  ["ids", "names"].forEach(k => ((p.exclude || {})[k] || []).forEach(v => out.push({ label: "not " + (k === "ids" ? idl(v) : nm(v)), tone: "out", drop: q => idsPlanDropFrom(q, "exclude", k, v) })));
   if (p.limit) out.push({ label: "at most " + p.limit, drop: q => idsPlanWithout(q, ["limit"]) });
   if (p.cause) out.push({ label: IDS_ASK_CAUSE[p.cause] || p.cause, drop: q => idsPlanWithout(q, ["cause"]) });
   return out;
@@ -391,6 +400,56 @@ function IdsAskMini({ text }) {
 const IDS_ASK_MODE_KEY = "ngg.ids.ask.mode";
 function idsAskModeGet() { try { return localStorage.getItem(IDS_ASK_MODE_KEY) === "act" ? "act" : "ask"; } catch (_) { return "ask"; } }
 
+/* Typing a name brings up the people it could be, without an @: the last one
+   to three words before the caret are looked up, unless one of them is a word
+   of a request ("reprint", "members", "front") rather than part of a name. */
+const IDS_ASK_STOP = new Set(("a an and at all any are as back backs be by can card cards centre centres do every everyone fill for fix "
+  + "from front fronts gap gaps give has have how i improve in is it joined last make me member members my new no not "
+  + "of on one only or our photo photos please print printed proof put registered reprint reprints school send sheet sheets "
+  + "show some summer the their them these this those to today up volunteer volunteers want was week what when where which who "
+  + "why with yesterday you a4 participants participant ask add remove except without but also plus").split(" "));
+function idsAskNameFrag(before) {
+  const m = /([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'’-]*(?:\s+[A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F'’-]*){0,2})$/.exec(before || "");
+  if (!m) return [];
+  const words = m[1].split(/\s+/), out = [];
+  for (let k = Math.min(3, words.length); k >= 1; k--) {
+    const w = words.slice(words.length - k);
+    if (w.some(x => IDS_ASK_STOP.has(x.toLowerCase()))) continue;
+    const q = w.join(" ");
+    if (q.length >= 3) out.push({ q, at: before.length - q.length });
+  }
+  return out;
+}
+
+/* A pasted list (numbered, bulleted, or rows copied from a spreadsheet) is
+   read as one request: each line is a person, and a line naming exactly one
+   record becomes that record's ID, which keeps a long list inside the
+   request's length and means nobody is mistaken for a namesake. A first line
+   that is an instruction ("Reprint these:") leads the request. */
+const IDS_ASK_ID_RE = /^(?:\d{3}-\d{3}|[A-Z]{2,4}-\d{2}-\d{3}|SUM-[\w-]+|NGG-[\w-]+|VOL-[\w-]+)$/i;
+function idsAskPasteList(text, exact) {
+  const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+  const bullet = /^(?:\(?\d{1,3}[.)]|\d{1,3}\s*-|[-*•–·])\s*/;
+  let head = "";
+  if (/:$/.test(lines[0]) || (!bullet.test(lines[0]) && /\b(print|reprint|cards?|proof|fronts?|backs?)\b/i.test(lines[0]) && !/\t/.test(lines[0]))) head = lines.shift().replace(/:$/, "").trim();
+  const items = lines.map(l => {
+    const cells = l.split(/\t|\s{3,}|\s\|\s/).map(c => c.replace(bullet, "").replace(/[,;.]+$/, "").trim()).filter(c => c && !/^\d{1,3}$/.test(c));
+    const id = cells.find(c => IDS_ASK_ID_RE.test(c));
+    return id || cells.filter(c => /[A-Za-z]/.test(c)).sort((a, b) => b.length - a.length)[0] || "";
+  }).filter(Boolean);
+  if (items.length < 2) return null;
+  let matched = 0;
+  const shown = items.map(x => {
+    if (IDS_ASK_ID_RE.test(x)) return x;
+    const r = exact ? exact(x) : [];
+    if (r.length === 1 && r[0].displayId) { matched++; return r[0].displayId; }
+    return x;
+  });
+  const list = shown.length === 2 ? shown.join(" and ") : shown.slice(0, -1).join(", ") + " and " + shown[shown.length - 1];
+  return { text: (head || "Cards for") + " " + list, n: items.length, matched };
+}
+
 /** The pane: transcript, composer, and the one live plan. */
 function IdsAssistant({ A, onClose }) {
   const [text, setText] = React.useState("");
@@ -416,8 +475,11 @@ function IdsAssistant({ A, onClose }) {
     if (pop.kind === "people") {
       const r = people[i];
       if (!r) return;
-      const tag = r.displayId || r.name;
-      setText(x => x.slice(0, pop.at) + tag + " " + x.slice(pop.at + 1 + pop.q.length));
+      /* Tagged with @: the ID, which is exact. Typed as a name: the name as
+         the record has it, which still reads as the sentence it was. */
+      const tag = pop.bare ? r.name : (r.displayId || r.name);
+      const rest = x => x.slice(pop.at + (pop.bare ? 0 : 1) + pop.q.length);
+      setText(x => { const after = rest(x); return x.slice(0, pop.at) + tag + (/^\s/.test(after) ? "" : " ") + after; });
     } else setText(keysList[i] || "");
     setPop(null);
     setTimeout(() => inputRef.current && inputRef.current.focus(), 0);
@@ -426,8 +488,12 @@ function IdsAssistant({ A, onClose }) {
     const v = e.target.value, caret = e.target.selectionStart || v.length;
     setText(v); setHist(-1);
     const m = /(^|\s)@([^\s@]{0,24})$/.exec(v.slice(0, caret));
-    if (m) { setPop({ kind: "people", q: m[2], at: caret - m[2].length - 1 }); setPick(0); }
-    else if (v === "?") { setPop({ kind: "keys" }); setPick(0); }
+    if (m) { setPop({ kind: "people", q: m[2], at: caret - m[2].length - 1 }); setPick(0); return; }
+    if (v === "?") { setPop({ kind: "keys" }); setPick(0); return; }
+    // No @: the name being typed, longest reading first, if it is somebody's.
+    const before = v.slice(0, caret);
+    const frag = /[A-Za-z'’-]$/.test(before) ? idsAskNameFrag(before).find(f => { const hit = A.people(f.q); return hit.length && !hit.some(r => r.name.toLowerCase() === f.q.toLowerCase() && hit.length === 1); }) : null;
+    if (frag) { setPop({ kind: "people", q: frag.q, at: frag.at, bare: true }); setPick(0); }
     else setPop(null);
   };
   const onKey = e => {
@@ -435,7 +501,8 @@ function IdsAssistant({ A, onClose }) {
     if (list && list.length) {
       if (e.key === "ArrowDown") { e.preventDefault(); return setPick(i => (i + 1) % list.length); }
       if (e.key === "ArrowUp") { e.preventDefault(); return setPick(i => (i - 1 + list.length) % list.length); }
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); return choose(pick); }
+      // A suggestion for a typed name is taken with Tab; Enter still sends what was typed.
+      if (e.key === "Tab" || (e.key === "Enter" && !pop.bare)) { e.preventDefault(); return choose(pick); }
     }
     if (e.key === "Escape") {
       e.stopPropagation();
@@ -451,10 +518,22 @@ function IdsAssistant({ A, onClose }) {
       setHist(i); setText(i >= 0 ? recent[i] : "");
     }
   };
+  const onPaste = e => {
+    const raw = (e.clipboardData || window.clipboardData).getData("text");
+    const L = idsAskPasteList(raw, A.exact);
+    if (!L) return;
+    e.preventDefault();
+    const el = e.target, a = el.selectionStart || 0, b = el.selectionEnd || 0;
+    const next = (text.slice(0, a) + L.text + text.slice(b)).slice(0, IDS_ASK_TEXT_MAX);
+    setText(next); setPop(null);
+    A.say(L.n + " people read from the list" + (L.matched ? ", " + L.matched + " matched to their ID" : "") + (next.length >= IDS_ASK_TEXT_MAX ? ". The list is longer than one request holds: send it in two." : "."));
+  };
   // Starters come from the studio's real counts and centres; examples fill any gap.
   // With real starters, one example shows the other kind of request (by ID); without, the examples stand in.
   const base = A.starters && A.starters.length ? A.starters.concat(["Reprint 026-003 and 026-014"]) : IDS_ASK_EXAMPLES;
-  const starters = recent.slice(0, 2).map(x => ({ x, recent: true })).concat(base.filter(x => !recent.includes(x)).map(x => ({ x }))).slice(0, 5);
+  // What is on screen comes first: a sheet with gaps, a block, cards with no photo.
+  const onScreen = (A.next || []).filter(x => !recent.includes(x));
+  const starters = recent.slice(0, 2).map(x => ({ x, recent: true })).concat(onScreen.map(x => ({ x, now: true })), base.filter(x => !recent.includes(x) && !onScreen.includes(x)).map(x => ({ x }))).slice(0, 6);
   /* Voice: the browser's own speech recognition, where it has one. Nothing is
      sent anywhere by the studio; the words land in the composer to be read
      and sent like typing. */
@@ -480,9 +559,9 @@ function IdsAssistant({ A, onClose }) {
             <p className="ids-ai-hello-h"><IdsIcon name="sparkle"/>Say what to print</p>
             <p className="ids-ai-p">I read a request into a plan and set up the sheet: who goes on it, and how it prints. I can’t print, and I can’t mark anyone as printed. That stays your press.</p>
             <ul className="ids-ai-starters" aria-label={recent.length ? "Recent and examples" : "Examples"}>
-              {starters.map(({ x, recent: rc }) => (
+              {starters.map(({ x, recent: rc, now }) => (
                 <li key={x}><button type="button" className={"ids-ai-starter" + (rc ? " is-recent" : "")} onClick={() => { setText(x); inputRef.current && inputRef.current.focus(); }}>
-                  {rc ? <IdsIcon name="clock-counter-clockwise"/> : <IdsIcon name="arrow-up-right"/>}<span>{x}</span>
+                  {rc ? <IdsIcon name="clock-counter-clockwise"/> : <IdsIcon name={now ? "lightning" : "arrow-up-right"}/>}<span>{x}</span>
                 </button></li>
               ))}
               <li><button type="button" className="ids-ai-starter" onClick={() => { setText("What can you do?"); inputRef.current && inputRef.current.focus(); }}><IdsIcon name="question"/><span>What can you do?</span></button></li>
@@ -501,21 +580,26 @@ function IdsAssistant({ A, onClose }) {
       </div>
       <form className="ids-ai-compose" onSubmit={e => { e.preventDefault(); send(); }}>
         {pop && (pop.kind === "people" ? people.length > 0 : true) && (
-          <ul className="ids-ai-pop" role="listbox" aria-label={pop.kind === "people" ? "People" : "Shortcuts"}>
-            {pop.kind === "people" ? people.map((r, i) => (
-              <li key={r.key} role="option" aria-selected={i === pick} className={i === pick ? "is-on" : ""} onMouseDown={e => { e.preventDefault(); choose(i); }}>
-                <b>{r.name}</b><span className="ids-mono">{r.displayId || "no ID yet"}</span><span>{r.centre || "No centre"}</span>
-              </li>
-            )) : <>
+          <ul id="ids-ai-pop" className="ids-ai-pop" role="listbox" aria-label={pop.kind === "people" ? "People" : "Shortcuts"}>
+            {pop.kind === "people" ? <>
+              {people.map((r, i) => (
+                <li key={r.key} id={"ids-ai-opt-" + i} role="option" aria-selected={i === pick} className={i === pick ? "is-on" : ""} onMouseDown={e => { e.preventDefault(); choose(i); }}>
+                  <b>{r.name}</b><span className="ids-mono">{r.displayId || "no ID yet"}</span><span>{r.centre || "No centre"}</span>
+                </li>
+              ))}
+              {pop.bare && <li className="ids-ai-keys" aria-hidden="true"><kbd>Tab</kbd> use · <kbd>↓</kbd> next · <kbd>Esc</kbd> keep typing</li>}
+            </> : <>
               {keysList.map((x, i) => <li key={x} role="option" aria-selected={i === pick} className={i === pick ? "is-on" : ""} onMouseDown={e => { e.preventDefault(); choose(i); }}>{x}</li>)}
-              <li className="ids-ai-keys" aria-hidden="true"><kbd>/</kbd> focus · <kbd>↑</kbd> last request · <kbd>@</kbd> a person · <kbd>Esc</kbd> clear, then close</li>
+              <li className="ids-ai-keys" aria-hidden="true"><kbd>/</kbd> focus · <kbd>↑</kbd> last request · <kbd>@</kbd> a person by ID · <kbd>Tab</kbd> use a suggestion · paste a list · <kbd>Esc</kbd> clear, then close</li>
             </>}
           </ul>
         )}
         <label htmlFor="ids-ai-in" className="ids-sr">Message the assistant</label>
-        <textarea id="ids-ai-in" ref={inputRef} className="ids-ai-in" rows={2} value={text} maxLength={400}
-          placeholder={A.live ? IDS_ASK_REFINE_HINT : "Type @ to tag a person or ? for shortcuts"}
-          aria-autocomplete="list" aria-expanded={!!pop} onChange={onChange} onKeyDown={onKey} onBlur={() => setTimeout(() => setPop(null), 120)}/>
+        <textarea id="ids-ai-in" ref={inputRef} className="ids-ai-in" rows={2} value={text} maxLength={IDS_ASK_TEXT_MAX}
+          placeholder={A.live ? IDS_ASK_REFINE_HINT : "Say what to print. Names come up as you type; Tab picks one. ? for shortcuts"}
+          aria-autocomplete="list" aria-expanded={!!pop} aria-controls={pop ? "ids-ai-pop" : undefined}
+          aria-activedescendant={pop && pop.kind === "people" && people[pick] ? "ids-ai-opt-" + pick : undefined}
+          onChange={onChange} onKeyDown={onKey} onPaste={onPaste} onBlur={() => setTimeout(() => setPop(null), 120)}/>
         <div className="ids-ai-bar">
           <span className="ids-ai-mode" role="group" aria-label="Mode">
             <button type="button" aria-pressed={A.mode === "ask"} className={A.mode === "ask" ? "is-on" : ""} onClick={() => A.setMode("ask")} title="Suggests a plan; you press Apply"><IdsIcon name="chat-circle"/>Ask</button>

@@ -336,7 +336,7 @@ class Mp9Portal extends React.Component {
       hasSupport: ((this.dd("chat") || {}).supporting || []).length > 0,
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
-      cd: sat ? (dd > 0 ? "in " + dd + "d " + hh + "h" : "in " + hh + "h") : "", prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
+      cd: sat ? (ms <= 0 ? "Today" : "Starts in " + (dd > 0 ? dd + (dd === 1 ? " day " : " days ") : "") + hh + (hh === 1 ? " hour" : " hours")) : "", prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
       /* A quick reply starts the message; it never sends it. "I need help" is
          not a message to the mentor only: it opens Help, where the people who
          keep children safe are. */
@@ -367,12 +367,16 @@ class Mp9Portal extends React.Component {
        A reply to a check-in or a journal entry is labelled as one, so the
        stream reads as conversations, not one undivided list. */
     const audioOf = m => ((m.media || []).find(x => x.type === "audio") || {}).url || "";
-    const msgs = (c.messages || []).map((m, i) => ({ t: m.body, when: mp9When(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""), mine: m.mine,
+    /* Read-aloud shows on the latest message from the mentor; on the others
+       it appears when the message is hovered or focused (the bubble takes
+       focus), so a speaker does not sit after every timestamp. */
+    const lastIn = (c.messages || []).reduce((k, m, i) => (!m.mine && !audioOf(m) ? i : k), -1);
+    const msgs = (c.messages || []).map((m, i) => ({ t: m.body, hasT: !!String(m.body || "").trim(), hasWhen: true, readCls: "m9x-msg-read" + (i === lastIn || s.speaking === "msg" + m.id ? " is-on" : ""), when: mp9When(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""), mine: m.mine,
       audio: mp9Abs(audioOf(m)), hasAudio: !!audioOf(m), canRead: !m.mine && this.canSpeak() && !audioOf(m),
       readL: s.speaking === "msg" + m.id ? "Stop reading" : "Read aloud", readIcon: s.speaking === "msg" + m.id ? "ph-fill ph-stop-circle" : "ph ph-speaker-high", read: () => this.speak(m.body, "msg" + m.id),
       hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
       al: m.mine ? "flex-end" : "flex-start", bg: m.mine ? "#0b0b0c" : "#fff", fg: m.mine ? "#fff" : "#0b0b0c", bd: m.mine ? "#0b0b0c" : "#e8e5dd" }));
-    if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", hasAbout: false, about: "", hasAudio: false, audio: "", canRead: false, al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
+    if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", hasT: true, hasWhen: false, readCls: "", hasAbout: false, about: "", hasAudio: false, audio: "", canRead: false, al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
     /* A voice note: record (up to two minutes), listen back, then send — never sent by the recorder itself. */
     const cr = s.cRec || { rec: "idle" }, upR = (k, p) => this.setState(st => ({ cRec: { ...(st.cRec || {}), ...p } }));
     const canVoice = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);

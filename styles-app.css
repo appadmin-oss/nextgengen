@@ -7980,7 +7980,8 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-stat { font-size: 12.5px; color: var(--ids-muted); }
 .ids-seltools { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .ids-seltools-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; margin-right: 4px; }
-.ids-gapbar { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--ids-warn-bg); color: var(--ids-warn-fg); font-size: 12.5px; }
+.ids-gapbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 16px; background: var(--ids-warn-bg); color: var(--ids-warn-fg); font-size: 12.5px; }
+.ids-gapbar > .ids-grow { flex: 1 1 18em; }
 .ids-canvas { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px; display: flex; }
 .ids-canvas-empty { margin: auto; max-width: 380px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--ids-muted); }
 .ids-canvas-empty b { font-size: 16px; font-weight: 600; color: var(--ids-ink); }
@@ -11066,11 +11067,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-e9602f6{font-size:13px;font-weight:600;color:#3a3a40}
 .m9-0a800e7{font-size:14.5px;display:flex;align-items:center;gap:8px}
 .m9-7c2238c{font-size:13px;color:#4a4a50;line-height:1.45}
-.m9-ba935ad{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:#f4f4f2}
-.m9-a7c04d4{font-size:22px;flex-shrink:0}
-.m9-8da9334{font-size:15px;font-weight:600}
-.m9-ac79166{font-family:'Geist Mono',monospace;font-size:15px;font-variant-numeric:tabular-nums}
-.m9-86c1171{height:40px;padding:0 14px;border-radius:10px;border:0;background:#0b0b0c;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .m9-849d18f{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;border-radius:14px;background:#ecebe6}
 .m9-9dbc768{min-height:44px;padding:0 4px;border:0;border-radius:10px;background:var(--dc-background, unset);box-shadow:var(--dc-box-shadow, unset);font-size:13.5px;font-weight:var(--dc-font-weight, unset);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
 .m9-de11aa1{min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#f5b026;font-size:11px;font-weight:700;display:grid;place-items:center}
@@ -11080,14 +11076,8 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-0063afb{width:7px;height:7px;border-radius:50%;background:currentColor}
 .m9-da8d1aa{font-size:12px;color:#6b6b72;display:flex;align-items:center;gap:5px}
 .m9-a37d35a{padding:16px;display:flex;flex-direction:column;gap:10px;background:#f9f9f7}
-.m9-8010b8e{align-self:var(--dc-align-self, unset);max-width:82%;display:flex;flex-direction:column;gap:4px;align-items:var(--dc-align-items, unset)}
-.m9-3fb05f2{height:24px;padding:0 9px;border-radius:999px;background:#ecebe6;color:#3a3a40;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px}
-.m9-f9333a3{padding:10px 14px;border-radius:16px;border:var(--dc-border, unset);background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:15px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
-.m9-80df6ac{max-width:260px;height:40px}
-.m9-fa9ff02{font-size:12px;color:#5f5f66;display:flex;align-items:center;gap:6px}
-.m9-215c389{width:44px;height:44px;margin:-12px -10px -12px 0;border:0;background:none;cursor:pointer;font-size:18px;color:#3a3a40;display:grid;place-items:center}
-.m9-177c8c9{padding:8px 10px 0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
-.m9-cdac255{flex-shrink:0;height:44px;padding:0 14px;border-radius:999px;border:1px solid #d6d4cc;background:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.m9-c498cb9{align-self:var(--dc-align-self, unset);align-items:var(--dc-align-items, unset)}
+.m9-1400492{border-color:var(--dc-border-color, unset);background:var(--dc-background, unset);color:var(--dc-color, unset)}
 .m9-bc8bba8{margin:8px 10px 0;padding:10px 12px;border-radius:12px;background:#fdf6e3;color:#5c4100;font-size:13.5px;line-height:1.45}
 .m9-7a673f6{padding:10px;border-top:1px solid #e8e5dd;display:flex;gap:8px;align-items:center}
 .m9-9cf850f{flex:1;min-width:0;height:48px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;font-size:16px;outline:0;background:#fff}
@@ -11403,6 +11393,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-9328298{height:48px;padding:0 16px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:15px;font-weight:600;cursor:pointer}
 .m9-eb6b5da{height:48px;padding:0 20px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:15px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
 .m9-40123d3{display:flex;gap:10px;align-items:flex-start;padding:14px;border-radius:14px;background:#f3faf4;border:1px solid #cfe8d5}
+.m9-8da9334{font-size:15px;font-weight:600}
 .m9-6daf76d{align-self:flex-start;height:40px;padding:0 4px;border:0;background:none;font-size:14px;font-weight:600;text-decoration:underline;cursor:pointer}
 .m9-8ad45ff{font-size:18px;color:#a07400}
 .m9-1a1aa38{height:44px;padding:0 12px;border-radius:10px;border:1px solid #d6d4cc;background:#fff;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
@@ -14087,3 +14078,36 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-start-go:focus-visible, .m9x-start-hide:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
 .m9x-start-hide { align-self: flex-start; min-height: 44px; padding: 0 4px; border: 0; background: none; color: #3f3f46; font: 500 14px 'Geist', system-ui, sans-serif; text-decoration: underline; cursor: pointer; }
 @container (max-width: 420px) { .m9x-start-i { flex-wrap: wrap; } .m9x-start-go { margin-left: 34px; } }
+
+/* Member portal · My mentor. The next-session banner stacks rather than
+   truncates: label, the date (which may wrap), the countdown in the reading
+   face, and the Prepare action, which drops below when the row is narrow. */
+.m9x-sess { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 14px; background: #f4f4f2; }
+.m9x-sess > i { flex-shrink: 0; align-self: flex-start; margin-top: 2px; font-size: 22px; color: var(--m9-accent, #0b0b0c); }
+.m9x-sess-txt { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m9x-sess-k { font-size: 12.5px; color: #5f5f66; }
+.m9x-sess-d { font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.m9x-sess-cd { font-size: 13.5px; color: #3a3a40; font-variant-numeric: tabular-nums; }
+.m9x-sess-go { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: #0b0b0c; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.m9x-sess-go:focus-visible { outline: 3px solid #f5b026; outline-offset: 2px; }
+@container (max-width: 420px) { .m9x-sess-go { flex: 1 1 100%; } }
+
+/* One message: a bubble, a voice note, a time. A message with no text
+   (a voice note) draws no empty bubble. */
+.m9x-msg { max-width: min(82%, 520px); display: flex; flex-direction: column; gap: 4px; }
+.m9x-msg-about { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 0 9px; border-radius: 999px; background: #ecebe6; color: #3a3a40; font-size: 12px; font-weight: 600; }
+.m9x-msg-t { padding: 10px 14px; border: 1px solid; border-radius: 16px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.m9x-msg-t:focus { outline: 0; }
+.m9x-msg-t:focus-visible { outline: 3px solid #f5b026; outline-offset: 2px; }
+.m9x-msg-audio { width: min(260px, 100%); height: 40px; }
+.m9x-msg-when { display: flex; align-items: center; gap: 4px; min-height: 20px; font-size: 12px; color: #5f5f66; }
+.m9x-msg-read { display: grid; place-items: center; width: 44px; height: 44px; margin: -12px -10px -12px -6px; padding: 0; border: 0; background: none; color: #3a3a40; font-size: 18px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+.m9x-msg-read.is-on, .m9x-msg:hover .m9x-msg-read, .m9x-msg:focus-within .m9x-msg-read { opacity: 1; }
+.m9x-msg-read:focus-visible { outline: 3px solid #f5b026; outline-offset: -6px; }
+@media (prefers-reduced-motion: reduce) { .m9x-msg-read { transition: none; } }
+
+/* Quick replies wrap; none is cut off at the edge. */
+.m9x-quick { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 0; }
+.m9x-quick-b { min-height: 44px; padding: 0 14px; border: 1px solid #d6d4cc; border-radius: 999px; background: #fff; color: #0b0b0c; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.m9x-quick-b:hover { border-color: #0b0b0c; }
+.m9x-quick-b:focus-visible { outline: 3px solid #f5b026; outline-offset: 2px; }
