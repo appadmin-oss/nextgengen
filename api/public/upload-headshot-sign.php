@@ -13,6 +13,10 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
 rate_limit_check('upload.sign');
 
+/* A retry after Cloudinary refused an upload carries what it said; the
+   account is checked (and, when spent, left for the next) before signing. */
+$refusedBody = read_json_body();
+$refusal = media_before_sign(is_array($refusedBody['refused'] ?? null) ? $refusedBody['refused'] : null);
 $cfg = $CONFIG['cloudinary'] ?? [];
 /* A bucket wins when one is set (object-store.php): an image, in the headshot
    folder, at most the headshot cap — the kind is fixed here as it is below. */

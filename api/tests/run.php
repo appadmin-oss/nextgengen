@@ -29099,6 +29099,70 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
 })();
 
+// ── A refusal the browser saw moves uploads to the backup (media_upload_refused) ──
+(function () {
+    $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $main = ['cloud_name' => 'maincloud', 'api_key' => '111111', 'api_secret' => 'mainsecret123', 'folder' => 'ngg',
+        'backup' => ['cloud_name' => 'backupcloud', 'api_key' => '444444', 'api_secret' => 'backupsecret1']];
+    $GLOBALS['CONFIG']['cloudinary'] = $main;
+    $reset = static function () use ($main) {
+        setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test');
+        setting_set('media.refusal.checked', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+        unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+        $GLOBALS['CONFIG']['cloudinary'] = $main;
+    };
+    $reset();
+    $use = ['primary' => 40.0, 'backup' => 5.0]; $calls = []; $probes = []; $probeAns = ['ok' => false, 'code' => 420, 'message' => 'Upload limit exceeded'];
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q, $acc) use (&$use, &$calls) {
+        $calls[] = $acc . ' ' . $path;
+        return ['code' => 200, 'body' => ['plan' => 'Free', 'credits' => ['usage' => 1, 'limit' => 25, 'used_percent' => $use[$acc] ?? 10.0]]];
+    };
+    $GLOBALS['__media_probe_mock'] = function ($id) use (&$probes, &$probeAns) { $probes[] = $id; return $probeAns; };
+    media_activate();
+    chk('refusal · with the backup set in API keys, uploads start on the main account', media_active_id() === 'primary' && count(media_accounts()) === 2);
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 400, 'message' => 'Invalid image file']);
+    chk('refusal · a bad file is not a spent plan: nothing is checked, nothing moves', !$v['switched'] && $v['checked'] === 'none' && !$calls && !$probes && media_active_id() === 'primary');
+    db_exec("DELETE FROM ops_events WHERE source = 'media.storage'");
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · the reading still says 40%, so the server tries an upload itself before believing it', $v['checked'] === 'probe' && $probes === ['primary'] && in_array('primary /usage', $calls, true));
+    chk('refusal · …it is refused too: uploads move to the backup, and its keys are the ones signed with', $v['switched'] && media_active_id() === 'backup' && media_cfg()['cloud_name'] === 'backupcloud' && media_cfg()['api_secret'] === 'backupsecret1');
+    chk('refusal · …and the people who run it are told, once', (int)db_row("SELECT COUNT(*) AS n FROM ops_events WHERE source = 'media.storage' AND detail LIKE '%refused an upload%'")['n'] === 1);
+    $probes = [];
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · a second report about the main account (already left) just gets the backup signature', $v['switched'] && $v['active'] === 'backup' && !$probes);
+    $v = media_upload_refused(['cloud' => 'nobodys', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · a report naming somebody else\'s cloud changes nothing', !$v['switched'] && media_active_id() === 'backup');
+
+    // A browser that cries wolf: the account has room and the server's own upload lands.
+    $reset(); $calls = []; $probes = []; $probeAns = ['ok' => true, 'code' => 200, 'message' => '']; media_activate();
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · a report the server cannot confirm moves nothing', !$v['switched'] && $v['checked'] === 'probe' && media_active_id() === 'primary');
+    $probes = [];
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · …and a stream of reports costs one check, not one each', $v['checked'] === 'recent' && !$probes);
+
+    // The reading itself shows the plan spent: no test upload needed.
+    $reset(); $calls = []; $probes = []; $use['primary'] = 99.0; media_activate();
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · when the fresh reading shows the plan spent, uploads move without a test upload', $v['switched'] && $v['checked'] === 'usage' && !$probes && media_active_id() === 'backup');
+
+    // No web-cron on the host: signing reads a stale account.
+    $reset(); $calls = []; $use['primary'] = 96.0;
+    setting_set('media.usage', ['configured' => true, 'level' => 'ok', 'pct' => 10.0, 'parts' => [], 'checkedAt' => gmdate('c', time() - MEDIA_REFRESH_SECONDS - 600), 'error' => ''], 'test');
+    media_activate();
+    chk('refusal · (a six-hour-old reading says the main account is fine)', media_active_id() === 'primary');
+    media_before_sign(null);
+    chk('refusal · signing an upload takes the overdue reading, so a host without web-cron still moves to the backup',
+        in_array('primary /usage', $calls, true) && media_active_id() === 'backup' && media_cfg()['cloud_name'] === 'backupcloud');
+    $calls = []; media_before_sign(null);
+    chk('refusal · …and a fresh reading is not taken again on the next upload', !$calls);
+
+    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_probe_mock']);
+    $reset();
+    if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+    unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+})();
+
 // ── A child's own concern from the Member Portal (member_sg_self) ──
 (function () {
     $now = now_iso();

@@ -396,6 +396,81 @@ function cloudinary_failover(string $why): bool {
     media_switch_notice($from, $to, $why);
     return true;
 }
+/* ── A refusal the browser saw ──────────────────────────────────────────
+   Most uploads go from the browser straight to Cloudinary with a signature
+   from upload-sign.php, so when the account uploads go to is spent the server
+   never sees the refusal, and the backup sat unused until the next 6-hourly
+   reading (never, on a host whose web-cron does not fire). The uploader now
+   reports the refusal when it asks for a fresh signature, and this decides.
+   A browser's word alone never moves the site's storage: the account is read
+   at once, and if the reading does not settle it, a one-pixel signed upload is
+   tried with the server's own keys. Checked at most once per account per
+   MEDIA_REFUSAL_GAP seconds, so a stream of reports costs one check. */
+const MEDIA_REFUSAL_GAP = 120;
+const MEDIA_PROBE_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/** Does what the browser saw read as a spent plan (rather than a bad file)? */
+function media_refusal_is_quota(int $status, string $msg): bool {
+    return $status === 420 || $status === 429 || (bool)preg_match('/limit|quota|credit|exceed|disabled|suspend|plan/i', $msg);
+}
+
+/** $r = ['cloud' => the cloud that refused, 'status' => HTTP status, 'message' => Cloudinary's words].
+ *  Returns ['switched' => bool, 'active' => account id, 'checked' => what was done]. */
+function media_upload_refused(array $r): array {
+    $cloud = (string)($r['cloud'] ?? ''); $status = (int)($r['status'] ?? 0); $msg = mb_substr((string)($r['message'] ?? ''), 0, 300);
+    $active = media_active_id(); $acc = media_account($active);
+    $out = ['switched' => false, 'active' => $active, 'checked' => 'none'];
+    // Already moved on (another upload reported first): the fresh signature is for the next account.
+    if (!$acc || $cloud === '' || strcasecmp($cloud, (string)$acc['cloud_name']) !== 0) { $out['switched'] = $acc && $cloud !== '' && media_account_for_cloud($cloud) !== null; return $out; }
+    if (!media_refusal_is_quota($status, $msg)) return $out;
+    $last = (array)(setting_get('media.refusal.checked') ?: []);
+    if (time() - (int)($last[$active] ?? 0) < MEDIA_REFUSAL_GAP) { $out['checked'] = 'recent'; return $out; }
+    $last[$active] = time();
+    setting_set('media.refusal.checked', $last, 'system');
+
+    $st = media_usage_refresh_one($acc, true);
+    $out['checked'] = 'usage';
+    $why = 'refused an upload (' . ($msg !== '' ? $msg : 'HTTP ' . $status) . ')';
+    if ($st['level'] === 'critical') {
+        media_activate(); media_credit_flags();
+        if (media_active_id() !== $active) { media_switch_notice($active, media_active_id(), $why); $out['switched'] = true; }
+    } else {
+        $p = media_probe_upload($acc);
+        $out['checked'] = 'probe';
+        if (!$p['ok'] && media_refusal_is_quota((int)$p['code'], (string)$p['message'])) $out['switched'] = cloudinary_failover($why);
+    }
+    $out['active'] = media_active_id();
+    return $out;
+}
+
+/** A one-pixel signed upload with one account's keys, deleted again when it lands. Test seam: $GLOBALS['__media_probe_mock']. */
+function media_probe_upload(array $acc): array {
+    if (isset($GLOBALS['__media_probe_mock']) && is_callable($GLOBALS['__media_probe_mock'])) return ($GLOBALS['__media_probe_mock'])((string)$acc['id']);
+    if (!function_exists('curl_init')) return ['ok' => true, 'code' => 0, 'message' => ''];
+    $ts = time(); $folder = trim((string)(media_primary_cfg()['folder'] ?? 'ngg'), '/') . '/_probe';
+    $sig = sha1('folder=' . $folder . '&timestamp=' . $ts . $acc['api_secret']);
+    $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$acc['cloud_name']) . '/image/upload');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => ['file' => MEDIA_PROBE_GIF, 'folder' => $folder, 'timestamp' => $ts, 'api_key' => $acc['api_key'], 'signature' => $sig]]);
+    $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $j = json_decode((string)$raw, true);
+    if ($code >= 200 && $code < 300 && !empty($j['public_id'])) {
+        if (function_exists('cloudinary_destroy')) cloudinary_destroy((string)$j['public_id'], (string)$acc['cloud_name']);
+        return ['ok' => true, 'code' => $code, 'message' => ''];
+    }
+    return ['ok' => false, 'code' => $code, 'message' => (string)($j['error']['message'] ?? '')];
+}
+
+/** Before signing: a fresh signature carries the browser's report of a
+ *  refusal, if any; and a reading older than the cadence is taken now, for a
+ *  host whose web-cron does not fire. Returns the refusal verdict, or null. */
+function media_before_sign(?array $refused): ?array {
+    if (!media_accounts()) return null;
+    $verdict = $refused ? media_upload_refused($refused) : null;
+    try { media_usage_refresh(false); } catch (Throwable $e) { error_log('[media_before_sign] ' . $e->getMessage()); }
+    return $verdict;
+}
+
 /** Each switch is told to the people who run it, and recorded. */
 function media_switch_notice(string $from, string $to, string $why): void {
     $fa = media_account($from); $ta = media_account($to);
