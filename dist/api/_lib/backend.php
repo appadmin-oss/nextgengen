@@ -790,6 +790,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.photo.edit'          => 'admin_photo_edit',
             'admin.photo.edit.bulk'     => 'admin_photo_edit_bulk',
             'admin.photos.secure'       => 'admin_photos_secure',
+            'admin.photos.materialise'  => 'admin_photos_materialise',
             'admin.photos.backup'       => 'photo_backup_zip',
             'admin.photo.replace'       => 'admin_photo_replace',
             'admin.application.convert' => 'admin_application_convert',

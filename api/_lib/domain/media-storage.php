@@ -178,6 +178,18 @@ function admin_media_purge_derived(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     if (trim((string)($p['confirm'] ?? '')) !== 'FREE SPACE') return ['ok' => false, 'error' => 'confirm_required', 'detail' => 'Type FREE SPACE to confirm.'];
     if (!media_configured()) return ['ok' => false, 'error' => 'not_configured'];
+    /* A photo still on a record as a background-removal chain would be cut out
+       again — 75 transformations each — the next time any page shows it, so
+       freeing space would spend more than it saves. Store those photos as plain
+       images first (System → Photos → Store edited photos). */
+    if (function_exists('admin_photos_materialise') && empty($p['force'])) {
+        $n = 0;
+        foreach ([['members'], ['volunteers'], ['summer_students']] as [$tbl]) {
+            $n += (int)(db_row("SELECT COUNT(*) c FROM {$tbl} WHERE photoUrl LIKE '%res.cloudinary.com/%e_background_removal%'")['c'] ?? 0);
+        }
+        if ($n > 0) return ['ok' => false, 'error' => 'chained_photos', 'count' => $n,
+            'detail' => $n . ' photo' . ($n === 1 ? ' is' : 's are') . ' still an edit with the background removed. Freeing space now would make Cloudinary remove each background again (75 credits’ worth of work each). Store them as plain images first.'];
+    }
     $deleted = 0; $partial = false; $errors = [];
     foreach (['image', 'video'] as $rt) {
         for ($i = 0; $i < MEDIA_PURGE_ROUNDS; $i++) {

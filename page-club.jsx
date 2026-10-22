@@ -774,9 +774,20 @@ function cmPhotoOf(post) {
     author: { name: a.name || "", centre: a.centre || "", isMe: !!a.isMe, photo: a.photo || "" },
   };
 }
+/* Cloudinary bills every distinct derived copy. So images come in four widths,
+   not the dozen the screens asked for; the resize goes AFTER any edit already in
+   the URL (before it, a 96px avatar re-ran the whole edit and was then blown up);
+   and a video is delivered as exactly the rendition made at upload
+   (CM_VIDEO_TF = upload-sign.php's eager string), so it is transcoded once. */
+const CM_WIDTHS = [128, 320, 640, 1280];
+const CM_VIDEO_TF = "f_auto,q_auto:eco,w_1280,c_limit";
+function cmSnapW(w) { for (const x of CM_WIDTHS) if (w <= x) return x; return CM_WIDTHS[CM_WIDTHS.length - 1]; }
 function cmOpt(url, w) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
-  return url.replace("/upload/", "/upload/f_auto,q_auto" + (w ? ",w_" + w + ",c_limit" : "") + "/");
+  const tf = /\/video\/upload\//.test(url) ? CM_VIDEO_TF : "f_auto,q_auto" + (w ? ",w_" + cmSnapW(w) + ",c_limit" : "");
+  // …/upload/<edits>/v123/id → …/upload/<edits>/<tf>/v123/id. No version marker: the old place.
+  if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + tf + "/$2");
+  return url.replace("/upload/", "/upload/" + tf + "/");
 }
 function cmPoster(url) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";

@@ -1371,11 +1371,17 @@ function cloudinary_adopt(string $url): array {
     } else {
         return ['ok' => false, 'error' => 'no_photo'];
     }
+    $up = cloudinary_upload_signed($file);
+    return empty($up['ok']) ? $up : ['ok' => true, 'url' => $up['url'], 'adopted' => true];
+}
+
+/** One signed upload to Cloudinary (a data: URI or a public URL Cloudinary fetches). [ok, url] */
+function cloudinary_upload_signed(string $file): array {
     $cfg = $GLOBALS['CONFIG']['cloudinary'];
     $folder = trim((string)($cfg['folder'] ?? 'ngg'), '/') . '/photos';
     if (isset($GLOBALS['__cloudinary_upload_mock']) && is_callable($GLOBALS['__cloudinary_upload_mock'])) {
         $secure = (string)($GLOBALS['__cloudinary_upload_mock'])($file, $folder);
-        return $secure !== '' ? ['ok' => true, 'url' => $secure, 'adopted' => true] : ['ok' => false, 'error' => 'upload_failed'];
+        return $secure !== '' ? ['ok' => true, 'url' => $secure] : ['ok' => false, 'error' => 'upload_failed'];
     }
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
     $ts = time();
@@ -1389,7 +1395,82 @@ function cloudinary_adopt(string $url): array {
     $j = is_string($raw) ? json_decode($raw, true) : null;
     $secure = is_array($j) ? (string)($j['secure_url'] ?? '') : '';
     if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => is_array($j) ? (string)($j['error']['message'] ?? '') : ''];
-    return ['ok' => true, 'url' => $secure, 'adopted' => true];
+    return ['ok' => true, 'url' => $secure];
+}
+
+/* ── Materialising a finished photo ────────────────────────────────────────
+ * Cloudinary charges for every DERIVED image: an edit is a transformation
+ * chain in the URL, and every card size, crop or format built on top of that
+ * URL is a new derivative that runs the whole chain again. A background
+ * removal costs 75 transformations, so one photo seen at five card sizes in
+ * two formats cost ~750 — the reason the free plan ran out at about fifty
+ * people a month.
+ *
+ * So a finished edit is stored once, as a plain image: Cloudinary fetches the
+ * edited URL (generated once, already paid for) and keeps the result as a new
+ * original. Everything after builds on that original — 1 transformation per
+ * size, never 76. The chain stays in photo_assets.transforms for the record of
+ * what was done. A failed upload changes nothing: the edited URL is kept. */
+/** The transformation chain in a Cloudinary delivery URL ('' when there is none). */
+function photo_chain_of(string $url): string {
+    return preg_match('#/upload/(.+?)/v\d+/#', $url, $m) ? $m[1] : '';
+}
+/** An approved asset row for a photo edited outside the review desk. */
+function photo_asset_record(string $type, string $id, string $source, string $edited, string $transforms, string $by): void {
+    if ($type === '' || $id === '') return;
+    $v = (int)(db_row('SELECT MAX(version) v FROM photo_assets WHERE subjectType = ? AND subjectId = ?', [$type, $id])['v'] ?? 0) + 1;
+    db_insert('photo_assets', ['assetId' => 'PH-' . strtoupper(bin2hex(random_bytes(6))), 'subjectType' => $type, 'subjectId' => $id, 'version' => $v, 'status' => 'approved',
+        'sourceUrl' => $source, 'editedUrl' => $edited, 'transforms' => $transforms, 'reviewedBy' => $by, 'reviewedAt' => now_iso(),
+        'decisionNote' => 'Edited and stored as a plain image', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+}
+
+function photo_materialise(string $url): string {
+    $url = trim($url);
+    if ($url === '' || !cloudinary_hosted($url) || cloudinary_base($url) === $url) return $url;   // nothing derived to fix
+    if (setting_raw('photo_materialise') === '0' || !cloudinary_configured()) return $url;
+    if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return $url;
+    $up = cloudinary_upload_signed($url);
+    if (empty($up['ok'])) {
+        if (function_exists('ops_record')) ops_record('warn', 'photo.materialise', 'A finished photo could not be stored as a plain image; it is kept as an edit for now.', (string)($up['error'] ?? 'upload_failed') . ' · ' . $url);
+        return $url;
+    }
+    return (string)$up['url'];
+}
+
+/** Photos still on a record as an edit chain (they cost again at every size): how many, and convert a batch. */
+const PHOTO_MATERIALISE_BATCH = 50;
+function admin_photos_materialise(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $limit = max(1, min(PHOTO_MATERIALISE_BATCH, (int)($p['limit'] ?? PHOTO_MATERIALISE_BATCH)));
+    $dry = !empty($p['dryRun']);
+    $todo = [];
+    foreach (['member' => ['members', 'memberId'], 'volunteer' => ['volunteers', 'volunteerId'], 'student' => ['summer_students', 'studentId']] as $t => [$tbl, $key]) {
+        foreach (db_all("SELECT {$key} AS id, photoUrl FROM {$tbl} WHERE photoUrl LIKE 'https://res.cloudinary.com/%/image/upload/%'") as $r) {
+            $u = (string)$r['photoUrl'];
+            if (cloudinary_base($u) !== $u) $todo[] = [$t, (string)$r['id'], $u];
+        }
+    }
+    $out = ['ok' => true, 'chained' => count($todo), 'converted' => 0, 'failed' => 0, 'remaining' => count($todo)];
+    if ($dry || !$todo) return $out;
+    if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    foreach (array_slice($todo, 0, $limit) as [$t, $id, $u]) {
+        $m = photo_materialise($u);
+        if ($m === $u) { $out['failed']++; continue; }
+        /* The asset row is pointed at the new image FIRST, so replacing the
+           record's photo keeps it live — and with it the original upload the
+           edit was made from (supersede never deletes what a live asset uses).
+           A record that never had an asset gets one now, holding the original
+           and the chain, for the same reason and for the record of the edit. */
+        $n = db_exec('UPDATE photo_assets SET editedUrl = ?, updatedAt = ? WHERE subjectType = ? AND subjectId = ? AND editedUrl = ?', [$m, now_iso(), $t, $id, $u]);
+        if (!$n && !db_row("SELECT 1 FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND editedUrl = ? LIMIT 1", [$t, $id, $m])) {
+            photo_asset_record($t, $id, cloudinary_base($u), $m, photo_chain_of($u), (string)$g['requester']['memberId']);
+        }
+        photo_set_subject($t, $id, $m, (string)$g['requester']['memberId']);
+        $out['converted']++;
+    }
+    $out['remaining'] = count($todo) - $out['converted'];
+    audit('photo.materialise', (string)$g['requester']['memberId'], 'photos', ['converted' => $out['converted'], 'failed' => $out['failed'], 'remaining' => $out['remaining']], (string)($p['ip'] ?? ''));
+    return $out;
 }
 
 /** The table and key column holding a subject's photo. */
@@ -1423,14 +1504,23 @@ function photo_edit_subject(string $subjectType, string $subjectId, string $asse
     $tbl = photo_subject_table($subjectType);
     $row = ($tbl && $subjectId !== '') ? db_row("SELECT photoUrl FROM {$tbl[0]} WHERE {$tbl[1]} = ? LIMIT 1", [$subjectId]) : null;
     $before = $row ? (string)($row['photoUrl'] ?? '') : '';
+    /* The subject's latest asset is the one to edit only while it IS the photo
+       on the record. A photo replaced since (an upload, an import) is a new
+       picture: editing the old asset would put the old face back. */
+    if ($a && $assetId === '' && $before !== '' && !in_array($before, [photo_store_relativise((string)$a['editedUrl']), photo_store_relativise((string)$a['sourceUrl'])], true)) $a = null;
     $source = $a ? (string)$a['sourceUrl'] : cloudinary_base($before);
     if ($source === '') return ['ok' => false, 'error' => 'no_photo'];
     $ad = cloudinary_adopt($source);
     if (empty($ad['ok'])) return $ad;
     $edit = cloudinary_edit_manual($ad['url'], $spec);
-    if ($a) db_update('photo_assets', ($ad['adopted'] ? ['sourceUrl' => $ad['url']] : []) + ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
-    $unchanged = $before !== '' && photo_store_relativise($edit['url']) === $before;
-    if (!$unchanged) photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url']]);
+    /* The same edit again is no change: the record already shows it (as the
+       chain, or as the plain image it was stored as). Comparing only URLs would
+       re-edit and re-store a materialised photo on every re-run. */
+    $unchanged = $before !== '' && (photo_store_relativise($edit['url']) === $before
+        || ($a && (string)$a['transforms'] === $edit['transforms'] && photo_store_relativise((string)$a['editedUrl']) === $before));
+    if ($a && !$unchanged) db_update('photo_assets', ($ad['adopted'] ? ['sourceUrl' => $ad['url']] : []) + ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
+    if (!$unchanged) photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url'],
+        'assetId' => $a['assetId'] ?? '', 'sourceUrl' => $ad['url'], 'transforms' => $edit['transforms']]);
     return ['ok' => true, 'url' => $edit['url'], 'transforms' => $edit['transforms'], 'unchanged' => $unchanged, 'adopted' => !empty($ad['adopted']),
         'subjectType' => $subjectType, 'subjectId' => $subjectId, 'assetId' => $a['assetId'] ?? ''];
 }
@@ -1684,7 +1774,18 @@ function photo_apply_to_subject(array $a): void {
     // Relativised: the pipeline is handed the absolute URL because Cloudinary
     // and the vision model have to fetch it, and it hands the same string back.
     // Writing that into the row would bake today's hostname into every record.
-    $url = photo_store_relativise((string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? ''));
+    $raw = (string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? '');
+    // A finished Cloudinary edit is stored once as a plain image, so later sizes never re-run it.
+    $plain = photo_materialise($raw);
+    if ($plain !== $raw) {
+        if (!empty($a['assetId'])) db_update('photo_assets', ['editedUrl' => $plain, 'updatedAt' => now_iso()], ['assetId' => (string)$a['assetId']]);
+        /* No asset row (an edit made on the record itself): one is written now,
+           holding the original and the chain. A later edit then starts from the
+           original — not from this already-edited image — and supersede keeps
+           the original while the asset is live. */
+        else photo_asset_record((string)$a['subjectType'], (string)$a['subjectId'], (string)($a['sourceUrl'] ?? '') ?: cloudinary_base($raw), $plain, (string)($a['transforms'] ?? '') ?: photo_chain_of($raw), (string)($a['by'] ?? ''));
+    }
+    $url = photo_store_relativise($plain);
     if ($url === '') return;
     // Members too: an edited member photo never reached the record, so the card kept the old one.
     // Through photo_set_subject, so the photo it replaces is superseded, not kept.

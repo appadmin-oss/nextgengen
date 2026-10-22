@@ -1850,6 +1850,8 @@
         edit:    (target, spec) => request('/admin/photos.php', { body: Object.assign({ action: 'edit', spec }, target) }),
         editBulk: (items, spec) => request('/admin/photos.php', { body: { action: 'edit_bulk', items, spec } }),
         secure:   () => request('/admin/photos.php', { body: { action: 'secure' } }),
+        // Edited photos still stored as a Cloudinary chain → plain images, a batch at a time (photo_materialise).
+        materialise: (dryRun) => request('/admin/photos.php', { body: { action: 'materialise', dryRun: !!dryRun } }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
         /* Children with NO photograph on file — a different question from the
            review queue, which can only show photos that exist. */

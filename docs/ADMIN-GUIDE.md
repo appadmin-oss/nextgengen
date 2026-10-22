@@ -2225,7 +2225,26 @@ transformations). The site watches it for you:
 - **Free space…** (Diagnostics) deletes the resized copies Cloudinary made for
   each page — every original is kept, and a copy is remade when a page next
   needs it. Type FREE SPACE to confirm. If storage is still high afterwards,
-  the plan itself needs upgrading on cloudinary.com.
+  the plan itself needs upgrading on cloudinary.com. It **refuses** while any
+  record still shows a photo as an edit with its background removed: deleting
+  those copies would make Cloudinary remove every background again (75
+  transformations each). Store them as plain images first (below).
+- **Where the credits went, and what changed.** A background removal costs
+  Cloudinary 75 transformations, and it used to run again for every card size,
+  crop and image format built from the edited photo — about 450–600 per person,
+  which is why the free plan ran out at roughly fifty people a month. Now:
+  - an approved or edited photo is **stored once as a plain image** as it
+    looks (the edit is kept on record), so every later size costs one
+    transformation, not 76;
+  - **Store edited photos…** (Diagnostics) converts the photos already on
+    records, 50 a press, counting first;
+  - card photos are delivered in one format (JPEG) instead of one per browser;
+  - community images come in four widths instead of twelve, resized after any
+    edit (a tiny avatar no longer re-runs the edit), and a video is delivered
+    as the one version made at upload instead of being transcoded twice.
+  Headshot uploads are deliberately **not** de-duplicated: they come through a
+  page that needs no sign-in, and telling a stranger "this exact photo is
+  already stored" would let anyone test for a child's picture.
 
 ## Settings and connected services
 

@@ -43,6 +43,8 @@ function crSyMediaBlocks(m, ctx) {
   out.push({ type: "note", span: 6, icon: "broom", text: "Free space: delete the resized and reformatted copies Cloudinary made for each page. Every original is kept, and a copy is remade the next time a page needs it.",
              sub: "Safe to do at any time. It frees storage now and uses a little of the plan later as copies are remade.",
              act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
+  out.push({ type: "note", span: 6, icon: "images", text: "Store edited photos as plain images: a photo kept as an edit is edited again at every size a card or page needs. Stored once, it costs one transformation per size instead.",
+             act: { l: "Store edited photos…", run: () => crSyPhotoMaterialise(ctx) } });
   return out;
 }
 /* What the storage bucket holds, and what was saved without touching a pixel:
@@ -89,6 +91,20 @@ function crSyMediaPurge(ctx) {
   });
 }
 
+/* Edited photos still kept as a Cloudinary edit chain cost again at every size
+   and format a page asks for. This stores each one once as a plain image. */
+async function crSyPhotoMaterialise(ctx) {
+  try {
+    const d = await NGGApi.admin.photos.materialise(true);
+    if (!d.chained) return ctx.toast("Every edited photo is already stored as a plain image.");
+    const ok = await ctx.confirm({ title: "Store " + crPlural(d.chained, "edited photo") + " as plain images?", cta: "Store them",
+      body: "Each is saved once as it looks now, so cards and pages stop re-running the edit (a background removal costs Cloudinary 75 transformations every time). The edit is kept on record. Up to 50 go per press." });
+    if (!ok) return;
+    const r = await NGGApi.admin.photos.materialise(false);
+    ctx.toast("Stored " + crPlural(r.converted, "photo") + (r.failed ? ", " + crNum(r.failed) + " couldn’t be stored" : "") + (r.remaining ? " — " + crNum(r.remaining) + " left, press again" : "") + ".", null, !!r.failed);
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t store the photos."), null, true); }
+}
 async function crSyPhotoSecure(ctx) {
   try {
     const r = await NGGApi.admin.photos.secure();

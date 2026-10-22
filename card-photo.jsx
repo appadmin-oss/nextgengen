@@ -131,7 +131,8 @@ function cphFrame(face, imgW, imgH, aspect) {
 function cphCardUrl(parts, wPx, hPx, crop) {
   const segs = cphKeepChain(parts.chain);
   if (crop) segs.push("c_crop,x_" + crop.x + ",y_" + crop.y + ",w_" + crop.w + ",h_" + crop.h);
-  segs.push("c_pad,w_" + Math.round(wPx) + ",h_" + Math.round(hPx) + ",b_auto:predominant_gradient,f_auto,q_auto:good");
+  // f_jpg, not f_auto: one format per size (print wants JPEG anyway), so each box size is one derived copy, not two.
+  segs.push("c_pad,w_" + Math.round(wPx) + ",h_" + Math.round(hPx) + ",b_auto:predominant_gradient,f_jpg,q_auto:good");
   return parts.prefix + segs.join("/") + "/" + parts.rest;
 }
 /** The two lookups: the stored image's size and steps, and its landmarks. */

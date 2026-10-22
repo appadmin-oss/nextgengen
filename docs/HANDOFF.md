@@ -2349,3 +2349,49 @@ periods were settled, and the screen offered no exact figure to waive.
   The design follows the audit's research (MENTOR Elements of Effective
   Practice; Raposa et al. 2019; second-adult messaging).
 - Tests: PHP 5038/0 (+14 supports); portal-account 49/0.
+
+## Accessibility pass (2026-10-22)
+
+- `tests/a11y.test.js` runs axe-core (dev dependency only, pinned 4.10.3) for
+  WCAG 2.1 A/AA on 18 screens: the member portal (wide, phone, simple view,
+  feedback and password sheets), the Anchor Journal (home, writer), the mentor
+  portal and the instructor portal. It fails on any violation at any impact,
+  fails a screen that never drew, and proves itself by catching a planted
+  image with no alt. Result: 0 violations.
+- What axe does not measure was swept by hand: no icon-only button without a
+  label in the three portal designs; 42 buttons under 40px (search, nav,
+  steppers, Undo, Retry, chips) raised to 44px, and three CSS controls
+  (`.m15x-err button`, `.m15x-back`, `.mpj-chip button`). Earlier in the day:
+  the lesson text (12px grey monospace in a 140px box → 16px readable),
+  timestamps 3.26:1 → #5f5f66, quick replies 36 → 44px, audio players with
+  real controls, every new control labelled with aria-pressed where it toggles.
+
+## Cloudinary credits, phase 1 (2026-10-22)
+
+From the research in this session (Cloudinary bills each derived copy; the
+chain in an edited URL re-runs inside every copy built on it):
+
+- `photo_materialise($url)`: a Cloudinary URL with a transformation chain is
+  uploaded once (Cloudinary fetches the edited image) and replaced by the plain
+  result. Called from `photo_apply_to_subject` (review approve, pipeline
+  auto-approve, single and bulk edits). Failure keeps the edit URL and records
+  `ops: photo.materialise`. Setting `photo_materialise = 0` switches it off.
+  `cloudinary_upload_signed()` is the one signed upload (adopt uses it).
+- Assets: the asset's `editedUrl` is pointed at the plain image BEFORE the
+  record changes, so `photo_supersede` keeps the original upload (it never
+  deletes what a live asset uses); a record edited with no asset gets one
+  (`photo_asset_record`) holding the original and the chain. `photo_edit_subject`
+  uses the latest asset only while it IS the record's photo, and treats the
+  same transforms as `unchanged` (a re-run no longer re-edits and re-uploads).
+- `admin.photos.materialise` (settings cap; dryRun counts) converts records
+  still showing a chain, 50 a press; Control Room → System → "Store edited
+  photos…". `admin_media_purge_derived` refuses with `chained_photos` while any
+  record shows `e_background_removal` (`force` only from code).
+- `card-photo.jsx`: card art `f_jpg` instead of `f_auto` (one derivative per
+  size). `page-club.jsx cmOpt`: widths snapped to 128/320/640/1280, appended
+  after any chain, videos delivered as exactly `CM_VIDEO_TF` = upload-sign's
+  eager string (pinned by a PHP test).
+- Not done, on purpose: headshot SHA-256 de-duplication (public route; would
+  reveal whether a photo exists). Phase 2 (in-browser MODNet cut-out with a
+  quality gate, Cloudinary only as the operator's paid fallback) is next.
+- Tests: PHP 5048/0 (+9 credits); card-photo 45/0.

@@ -5,7 +5,7 @@
    portal (wide, phone and the simple view), the mentor portal, the
    instructor portal and the Anchor Journal, signed in on real records.
 
-   It fails on any serious or critical WCAG 2.1 A/AA violation, and prints
+   It fails on any WCAG 2.1 A/AA violation, whatever its impact, and prints
    each one with the element, so the fix is findable. CLAUDE.md §9 states
    these as requirements; this suite is what holds them.
 
@@ -104,18 +104,31 @@ async function as(memberId, admin, viewport) {
     const report = [];
     /* One screen: settle, run axe for WCAG 2.1 A/AA, keep serious and critical. */
     const audit = async (pg, label, ready) => {
-      await ready(pg).catch(() => {});
+      // A screen that never drew is not a pass: auditing a spinner proves nothing.
+      const drew = await ready(pg).then(() => true, () => false);
+      if (!drew) { chk(label + ': the screen drew (so it could be checked)', false); return; }
       await pg.waitForTimeout(600);
       await pg.addScriptTag({ path: AXE });
       const res = await pg.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] })
-        .then(r => r.violations.filter(v => v.impact === 'serious' || v.impact === 'critical').map(v => ({ id: v.id, impact: v.impact, help: v.help,
+        .then(r => r.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help,
           nodes: v.nodes.slice(0, 6).map(n => (n.target || []).join(' ') + (n.failureSummary ? ' — ' + n.failureSummary.split('\n').slice(1, 2).join(' ').trim() : '')), count: v.nodes.length }))));
       res.forEach(v => report.push({ screen: label, ...v }));
-      chk(label + ': no serious or critical WCAG 2.1 AA violation' + (res.length ? ' (' + res.map(v => v.id + '×' + v.count).join(', ') + ')' : ''), res.length === 0);
+      chk(label + ': no WCAG 2.1 A/AA violation' + (res.length ? ' (' + res.map(v => v.id + '×' + v.count).join(', ') + ')' : ''), res.length === 0);
     };
     const mainReady = text => pg => pg.waitForFunction(t => new RegExp(t).test((document.querySelector('main') || document.body).innerText), text, { timeout: 40000 });
-    const boot = async (pg, url) => { await pg.goto(BASE + url, { waitUntil: 'domcontentloaded' }); await waitForBoot(pg); };
+    const boot = async (pg, url) => { await pg.goto(BASE + url, { waitUntil: 'domcontentloaded' }); if (!/^\/journal\//.test(url)) await waitForBoot(pg); };
 
+    /* The checker itself: a planted unlabelled image must be caught, or every pass above means nothing. */
+    {
+      const sp = await as('NGG-AX-K1', false);
+      await boot(sp, '/dashboard');
+      await sp.waitForSelector('.m9-app main', { timeout: 60000 });
+      await sp.evaluate(() => { const i = document.createElement('img'); i.src = '/assets/logo.png'; i.id = 'a11y-plant'; document.querySelector('main').appendChild(i); });
+      await sp.addScriptTag({ path: AXE });
+      const hit = await sp.evaluate(() => window.axe.run(document, { runOnly: { type: 'rule', values: ['image-alt'] } }).then(r => r.violations.some(v => v.nodes.some(n => (n.target || []).join(' ').includes('a11y-plant')))));
+      chk('the checker works: a planted image with no alt text is caught', hit === true);
+      await sp.close();
+    }
     if (!only || only === 'member') {
       const mb = await as('NGG-AX-K1', false);
       for (const [url, label, ready] of [
@@ -133,7 +146,8 @@ async function as(memberId, admin, viewport) {
       await mb.click('main button:has-text("Share an idea")').catch(() => {});
       await audit(mb, 'Member · feedback sheet', pg => pg.waitForSelector('[role="dialog"] textarea', { timeout: 15000 }));
       await boot(mb, '/dashboard/me');
-      await mb.click('main button:has-text("Change password")').catch(() => {});
+      await mb.waitForFunction(() => /You have a password|No password yet/.test((document.querySelector('main') || {}).innerText || ''), null, { timeout: 40000 }).catch(() => {});
+      await mb.click('main section:has(h2:has-text("Sign-in and password")) button:has-text("password")').catch(() => {});
       await audit(mb, 'Member · password sheet', pg => pg.waitForSelector('[role="dialog"] input[aria-label="New password"]', { timeout: 15000 }));
       const ph = await as('NGG-AX-K1', false, { width: 390, height: 844 });
       await boot(ph, '/dashboard/more');

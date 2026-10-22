@@ -509,6 +509,7 @@ npm run test:all          # build + build test + PHP suite + every node suite
 npm run test:routes       # route registry      npm run test:admbulk   # bulk actions
 npm run test:summered     # editions & groups   npm run test:sumpage   # /summer page
 npm run test:designer     # card studio         npm run test:ui        # ui smoke
+npm run test:a11y         # axe-core WCAG 2.1 A/AA across the portals and the journal
 ```
 
 - Node E2E tests spawn `php -S`, write a **throwaway `api/config.php`**, and

@@ -8639,8 +8639,14 @@ chk('a photo stored on this site is uploaded to Cloudinary once, then edited —
     $now = (string)db_row('SELECT photoUrl FROM members WHERE memberId = ?', ['NGG-2025-0001'])['photoUrl'];
     $up = $GLOBALS['__pe_uploads'];
     ($GLOBALS['__pe_off'])();
-    return $local !== '' && !empty($r['ok']) && count($up) === 1 && strpos($up[0][0], 'data:image/jpeg;base64,') === 0 && $up[0][1] === 'ngg/photos'
-        && strpos($now, 'https://res.cloudinary.com/demo/image/upload/') === 0 && strpos($now, 'e_brightness:18') !== false;  // and the MEMBER record got it
+    $asset = db_row("SELECT sourceUrl, editedUrl, transforms FROM photo_assets WHERE subjectType = 'member' AND subjectId = 'NGG-2025-0001' ORDER BY id DESC LIMIT 1");
+    /* Uploaded once to edit it, then the finished edit stored once as a plain
+       image: the MEMBER record gets the plain image (no chain to re-run at every
+       size), and the asset keeps the original and the edit for the record. */
+    return $local !== '' && !empty($r['ok']) && count($up) === 2 && strpos($up[0][0], 'data:image/jpeg;base64,') === 0 && $up[0][1] === 'ngg/photos'
+        && strpos($up[1][0], 'e_brightness:18') !== false
+        && strpos($now, 'https://res.cloudinary.com/demo/image/upload/v1/') === 0 && photo_chain_of($now) === ''
+        && $asset && $asset['editedUrl'] === $now && str_contains((string)$asset['transforms'], 'e_brightness:18') && photo_chain_of((string)$asset['sourceUrl']) === '';
 })());
 chk('with no Cloudinary keys, an edit says so instead of failing vaguely', (function () {
     $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null; $GLOBALS['CONFIG']['cloudinary'] = [];
@@ -8664,7 +8670,7 @@ chk('bulk photo edit: per-row verdicts, duplicates once, unknown named, ONE audi
     ($GLOBALS['__pe_off'])();
     $bad = array_values(array_filter($r['results'] ?? [], fn($x) => empty($x['ok'])));
     return !empty($r['ok']) && $r['ran'] === 3 && $r['applied'] === 2 && $r['failed'] === 1 && ($bad[0]['error'] ?? '') === 'not_found'
-        && $a1 === $a0 + 1 && $uploads === 1                       // the local photo uploaded once; the Cloudinary one never
+        && $a1 === $a0 + 1 && $uploads === 3                       // the local photo uploaded once to edit; each finished edit stored once (2); a re-run, nothing
         && !empty($again['ok']) && $again['unchanged'] === 2 && $again['applied'] === 0;
 })());
 chk('bulk photo edit: capped, the cap named; a bad row refuses the whole run before any write', (function () {
@@ -28952,8 +28958,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         return ['code' => 200, 'body' => ['deleted' => array_fill(0, 3, 'x'), 'partial' => $n === 1]];
     };
     chk('media · freeing space needs the typed confirmation', (backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU])['error'] ?? '') === 'confirm_required');
+    // A record still showing a background-removal chain: freeing space would pay for every removal again.
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-BG'");
+    db_insert('members', ['memberId' => 'MEDIA-BG', 'fullName' => 'Bg Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+        'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/c_fill,g_face/e_background_removal/b_rgb:eceef2/v1/ngg/headshot/bg.jpg']);
     $calls = [];
-    $pg = backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE']);
+    $gd = backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE']);
+    chk('media · freeing space is refused while records still show a background-removal edit, with the count and what to do',
+        ($gd['error'] ?? '') === 'chained_photos' && ($gd['count'] ?? 0) >= 1 && str_contains((string)($gd['detail'] ?? ''), 'plain images') && !array_filter($calls, static fn($c) => str_starts_with($c, 'DELETE')));
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-BG'");
+    $calls = [];
+    // The purge itself, the guard set aside (it is not reachable from the route).
+    $pg = backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE', 'force' => true]);
     $del = array_values(array_filter($calls, static fn($c) => str_starts_with($c, 'DELETE')));
     chk('media · freeing space deletes derived copies only (keep_original), follows partial results, and re-reads usage',
         !empty($pg['ok']) && $pg['deleted'] === 9 && count($del) === 3 && str_contains($del[0], '"keep_original":"true"') && ($pg['usage']['level'] ?? '') === 'ok');
@@ -30075,6 +30091,65 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     backend_dispatch('admin.mentor.assign', ['requesterId' => 'SP-ADM', 'memberId' => 'SP-KID', 'mentorId' => 'SPT-4']);
     chk('supporting mentors · a supporter made the primary stops being a supporter: one person, one role', ms_supports_of('SP-KID') === []);
     $clean();
+})();
+
+/* ── Cloudinary credits: a finished edit is stored once, as a plain image ─── */
+(function () {
+    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'demo', 'api_key' => '1', 'api_secret' => 'testsecret', 'folder' => 'ngg'];
+    $GLOBALS['__mt_up'] = [];
+    $GLOBALS['__cloudinary_upload_mock'] = function ($file, $folder) { $GLOBALS['__mt_up'][] = $file; return 'https://res.cloudinary.com/demo/image/upload/v9/' . $folder . '/plain' . count($GLOBALS['__mt_up']) . '.jpg'; };
+    $GLOBALS['__cloudinary_destroy_mock'] = function ($pid) { $GLOBALS['__mt_destroyed'][] = $pid; return true; };
+    $GLOBALS['__mt_destroyed'] = [];
+    $chain = 'https://res.cloudinary.com/demo/image/upload/c_fill,g_face,w_600,h_750,f_auto,q_auto:good,e_improve:30/e_background_removal/b_rgb:eceef2/v3/ngg/headshot/kid.jpg';
+    chk('credits · a chained edit is stored once as a plain image; a plain one, or one not on Cloudinary, is left alone',
+        ($m = photo_materialise($chain)) !== $chain && photo_chain_of($m) === '' && $GLOBALS['__mt_up'] === [$chain]
+        && photo_materialise($m) === $m && photo_materialise('/api/public/photo.php?p=abc.jpg') === '/api/public/photo.php?p=abc.jpg' && count($GLOBALS['__mt_up']) === 1);
+    setting_set('photo_materialise', '0', 'test');
+    chk('credits · it can be switched off (photo_materialise = 0)', photo_materialise($chain) === $chain);
+    setting_set('photo_materialise', null, 'test');
+    $GLOBALS['__cloudinary_upload_mock'] = fn() => '';
+    chk('credits · a failed store changes nothing: the edit is kept as it was', photo_materialise($chain) === $chain);
+    $GLOBALS['__cloudinary_upload_mock'] = function ($file, $folder) { $GLOBALS['__mt_up'][] = $file; return 'https://res.cloudinary.com/demo/image/upload/v9/' . $folder . '/plain' . count($GLOBALS['__mt_up']) . '.jpg'; };
+
+    // The review desk: approving puts the plain image on the record and keeps the chain on the asset.
+    $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId IN ('MT-KID','MT-OLD','MT-SU')"); db_exec("DELETE FROM photo_assets WHERE subjectId IN ('MT-KID','MT-OLD')");
+    db_insert('members', ['memberId' => 'MT-SU', 'fullName' => 'Mt Admin', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'MT-KID', 'fullName' => 'Mt Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('photo_assets', ['assetId' => 'PH-MT-1', 'subjectType' => 'member', 'subjectId' => 'MT-KID', 'version' => 1, 'status' => 'pending_review',
+        'sourceUrl' => 'https://res.cloudinary.com/demo/image/upload/v3/ngg/headshot/kid.jpg', 'editedUrl' => $chain, 'transforms' => photo_chain_of($chain), 'createdAt' => $now, 'updatedAt' => $now]);
+    $ap = backend_dispatch('admin.photo.approve', ['requesterId' => 'MT-SU', 'assetId' => 'PH-MT-1']);
+    $rec = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'MT-KID'")['photoUrl'];
+    $as = db_row("SELECT status, editedUrl, transforms, sourceUrl FROM photo_assets WHERE assetId = 'PH-MT-1'");
+    chk('credits · an approved photo reaches the record as a plain image — no background removal left in its URL to pay for again',
+        !empty($ap['ok']) && photo_chain_of($rec) === '' && !str_contains($rec, 'e_background_removal') && $as['editedUrl'] === $rec && $as['status'] === 'approved'
+        && str_contains((string)$as['transforms'], 'e_background_removal'));
+    chk('credits · …and the original upload the edit came from is kept, not deleted', !in_array('ngg/headshot/kid', $GLOBALS['__mt_destroyed'], true) && $as['sourceUrl'] !== '');
+
+    // The batch: records still showing a chain, converted, counted, asset written where there was none.
+    db_insert('members', ['memberId' => 'MT-OLD', 'fullName' => 'Mt Old', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now,
+        'photoUrl' => str_replace('kid.jpg', 'old.jpg', $chain)]);
+    $dry = backend_dispatch('admin.photos.materialise', ['requesterId' => 'MT-SU', 'dryRun' => true]);
+    $n0 = count($GLOBALS['__mt_up']);
+    $run = backend_dispatch('admin.photos.materialise', ['requesterId' => 'MT-SU']);
+    $old = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'MT-OLD'")['photoUrl'];
+    $oa = db_row("SELECT sourceUrl, editedUrl, transforms FROM photo_assets WHERE subjectType = 'member' AND subjectId = 'MT-OLD' ORDER BY id DESC LIMIT 1");
+    chk('credits · the batch counts first (no upload), then stores each chained photo once and records its original and its edit',
+        $dry['chained'] >= 1 && $n0 === count($GLOBALS['__mt_up']) - $run['converted'] && $run['converted'] >= 1 && photo_chain_of($old) === ''
+        && $oa && $oa['editedUrl'] === $old && str_contains((string)$oa['transforms'], 'e_background_removal') && photo_chain_of((string)$oa['sourceUrl']) === ''
+        && !in_array('ngg/headshot/old', $GLOBALS['__mt_destroyed'], true));
+    chk('credits · the batch needs the settings permission', (backend_dispatch('admin.photos.materialise', ['requesterId' => 'MT-KID'])['error'] ?? '') === 'forbidden');
+
+    // Video: delivered as exactly the rendition made at upload, so it is transcoded once.
+    $sign = (string)file_get_contents(__DIR__ . '/../member/upload-sign.php'); $club = (string)file_get_contents(__DIR__ . '/../../page-club.jsx');
+    chk('credits · a video is delivered as the same rendition the upload made (one transcode, not two)',
+        preg_match("/\\\$eager = '([^']+)'/", $sign, $e) && preg_match('/const CM_VIDEO_TF = "([^"]+)"/', $club, $c) && $e[1] === $c[1]);
+    chk('credits · card art asks for one format (f_jpg), never f_auto per browser', str_contains((string)file_get_contents(__DIR__ . '/../../card-photo.jsx'), 'b_auto:predominant_gradient,f_jpg,q_auto:good'));
+
+    unset($GLOBALS['__cloudinary_upload_mock'], $GLOBALS['__cloudinary_destroy_mock']);
+    db_exec("DELETE FROM members WHERE memberId IN ('MT-KID','MT-OLD','MT-SU')"); db_exec("DELETE FROM photo_assets WHERE subjectId IN ('MT-KID','MT-OLD')");
+    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
 })();
 
 /* ── No back door to a session ──────────────────────────────────────────────
