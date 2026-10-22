@@ -25,8 +25,8 @@
 const GUIDE_TOURS = {
   member: { title: "Welcome to My NGG", kid: true, steps: [
     ["ph ph-hand-waving", "This is your space", "Everything about you at NGG is here: what to do this week, your mentor, your lessons and how you are growing.", { shot: "home" }],
-    ["ph ph-compass", "Finding your way", { phone: "The bar at the bottom of the screen takes you anywhere: Today, Mentor, Grow, Learn and Me. Tap one to go there.",
-      desktop: "The list on the left takes you anywhere: Today, Mentor, Grow, Learn and Me. Click one to go there." },
+    ["ph ph-compass", "Finding your way", { phone: "The bar at the bottom of the screen takes you anywhere: Today, Mentor, Grow, Learn and Account. Tap one to go there.",
+      desktop: "The list on the left takes you anywhere: Today, Mentor, Grow, Learn and Account. Click one to go there." },
       { spot: { phone: ".m9-app nav[aria-label='My NGG']", desktop: ".m9-app aside nav" }, shot: "nav", dev: true }],
     ["ph ph-sun-horizon", "Start with Today", "Today shows what to do first. Do the top thing, then the next. When it says “all caught up”, you are.", { shot: "today" }],
     ["ph ph-list-checks", "Your first five things", "On Today there is a Getting started list: your photo, a hello to your mentor, a first reflection. Do one at a time. It goes away when they are all done.", { spot: ".m9x-start", shot: "start" }],

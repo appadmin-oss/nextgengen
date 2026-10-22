@@ -38,7 +38,7 @@ const SHOTS = {
   member: {
     who: 'NGG-GS-K1',
     home:   { url: '/dashboard', alt: 'The Today screen of My NGG' },
-    nav:    { url: '/dashboard', sel: { phone: ".m9-app nav[aria-label='My NGG']", desktop: '.m9-app aside' }, alt: { phone: 'The bar at the bottom of My NGG: Today, Mentor, Grow, Learn and Me', desktop: 'The list on the left of My NGG: Today, Mentor, Grow, Learn and Me' } },
+    nav:    { url: '/dashboard', sel: { phone: ".m9-app nav[aria-label='My NGG']", desktop: '.m9-app aside' }, alt: { phone: 'The bar at the bottom of My NGG: Today, Mentor, Grow, Learn and Account', desktop: 'The list on the left of My NGG: Today, Mentor, Grow, Learn and Account' } },
     today:  { url: '/dashboard', sel: '.m9-app main', alt: 'Today: what to do first, at the top' },
     start:  { url: '/dashboard', sel: '.m9x-start', alt: 'The Getting started list on Today' },
     mentor: { url: '/dashboard/mentor', alt: 'The Mentor screen: messages with your mentor' },
