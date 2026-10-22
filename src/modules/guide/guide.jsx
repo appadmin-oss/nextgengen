@@ -161,10 +161,18 @@ function GuideSpot({ sel, onMiss, onPlace }) {
     const shown = el && el.getClientRects().length && getComputedStyle(el).visibility !== "hidden";
     if (!shown) { setR(null); onMiss && onMiss(); return undefined; }
     try { el.scrollIntoView({ block: "center", behavior: "instant" }); } catch (_) { el.scrollIntoView(); }
-    const place = () => { const b = el.getBoundingClientRect(); setR({ top: b.top - 6, left: b.left - 6, width: b.width + 12, height: b.height + 12 }); onPlace && onPlace(b.top + b.height / 2 < innerHeight / 2 ? "top" : "bottom"); };
+    /* Measured every frame, not on scroll alone: the page can still be settling
+       (a bar sliding in, fonts, a scroll lock) after the step opens, and a ring
+       measured once was left round where the control had been. A frame where
+       nothing moved costs one comparison. */
+    let last = "", raf = 0;
+    const place = () => {
+      const b = el.getBoundingClientRect(), k = [b.top, b.left, b.width, b.height].map(Math.round).join();
+      if (k !== last) { last = k; setR({ top: b.top - 6, left: b.left - 6, width: b.width + 12, height: b.height + 12 }); onPlace && onPlace(b.top + b.height / 2 < innerHeight / 2 ? "top" : "bottom"); }
+      raf = requestAnimationFrame(place);
+    };
     place();
-    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+    return () => cancelAnimationFrame(raf);
   }, [sel]);
   return r ? <div className="ngt-spot" aria-hidden="true" style={{ top: r.top, left: r.left, width: r.width, height: r.height }}/> : null;
 }
@@ -203,6 +211,13 @@ function GuideTour({ portal, auto = true, name }) {
     return () => { live = false; window.removeEventListener("ngg:guide", f); };
   }, [portal]);
   React.useEffect(() => { if (open && card.current) { const b = card.current.querySelector(".ngt-next"); if (b) b.focus(); } }, [open, i]);
+  /* One dialog at a time: the duty reminder steps aside while a tour is up. */
+  const isOpen = !!open;
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    window.dispatchEvent(new CustomEvent("ngg:tour", { detail: { open: true } }));
+    return () => window.dispatchEvent(new CustomEvent("ngg:tour", { detail: { open: false } }));
+  }, [isOpen]);
   if (!open || !tour) return null;
   const steps = open.steps, last = i === steps.length - 1, st = steps[i];
   const close = () => { guideMark(portal, open.seen, open.dv.kind); setOpen(null); setTimeout(() => { try { from.current && from.current.focus(); } catch (_) {} }, 0); };
@@ -251,6 +266,9 @@ function GuideTour({ portal, auto = true, name }) {
 function DutyPopup({ role, onGo, delay = 900 }) {
   const [d, setD] = React.useState(null);
   const [open, setOpen] = React.useState(false);
+  // A tour opened from Help while this is showing: it waits behind, and comes back when the tour ends.
+  const [aside, setAside] = React.useState(false);
+  React.useEffect(() => { const f = e => setAside(!!(e.detail && e.detail.open)); window.addEventListener("ngg:tour", f); return () => window.removeEventListener("ngg:tour", f); }, []);
   const card = React.useRef(null);
   const load = React.useCallback(() => NGGApi.member.duties(role).then(r => {
     setD(r);
@@ -261,8 +279,8 @@ function DutyPopup({ role, onGo, delay = 900 }) {
     if (n && !r.snoozedUntil && !shown) setOpen(true);
   }).catch(() => {}), [role]);
   React.useEffect(() => { if (!guideAuto()) return undefined; const t = setTimeout(load, delay); return () => clearTimeout(t); }, [load]);
-  React.useEffect(() => { if (open && card.current) { const b = card.current.querySelector(".ndp-go"); if (b) b.focus(); } }, [open]);
-  if (!open || !d) return null;
+  React.useEffect(() => { if (open && !aside && card.current) { const b = card.current.querySelector(".ndp-go"); if (b) b.focus(); } }, [open, aside]);
+  if (!open || !d || aside) return null;
   const list = (d.duties || []).filter(x => x.level !== "info");
   const n = list.length, urgent = list.filter(x => x.level === "urgent").length;
   const oldest = Math.max(0, ...list.map(x => x.days || 0));

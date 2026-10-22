@@ -11652,6 +11652,27 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .ngt-next { border: 0; background: #0b0b0c; color: #fff; }
 .ngt-foot { margin: 0; font-size: 13px; color: #4a4a50; }
 .ngt-card p.ngt-foot, .ndp-card p.ngt-foot { font-size: 13px; color: #4a4a50; }
+
+/* Device-aware tours (guide.jsx): a screenshot of the screen the step is
+   about, or a light on the real control. While a control is lit, the ring's
+   own shadow dims the page and the card moves to the half of the screen the
+   control is not in. */
+.ngt-shot { margin: 0; border-radius: 14px; overflow: hidden; border: 1px solid #e8e5dd; background: #f4f4f2; }
+.ngt-shot img { display: block; width: 100%; height: auto; max-height: 42vh; object-fit: contain; }
+.ngt-scrim.is-lit { background: transparent; }
+.ngt-spot { position: fixed; z-index: 401; border-radius: 14px; outline: 3px solid #f5b026; outline-offset: 0; box-shadow: 0 0 0 9999px rgba(11, 11, 12, .55); pointer-events: none; transition: top .2s, left .2s, width .2s, height .2s; }
+.ngt-scrim.is-lit .ngt-card { position: relative; z-index: 402; }
+.ngt-scrim.is-lit-top { place-items: end center; }
+.ngt-scrim.is-lit-bottom { place-items: start center; }
+.ngt-where { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #5c4100; }
+.ngt-card p.ngt-where { font-size: 14px; color: #5c4100; }
+/* The children's tour reads bigger. */
+.ngt-scrim.is-kid .ngt-card h2 { font-size: 28px; }
+.ngt-scrim.is-kid .ngt-card p { font-size: 18px; }
+@media (prefers-reduced-motion: reduce) { .ngt-spot { transition: none; } }
+@container (max-width: 560px) {
+  .ngt-scrim.is-lit-bottom .ngt-card { align-self: start; border-radius: 0 0 22px 22px; }
+}
 .ndp-card.is-urgent .ndp-icon { background: #fdeeea; color: #a3331c; }
 .ndp-list { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
 .ndp-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid #e8e5dd; background: #fafaf8; }

@@ -2450,3 +2450,52 @@ chain in an edited URL re-runs inside every copy built on it):
 - **Tests.** 13 checks in `api/tests/run.php`. `__cld_upload_http` is a new test seam for the upload's HTTP exchange.
 - **No duplicate copies.** A photo copied off the spent account is uploaded under a fixed name (`copy_<md5 of its base URL>`, `overwrite=false`), so editing it again returns the copy already there instead of storing a second one. The main account's original stays, so existing links keep working, and it costs nothing new there.
 - **Upload preset.** The main account's unsigned upload preset is never carried to the backup, because it doesn't exist there. The backup can name its own (`cloudinary.backup.unsigned_preset`, optional). Without one, application-form photos go to the site's own store while the backup is in use.
+
+## No !important; Cloudinary accounts that actually fail over; tours per device; Community links and documents; a sharper studio assistant (2026-10-22)
+
+This closes `HANDOFF-NEXT-AGENT.md` (deleted with this entry). Its items 3–6
+were done earlier the same day; this records 1, 2, 4 finished, and what the
+owner reported while it ran.
+
+### No `!important` anywhere
+- `tests/no-important.test.js` (in `test:all`, `npm run test:noimportant`) fails the build on any `!important` in source CSS, JSX, HTML or the journal. `dc-compile` strips it from generated CSS.
+- Where one was holding a rule up, the rule now wins by specificity (`:not(#_):not(#_)`), never by `!important`.
+- The value-keyed phone layer (`[style*="font-size: 56px"]` and the like) is gone. Inline values read a responsive variable instead: `var(--rs-…, desktop value)`, with phone and tablet values set in `styles.css`. Reduced motion is `--motion` (0 or 1) multiplying inline durations.
+- **Reviewed against the old build, page by page and width by width.** The only lasting differences are places where the page now gets what its own markup asks for and the old blanket rules overrode. Every `.display` element at phone width was forced to 42.9px, including a member's name in a list. Sections with an inline `padding-top` now honour it. Print differs on purpose. Two apparent changes (`/join`'s faded dot, the `/centres` button) were the diff tool pairing the wrong elements; measured directly, they are unchanged.
+
+### Cloudinary: several accounts, and the backup is really used
+- **Accounts.** Accounts are one ordered list (`media_accounts()`): the main account, then the backup from Settings → API keys, then any added in Control Room → System → image storage. Added accounts' secrets are sealed (`ai_ui_seal`). Uploads go to the first account below `high`, else the first below `critical`.
+- **The fault the owner reported ("not using the backup's credits").** Most uploads go from the browser straight to Cloudinary, so when the main plan refused one, the server never heard. It kept signing for the main account until the 6-hourly reading, which never comes on a host whose web-cron does not fire.
+  - Now `uploadFile` (api-client.js) treats a refusal that reads as a spent plan (420/429, or words about limits) differently. It asks for a fresh signature carrying what Cloudinary said, and retries that one upload once if the server signs for another cloud.
+  - `media_upload_refused()` never takes the browser's word for it. It re-reads the account and, if that is not conclusive, makes a one-pixel signed upload with its own keys (deleted when it lands). It fails over only on a confirmed refusal, and checks at most once per account every 2 minutes (`MEDIA_REFUSAL_GAP`).
+  - `media_before_sign()` takes an overdue usage reading when an upload is signed. Both signers use it (member and public headshot).
+- **Tests.** `tests/media-failover.test.js` uses real PHP and Chromium, with Cloudinary's endpoints intercepted. It checks the backup's signature against the backup's own secret. 13 PHP checks cover the refusal path.
+- **Merge note.** The merge with the other session (`007be5b`) dropped the tour's CSS block (`.ngt-spot`, `.ngt-shot`, the lit scrim, `.is-kid`), which is why the spotlight drew nowhere. It is restored. `bootstrap.php`'s second `media_activate()` was a duplicate of the one at the end of `service_keys_apply()`, and staying removed is correct.
+
+### Tours per device (`src/modules/guide/guide.jsx`)
+- **Device.** `guideDevice()` gives the kind (phone, tablet or desktop), the OS and whether NGG is installed. Steps carry `only`, `spot`, `shot` and `dev`.
+- **What gets shown.** A first visit gets the full tour. Someone who has done it, arriving on a new kind of device, gets the short "New here on a computer" tour of what differs; `onboard.<portal>.devices` records which kinds they have seen. Children's tours read bigger (`tour.kid`).
+- **The spotlight.** `GuideSpot` rings the real control and follows it every animation frame, re-rendering only when it moves. A ring measured once was left where the control had been while the page settled.
+- **Screenshots.** `tools/guide-shots.js` takes the shots from the real portals at phone and computer size into `assets/guide/`, listed in `shots.json`. A step shows its screenshot when its control is not on the current screen. Re-run it after a portal's layout changes; it takes about a minute a shot, because the dev page compiles in the browser.
+- **One dialog at a time.** The duty reminder used the same button classes and stacked under a tour opened from Help, swallowing its clicks. The tour now announces itself (`ngg:tour`), and the reminder waits behind it.
+
+### Community
+- **Link cards.** A post's link attachment was a `div` with no handler, so it did nothing when tapped ("the community post link does not work"). It is a real `<a target=_blank rel=noopener>` now, http(s) only (`cm3SafeUrl`).
+- **Documents.**
+  - The viewer used to fetch the stored URL from the browser. Cloudinary refuses PDF delivery on restricted accounts, and a bucket sends no CORS headers, so the viewer showed "This document can't be shown here".
+  - `community.doc` + `api/member/community-doc.php` now serve the file from this origin, under the same visibility rule as `community.media`. The file is fetched only from our storage: a signed Cloudinary download on one of our accounts, or the bucket's signed GET. Any other URL is refused as `not_ours` and never fetched; the stored URL is member-supplied.
+  - The error state has a working Download button.
+- **The stray blue circle on cards.** It was the cursor follower (a gold ring under `mix-blend-mode: difference`), which is removed.
+
+### The ID Card Studio assistant: "needs upgrade"
+- **How the gaps were found.** A probe of realistic requests through the rules (which always run, and are all there is when no AI answers) found ten misreadings. All are fixed in the rules, the AI's instructions and `idsPlanSelect`.
+- **New plan fields:**
+  - `centres`: several centres at once.
+  - `numPrefix`: "026-001 to 026-040" is that year's block, not two people.
+  - `latest`: "the last 20 who joined".
+  - `hasPhoto`: "without a photo", "only the ones with photos".
+- **Phrasings now read:**
+  - "except those already printed" and "who still needs a card" mean the people still waiting.
+  - "Volunteers and members together" means both lists; "one sheet per centre" breaks sheets by centre; "print the backs too" turns backs on.
+  - "Ada Okafor's" is Ada Okafor; "at Yaba" is Yaba Hub; a two-word centre is never read as a person.
+- **Not done.** The studio's "everyday" AI tier still starts with Groq's 8B model. Moving it to a stronger, paid model would spend money, so it is left for the owner to decide (Settings → AI routing).
