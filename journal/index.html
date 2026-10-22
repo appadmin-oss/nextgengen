@@ -33,7 +33,7 @@
   .aj-boot.gone { opacity: 0; pointer-events: none; }
   /* Carry global accessibility prefs into the journal PWA. */
   /* :not(#_) adds an id's weight without matching anything less, so these beat
-     every class rule in app.css without !important. */
+     every class rule in app.css, with no important flag. */
   :root[data-motion="reduce"] :not(#_):not(#_), :root[data-motion="reduce"] :not(#_):not(#_)::before, :root[data-motion="reduce"] :not(#_):not(#_)::after {
     animation-duration: .01ms; animation-iteration-count: 1; transition-duration: .01ms;
   }

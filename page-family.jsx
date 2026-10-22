@@ -581,7 +581,7 @@ function FamilyAttendance({ d, first }) {
       <section className="fam-card" aria-labelledby="fam-con-h">
         <h3 id="fam-con-h" className="fam-h2">Conduct</h3>
         {d.conduct.enabled ? <>
-          <p className="fam-big" style={{ fontSize: 22, marginTop: 10 }}>{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
+          <p className="fam-big" style={{ fontSize: "var(--rs-fsize-1, 22px)", marginTop: 10 }}>{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
           {d.conduct.reason && <p className="fam-meta">{d.conduct.reason}{d.conduct.until ? " · until " + fmtDate(d.conduct.until) : ""}</p>}
           {d.conduct.fines.length > 0 ? <ul className="fam-list">{d.conduct.fines.map((f, i) => <li key={i} className="fam-list-row"><span>{f.reason || "Fine"}</span><span className="fam-meta">{fmtDate(f.issuedAt)}</span></li>)}</ul>
             : <p className="fam-hint">No outstanding fines.</p>}

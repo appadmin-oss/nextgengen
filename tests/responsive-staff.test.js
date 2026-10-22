@@ -89,7 +89,7 @@ function fixture(manifest) {
      That looked exactly like a crash in the surface under test, and cost a
      bisect to disprove. So the App keeps #root, hidden, and every measurement
      mounts into #probe. */
-  #root { display: none !important; }
+  #root:not(#_) { display: none; }
 </style>
 </head><body><div id="root"></div><div id="probe"></div>
 <script src="/dist/vendor/react.production.min.js"></script>

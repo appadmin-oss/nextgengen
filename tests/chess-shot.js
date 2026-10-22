@@ -50,7 +50,7 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css">
 <link rel="stylesheet" href="/dist/styles-app.css">
-<style>body{margin:0;background:var(--cream-50,#fdf9f0);}/* The site's cursor sprite follows the pointer, and the harness's last click leaves it sitting in the middle of whatever it clicked. It photographed as a stray ring inside the Accuracy card for weeks. */.ngg-cursor{display:none!important}</style>
+<style>body{margin:0;background:var(--cream-50,#fdf9f0);}/* The site's cursor sprite follows the pointer, and the harness's last click leaves it sitting in the middle of whatever it clicked. It photographed as a stray ring inside the Accuracy card for weeks. */.ngg-cursor:not(#_):not(#_){display:none}</style>
 </head><body><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>

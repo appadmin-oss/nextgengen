@@ -218,6 +218,27 @@ function cleanup() {
     chk('…and freeing space asks for the typed confirmation first', /Originals are not touched/.test(await D.evaluate(() => document.body.innerText)));
     await D.context().close();
 
+    console.log('several Cloudinary accounts');
+    /* A second account whose plan has room while the main one is full: the list
+       says where uploads go, an account opens with its usage and its order
+       controls, and adding one asks for the three keys. */
+    php(`setting_set('media.accounts', [['id' => 'acc_t1', 'label' => 'Second plan', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'secret' => ai_ui_seal('extrasecret1'), 'enabled' => true, 'addedAt' => now_iso(), 'addedBy' => 'x']], 'test');
+      setting_set('media.usage.accounts', ['acc_t1' => ['configured' => true, 'level' => 'ok', 'pct' => 20.0, 'plan' => 'Free', 'checkedAt' => gmdate('c'), 'error' => '', 'parts' => ['credits' => ['usage' => 5, 'limit' => 25, 'pct' => 20.0]]]], 'test');`, ['bootstrap']);
+    const M = await open(1280, 900, '/control/settings/ops');
+    await M.waitForSelector('text=Cloudinary accounts', { timeout: 30000 });
+    const mtext = await M.evaluate(() => document.body.innerText);
+    chk('the accounts list names the extra account, its cloud, and that new uploads go to it', /Second plan/.test(mtext) && /extra-one/.test(mtext) && /Uploads go here/.test(mtext) && /New uploads go to Second plan/.test(mtext));
+    chk('…and never shows a secret', !/extrasecret1/.test(await M.content()));
+    await M.click('text=Second plan');
+    await M.waitForSelector('button:has-text("Check usage now")', { timeout: 10000 });
+    chk('an account opens with its usage and its controls', /20% used/.test(await M.evaluate(() => document.body.innerText)) && !!(await M.$('button:has-text("Pause uploads to it")')) && !!(await M.$('button:has-text("Remove…")')));
+    await M.keyboard.press('Escape');
+    await M.click('button:has-text("Add an account…")');
+    await M.waitForSelector('text=Cloud name', { timeout: 10000 });
+    chk('adding an account asks for the cloud name, API key and secret, and says they are checked', /API secret/.test(await M.evaluate(() => document.body.innerText)) && /checked with Cloudinary/.test(await M.evaluate(() => document.body.innerText)));
+    await M.context().close();
+    php(`setting_set('media.accounts', null, 'test'); setting_set('media.usage.accounts', null, 'test');`, ['bootstrap']);
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

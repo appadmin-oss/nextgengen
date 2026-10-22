@@ -1768,6 +1768,11 @@
         purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
         objects: () => request('/admin/media.php?view=objects'),
         sweep:   () => request('/admin/media.php', { body: { action: 'sweepObjects' } }),
+        accounts:      () => request('/admin/media.php?view=accounts'),
+        accountSave:   (a) => request('/admin/media.php', { body: Object.assign({ action: 'accountSave' }, a) }),
+        accountRemove: (id) => request('/admin/media.php', { body: { action: 'accountRemove', id } }),
+        accountMove:   (id, dir) => request('/admin/media.php', { body: { action: 'accountMove', id, dir } }),
+        accountCheck:  (id) => request('/admin/media.php', { body: { action: 'accountCheck', id } }),
       },
       ops: {
         status: () => request('/admin/ops.php'),

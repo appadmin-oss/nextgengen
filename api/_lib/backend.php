@@ -668,6 +668,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.tools.quiz.ai'        => 'study_quiz_ai',
             'member.tools.notes.ai'       => 'study_notes_ai',
             'admin.media.purgeDerived'    => 'admin_media_purge_derived',
+            'admin.media.accounts'        => 'admin_media_accounts',
+            'admin.media.accountSave'     => 'admin_media_account_save',
+            'admin.media.accountRemove'   => 'admin_media_account_remove',
+            'admin.media.accountMove'     => 'admin_media_account_move',
+            'admin.media.accountCheck'    => 'admin_media_account_check',
             'family.fees.pay'             => 'family_fees_pay',
             /* Self-service. Every one of these takes its memberId from the
                SESSION, never the body — see member-self.php. */

@@ -38,17 +38,19 @@ const MEDIA_LEVEL_ORDER = ['ok' => 0, 'warn' => 1, 'high' => 2, 'critical' => 3]
 const MEDIA_REFRESH_SECONDS = 21600;          // web-cron cadence (6h); an admin can refresh at once
 const MEDIA_PURGE_ROUNDS = 10;                // derived-purge calls per press (Cloudinary deletes ≤1000 a call)
 
+/** The account uploads go to now (media_activate() puts it in the config). */
 function media_cfg(): array { return (array)($GLOBALS['CONFIG']['cloudinary'] ?? []); }
 function media_configured(): bool {
     $c = media_cfg();
     return !empty($c['cloud_name']) && !empty($c['api_key']) && !empty($c['api_secret']);
 }
 
-/** Cloudinary Admin API call. Test seam: $GLOBALS['__media_api_mock'] = fn($method, $path, $query) => ['code'=>…, 'body'=>array]. */
-function media_api(string $method, string $path, array $query = []): array {
-    if (isset($GLOBALS['__media_api_mock']) && is_callable($GLOBALS['__media_api_mock'])) return ($GLOBALS['__media_api_mock'])($method, $path, $query);
-    if (!media_configured() || !function_exists('curl_init')) return ['code' => 0, 'body' => null, 'error' => 'not_configured'];
-    $c = media_cfg();
+/** Cloudinary Admin API call, on one account (default: the one uploads go to).
+ *  Test seam: $GLOBALS['__media_api_mock'] = fn($method, $path, $query, $accountId) => ['code'=>…, 'body'=>array]. */
+function media_api(string $method, string $path, array $query = [], ?array $acc = null): array {
+    if (isset($GLOBALS['__media_api_mock']) && is_callable($GLOBALS['__media_api_mock'])) return ($GLOBALS['__media_api_mock'])($method, $path, $query, $acc ? (string)$acc['id'] : media_active_id());
+    $c = $acc ?? media_cfg();
+    if (empty($c['cloud_name']) || empty($c['api_key']) || empty($c['api_secret']) || !function_exists('curl_init')) return ['code' => 0, 'body' => null, 'error' => 'not_configured'];
     $url = 'https://api.cloudinary.com/v1_1/' . rawurlencode((string)$c['cloud_name']) . $path . ($query ? '?' . http_build_query($query) : '');
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CUSTOMREQUEST => $method,
@@ -72,24 +74,63 @@ function media_part(array $j, string $k): ?array {
     return ['usage' => $u, 'limit' => $l, 'pct' => $pct === null ? null : round($pct, 1)];
 }
 
-/** The cached state, as the Control Room reads it. Never calls out. */
-function media_usage_state(): array {
-    $s = function_exists('setting_get') ? setting_get('media.usage') : null;
+/** The cached state of one account (default: the one uploads go to). Never calls out. */
+function media_usage_state(?string $accountId = null): array {
+    $id = $accountId ?? media_active_id();
+    $s = media_state_raw($id);
     $base = ['configured' => media_configured(), 'level' => 'ok', 'pct' => null, 'parts' => [], 'checkedAt' => '', 'error' => ''];
-    return is_array($s) ? $s + $base : $base;
+    $out = is_array($s) ? $s + $base : $base;
+    if ($accountId === null && count(media_accounts()) > 1) {
+        $acc = media_account($id);
+        $out['account'] = ['id' => $id, 'label' => $acc ? $acc['label'] : '', 'cloud' => $acc ? $acc['cloud_name'] : ''];
+        $out['accounts'] = count(media_accounts());
+    }
+    return $out;
+}
+function media_state_raw(string $id): ?array {
+    if (!function_exists('setting_get')) return null;
+    if ($id === 'primary') { $s = setting_get('media.usage'); $s = is_array($s) ? $s : null; }
+    else { $all = setting_get('media.usage.accounts'); $s = is_array($all) && is_array($all[$id] ?? null) ? $all[$id] : null; }
+    // The reading taken in this request, as it was taken (a stored float can come back an int) — while it is still the stored one.
+    $mem = $GLOBALS['__media_states'][$id] ?? null;
+    return $s !== null && $mem !== null && ($mem['checkedAt'] ?? '') === ($s['checkedAt'] ?? '') ? $mem : $s;
+}
+function media_state_put(string $id, array $state): void {
+    $GLOBALS['__media_states'][$id] = $state;
+    if ($id === 'primary') { setting_set('media.usage', $state, 'system'); return; }
+    $all = setting_get('media.usage.accounts'); $all = is_array($all) ? $all : [];
+    $all[$id] = $state;
+    setting_set('media.usage.accounts', $all, 'system');
 }
 
-/** May a new upload go to Cloudinary right now? */
+/** May a new upload go to Cloudinary right now? Yes while any account has room. */
 function media_uploads_allowed(): bool {
-    return media_usage_state()['level'] !== 'critical';
+    $accs = media_accounts();
+    if (!$accs) return media_usage_state('primary')['level'] !== 'critical';
+    foreach ($accs as $a) if ((media_state_raw($a['id'])['level'] ?? 'ok') !== 'critical') return true;
+    return false;
 }
 
-/** Read /usage, keep the breakdown, alert on a rise. $force skips the cadence. */
+/** Read /usage on every account, keep each breakdown, alert on a rise, and
+ *  move uploads to the next account with room. $force skips the cadence.
+ *  Returns the state of the account uploads now go to. */
 function media_usage_refresh(bool $force = false): array {
-    if (!media_configured()) return media_usage_state();
-    $prev = media_usage_state();
+    $accs = media_accounts();
+    if (!$accs) return media_usage_state();
+    foreach ($accs as $a) media_usage_refresh_one($a, $force);
+    $was = media_active_id();
+    media_activate();
+    $now = media_active_id();
+    if ($now !== $was && function_exists('audit')) audit('media.account.switched', null, $now, ['from' => $was, 'to' => $now], '');
+    return media_usage_state();
+}
+
+/** One account's /usage read. */
+function media_usage_refresh_one(array $acc, bool $force): array {
+    $id = (string)$acc['id'];
+    $prev = media_usage_state($id);
     if (!$force && $prev['checkedAt'] !== '' && time() - strtotime((string)$prev['checkedAt']) < MEDIA_REFRESH_SECONDS - 60) return $prev;
-    $r = media_api('GET', '/usage');
+    $r = media_api('GET', '/usage', [], $acc);
     $code = (int)($r['code'] ?? 0);
     $state = ['configured' => true, 'checkedAt' => gmdate('c'), 'error' => '', 'parts' => [], 'pct' => null, 'level' => 'ok', 'plan' => ''];
     if ($code === 420 || $code === 429) {
@@ -108,20 +149,35 @@ function media_usage_refresh(bool $force = false): array {
         // Unreachable or refused credentials: keep the last known level, say what happened.
         $state = ['checkedAt' => gmdate('c'), 'error' => 'Could not read Cloudinary usage (HTTP ' . $code . ').'] + $prev;
     }
-    setting_set('media.usage', $state, 'system');
-    // The older flags the photo pipeline reads: from `high`, the paid AI transforms stop.
-    setting_set('cloudinary_credits', MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['high'] ? 'exhausted' : 'ok', 'system');
-    if ($state['pct'] !== null) setting_set('cloudinary_credits_pct', (string)(int)round((float)$state['pct']), 'system');
-    if (MEDIA_LEVEL_ORDER[$state['level']] > MEDIA_LEVEL_ORDER[$prev['level'] ?? 'ok']) media_alert($state);
+    media_state_put($id, $state);
+    if (MEDIA_LEVEL_ORDER[$state['level']] > MEDIA_LEVEL_ORDER[$prev['level'] ?? 'ok']) media_alert($state, $acc);
+    media_credit_flags();
     return $state;
 }
 
+/* The older flags the photo pipeline reads: from `high`, the paid AI
+   transforms stop. With several accounts they follow the one uploads go to:
+   an edit is made where the photo is uploaded. */
+function media_credit_flags(): void {
+    $s = media_state_raw(media_pick_id() ?? 'primary') ?? [];
+    $level = (string)($s['level'] ?? 'ok');
+    setting_set('cloudinary_credits', MEDIA_LEVEL_ORDER[$level] >= MEDIA_LEVEL_ORDER['high'] ? 'exhausted' : 'ok', 'system');
+    if (($s['pct'] ?? null) !== null) setting_set('cloudinary_credits_pct', (string)(int)round((float)$s['pct']), 'system');
+}
+
 /** Who is told, once per level reached: the intake inbox and every staff member who holds `settings`. */
-function media_alert(array $state): void {
+function media_alert(array $state, ?array $acc = null): void {
     $pct = $state['pct'] === null ? '?' : (string)round((float)$state['pct']);
-    $what = ['warn' => 'is over ' . MEDIA_LEVELS['warn'] . '% used', 'high' => 'is over ' . MEDIA_LEVELS['high'] . '% used — AI photo edits have stopped',
-             'critical' => 'is full — new uploads are paused and photos are being stored on the site instead'][$state['level']] ?? 'needs attention';
-    $title = 'Cloudinary storage ' . $what . ' (' . $pct . '%)';
+    $multi = count(media_accounts()) > 1;
+    // With another account to move to, a full one is not a pause: say where uploads go now.
+    $next = null;
+    if ($multi && MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['high']) {
+        foreach (media_accounts() as $a) if ($acc && $a['id'] !== $acc['id'] && MEDIA_LEVEL_ORDER[(string)(media_state_raw($a['id'])['level'] ?? 'ok')] < MEDIA_LEVEL_ORDER['high']) { $next = $a; break; }
+    }
+    $what = ['warn' => 'is over ' . MEDIA_LEVELS['warn'] . '% used',
+             'high' => 'is over ' . MEDIA_LEVELS['high'] . '% used — ' . ($next ? 'new uploads now go to ' . $next['label'] : 'AI photo edits have stopped'),
+             'critical' => 'is full — ' . ($next ? 'new uploads now go to ' . $next['label'] : 'new uploads are paused and photos are being stored on the site instead')][$state['level']] ?? 'needs attention';
+    $title = 'Cloudinary ' . ($multi && $acc ? '(' . $acc['label'] . ') ' : 'storage ') . $what . ' (' . $pct . '%)';
     $lines = [];
     foreach ($state['parts'] as $k => $p) $lines[] = ucfirst($k) . ': ' . ($p['pct'] === null ? 'n/a' : $p['pct'] . '%');
     $html = '<p>' . esc_html($title) . '.</p>' . ($lines ? '<p>' . esc_html(implode(' · ', $lines)) . '</p>' : '')
@@ -133,7 +189,7 @@ function media_alert(array $state): void {
         if (function_exists('push_notification')) push_notification((string)$m['memberId'], ['kind' => 'system', 'title' => $title, 'body' => 'Open Diagnostics → Image storage.', 'linkPage' => 'admin']);
         if (filter_var((string)($m['email'] ?? ''), FILTER_VALIDATE_EMAIL) && function_exists('send_mail')) { try { send_mail((string)$m['email'], '[NGG] ' . $title, $html); } catch (\Throwable $e) {} }
     }
-    audit('media.storage.alert', null, $state['level'], ['pct' => $state['pct']], '');
+    audit('media.storage.alert', null, $state['level'], ['pct' => $state['pct'], 'account' => $acc ? $acc['id'] : 'primary'], '');
 }
 
 /**
@@ -191,10 +247,12 @@ function admin_media_purge_derived(array $p): array {
             'detail' => $n . ' photo' . ($n === 1 ? ' is' : 's are') . ' still an edit with the background removed. Freeing space now would make Cloudinary remove each background again (75 credits’ worth of work each). Store them as plain images first.'];
     }
     $deleted = 0; $partial = false; $errors = [];
-    foreach (['image', 'video'] as $rt) {
+    // Every account: a derived copy costs storage wherever it is.
+    $multi = count(media_accounts()) > 1;
+    foreach (media_accounts() as $acc) foreach (['image', 'video'] as $rt) {
         for ($i = 0; $i < MEDIA_PURGE_ROUNDS; $i++) {
-            $r = media_api('DELETE', '/resources/' . $rt . '/upload', ['all' => 'true', 'keep_original' => 'true']);
-            if ((int)$r['code'] < 200 || (int)$r['code'] >= 300) { $errors[] = $rt . ': HTTP ' . (int)$r['code']; break; }
+            $r = media_api('DELETE', '/resources/' . $rt . '/upload', ['all' => 'true', 'keep_original' => 'true'], $acc);
+            if ((int)$r['code'] < 200 || (int)$r['code'] >= 300) { $errors[] = ($multi ? $acc['label'] . ' · ' : '') . $rt . ': HTTP ' . (int)$r['code']; break; }
             $deleted += is_array($r['body']['deleted'] ?? null) ? count($r['body']['deleted']) : 0;
             $partial = !empty($r['body']['partial']);
             if (!$partial) break;
@@ -204,3 +262,227 @@ function admin_media_purge_derived(array $p): array {
     $after = media_usage_refresh(true);
     return ['ok' => $errors === [], 'deleted' => $deleted, 'more' => $partial, 'errors' => $errors, 'usage' => $after];
 }
+
+/* ── Several Cloudinary accounts ───────────────────────────────────────────
+ * One free Cloudinary plan holds about fifty people's photos a month. More
+ * accounts mean more room: the account in config.php (or Settings → API keys)
+ * is the main one, and others are added in Control Room → System → Image
+ * storage. Uploads go to the FIRST account, in the order shown, that still has
+ * room (under `high`; failing that, under `critical`), so a full plan moves new
+ * uploads to the next account by itself, on the next usage reading — and an
+ * account that a reset or an upgrade empties takes them back.
+ *
+ * Images already uploaded stay where they are and keep working: a delivery
+ * URL names its own cloud, and needs no key to be shown. Keys are needed only
+ * to upload, to read usage and to delete, and those three pick the account by
+ * the cloud an image is on (media_account_for_cloud).
+ *
+ * The extra accounts' secrets are sealed (ai_ui_seal) and never sent back to a
+ * browser; a key is checked against Cloudinary before it is kept.
+ */
+const MEDIA_ACCOUNTS_MAX = 8;
+
+/** The main account's keys: config.php with Settings → API keys laid over it. */
+function media_primary_cfg(): array {
+    $c = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
+    return isset($c['__primary']) && is_array($c['__primary']) ? $c['__primary'] + $c : $c;
+}
+function media_extra_rows(): array {
+    $rows = function_exists('setting_get') ? setting_get('media.accounts') : null;
+    return is_array($rows) ? array_values(array_filter($rows, 'is_array')) : [];
+}
+
+/** Every usable account, in the order uploads try them. */
+function media_accounts(): array {
+    $out = [];
+    $p = media_primary_cfg();
+    if (!empty($p['cloud_name']) && !empty($p['api_key']) && !empty($p['api_secret']))
+        $out[] = ['id' => 'primary', 'label' => 'Main account', 'cloud_name' => (string)$p['cloud_name'], 'api_key' => (string)$p['api_key'], 'api_secret' => (string)$p['api_secret'], 'primary' => true, 'enabled' => true];
+    foreach (media_extra_rows() as $r) {
+        if (empty($r['enabled']) || empty($r['cloudName'])) continue;
+        $sec = function_exists('ai_ui_open') ? ai_ui_open((string)($r['secret'] ?? '')) : '';
+        if ($sec === '') continue;
+        $out[] = ['id' => (string)$r['id'], 'label' => (string)($r['label'] ?: $r['cloudName']), 'cloud_name' => (string)$r['cloudName'], 'api_key' => (string)$r['apiKey'], 'api_secret' => $sec, 'primary' => false, 'enabled' => true];
+    }
+    return $out;
+}
+function media_account(string $id): ?array {
+    foreach (media_accounts() as $a) if ($a['id'] === $id) return $a;
+    return null;
+}
+/** The account an image on `$cloud` belongs to, or null when it is not ours. */
+function media_account_for_cloud(string $cloud): ?array {
+    if ($cloud === '') return null;
+    foreach (media_accounts() as $a) if (strcasecmp($a['cloud_name'], $cloud) === 0) return $a;
+    return null;
+}
+function media_cloud_of(string $url): string {
+    return preg_match('#^https://res\.cloudinary\.com/([^/]+)/#', $url, $m) ? $m[1] : '';
+}
+
+/** The account uploads should go to: the first with room. Null when every one is full. */
+function media_pick_id(): ?string {
+    $accs = media_accounts();
+    foreach (['high', 'critical'] as $below)
+        foreach ($accs as $a) if (MEDIA_LEVEL_ORDER[(string)(media_state_raw($a['id'])['level'] ?? 'ok')] < MEDIA_LEVEL_ORDER[$below]) return $a['id'];
+    return null;
+}
+function media_active_id(): string {
+    return (string)($GLOBALS['__media_active'] ?? (media_pick_id() ?? 'primary'));
+}
+
+/**
+ * Put the chosen account's keys where every uploader reads them
+ * ($CONFIG['cloudinary']), keeping the main account's own under `__primary`.
+ * Run once a request from bootstrap, after the on-screen keys are applied, and
+ * again after a usage reading. With one account it changes nothing.
+ */
+function media_activate(): void {
+    $cfg = (array)($GLOBALS['CONFIG']['cloudinary'] ?? []);
+    $primary = media_primary_cfg();
+    $id = media_pick_id() ?? 'primary';
+    $acc = $id === 'primary' ? null : media_account($id);
+    if (!$acc) { $id = 'primary'; }
+    $GLOBALS['__media_active'] = $id;
+    if ($id === 'primary') {
+        if (isset($cfg['__primary'])) { $GLOBALS['CONFIG']['cloudinary'] = array_diff_key($primary, ['__primary' => 1]); }
+        return;
+    }
+    $keep = ['cloud_name' => $primary['cloud_name'] ?? '', 'api_key' => $primary['api_key'] ?? '', 'api_secret' => $primary['api_secret'] ?? ''];
+    $GLOBALS['CONFIG']['cloudinary'] = array_merge(array_diff_key($primary, ['__primary' => 1]),
+        ['cloud_name' => $acc['cloud_name'], 'api_key' => $acc['api_key'], 'api_secret' => $acc['api_secret'], '__primary' => $keep]);
+    // An unsigned preset belongs to the main account; on another cloud it would not exist.
+    unset($GLOBALS['CONFIG']['cloudinary']['unsigned_preset']);
+}
+
+/** The keys to act on an image with: the account its URL names, else the one uploads go to. */
+function media_account_for_url(string $url): ?array {
+    $cloud = media_cloud_of($url);
+    return $cloud !== '' ? media_account_for_cloud($cloud) : media_account(media_active_id());
+}
+
+/* ── Ops ── */
+
+/** How one account reads on screen: never its secret. */
+function media_account_view(array $a, array $row = []): array {
+    $st = media_usage_state((string)$a['id']);
+    return ['id' => $a['id'], 'label' => $a['label'], 'cloudName' => $a['cloud_name'], 'keyEnds' => substr((string)$a['api_key'], -4), 'primary' => !empty($a['primary']),
+            'enabled' => $row ? !empty($row['enabled']) : true, 'active' => media_active_id() === $a['id'],
+            'level' => $st['level'], 'pct' => $st['pct'], 'parts' => $st['parts'], 'plan' => $st['plan'] ?? '', 'checkedAt' => $st['checkedAt'], 'error' => $st['error'],
+            'addedAt' => (string)($row['addedAt'] ?? ''), 'addedBy' => (string)($row['addedBy'] ?? '')];
+}
+
+/** admin.media.accounts — every account, in upload order, with its usage. */
+function admin_media_accounts(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $rows = []; foreach (media_extra_rows() as $r) $rows[(string)$r['id']] = $r;
+    $out = [];
+    foreach (media_accounts() as $a) $out[] = media_account_view($a, $rows[$a['id']] ?? []);
+    // A paused extra account is listed too, so it can be resumed.
+    foreach ($rows as $id => $r) if (empty($r['enabled'])) $out[] = ['id' => $id, 'label' => (string)($r['label'] ?: $r['cloudName']), 'cloudName' => (string)$r['cloudName'],
+        'keyEnds' => substr((string)$r['apiKey'], -4), 'primary' => false, 'enabled' => false, 'active' => false, 'level' => 'ok', 'pct' => null, 'parts' => [], 'plan' => '',
+        'checkedAt' => '', 'error' => '', 'addedAt' => (string)($r['addedAt'] ?? ''), 'addedBy' => (string)($r['addedBy'] ?? '')];
+    $pick = media_pick_id();
+    return ['ok' => true, 'accounts' => $out, 'uploadsTo' => $pick, 'max' => MEDIA_ACCOUNTS_MAX, 'primaryConfigured' => (bool)media_account('primary')];
+}
+
+/** Ask Cloudinary whether a set of keys works, before keeping them. */
+function media_account_check(array $acc): array {
+    $r = media_api('GET', '/usage', [], $acc);
+    $code = (int)($r['code'] ?? 0);
+    if ($code >= 200 && $code < 300) return ['ok' => true];
+    if ($code === 401 || $code === 403) return ['ok' => false, 'error' => 'bad_credentials', 'detail' => 'Cloudinary refused these keys. Copy the cloud name, API key and API secret again from the Cloudinary console → Settings → API Keys.'];
+    if ($code === 404) return ['ok' => false, 'error' => 'bad_cloud', 'detail' => 'There is no Cloudinary cloud by that name.'];
+    if ($code === 420 || $code === 429) return ['ok' => true, 'full' => true];
+    return ['ok' => false, 'error' => 'unreachable', 'detail' => 'Could not reach Cloudinary to check the keys (HTTP ' . $code . '). Try again in a minute.'];
+}
+
+/** admin.media.accountSave — add an account, or change one's label, keys or pause. */
+function admin_media_account_save(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $rows = media_extra_rows();
+    $id = trim((string)($p['id'] ?? ''));
+    $i = null;
+    foreach ($rows as $k => $r) if ((string)$r['id'] === $id) $i = $k;
+    if ($id !== '' && $i === null) return ['ok' => false, 'error' => 'not_found'];
+    if ($id === 'primary') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'The main account is set in Settings → API keys → Cloudinary.'];
+    $cur = $i !== null ? $rows[$i] : [];
+    // On a change, a field left empty keeps what is saved.
+    $keep = static fn($k, $ck) => trim((string)($p[$k] ?? '')) !== '' ? trim((string)$p[$k]) : (string)($cur[$ck] ?? '');
+    $label = trim(preg_replace('/\s+/', ' ', $keep('label', 'label')));
+    $cloud = strtolower($keep('cloudName', 'cloudName'));
+    $key = $keep('apiKey', 'apiKey');
+    $secret = trim((string)($p['apiSecret'] ?? ''));
+    $enabled = array_key_exists('enabled', $p) ? !empty($p['enabled']) : ($cur ? !empty($cur['enabled']) : true);
+    if (mb_strlen($label) > 60) return ['ok' => false, 'error' => 'label_too_long', 'detail' => 'Keep the name under 60 characters.'];
+    if (!preg_match('/^[a-z0-9][a-z0-9_-]{1,63}$/', $cloud)) return ['ok' => false, 'error' => 'bad_cloud_name', 'detail' => 'The cloud name is the short name on the Cloudinary console, letters, numbers and dashes.'];
+    if (!preg_match('/^\d{6,20}$/', $key)) return ['ok' => false, 'error' => 'bad_api_key', 'detail' => 'The API key is a number, 6 to 20 digits.'];
+    if ($secret === '' && $i === null) return ['ok' => false, 'error' => 'secret_required', 'detail' => 'Paste the API secret.'];
+    if ($secret !== '' && !preg_match('/^[A-Za-z0-9_-]{10,64}$/', $secret)) return ['ok' => false, 'error' => 'bad_api_secret', 'detail' => 'That does not look like a Cloudinary API secret.'];
+    foreach (media_accounts() as $a) if (strcasecmp($a['cloud_name'], $cloud) === 0 && $a['id'] !== $id) return ['ok' => false, 'error' => 'duplicate_cloud', 'detail' => 'That cloud is already on the list (' . $a['label'] . ').'];
+    foreach ($rows as $r) if (strcasecmp((string)$r['cloudName'], $cloud) === 0 && (string)$r['id'] !== $id) return ['ok' => false, 'error' => 'duplicate_cloud', 'detail' => 'That cloud is already on the list.'];
+    if ($i === null && count($rows) >= MEDIA_ACCOUNTS_MAX) return ['ok' => false, 'error' => 'too_many', 'detail' => 'At most ' . MEDIA_ACCOUNTS_MAX . ' extra accounts.'];
+    $sealed = $secret !== '' ? ai_ui_seal($secret) : (string)($cur['secret'] ?? '');
+    if ($sealed === '') return ['ok' => false, 'error' => 'cannot_seal', 'detail' => 'This server cannot encrypt the secret (OpenSSL is missing), so it will not be stored.'];
+    // Keys that changed are checked against Cloudinary before they are kept.
+    $changed = $i === null || $secret !== '' || $cloud !== (string)($cur['cloudName'] ?? '') || $key !== (string)($cur['apiKey'] ?? '');
+    if ($changed && $enabled) {
+        $chk = media_account_check(['id' => $id !== '' ? $id : 'new', 'label' => $label, 'cloud_name' => $cloud, 'api_key' => $key, 'api_secret' => $secret !== '' ? $secret : ai_ui_open($sealed)]);
+        if (empty($chk['ok'])) return $chk;
+    }
+    $row = ['id' => $id !== '' ? $id : 'acc_' . bin2hex(random_bytes(5)), 'label' => $label !== '' ? $label : $cloud, 'cloudName' => $cloud, 'apiKey' => $key, 'secret' => $sealed, 'enabled' => $enabled,
+            'addedAt' => (string)($cur['addedAt'] ?? now_iso()), 'addedBy' => (string)($cur['addedBy'] ?? $by), 'updatedAt' => now_iso(), 'updatedBy' => $by];
+    if ($i === null) $rows[] = $row; else $rows[$i] = $row;
+    setting_set('media.accounts', $rows, $by);
+    audit($i === null ? 'media.account.add' : 'media.account.update', $by, $row['id'], ['cloud' => $cloud, 'label' => $row['label'], 'enabled' => $enabled, 'keysChanged' => $changed], (string)($p['ip'] ?? ''));
+    if ($changed) media_usage_refresh_one(media_account($row['id']) ?? ['id' => $row['id'], 'label' => $row['label'], 'cloud_name' => $cloud, 'api_key' => $key, 'api_secret' => ai_ui_open($sealed)], true);
+    media_activate(); media_credit_flags();
+    return ['ok' => true, 'id' => $row['id']] + admin_media_accounts($p);
+}
+
+/** admin.media.accountRemove — off the list. Its images keep showing; only uploading to, reading and deleting from it stop. */
+function admin_media_account_remove(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $id = (string)($p['id'] ?? '');
+    if ($id === 'primary') return ['ok' => false, 'error' => 'primary_is_settings', 'detail' => 'The main account is removed in Settings → API keys → Cloudinary.'];
+    $rows = media_extra_rows(); $gone = null;
+    $rows = array_values(array_filter($rows, static function ($r) use ($id, &$gone) { if ((string)$r['id'] === $id) { $gone = $r; return false; } return true; }));
+    if (!$gone) return ['ok' => false, 'error' => 'not_found'];
+    // How many records still show an image from this cloud, so the screen can say they keep working.
+    $n = 0; $like = '%res.cloudinary.com/' . (string)$gone['cloudName'] . '/%';
+    foreach (['members', 'volunteers', 'summer_students'] as $t) { try { $n += (int)(db_row("SELECT COUNT(*) c FROM {$t} WHERE photoUrl LIKE ?", [$like])['c'] ?? 0); } catch (Throwable $e) {} }
+    setting_set('media.accounts', $rows, (string)$g['requester']['memberId']);
+    $all = setting_get('media.usage.accounts'); if (is_array($all)) { unset($all[$id]); setting_set('media.usage.accounts', $all, 'system'); }
+    audit('media.account.remove', (string)$g['requester']['memberId'], $id, ['cloud' => (string)$gone['cloudName'], 'photosStillThere' => $n], (string)($p['ip'] ?? ''));
+    media_activate(); media_credit_flags();
+    return ['ok' => true, 'photosStillThere' => $n] + admin_media_accounts($p);
+}
+
+/** admin.media.accountMove — change the order uploads try the extra accounts in (the main one is always first). */
+function admin_media_account_move(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $id = (string)($p['id'] ?? ''); $dir = (string)($p['dir'] ?? '');
+    if (!in_array($dir, ['up', 'down'], true)) return ['ok' => false, 'error' => 'bad_direction'];
+    $rows = media_extra_rows(); $i = null;
+    foreach ($rows as $k => $r) if ((string)$r['id'] === $id) $i = $k;
+    if ($i === null) return ['ok' => false, 'error' => 'not_found'];
+    $j = $dir === 'up' ? $i - 1 : $i + 1;
+    if ($j < 0 || $j >= count($rows)) return ['ok' => true, 'unchanged' => true] + admin_media_accounts($p);
+    [$rows[$i], $rows[$j]] = [$rows[$j], $rows[$i]];
+    setting_set('media.accounts', $rows, (string)$g['requester']['memberId']);
+    audit('media.account.move', (string)$g['requester']['memberId'], $id, ['dir' => $dir], (string)($p['ip'] ?? ''));
+    media_activate(); media_credit_flags();
+    return ['ok' => true] + admin_media_accounts($p);
+}
+
+/** admin.media.accountCheck — read one account's usage now. */
+function admin_media_account_check(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $acc = media_account((string)($p['id'] ?? ''));
+    if (!$acc) return ['ok' => false, 'error' => 'not_found'];
+    media_usage_refresh_one($acc, true);
+    media_activate(); media_credit_flags();
+    return ['ok' => true] + admin_media_accounts($p);
+}
+

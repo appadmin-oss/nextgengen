@@ -5,9 +5,16 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET' && ($_GET['view'] ?? '') === 'objects') {
     $res = gs_call('admin.media.objects', ['requesterId' => $s['mid']]);
+} elseif ($method === 'GET' && ($_GET['view'] ?? '') === 'accounts') {
+    $res = gs_call('admin.media.accounts', ['requesterId' => $s['mid']]);
+} elseif ($method === 'POST' && in_array((string)(($b = read_json_body())['action'] ?? ''), ['accountSave', 'accountRemove', 'accountMove', 'accountCheck'], true)) {
+    rate_limit_check_actor('media.accounts', (string)$s['mid']);
+    $res = gs_call('admin.media.' . (string)$b['action'], ['requesterId' => $s['mid'], 'ip' => client_ip(),
+        'id' => (string)($b['id'] ?? ''), 'label' => $b['label'] ?? null, 'cloudName' => $b['cloudName'] ?? null, 'apiKey' => $b['apiKey'] ?? null,
+        'apiSecret' => (string)($b['apiSecret'] ?? ''), 'dir' => (string)($b['dir'] ?? '')] + (array_key_exists('enabled', $b) ? ['enabled' => !empty($b['enabled'])] : []));
 } elseif ($method === 'GET') {
     $res = gs_call('admin.media.usage', ['requesterId' => $s['mid'], 'refresh' => !empty($_GET['refresh'])]);
-} elseif ($method === 'POST' && (string)(($b = read_json_body())['action'] ?? '') === 'sweepObjects') {
+} elseif ($method === 'POST' && (string)(($b = $b ?? read_json_body())['action'] ?? '') === 'sweepObjects') {
     rate_limit_check_actor('media.purge', (string)$s['mid']);
     $res = gs_call('admin.media.objects', ['requesterId' => $s['mid'], 'sweep' => true, 'ip' => client_ip()]);
 } elseif ($method === 'POST') {

@@ -22,12 +22,12 @@ html,body{margin:0;height:100%;background:#ecebe7}
 a{color:#0b0b0c;text-underline-offset:2px}
 a:hover{color:#6b4b00}
 button,input,textarea,select{font:inherit;color:inherit}
-button:disabled{cursor:default!important}
+button:disabled{cursor:default}
 :focus-visible{outline:3px solid #f5b026;outline-offset:2px}
 @keyframes cmBurst{0%{transform:translate(-50%,8px) scale(.3);opacity:0}18%{opacity:1;transform:translate(-50%,-14px) scale(1.25)}60%{opacity:1}100%{transform:translate(-50%,-78px) scale(.9);opacity:0}}
 @keyframes cmPop{0%{transform:scale(.6)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
 @keyframes cmVFlash{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}20%{opacity:1;transform:translate(-50%,-50%) scale(1)}70%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.12)}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none;animation:none}}
 </style>
 </helmet>
 <div ref="{{ rootRef }}" style="height:100vh;display:flex;align-items:center;justify-content:center;padding:{{ outerPad }};font-family:'Geist',system-ui,sans-serif;color:#0b0b0c;font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased">

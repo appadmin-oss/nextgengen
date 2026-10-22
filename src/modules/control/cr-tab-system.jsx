@@ -47,6 +47,80 @@ function crSyMediaBlocks(m, ctx) {
              act: { l: "Store edited photos…", run: () => crSyPhotoMaterialise(ctx) } });
   return out;
 }
+/* ══ Several Cloudinary accounts (media-storage.php) ═════════════════════════
+   One free plan holds about fifty people's photos a month; more accounts mean
+   more room. Uploads go to the first account, in this order, with room; a full
+   one hands over by itself on the next usage reading, and takes uploads back
+   when it resets. Images already uploaded stay where they are and keep
+   showing. A secret is checked against Cloudinary before it is kept, sealed,
+   and never shown again. */
+const CR_SY_ACC_ERR = { bad_cloud_name: "cloudName", duplicate_cloud: "cloudName", bad_cloud: "cloudName", bad_api_key: "apiKey", bad_api_secret: "apiSecret", secret_required: "apiSecret", bad_credentials: "apiSecret", label_too_long: "label" };
+function crSyAccountBlocks(A, ctx) {
+  const accs = A.accounts || [], live = accs.filter(a => a.enabled);
+  const where = A.uploadsTo ? (accs.find(a => a.id === A.uploadsTo) || {}).label : "";
+  const out = [{ type: "table", span: 6, title: "Cloudinary accounts", nosel: true,
+    sub: live.length > 1 ? "New uploads go to " + (where || "no account: every plan is full") + ". The first account in this order with room takes them; a full plan hands over by itself, and takes them back when it resets."
+      : "One account. Add another to get more room: when this plan fills, new uploads move to the next account by themselves.",
+    cols: ["Account", "Cloud", { l: "Used", num: true }, "State"],
+    rows: accs.map((a, i) => {
+      const lv = CR_SY_MEDIA_LEVEL[a.level] || CR_SY_MEDIA_LEVEL.ok;
+      const state = !a.enabled ? ["Paused", "neutral"] : a.active ? ["Uploads go here", "ok"] : a.level === "critical" ? ["Full", "bad"] : [lv[1], lv[0] || "neutral"];
+      return { key: a.id, cells: [{ k: "strong", t: a.label, s: a.primary ? "Main account · Settings → API keys" : "Added " + (a.addedAt ? crAgo(a.addedAt) + " ago" : "") },
+        { k: "mono", t: a.cloudName, s: "Key ends " + a.keyEnds }, { k: "num", t: a.pct == null ? "—" : Math.round(a.pct) + "%", v: a.pct == null ? -1 : a.pct },
+        { k: "status", t: state[0], tone: state[1] }],
+        open: () => crSyAccountDrawer(a, i, accs, ctx) };
+    }), emptyText: "No Cloudinary account yet." }];
+  if (accs.filter(a => !a.primary).length < (A.max || 8)) out.push({ type: "note", span: 6, icon: "plus-circle",
+    text: "Add a Cloudinary account: a free one from cloudinary.com, signed up with another email address, adds its own credits and storage.",
+    sub: "You need its cloud name, API key and API secret, from the Cloudinary console → Settings → API Keys. The keys are checked before they are kept.",
+    act: { l: "Add an account…", run: () => crSyAccountForm(null, ctx) } });
+  return out;
+}
+function crSyAccountDrawer(a, i, accs, ctx) {
+  const extras = accs.filter(x => !x.primary), xi = extras.findIndex(x => x.id === a.id);
+  const act = (l, fn, okMsg) => ({ l, run: async () => { try { await fn(); ctx.closeDrawer(); ctx.toast(okMsg); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "That didn’t work."), null, true); } } });
+  const parts = a.parts || {}, name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth", transformations: "Transformations" };
+  const actions = [];
+  if (a.enabled) actions.push(Object.assign(act("Check usage now", () => NGGApi.admin.media.accountCheck(a.id), "Checked " + a.label + "."), { primary: true }));
+  if (!a.primary) {
+    if (xi > 0) actions.push(act("Move up", () => NGGApi.admin.media.accountMove(a.id, "up"), a.label + " moved up."));
+    if (xi >= 0 && xi < extras.length - 1) actions.push(act("Move down", () => NGGApi.admin.media.accountMove(a.id, "down"), a.label + " moved down."));
+    actions.push({ l: "Change name or keys…", run: () => { ctx.closeDrawer(); crSyAccountForm(a, ctx); } });
+    actions.push(act(a.enabled ? "Pause uploads to it" : "Resume", () => NGGApi.admin.media.accountSave({ id: a.id, enabled: !a.enabled }), a.enabled ? a.label + " takes no new uploads." : a.label + " is back in the order."));
+    actions.push({ l: "Remove…", danger: true, run: async () => {
+      if (!(await ctx.confirm({ title: "Remove " + a.label + "?", body: "Photos already on it keep showing — an image link needs no key. This site just stops uploading to it, reading its usage and deleting from it. You can add it again later.", cta: "Remove it" }))) return;
+      try { const r = await NGGApi.admin.media.accountRemove(a.id); ctx.closeDrawer(); ctx.toast(a.label + " removed" + (r.photosStillThere ? " · " + crPlural(r.photosStillThere, "photo") + " on record still show from it" : "") + "."); ctx.reload(); }
+      catch (e) { ctx.toast(crErr(e, "Couldn’t remove it."), null, true); }
+    } });
+  } else actions.push({ l: "Change keys in Settings", run: () => { ctx.closeDrawer(); ctx.go("settings", "keys"); } });
+  ctx.drawer({ title: a.label, sub: a.cloudName + (a.primary ? " · main account" : ""),
+    stats: [["Used", a.pct == null ? "Not read yet" : Math.round(a.pct) + "%"], ["Plan", a.plan || "—"], ["Checked", a.checkedAt ? crAgo(a.checkedAt) + " ago" : "Not yet"]],
+    fields: Object.keys(name).filter(k => parts[k]).map(k => [name[k], parts[k].pct == null ? "Not reported" : Math.round(parts[k].pct) + "% used"])
+      .concat([["API key", "ends " + a.keyEnds], ["Uploads", !a.enabled ? "Paused" : a.active ? "New uploads go here" : a.level === "critical" ? "Full — skipped" : "Next in line"]]),
+    sections: a.error ? [{ h: "Last reading", text: a.error }] : undefined,
+    actions });
+}
+function crSyAccountForm(a, ctx) {
+  ctx.form({
+    title: a ? "Change " + a.label : "Add a Cloudinary account", submit: a ? "Save" : "Check and add",
+    intro: a ? "Leave the secret empty to keep the one saved. New keys are checked with Cloudinary before they are kept." : "From the Cloudinary console → Settings → API Keys. The keys are checked with Cloudinary before they are kept, and the secret is never shown again.",
+    fields: [
+      { id: "label", l: "Name on this list", max: 60, ph: "e.g. Second free plan" },
+      { id: "cloudName", l: "Cloud name", req: true, max: 64, ac: "off", ph: "e.g. ngg-photos-2" },
+      { id: "apiKey", l: "API key", req: !a, max: 20, ac: "off", ph: a ? "Ends " + a.keyEnds + " · leave empty to keep" : "The number" },
+      { id: "apiSecret", l: "API secret", req: !a, type: "password", ac: "new-password", max: 64, ph: a ? "Saved · leave empty to keep" : "" },
+    ],
+    values: { label: a ? a.label : "", cloudName: a ? a.cloudName : "", apiKey: "", apiSecret: "" },
+    onSubmit: async v => {
+      const body = { label: String(v.label || "").trim(), cloudName: String(v.cloudName || "").trim(), apiKey: String(v.apiKey || "").trim(), apiSecret: String(v.apiSecret || "").trim() };
+      if (a) body.id = a.id;
+      try { return await NGGApi.admin.media.accountSave(body); }
+      catch (e) { const f = CR_SY_ACC_ERR[e.code]; if (f) return { fieldErrors: { [f]: crErr(e, "") } }; throw e; }
+    },
+    done: () => { ctx.reload(); return a ? a.label + " saved." : "Added. It takes uploads when the accounts before it are full."; },
+  });
+}
+
 /* What the storage bucket holds, and what was saved without touching a pixel:
    identical files stored once, and unused files swept (media-objects.php). */
 const crSyBytes = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
@@ -310,8 +384,9 @@ Object.assign(CR_TAB_DEFS, {
   ops: {
     skeleton: ["kpis", "table"],
     load: async () => {
-      const [st, media, objects] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null)]);
-      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null });
+      const [st, media, objects, accounts] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null),
+        NGGApi.admin.media.accounts().catch(() => null)]);
+      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null, accounts: accounts && accounts.accounts ? accounts : null });
     },
     actions: (d, ctx) => [
       { l: "Mark all dealt with", icon: "checks", primary: true, run: () => crSyOpsClear(ctx, 0, (d.events || []).length), disabled: !(d.events || []).length, why: (d.events || []).length ? undefined : "There are no open faults." },
@@ -388,6 +463,7 @@ Object.assign(CR_TAB_DEFS, {
             act: { l: "Set up storage", run: () => ctx.go("settings", "keys") } });
       if (d.objects) out.push(...crSyObjectBlocks(d.objects, ctx));
       if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
+      if (d.accounts && (d.accounts.primaryConfigured || d.accounts.accounts.length)) out.push(...crSyAccountBlocks(d.accounts, ctx));
 
       const jobs = Object.keys(h.cron || {});
       out.push({ type: "table", span: 6, title: "Background jobs", sub: "Driven by ordinary traffic — a quiet site runs them less often, which is not a fault. Open one to run it now.", nosel: true,

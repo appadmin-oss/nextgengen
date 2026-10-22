@@ -489,7 +489,7 @@ function SectionHead({ eyebrow, title, sub, align = "left" }) {
     <div className="section-h reveal" data-reveal style={baseStyle}>
       {eyebrow && <span className="eyebrow reveal" data-reveal style={{ color: "var(--eyebrow-fg, var(--gold-700))", "--reveal-delay": "0ms" }}>{eyebrow}</span>}
       <h2 className="reveal" data-reveal style={{ "--reveal-delay": "120ms" }}>{title}</h2>
-      {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-500)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
+      {sub && <p className="reveal" data-reveal style={{ fontSize: 17, color: "var(--ink-700)", margin: 0, lineHeight: 1.5, maxWidth: 640, "--reveal-delay": "240ms" }}>{sub}</p>}
     </div>
   );
 }
@@ -502,7 +502,7 @@ function Progress({ value, label, variant = "" }) {
         <span>{label}</span><span className="mono">{value}%</span>
       </div>}
       <div className={"progress " + variant}>
-        <i style={{ width: `${value}%`, transition: "width 0.8s cubic-bezier(0.2,0.7,0.2,1)" }} />
+        <i style={{ width: `${value}%`, transition: "width calc(0.8s * var(--motion, 1)) cubic-bezier(0.2,0.7,0.2,1)" }} />
       </div>
     </div>
   );
@@ -2038,7 +2038,7 @@ function ImageLightbox({ url, alt, onClose }) {
   if (!url) return null;
   return (
     <div onClick={onClose} role="dialog" aria-modal="true" aria-label={alt || "Photo"} style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.86)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "grid", placeItems: "center", padding: 24 }}>
-      <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>✕</button>
+      <button type="button" onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 18, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", cursor: "pointer", lineHeight: 1 }}>✕</button>
       <img src={url} alt={alt || "Photo"} onClick={e => e.stopPropagation()} style={{ maxWidth: "min(92vw, 620px)", maxHeight: "88vh", width: "auto", height: "auto", objectFit: "contain", borderRadius: 14, boxShadow: "0 30px 80px -20px rgba(0,0,0,0.7)" }}/>
     </div>
   );
@@ -2221,7 +2221,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
   if (mode === "camera") {
     return (
       <div role="dialog" aria-modal="true" aria-label="Take a photo" style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(6,9,20,0.94)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
-        <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer" }}>✕</button>
+        <button type="button" onClick={closeCamera} aria-label="Close" style={{ position: "absolute", top: 16, right: 16, width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.14)", color: "#fff", fontSize: "var(--rs-fsize-1, 22px)", lineHeight: 1, cursor: "pointer" }}>✕</button>
         <div style={{ color: "#fff", fontFamily: "'Sora',sans-serif", fontWeight: 700, fontSize: 18 }}>{shot ? "Use this photo?" : "Take your photo"}</div>
         <div style={{ position: "relative", width: "100%", maxWidth: 360, aspectRatio: "4 / 5", borderRadius: 18, overflow: "hidden", background: "#0b1020", boxShadow: "0 24px 70px -24px rgba(0,0,0,0.75)" }}>
           <video ref={videoRef} playsInline muted autoPlay style={{ width: "100%", height: "100%", objectFit: "cover", transform: facing === "environment" ? "none" : "scaleX(-1)", display: shot ? "none" : "block" }}/>

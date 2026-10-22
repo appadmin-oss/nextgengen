@@ -1622,21 +1622,23 @@ function admin_photo_replace(array $p): array {
  * and the version segment are skipped: an edit of an upload is the same upload.
  */
 function cloudinary_public_id(string $url): string {
-    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
-    $cloud = (string)($cfg['cloud_name'] ?? '');
-    if ($cloud === '' || !preg_match('#^https://res\.cloudinary\.com/([^/]+)/image/upload/(.+)$#', $url, $m) || $m[1] !== $cloud) return '';
+    // Ours means on any of our accounts (media-storage.php); another account's image is never ours to delete.
+    if (!preg_match('#^https://res\.cloudinary\.com/([^/]+)/image/upload/(.+)$#', $url, $m) || !media_account_for_cloud($m[1])) return '';
     $parts = explode('/', strtok($m[2], '?'));
     // Drop leading transformation segments (they contain commas or a known prefix like c_, w_, e_…) and the version.
     while ($parts && (strpos($parts[0], ',') !== false || preg_match('/^[a-z]{1,3}_[^\/]*$/', $parts[0]) || preg_match('/^v\d+$/', $parts[0]))) array_shift($parts);
     $id = implode('/', $parts);
     return (string)preg_replace('/\.[a-z0-9]{2,5}$/i', '', $id);
 }
-/** Delete an upload from our Cloudinary (signed, server side). Test seam: $GLOBALS['__cloudinary_destroy_mock']. */
-function cloudinary_destroy(string $publicId): bool {
+/** Delete an upload from our Cloudinary (signed, server side), on the account
+ *  whose cloud holds it ($cloud; default: the one uploads go to).
+ *  Test seam: $GLOBALS['__cloudinary_destroy_mock']. */
+function cloudinary_destroy(string $publicId, string $cloud = ''): bool {
     if ($publicId === '') return false;
-    if (isset($GLOBALS['__cloudinary_destroy_mock']) && is_callable($GLOBALS['__cloudinary_destroy_mock'])) return (bool)($GLOBALS['__cloudinary_destroy_mock'])($publicId);
-    if (!cloudinary_configured() || !function_exists('curl_init')) return false;
-    $cfg = $GLOBALS['CONFIG']['cloudinary']; $ts = time();
+    if (isset($GLOBALS['__cloudinary_destroy_mock']) && is_callable($GLOBALS['__cloudinary_destroy_mock'])) return (bool)($GLOBALS['__cloudinary_destroy_mock'])($publicId, $cloud);
+    $cfg = $cloud !== '' ? media_account_for_cloud($cloud) : media_cfg();
+    if (!$cfg || empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret']) || !function_exists('curl_init')) return false;
+    $ts = time();
     $sig = sha1('invalidate=true&public_id=' . $publicId . '&timestamp=' . $ts . $cfg['api_secret']);
     $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/destroy');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_POST => true,
@@ -1738,7 +1740,7 @@ function photo_supersede(string $subjectType, string $subjectId, string $oldUrl,
     $oldPid = $oldId === '' && function_exists('cloudinary_public_id') ? cloudinary_public_id($old) : '';
     if ($oldPid !== '' && $oldPid !== cloudinary_public_id($new)) {
         $refs = photo_store_live_refs($oldPid);
-        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid);
+        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid, media_cloud_of($old));
         else $kept = 'in use';
     }
     /* And an original in OUR bucket (R2 / B2), by the same rule: not if the new

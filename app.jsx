@@ -510,7 +510,7 @@ function App() {
           options={["#d0ff3a", "#ff5a3c", "#b07cff", "#f5b026"]}
         />
         <TweakSection label="Jump to page"/>
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:8}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:6, marginTop:8}}>
           {[
             ["home","Home"],["summer","Summer"],["club","NGGC"],["anchor","Anchor 12"],
             ["profile","Profile"],["blog","Journal"],["media","Media"],["parents","Parents"],

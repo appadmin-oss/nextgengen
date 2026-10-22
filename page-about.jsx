@@ -115,7 +115,7 @@ function AboutPage({ setPage }) {
 
       {/* ═══ HERO — §1 core objective ═══ */}
       <section className="page-hero page-hero-dark ab-sec-dark on-dark"
-        style={{ padding: "72px 0", position: "relative", overflow: "hidden" }}>
+        style={{ padding: "var(--rs-p-48, 72px 0px)", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{
           position: "absolute", inset: 0,
           backgroundImage: "radial-gradient(circle at 78% 18%, rgba(245,176,38,0.18), transparent 58%)",
@@ -123,7 +123,7 @@ function AboutPage({ setPage }) {
         <div className="container" style={{ position: "relative" }}>
           <span className="chip chip-on-dark"><span className="dot dot-gold" /> NGGC 2040 · FORMATION BRIEF</span>
           <h1 className="display" style={{
-            fontSize: "clamp(52px, 7.5vw, 116px)", margin: "20px 0 18px", color: "white", lineHeight: 0.92,
+            fontSize: "var(--rs-fsize-49, clamp(52px, 7.5vw, 116px))", margin: "20px 0 18px", color: "white", lineHeight: "var(--rs-lheight-50, 0.92)",
             letterSpacing: "-0.03em", maxWidth: "14ch",
           }}>
             A generation that cannot be <em style={{ fontStyle: "normal", color: "var(--coral)" }}>bought,<br />bent or broken.</em>
@@ -187,12 +187,12 @@ function AboutPage({ setPage }) {
             <div>
               <span className="eyebrow ab-label">VISION 2040</span>
               <div className="display ab-num" style={{
-                fontSize: "clamp(64px, 9vw, 132px)", lineHeight: 0.9, letterSpacing: "-0.04em",
+                fontSize: "var(--rs-fsize-51, clamp(64px, 9vw, 132px))", lineHeight: "var(--rs-lheight-52, 0.9)", letterSpacing: "-0.04em",
                 color: "var(--gold-500)", margin: "10px 0 4px",
               }}>
                 {NGGC_VISION_2040.targetLabel}
               </div>
-              <div className="display" style={{ fontSize: "clamp(26px, 3.2vw, 44px)", lineHeight: 1.05, letterSpacing: "-0.02em", color: "white" }}>
+              <div className="display" style={{ fontSize: "var(--rs-fsize-53, clamp(26px, 3.2vw, 44px))", lineHeight: "var(--rs-lheight-54, 1.05)", letterSpacing: "-0.02em", color: "white" }}>
                 incorruptible African leaders by {NGGC_VISION_2040.horizon}.
               </div>
               <p className="ab-body" style={{ fontSize: 16, marginTop: 20, maxWidth: "50ch" }}>
@@ -373,7 +373,7 @@ function AboutPage({ setPage }) {
           </div>
 
           {/* The five-rung handover — mentor reminds → child teaches others. */}
-          <div className="card" style={{ padding: "26px 28px", marginBottom: 20 }}>
+          <div className="card" style={{ padding: "var(--rs-p-40, 26px 28px)", marginBottom: 20 }}>
             <div className="mono ab-label ab-label-ink" style={{ marginBottom: 16 }}>
               THE HANDOVER — THIS IS LEADERSHIP FORMATION
             </div>
@@ -390,7 +390,7 @@ function AboutPage({ setPage }) {
           </div>
 
           {/* §19 — mentoring is not policing. The boundary, stated plainly. */}
-          <div className="card ab-card-pad" style={{ background: "var(--cream-100)", border: "1px solid var(--cream-200)" }}>
+          <div className="card ab-card-pad" style={{ background: "var(--cream-100)", border: "var(--rs-border-55, 1px solid var(--cream-200))" }}>
             <div className="mono ab-label ab-label-warn" style={{ marginBottom: 12 }}>MENTORING IS NOT POLICING</div>
             <p className="ab-body-lg" style={{ fontSize: 17, color: "var(--ink-900)", margin: "0 0 14px", maxWidth: "64ch" }}>
               The mentor is not {NGGC_MENTOR.isNot.slice(0, -1).join(", ")} or {NGGC_MENTOR.isNot.slice(-1)} whose job is to
@@ -525,7 +525,7 @@ function AboutPage({ setPage }) {
             sub={NGGC_LEADERSHIP.philosophy}
           />
 
-          <div className="card" style={{ padding: "26px 28px", marginBottom: 20, background: "var(--cream-100)", border: "1px solid var(--cream-200)" }}>
+          <div className="card" style={{ padding: "var(--rs-p-40, 26px 28px)", marginBottom: 20, background: "var(--cream-100)", border: "var(--rs-border-55, 1px solid var(--cream-200))" }}>
             <div className="mono ab-label ab-label-warn" style={{ marginBottom: 12 }}>
               ANSWERS THE PROGRAMME DOES NOT ACCEPT
             </div>
@@ -602,7 +602,7 @@ function AboutPage({ setPage }) {
               {NGGC_LAYERS.map(l => (
                 <div key={l.n} className="ab-step" style={{ borderTopColor: "var(--navy-900)" }}>
                   <div className="mono ab-label" style={{ fontSize: 11 }}>LAYER {l.n}</div>
-                  <div className="ab-step-h" style={{ fontSize: 22 }}>{l.name}</div>
+                  <div className="ab-step-h" style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{l.name}</div>
                   <div className="ab-body" style={{ fontSize: 14 }}>{l.parts.join(" · ")}</div>
                 </div>
               ))}
@@ -618,7 +618,7 @@ function AboutPage({ setPage }) {
             <div>
               <span className="eyebrow ab-label">THE REAL PRODUCT</span>
               <h2 className="display ab-h" style={{
-                fontSize: "clamp(34px, 4.4vw, 60px)", lineHeight: 1, letterSpacing: "-0.03em",
+                fontSize: "var(--rs-fsize-56, clamp(34px, 4.4vw, 60px))", lineHeight: "var(--rs-lheight-7, 1)", letterSpacing: "-0.03em",
                 margin: "10px 0 18px", maxWidth: "15ch",
               }}>
                 {NGGC_REAL_PRODUCT.is}
@@ -654,7 +654,7 @@ function AboutPage({ setPage }) {
         <div className="container" style={{ position: "relative" }}>
           <span className="eyebrow ab-label">THE 2040 DECLARATION</span>
           <h2 className="display ab-h" style={{
-            fontSize: "clamp(36px, 5vw, 76px)", lineHeight: 0.98, letterSpacing: "-0.03em",
+            fontSize: "var(--rs-fsize-57, clamp(36px, 5vw, 76px))", lineHeight: "var(--rs-lheight-4, 0.98)", letterSpacing: "-0.03em",
             margin: "12px 0 20px", maxWidth: "18ch",
           }}>
             Africa needs a generation of <span style={{ color: "var(--gold-500)" }}>formed</span> people.
@@ -689,7 +689,7 @@ function AboutPage({ setPage }) {
                 {NGGC_PATHWAY.map(s => s.label).join(" → ")}
               </div>
               <div className="display ab-num" style={{
-                fontSize: "clamp(40px, 6vw, 82px)", lineHeight: 0.92, letterSpacing: "-0.04em",
+                fontSize: "var(--rs-fsize-58, clamp(40px, 6vw, 82px))", lineHeight: "var(--rs-lheight-50, 0.92)", letterSpacing: "-0.04em",
                 color: "var(--gold-500)",
               }}>
                 {NGGC_VISION_2040.targetLabel}

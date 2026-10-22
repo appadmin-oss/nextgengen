@@ -2203,6 +2203,29 @@ those photos keep showing from where they are.
 
 ## Image storage (Cloudinary)
 
+**More than one Cloudinary account.** One free plan holds about fifty people's
+photos a month. Control Room → Settings → **Diagnostics** → *Cloudinary
+accounts* lists the main account (the keys in Settings → API keys) and any you
+add with **Add an account…** — a free account signed up with another email
+address adds its own credits and storage. You need its cloud name, API key and
+API secret (Cloudinary console → Settings → API Keys); the keys are **checked
+with Cloudinary before they are kept**, and the secret is never shown again.
+
+- **Uploads go to the first account, in the order shown, that has room.** When
+  one passes 85% (or is full), new uploads move to the next by themselves, on
+  the next usage reading; when a plan resets or is upgraded it takes uploads
+  back. The list says where uploads go now.
+- **Photos already uploaded stay where they are and keep showing** — an image
+  link names its own account and needs no key. Removing an account from the
+  list only stops uploading to it, reading its usage and deleting from it; the
+  screen says how many photos on record still show from it.
+- Open an account to **check its usage now**, **move it up or down** (the main
+  account is always first), **pause** uploads to it, change its name or keys,
+  or remove it. Every change is recorded in the audit log (never a key).
+- Alerts name the account: "Cloudinary (Second plan) is full — new uploads now
+  go to Third plan". Only when every account is full are uploads paused.
+- **Free space…** frees the resized copies on every account.
+
 Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
 shared between storage, bandwidth — every time a page shows an image — and
 transformations). The site watches it for you:
@@ -2527,6 +2550,18 @@ first reflection, answer the week's check-in, link a parent or guardian with
 the Anchor Circle code. Each has one button. The card disappears when all
 are done, and a member can hide it (Help → Show "Getting started" brings it
 back). Help also has **Take the tour again**.
+
+**Tours that know the device.** Every portal's first-visit tour is written for
+the device it opens on. On a phone it talks about the bar at the bottom and
+shows, in the phone's own words (iPhone or Android), how to put NGG on the
+home screen; on a computer it talks about the list on the left (and, in the
+Control Room, ⌘K). A step about a control **lights it up on the real page**,
+with the card moved out of its way; a step about another screen shows a
+**screenshot** of it, taken from the real portal on a phone and on a computer
+(`node tools/guide-shots.js` retakes them after a layout change). Somebody who
+took the tour on a phone and later signs in on a computer (or the other way
+round) gets a **short tour of what is different there**, once. The children's
+tour (My NGG) reads bigger and ends on the Getting started list.
 
 **Supporting mentors.** A member has one mentor, plus at most **two**
 supporting mentors, each for one thing (Coding, Exams) and optionally until a

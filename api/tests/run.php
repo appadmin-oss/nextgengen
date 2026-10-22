@@ -28979,6 +28979,78 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
 })();
 
+// ── Several Cloudinary accounts: uploads go to the first with room (media-storage.php) ──
+(function () use ($SU) {
+    $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'maincloud', 'api_key' => '111111', 'api_secret' => 'mainsecret123', 'folder' => 'ngg'];
+    setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    unset($GLOBALS['__media_active']);
+    $use = ['primary' => 40.0]; $codes = []; $calls = [];
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q, $acc) use (&$use, &$codes, &$calls) {
+        $calls[] = $acc . ' ' . $m . ' ' . $path;
+        if (isset($codes[$acc])) return ['code' => $codes[$acc], 'body' => null];
+        return ['code' => 200, 'body' => ['plan' => 'Free', 'credits' => ['usage' => 1, 'limit' => 25, 'used_percent' => $use[$acc] ?? 10.0]]];
+    };
+    chk('accounts · the main account alone: uploads go to it, and nothing about the config changes', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud' && count(media_accounts()) === 1);
+    chk('accounts · adding one is for settings holders', (backend_dispatch('admin.media.accountSave', ['requesterId' => 'NOBODY', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1'])['ok'] ?? true) === false);
+    chk('accounts · a malformed key is refused before anything is sent', (backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-one', 'apiKey' => 'abc', 'apiSecret' => 'extrasecret1'])['error'] ?? '') === 'bad_api_key');
+    chk('accounts · the main account cannot be added twice', (backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'maincloud', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1'])['error'] ?? '') === 'duplicate_cloud');
+    $codes = ['new' => 401];
+    $bad = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'wrongsecret1']);
+    chk('accounts · keys Cloudinary refuses are not kept', ($bad['error'] ?? '') === 'bad_credentials' && media_extra_rows() === []);
+    $codes = []; $use['primary'] = 40.0;
+    $add = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'label' => 'Second plan', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1']);
+    $xid = (string)($add['id'] ?? '');
+    $use[$xid] = 20.0;
+    chk('accounts · a working account is added, listed after the main one, its secret never sent back',
+        !empty($add['ok']) && count($add['accounts']) === 2 && $add['accounts'][0]['id'] === 'primary' && $add['accounts'][1]['cloudName'] === 'extra-one'
+        && !str_contains(json_encode($add), 'extrasecret1') && $add['accounts'][1]['keyEnds'] === '2222');
+    chk('accounts · …and the secret is stored sealed, not as typed', !str_contains(json_encode(setting_get('media.accounts')), 'extrasecret1') && media_account($xid)['api_secret'] === 'extrasecret1');
+    chk('accounts · with room on the main account, uploads stay there', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud');
+    db_exec("DELETE FROM ops_events WHERE source = 'media.storage'");
+    $use['primary'] = 97.0;
+    $r = media_usage_refresh(true);
+    chk('accounts · the main plan full: uploads move to the next account by themselves', media_active_id() === $xid && media_cfg()['cloud_name'] === 'extra-one'
+        && media_cfg()['api_secret'] === 'extrasecret1' && media_uploads_allowed() && ($r['account']['id'] ?? '') === $xid);
+    chk('accounts · …the main account\'s own keys are kept beside them', media_primary_cfg()['cloud_name'] === 'maincloud' && media_account('primary')['api_secret'] === 'mainsecret123');
+    chk('accounts · …the alert says where uploads went, and the switch is audited',
+        str_contains((string)(db_row("SELECT detail FROM ops_events WHERE source = 'media.storage' ORDER BY id DESC LIMIT 1")['detail'] ?? ''), 'new uploads now go to Second plan')
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.account.switched' AND subject = ?", [$xid]));
+    chk('accounts · …and the paid AI edits follow the account uploads go to (it has room)', cloudinary_credits_ok());
+    chk('accounts · an image on either account is ours; another cloud is not',
+        cloudinary_public_id('https://res.cloudinary.com/extra-one/image/upload/v1/ngg/photos/a1.jpg') === 'ngg/photos/a1'
+        && cloudinary_public_id('https://res.cloudinary.com/maincloud/image/upload/v1/ngg/photos/b2.jpg') === 'ngg/photos/b2'
+        && cloudinary_public_id('https://res.cloudinary.com/strangers/image/upload/v1/x.jpg') === '');
+    chk('accounts · deleting uses the account the image is on', (media_account_for_url('https://res.cloudinary.com/maincloud/image/upload/v1/x.jpg')['id'] ?? '') === 'primary'
+        && (media_account_for_url('https://res.cloudinary.com/extra-one/image/upload/v1/x.jpg')['id'] ?? '') === $xid);
+    $use[$xid] = 98.0; media_usage_refresh(true);
+    chk('accounts · every plan full: uploads pause, as with one account', !media_uploads_allowed());
+    $use['primary'] = 30.0; media_usage_refresh(true);
+    chk('accounts · a plan that resets takes uploads back, first in the order', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud' && media_uploads_allowed());
+    $calls = [];
+    backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE', 'force' => true]);
+    chk('accounts · freeing space frees it on every account', (bool)array_filter($calls, static fn($c) => str_starts_with($c, 'primary DELETE')) && (bool)array_filter($calls, static fn($c) => str_starts_with($c, $xid . ' DELETE')));
+    // A third, paused, then moved and removed.
+    $use['x3'] = 5.0;
+    $a3 = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-two', 'apiKey' => '333333', 'apiSecret' => 'thirdsecret1']);
+    $x3 = (string)$a3['id'];
+    $mv = backend_dispatch('admin.media.accountMove', ['requesterId' => $SU, 'id' => $x3, 'dir' => 'up']);
+    chk('accounts · the extra accounts can be put in order; the main one stays first', $mv['accounts'][0]['id'] === 'primary' && $mv['accounts'][1]['id'] === $x3 && $mv['accounts'][2]['id'] === $xid);
+    $pz = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'id' => $x3, 'enabled' => false]);
+    chk('accounts · a paused account takes no uploads but stays on the list', !media_account($x3) && (bool)array_filter($pz['accounts'], static fn($a) => $a['id'] === $x3 && !$a['enabled']));
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-X1'");
+    db_insert('members', ['memberId' => 'MEDIA-X1', 'fullName' => 'Extra Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+        'photoUrl' => 'https://res.cloudinary.com/extra-one/image/upload/v1/ngg/photos/x1.jpg']);
+    $rm = backend_dispatch('admin.media.accountRemove', ['requesterId' => $SU, 'id' => $xid]);
+    chk('accounts · removing one says how many photos it still shows (they keep working), and is audited',
+        !empty($rm['ok']) && $rm['photosStillThere'] === 1 && !media_account($xid) && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.account.remove' AND subject = ?", [$xid]));
+    chk('accounts · the main account is never removed from here', (backend_dispatch('admin.media.accountRemove', ['requesterId' => $SU, 'id' => 'primary'])['error'] ?? '') === 'primary_is_settings');
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-X1'");
+    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_active']);
+    setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+})();
+
 // ── A child's own concern from the Member Portal (member_sg_self) ──
 (function () {
     $now = now_iso();

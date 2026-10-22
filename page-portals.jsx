@@ -176,7 +176,7 @@ function AdminTotpGate({ onPass, member }) {
                   {Array.isArray(setupData.backupCodes) && setupData.backupCodes.length > 0 && (
                     <div className="admin-gate-secret" style={{ marginTop: 10 }}>
                       <div className="mono" style={{ fontSize: 10, color: "var(--crimson-500, #E4155F)" }}>BACKUP CODES — SAVE THESE NOW (shown once). Each works once if you lose your authenticator.</div>
-                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
+                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
                         {setupData.backupCodes.map((c, i) => <code key={i}>{c}</code>)}
                       </div>
                     </div>
@@ -674,7 +674,7 @@ function FormPreview({ fields, name }) {
       <h3 className="display" style={{ fontSize: 24, margin: "0 0 18px" }}>{name}</h3>
       {fields.map((f, i) => {
         if (f.type === "section") return <h4 key={i} style={{ fontFamily: "var(--font-display)", fontSize: 18, margin: "22px 0 6px", color: "var(--navy-900)" }}>{f.label}</h4>;
-        if (f.type === "info") return <p key={i} style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 12px" }}>{f.label}</p>;
+        if (f.type === "info") return <p key={i} style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 12px" }}>{f.label}</p>;
         return (
           <div key={i} style={{ marginBottom: 16 }}>
             <label style={{ display: "block", fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{f.label}{f.required && <span style={{ color: "var(--coral)" }}> *</span>}</label>
@@ -1607,7 +1607,7 @@ function SummerCardsLink() {
   return (
     <div className="card" style={{ padding: 28, textAlign: "center", maxWidth: 560 }}>
       <h3 className="display" style={{ fontSize: 24, margin: "0 0 8px" }}>Card &amp; Design Studios</h3>
-      <p style={{ color: "var(--ink-500)", margin: "0 0 18px" }}>
+      <p style={{ color: "var(--ink-700)", margin: "0 0 18px" }}>
         Print and manage the 54×92mm ID cards in the Card Studio, or design new card
         templates, posters and batch runs in the full-screen Design Studio.
       </p>
@@ -2982,7 +2982,7 @@ function AcademyCatalogue({ source = "summer" }) {
       {inUse.length > 0 && (() => { const listed = new Set(rows.flatMap(r => r.courses)); const off = inUse.filter(c => !listed.has(c)); return off.length ? <p className="admin-hint" role="note">Still in use but not on this list: {off.join(", ")} — their lessons and classes keep working.</p> : null; })()}
       <div style={{ display: "grid", gap: 16 }}>
         {rows.map((r, i) => (
-          <div key={i} className="admin-card" style={{ padding: 16, border: "1px solid rgba(12,20,50,0.12)", borderRadius: 12 }}>
+          <div key={i} className="admin-card" style={{ padding: 16, border: "var(--rs-border-109, 1px solid rgba(12, 20, 50, 0.12))", borderRadius: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
               <input className="admin-input" value={r.faculty} placeholder="Faculty name (e.g. Music)" onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
               <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title="Remove this faculty">✕ Faculty</button>
@@ -4451,7 +4451,7 @@ function SummerPolicy() {
             return (
               <button key={n} type="button" onClick={() => toggleDow(Number(n))}
                 className={"chip " + (on ? "chip-gold" : "")}
-                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                style={{ cursor: "pointer", border: "var(--rs-border-110, 1px solid var(--line, rgba(0,0,0,.14)))", opacity: on ? 1 : .55 }}
                 aria-pressed={on}>{lbl}</button>
             );
           })}
@@ -4627,7 +4627,7 @@ function SummerPolicy() {
             return (
               <button key={n} type="button" onClick={() => toggleMDow(Number(n))}
                 className={"chip " + (on ? "chip-gold" : "")}
-                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                style={{ cursor: "pointer", border: "var(--rs-border-110, 1px solid var(--line, rgba(0,0,0,.14)))", opacity: on ? 1 : .55 }}
                 aria-pressed={on}>{lbl}</button>
             );
           })}
@@ -5524,7 +5524,7 @@ function PortalGate({ cap, brand, setPage, children, bare }) {
           </div>
         </div>
         <div className="admin-topbar-r">
-          <span className="mono" style={{ color: "rgba(255,255,255,0.6)" }}>{member.fullName} · {member.role}</span>
+          <span className="mono" style={{ color: "rgba(255,255,255,0.72)" }}>{member.fullName} · {member.role}</span>
           {/* A super_admin can cross to the other portal; single-cap coordinators can't. */}
           {cap === "summer" && hasCap("club") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("club-admin")}>NGG Club ↗</button>}
           {cap === "club" && hasCap("summer") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>}
