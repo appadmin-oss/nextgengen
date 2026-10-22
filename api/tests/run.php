@@ -29978,6 +29978,41 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($code['post']['status'] !== 'published') $approve($code);
     $cmd = backend_dispatch('community.media', ['memberId' => 'CV3-S2', 'postId' => $code['post']['postId']]);
     chk('cm3 code: a code post keeps its source; a student\'s hint is not kept', $code['post']['code']['title'] === 'about.html' && $cmd['code'] === "<h1>Hi</h1>\n<p>About me</p>" && $cmd['hint'] === '');
+    /* A document is served from this origin, fetched only from OUR storage:
+       the stored URL is member-supplied, so a foreign host is never fetched. */
+    $keepCl = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $clReset = static function () { unset($GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active'], $GLOBALS['__media_states']); };
+    $clReset(); $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggdocs', 'api_key' => 'k1', 'api_secret' => 'sec'];
+    $docP = $post('CV3-T', ['body' => 'Robot plan', 'mediaType' => 'doc', 'mediaUrl' => 'https://res.cloudinary.com/nggdocs/image/upload/v1712/community/docs/plan-1.pdf', 'mediaFormat' => 'pdf', 'mediaName' => 'Robot "plan".pdf']);
+    $docX = $post('CV3-T', ['body' => 'Elsewhere', 'mediaType' => 'doc', 'mediaUrl' => 'https://evil.example/internal.pdf', 'mediaFormat' => 'pdf', 'mediaName' => 'x.pdf']);
+    $docR = $post('CV3-T', ['body' => 'Word', 'mediaType' => 'doc', 'mediaUrl' => 'https://res.cloudinary.com/nggdocs/raw/upload/v9/community/docs/notes.docx', 'mediaFormat' => 'docx', 'mediaName' => 'notes.docx']);
+    $seen = [];
+    $GLOBALS['__cm3_doc_fetch_mock'] = function ($src) use (&$seen) { $seen[] = $src; return ['code' => 200, 'body' => '%PDF-1.4 test']; };
+    $d = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docP['post']['postId']]);
+    chk('cm3 doc: a member gets the file from this origin, named and typed', !empty($d['ok']) && $d['body'] === '%PDF-1.4 test' && $d['mime'] === 'application/pdf' && $d['name'] === 'Robot plan.pdf');
+    chk('cm3 doc: an image-pipeline PDF is fetched by public id and format, not the delivery URL',
+        ($seen[0]['kind'] ?? '') === 'cloudinary' && $seen[0]['publicId'] === 'community/docs/plan-1' && $seen[0]['format'] === 'pdf' && $seen[0]['resource'] === 'image');
+    $dr = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docR['post']['postId']]);
+    chk('cm3 doc: a raw file keeps its extension in its public id', !empty($dr['ok']) && ($seen[1]['publicId'] ?? '') === 'community/docs/notes.docx' && $seen[1]['format'] === '' && $dr['mime'] === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    $n = count($seen);
+    $dx = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docX['post']['postId']]);
+    chk('cm3 doc: a URL that is not on our storage is refused and never fetched', ($dx['error'] ?? '') === 'not_ours' && count($seen) === $n);
+    chk('cm3 doc: a post that is not a document is refused', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $code['post']['postId']])['error'] ?? '') === 'not_a_document');
+    chk('cm3 doc: a held post is not served to another member', (backend_dispatch('community.doc', ['memberId' => 'CV3-S2', 'postId' => $p1['post']['postId']])['error'] ?? '') === 'not_found');
+    $GLOBALS['__cm3_doc_fetch_mock'] = fn($src) => ['code' => 401, 'body' => ''];
+    chk('cm3 doc: a storage refusal is reported, not served as an empty file', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docP['post']['postId']])['error'] ?? '') === 'fetch_failed');
+    unset($GLOBALS['__cm3_doc_fetch_mock']);
+    $u = cm3_doc_download_url(cm3_doc_source('https://res.cloudinary.com/nggdocs/image/upload/v1712/community/docs/plan-1.pdf'), 1700000000);
+    parse_str((string)parse_url($u, PHP_URL_QUERY), $q);
+    chk('cm3 doc: the download is signed over the sorted parameters with the account secret',
+        strpos($u, 'https://api.cloudinary.com/v1_1/nggdocs/image/download?') === 0 && $q['api_key'] === 'k1'
+        && $q['signature'] === sha1('expires_at=1700000300&format=pdf&public_id=community/docs/plan-1&timestamp=1700000000&type=uploadsec'));
+    chk('cm3 doc: another cloud, a climbing path or another resource type is not ours',
+        cm3_doc_source('https://res.cloudinary.com/someoneelse/image/upload/v1/a.pdf') === null
+        && cm3_doc_source('https://res.cloudinary.com/nggdocs/image/upload/v1/../x.pdf') === null
+        && cm3_doc_source('https://res.cloudinary.com/nggdocs/video/upload/v1/a.mp4') === null);
+    $GLOBALS['CONFIG']['cloudinary'] = $keepCl; $clReset();
+
     $files = backend_dispatch('community.v3files', ['memberId' => 'CV3-S']);
     chk('cm3 files: code and videos are listed across the member\'s channels', in_array('code', array_column($files['files'], 'kind'), true) && in_array('videos', array_column($files['files'], 'kind'), true));
 

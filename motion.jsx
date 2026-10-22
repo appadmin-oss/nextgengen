@@ -290,52 +290,6 @@ function BlurImage({ src, alt = "", ratio = "1/1", style = {}, className = "", e
   );
 }
 
-// ----------------------------------------------------------------------------
-// useCursor — adds a soft follower dot that lerps toward pointer position.
-// Only on devices with a fine pointer (mouse/trackpad).
-// ----------------------------------------------------------------------------
-
-function useCursor() {
-  React.useEffect(() => {
-    if (reducedMotion()) return;
-    if (!window.matchMedia("(pointer: fine)").matches) return;
-    let dot = document.querySelector(".ngg-cursor");
-    if (!dot) {
-      dot = document.createElement("div");
-      dot.className = "ngg-cursor";
-      document.body.appendChild(dot);
-    }
-    let x = window.innerWidth / 2, y = window.innerHeight / 2;
-    let tx = x, ty = y;
-    let raf = 0;
-    const onMove = (e) => { tx = e.clientX; ty = e.clientY; };
-    const tick = () => {
-      x += (tx - x) * 0.18;
-      y += (ty - y) * 0.18;
-      dot.style.transform = `translate(${x}px, ${y}px)`;
-      raf = requestAnimationFrame(tick);
-    };
-    window.addEventListener("mousemove", onMove, { passive: true });
-    const onHoverIn = (e) => {
-      if (e.target.matches && e.target.closest("button, a, [role='button']")) {
-        dot.classList.add("is-active");
-      }
-    };
-    const onHoverOut = () => dot.classList.remove("is-active");
-    document.addEventListener("mouseover", onHoverIn);
-    document.addEventListener("mouseout", onHoverOut);
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseover", onHoverIn);
-      document.removeEventListener("mouseout", onHoverOut);
-      dot.remove();
-    };
-  }, []);
-}
-
 window.Tilt = Tilt;
 window.ScrollSection = ScrollSection;
 window.BlurImage = BlurImage;
-window.useCursor = useCursor;

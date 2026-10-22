@@ -353,6 +353,88 @@ function community_v3_media(array $p): array {
         'pos' => (int)($pos['pos'] ?? 0)];
 }
 
+/** community.doc — a document post's file, fetched from OUR storage and handed
+ *  to api/member/community-doc.php to stream from this origin. The browser
+ *  cannot read the stored URL itself: Cloudinary refuses PDF delivery on an
+ *  account with that restriction (the default), and a bucket sends no CORS
+ *  headers, so pdf.js failed and Download landed on an error page. A signed
+ *  Cloudinary download and the bucket's signed GET work in both cases.
+ *  The stored URL is member-supplied, so anything not on one of our accounts
+ *  or our bucket is refused (`not_ours`) — this never fetches an arbitrary URL.
+ *  Test seam: $GLOBALS['__cm3_doc_fetch_mock'] ($source, $info) → ['code', 'body']. */
+const CM3_DOC_MAX_BYTES = 25 * 1024 * 1024;
+function community_v3_doc(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $pid = (string)($p['postId'] ?? '');
+    $r = $pid !== '' ? db_row('SELECT * FROM community_posts WHERE postId = ? LIMIT 1', [$pid]) : null;
+    if (!$r || ((string)$r['status'] !== 'published' && (string)$r['authorId'] !== $viewer && cm3_role($viewer) !== 'admin')) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$r['mediaType'] !== 'doc' || (string)$r['mediaUrl'] === '') return ['ok' => false, 'error' => 'not_a_document'];
+    $url = (string)$r['mediaUrl'];
+    $ext = strtolower((string)($r['mediaFormat'] ?? '')) ?: upload_ext($url);
+    if (!upload_is_doc_ext($ext)) return ['ok' => false, 'error' => 'bad_document'];
+    $src = cm3_doc_source($url);
+    if (!$src) return ['ok' => false, 'error' => 'not_ours', 'url' => $url];
+    $got = cm3_doc_get($src);
+    if ((int)($got['code'] ?? 0) !== 200 || (string)($got['body'] ?? '') === '') return ['ok' => false, 'error' => 'fetch_failed', 'status' => (int)($got['code'] ?? 0), 'url' => $url];
+    if (strlen($got['body']) > CM3_DOC_MAX_BYTES) return ['ok' => false, 'error' => 'doc_too_big'];
+    $name = trim((string)preg_replace('/[^A-Za-z0-9 ._()-]+/', '', (string)$r['altText'])) ?: 'Document';
+    if (!preg_match('/\.' . preg_quote($ext, '/') . '$/i', $name)) $name .= '.' . $ext;
+    $types = STORE_TYPES['pdf'] + STORE_TYPES['raw'];
+    return ['ok' => true, 'postId' => $pid, 'name' => $name, 'ext' => $ext, 'mime' => (string)($types[$ext] ?? 'application/octet-stream'), 'body' => $got['body']];
+}
+
+/** Where a stored document URL lives, if it is ours: the bucket key, or the
+ *  Cloudinary account, resource type, public id and format. Null otherwise. */
+function cm3_doc_source(string $url): ?array {
+    if (function_exists('store_key_of') && ($key = store_key_of($url)) !== '') return ['kind' => 'bucket', 'key' => $key];
+    if (!preg_match('~^https://res\.cloudinary\.com/([^/]+)/(image|raw)/upload/([^?#]+)$~', $url, $m)) return null;
+    $acc = media_account_for_cloud($m[1]);
+    if (!$acc) return null;
+    $parts = explode('/', rawurldecode($m[3]));
+    // Leading transformation segments and the version are delivery, not the file.
+    while (count($parts) > 1 && (strpos($parts[0], ',') !== false || preg_match('/^[a-z]{1,3}_[^\/]*$/', $parts[0]) || preg_match('/^v\d+$/', $parts[0]))) array_shift($parts);
+    $id = implode('/', $parts);
+    if ($id === '' || strpos($id, '..') !== false) return null;
+    $format = '';
+    // An image-pipeline PDF's public id has no extension; a raw file's keeps it.
+    if ($m[2] === 'image' && preg_match('/^(.+)\.([a-z0-9]{2,5})$/i', $id, $x)) { $id = $x[1]; $format = strtolower($x[2]); }
+    return ['kind' => 'cloudinary', 'account' => $acc, 'resource' => $m[2], 'publicId' => $id, 'format' => $format, 'url' => $url];
+}
+
+/** The signed Cloudinary download URL for one stored file (Admin API
+ *  `download`, which serves the original even where delivery is restricted). */
+function cm3_doc_download_url(array $src, int $now): string {
+    $a = $src['account'];
+    $params = ['public_id' => $src['publicId'], 'timestamp' => (string)$now, 'type' => 'upload', 'expires_at' => (string)($now + 300)];
+    if ($src['format'] !== '') $params['format'] = $src['format'];
+    ksort($params);
+    $sign = [];
+    foreach ($params as $k => $v) $sign[] = $k . '=' . $v;
+    $params['signature'] = sha1(implode('&', $sign) . $a['api_secret']);
+    $params['api_key'] = $a['api_key'];
+    return 'https://api.cloudinary.com/v1_1/' . rawurlencode((string)$a['cloud_name']) . '/' . $src['resource'] . '/download?' . http_build_query($params);
+}
+
+/** Fetch the bytes: the bucket's signed GET, or the signed download, then the
+ *  plain delivery URL for an unrestricted account. */
+function cm3_doc_get(array $src): array {
+    if (isset($GLOBALS['__cm3_doc_fetch_mock']) && is_callable($GLOBALS['__cm3_doc_fetch_mock'])) return ($GLOBALS['__cm3_doc_fetch_mock'])($src);
+    if ($src['kind'] === 'bucket') return store_http('GET', $src['key']);
+    $got = cm3_doc_http(cm3_doc_download_url($src, time()));
+    if ((int)$got['code'] === 200 && $got['body'] !== '') return $got;
+    return cm3_doc_http($src['url']);
+}
+function cm3_doc_http(string $url): array {
+    if (!function_exists('curl_init')) return ['code' => 0, 'body' => ''];
+    $ch = curl_init($url);
+    $opt = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+            CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2, CURLOPT_MAXFILESIZE => CM3_DOC_MAX_BYTES];
+    if (defined('CURLOPT_REDIR_PROTOCOLS')) $opt[CURLOPT_REDIR_PROTOCOLS] = defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2;
+    curl_setopt_array($ch, $opt + (function_exists('store_curl_tls') ? store_curl_tls() : []));
+    $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    return ['code' => $code, 'body' => is_string($out) ? $out : ''];
+}
+
 /** community.videoPos — remember where this member stopped (0 = start over). */
 function community_v3_video_pos(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');

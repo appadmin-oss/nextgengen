@@ -50,7 +50,15 @@ function cleanup() {
   const chromium = loadChromium();
   if (!chromium) { console.log('⏭  community v3: skipped (playwright not installed)'); process.exit(0); }
   if (fs.existsSync(CFG)) { console.error('api/config.php already exists — refusing to overwrite. Move it aside and re-run.'); process.exit(2); }
-  fs.writeFileSync(CFG, `<?php return [
+  /* Documents are fetched server-side from OUR storage (community.doc). There is
+     no bucket here, so the fetch seam answers for the one stored handout. */
+  fs.writeFileSync(CFG, `<?php
+  $GLOBALS['__cm3_doc_fetch_mock'] = function ($src) {
+    return ($src['kind'] ?? '') === 'bucket' && $src['key'] === 'community/docs/handout.pdf'
+      ? ['code' => 200, 'body' => file_get_contents(${JSON.stringify(path.join(ROOT, 'tests', '_fixture-handout.pdf'))})] : ['code' => 404, 'body' => ''];
+  };
+  return [
+    'storage' => ['public_base' => 'https://files.nggtest.example'],
     'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
     'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'next@afrovanguard.org.ng', 'smtp' => ['host' => '']],
     'app_origin' => ${JSON.stringify(BASE)},
@@ -82,6 +90,9 @@ function cleanup() {
       + post('CP-CODE1', STUDENT2, 'Kunle B.', 'CH-CODE', 'My first page', `['mediaType'=>'code','mediaCode'=>'<h1 id="hi">Hi</h1>','mediaMeta'=>json_encode(['title'=>'about.html'])]`)
       + post('CP-Q1', STUDENT2, 'Kunle B.', 'CH-CODE', 'How do I centre a div?', `['kind'=>'question']`)
       + post('CP-ROBO', MENTOR, 'Tunde O.', 'CH-ROBO', 'Robots only post')
+      + post('CP-DOC1', MENTOR, 'Tunde O.', 'CH-CODE', 'Handout for Saturday', `['mediaType'=>'doc','mediaUrl'=>'https://files.nggtest.example/community/docs/handout.pdf','mediaFormat'=>'pdf','altText'=>'Wiring handout.pdf','mediaPages'=>1]`)
+      + post('CP-DOCX', MENTOR, 'Tunde O.', 'CH-CODE', 'Old handout', `['mediaType'=>'doc','mediaUrl'=>'https://files.nggtest.example/community/docs/gone.pdf','mediaFormat'=>'pdf','altText'=>'Gone handout.pdf','mediaPages'=>1]`)
+      + post('CP-LINK1', MENTOR, 'Tunde O.', 'CH-CODE', 'Read this https://developer.mozilla.org/en-US/docs/Web/HTML', `['linkPreview'=>json_encode(['url'=>'https://developer.mozilla.org/en-US/docs/Web/HTML','site'=>'developer.mozilla.org','title'=>'HTML basics'])]`)
       + `db_insert('community_comments', ['commentId'=>'CC-A1','postId'=>'CP-Q1','memberId'=>'${MENTOR}','memberName'=>'Tunde O.','body'=>'Use flexbox on the parent.','status'=>'published','createdAt'=>${now}]);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -211,6 +222,28 @@ function cleanup() {
     chk('Escape closes the code viewer', await s.page.evaluate(() => !document.querySelector('iframe[title="Preview"]')));
     await click(s.page, /^Files$/, '.cm3-app aside');
     chk('Files lists videos and code across their channels', await waitText(s.page, /about\.html/, 8000) && /Wiring a button/.test(await text(s.page)));
+
+    console.log('\n── Documents and links ─────────────────────────────────────');
+    await click(s.page, /^Home$/, '.cm3-app aside');
+    await waitText(s.page, /Handout for Saturday/, 10000);
+    const link = await s.page.evaluate(() => { const a = Array.from(document.querySelectorAll('.cm3-app article a[target=_blank]')).find(x => /HTML basics/.test(x.innerText)); return a ? { href: a.href, rel: a.rel, label: a.getAttribute('aria-label') } : null; });
+    chk('a link card is a real link to the page, opening in a new tab', !!link && link.href === 'https://developer.mozilla.org/en-US/docs/Web/HTML' && /noopener/.test(link.rel) && /new tab/.test(link.label || ''));
+    const docRes = await s.page.evaluate(() => fetch('/api/member/community-doc.php?postId=CP-DOC1', { credentials: 'same-origin' }).then(async r => ({ st: r.status, ct: r.headers.get('content-type'), cd: r.headers.get('content-disposition'), head: (await r.text()).slice(0, 5) })));
+    chk('a document is served from this origin as a PDF', docRes.st === 200 && /application\/pdf/.test(docRes.ct) && /^inline/.test(docRes.cd) && docRes.head === '%PDF-');
+    const dlRes = await s.page.evaluate(() => fetch('/api/member/community-doc.php?postId=CP-DOC1&dl=1').then(r => r.headers.get('content-disposition')));
+    chk('…and as a download, with its own name', /^attachment/.test(dlRes) && /Wiring handout\.pdf/.test(dlRes));
+    chk('a document is not served without a session', await s.page.evaluate(() => fetch('/api/member/community-doc.php?postId=CP-DOC1', { credentials: 'omit' }).then(r => r.status)) >= 400);
+    await s.page.evaluate(() => { const a = Array.from(document.querySelectorAll('article')).find(x => /Handout for Saturday/.test(x.innerText)); const b = a && Array.from(a.querySelectorAll('button')).find(x => /Wiring handout/.test(x.innerText)); if (b) b.click(); });
+    chk('the document viewer draws the real page', await s.page.waitForFunction(() => { const c = document.querySelector('.cm3x-pdf-page canvas'); return !!c && c.width > 100; }, null, { timeout: 30000 }).then(() => true, () => false));
+    chk('…with no "can’t be shown" message', !/can’t be shown here/.test(await text(s.page)));
+    await shot(s.page, 'cm3-doc-viewer');
+    await s.page.keyboard.press('Escape');
+    await s.page.waitForTimeout(400);
+    await s.page.evaluate(() => { const a = Array.from(document.querySelectorAll('article')).find(x => /Old handout/.test(x.innerText)); const b = a && Array.from(a.querySelectorAll('button')).find(x => /Gone handout/.test(x.innerText)); if (b) b.click(); });
+    chk('a document storage cannot give back says so, with a Download to try', await waitText(s.page, /can’t be shown here/, 30000)
+      && await s.page.evaluate(() => { const a = document.querySelector('a.cm3x-pdf-dl'); return !!a && /community-doc\.php\?postId=CP-DOCX&dl=1/.test(a.href); }));
+    await s.page.keyboard.press('Escape');
+    await s.page.waitForTimeout(400);
 
     console.log('\n── Reporting ───────────────────────────────────────────────');
     await click(s.page, /^Home$/, '.cm3-app aside');

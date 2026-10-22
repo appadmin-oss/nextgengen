@@ -400,7 +400,6 @@ function App() {
 
   useScrollReveal(page);
   useReveal([page]);
-  useCursor();
 
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
