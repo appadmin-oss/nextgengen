@@ -2706,3 +2706,9 @@ Settings → API keys → Photos → **Cloudinary · backup account** takes a se
 - **When the main account renews** (back under 70%), work moves back to it with another email.
 - **You can choose.** Settings → Diagnostics → Image storage → **Cloudinary accounts**: open an account and press **Use for new uploads now**. The choice holds (even past 70%) until you press **Back to automatic**; only a full account is still skipped, so uploads never stop.
 - **What a backup can't save:** photos already stored on the main account still use its bandwidth every time a page shows them. Only new photos, and photos edited again, move to the backup.
+- **Photos on a spent account move only when they are needed.** Nothing is copied in bulk, so the new account holds only photos somebody actually used:
+  - **Printing** in the ID Card Studio first copies the photos on that run that sit on an account past 70% to the account in use. The studio says how many it copied.
+  - **Editing** a photo copies that one photo first.
+  - Each is copied once, so a second print or edit reuses the copy. The old file stays, so shared links keep working.
+  - Photos nobody prints or edits stay where they are. They still use the old account's bandwidth when a page shows them, but no new storage anywhere.
+- **An account Cloudinary has stopped** ("account disabled", over its limits) now counts as full when its usage is read, instead of keeping its last reading.

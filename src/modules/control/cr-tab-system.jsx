@@ -45,6 +45,8 @@ function crSyMediaBlocks(m, ctx) {
              act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
   out.push({ type: "note", span: 6, icon: "images", text: "Store edited photos as plain images: a photo kept as an edit is edited again at every size a card or page needs. Stored once, it costs one transformation per size instead.",
              act: { l: "Store edited photos…", run: () => crSyPhotoMaterialise(ctx) } });
+  out.push({ type: "note", span: 6, icon: "arrows-left-right", text: "Photos on a spent account move only when they are needed: printing a card in the ID Card Studio, or editing a photo, first copies that one photo to the account uploads go to now.",
+             sub: "Nothing is copied in bulk, so the new account holds only photos somebody used. Each is copied once; the old file stays, so shared links keep working." });
   return out;
 }
 /* ══ Several Cloudinary accounts (media-storage.php) ═════════════════════════

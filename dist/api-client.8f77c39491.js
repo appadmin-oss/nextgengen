@@ -1888,6 +1888,8 @@
         secure:   () => request('/admin/photos.php', { body: { action: 'secure' } }),
         // Edited photos still stored as a Cloudinary chain → plain images, a batch at a time (photo_materialise).
         materialise: (dryRun) => request('/admin/photos.php', { body: { action: 'materialise', dryRun: !!dryRun } }),
+        // The photos of these people, copied off a spent Cloudinary account just before they are used (admin_photos_relocate).
+        relocate: (subjects) => request('/admin/photos.php', { body: { action: 'relocate', subjects: subjects || [] } }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
         /* Children with NO photograph on file — a different question from the
            review queue, which can only show photos that exist. */

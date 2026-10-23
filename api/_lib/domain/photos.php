@@ -1459,6 +1459,67 @@ function photo_materialise(string $url): string {
 
 /** Photos still on a record as an edit chain (they cost again at every size): how many, and convert a batch. */
 const PHOTO_MATERIALISE_BATCH = 50;
+/**
+ * admin.photos.relocate — copy the photos of the people named in `subjects`
+ * ([{type: member|volunteer|student, id}], at most PHOTO_RELOCATE_MAX) off a
+ * Cloudinary account that is past 70%, to the account uploads go to now.
+ *
+ * On demand, never in bulk: a photo is copied only when it is about to be
+ * used in a way that costs the spent account — printed in the ID Card Studio
+ * (which calls this for the cards on the run), or edited (cloudinary_adopt).
+ * Copying everyone up front would fill the new account with photos nobody
+ * prints. Each is copied once, as it looks now, under a fixed name with
+ * overwrite off, so asking again never stores a second copy; the record then
+ * points at the copy and the old file stays (links already shared still work).
+ * Returns `moved` as [{type, id, url}] so the caller can draw from the copy.
+ */
+const PHOTO_RELOCATE_MAX = 60;
+function photo_spent_clouds(): array {
+    $to = media_active_id(); $from = [];
+    foreach (media_accounts() as $a) {
+        if ($a['id'] === $to) continue;
+        if (MEDIA_LEVEL_ORDER[(string)(media_usage_state($a['id'])['level'] ?? 'ok')] >= MEDIA_LEVEL_ORDER['warn']) $from[strtolower($a['cloud_name'])] = $a['label'];
+    }
+    return $from;
+}
+function admin_photos_relocate(array $p): array {
+    // The permission that prints each kind of card is the one that may copy its photo (card-runs.php).
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $gates = [];
+    $may = static function (string $t) use (&$gates, $p) { return $gates[$t] ??= !empty(crun_gate_for($p, $t)['ok']); };
+    $subs = is_array($p['subjects'] ?? null) ? array_values($p['subjects']) : [];
+    if (!$subs) return ['ok' => false, 'error' => 'missing_field', 'detail' => 'Name the people whose photos are needed.'];
+    if (count($subs) > PHOTO_RELOCATE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => PHOTO_RELOCATE_MAX];
+    $out = ['ok' => true, 'moved' => [], 'kept' => 0, 'failed' => 0];
+    $from = photo_spent_clouds();
+    $toAcc = media_account(media_active_id());
+    if (!$from || !$toAcc) { $out['kept'] = count($subs); return $out; }
+    $map = ['member' => ['members', 'memberId'], 'volunteer' => ['volunteers', 'volunteerId'], 'student' => ['summer_students', 'studentId']];
+    $who = (string)$g['requester']['memberId'];
+    foreach ($subs as $sub) {
+        $t = (string)($sub['type'] ?? ''); $id = (string)($sub['id'] ?? '');
+        if (!isset($map[$t]) || $id === '' || !$may($t)) { $out['failed']++; continue; }
+        [$tbl, $key] = $map[$t];
+        $row = db_row("SELECT photoUrl" . ($t === 'member' ? ', centre' : '') . " FROM {$tbl} WHERE {$key} = ? LIMIT 1", [$id]);
+        // Scope is checked on the way in, per row: a centre-scoped admin moves only their own members' photos.
+        if (!$row || ($t === 'member' && function_exists('admin_centre_allowed') && !admin_centre_allowed($g['requester'], (string)($row['centre'] ?? '')))) { $out['failed']++; continue; }
+        $u = (string)$row['photoUrl'];
+        if (!isset($from[strtolower(media_cloud_of($u))])) { $out['kept']++; continue; }   // not on a spent account: nothing to do
+        $up = cloudinary_upload_signed($u, 'moved_' . md5($u));
+        $m = !empty($up['ok']) ? (string)$up['url'] : '';
+        if ($m === '' || isset($from[strtolower(media_cloud_of($m))])) { $out['failed']++; continue; }
+        // The asset row first, so replacing the record's photo keeps it live (as admin_photos_materialise does).
+        $n = db_exec('UPDATE photo_assets SET editedUrl = ?, updatedAt = ? WHERE subjectType = ? AND subjectId = ? AND editedUrl = ?', [$m, now_iso(), $t, $id, $u]);
+        if (!$n && !db_row("SELECT 1 FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND editedUrl = ? LIMIT 1", [$t, $id, $m])) {
+            photo_asset_record($t, $id, cloudinary_base($u), $m, photo_chain_of($u), $who);
+        }
+        photo_set_subject($t, $id, $m, $who);
+        $out['moved'][] = ['type' => $t, 'id' => $id, 'url' => $m];
+    }
+    if ($out['moved'] || $out['failed']) audit('photo.relocate', $who, 'photos', ['to' => $toAcc['id'], 'moved' => count($out['moved']), 'failed' => $out['failed']], (string)($p['ip'] ?? ''));
+    return $out;
+}
+
 function admin_photos_materialise(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $limit = max(1, min(PHOTO_MATERIALISE_BATCH, (int)($p['limit'] ?? PHOTO_MATERIALISE_BATCH)));

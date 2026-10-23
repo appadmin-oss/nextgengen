@@ -213,6 +213,7 @@ function cleanup() {
     const dtext = await D.evaluate(() => document.body.innerText);
     chk('Diagnostics shows image storage as full, with each part of the plan', /Full — new uploads are paused/.test(dtext) && /Plan credits\s*97% used/.test(dtext) && /Storage\s*61% used/.test(dtext));
     chk('…says what that does to uploads, and offers Check now and Free space', /photos are kept on this site instead/.test(dtext) && !!(await D.$('button:has-text("Check now")')) && !!(await D.$('button:has-text("Free space")')));
+    chk('…and says photos on a spent account move only when needed, never in bulk', /move only when they are needed/.test(dtext) && !(await D.$('button:has-text("Move photos")')));
     await D.click('button:has-text("Free space")');
     await D.waitForSelector('text=Type FREE SPACE', { timeout: 10000 });
     chk('…and freeing space asks for the typed confirmation first', /Originals are not touched/.test(await D.evaluate(() => document.body.innerText)));

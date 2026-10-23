@@ -2284,7 +2284,7 @@ function community_display_name(string $id): string {
         return trim(($p[0] ?? '') . (isset($p[1]) && $p[1] !== '' ? ' ' . mb_strtoupper(mb_substr($p[1], 0, 1)) . '.' : ''));
     };
     $m = db_row("SELECT fullName FROM members WHERE memberId = ? LIMIT 1", [$id]);
-    if ($m) return $short((string)$m['fullName']);
+    if ($m) return community_actor_is_staff($id) ? (string)$m['fullName'] : $short((string)$m['fullName']);
     $s = db_row("SELECT fullName FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);
     if ($s) return $short((string)$s['fullName']);
     /* Falls back to whatever they last posted under rather than to an id — a
