@@ -1692,6 +1692,21 @@ moves over.
   severity (low → urgent), a lead, a status and notes.
 - Members also have their **journal**, the arcade, drafts that survive a
   closed tab, `/poll` and `/shrug`, image paste, and an offline notice.
+- **Homework:** each child gets one private in-app notice when a task is set,
+  which opens the task's post. Their note and link are kept per task, and a
+  task counts as *seen* the first time its card is on screen, which is what
+  the tracker's "Not seen since…" line reads. A late task still says *Hand
+  in*. Homework is never set in Commons; the composer picks a course channel.
+- **Search** asks the server, in a channel as well as on Home. It matches the
+  words and the name on a post, and stays inside the channels the member
+  follows. *See their posts* on a profile card lists what that person wrote.
+- **Catch me up** lists the member's own unread posts, each one opens. A
+  member whose post or reply is hidden or taken down is told, privately.
+  Nobody but the author can reply to a post that is still waiting for a check,
+  and deleting the reply marked as the answer re-opens the question.
+- Counts and new posts refresh once a minute while the page is open. The
+  *People* tab lists everyone who has posted in the channel. Typing names a
+  child as "Ada N.", never by full name.
 
 ## Member records: from optional to required
 

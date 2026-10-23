@@ -13236,6 +13236,9 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-06dcd20{height:44px;padding:0 14px;border:var(--dc-border, unset);background:var(--dc-background, unset);border-radius:10px;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:500}
 .cm3-cc9ee3b{height:44px;padding:0 20px;border:0;border-radius:10px;background:#0b0b0c;color:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
 .cm3-fdcde53{font-size:12px;color:#6b6b72;text-wrap:pretty}
+.cm3-05cbb02{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:12px 14px;border-radius:10px;background:#fdeeea;color:#7a2410;font-size:14px}
+.cm3-4d4cbaf{height:40px;padding:0 14px;border:0;border-radius:8px;background:#7a2410;color:#fff;font-weight:600;font-size:13.5px;cursor:pointer}
+.cm3-0e388cd{text-align:center;padding:32px 16px;color:#6b6b72;margin:0}
 .cm3-ba98709{text-align:center;padding:40px 16px;color:#6b6b72}
 .cm3-e0d7397{margin:6px 0 0;font-weight:600;color:#0b0b0c}
 .cm3-b5711ab{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -13301,8 +13304,9 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-5d7185e{flex:1;min-width:160px;display:flex;flex-direction:column}
 .cm3-1177453{padding:4px 10px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px}
 .cm3-b635d5e{margin:0;font-size:15px;line-height:1.5;padding:12px 14px;border-radius:10px;background:#faf9f6;white-space:pre-wrap}
-.cm3-281deea{height:120px;border-radius:10px;background:#1b1b1e;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px}
-.cm3-a2600b0{font-size:28px}
+.cm3-c657aa0{border-radius:10px;overflow:hidden;background:#f1f0eb;max-height:320px;display:flex;justify-content:center}
+.cm3-1979a57{align-self:flex-start;display:flex;align-items:center;gap:8px;min-height:40px;padding:0 12px;border:1px solid #e8e5dd;border-radius:10px;background:#faf9f6;color:#0b0b0c;text-decoration:none;font-size:13.5px;font-weight:600}
+.cm3-b31cca9{margin:0;padding:10px 12px;list-style:none;border-radius:10px;background:#fdf6e3;display:flex;flex-direction:column;gap:4px;font-size:13px;color:#5c4100}
 .cm3-81586a8{display:flex;gap:8px;align-items:flex-start;font-size:13px;color:#3a3a40}
 .cm3-40c2800{color:#b26a00;font-size:16px;flex-shrink:0;margin-top:1px}
 .cm3-5fe25fa{text-wrap:pretty}
@@ -13321,6 +13325,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-c8c7877{font-size:12.5px;font-weight:600}
 .cm3-5d32b72{font-size:12.5px;color:#3a3a40;flex:1;display:flex;align-items:center;gap:6px}
 .cm3-4205960{height:38px;padding:0 14px;border:0;border-radius:10px;background:#0b0b0c;color:#fff;font-weight:600;cursor:pointer}
+.cm3-122548f{height:38px;padding:0 12px;border:1px solid #e8e5dd;border-radius:10px;background:#fff;font-weight:600;cursor:pointer}
 .cm3-e23ce8d{margin:0;flex:1;font-size:13px;color:#6b6b72;text-wrap:pretty}
 .cm3-a133383{height:40px;padding:0 14px;border:0;border-radius:10px;background:#0b0b0c;color:#fff;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;flex-shrink:0}
 .cm3-79fe203{background:#fff;border:1px solid #e8e5dd;border-radius:14px;overflow:hidden}
@@ -13399,7 +13404,11 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-6d8c26e{font-size:12px;font-weight:600;color:#1d4f2a;display:flex;align-items:center;gap:5px}
 .cm3-0f18a85{font-size:12px;color:#3a3a40;display:flex;align-items:center;gap:5px}
 .cm3-3a839e8{align-self:flex-start;height:30px;padding:0 10px;border:1px solid #cfe3d3;border-radius:8px;background:#fff;color:#1d4f2a;font-weight:600;font-size:12px;cursor:pointer}
+.cm3-2fdf245{display:flex;gap:4px;align-self:flex-end;margin:-4px -6px -6px 0}
+.cm3-f5cb6b7{height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#5f5f66;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px}
 .cm3-51f780b{margin:0;text-align:center;color:#6b6b72;font-size:13.5px;padding:12px 0}
+.cm3-87d9387{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 12px;border-radius:10px;background:#fdeeea;color:#7a2410;font-size:13.5px}
+.cm3-67ff08f{height:36px;padding:0 12px;border:0;border-radius:8px;background:#7a2410;color:#fff;font-weight:600;font-size:13px;cursor:pointer}
 .cm3-5cec19a{border-top:1px solid #e8e5dd;padding:12px;display:flex;flex-direction:column;gap:8px}
 .cm3-38cc443{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:8px 10px;border-radius:9px;background:var(--dc-background, unset);color:var(--dc-color, unset)}
 .cm3-ed31fa5{font-size:15px;flex-shrink:0}
@@ -13639,6 +13648,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3-ac8a4ba:hover{background:#f0efea}
 .cm3-85a5a3b:hover{background:#2a2a2e}
 .cm3-f481a97:hover{border-color:#c9c7bf}
+.cm3-ac48adc:hover{background:#ecebe7}
 .cm3-94e6c55:hover{background:#f7f6f2}
 .cm3-7c47bd6:hover{background:#1f1f22}
 .cm3-8585bf8:hover{background:rgba(255,255,255,.1)}
@@ -14202,3 +14212,7 @@ button.m9x-ev-sum { cursor: pointer; }
 .ids-ask-msg-b { padding: 4px 12px 12px; font-size: 13px; line-height: 1.5; color: var(--ids-ink-2); white-space: pre-line; }
 .ids-ask-msg-b p { margin: 0 0 8px; }
 .ids-ask-msg-cta { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--ids-r-sm); background: var(--ids-ink); color: var(--ids-on-ink); font-size: 12.5px; font-weight: 600; }
+
+/* The moderation queue shows what it asks a moderator to approve. */
+.cm3x-qvideo { display: block; width: 100%; max-height: 320px; border-radius: 10px; background: #1b1b1e; }
+.cm3x-qphoto { display: block; max-width: 100%; max-height: 320px; object-fit: contain; }

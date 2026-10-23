@@ -991,7 +991,7 @@
         vote:     (postId, choice) => request('/member/community.php', { body: { action: 'vote', postId, choice } }),
         star:     (postId) => request('/member/community.php', { body: { action: 'star', postId } }),
         mentions: (q) => request('/member/community.php' + qs({ view: 'mention', q })),
-        search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
+        search:   (q, channel, author) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all', author: author || '' })),
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         files:    (channel, kind) => request('/member/community.php' + qs({ view: 'files', channel, kind: kind || 'all' })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),

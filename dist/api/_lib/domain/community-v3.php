@@ -514,7 +514,8 @@ function community_v3_hw_board(array $p): array {
         $row = ['id' => $hid, 'ch' => (string)$h['slug'], 'by' => cm3_key((string)$h['createdBy']), 'byName' => $setBy, 'title' => (string)$h['title'],
             'due' => $due !== '' ? 'Due ' . cm3_due_words($due) : 'No due date', 'dueShort' => $due !== '' ? 'Due ' . gmdate('D', (int)$dueT) : 'Any time',
             'set' => gmdate('D j M', strtotime((string)$h['createdAt']) ?: time()), 'detail' => (string)$h['detail'],
-            'me' => $meSt, 'myNote' => $me ? (string)($me['note'] ?? '') : '', 'reviewedAt' => $me ? (string)$me['reviewedAt'] : ''];
+            'me' => $meSt, 'myNote' => $me ? (string)($me['note'] ?? '') : '', 'reviewedAt' => $me ? (string)$me['reviewedAt'] : '',
+            'seen' => $me ? (string)($me['seenAt'] ?? '') !== '' : true];
         if ($staff) $row['cohort'] = array_map(fn($s) => ['id' => (string)$s['memberId'], 'name' => (string)$s['memberName'],
             'state' => (string)$s['reviewedAt'] !== '' ? 'reviewed' : ((string)$s['submittedAt'] !== '' ? 'waiting' : 'missing'),
             'what' => (string)$s['submittedAt'] !== '' ? ((string)($s['note'] ?? '') ?: 'Handed in') : ((string)($s['seenAt'] ?? '') !== '' ? 'seen' : ''),

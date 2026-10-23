@@ -30129,6 +30129,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $tb = backend_dispatch('community.hwBoard', ['memberId' => 'CV3-T']);
     $tr = null; foreach ($tb['homework'] ?? [] as $h) if ($h['id'] === $hw['post']['homeworkId']) $tr = $h;
     chk('cm3 homework: the mentor sees the cohort', $tr && count($tr['cohort']) >= 2 && in_array('missing', array_column($tr['cohort'], 'state'), true));
+    $hwN = db_row("SELECT title, linkRef FROM notifications WHERE memberId = 'CV3-S' AND kind = 'community.homework' ORDER BY id DESC LIMIT 1");
+    chk('cm3 homework: each child it was set for gets one notice that opens the post',
+        $hwN && $hwN['linkRef'] === $hw['post']['postId'] && str_contains((string)$hwN['title'], 'About me page')
+        && (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'CV3-S' AND kind = 'community.homework' AND linkRef = ?", [$hw['post']['postId']])['n'] === 1);
+    chk('cm3 homework: the setter is not told about their own task',
+        !db_row("SELECT id FROM notifications WHERE memberId = 'CV3-T' AND kind = 'community.homework' AND linkRef = ?", [$hw['post']['postId']]));
+    chk('cm3 homework: an unopened task reads as not seen', $mine && $mine['seen'] === false);
+    backend_dispatch('community.homeworkSeen', ['memberId' => 'CV3-S', 'homeworkId' => $hw['post']['homeworkId']]);
+    $mine2 = null; foreach (backend_dispatch('community.hwBoard', ['memberId' => 'CV3-S'])['homework'] ?? [] as $h) if ($h['id'] === $hw['post']['homeworkId']) $mine2 = $h;
+    chk('cm3 homework: once the card is on screen it is seen', $mine2 && $mine2['seen'] === true);
 
     // A moderator approves what the (test) screen held, as they would.
     $approve = fn($r) => backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $r['post']['postId'], 'action' => 'approve']);
@@ -30141,6 +30151,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('cm3 answers: the asker marks it, and the reply says so', ($ans['answerId'] ?? '') === $cm['comment']['commentId'] && !empty($cs[0]['isAnswer']) && $cs[0]['role'] === 'Mentor');
     $qf = backend_dispatch('community.feed', ['memberId' => 'CV3-S', 'channel' => 'questions', 'scope' => 'mine']);
     chk('cm3 feed: the Questions filter shows questions, answered ones say so', count($qf['posts']) >= 1 && $qf['posts'][0]['kind'] === 'question' && $qf['posts'][0]['answered'] === true);
+    backend_dispatch('community.delete', ['memberId' => 'CV3-T', 'targetType' => 'comment', 'targetId' => $cm['comment']['commentId']]);
+    chk('cm3 answers: deleting the marked reply re-opens the question',
+        (string)db_row('SELECT answerId FROM community_posts WHERE postId = ?', [$q['post']['postId']])['answerId'] === '');
+    chk('cm3 replies: nobody else can reply to a post still waiting for a check',
+        (backend_dispatch('community.comment', ['memberId' => 'CV3-S2', 'postId' => $p1['post']['postId'], 'body' => 'hi'])['error'] ?? '') === 'not_found');
+    $sAuth = backend_dispatch('community.search', ['memberId' => 'CV3-S', 'q' => '', 'author' => cm3_key('CV3-S2')]);
+    chk('cm3 search: "See their posts" finds what that person wrote, and only that',
+        count($sAuth['posts'] ?? []) >= 1 && count(array_filter($sAuth['posts'], fn($x) => $x['authorKey'] !== cm3_key('CV3-S2'))) === 0);
+    chk('cm3 search: a channel search stays in the channel',
+        count(array_filter(backend_dispatch('community.search', ['memberId' => 'CV3-S', 'q' => 'centre', 'channel' => 'nowhere-at-all'])['posts'] ?? [], fn($x) => true)) === 0);
+    $dg = backend_dispatch('community.digest', ['memberId' => 'CV3-S']);
+    chk('cm3 digest: Catch me up lists the posts it means, each one openable',
+        !empty($dg['ok']) && is_array($dg['items'] ?? null) && (int)($dg['total'] ?? -1) >= count($dg['items']) && (!$dg['items'] || ($dg['items'][0]['postId'] ?? '') !== ''));
+    $hideMe = $post('CV3-S2', ['body' => 'a post a mentor will hide']);
+    if ($hideMe['post']['status'] !== 'published') $approve($hideMe);
+    backend_dispatch('admin.community.moderate', ['requesterId' => 'CV3-ADM', 'kind' => 'post', 'id' => $hideMe['post']['postId'], 'action' => 'hide', 'reason' => 'Off topic']);
+    chk('cm3 moderation: the author is told their post was hidden, privately',
+        (bool)db_row("SELECT id FROM notifications WHERE memberId = 'CV3-S2' AND kind = 'community.moderated' AND linkRef = ?", [$hideMe['post']['postId']]));
+    chk('cm3 typing: a child is "first name, initial" on the typing line', community_display_name('CV3-S2') !== '' && preg_match('/^\S+( [A-Z]\.)?$/u', community_display_name('CV3-S2')) === 1);
 
     $code = $post('CV3-S', ['body' => 'My first page', 'mediaType' => 'code', 'code' => "<h1>Hi</h1>\n<p>About me</p>", 'codeTitle' => 'about.html', 'hint' => 'should be dropped']);
     if ($code['post']['status'] !== 'published') $approve($code);

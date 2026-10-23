@@ -8,9 +8,9 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'feed');
     if ($view === 'channels')      $res = gs_call('community.channels', ['memberId' => $s['mid']]);
     elseif ($view === 'comments')  $res = gs_call('community.comments', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
-    elseif ($view === 'digest')    $res = gs_call('community.digest', ['channel' => $_GET['channel'] ?? 'all']);
+    elseif ($view === 'digest')    $res = gs_call('community.digest', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all']);
     elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '', 'memberId' => $s['mid']]);
-    elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '']);
+    elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '', 'author' => $_GET['author'] ?? '']);
     elseif ($view === 'members')   $res = gs_call('community.channelMembers', ['channel' => $_GET['channel'] ?? '']);
     // Every file shared in a channel — the Files screen.
     elseif ($view === 'files')     $res = gs_call('community.files', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '', 'kind' => $_GET['kind'] ?? 'all']);

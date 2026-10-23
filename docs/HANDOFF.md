@@ -2546,3 +2546,45 @@ owner reported while it ran.
   - `cloudinary_pin` names an account chosen in the account drawer ("Use for new uploads now" / "Back to automatic", op `admin.media.account`, settings cap). It is honoured until that account is full.
   - A passing backup key test reads usage at once.
 - **Tests:** 10 more checks in `api/tests/run.php`.
+
+## Community: functionality audit fixes
+
+An audit of the Community found eighteen faults. Fixed:
+
+- **Catch me up:** it lists the member's real unread posts, and each one opens. It uses AI text only when the AI call succeeds.
+- **Moderation:** the author is told when their post or reply is hidden or removed (`community_moderation_told`).
+- **Replies:**
+  - A reply to a held post is refused unless the replier is its author or an admin.
+  - Deleting the marked answer clears `answerId`.
+  - Each reply has Report and Delete.
+  - Hidden replies are filtered out.
+  - A failed load shows an error with a retry.
+- **Moderation queue:** the queue shows the media and the reports. Cases can be taken, have their severity changed, and be closed with a note.
+- **Feed:**
+  - A post opened from a link sits beside the feed (`opened`).
+  - The feed has its own page counter and a sequence guard.
+  - A new post enters only the lists it belongs in (`feedTakes`).
+  - Counts and new posts refresh every 60s while the tab is visible.
+  - Unsaving from Saved removes the card.
+- **Homework:**
+  - Notes and links are per task, and a link is added through `dialog.prompt`.
+  - `seen` is on board rows, and `homeworkSeen` is sent once per task.
+  - Each child gets one in-app notice from `community_post_on_published`. It is in-app only, so a class is not mailed inside a Send.
+  - Late tasks say Hand in, and the opened task sorts first.
+  - The board has loading and error states; a failure is never shown as "All handed in".
+  - Homework is never set in Commons.
+- **Search:**
+  - The server answers in channels too; before, it filtered the drawn page.
+  - It matches the body or the author name.
+  - "Everywhere" is scoped to `cm3_my_channels`.
+  - An `author` (cm3 key) filter backs "See their posts", which used to search the first name as text.
+- **People tab:** reads `community.channelMembers`, which now returns `key`.
+- **Typing:**
+  - It pings the channel being written in: the composer's or the thread's.
+  - A late answer for a channel already left is dropped.
+  - A child is shown as "Ada N.".
+- **Other:**
+  - The offline banner no longer promises an auto-post.
+  - `loadFiles` is no longer called twice.
+  - Photos have alt text.
+- **Tests:** 11 PHP checks added.

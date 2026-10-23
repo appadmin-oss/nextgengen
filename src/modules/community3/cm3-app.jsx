@@ -56,10 +56,10 @@ function Cm3PdfPage({ url, dl, page, zoom, onPages }) {
 
 class Cm3App extends React.Component {
   state = {
-    boot: null, bootErr: "", view: "home", filter: "all", ch: "", chTab: "posts", q: "", posts: [], hasMore: false, page: 0, feedKey: "", feedErr: "", loading: false,
+    boot: null, bootErr: "", view: "home", filter: "all", ch: "", chTab: "posts", q: "", posts: [], hasMore: false, feedPage: 0, opened: null, feedKey: "", feedErr: "", loading: false,
     comments: {}, hw: null, files: null, slides: [], queue: null, qComments: [], cases: null, stats: null, health: null, modLocked: false, modErr: "",
     thread: null, comp: null, report: null, toast: "", toastUndo: null, digest: false, digestText: "", modTab: "queue", modFilter: "all", modeAsk: null,
-    sheet: false, w: 1280, stars: 0, picker: null, hwSel: null, hwFilter: "all", reply: "", fileKind: "all", hidden: {}, read: {}, hwNote: "", hwAttach: null,
+    sheet: false, w: 1280, stars: 0, picker: null, hwSel: null, hwFilter: "all", reply: "", fileKind: "all", hidden: {}, read: {}, hwNotes: {}, hwLinks: {},
     nudged: {}, card: null, burst: null, car: 0, carPaused: false, viewer: null, media: {}, vt: 0, vPlay: false, crisis: "", busy: false, typing: "", edit: null
   };
   rootRef = React.createRef();
@@ -102,24 +102,52 @@ class Cm3App extends React.Component {
     /* Paste a picture straight into an open composer and it uploads as the post's photo. */
     this.onPaste = e => { if (!this.state.comp || this.state.comp.media) return; const it = Array.from((e.clipboardData || {}).items || []).find(x => x.kind === "file" && /^image\//.test(x.type)); if (it) { e.preventDefault(); this.upload("photo", it.getAsFile()); } };
     document.addEventListener("paste", this.onPaste);
-    this.onNet = () => this.setState({ offline: navigator.onLine === false });
+    this.onNet = () => { const was = this.state.offline, off = navigator.onLine === false; this.setState({ offline: off }, () => { if (was && !off) this.refresh(); }); };
     window.addEventListener("online", this.onNet); window.addEventListener("offline", this.onNet); this.onNet();
     this.boot();
     this.watchPrompt();
     /* Who is typing — polled only while a channel is open and the tab is
        visible; shared hosting has no push (domain/community.php §typing). */
-    this.typT = setInterval(() => { const s = this.state; if (s.view !== "channel" || document.visibilityState !== "visible" || !s.boot) return; this.api().typingWho(s.ch).then(r => { if ((r.says || "") !== this.state.typing) this.setState({ typing: r.says || "" }); }).catch(() => {}); }, 6000);
+    this.typT = setInterval(() => { const s = this.state; if (s.view !== "channel" || document.visibilityState !== "visible" || !s.boot) return; const ch = s.ch; this.api().typingWho(ch).then(r => { if (this.state.ch === ch && this.state.view === "channel" && (r.says || "") !== this.state.typing) this.setState({ typing: r.says || "" }); }).catch(() => {}); }, 6000);
+    this.refT = setInterval(() => this.refresh(), 60000);
     // Deep link: /community?post=CP-… opens that post's thread.
-    try { const pid = new URLSearchParams(location.search).get("post"); if (pid) this.openPost(pid); } catch (e) {}
+    // A "Copy link at 0:42" link carries #t=42: the video opens at that moment.
+    try { const pid = new URLSearchParams(location.search).get("post"); if (pid) this.openPost(pid, parseInt((String(location.hash).match(/t=(\d+)/) || [])[1] || "0", 10)); } catch (e) {}
   }
   componentWillUnmount() {
     window.removeEventListener("resize", this.onWin); document.removeEventListener("keydown", this.onKey);
     document.removeEventListener("paste", this.onPaste);
     document.removeEventListener("scroll", this.onDockScr, true); cancelAnimationFrame(this.dockRaf);
     window.removeEventListener("online", this.onNet); window.removeEventListener("offline", this.onNet);
-    clearInterval(this.carT); clearTimeout(this.tt); clearTimeout(this.tb); clearInterval(this.typT); this.vOff(); this.flushUndo();
+    clearInterval(this.carT); clearTimeout(this.tt); clearTimeout(this.tb); clearInterval(this.typT); clearInterval(this.refT); this.vOff(); this.flushUndo();
   }
   api() { return NGGApi.member.community; }
+  /* Whether a new post belongs in the list on screen: a post is not "saved",
+     a "mention" or a search hit just because you wrote it. */
+  feedTakes(st, p, ch) {
+    if (st.view === "channel") return st.ch === ch && !st.q.trim();
+    if (st.view !== "home" || st.q.trim() || st.byAuthor) return false;
+    return st.filter === "all" || st.filter === "mine" || (st.filter === "questions" && p.kind === "question");
+  }
+  /* Shared hosting has no push: once a minute, while the tab is visible, the
+     counts are re-read and new posts at the top of an unscrolled feed are
+     added. Nothing is replaced, so a post being read never jumps. */
+  refresh() {
+    const s0 = this.state;
+    if (!s0.boot || document.visibilityState !== "visible" || s0.offline) return;
+    this.api().v3boot().then(b => this.setState(st => {
+      const read = st.view === "channel" ? { [st.ch]: true } : {};
+      return { boot: Object.assign({}, st.boot, { channels: b.channels || st.boot.channels, counts: b.counts || st.boot.counts }), read };
+    }, () => { if (this.state.view === "channel") this.api().markRead(this.state.ch).catch(() => {}); })).catch(() => {});
+    const s = this.state;
+    if (s.feedPage !== 0 || s.loading || s.q.trim() || s.byAuthor || !(s.view === "home" || (s.view === "channel" && s.chTab === "posts"))) return;
+    const key = this.feedChannel();
+    this.api().v3feed(key, 0).then(r => this.setState(st => {
+      if (st.feedKey !== key || st.feedPage !== 0) return null;
+      const fresh = (r.posts || []).map(p => this.adapt(p)).filter(p => !st.posts.some(x => x.id === p.id));
+      return fresh.length ? { posts: fresh.concat(st.posts) } : null;
+    })).catch(() => {});
+  }
   boot() {
     this.setState({ bootErr: "" });
     this.api().v3boot().then(b => {
@@ -128,20 +156,29 @@ class Cm3App extends React.Component {
     }).catch(e => this.setState({ bootErr: cm3Err(e, "Couldn’t open the Community.") }));
   }
   loadHome() { this.api().home().then(r => this.setState({ slides: r.slides || [] })).catch(() => {}); }
-  loadHw() { this.api().hwBoard().then(r => this.setState({ hw: r.homework || [] })).catch(() => this.setState({ hw: [] })); }
+  /* A failed board is an error with a retry, never an empty board: "All handed
+     in" on an outage tells a child they have nothing to do. */
+  loadHw() { this.setState({ hwErr: "" }); this.api().hwBoard().then(r => this.setState({ hw: r.homework || [], hwErr: "" })).catch(e => this.setState(st => ({ hwErr: cm3Err(e, "Couldn’t load the homework."), hw: st.hw }))); }
   loadFiles() { const s = this.state; this.api().v3files(s.view === "channel" ? s.ch : "").then(r => this.setState({ files: r.files || [] })).catch(e => { this.setState({ files: [] }); this.flash(cm3Err(e, "Couldn’t load the files.")); }); }
   feedChannel() { const s = this.state; return s.view === "channel" ? s.ch : (CM3_FEED_FILTER[s.filter] || "all"); }
   loadFeed(reset) {
-    const key = this.feedChannel(), page = reset ? 0 : this.state.page + 1;
+    /* The feed keeps its own page (the PDF viewer's page used to share `page`,
+       so "Show older" re-asked for page 1 after any viewer), and every load
+       carries a number: only the newest answer is applied, so a slow reply
+       from the channel you just left can never replace the one you are in. */
+    const key = this.feedChannel(), page = reset ? 0 : this.state.feedPage + 1, seq = (this.feedSeq = (this.feedSeq || 0) + 1);
     if (reset) this.setState({ loading: true, feedErr: "", feedKey: key });
-    const load = this.state.q.trim().length >= 2 && this.state.view === "home"
-      ? this.api().search(this.state.q.trim(), "all").then(r => ({ posts: r.posts || [], hasMore: false }))
+    /* Search asks the server — in a channel too. Filtering the page already on
+       screen only ever searched the newest twenty posts. */
+    const st0 = this.state, qq = st0.q.trim(), by = st0.view === "home" && st0.byAuthor ? st0.byAuthor.key : "";
+    const load = (qq.length >= 2 && (st0.view === "home" || st0.view === "channel")) || by
+      ? this.api().search(qq.length >= 2 ? qq : "", st0.view === "channel" ? st0.ch : "all", by).then(r => ({ posts: r.posts || [], hasMore: false }))
       : this.api().v3feed(key, page);
     load.then(r => this.setState(st => {
-      if (st.feedKey !== key && !reset) return null;
+      if (seq !== this.feedSeq || st.feedKey !== key) return null;
       const posts = (r.posts || []).map(p => this.adapt(p));
-      return { posts: reset ? posts : st.posts.concat(posts.filter(p => !st.posts.some(x => x.id === p.id))), hasMore: !!r.hasMore, page, loading: false };
-    })).catch(e => this.setState({ loading: false, feedErr: cm3Err(e, "Couldn’t load the posts.") }));
+      return { posts: reset ? posts : st.posts.concat(posts.filter(p => !st.posts.some(x => x.id === p.id))), hasMore: !!r.hasMore, feedPage: page, loading: false };
+    })).catch(e => { if (seq === this.feedSeq) this.setState({ loading: false, feedErr: cm3Err(e, "Couldn’t load the posts.") }); });
     if (reset && this.state.view === "channel") this.api().markRead(key).then(() => this.setState(st => ({ read: Object.assign({}, st.read, { [key]: true }) }))).catch(() => {});
   }
   loadMod() {
@@ -177,14 +214,21 @@ class Cm3App extends React.Component {
     this.people[key] = Object.assign({}, was, o, { ini: cm3Ini(o.name || was.name), tone: cm3Tone(key) });
   }
   who(key) { return (this.people || {})[key] || { name: "Member", ini: "?", tone: "#eee", role: "Student", centre: "" }; }
-  handle(name) { return String(name || "").toLowerCase().split(" ").join("."); }
+  /* The server's handle, made the same way (community_member_handle): first
+     name, a hyphen, the surname's initial — "Ada N." and "Ada Njoku" are both
+     @ada-n. It used to be "ada.n.", which matched nobody, so a mention made
+     from a profile card notified no one. */
+  handle(name) {
+    const parts = String(name || "").trim().split(/\s+/), first = parts[0] || "", li = parts[1] ? parts[1].charAt(0) : "";
+    return (first + (li ? "-" + li : "")).toLowerCase().replace(/[^a-z0-9._-]+/g, "").replace(/^[-._]+|[-._]+$/g, "");
+  }
 
   /* ── small helpers ───────────────────────────────────────────────────── */
   flash(t, undo) { clearTimeout(this.tt); this.setState({ toast: t, toastUndo: undo || null }); this.tt = setTimeout(() => this.setState({ toast: "", toastUndo: null }), undo ? 6000 : 3600); }
   /* Irreversible acts (deleting your own post) wait out a short Undo window. */
   later(fn, label) { this.flushUndo(); this.pending = { fn, t: setTimeout(() => { this.pending = null; fn(); }, 6000) }; this.flash(label, () => { clearTimeout(this.pending.t); const p = this.pending; this.pending = null; p && p.undo && p.undo(); }); return this.pending; }
   flushUndo() { if (this.pending) { clearTimeout(this.pending.t); const f = this.pending.fn; this.pending = null; f(); } }
-  updPost(id, fn) { this.setState(s => ({ posts: s.posts.map(p => p.id === id ? fn(Object.assign({}, p)) : p) })); }
+  updPost(id, fn) { this.setState(s => ({ posts: s.posts.map(p => p.id === id ? fn(Object.assign({}, p)) : p), opened: s.opened && s.opened.id === id ? fn(Object.assign({}, s.opened)) : s.opened })); }
   segs(text) {
     const meKey = this.state.boot.me.key, P = this.people || {};
     return String(text || "").split(/(@[a-z0-9_.-]*[a-z0-9_]|\p{Extended_Pictographic}️?)/iu).filter(x => x).map(t => {
@@ -216,42 +260,70 @@ class Cm3App extends React.Component {
     return { v: "ok", icon: "ph ph-check-circle", msg: R.msg.ok };
   }
   hwStats(h) { const c = h.cohort || []; const r = c.filter(x => x.state === "reviewed").length, w = c.filter(x => x.state === "waiting").length; return { total: c.length, r, w, m: c.length - r - w, handed: r + w }; }
-  goCh(slug) { return () => this.setState(st => ({ view: "channel", ch: slug, chTab: "posts", thread: null, picker: null, digest: false, sheet: false, q: "" }), () => { this.loadFeed(true); }); }
-  goView(view, extra) { return () => this.setState(Object.assign({ view, thread: null, picker: null, digest: false, sheet: false }, extra || {}), () => {
+  goCh(slug) { return () => this.setState(st => ({ view: "channel", ch: slug, chTab: "posts", thread: null, picker: null, digest: false, sheet: false, q: "", byAuthor: null, typing: "" }), () => { this.loadFeed(true); }); }
+  /* A task counts as seen the first time its card is on screen, which is what
+     the instructor's "Not seen since…" line reads. Sent once per task. */
+  componentDidUpdate() {
+    const s = this.state;
+    const onHw = s.view === "homework" || (s.view === "channel" && s.chTab === "homework");
+    /* The People tab is everyone who has posted in the channel (the server's
+       list), not only the authors of the twenty posts on screen. */
+    if (s.view === "channel" && s.chTab === "people" && s.ch && !(s.chMembers || {})[s.ch] && !(this.memAsked || {})[s.ch]) {
+      this.memAsked = Object.assign({}, this.memAsked, { [s.ch]: true });
+      const slug = s.ch;
+      this.api().members(slug).then(r => this.setState(st => ({ chMembers: Object.assign({}, st.chMembers, { [slug]: r.members || [] }) })))
+        .catch(() => { this.memAsked[slug] = false; this.setState(st => ({ chMembers: Object.assign({}, st.chMembers, { [slug]: null }) })); });
+    }
+    if (!onHw || !s.hw || !this.api()) return;
+    this.hwSeenSent = this.hwSeenSent || {};
+    for (const h of s.hw) {
+      if (h.seen !== false || this.hwSeenSent[h.id] || (s.view === "channel" && h.ch !== s.ch)) continue;
+      this.hwSeenSent[h.id] = true;
+      this.api().homeworkSeen(h.id).catch(() => {});   // best-effort; not retried in a loop
+    }
+  }
+  goView(view, extra) { return () => this.setState(Object.assign({ view, thread: null, picker: null, digest: false, sheet: false, byAuthor: null }, extra || {}), () => {
     if (view === "home") this.loadFeed(true);
-    if (view === "files" && !this.state.files) this.loadFiles();
     if (view === "files") this.loadFiles();
     if (view === "homework") this.loadHw();
     if (view === "mod") this.loadMod();
   }); }
-  openPost(pid) {
-    this.api().post_get(pid).then(r => { const p = this.adapt(r.post); this.setState(st => ({ posts: st.posts.some(x => x.id === p.id) ? st.posts : [p].concat(st.posts), thread: p.id })); this.loadComments(p.id); })
-      .catch(() => this.flash("That post isn’t available any more."));
+  /* A post opened by itself (a link, a notification, Catch me up) is kept
+     beside the feed, not in it: the feed reloading when the Community boots
+     used to replace the list and close the thread a link had just opened. */
+  openPost(pid, at) {
+    this.api().post_get(pid).then(r => {
+      const p = this.adapt(r.post);
+      this.setState({ opened: p, thread: p.id }, () => { if (at > 0 && p.media && p.media.type === "video") this.openViewer("video", p.id, p.id, at); });
+      this.loadComments(p.id);
+    }).catch(() => this.flash("That post isn’t available any more."));
   }
   loadComments(pid) {
     this.api().comments(pid).then(r => {
       (r.comments || []).forEach(c => this.person(c.authorKey, { name: c.name, staff: !!c.staff, role: c.role || (c.staff ? "Staff" : "Student"), photo: c.photo }));
       this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: r.comments || [] }) }));
-    }).catch(() => this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: [] }) })));
+    }).catch(() => this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [pid]: true }) })));
   }
 
   /* ── actions ─────────────────────────────────────────────────────────── */
   react(id, e) {
-    const p0 = this.state.posts.find(x => x.id === id); if (!p0) return;
+    const p0 = this.postById(id); if (!p0) return;
     if (p0.mine !== e && !cm3Reduced()) { clearTimeout(this.tb); this.setState({ burst: { id, e, k: Date.now() } }); this.tb = setTimeout(() => this.setState({ burst: null }), 1200); }
     this.updPost(id, p => { const r = Object.assign({}, p.reacts); if (p.mine) r[p.mine] = Math.max(0, (r[p.mine] || 0) - 1); if (p.mine === e) p.mine = ""; else { r[e] = (r[e] || 0) + 1; p.mine = e; } p.reacts = r; return p; });
     this.api().react(id, e).then(r => this.updPost(id, p => Object.assign(p, { reacts: Array.isArray(r.reactions) ? {} : r.reactions || {}, mine: r.myReaction || "" })))
       .catch(err => { this.updPost(id, p => Object.assign(p, { reacts: p0.reacts, mine: p0.mine })); this.flash(cm3Err(err, "Couldn’t react.")); });
   }
   vote(id, i) {
-    const p0 = this.state.posts.find(x => x.id === id);
+    const p0 = this.postById(id);
     this.updPost(id, x => { const op = x.poll.opts.map(z => z.slice()); if (x.poll.voted >= 0) op[x.poll.voted][1]--; op[i][1]++; x.poll = { opts: op, voted: i }; return x; });
     this.api().vote(id, i).then(r => r.poll && this.updPost(id, x => Object.assign(x, { poll: { opts: r.poll.options.map(o => [o.text, o.votes]), voted: r.poll.myVote } })))
       .catch(e => { this.updPost(id, x => Object.assign(x, { poll: p0.poll })); this.flash(cm3Err(e, "Couldn’t vote.")); });
   }
   save(id) {
     this.updPost(id, x => Object.assign(x, { saved: !x.saved }));
-    this.api().bookmark(id).then(r => { this.updPost(id, x => Object.assign(x, { saved: !!r.bookmarked })); this.flash(r.bookmarked ? "Saved. Find it under Saved." : "Removed from Saved."); })
+    this.api().bookmark(id).then(r => { this.updPost(id, x => Object.assign(x, { saved: !!r.bookmarked }));
+      // Unsaved while looking at Saved: it leaves the list, as Saved now says.
+      if (!r.bookmarked && this.state.view === "home" && this.state.filter === "saved") this.setState(st => ({ posts: st.posts.filter(x => x.id !== id) })); this.flash(r.bookmarked ? "Saved. Find it under Saved." : "Removed from Saved."); })
       .catch(e => { this.updPost(id, x => Object.assign(x, { saved: !x.saved })); this.flash(cm3Err(e)); });
   }
   star(p, first) {
@@ -267,9 +339,26 @@ class Cm3App extends React.Component {
     const pend = this.later(() => this.api().remove("post", p.id).catch(e => { this.setState({ posts: keep }); this.flash(cm3Err(e, "Couldn’t delete it.")); }), "Your post was deleted.");
     pend.undo = () => this.setState({ posts: keep });
   }
+  removeReply(pid, c) {
+    const keep = this.state.comments[pid] || [];
+    this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: keep.filter(x => x.commentId !== c.commentId) }) }));
+    if (c.status === "published") this.updPost(pid, p => Object.assign(p, { n: Math.max(0, p.n - 1) }));
+    const pend = this.later(() => this.api().remove("comment", c.commentId).catch(e => {
+      this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: keep }) }));
+      if (c.status === "published") this.updPost(pid, p => Object.assign(p, { n: p.n + 1 }));
+      this.flash(cm3Err(e, "Couldn’t delete your reply."));
+    }), "Your reply was deleted.");
+    pend.undo = () => { this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: keep }) })); if (c.status === "published") this.updPost(pid, p => Object.assign(p, { n: p.n + 1 })); };
+  }
+  caseUpdate(c, change, done) {
+    NGGApi.admin.community.safeguardingUpdate(c.caseId, change)
+      .then(() => { this.flash(done); return NGGApi.admin.community.safeguarding("open").then(r => this.setState({ cases: r.cases || [] })); })
+      .catch(e => this.flash(cm3Err(e, "Couldn’t update the case.")));
+  }
   sendReport() {
     const s = this.state, rp = s.report; if (!rp || !rp.reason) return;
-    this.setState({ report: null, hidden: Object.assign({}, s.hidden, { [rp.id]: true }), thread: s.thread === rp.id ? null : s.thread });
+    // A reported reply leaves the thread; a reported post leaves the feed (and closes its thread).
+    this.setState({ report: null, hidden: Object.assign({}, s.hidden, { [rp.id]: true }), thread: rp.type !== "comment" && s.thread === rp.id ? null : s.thread });
     this.api().report(rp.type || "post", rp.id, rp.reason)
       .then(() => this.flash(rp.reason === "safety" ? "Sent to a trained safeguarding lead. Thank you for telling us." : "Reported. A mentor will look at it. Nobody will know it was you."))
       .catch(e => this.flash(cm3Err(e, "Couldn’t send the report.")));
@@ -294,7 +383,8 @@ class Cm3App extends React.Component {
   }
   openComp(type) {
     const s = this.state, b = s.boot, mine = b.channels.filter(c => c.mine);
-    const def = s.view === "channel" ? s.ch : (type === "question" || type === "work") ? ((mine.find(c => c.slug !== "commons") || {}).slug || "commons") : (b.me.staff ? ((mine.find(c => c.slug !== "commons") || {}).slug || "commons") : "commons");
+    const course = (mine.find(c => c.slug !== "commons") || {}).slug || "commons";
+    const def = type === "homework" && (s.view !== "channel" || s.ch === "commons") ? course : s.view === "channel" ? s.ch : (type === "question" || type === "work") ? ((mine.find(c => c.slug !== "commons") || {}).slug || "commons") : (b.me.staff ? ((mine.find(c => c.slug !== "commons") || {}).slug || "commons") : "commons");
     const due = new Date(Date.now() + 4 * 86400000); due.setHours(18, 0, 0, 0);
     const iso = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
     this.setState({ comp: { type: type || "post", ch: def, text: this.draft(def) || "", opts: ["", ""], media: null, up: 0, hwTitle: "", hwDue: iso(due) + " 18:00", captions: "" }, picker: null, sheet: false });
@@ -349,13 +439,15 @@ class Cm3App extends React.Component {
     this.api().post(data).then(r => {
       this.draft(c.ch, "");
       const p = r.post ? this.adapt(r.post) : null;
-      this.setState(st => ({ comp: null, busy: false, posts: p && (st.view === "home" || st.ch === c.ch) ? [p].concat(st.posts) : st.posts }));
+      this.setState(st => ({ comp: null, busy: false, posts: p && this.feedTakes(st, p, c.ch) ? [p].concat(st.posts) : st.posts }));
       const chName = (s.boot.channels.find(x => x.slug === c.ch) || {}).name || "the channel";
       this.flash(r.queued ? "Sent for a quick check. Only you can see it until a mentor approves it." : c.type === "homework" ? "Homework set. Each student gets one private notification." : "Posted to " + chName + ".");
       if (c.type === "homework") this.loadHw();
     }).catch(e => { this.setState({ busy: false }); if (e.code === "crisis") this.setState({ crisis: e.detail || "" }); else this.flash(cm3Err(e, "Couldn’t post — try again.")); });
   }
-  typingPing() { const s = this.state; if (s.view !== "channel") return; const now = Date.now(); if (now - (this.lastPing || 0) < 3000) return; this.lastPing = now; this.api().typingPing(s.ch).catch(() => {}); }
+  /* Pings the channel being WRITTEN in — the composer's or the open thread's —
+     not whichever channel happens to be on screen. */
+  typingPing(ch) { if (!ch) return; const now = Date.now(); if (ch === this.lastPingCh && now - (this.lastPing || 0) < 3000) return; this.lastPing = now; this.lastPingCh = ch; this.api().typingPing(ch).catch(() => {}); }
 
   /* ── moderation ──────────────────────────────────────────────────────── */
   moderate(it, act, extra, msg) {
@@ -366,14 +458,28 @@ class Cm3App extends React.Component {
   }
 
   /* ── video ───────────────────────────────────────────────────────────── */
-  openViewer(type, key, post) {
+  /* Read fresh each time it opens: what is unread changes as posts are read. A failure says so and can be retried. */
+  loadDigest() {
+    this.setState({ digestRes: null, digestErr: "" });
+    this.api().digest("all").then(r => this.setState({ digestRes: r })).catch(() => this.setState({ digestErr: "Couldn’t read your unread posts just now. Tap to try again." }));
+  }
+  /* A post by id: in the feed, or the one a link opened beside it. */
+  postById(id) { const s = this.state; return s.posts.find(p => p.id === id) || (s.opened && s.opened.id === id ? s.opened : null); }
+  openViewer(type, key, post, at) {
     this.flushUndo();
-    const m = (this.state.posts.find(p => p.id === (post || key)) || {}).media || {};
-    this.setState({ viewer: { type, key, post: post || key, url: m.url, poster: m.poster, name: m.name, title: m.title, pages: m.pages || 0 }, vt: 0, vPlay: false, vDur: m.dur || 0, vMenu: null, vTab: null, vQ: "", page: 0, zoom: 100, codeSrc: null, codeRan: null, codeRunN: 0, codeHintOn: false, vNextIn: null, vResumed: null });
+    const m = (this.postById(post || key) || {}).media || {};
+    this.setState({ viewer: { type, key, post: post || key, url: m.url, poster: m.poster, name: m.name, title: m.title, pages: m.pages || 0 }, vt: 0, vPlay: false, vDur: m.dur || 0, vMenu: null, vTab: null, vQ: "", page: 0, zoom: 100, codeSrc: null, codeRan: null, codeRunN: 0, codeHintOn: false, vNextIn: null, vResumed: null, pdfPages: 0 });
     if (type === "video" || type === "code") this.api().media(post || key).then(r => {
-      this.setState(st => ({ media: Object.assign({}, st.media, { [r.postId]: r }), vResumed: type === "video" && r.pos > 3 ? r.pos : null }));
-      if (type === "video" && r.pos > 3) { const v = this.vRef.current; if (v) v.currentTime = r.pos; this.setState({ vt: r.pos }); clearTimeout(this.vRT); this.vRT = setTimeout(() => this.setState({ vResumed: null }), 6000); }
-    }).catch(() => {});
+      // A link's moment (#t=) wins over where they stopped last time.
+      const pos = at > 0 ? at : r.pos;
+      this.setState(st => ({ media: Object.assign({}, st.media, { [r.postId]: r }), vResumed: type === "video" && pos > 3 && !(at > 0) ? pos : null }));
+      if (type === "video" && pos > 3) { const v = this.vRef.current; if (v) v.currentTime = pos; this.setState({ vt: pos }); clearTimeout(this.vRT); this.vRT = setTimeout(() => this.setState({ vResumed: null }), 6000); }
+    }).catch(() => {
+      // Never "Loading…" for ever: the viewer says it could not load, and closing it is always there.
+      const pid = post || key;
+      this.setState(st => ({ media: Object.assign({}, st.media, { [pid]: Object.assign({}, st.media[pid] || {}, { failed: true, code: type === "code" ? "<!-- This code couldn't be loaded. Close it and try again. -->" : (st.media[pid] || {}).code }) }) }));
+      this.flash(type === "video" ? "Couldn’t load the video’s chapters. It still plays." : "Couldn’t load the code. Close it and try again.");
+    });
     if (type === "video") { window.addEventListener("keydown", this.vKey); document.addEventListener("fullscreenchange", this.vFsCh); this.vPoke(); }
   }
   closeViewer() { const st = this.state; if (st.viewer && st.viewer.type === "video") this.vSave(st.viewer.post, st.vt >= (st.vDur || 1) - 1 ? 0 : st.vt); this.vOff(); this.setState({ viewer: null, vPlay: false }); }
@@ -451,6 +557,8 @@ class Cm3App extends React.Component {
     const person = k => this.who(k);
     const posts = s.posts;
     const visible = posts.filter(p => !s.hidden[p.id]);
+    // The post a link opened, when the feed on screen does not hold it.
+    const opened = s.opened && !s.hidden[s.opened.id] && !visible.some(p => p.id === s.opened.id) ? s.opened : null;
     const unreadN = s.read.__all ? 0 : B.counts.unread, mentionN = B.counts.mentions;
     const hw = s.hw || [];
     const hwBy = {}; hw.forEach(h => { hwBy[h.id] = h; if (h.by) this.person(h.by, { name: h.byName, staff: true, role: "Instructor" }); });
@@ -466,7 +574,6 @@ class Cm3App extends React.Component {
     const q = s.q.trim().toLowerCase();
     let list = visible;
     if (s.view === "channel") list = visible.filter(p => p.ch === s.ch);
-    if (q && s.view === "channel") list = list.filter(p => (p.body + " " + person(p.author).name).toLowerCase().includes(q));
 
     const R = B.reactions;
     const pv = p => {
@@ -493,12 +600,16 @@ class Cm3App extends React.Component {
         docH: m.type === "doc" ? m.name : "",
         openMedia: () => m.type === "link" ? window.open(cm3SafeUrl(m.url), "_blank", "noopener") : m.type === "photo" ? window.open(m.url, "_blank", "noopener") : this.openViewer(m.type, p.id, p.id),
         isPhoto: m.type === "photo", isVideo: m.type === "video", isDoc: m.type === "doc", isLink: m.type === "link", mUrl: m.type === "link" ? cm3SafeUrl(m.url) : "", linkLabel: m.type === "link" ? (m.title || m.host || "Link") + " (opens in a new tab)" : "", mName: m.name || "", mMeta: m.type === "doc" ? m.meta : m.type === "link" ? "Opens in a new tab" : "", mHost: m.host || "", mTitle: m.title || "",
-        photoEl: m.type === "photo" ? img(m.url, 900, "cm3x-fill", m.alt) : null,
+        photoEl: m.type === "photo" ? img(m.url, 900, "cm3x-fill", m.alt || "Photo shared by " + a.name) : null,
         thumbEl: m.type === "video" ? (m.poster ? img(m.poster, 900, "cm3x-fill", "") : null) : null,
         isPoll: !!p.poll, pollMeta: tot + " votes · " + (voted >= 0 ? "You voted. Tap again to change." : "Tap a choice to vote"),
         pollOpts: p.poll ? p.poll.opts.map((o, i) => { const pct = tot ? Math.round(o[1] / tot * 100) : 0, on = voted === i, show = voted >= 0; return { label: o[0], on, pressed: on ? "true" : "false", showRes: show, pct: pct + "%", w: show ? pct + "%" : "0%", fill: on ? "#fbe3a6" : "#f1f0eb", bd: on ? "#f5b026" : "#e8e5dd", fw: on ? 600 : 500, vote: () => this.vote(p.id, i) }; }) : [],
-        isHw: !!p.hw, hwTitle: h ? h.title : "Homework", hwMeta: h ? (h.due + (staff && hs.total ? " · " + hs.handed + " of " + hs.total + " handed in" : "")) : "", hwCta: staff ? "Tracker" : h && h.me === "todo" ? "Hand in" : "View", openHw: goView("homework", { hwSel: p.hw }),
-        pending: p.status === "pending", statusNote: admin && !mine ? "Held for review — see the Moderation queue." : (p.note || "Waiting for a quick check — only you can see it. A mentor usually approves within a few hours."),
+        isHw: !!p.hw, hwTitle: h ? h.title : "Homework", hwMeta: h ? (h.due + (staff && hs.total ? " · " + hs.handed + " of " + hs.total + " handed in" : "")) : "", hwCta: staff ? "Tracker" : h && (h.me === "todo" || h.me === "late") ? "Hand in" : "View", openHw: goView("homework", { hwSel: p.hw }),
+        /* Anything not live says so to whoever can still see it: a hidden post used to look live to its author. */
+        pending: p.status !== "published", statusNote: admin && !mine ? (p.status === "pending" ? "Held for review — see the Moderation queue." : "Not visible to members (" + p.status + ").")
+          : p.status === "pending" ? (p.note || "Waiting for a quick check — only you can see it. A mentor usually approves within a few hours.")
+          : p.status === "hidden" ? "A mentor hid this. Only you can see it. " + (p.note && !/^Hidden by a mentor\.?$/.test(p.note) ? p.note : "You can delete it and post again, or ask your mentor about it.")
+          : "This was taken down and only you can see it." + (p.note ? " " + p.note : ""),
         hasStar: p.stars > 0, starLine: p.stars > 0 ? (p.myStar ? "Genius Star from you" : p.stars === 1 ? "A Genius Star from a mentor" : p.stars + " Genius Stars from mentors") : "",
         isQ, qLabel: answered ? "Answered" : "Waiting for an answer", qIcon: answered ? "ph-fill ph-check-circle" : "ph ph-clock", qFg: answered ? "#1d4f2a" : "#6b4b00",
         reacts: R.filter(e => (p.reacts[e] || 0) > 0 || p.mine === e).map(e => { const on = p.mine === e, cnt = p.reacts[e] || 0; return { e, n: cnt, pressed: on ? "true" : "false", aria: e + " " + cnt + (on ? ", your reaction" : ""), bg: on ? "#fdf1d6" : "#fff", bd: on ? "#f5b026" : "#e8e5dd", src: cm3EmojiSrc(e), anim: s.burst && s.burst.id === p.id && s.burst.e === e ? "cmPop .35s ease-out" : "none", toggle: () => this.react(p.id, e) }; }),
@@ -522,9 +633,9 @@ class Cm3App extends React.Component {
     const cur = chBy[s.ch] || chans[0] || { name: "", desc: "", icon: "ph ph-hash", color: "#ccc", slug: "", members: 0, posts: 0 };
     const VIEWT = { all: ["Home", greet + ", " + me0.first + " · " + unreadN + " new " + (unreadN === 1 ? "post" : "posts") + " in your channels"], unread: ["Unread", "Posts since you last opened each channel"], mentions: ["Mentions", "Posts that tag @" + (me0.handle || this.handle(me0.name))], questions: ["Questions", "Help someone, or find an answer that already exists"], saved: ["Saved", "Only you can see what you’ve saved"], mine: ["My posts", "Everything you’ve shared, including posts waiting for a check"] };
     let title = "", sub = "", hasHeadTile = false;
-    if (s.view === "home") { [title, sub] = VIEWT[s.filter] || VIEWT.all; if (q) sub = "Showing posts matching “" + s.q.trim() + "”"; }
+    if (s.view === "home") { [title, sub] = VIEWT[s.filter] || VIEWT.all; if (s.byAuthor) { title = "Posts by " + s.byAuthor.name; sub = "Newest first, in your channels · tap Home to see everything"; } if (q) sub = "Showing posts matching “" + s.q.trim() + "”" + (s.byAuthor ? " by " + s.byAuthor.name : ""); }
     if (s.view === "channel") { title = cur.name; sub = cur.desc; hasHeadTile = true; }
-    if (s.view === "homework") { title = "Homework"; sub = staff ? "Who has handed in, who needs a nudge" : todoN ? todoN + " to hand in · everything your instructors set, in one place" : "All handed in. Nice work."; }
+    if (s.view === "homework") { title = "Homework"; sub = staff ? "Who has handed in, who needs a nudge" : s.hw === null ? (s.hwErr ? "Couldn’t load your homework" : "Loading your homework…") : todoN ? todoN + " to hand in · everything your instructors set, in one place" : "All handed in. Nice work."; }
     if (s.view === "files") { title = "Files"; sub = "Every photo, video, document and link shared in your channels"; }
     if (s.view === "journal") { title = "Journal"; sub = typeof cmTodayWords === "function" ? cmTodayWords() : "Your own record, and the programme’s"; }
     if (s.view === "arcade") { title = "Arcade"; sub = "Quick games between sessions. Scores are checked by NGG, so they’re fair."; }
@@ -533,8 +644,10 @@ class Cm3App extends React.Component {
     const chHw = hw.filter(h => h.ch === s.ch), chFiles = (s.files || []).filter(f => f.ch === s.ch);
     const pplMap = {};
     const addP = (k, nm) => { const key = k || nm; if (!pplMap[key]) { const pp = k ? person(k) : null; pplMap[key] = { name: nm, ini: cm3Ini(nm), tone: k ? cm3Tone(k) : "#f1f0eb", staff: !!(pp && pp.staff), role: pp ? pp.role : "Student", centre: pp ? pp.centre || "" : "", n: 0 }; } return pplMap[key]; };
+    ((s.chMembers || {})[s.ch] || []).forEach(m => { const e = addP(m.key || null, m.name); e.staff = e.staff || !!m.staff; if (!e.centre) e.centre = m.centre || ""; if (m.staff && e.role === "Student") e.role = "Staff"; e.srv = m.posts || 0; });
     visible.filter(p => p.ch === s.ch).forEach(p => { addP(p.author, person(p.author).name).n++; (s.comments[p.id] || []).forEach(c => addP(c.authorKey, c.name)); });
     chHw.forEach(h => (h.cohort || []).forEach(r => addP(null, r.name)));
+    Object.values(pplMap).forEach(m => { if (m.srv != null) m.n = Math.max(m.n, m.srv); });
     const people = Object.values(pplMap).sort((a, b) => (b.staff - a.staff) || (b.n - a.n)).map(m => ({ ...m, sub: [m.staff ? "" : "Student", m.centre, m.n ? m.n + (m.n === 1 ? " post" : " posts") : ""].filter(Boolean).join(" · ") }));
 
     let tabs = [], hasTabs = false, tabsLabel = "";
@@ -556,9 +669,12 @@ class Cm3App extends React.Component {
     // "Preview as" is the prototype's role switcher; the real viewer is the signed-in person, so it is not shown.
     const roles = [];
 
-    const chips = [["all", "All"], ["unread", "Unread", unreadN], ["mentions", "Mentions", mentionN], ["questions", "Questions"], ["saved", "Saved"], ["mine", "Mine"]].map(([id, label, n]) => { const sel = s.filter === id; return { label, n: String(n || ""), hasN: !!n, sel: sel ? "true" : "false", bg: sel ? "#0b0b0c" : "#fff", fg: sel ? "#fff" : "#0b0b0c", bd: sel ? "#0b0b0c" : "#e8e5dd", go: () => this.setState({ filter: id }, () => this.loadFeed(true)) }; });
+    const chips = [["all", "All"], ["unread", "Unread", unreadN], ["mentions", "Mentions", mentionN], ["questions", "Questions"], ["saved", "Saved"], ["mine", "Mine"]].map(([id, label, n]) => { const sel = s.filter === id; return { label, n: String(n || ""), hasN: !!n, sel: sel ? "true" : "false", bg: sel ? "#0b0b0c" : "#fff", fg: sel ? "#fff" : "#0b0b0c", bd: sel ? "#0b0b0c" : "#e8e5dd", go: () => this.setState({ filter: id, byAuthor: null }, () => this.loadFeed(true)) }; });
 
-    const dg = s.digestText ? s.digestText.split(/\n+/).map(x => x.replace(/^\s*[-•*\d.]+\s*/, "").trim()).filter(Boolean).slice(0, 6).map((t, i) => ({ n: String(i + 1).padStart(2, "0"), t, icon: "", open: () => {} })) : [{ n: "··", t: "Reading your unread posts…", icon: "", open: () => {} }];
+    /* "Catch me up": one line per unread post, each opening its post (community.digest). */
+    const D0 = s.digestRes;
+    const dg = D0 ? (D0.items || []).map((x, i) => ({ n: String(i + 1).padStart(2, "0"), t: x.line, icon: "ph ph-arrow-right", open: () => { set({ digest: false }); this.openPost(x.postId); } }))
+      : [{ n: "··", t: s.digestErr || "Reading your unread posts…", icon: "", open: () => { if (s.digestErr) this.loadDigest(); } }];
 
     const waitingPosts = role === "instructor" ? visible.filter(p => !person(p.author).staff && (p.kind === "question" || p.kind === "work") && !p.answered && p.n === 0) : [];
     const waiting = waitingPosts.slice(0, 5).map(p => { const a = person(p.author); return { name: a.name, ini: a.ini, tone: a.tone, label: (p.kind === "question" ? "Question" : "Shared work") + " · " + p.ago, body: p.body.length > 140 ? p.body.slice(0, 140) + "…" : p.body, reply: () => { set({ thread: p.id, reply: "" }); this.loadComments(p.id); } }; });
@@ -569,8 +685,20 @@ class Cm3App extends React.Component {
     const quickTypes = [["question", "Ask", "ph ph-question", "#b26a00"], ["work", "Show my work", "ph ph-paint-brush-broad", "#1d6b30"], ["poll", "Poll", "ph ph-chart-bar", "#3b5bdb"]].concat(staff ? [["homework", "Homework", "ph ph-backpack", "#a3365f"]] : []).map(t => ({ label: t[1], icon: t[2], ic: t[3], go: () => this.openComp(t[0]) }));
 
     const ST = { todo: ["To do", "#fdf1d6", "#6b4b00", "ph ph-circle-dashed"], late: ["Late — still fine", "#fdf1ef", "#7a1a10", "ph ph-clock-countdown"], waiting: ["Handed in", "#eceefb", "#2a3f9e", "ph ph-hourglass-medium"], reviewed: ["Reviewed", "#e5efe7", "#1d4f2a", "ph ph-check-circle"] };
-    const hwList = myHw.filter(h => !hwScope || h.ch === hwScope).sort((a, b) => ["late", "todo", "waiting", "reviewed"].indexOf(a.me) - ["late", "todo", "waiting", "reviewed"].indexOf(b.me)).map(h => { const c = chBy[h.ch] || {}, st = ST[h.me] || ST.todo; return { title: h.title, chName: c.name, chColor: c.color, chIcon: c.icon, byName: h.byName, set: h.set, due: h.due, detail: h.detail, stLabel: st[0], stBg: st[1], stFg: st[2], stIcon: st[3], isTodo: h.me === "todo" || h.me === "late", isWaiting: h.me === "waiting", hasFeedback: h.me === "reviewed", feedback: "Reviewed by " + h.byName + ". Well done.", myNote: h.myNote ? "You wrote: " + h.myNote : "Handed in. Waiting for review.",
-      handIn: () => { const note = s.hwNote.trim() + (s.hwAttach ? (s.hwNote.trim() ? " · " : "") + s.hwAttach : ""); this.api().homeworkSubmit(h.id, note).then(() => { this.setState(st2 => ({ hw: (st2.hw || []).map(x => x.id === h.id ? Object.assign({}, x, { me: "waiting", myNote: note }) : x), hwNote: "", hwAttach: null })); this.flash("Handed in! " + h.byName + " will review it."); }).catch(e => this.flash(cm3Err(e, "Couldn’t hand it in."))); } }; });
+    const hwRank = h => (h.id === s.hwSel ? -1 : ["late", "todo", "waiting", "reviewed"].indexOf(h.me));   // the task a link or "Hand in" opened comes first
+    const hwList = myHw.filter(h => !hwScope || h.ch === hwScope).sort((a, b) => hwRank(a) - hwRank(b)).map(h => { const c = chBy[h.ch] || {}, st = ST[h.me] || ST.todo; return { title: h.title, chName: c.name, chColor: c.color, chIcon: c.icon, byName: h.byName, set: h.set, due: h.due, detail: h.detail, stLabel: st[0], stBg: st[1], stFg: st[2], stIcon: st[3], isTodo: h.me === "todo" || h.me === "late", isWaiting: h.me === "waiting", hasFeedback: h.me === "reviewed", feedback: "Reviewed by " + h.byName + ". Well done.", myNote: h.myNote ? "You wrote: " + h.myNote : "Handed in. Waiting for review.",
+      note: s.hwNotes[h.id] || "", onNote: e => { const v = e.target.value; this.setState(st2 => ({ hwNotes: Object.assign({}, st2.hwNotes, { [h.id]: v }) })); },
+      attachPressed: s.hwLinks[h.id] ? "true" : "false", attachBd: s.hwLinks[h.id] ? "#f5b026" : "#e8e5dd", attachBg: s.hwLinks[h.id] ? "#fdf6e3" : "#fff", attachIcon: s.hwLinks[h.id] ? "ph-fill ph-check-circle" : "ph ph-link", attachLabel: s.hwLinks[h.id] ? "Link added — tap to remove" : "Add a link to your work",
+      toggleAttach: async () => {
+        if (s.hwLinks[h.id]) return this.setState(st2 => ({ hwLinks: Object.assign({}, st2.hwLinks, { [h.id]: "" }) }));
+        const u = await dialog.prompt({ title: "Add a link to your work", body: "A Scratch project, a shared doc, a video — anything " + h.byName + " can open. A screenshot can be posted in the channel instead.", label: "Link", placeholder: "https://", cta: "Add link" });
+        if (u == null) return;
+        const t = String(u).trim();
+        if (!/^https?:\/\/\S+\.\S+/.test(t)) return this.flash("That doesn’t look like a link. It should start with https://");
+        this.setState(st2 => ({ hwLinks: Object.assign({}, st2.hwLinks, { [h.id]: t }) }));
+      },
+      handIn: () => { if (this.hwBusy === h.id) return; const n0 = (s.hwNotes[h.id] || "").trim(), ln = s.hwLinks[h.id] || ""; const note = n0 + (ln ? (n0 ? " · " : "") + ln : ""); this.hwBusy = h.id;
+        this.api().homeworkSubmit(h.id, note).then(() => { this.hwBusy = null; this.setState(st2 => ({ hw: (st2.hw || []).map(x => x.id === h.id ? Object.assign({}, x, { me: "waiting", myNote: note }) : x), hwNotes: Object.assign({}, st2.hwNotes, { [h.id]: "" }), hwLinks: Object.assign({}, st2.hwLinks, { [h.id]: "" }) })); this.flash("Handed in! " + h.byName + " will review it."); }).catch(e => { this.hwBusy = null; this.flash(cm3Err(e, "Couldn’t hand it in. Your note is still here — try again.")); }); } }; });
 
     const sTasks = staffHw.filter(h => !hwScope || h.ch === hwScope);
     const sel = sTasks.find(h => h.id === s.hwSel) || sTasks[0];
@@ -603,7 +731,14 @@ class Cm3App extends React.Component {
     const qCounts = { all: queue.length, held: queue.filter(x => x.kind === "held").length, video: queue.filter(x => x.kind === "video").length, reported: queue.filter(x => x.kind === "reported").length };
     const qChips = [["all", "Everything"], ["held", "Held by screen"], ["video", "Videos"], ["reported", "Reported"]].map(([id, l]) => { const on = s.modFilter === id; return { label: l, n: String(qCounts[id]), sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#e8e5dd", go: () => set({ modFilter: id }) }; });
     const qItems = queue.filter(x => s.modFilter === "all" || x.kind === s.modFilter).map(it => { const nm = it.author || it.name || "Member", k = qKinds[it.kind] || qKinds.held, first = nm.split(" ")[0];
-      return { name: nm, ini: cm3Ini(nm), tone: cm3Tone(it.authorKey), centre: it.centre || "", ago: cm3Ago(it.createdAt), type: it.isComment ? "Reply" : "Post", chName: it.channel || "", body: it.body, why: it.why, tag: it.kind === "reported" ? "Reported ×" + it.reportCount : k[0], tagBg: k[1], tagFg: k[2], tagIcon: k[3], isVideo: it.mediaType === "video",
+      return { name: nm, ini: cm3Ini(nm), tone: cm3Tone(it.authorKey), centre: it.centre || "", ago: cm3Ago(it.createdAt), type: it.isComment ? "Reply" : "Post", chName: it.channel || "", body: it.body, why: it.why, tag: it.kind === "reported" ? "Reported ×" + it.reportCount : k[0], tagBg: k[1], tagFg: k[2], tagIcon: k[3], isVideo: !it.isComment && it.mediaType === "video" && !!it.mediaUrl,
+        /* What is being approved, shown: a moderator used to approve a held photo or clip from its caption alone. */
+        videoEl: !it.isComment && it.mediaType === "video" && it.mediaUrl ? React.createElement("video", { src: it.mediaUrl, poster: it.mediaPoster || undefined, controls: true, preload: "metadata", playsInline: true, className: "cm3x-qvideo" }) : null,
+        isPhoto: !it.isComment && it.mediaType === "image" && !!it.mediaUrl, photoEl: !it.isComment && it.mediaType === "image" && it.mediaUrl ? React.createElement("img", { src: it.mediaUrl, alt: it.altText || "The photo in this post", className: "cm3x-qphoto", loading: "lazy" }) : null,
+        isDoc: !it.isComment && it.mediaType === "doc", docUrl: !it.isComment && it.mediaType === "doc" ? cm3DocUrl(it.postId) : "",
+        hasReports: (it.reports || []).length > 0, reports: (it.reports || []).slice(0, 6).map(r => ({ by: r.by, reason: r.reason || "No reason given" })),
+        // Editing and messaging work on a post; a reply is approved, hidden or removed.
+        canEdit: !it.isComment, canMessage: !it.isComment,
         approve: () => this.moderate(it, "approve", null, "Approved and published. " + first + " gets a notification."),
         hide: () => this.moderate(it, "hide", null, "Hidden. " + first + " sees a kind note explaining why."),
         remove: () => this.moderate(it, "remove", null, "Removed and logged in the audit trail."),
@@ -620,7 +755,17 @@ class Cm3App extends React.Component {
       return { id: c.caseId, ago: cm3Ago(c.createdAt), surface: (c.source === "report" ? "Report" : c.source === "escalated" ? "Escalated" : "Screen") + " · " + (c.surface === "comment" ? "reply" : "post") + (c.channel ? " · " + ((chBy[c.channel] || {}).name || c.channel) : ""),
         summary: c.note ? c.note + " — “" + String(c.body || "").slice(0, 90) + "”" : "“" + String(c.body || "").slice(0, 140) + "”", lead: c.leadName || "Unassigned", status: c.status === "in_progress" ? "Open · " + (c.mine ? "you" : c.leadName) : c.status === "open" ? "Open · new" : c.status,
         open, sevLabel: sev === "high" ? "High concern" : sev === "medium" ? "Medium concern" : "Low concern", sevBg: sev === "high" ? "#fdf1ef" : "#f1f0eb", sevFg: sev === "high" ? "#7a1a10" : "#3a3a40", bd: open && sev === "high" ? "#f3c7c2" : "#e8e5dd",
-        go: () => NGGApi.admin.community.safeguardingUpdate(c.caseId, c.leadId ? { severity: sev === "high" ? "medium" : "high" } : { take: 1 }).then(() => { this.flash(c.leadId ? "Severity changed. Logged." : "You’ve taken " + c.caseId + ". Access is logged."); NGGApi.admin.community.safeguarding("open").then(r => this.setState({ cases: r.cases || [] })); }).catch(e => this.flash(cm3Err(e))) }; });
+        /* Separate acts, each saying what it does: taking a case, changing its
+           severity, closing it with a note. One "Open case file" button used to
+           flip the severity on every press and never open anything. */
+        canTake: !c.leadId, isMine: !!c.leadId && !!c.mine,
+        take: () => this.caseUpdate(c, { take: 1 }, "You’ve taken " + c.caseId + ". Access is logged."),
+        sevAct: sev === "high" ? "Lower to medium" : "Raise to high",
+        sev: () => this.caseUpdate(c, { severity: sev === "high" ? "medium" : "high" }, "Severity set to " + (sev === "high" ? "medium" : "high") + ". Logged."),
+        close: async () => {
+          const note = await dialog.prompt({ title: "Close " + c.caseId + "?", body: "Say what was done. The note stays on the case and in the audit log.", label: "What was done", multiline: true, cta: "Close the case" });
+          if (note) this.caseUpdate(c, { status: "closed", note }, c.caseId + " is closed. Logged.");
+        } }; });
     const chRows = (s.chanAdmin || []).map(c => { const arch = c.status === "archived"; return { name: c.name, icon: c.icon && /^ph /.test(c.icon) ? c.icon : "ph ph-hash", color: arch ? "#b9b9b4" : c.color, faculty: c.faculty || c.kind, members: String((chBy[c.slug] || {}).members || 0), posts: c.total || c.posts || 0, lead: "", st: arch ? "Archived" : "Active", stBg: arch ? "#f1f0eb" : "#e5efe7", stFg: arch ? "#3a3a40" : "#1d4f2a", nameFg: arch ? "#6b6b72" : "#0b0b0c", toggleLabel: arch ? "Restore" : "Archive",
       toggle: () => NGGApi.admin.community.channelUpsert({ channelId: c.channelId, name: c.name, slug: c.slug, color: c.color, kind: c.kind, faculty: c.faculty, icon: c.icon, description: c.description, rules: c.rules, sortOrder: c.sortOrder, pinned: c.pinned, status: arch ? "active" : "archived" }).then(() => { this.flash((arch ? "Restored " : "Archived ") + c.name + "."); this.loadMod(); }).catch(e => this.flash(cm3Err(e))) }; });
     const H = s.health || { stats: [], days: [], centres: [], top: [], quiet: [] }, maxDay = Math.max(1, ...H.days.map(d => d[1]));
@@ -637,13 +782,17 @@ class Cm3App extends React.Component {
     const about = { desc: cur.desc, members: (cur.members || 0).toLocaleString("en"), posts: String(cur.posts || 0), lead: "The community team", leadIni: "NG", leadTone: "#f5b026", who: cur.kind === "commons" ? "Everyone in NGG can read this — " + (B.everyone || 0).toLocaleString("en") + " people across " + B.centres + " centres." : "Members of this course and their mentors. The community team can read every channel." };
     const railTask = staff ? staffHw.find(h => !hwScope || h.ch === hwScope) : myHw.find(h => (!hwScope || h.ch === hwScope) && (h.me === "todo" || h.me === "late")) || myHw.find(h => !hwScope || h.ch === hwScope);
     let rh = {};
-    if (railTask) { const st = this.hwStats(railTask); rh = { title: railTask.title, due: railTask.dueShort, staff, student: !staff, wR: (st.total ? st.r / st.total * 100 : 0) + "%", wW: (st.total ? st.w / st.total * 100 : 0) + "%", line: staff ? st.handed + " of " + st.total + " handed in · " + st.w + " waiting for you" : (ST[railTask.me] || ST.todo)[0] + " · " + ((chBy[railTask.ch] || {}).name || ""), cta: staff ? "Open tracker" : railTask.me === "todo" ? "Hand it in" : "View", go: goView("homework", { hwSel: railTask.id }) }; }
+    if (railTask) { const st = this.hwStats(railTask); rh = { title: railTask.title, due: railTask.dueShort, staff, student: !staff, wR: (st.total ? st.r / st.total * 100 : 0) + "%", wW: (st.total ? st.w / st.total * 100 : 0) + "%", line: staff ? st.handed + " of " + st.total + " handed in · " + st.w + " waiting for you" : (ST[railTask.me] || ST.todo)[0] + " · " + ((chBy[railTask.ch] || {}).name || ""), cta: staff ? "Open tracker" : railTask.me === "todo" || railTask.me === "late" ? "Hand it in" : "View", go: goView("homework", { hwSel: railTask.id }) }; }
     const promise = [{ icon: "ph ph-hand-heart", t: "Be kind.", d: "Say what you liked, then one thing to try." }, { icon: "ph ph-lock-key", t: "Keep private things private.", d: "No phone numbers, addresses or other apps." }, { icon: "ph ph-flag", t: "Tell someone.", d: "If anything feels wrong, report it or tell your mentor. You won’t be in trouble." }];
 
-    const tPost = s.thread ? visible.find(p => p.id === s.thread) : null;
+    const tPost = s.thread ? (visible.find(p => p.id === s.thread) || (opened && opened.id === s.thread ? opened : null)) : null;
     const tp = tPost ? pv(tPost) : {};
-    const tComments = tPost ? (s.comments[tPost.id] || []).map(c => { const nm = c.name || "Member"; return { name: nm, ini: cm3Ini(nm), tone: cm3Tone(c.authorKey), hasRole: !!c.staff, role: c.role || "Staff", ago: cm3Ago(c.createdAt), body: c.body, segs: this.segs(c.body), answer: !!c.isAnswer, pending: c.status !== "published", bg: c.isAnswer ? "#eef6f0" : "#f6f5f1", bd: c.isAnswer ? "#cfe3d3" : "transparent",
-      canMark: tPost.kind === "question" && c.status === "published" && (staff || tPost.isMine) && !c.isMe, mark: () => this.markAnswer(tPost.id, c.commentId) }; }) : [];
+    const tComments = tPost ? (s.comments[tPost.id] || []).filter(c => !s.hidden[c.commentId]).map(c => { const nm = c.name || "Member"; return { name: nm, ini: cm3Ini(nm), tone: cm3Tone(c.authorKey), hasRole: !!c.staff, role: c.role || "Staff", ago: cm3Ago(c.createdAt), body: c.body, segs: this.segs(c.body), answer: !!c.isAnswer, pending: c.status !== "published", bg: c.isAnswer ? "#eef6f0" : "#f6f5f1", bd: c.isAnswer ? "#cfe3d3" : "transparent",
+      canMark: tPost.kind === "question" && c.status === "published" && (staff || tPost.isMine) && !c.isMe, mark: () => this.markAnswer(tPost.id, c.commentId),
+      /* A reply can be reported like a post (that is where unkindness happens), and its author can take it back. */
+      canReport: !c.isMe && !!c.commentId, reportLabel: "Report " + nm.split(" ")[0] + "’s reply", report: () => set({ report: { id: c.commentId, type: "comment", reason: null } }),
+      canDelete: !!c.isMe && !!c.commentId, del: () => this.removeReply(tPost.id, c), hasActs: !!c.commentId }; }) : [];
+    const tErr = tPost ? !!(s.commentsErr || {})[tPost.id] && !(s.comments[tPost.id] || []).length : false;
     const rchkRaw = s.reply.trim().length > 3 ? this.check(s.reply) : null;
     const rchk = rchkRaw && rchkRaw.v !== "ok" ? { ...rchkRaw, bg: "#fdf1d6", fg: "#6b4b00" } : {};
 
@@ -675,7 +824,7 @@ class Cm3App extends React.Component {
       const dueOpts = [2, 4, 7].map(d => { const x = new Date(Date.now() + d * 86400000); x.setHours(18, 0, 0, 0); return x; }).map(x => x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0") + " 18:00");
       compV = {
         compOpen: true, compTitle: { post: "New post", question: "Ask a question", work: "Show your work", poll: "New poll", announce: "New announcement", homework: "Set homework" }[c.type],
-        compTypes: compTypesBase.map(t => { const on = c.type === t[0]; return { label: t[1], icon: t[2], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#e8e5dd", go: () => set({ comp: { ...c, type: t[0] } }) }; }),
+        compTypes: compTypesBase.map(t => { const on = c.type === t[0]; return { label: t[1], icon: t[2], sel: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c", bd: on ? "#0b0b0c" : "#e8e5dd", go: () => set({ comp: { ...c, type: t[0], ch: t[0] === "homework" && c.ch === "commons" ? ((myChans.find(x => x.slug !== "commons") || {}).slug || c.ch) : c.ch } }) }; }),
         compCh: c.ch, compChans: myChans.filter(x => !(c.type === "homework" && x.slug === "commons")), onCompCh: e => set({ comp: { ...c, ch: e.target.value } }),
         compAudience: cc.kind === "commons" ? "Everyone in NGG · " + (B.everyone || 0).toLocaleString("en") + " people across " + B.centres + " centres" : (cc.members ? cc.members + " people in " + cc.name : "Everyone in " + cc.name) + " · their mentors can read",
         compIsHw: c.type === "homework", hwTitle: c.hwTitle, onHwTitle: e => set({ comp: { ...c, hwTitle: e.target.value } }), hwDue: c.hwDue, onHwDue: e => set({ comp: { ...c, hwDue: e.target.value } }),
@@ -683,7 +832,7 @@ class Cm3App extends React.Component {
         compLabel: LB[c.type], compPh: PH[c.type] + (mk2 === "video" ? " Add chapters as lines like “0:00 Intro”." : ""), compText: c.text, onCompText: e => { let t = e.target.value; const extra = {};
           /* The slash shortcuts the previous composer had: /poll turns the post into a poll, /shrug types one. */
           if (/^\/poll\s$/.test(t)) { t = ""; extra.type = "poll"; } else if (/\/shrug\s$/.test(t)) t = t.replace(/\/shrug\s$/, "¯\\_(ツ)_/¯ ");
-          set({ comp: { ...c, text: t, ...extra } }); this.draft(c.ch, t); this.typingPing(); },
+          set({ comp: { ...c, text: t, ...extra } }); this.draft(c.ch, t); this.typingPing(c.ch); },
         compHasHelp: !!HELP[c.type] && !c.text.trim(), compHelp: () => set({ comp: { ...c, text: HELP[c.type] } }),
         compTagNote: c.up ? "Uploading… " + c.up + "%" : staff ? "Type @ to mention someone, or @all to notify the whole channel." : "Type @ to mention someone.",
         hasMentionSug: mentionSug.length > 0, mentionSug, hasTagged: tagged.length > 0, tagged, taggedLine,
@@ -713,7 +862,7 @@ class Cm3App extends React.Component {
         stats: [{ v: String(mineP.length), l: "posts here" }, { v: String(mineP.reduce((t, p) => t + p.n, 0)), l: "replies to them" }, { v: String(stars), l: "Genius Stars" }],
         chans: sh.map(ch => ({ name: ch.name, icon: ch.icon, color: ch.color, go: () => { set({ card: null }); this.goCh(ch.slug)(); } })),
         mention: () => { set({ card: null }); this.openComp("post"); setTimeout(() => this.setState(st => ({ comp: st.comp ? { ...st.comp, text: "@" + this.handle(pp.name) + " " } : st.comp })), 0); },
-        posts: () => this.setState({ card: null, view: "home", filter: "all", q: pp.name.split(" ")[0], thread: null }, () => this.loadFeed(true)),
+        posts: () => this.setState({ card: null, view: "home", filter: "all", q: "", byAuthor: { key: k, name: pp.name }, thread: null }, () => this.loadFeed(true)),
         note: pp.staff ? "Ask " + pp.name.split(" ")[0] + " in your channel so everyone can learn from the answer." : "There are no private messages in Community. To talk 1-to-1, use your mentor in My NGG." };
     }
     const slides = s.slides.length ? s.slides : [{ kind: "news", tag: "This week at NGG", icon: "ph ph-sparkle", title: "Welcome to the Community", d: "Share what you made, ask when you’re stuck, and cheer each other on.", cta: "" }];
@@ -731,36 +880,34 @@ class Cm3App extends React.Component {
       ...base, ready: true, narrow, isStudent: !staff,
       showAside: !narrow || s.sheet, asidePos: narrow ? "absolute" : "relative", asideW: narrow ? "min(320px, 86%)" : "256px", asideSh: narrow ? "0 0 40px rgba(0,0,0,.2)" : "none", sheetScrim: narrow && s.sheet, openSheet: () => set({ sheet: true }), closeSheet: () => set({ sheet: false }),
       meCentre: role === "admin" ? "Community team · all centres" : (me0.centre ? me0.centre + " centre" : "NGG"), meName: me0.name, meIni: cm3Ini(me0.name), meTone: cm3Tone(meKey), meRole: me0.roleLabel, roles, showRoles: false,
-      q: s.q, onQ: e => { const v = e.target.value; this.setState({ q: v, view: s.view === "channel" ? "channel" : "home", chTab: "posts" }); clearTimeout(this.qT); this.qT = setTimeout(() => { if (this.state.view === "home") this.loadFeed(true); }, 350); },
+      q: s.q, onQ: e => { const v = e.target.value; this.setState({ q: v, view: s.view === "channel" ? "channel" : "home", chTab: "posts" }); clearTimeout(this.qT); this.qT = setTimeout(() => { if (this.state.view === "home" || this.state.view === "channel") this.loadFeed(true); }, 350); },
       newPost: () => this.openComp("post"), setHw: () => this.openComp("homework"),
       navViews, navChans, navTools, myChanN: String(myChans.length),
       headPad: narrow ? "8px 16px 12px" : "18px 28px 14px", bodyPad: narrow ? "14px 16px 100px" : "20px 28px 48px", maxW: onMod ? "1040px" : onFiles || s.view === "arcade" ? "900px" : "720px", h1Size: narrow ? "19px" : "23px",
       title, sub, hasHeadTile, headIcon: cur.icon, headColor: cur.color,
       showDigestBtn: s.view === "home" && s.filter === "all", digestExp: s.digest ? "true" : "false", digestBtnLabel: narrow ? "Catch up" : "Catch me up",
-      toggleDigest: () => { set({ digest: !s.digest }); if (!s.digest && !s.digestText) this.api().digest("all").then(r => set({ digestText: r.digest || "Nothing new since you last looked." })).catch(() => set({ digestText: "Couldn’t write a summary just now. Your unread posts are under Unread." })); },
+      toggleDigest: () => { set({ digest: !s.digest }); if (!s.digest) this.loadDigest(); },
       hasTabs, tabs, tabsLabel,
       onFeed, showChips: narrow && s.view === "home", showHero: s.view === "home" && s.filter === "all" && !s.q.trim(), sl, carDots, carPos: (ci + 1) + " / " + nS, carMinH: narrow ? "190px" : "176px", quoteSize: narrow ? "24px" : "30px", newsSize: narrow ? "21px" : "25px",
       carPrev: () => set({ car: ci - 1 }), carNext: () => set({ car: ci + 1 }), carToggle: () => set({ carPaused: !s.carPaused }), carToggleLabel: s.carPaused ? "Play slideshow" : "Pause slideshow", carToggleIcon: s.carPaused ? "ph-fill ph-play" : "ph-fill ph-pause",
       pauseCar: () => { this.carHover = true; }, resumeCar: () => { this.carHover = false; },
       shareQuote: () => { const t = (cs.quote || cs.title || "") + (cs.by ? " — " + cs.by : ""); try { if (navigator.share) navigator.share({ text: t }).catch(() => {}); else { navigator.clipboard.writeText(t); this.flash("Quote copied. Paste it anywhere."); } } catch (e) { this.flash(t); } },
       tiles, showTiles: !admin && s.view === "home" && s.filter === "all" && !s.q.trim(),
-      chips, digestOpen: s.digest && s.view === "home", digest: dg, digestMeta: "From your unread posts · " + me0.first,
+      chips, digestOpen: s.digest && s.view === "home", digest: dg, digestMeta: D0 ? D0.digest : "From your unread posts · " + me0.first,
+      digestFoot: D0 && D0.more ? "And " + D0.more + " more under Unread. Open a post to read it in full." : D0 && D0.ai ? "The first line is written by the NGG assistant and can miss things: open a post to read it in full." : "Open a post to read it in full; it then counts as read.",
       showAdminStrip: admin && s.view === "home" && s.filter === "all", queueN: String(s.stats ? s.stats.counts.held + s.stats.counts.video + s.stats.counts.reported : "…"), casesN: String(openCases), goQueue: goView("mod", { modTab: "queue" }), goSg: goView("mod", { modTab: me0.canSafeguard ? "sg" : "queue" }),
       showWaiting: role === "instructor" && s.view === "home" && s.filter === "all", waiting, waitEmpty: !waiting.length, waitMeta: waiting.length ? waiting.length + " waiting" : "",
       showHwStrip: !staff && !!nextTodo && s.view === "home" && s.filter === "all" && !rail, hwStrip,
       promptPh: s.view === "channel" ? "Share something with " + cur.name + "…" : "Share something, ask a question, or show your work…", quickTypes, outLinks: [["My NGG", "ph ph-house", "/dashboard"], ["NGG website", "ph ph-globe-simple", "/"]].map(([l, icon, to]) => ({ l, icon, go: () => { try { history.pushState({}, "", to); dispatchEvent(new PopStateEvent("popstate")); } catch (e) { location.assign(to); } } })), promptRef: this.promptRef, dockCls: (s.dockOn ? "is-on" : "") + (narrow ? " is-tabbed" : ""), dockHidden: s.dockOn ? "false" : "true", dockTab: s.dockOn ? "0" : "-1",
       typing: s.view === "channel" && !!s.typing, typingText: s.typing,
       feed, feedEmpty: !feed.length,
-      emptyT: emptyLoading ? "Loading posts…" : s.feedErr ? "Couldn’t load the posts" : q ? "Nothing matches “" + s.q.trim() + "”" : F === "unread" ? "You’re all caught up" : F === "saved" ? "Nothing saved yet" : F === "mentions" ? "No mentions yet" : F === "questions" ? "No questions yet" : s.view === "channel" ? "Nothing here yet. Be the first to post in " + cur.name + "." : "Nothing here yet",
+      emptyT: emptyLoading ? "Loading posts…" : s.feedErr ? "Couldn’t load the posts" : s.byAuthor && !q && s.view === "home" ? s.byAuthor.name.split(" ")[0] + " hasn’t posted in your channels yet" : q ? "Nothing matches “" + s.q.trim() + "”" : F === "unread" ? "You’re all caught up" : F === "saved" ? "Nothing saved yet" : F === "mentions" ? "No mentions yet" : F === "questions" ? "No questions yet" : s.view === "channel" ? "Nothing here yet. Be the first to post in " + cur.name + "." : "Nothing here yet",
       emptyD: emptyLoading ? "" : s.feedErr ? s.feedErr + " Pull down or tap Home to try again." : q ? "Try a name, a channel, or fewer words." : F === "saved" ? "Tap the bookmark on any post to keep it here." : F === "unread" ? "New posts in your channels will show up here." : F === "questions" ? "Ask one — someone has probably wondered the same thing." : "Be the first to post.",
-      onHwStudent: onHw && !staff, hwList, hwEmpty: !hwList.length, hwNote: s.hwNote, onHwNote: e => set({ hwNote: e.target.value }),
-      toggleAttach: () => { if (s.hwAttach) return set({ hwAttach: null }); const u = window.prompt("Paste a link to your work (a screenshot can be posted in the channel):", "https://"); if (u && /^https?:\/\/\S+\.\S+/.test(u.trim())) set({ hwAttach: u.trim() }); else if (u) this.flash("That doesn’t look like a link."); },
-      attachPressed: s.hwAttach ? "true" : "false", attachBd: s.hwAttach ? "#f5b026" : "#e8e5dd", attachBg: s.hwAttach ? "#fdf6e3" : "#fff", attachIcon: s.hwAttach ? "ph-fill ph-check-circle" : "ph ph-link", attachLabel: s.hwAttach ? "Link added" : "Add a link to your work",
-      onHwStaff: onHw && staff, staffTasks, hasTracker: !!sel, noTracker: !sel, tr, trRows, trFilters,
+      onHwStudent: onHw && !staff, hwList, hwEmpty: !hwList.length && s.hw !== null, hwErrOn: !!s.hwErr, hwErr: s.hwErr || "", hwRetry: () => this.loadHw(), hwLoading: s.hw === null && !s.hwErr,       onHwStaff: onHw && staff, staffTasks, hasTracker: !!sel, noTracker: !sel && s.hw !== null, tr, trRows, trFilters,
       onFiles, fileChips, files, filesEmpty: !files.length,
       onPeople: s.view === "channel" && s.chTab === "people", people,
       onJournal: s.view === "journal", journalEl: s.view === "journal" && typeof CmJournalMine === "function" ? React.createElement(Cm3Journal, { auth: this.props.auth, onWrite: seed => this.setState({ writing: seed }) }) : null,
-      offlineEl: s.offline ? React.createElement("p", { className: "cm3x-offline", role: "status" }, "You’re offline. What you write is kept as a draft; it posts when you’re back online.") : null,
+      offlineEl: s.offline ? React.createElement("p", { className: "cm3x-offline", role: "status" }, "You’re offline. What you’re writing is kept as a draft on this device — press Post again once you’re back online.") : null,
       onArcade: s.view === "arcade", arcadeEl: s.view === "arcade" && typeof CmArcade === "function" ? React.createElement(CmArcade, { auth: this.props.auth }) : null,
       modLocked: s.view === "mod" && s.modLocked, modGateEl: s.view === "mod" && s.modLocked && typeof AdminTotpGate === "function" ? React.createElement("div", { className: "cm3x-gate" }, React.createElement("p", null, "Moderation needs your two-step code, the same as the Control Room."), React.createElement(AdminTotpGate, { member: this.props.auth && this.props.auth.member, onPass: () => { this.setState({ modLocked: false }); this.loadMod(); } })) : null,
       onMod, modStats, modQueue: onMod && s.modTab === "queue", qChips, qItems, qEmpty: !qItems.length, modSg: onMod && s.modTab === "sg" && me0.canSafeguard, caseItems, modChannels: onMod && s.modTab === "channels", chRows,
@@ -768,8 +915,8 @@ class Cm3App extends React.Component {
       modSettings: onMod && s.modTab === "settings", modes, modeAskOpen: !!s.modeAsk, modeAskText, modeNow: mode[0].toUpperCase() + mode.slice(1), cancelMode: () => set({ modeAsk: null }),
       confirmMode: () => { const m = s.modeAsk; NGGApi.admin.community.moderation(m).then(r => { set({ modeAsk: null, boot: Object.assign({}, B, { mode: m }) }); this.flash("Mode set to " + m + ". " + (r.released ? r.released + " held items released. " : "") + "Change logged."); this.loadMod(); }).catch(e => { set({ modeAsk: null }); this.flash(cm3Err(e)); }); },
       showRail: rail && !threadOpen && (s.view === "home" || s.view === "channel"), railAbout: s.view === "channel", about, railHw: !!railTask && !admin, rh, railStars: staff && !admin, starsLeftLabel: s.stars + " Genius Stars left today", promise,
-      threadOpen, threadOverlay: threadOpen && !rail, thPos: rail ? "relative" : "absolute", thW: narrow ? "100%" : "420px", tp, tComments, tEmpty: !tComments.length, closeThread: () => set({ thread: null, reply: "" }),
-      reply: s.reply, onReply: e => set({ reply: e.target.value }), sendReply: () => this.sendReply(), replyOff: !s.reply.trim() || s.busy, sendBg: s.reply.trim() ? "#0b0b0c" : "#b9b9b4", replyPh: tPost && tPost.kind === "question" && staff ? "Answer the question…" : "Say something kind and specific…", hasReplyChk: !!rchk.msg, rchk,
+      threadOpen, threadOverlay: threadOpen && !rail, thPos: rail ? "relative" : "absolute", thW: narrow ? "100%" : "420px", tp, tComments, tEmpty: !tComments.length && !tErr, tErr, tRetry: () => { this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [tPost.id]: false }) })); this.loadComments(tPost.id); }, closeThread: () => set({ thread: null, reply: "" }),
+      reply: s.reply, onReply: e => { set({ reply: e.target.value }); if (tPost) this.typingPing(tPost.ch); }, sendReply: () => this.sendReply(), replyOff: !s.reply.trim() || s.busy, sendBg: s.reply.trim() ? "#0b0b0c" : "#b9b9b4", replyPh: tPost && tPost.kind === "question" && staff ? "Answer the question…" : "Say something kind and specific…", hasReplyChk: !!rchk.msg, rchk,
       ...compV, closeComp: () => set({ comp: null }), submit: () => this.submit(),
       modalAlign: narrow ? "flex-end" : "center", modalPad: narrow ? "0" : "24px", modalR: narrow ? "20px 20px 0 0" : "16px",
       reportOpen: !!rp, reasons, reportSafety: !!rp && rp.reason === "safety", reportOff: !(rp && rp.reason), reportBtnBg: rp && rp.reason ? (rp.reason === "safety" ? "#b42318" : "#0b0b0c") : "#b9b9b4", closeReport: () => set({ report: null }), sendReport: () => this.sendReport(),
@@ -784,7 +931,7 @@ class Cm3App extends React.Component {
   viewerValues(narrow, W, person, meKey) {
     const s = this.state, set = o => this.setState(o), vwS = s.viewer;
     if (!vwS) return { viewerOpen: false };
-    const vp = s.posts.find(x => x.id === vwS.post), md = s.media[vwS.post] || {}, author = vp ? person(vp.author) : { name: "" };
+    const vp = this.postById(vwS.post), md = s.media[vwS.post] || {}, author = vp ? person(vp.author) : { name: "" };
     const nRep = vp ? vp.n : 0;
     const vw = { post: vwS.post, hasPost: !!vp, replies: nRep ? nRep + (nRep === 1 ? " reply" : " replies") : "Reply", openPost: () => { this.closeViewer(); set({ thread: vwS.post }); this.loadComments(vwS.post); }, icon: { video: "ph-fill ph-play-circle", doc: "ph ph-file-pdf", code: "ph ph-code" }[vwS.type] || "ph ph-file", title: vwS.name || "", sub: "" };
     const VW = { viewerOpen: true, vw, vIsVideo: vwS.type === "video", vIsPdf: vwS.type === "doc", vIsCode: vwS.type === "code", closeViewer: () => this.closeViewer() };
@@ -858,13 +1005,13 @@ class Cm3App extends React.Component {
       const n = s.pdfPages || vwS.pages || 1, pi = Math.min(s.page || 0, n - 1), zm = s.zoom || 100;
       vw.title = vwS.name || "Document"; vw.sub = "Shared by " + author.name.split(" ")[0] + " · " + n + (n === 1 ? " page" : " pages");
       Object.assign(VW, { pdfRail: !narrow && n > 1, pdfThumbs: Array.from({ length: Math.min(n, 60) }, (_, i) => ({ h: "Page " + (i + 1), n: String(i + 1), label: "Page " + (i + 1), cur: i === pi ? "page" : undefined, ring: i === pi ? "#f5b026" : "transparent", go: () => set({ page: i }) })),
-        pdfPageEl: /pdf$/i.test((s.posts.find(p => p.id === vwS.post) || { media: {} }).media.format || "pdf") ? React.createElement(Cm3PdfPage, { url: cm3DocUrl(vwS.post), dl: cm3DocUrl(vwS.post, true), page: pi, zoom: zm, onPages: k => this.setState({ pdfPages: k }) }) : React.createElement("div", { className: "cm3x-pdf-msg" }, React.createElement("p", null, "This kind of file can’t be previewed here."), React.createElement("a", { className: "cm3x-pdf-dl", href: cm3DocUrl(vwS.post, true), download: vwS.name || "" }, React.createElement("i", { className: "ph ph-download-simple", "aria-hidden": "true" }), "Download it to open it")),
+        pdfPageEl: /pdf$/i.test((this.postById(vwS.post) || { media: {} }).media.format || "pdf") ? React.createElement(Cm3PdfPage, { url: cm3DocUrl(vwS.post), dl: cm3DocUrl(vwS.post, true), page: pi, zoom: zm, onPages: k => this.setState({ pdfPages: k }) }) : React.createElement("div", { className: "cm3x-pdf-msg" }, React.createElement("p", null, "This kind of file can’t be previewed here."), React.createElement("a", { className: "cm3x-pdf-dl", href: cm3DocUrl(vwS.post, true), download: vwS.name || "" }, React.createElement("i", { className: "ph ph-download-simple", "aria-hidden": "true" }), "Download it to open it")),
         pgLabel: "Page " + (pi + 1) + " of " + n, pgPrev: () => set({ page: Math.max(0, pi - 1) }), pgNext: () => set({ page: Math.min(n - 1, pi + 1) }), pgPrevOff: pi === 0, pgNextOff: pi >= n - 1,
         zoomLabel: zm + "%", zoomIn: () => set({ zoom: Math.min(200, zm + 25) }), zoomOut: () => set({ zoom: Math.max(50, zm - 25) }), pdfDownload: () => { const a = document.createElement("a"); a.href = cm3DocUrl(vwS.post, true); a.download = vwS.name || ""; document.body.appendChild(a); a.click(); a.remove(); } });
     }
     if (vwS.type === "code") {
       const orig = md.code || "", src = s.codeSrc == null ? orig : s.codeSrc, ran = s.codeRan == null ? orig : s.codeRan, lines = src.split("\n").length;
-      const vc = (s.posts.find(p => p.id === vwS.post) || { media: {} }).media;
+      const vc = (this.postById(vwS.post) || { media: {} }).media;
       vw.title = vc.title || "index.html"; vw.sub = "Shared by " + author.name.split(" ")[0] + " · your edits stay on your device";
       Object.assign(VW, { codeSrc: md.code == null ? "Loading…" : src, onCode: e => set({ codeSrc: e.target.value }), codeKey: e => { if (e.key === "Tab") { e.preventDefault(); const el = e.target, a0 = el.selectionStart, b0 = el.selectionEnd, v = el.value.slice(0, a0) + "  " + el.value.slice(b0); set({ codeSrc: v }); setTimeout(() => { el.selectionStart = el.selectionEnd = a0 + 2; }, 0); } if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); set({ codeRan: src, codeRunN: (s.codeRunN || 0) + 1 }); } },
         codeNums: Array.from({ length: lines }, (_, i) => i + 1).join("\n"), codeLineN: String(lines + 1), codeDirty: src !== orig,
