@@ -2530,3 +2530,19 @@ owner reported while it ran.
   | cr-core | 74/0 |
   | timetable-core | 62/0 |
   | route-registry | 60/0 |
+- **Follow-up ("it still uses the default account's credits").**
+  - Why it happened: the switch only fired at `high` (85%), and only at the six-hourly check.
+  - It now fires at `warn` (70%), and failback happens under 70%.
+  - A passing backup key test runs `media_usage_refresh(true)` at once.
+  - New op `admin.media.account` (`backup` | `primary` | `auto`, settings cap) sets `cloudinary_pin`. A pin overrides both the monitor and the upload-refusal failover until it is cleared.
+  - Diagnostics → Image storage shows the account in use and the switch button.
+  - Still unavoidable: bandwidth for photos already delivered from the main account.
+
+### Merge: the other session's several-accounts Cloudinary, plus 70% and a manual choice
+
+- **What was merged.** The other session replaced the single backup with `media_accounts()`: up to 8 accounts in order, browser-upload refusals reported back and confirmed by the server, a per-account check, and move up/down, pause and remove. That is the base now; my single-backup code is gone.
+- **Ported onto it:**
+  - `media_pick_id()` hands over from `warn` (70%), then `high`, then `critical`.
+  - `cloudinary_pin` names an account chosen in the account drawer ("Use for new uploads now" / "Back to automatic", op `admin.media.account`, settings cap). It is honoured until that account is full.
+  - A passing backup key test reads usage at once.
+- **Tests:** 10 more checks in `api/tests/run.php`.

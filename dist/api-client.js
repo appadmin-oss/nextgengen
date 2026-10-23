@@ -1795,6 +1795,7 @@
       /* Is it broken, and did anyone notice. */
       media: {
         usage:   (refresh) => request('/admin/media.php' + (refresh ? '?refresh=1' : '')),
+        account: (use) => request('/admin/media.php', { body: { action: 'account', use } }),
         purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
         objects: () => request('/admin/media.php?view=objects'),
         sweep:   () => request('/admin/media.php', { body: { action: 'sweepObjects' } }),

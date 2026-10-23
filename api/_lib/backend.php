@@ -655,6 +655,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.fees'                 => 'member_fees_account',
             'member.fees.pay'             => 'member_fees_pay',
             'admin.media.usage'           => 'admin_media_usage',
+            'admin.media.account'         => 'admin_media_account',
             'admin.media.objects'         => 'admin_media_objects',
             'member.upload.done'          => 'media_obj_confirm',
             'member.tools.decks'          => 'study_decks',

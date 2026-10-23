@@ -387,6 +387,8 @@ function admin_keys_test(array $p): array {
             $r = cloudinary_with_account('backup', fn() => media_api('GET', '/usage'));
             $code = (int)($r['code'] ?? 0);
             $pc = is_array($r['body'] ?? null) && ($cp = media_part($r['body'], 'credits')) ? $cp['pct'] : null;
+            // Keys that work are acted on now, not at the next six-hourly check: a main account already past 70% hands over at once.
+            if ($code >= 200 && $code < 300) media_usage_refresh(true);
             return ['ok' => true] + $done(['pass' => $code >= 200 && $code < 300, 'detail' => $code >= 200 && $code < 300
                 ? 'Cloudinary accepted the backup account' . ($pc !== null ? ' (' . round((float)$pc) . '% of its credits used)' : '') . '. ' . (cloudinary_active() === 'backup' ? 'It is in use now.' : 'It takes over when the main account runs low.')
                 : 'Cloudinary refused the backup account (HTTP ' . $code . ').']);

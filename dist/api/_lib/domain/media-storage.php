@@ -344,7 +344,13 @@ function media_cloud_of(string $url): string {
 /** The account uploads should go to: the first with room. Null when every one is full. */
 function media_pick_id(): ?string {
     $accs = media_accounts();
-    foreach (['high', 'critical'] as $below)
+    // An operator's choice comes first, while that account is not full (Diagnostics → Image storage).
+    $pin = media_pin();
+    if ($pin !== '') foreach ($accs as $a) if ($a['id'] === $pin && MEDIA_LEVEL_ORDER[(string)(media_state_raw($a['id'])['level'] ?? 'ok')] < MEDIA_LEVEL_ORDER['critical']) return $a['id'];
+    /* From 70% (`warn`) the next account takes over: the others are there to spare
+       the main account's credits, not to rescue it once spent. Then below `high`,
+       then anything not full. */
+    foreach (['warn', 'high', 'critical'] as $below)
         foreach ($accs as $a) if (MEDIA_LEVEL_ORDER[(string)(media_state_raw($a['id'])['level'] ?? 'ok')] < MEDIA_LEVEL_ORDER[$below]) return $a['id'];
     return null;
 }
@@ -374,6 +380,29 @@ function media_cfg_for(?array $acc): array {
     if (!$acc || $acc['id'] === 'primary') return $primary;
     return array_merge($primary, ['cloud_name' => $acc['cloud_name'], 'api_key' => $acc['api_key'], 'api_secret' => $acc['api_secret'], 'unsigned_preset' => (string)($acc['unsigned_preset'] ?? '')]);
 }
+/** The account an operator chose for new uploads ('' = automatic). Ignored once that account is removed or paused. */
+function media_pin(): string {
+    $v = function_exists('setting_raw') ? (string)setting_raw('cloudinary_pin') : '';
+    return $v !== '' && media_account($v) ? $v : '';
+}
+/**
+ * admin.media.account — send new uploads to one account now (`use` = its id),
+ * held until changed, or back to automatic (`use` = 'auto'). A full account is
+ * still skipped, so a choice can never stop uploads.
+ */
+function admin_media_account(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $use = (string)($p['use'] ?? '');
+    if ($use !== 'auto' && !media_account($use)) return ['ok' => false, 'error' => 'not_found', 'detail' => 'That account is not set up, or is paused.'];
+    $was = media_active_id();
+    setting_set('cloudinary_pin', $use === 'auto' ? '' : $use, (string)$g['requester']['memberId']);
+    media_activate(); media_credit_flags();
+    $now = media_active_id();
+    audit('admin.media.account', (string)$g['requester']['memberId'], $use, ['from' => $was, 'to' => $now], (string)($p['ip'] ?? ''));
+    if ($now !== $was) media_switch_notice($was, $now, $use === 'auto' ? 'is back on automatic' : 'was chosen for new uploads');
+    return ['ok' => true, 'uploadsTo' => $now, 'pin' => media_pin()] + admin_media_accounts($p);
+}
+
 /* Names the photo pipeline and the API-keys screen use. */
 function cloudinary_account_apply(): void { media_activate(); }
 function cloudinary_active(): string { return media_active_id(); }
@@ -510,7 +539,7 @@ function admin_media_accounts(array $p): array {
         'keyEnds' => substr((string)$r['apiKey'], -4), 'primary' => false, 'enabled' => false, 'active' => false, 'level' => 'ok', 'pct' => null, 'parts' => [], 'plan' => '',
         'checkedAt' => '', 'error' => '', 'addedAt' => (string)($r['addedAt'] ?? ''), 'addedBy' => (string)($r['addedBy'] ?? '')];
     $pick = media_pick_id();
-    return ['ok' => true, 'accounts' => $out, 'uploadsTo' => $pick, 'max' => MEDIA_ACCOUNTS_MAX, 'primaryConfigured' => (bool)media_account('primary')];
+    return ['ok' => true, 'accounts' => $out, 'uploadsTo' => $pick, 'pin' => media_pin(), 'max' => MEDIA_ACCOUNTS_MAX, 'primaryConfigured' => (bool)media_account('primary')];
 }
 
 /** Ask Cloudinary whether a set of keys works, before keeping them. */

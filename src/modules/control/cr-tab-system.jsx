@@ -59,7 +59,7 @@ function crSyAccountBlocks(A, ctx) {
   const accs = A.accounts || [], live = accs.filter(a => a.enabled);
   const where = A.uploadsTo ? (accs.find(a => a.id === A.uploadsTo) || {}).label : "";
   const out = [{ type: "table", span: 6, title: "Cloudinary accounts", nosel: true,
-    sub: live.length > 1 ? "New uploads go to " + (where || "no account: every plan is full") + ". The first account in this order with room takes them; a full plan hands over by itself, and takes them back when it resets."
+    sub: live.length > 1 ? "New uploads go to " + (where || "no account: every plan is full") + (A.pin ? ", as you chose: open an account to go back to automatic." : ". The first account in this order under 70% used takes them; a plan past that hands over by itself, and takes them back when it resets. Open an account to send uploads there now.")
       : "One account. Add another to get more room: when this plan fills, new uploads move to the next account by themselves.",
     cols: ["Account", "Cloud", { l: "Used", num: true }, "State"],
     rows: accs.map((a, i) => {
@@ -68,7 +68,7 @@ function crSyAccountBlocks(A, ctx) {
       return { key: a.id, cells: [ { k: "strong", t: a.label, s: a.settings ? (a.primary ? "Main account" : "Backup") + " · Settings → API keys" : "Added " + (a.addedAt ? crAgo(a.addedAt) + " ago" : "") },
         { k: "mono", t: a.cloudName, s: "Key ends " + a.keyEnds }, { k: "num", t: a.pct == null ? "—" : Math.round(a.pct) + "%", v: a.pct == null ? -1 : a.pct },
         { k: "status", t: state[0], tone: state[1] }],
-        open: () => crSyAccountDrawer(a, i, accs, ctx) };
+        open: () => crSyAccountDrawer(a, i, accs, ctx, A.pin || "") };
     }), emptyText: "No Cloudinary account yet." }];
   if (accs.filter(a => !a.settings).length < (A.max || 8)) out.push({ type: "note", span: 6, icon: "plus-circle",
     text: "Add a Cloudinary account: a free one from cloudinary.com, signed up with another email address, adds its own credits and storage.",
@@ -76,12 +76,15 @@ function crSyAccountBlocks(A, ctx) {
     act: { l: "Add an account…", run: () => crSyAccountForm(null, ctx) } });
   return out;
 }
-function crSyAccountDrawer(a, i, accs, ctx) {
+function crSyAccountDrawer(a, i, accs, ctx, pin) {
   const extras = accs.filter(x => !x.settings), xi = extras.findIndex(x => x.id === a.id);
   const act = (l, fn, okMsg) => ({ l, run: async () => { try { await fn(); ctx.closeDrawer(); ctx.toast(okMsg); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "That didn’t work."), null, true); } } });
   const parts = a.parts || {}, name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth", transformations: "Transformations" };
   const actions = [];
   if (a.enabled) actions.push(Object.assign(act("Check usage now", () => NGGApi.admin.media.accountCheck(a.id), "Checked " + a.label + "."), { primary: true }));
+  /* Choose where new uploads go, now: held until Back to automatic (a full account is still skipped). */
+  if (a.enabled && pin !== a.id && !a.active) actions.push(act("Use for new uploads now", () => NGGApi.admin.media.account(a.id), "New photos and edits now go to " + a.label + "."));
+  if (pin) actions.push(act("Back to automatic", () => NGGApi.admin.media.account("auto"), "Automatic again: the next account takes over from 70% used."));
   if (!a.settings) {
     if (xi > 0) actions.push(act("Move up", () => NGGApi.admin.media.accountMove(a.id, "up"), a.label + " moved up."));
     if (xi >= 0 && xi < extras.length - 1) actions.push(act("Move down", () => NGGApi.admin.media.accountMove(a.id, "down"), a.label + " moved down."));
