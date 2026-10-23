@@ -2450,3 +2450,10 @@ chain in an edited URL re-runs inside every copy built on it):
 - **Tests.** 13 checks in `api/tests/run.php`. `__cld_upload_http` is a new test seam for the upload's HTTP exchange.
 - **No duplicate copies.** A photo copied off the spent account is uploaded under a fixed name (`copy_<md5 of its base URL>`, `overwrite=false`), so editing it again returns the copy already there instead of storing a second one. The main account's original stays, so existing links keep working, and it costs nothing new there.
 - **Upload preset.** The main account's unsigned upload preset is never carried to the backup, because it doesn't exist there. The backup can name its own (`cloudinary.backup.unsigned_preset`, optional). Without one, application-form photos go to the site's own store while the backup is in use.
+- **Follow-up ("it still uses the default account's credits").**
+  - Why it happened: the switch only fired at `high` (85%), and only at the six-hourly check.
+  - It now fires at `warn` (70%), and failback happens under 70%.
+  - A passing backup key test runs `media_usage_refresh(true)` at once.
+  - New op `admin.media.account` (`backup` | `primary` | `auto`, settings cap) sets `cloudinary_pin`. A pin overrides both the monitor and the upload-refusal failover until it is cleared.
+  - Diagnostics → Image storage shows the account in use and the switch button.
+  - Still unavoidable: bandwidth for photos already delivered from the main account.

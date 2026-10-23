@@ -65,7 +65,15 @@ function cloudinary_backup_over(array $p): array {
 }
 /** 'primary' or 'backup': which account new work goes to. */
 function cloudinary_active(): string {
-    return function_exists('setting_raw') && setting_raw('cloudinary_active') === 'backup' && cloudinary_backup_cfg() ? 'backup' : 'primary';
+    if (!function_exists('setting_raw') || !cloudinary_backup_cfg()) return 'primary';
+    $pin = cloudinary_pin();
+    if ($pin !== '') return $pin;
+    return setting_raw('cloudinary_active') === 'backup' ? 'backup' : 'primary';
+}
+/** An operator's choice that overrides the automatic switch: 'backup', 'primary', or '' (automatic). */
+function cloudinary_pin(): string {
+    $v = function_exists('setting_raw') ? (string)setting_raw('cloudinary_pin') : '';
+    return in_array($v, ['backup', 'primary'], true) ? $v : '';
 }
 /** Lay the live account's keys into $CONFIG['cloudinary']. Idempotent; runs after the API keys are applied. */
 function cloudinary_account_apply(): void {
@@ -98,7 +106,7 @@ function cloudinary_switch(string $to, string $why): bool {
 }
 /** The main account refused work (credits spent): move to the backup now rather than at the next check. */
 function cloudinary_failover(string $why): bool {
-    return cloudinary_active() === 'primary' && cloudinary_switch('backup', $why);
+    return cloudinary_pin() === '' && cloudinary_active() === 'primary' && cloudinary_switch('backup', $why);
 }
 /** The cloud name a res.cloudinary.com URL lives on ('' for anything else). */
 function cloudinary_cloud_of(string $url): string {
@@ -175,8 +183,9 @@ function media_usage_refresh(bool $force = false): array {
     if ($state['pct'] !== null) setting_set('cloudinary_credits_pct', (string)(int)round((float)$state['pct']), 'system');
     if (MEDIA_LEVEL_ORDER[$state['level']] > MEDIA_LEVEL_ORDER[$prev['level'] ?? 'ok']) media_alert($state);
     // Two accounts: from `high` on the main one, the backup takes over; when the main one renews, it comes back.
-    if (cloudinary_backup_cfg()) {
-        if (cloudinary_active() === 'primary' && MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['high']) {
+    // Switching at `warn` (70%), not `high`: the backup is there to spare the main account, not to rescue it once spent.
+    if (cloudinary_backup_cfg() && cloudinary_pin() === '') {
+        if (cloudinary_active() === 'primary' && MEDIA_LEVEL_ORDER[$state['level']] >= MEDIA_LEVEL_ORDER['warn']) {
             if (cloudinary_switch('backup', 'is ' . ($state['pct'] === null ? 'out of' : round((float)$state['pct']) . '% through its') . ' credits')) return media_usage_refresh(true);
         } elseif (cloudinary_active() === 'backup' && empty($GLOBALS['__media_probe'])) {
             $GLOBALS['__media_probe'] = true;
@@ -185,12 +194,13 @@ function media_usage_refresh(bool $force = false): array {
                 $code = (int)($r['code'] ?? 0);
                 if ($code >= 200 && $code < 300 && is_array($r['body'])) {
                     $pc = array_values(array_filter(array_map(static fn($k) => ($p = media_part($r['body'], $k)) ? $p['pct'] : null, ['credits', 'storage', 'bandwidth', 'transformations']), static fn($v) => $v !== null));
-                    if (MEDIA_LEVEL_ORDER[media_level_for($pc ? max($pc) : null)] < MEDIA_LEVEL_ORDER['high'] && cloudinary_switch('primary', 'has credits again')) return media_usage_refresh(true);
+                    if (MEDIA_LEVEL_ORDER[media_level_for($pc ? max($pc) : null)] < MEDIA_LEVEL_ORDER['warn'] && cloudinary_switch('primary', 'has credits again')) return media_usage_refresh(true);
                 }
             } finally { unset($GLOBALS['__media_probe']); }
         }
     }
     $state['account'] = cloudinary_active();
+    $state['cloudName'] = (string)(media_cfg()['cloud_name'] ?? '');
     setting_set('media.usage', $state, 'system');
     return $state;
 }
@@ -242,8 +252,30 @@ function admin_media_usage(array $p): array {
     /* Where a NEW upload goes: the bucket when one is set (object-store.php) — then
        Cloudinary's plan no longer decides whether uploads may go. */
     $store = store_configured() ? ['bucket' => store_bucket(), 'host' => store_public_host(), 'endpointHost' => strtolower((string)parse_url(store_endpoint(), PHP_URL_HOST))] : null;
-    return ['ok' => true, 'usage' => $s, 'levels' => MEDIA_LEVELS, 'store' => $store, 'uploadsTo' => $store ? 'bucket' : (media_configured() ? 'cloudinary' : 'server'),
+    $bk = cloudinary_backup_cfg();
+    $acct = ['active' => cloudinary_active(), 'pin' => cloudinary_pin(), 'backup' => (bool)$bk, 'backupName' => (string)($bk['cloud_name'] ?? ''),
+             'mainName' => (string)(($GLOBALS['CLOUDINARY_PRIMARY'] ?? media_cfg())['cloud_name'] ?? '')];
+    return ['ok' => true, 'usage' => $s, 'account' => $acct, 'levels' => MEDIA_LEVELS, 'store' => $store, 'uploadsTo' => $store ? 'bucket' : (media_configured() ? 'cloudinary' : 'server'),
             'uploadsAllowed' => $store ? true : $s['level'] !== 'critical'];
+}
+
+/**
+ * admin.media.account — which Cloudinary account new work goes to: `backup`
+ * or `primary` (the operator's choice, kept until changed), or `auto` (the
+ * monitor decides: the backup from 70% used on the main account).
+ */
+function admin_media_account(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $use = (string)($p['use'] ?? '');
+    if (!in_array($use, ['backup', 'primary', 'auto'], true)) return ['ok' => false, 'error' => 'bad_choice'];
+    if ($use === 'backup' && !cloudinary_backup_cfg()) return ['ok' => false, 'error' => 'no_backup', 'detail' => 'Add the backup account in Settings → API keys first.'];
+    $was = cloudinary_active();
+    setting_set('cloudinary_pin', $use === 'auto' ? '' : $use, (string)$g['requester']['memberId']);
+    if ($use !== 'auto') setting_set('cloudinary_active', $use, 'system');
+    cloudinary_account_apply();
+    audit('admin.media.account', (string)$g['requester']['memberId'], $use, ['from' => $was, 'to' => cloudinary_active()], (string)($p['ip'] ?? ''));
+    $s = media_usage_refresh(true);
+    return ['ok' => true, 'account' => cloudinary_active(), 'pin' => cloudinary_pin(), 'usage' => $s];
 }
 
 /**

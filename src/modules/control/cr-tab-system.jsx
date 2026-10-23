@@ -29,6 +29,7 @@ function crSyMediaBlocks(m, ctx) {
     const p = parts[k].pct;
     return [name[k], p == null ? "Not reported" : Math.round(p) + "% used", p == null ? "neutral" : p >= 95 ? "bad" : p >= 70 ? "warn" : "ok"];
   });
+  if (m.account && m.account.backup) items.push(["Account in use", m.account.active === "backup" ? "Backup" + (m.account.backupName ? " · " + m.account.backupName : "") : "Main" + (m.account.mainName ? " · " + m.account.mainName : ""), m.account.active === "backup" ? "warn" : "ok"]);
   items.push(["Last checked", u.checkedAt ? crAgo(u.checkedAt) + " ago" : "Not yet", "neutral"]);
   const out = [{ type: "status", span: 3, title: "Image storage", sub: (u.plan ? u.plan + " plan · " : "") + (u.pct == null ? "" : Math.round(u.pct) + "% of the plan used"),
                  summary: lv[1], tone: lv[0], items }];
@@ -40,6 +41,7 @@ function crSyMediaBlocks(m, ctx) {
   }[u.level] || "";
   out.push({ type: "note", span: 3, icon: u.level === "ok" ? "info" : "warning", tone: u.level === "ok" ? undefined : lv[0], text: text + (u.error ? " " + u.error : ""),
              act: { l: "Check now", run: () => crSyMediaCheck(ctx) } });
+  out.push(crSyAccountNote(m.account || {}, ctx));
   out.push({ type: "note", span: 6, icon: "broom", text: "Free space: delete the resized and reformatted copies Cloudinary made for each page. Every original is kept, and a copy is remade the next time a page needs it.",
              sub: "Safe to do at any time. It frees storage now and uses a little of the plan later as copies are remade.",
              act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
@@ -69,6 +71,23 @@ function crSyObjectBlocks(o, ctx) {
 async function crSyObjectSweep(ctx) {
   try { const r = await NGGApi.admin.media.sweep(); const x = r.ran || {}; ctx.toast(x.deleted ? "Deleted " + crNum(x.deleted) + " unused " + (x.deleted === 1 ? "file" : "files") + " · " + crSyBytes(x.freed) + " freed." : "Nothing to clean up: every file older than a week is still in use."); ctx.reload(); }
   catch (e) { ctx.toast(crErr(e, "Couldn’t clean up the bucket."), null, true); }
+}
+/* Which Cloudinary account new work goes to. Automatic moves to the backup from
+   70% used on the main one; the operator can also choose, and the choice holds. */
+function crSyAccountNote(a, ctx) {
+  if (!a.backup) return { type: "note", span: 6, icon: "swap", text: "Add a backup Cloudinary account (Settings → API keys → Photos) and new photos and edits move there when this one runs low.",
+    sub: "A free account is enough. Photos already here keep showing." };
+  const on = a.active === "backup" ? "the backup account" + (a.backupName ? " (" + a.backupName + ")" : "") : "the main account" + (a.mainName ? " (" + a.mainName + ")" : "");
+  const how = a.pin ? "You chose this; it stays until you change it." : "Automatic: the backup takes over from 70% used on the main account, and work comes back when it renews.";
+  const act = a.pin ? { l: "Back to automatic", use: "auto" } : a.active === "backup" ? { l: "Use the main account", use: "primary" } : { l: "Use the backup now", use: "backup" };
+  return { type: "note", span: 6, icon: "swap", text: "New photos and edits go to " + on + ". " + how,
+    sub: "Photos already on the main account still count against it each time a page shows them (bandwidth). Edited again, one is copied to the backup once.",
+    act: { l: act.l, run: () => crSyAccountSet(ctx, act.use) } };
+}
+async function crSyAccountSet(ctx, use) {
+  try { const r = await NGGApi.admin.media.account(use);
+    ctx.toast(r.account === "backup" ? "New photos and edits now go to the backup account." : "New photos and edits now go to the main account." + (use === "auto" ? " Switching is automatic again." : "")); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t switch the account."), null, true); }
 }
 async function crSyMediaCheck(ctx) {
   try { const r = await NGGApi.admin.media.usage(true); const u = r.usage || {}; ctx.toast("Checked: " + (u.pct == null ? "usage not reported" : Math.round(u.pct) + "% of the plan used") + "."); ctx.reload(); }

@@ -10,6 +10,8 @@ if ($method === 'GET' && ($_GET['view'] ?? '') === 'objects') {
 } elseif ($method === 'POST' && (string)(($b = read_json_body())['action'] ?? '') === 'sweepObjects') {
     rate_limit_check_actor('media.purge', (string)$s['mid']);
     $res = gs_call('admin.media.objects', ['requesterId' => $s['mid'], 'sweep' => true, 'ip' => client_ip()]);
+} elseif ($method === 'POST' && (string)($b['action'] ?? '') === 'account') {
+    $res = gs_call('admin.media.account', ['requesterId' => $s['mid'], 'use' => (string)($b['use'] ?? ''), 'ip' => client_ip()]);
 } elseif ($method === 'POST') {
     if ((string)($b['action'] ?? '') !== 'purgeDerived') json_error('unknown_action', 400);
     rate_limit_check_actor('media.purge', (string)$s['mid']);
