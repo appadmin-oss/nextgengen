@@ -1898,13 +1898,16 @@ so a request never just times out.
 
 **Make cards.** The left column is everyone who needs a card: **New** (never
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
-*Ask for photo*, or *Ask everyone blocked* to ask up to 200 at once). A
-member is told how to add a photo (Edit profile on their dashboard), in the
-app and by email, and a child member's guardians are told too; a Summer
-School participant's guardian is emailed; a volunteer is emailed and asked to
-reply with one. The admins for their centre get one summary per press. The
-row then says when they were asked; asking again within 3 days needs *Ask
-again*. A member printed for the first time is given their ID number when you
+*Ask for photo*, or *Ask everyone blocked*).
+
+**Photo requests, for one person or two thousand.** One press asks everyone you chose (up to 2,000).
+- **Before anything goes**, the confirm shows how each person is reached: members by email and in the app, their parents or guardians by email (each greeted by name), volunteers by email, and Summer School parents with their re-shoot link. It names anyone with no email or guardian on file, who must be asked in person, and says who is left out and why. Open *What they get* to read the exact words.
+- **Each message is written to one person**: their name, their card, their centre, how to take a photo that passes, and a button that opens the photo page for exactly them. Nobody has to find Edit profile or reply to an email. The link works for 21 days; the photo is checked like any other.
+- **Big requests go out in batches.** The first 25 go at once and the rest over the next few minutes, so nothing piles up. The admins for those centres get **one** summary when it has all gone: counts by centre and who could not be reached, never a list of a thousand names.
+- **Afterwards**, ask the assistant *"how is the photo request going?"*: photos in, still waiting, and who could not be reached. You can send **one reminder** from two days after the request, to those who were reached and still have no photo. *"Download the list of who has no photo"* gives a spreadsheet.
+- The row says when they were asked; asking again within 3 days needs *Ask again*.
+
+A member printed for the first time is given their ID number when you
 print — it is theirs for good and never reissued. Tick
 people, or *Add N to the sheet*. The middle is the sheet exactly as it will
 print. Pick what you are doing at the top — *New intake*, *Reprints*, *One

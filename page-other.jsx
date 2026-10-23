@@ -4491,21 +4491,31 @@ function ReshootPage() {
     finally { setBusy(false); }
   };
   const first = ctx && ctx.student ? String(ctx.student.name || "").split(" ")[0] : "";
+  /* One page for every photo link: a Summer School parent's re-shoot, and the
+     photo request a member, their parent or a volunteer was sent. A request is
+     for somebody with no photo yet, so it is a first photo, not a retake. */
+  const isFirst = !!ctx && !(ctx.student && ctx.student.photoUrl) && !ctx.reason;
+  const cardName = (ctx && ctx.card) || "ID card";
+  const whose = first ? first + "’s " + cardName : "the " + cardName;
 
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Photo link</h1><p style={mut}>{err}</p></div>);
   if (state === "done") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 50 }}>
     <div style={{ fontSize: 40 }}>✅</div>
     <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>Thank you!</h1>
-    <p style={mut}>The new photo is in. Our team will check it and finish {first || "your child"}'s ID — no need to do anything else.</p>
+    <p style={mut}>The photo is in. The team checks it, then {whose} is printed. There is nothing else to do.</p>
   </div>);
 
   return shell(<>
-    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NEW PHOTO</div>
-    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "4px 0 12px", fontWeight: 800 }}>A quick new photo{first ? " for " + first : ""}</h1>
+    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{isFirst ? "PHOTO FOR YOUR CARD" : "NEW PHOTO"}</div>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "4px 0 12px", fontWeight: 800 }}>{isFirst ? "A photo for " + whose : "A quick new photo" + (first ? " for " + first : "")}</h1>
     {ctx && ctx.reason
       ? <div style={{ ...card, padding: 14, marginBottom: 12, fontSize: 13.5, lineHeight: 1.5 }}><b style={{ color: gold }}>What to fix:</b> {ctx.reason}</div>
-      : <p style={{ ...mut, fontSize: 13.5, marginBottom: 12 }}>Please use a clear, front-facing photo in good light, with a plain background.</p>}
+      : <ul style={{ ...mut, fontSize: 13.5, margin: "0 0 12px", paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Face the camera, head and shoulders in the frame.</li>
+          <li>Stand in front of a plain, light wall.</li>
+          <li>Daylight or a bright room; no hat, cap or sunglasses.</li>
+        </ul>}
 
     <div style={{ ...card, overflow: "hidden", height: "var(--rs-height-93, 300px)", display: "grid", placeItems: "center", marginBottom: 12 }}>
       {photoUrl
@@ -4523,7 +4533,7 @@ function ReshootPage() {
           <button onClick={() => { setPhotoUrl(""); }} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
           <button onClick={submit} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Sending…" : "Send this photo →"}</button>
         </div>}
-    <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: "12px 0 0", lineHeight: 1.5 }}>Used only for {first || "your child"}'s program ID. We enhance lighting and framing but never change the face.</p>
+    <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: "12px 0 0", lineHeight: 1.5 }}>Used only for {whose}. We may improve the lighting and framing, but never change the face.</p>
   </>);
 }
 

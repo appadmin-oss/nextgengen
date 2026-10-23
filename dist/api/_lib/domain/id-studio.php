@@ -33,9 +33,13 @@
    card (domain/ngv-portal.php, admin_ids_av_*). Its owner is `people`. */
 const IDS_SUBJECTS = ['member', 'student', 'volunteer', 'afrovanguard'];
 const IDS_BATCH_MAX = 600;      // the same ceiling as a recorded run (CRUN_MAX_ISSUES)
-const IDS_ASK_MAX = 200;        // photo asks in one press
+const IDS_ASK_MAX = 2000;       // people in one photo request (a campaign); sent a batch at a time
+const IDS_ASK_INLINE = 25;      // sent during the press itself; the rest go out with the web-cron
+const IDS_ASK_DRAIN = 40;       // sent per web-cron tick
 const IDS_ASK_QUIET_DAYS = 3;   // nobody is asked again inside this window unless the operator insists
-const IDS_ASK_DIGEST_NAMES = 20; // names listed in the admins' notice; the rest are counted
+const IDS_ASK_REMIND_AFTER = 2; // days before a campaign's one reminder may go
+const IDS_ASK_DIGEST_NAMES = 5; // a staff summary names people only when it is this small; above, it counts by centre
+const IDS_PHOTO_LINK_DAYS = 21; // how long a one-tap photo link works
 const IDS_WHY_MAX = 80;
 
 /** The capability that owns a subject's card. */
@@ -359,93 +363,386 @@ function ids_mail(string $to, string $title, string $intro, string $body, string
     } catch (\Throwable $e) { error_log('[ids.mail] ' . $e->getMessage()); return false; }
 }
 
+/* ── One-tap photo links ─────────────────────────────────────────────────
+   A photo request used to tell a member to open their dashboard, find Edit
+   profile, then Upload; a volunteer to reply to an email nobody reads; and a
+   guardian that the child could do it. Every request now carries a link that
+   opens the photo page for exactly that person (the Summer School re-shoot
+   page, /reshoot), signed and time-limited, so a parent can do it from their
+   phone in a minute. The photo still goes through the photo pipeline's checks
+   and review like any other. Signed, not stored: nothing to clean up. */
+function ids_photo_link_token(string $t, string $id, ?int $exp = null): string {
+    $exp = $exp ?? time() + IDS_PHOTO_LINK_DAYS * 86400;
+    $body = b64url($t . '|' . $id . '|' . $exp);
+    return 'PL.' . $body . '.' . substr(b64url(hash_hmac('sha256', 'photo-link|' . $body, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true)), 0, 32);
+}
+function ids_photo_link(string $t, string $id): string {
+    return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/reshoot?t=' . rawurlencode(ids_photo_link_token($t, $id));
+}
+/** [subjectType, subjectId] for a valid, unexpired link; null otherwise. */
+function ids_photo_link_verify(string $tok): ?array {
+    if (!preg_match('/^PL\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{32})$/', $tok, $m)) return null;
+    $want = substr(b64url(hash_hmac('sha256', 'photo-link|' . $m[1], (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true)), 0, 32);
+    if (!hash_equals($want, $m[2])) return null;
+    $parts = explode('|', b64url_decode($m[1]));
+    if (count($parts) !== 3 || !in_array($parts[0], ['member', 'volunteer', 'student'], true) || $parts[1] === '' || (int)$parts[2] < time()) return null;
+    return [$parts[0], $parts[1]];
+}
+
+/** The guardians who take alerts for a member, with their names, for a personal hello. */
+function ids_guardians_for(string $memberId): array {
+    if (!function_exists('family_notify_prefs')) return [];
+    $out = [];
+    foreach (db_all("SELECT g.email, g.fullName, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                      WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $r) {
+        $e = strtolower(trim((string)$r['email']));
+        if ($e === '' || !filter_var($e, FILTER_VALIDATE_EMAIL) || empty(family_notify_prefs($r['notify'] ?? '')['alerts']) || isset($out[$e])) continue;
+        $out[$e] = ['email' => $e, 'name' => trim((string)$r['fullName'])];
+    }
+    return array_values($out);
+}
+
+/** How to take a photo that passes, said the same way in every message. */
+const IDS_PHOTO_TIPS = "For a photo that passes first time:\n• Face the camera, head and shoulders in the frame.\n• Stand in front of a plain, light wall.\n• Daylight or a bright room; no hat, cap or sunglasses.";
+
 /**
- * Ask for a photo, for one person or many (§3.1 "Ask for photo"; the
- * blocked filter's "Ask everyone").
+ * The words for one person, for each audience who can act. `$reminder` is the
+ * one follow-up a campaign may send. Written to one person: their name, their
+ * centre, their card, and a button that does the thing.
+ */
+function ids_photo_messages(string $t, array $c, string $link, bool $reminder): array {
+    $first = explode(' ', trim($c['name']))[0] ?: 'there';
+    $centre = trim((string)$c['centre']);
+    $card = $t === 'volunteer' ? 'NGG volunteer card' : 'NGG ID card';
+    $nudge = $reminder ? 'A quick reminder: ' : '';
+    $out = [];
+    if ($t === 'member') {
+        $out['member'] = ['title' => $reminder ? $first . ', your NGG card is still waiting for your photo' : $first . ', add your photo for your NGG card',
+            'intro' => 'Hi ' . $first . ',',
+            'body' => $nudge . 'your ' . $card . ' is ready to print. All it needs is your photo.' . "\n\n"
+                . 'Tap the button to take one or choose one from your phone. It takes about a minute, and the team checks it before it goes on your card.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add my photo', 'push' => ($reminder ? 'Still waiting: ' : '') . 'your NGG card needs your photo. Tap Edit profile, then Upload.'];
+        $out['guardian'] = ['title' => ($reminder ? 'Reminder: ' : '') . 'a photo for ' . $first . '’s NGG ID card',
+            'intro' => 'Hello{name},',
+            'body' => $nudge . $c['name'] . '’s ' . $card . ($centre !== '' ? ' (' . $centre . ' centre)' : '') . ' is ready to print. All it needs is a photo.' . "\n\n"
+                . 'You can add one from your phone in about a minute with the button below. ' . $first . ' can also add it from their own NGG dashboard, so whoever gets to it first is fine.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add ' . $first . '’s photo'];
+    } elseif ($t === 'volunteer') {
+        $out['volunteer'] = ['title' => $reminder ? $first . ', your volunteer card is still waiting for your photo' : $first . ', a photo for your NGG volunteer card',
+            'intro' => 'Hi ' . $first . ',',
+            'body' => $nudge . 'your ' . $card . ($centre !== '' ? ' for ' . $centre : '') . ' is ready to print. All it needs is your photo.' . "\n\n"
+                . 'Tap the button to take one or choose one from your phone. It takes about a minute.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add my photo'];
+    }
+    return $out;
+}
+
+/** One email in the house template, with a button to an absolute URL. Never throws. */
+function ids_mail_to(string $to, string $title, string $intro, string $body, string $ctaLabel, string $ctaUrl): bool {
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL) || !function_exists('send_mail') || !function_exists('email_template')) return false;
+    try {
+        $html = email_template(['title' => $title, 'eyebrow' => 'Next Generation Genius', 'intro' => $intro,
+            'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html($body)) . '</p>', 'ctaLabel' => $ctaLabel, 'ctaUrl' => $ctaUrl,
+            'footNote' => 'You are getting this because a card is waiting to be printed. If the photo is already sent, you can ignore it.']);
+        return (bool)@send_mail($to, $title, $html);
+    } catch (\Throwable $e) { error_log('[ids.mail] ' . $e->getMessage()); return false; }
+}
+
+/** Send one queued ask (or its reminder). Returns the channels that went; [] when nobody could be reached. */
+function ids_photo_send_one(array $row): array {
+    $t = (string)$row['subjectType']; $id = (string)$row['subjectId'];
+    $reminder = (string)$row['status'] === 'remind';
+    $c = ids_subject_contact($t, $id);
+    if (!$c) return ['status' => 'skipped', 'channels' => []];
+    // A photo arrived while it waited in the queue: nothing to ask for.
+    if ($c['photo'] !== '') return ['status' => 'skipped', 'channels' => []];
+    $sent = [];
+    if ($t === 'student') {
+        if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
+            db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
+            try { reshoot_notify_guardian($id, $reminder ? 'A reminder: we still do not have a photo for their ID card.' : 'We do not have a photo on file for their ID card yet.'); $sent[] = 'guardian'; }
+            catch (\Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+        }
+    } else {
+        $link = ids_photo_link($t, $id);
+        $msg = ids_photo_messages($t, $c, $link, $reminder);
+        if ($t === 'member') {
+            $mm = $msg['member'];
+            try { push_notification($id, ['kind' => 'photo', 'title' => mb_substr($mm['title'], 0, 160), 'body' => $mm['push'], 'linkPage' => 'dashboard']); $sent[] = 'member_app'; } catch (\Throwable $e) {}
+            if ($c['email'] !== '' && ids_mail_to($c['email'], $mm['title'], $mm['intro'], $mm['body'], $mm['cta'], $link)) $sent[] = 'member';
+            $gOk = 0; $gm = $msg['guardian'];
+            foreach (ids_guardians_for($id) as $g)
+                if (ids_mail_to($g['email'], $gm['title'], str_replace('{name}', $g['name'] !== '' ? ' ' . $g['name'] : '', $gm['intro']), $gm['body'], $gm['cta'], $link)) $gOk++;
+            if ($gOk) $sent[] = 'guardians';
+        } elseif ($t === 'volunteer') {
+            $vm = $msg['volunteer'];
+            if (ids_mail_to($c['email'], $vm['title'], $vm['intro'], $vm['body'], $vm['cta'], $link)) $sent[] = 'volunteer';
+        }
+    }
+    // The app alone is not reaching anyone who never opens it: only an email or a guardian counts as reached.
+    $reached = array_values(array_diff($sent, ['member_app']));
+    return ['status' => $reached ? 'sent' : 'unreachable', 'channels' => $sent];
+}
+
+/**
+ * Send the next queued asks, oldest first — the web-cron's job (and the first
+ * IDS_ASK_INLINE of a press, during the press). A campaign whose last person
+ * has gone gets its ONE staff summary.
+ */
+function ids_photo_drain(int $limit = IDS_ASK_DRAIN, string $campaignId = ''): array {
+    $rows = db_all("SELECT * FROM id_photo_asks WHERE status IN ('queued','remind')" . ($campaignId !== '' ? ' AND campaignId = ?' : '') . ' ORDER BY id LIMIT ' . (int)$limit,
+        $campaignId !== '' ? [$campaignId] : []);
+    $done = 0; $touched = [];
+    foreach ($rows as $r) {
+        $wasRemind = (string)$r['status'] === 'remind';
+        // Claimed first, so two ticks never send the same message twice.
+        if (!db_exec("UPDATE id_photo_asks SET status = 'sending' WHERE id = ? AND status = ?", [(int)$r['id'], (string)$r['status']])) continue;
+        $res = ids_photo_send_one($r);
+        $upd = ['status' => $res['status'], 'sent' => $res['status'] === 'sent' ? 1 : 0, 'channels' => json_encode($res['channels']), 'sentAt' => now_iso()];
+        if ($wasRemind) $upd['reminders'] = (int)$r['reminders'] + 1;
+        db_update('id_photo_asks', $upd, ['id' => (int)$r['id']]);
+        $done++;
+        if ((string)$r['campaignId'] !== '') $touched[(string)$r['campaignId']] = true;
+    }
+    foreach (array_keys($touched) as $cid) ids_photo_campaign_settle($cid);
+    return ['sent' => $done];
+}
+
+/** A campaign with nobody left in the queue is done; its staff summary goes once. */
+function ids_photo_campaign_settle(string $cid): void {
+    $left = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status IN ('queued','remind','sending')", [$cid])['c'] ?? 0);
+    if ($left) return;
+    $camp = db_row('SELECT * FROM id_photo_campaigns WHERE campaignId = ? LIMIT 1', [$cid]);
+    if (!$camp) return;
+    if ((string)$camp['status'] !== 'done') db_update('id_photo_campaigns', ['status' => 'done'], ['campaignId' => $cid]);
+    if ((string)$camp['summaryAt'] === '') { db_update('id_photo_campaigns', ['summaryAt' => now_iso()], ['campaignId' => $cid]); ids_photo_campaign_notify($camp); }
+}
+
+/**
+ * The staff summary: one notice per campaign to the admins who own those
+ * cards for those centres, never the requester. It counts — by centre, and
+ * who could not be reached — and names people only for a handful. It used to
+ * list the first twenty names in one sentence and "and 980 more".
+ */
+function ids_photo_campaign_notify(array $camp): void {
+    $cid = (string)$camp['campaignId'];
+    $rows = db_all('SELECT subjectType, subjectId, status, reminders FROM id_photo_asks WHERE campaignId = ?', [$cid]);
+    if (!$rows) return;
+    $byCap = [];
+    foreach ($rows as $r) {
+        if ((string)$r['status'] === 'skipped') continue;
+        $c = ids_subject_contact((string)$r['subjectType'], (string)$r['subjectId']);
+        if (!$c) continue;
+        $byCap[ids_cap_for((string)$r['subjectType'])][] = ['name' => $c['name'], 'centre' => $c['centre'], 'status' => (string)$r['status']];
+    }
+    $reminder = (string)$camp['remindedAt'] !== '' && (int)array_sum(array_map(fn($r) => (int)$r['reminders'], $rows)) > 0;
+    foreach ($byCap as $cap => $people) {
+        $centres = array_values(array_unique(array_filter(array_column($people, 'centre'))));
+        $staff = staff_with_cap($cap, [(string)$camp['askedBy']], function ($s) use ($centres) {
+            if (!$centres) return true;
+            foreach ($centres as $c) if (admin_centre_allowed($s, $c)) return true;
+            return false;
+        });
+        if (!$staff) continue;
+        $n = count($people);
+        $unreach = array_values(array_filter($people, fn($x) => $x['status'] === 'unreachable'));
+        $per = [];
+        foreach ($people as $x) { $k = $x['centre'] !== '' ? $x['centre'] : 'No centre'; $per[$k] = ($per[$k] ?? 0) + 1; }
+        arsort($per);
+        $lines = [];
+        if ($n <= IDS_ASK_DIGEST_NAMES) $lines[] = 'Asked: ' . implode(', ', array_map(fn($x) => $x['name'] . ($x['centre'] !== '' ? ' (' . $x['centre'] . ')' : ''), $people)) . '.';
+        else $lines[] = 'By centre: ' . implode(' · ', array_map(fn($k, $v) => $k . ' ' . $v, array_keys(array_slice($per, 0, 8, true)), array_slice($per, 0, 8, true))) . (count($per) > 8 ? ' · and ' . (count($per) - 8) . ' more centres' : '') . '.';
+        if ($unreach) $lines[] = count($unreach) === 1 ? '1 person has no email or guardian on file, so they need asking in person: ' . $unreach[0]['name'] . '.'
+            : count($unreach) . ' have no email or guardian on file and need asking in person. The ID Card Studio lists them (filter: waiting on a photo).';
+        $lines[] = 'Each card prints as soon as its photo is approved. If you see them at the centre, a photo taken there works too.';
+        $title = ($reminder ? 'Photo reminder sent to ' : 'Photo request sent to ') . ($n === 1 ? '1 person' : $n . ' people');
+        notify_people($staff, ['kind' => 'photo', 'title' => $title, 'body' => implode("\n\n", $lines),
+            'ctaLabel' => 'Open the ID Card Studio', 'ctaPath' => '/club/id-cards', 'linkPage' => 'id-cards']);
+    }
+}
+
+/** Validate one item of a photo request. Returns the contact, or an error code. */
+function ids_photo_check(array $g, array $it, string $cut, bool $force): array {
+    $t = (string)($it['subjectType'] ?? ''); $id = trim((string)($it['subjectId'] ?? ''));
+    if (!in_array($t, IDS_SUBJECTS, true) || $id === '') return ['subjectId' => $id, 'error' => 'bad_subject'];
+    if (!ids_can($g['requester'], $t)) return ['subjectId' => $id, 'error' => 'forbidden'];
+    $c = ids_subject_contact($t, $id);
+    if (!$c) return ['subjectId' => $id, 'error' => 'not_found'];
+    if ($c['centre'] !== '' && !admin_centre_allowed($g['requester'], $c['centre'])) return ['subjectId' => $id, 'error' => 'out_of_scope'];
+    if ($c['photo'] !== '') return ['subjectId' => $id, 'error' => 'has_photo'];
+    $open = db_row("SELECT 1 FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? AND status IN ('queued','remind','sending') LIMIT 1", [$t, $id]);
+    if ($open) return ['subjectId' => $id, 'error' => 'already_queued'];
+    $last = db_row("SELECT askedAt FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC LIMIT 1", [$t, $id]);
+    if ($last && (string)$last['askedAt'] > $cut && !$force) return ['subjectId' => $id, 'error' => 'asked_recently', 'askedAt' => (string)$last['askedAt']];
+    return ['subjectId' => $id, 'subjectType' => $t, 'contact' => $c];
+}
+
+/** Who a person's request would reach, without sending: for the confirm's counts. */
+function ids_photo_reach(string $t, array $c, string $id): array {
+    if ($t === 'student') return $c['guardian'] !== '' ? ['guardian'] : [];
+    if ($t === 'volunteer') return $c['email'] !== '' && filter_var($c['email'], FILTER_VALIDATE_EMAIL) ? ['volunteer'] : [];
+    $r = [];
+    if ($c['email'] !== '' && filter_var($c['email'], FILTER_VALIDATE_EMAIL)) $r[] = 'member';
+    if (ids_guardians_for($id)) $r[] = 'guardians';
+    return $r;
+}
+
+/**
+ * Ask for photos, for one person or two thousand: a CAMPAIGN.
  *
- * Who hears, by who can act:
- *   - a member: the member (in-app and email, pointing at the dashboard's
- *     Edit profile, where the photo uploads), and their linked guardians who
- *     take alerts — many members are children;
- *   - a volunteer: the volunteer, by email (there is no self-upload for a
- *     volunteer, so it asks them to send one to their coordinator);
- *   - a Summer School participant: their guardian, with the reshoot link;
- *   - and for every kind: the NGG admins who own that card for that centre
- *     (the capability, centre-scoped), in ONE notice per press listing who is
- *     waiting — never one notice per child.
- * Nobody is asked again within IDS_ASK_QUIET_DAYS unless `force`; that row is
- * reported as asked_recently. The answer says, per person, which channels
- * actually went, so the screen never claims a message nobody sent.
+ * Who hears, by who can act — each message written to one person, with a
+ * one-tap link to the photo page for exactly them (ids_photo_link):
+ *   - a member: in the app and by email, and their guardians who take alerts,
+ *     each by name;
+ *   - a volunteer: by email, with the link (no more "reply with a photo");
+ *   - a Summer School participant: their guardian, with the re-shoot link;
+ *   - staff: ONE summary per campaign when it has gone out, counting by
+ *     centre and naming who could not be reached — never one per child.
+ *
+ * `preview: true` sends nothing and returns what WOULD happen: how many, by
+ * whom they are reached, who cannot be, who is left out and why, and the
+ * exact words of each message — so the confirm says what will be sent.
+ *
+ * Otherwise the people are queued (id_photo_asks, status queued), the first
+ * IDS_ASK_INLINE are sent now, and the rest go out with the web-cron
+ * IDS_ASK_DRAIN at a time: a thousand people is one press, not five, and no
+ * request ever tries to send two thousand emails before it answers.
+ * Nobody is asked again within IDS_ASK_QUIET_DAYS unless `force`, nor while
+ * an earlier request for them is still in the queue.
  */
 function admin_ids_photo_ask(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $raw = $p['items'] ?? null;
     if ($raw === null && isset($p['subjectType'])) $raw = [['subjectType' => $p['subjectType'], 'subjectId' => $p['subjectId'] ?? '']];
     if (!is_array($raw) || !$raw) return ['ok' => false, 'error' => 'no_items'];
-    if (count($raw) > IDS_ASK_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_ASK_MAX . ' at a time.'];
-    $force = !empty($p['force']);
+    if (count($raw) > IDS_ASK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => IDS_ASK_MAX, 'message' => 'At most ' . IDS_ASK_MAX . ' people in one request.'];
+    $force = !empty($p['force']); $preview = !empty($p['preview']);
     $by = (string)$g['requester']['memberId'];
     $cut = gmdate('Y-m-d\TH:i:s\Z', time() - IDS_ASK_QUIET_DAYS * 86400);
-    $results = []; $waiting = [];   // $waiting[cap] = [[name, centre], …] for the admins' notice
-
+    $results = []; $ok = []; $seen = [];
     foreach ($raw as $it) {
-        $t = (string)($it['subjectType'] ?? ''); $id = trim((string)($it['subjectId'] ?? ''));
-        if (!in_array($t, IDS_SUBJECTS, true) || $id === '') { $results[] = ['subjectId' => $id, 'error' => 'bad_subject']; continue; }
-        if (!ids_can($g['requester'], $t)) { $results[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
-        $c = ids_subject_contact($t, $id);
-        if (!$c) { $results[] = ['subjectId' => $id, 'error' => 'not_found']; continue; }
-        if ($c['centre'] !== '' && !admin_centre_allowed($g['requester'], $c['centre'])) { $results[] = ['subjectId' => $id, 'error' => 'out_of_scope']; continue; }
-        if ($c['photo'] !== '') { $results[] = ['subjectId' => $id, 'error' => 'has_photo']; continue; }
-        $last = db_row('SELECT askedAt FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC LIMIT 1', [$t, $id]);
-        if ($last && (string)$last['askedAt'] > $cut && !$force) { $results[] = ['subjectId' => $id, 'error' => 'asked_recently', 'askedAt' => (string)$last['askedAt']]; continue; }
+        if (!is_array($it)) { $results[] = ['subjectId' => '', 'error' => 'bad_subject']; continue; }
+        $k = (string)($it['subjectType'] ?? '') . ':' . (string)($it['subjectId'] ?? '');
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $v = ids_photo_check($g, $it, $cut, $force);
+        if (isset($v['error'])) { $results[] = $v; continue; }
+        $ok[] = $v;
+    }
 
-        $first = explode(' ', trim($c['name']))[0] ?: 'there';
-        $sent = [];
-        if ($t === 'member') {
-            notify_people([$c['row']], ['kind' => 'photo', 'title' => 'A photo for your NGG ID card',
-                'body' => 'Your NGG ID card is ready to print except for your photo. On your dashboard, tap Edit profile, then Upload, and choose a clear, front-facing photo in good light. It is checked before it goes on your card.',
-                'intro' => 'Hello ' . $first . ',', 'eyebrow' => 'Next Generation Genius', 'ctaLabel' => 'Add your photo', 'ctaPath' => '/dashboard', 'linkPage' => 'dashboard']);
-            if ($c['email'] !== '') $sent[] = 'member';
-            else $sent[] = 'member_app';
-            $gs = function_exists('family_guardian_emails') ? family_guardian_emails($id, 'alerts') : [];
-            $gOk = 0;
-            foreach ($gs as $ge) if (ids_mail($ge, 'A photo for ' . $first . '’s NGG ID card', 'Hello,',
-                $c['name'] . '’s NGG ID card is ready to print except for the photo. ' . $first . ' can add it from their dashboard (Edit profile, then Upload), or you can send a clear, front-facing photo to their centre coordinator.')) $gOk++;
-            if ($gOk) $sent[] = 'guardians';
-        } elseif ($t === 'volunteer') {
-            if (ids_mail($c['email'], 'A photo for your NGG volunteer card', 'Hello ' . $first . ',',
-                'Your NGG volunteer card is ready to print except for your photo. Reply to this email with a clear, front-facing photo in good light, or hand one to your centre coordinator.')) $sent[] = 'volunteer';
-        } else {
-            if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
-                db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
-                try { reshoot_notify_guardian($id, 'We do not have a photo on file for their ID card.'); $sent[] = 'guardian'; }
-                catch (\Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+    if ($preview) {
+        $reach = ['member' => 0, 'guardians' => 0, 'volunteer' => 0, 'guardian' => 0, 'unreachable' => 0, 'appOnly' => 0];
+        $unreachNames = []; $sample = [];
+        foreach ($ok as $v) {
+            $r = ids_photo_reach($v['subjectType'], $v['contact'], $v['subjectId']);
+            foreach ($r as $ch) $reach[$ch]++;
+            if (!$r) {
+                // A member with no email and no guardian still gets the in-app note; nobody else does.
+                if ($v['subjectType'] === 'member') $reach['appOnly']++;
+                $reach['unreachable']++;
+                if (count($unreachNames) < 8) $unreachNames[] = $v['contact']['name'];
             }
+            if ($v['subjectType'] !== 'student' && !isset($sample[$v['subjectType']])) $sample[$v['subjectType']] = ids_photo_messages($v['subjectType'], $v['contact'], '', false);
         }
-        $waiting[ids_cap_for($t)][] = [$c['name'], $c['centre'], $t];
-        db_insert('id_photo_asks', ['subjectType' => $t, 'subjectId' => $id, 'askedBy' => $by, 'askedAt' => now_iso(), 'sent' => $sent ? 1 : 0, 'channels' => json_encode($sent)]);
-        $results[] = ['subjectId' => $id, 'subjectType' => $t, 'sent' => $sent];
+        $why = [];
+        foreach ($results as $r) $why[$r['error']] = ($why[$r['error']] ?? 0) + 1;
+        $words = [];
+        foreach ($sample as $t => $msgs) foreach ($msgs as $aud => $m)
+            $words[] = ['to' => $aud, 'subject' => $m['title'], 'intro' => str_replace('{name}', '', $m['intro']), 'body' => $m['body'], 'cta' => $m['cta']];
+        return ['ok' => true, 'preview' => true, 'people' => count($ok), 'reach' => $reach, 'unreachable' => $unreachNames, 'leftOut' => $why,
+                'inline' => min(count($ok), IDS_ASK_INLINE), 'queued' => max(0, count($ok) - IDS_ASK_INLINE), 'messages' => $words];
     }
 
-    // The admins who own these cards, scoped to the centres involved: one notice each, per press.
-    $admins = 0;
-    foreach ($waiting as $cap => $people) {
-        $centres = array_values(array_unique(array_filter(array_map(fn($x) => $x[1], $people))));
-        $staff = staff_with_cap($cap, [$by], function ($s) use ($centres) {
-            if (!$centres) return true;
-            foreach ($centres as $c) if (admin_centre_allowed($s, $c)) return true;
-            return false;
-        });
-        if (!$staff) continue;
-        $names = array_map(fn($x) => $x[0] . ($x[1] !== '' ? ' (' . $x[1] . ')' : ''), array_slice($people, 0, IDS_ASK_DIGEST_NAMES));
-        $more = count($people) - count($names);
-        $admins += notify_people($staff, ['kind' => 'photo', 'title' => count($people) === 1 ? 'A card is waiting on a photo' : count($people) . ' cards are waiting on photos',
-            'body' => 'A photo was requested for: ' . implode(', ', $names) . ($more > 0 ? ', and ' . $more . ' more' : '') . '. Their cards print as soon as a photo is approved. If you see them at the centre, a photo taken there works too.',
-            'ctaLabel' => 'Open the ID Card Studio', 'ctaPath' => '/club/id-cards', 'linkPage' => 'id-cards']);
+    if (!$ok) {
+        audit('ids.photo.ask', $by, '', ['asked' => 0, 'refused' => count($results), 'force' => $force], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'asked' => 0, 'queued' => 0, 'admins' => 0, 'results' => $results];
     }
-    $asked = count(array_filter($results, fn($r) => isset($r['sent'])));
-    audit('ids.photo.ask', $by, '', ['asked' => $asked, 'refused' => count($results) - $asked, 'admins' => $admins, 'force' => $force], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'asked' => $asked, 'admins' => $admins, 'results' => $results];
+    $cid = 'PC-' . strtoupper(rand_hex(5));
+    $now = now_iso();
+    db_insert('id_photo_campaigns', ['campaignId' => $cid, 'askedBy' => $by, 'createdAt' => $now, 'total' => count($ok), 'status' => 'sending']);
+    foreach ($ok as $v) db_insert('id_photo_asks', ['subjectType' => $v['subjectType'], 'subjectId' => $v['subjectId'], 'askedBy' => $by, 'askedAt' => $now,
+        'sent' => 0, 'channels' => '[]', 'campaignId' => $cid, 'status' => 'queued', 'sentAt' => '', 'reminders' => 0]);
+    ids_photo_drain(IDS_ASK_INLINE, $cid);
+    // Per-row verdicts: what went now, and what is queued to go.
+    foreach (db_all('SELECT subjectType, subjectId, status, channels FROM id_photo_asks WHERE campaignId = ?', [$cid]) as $r) {
+        $ch = json_decode((string)$r['channels'], true) ?: [];
+        $st = (string)$r['status'];
+        $results[] = ['subjectId' => (string)$r['subjectId'], 'subjectType' => (string)$r['subjectType']]
+            + ($st === 'queued' ? ['queued' => true, 'sent' => []] : ($st === 'skipped' ? ['error' => 'has_photo'] : ['sent' => $ch] + ($st === 'unreachable' ? ['unreachable' => true] : [])));
+    }
+    $queued = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'queued'", [$cid])['c'] ?? 0);
+    audit('ids.photo.ask', $by, $cid, ['asked' => count($ok), 'refused' => count($results) - count($ok), 'queued' => $queued, 'force' => $force], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'campaignId' => $cid, 'asked' => count($ok), 'queued' => $queued, 'results' => $results];
+}
+
+/** admin.ids.photo.campaigns — the recent requests, and what came of each: how many sent, reached, photos arrived. */
+function admin_ids_photo_campaigns(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $out = [];
+    foreach (db_all('SELECT * FROM id_photo_campaigns ORDER BY id DESC LIMIT 12') as $c) {
+        $rows = db_all('SELECT subjectType, subjectId, status, reminders FROM id_photo_asks WHERE campaignId = ?', [(string)$c['campaignId']]);
+        // Only the people this operator may see count for them.
+        $mine = []; $arrived = 0; $st = ['queued' => 0, 'sent' => 0, 'unreachable' => 0, 'skipped' => 0]; $waiting = [];
+        $byType = [];
+        foreach ($rows as $r) $byType[(string)$r['subjectType']][] = (string)$r['subjectId'];
+        $photo = []; $centre = []; $name = [];
+        foreach ($byType as $t => $ids) {
+            [$tbl, $key] = $t === 'student' ? ['summer_students', 'studentId'] : ($t === 'volunteer' ? ['volunteers', 'volunteerId'] : ['members', 'memberId']);
+            foreach (array_chunk($ids, 400) as $chunk)
+                foreach (db_all("SELECT $key AS id, fullName, centre, photoUrl FROM $tbl WHERE $key IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $x) {
+                    $photo[$t . ':' . $x['id']] = trim((string)$x['photoUrl']) !== ''; $centre[$t . ':' . $x['id']] = (string)$x['centre']; $name[$t . ':' . $x['id']] = (string)$x['fullName'];
+                }
+        }
+        foreach ($rows as $r) {
+            $k = (string)$r['subjectType'] . ':' . (string)$r['subjectId'];
+            if (!isset($name[$k]) || !ids_can($g['requester'], (string)$r['subjectType'])) continue;
+            if (($centre[$k] ?? '') !== '' && !admin_centre_allowed($g['requester'], $centre[$k])) continue;
+            $s = (string)$r['status']; $s = $s === 'remind' || $s === 'sending' ? 'queued' : $s;
+            if (isset($st[$s])) $st[$s]++;
+            if (!empty($photo[$k])) $arrived++;
+            elseif ($s !== 'skipped') $waiting[] = ['subjectType' => (string)$r['subjectType'], 'subjectId' => (string)$r['subjectId'], 'name' => $name[$k], 'centre' => $centre[$k] ?? '', 'unreachable' => $s === 'unreachable', 'reminded' => (int)$r['reminders'] > 0];
+            $mine[] = $k;
+        }
+        if (!$mine) continue;
+        $age = time() - strtotime((string)$c['createdAt']);
+        $out[] = ['campaignId' => (string)$c['campaignId'], 'createdAt' => (string)$c['createdAt'], 'mine' => (string)$c['askedBy'] === (string)$g['requester']['memberId'],
+            'people' => count($mine), 'status' => (string)$c['status'], 'counts' => $st, 'arrived' => $arrived, 'stillWaiting' => count($waiting),
+            'waiting' => array_slice($waiting, 0, 600), 'remindedAt' => (string)$c['remindedAt'],
+            'canRemind' => (string)$c['remindedAt'] === '' && (string)$c['status'] === 'done' && count($waiting) > 0 && $age >= IDS_ASK_REMIND_AFTER * 86400,
+            'remindFrom' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$c['createdAt']) + IDS_ASK_REMIND_AFTER * 86400)];
+    }
+    return ['ok' => true, 'campaigns' => $out];
+}
+
+/**
+ * admin.ids.photo.remind — the ONE reminder a campaign may send, to the people
+ * in it who still have no photo and could be reached, not before
+ * IDS_ASK_REMIND_AFTER days. Queued and drained like the request itself.
+ */
+function admin_ids_photo_remind(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $cid = (string)($p['campaignId'] ?? '');
+    $c = $cid !== '' ? db_row('SELECT * FROM id_photo_campaigns WHERE campaignId = ? LIMIT 1', [$cid]) : null;
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$c['remindedAt'] !== '') return ['ok' => false, 'error' => 'reminded_already', 'remindedAt' => (string)$c['remindedAt']];
+    if ((string)$c['status'] !== 'done') return ['ok' => false, 'error' => 'still_sending'];
+    if (time() - strtotime((string)$c['createdAt']) < IDS_ASK_REMIND_AFTER * 86400) return ['ok' => false, 'error' => 'too_soon', 'from' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$c['createdAt']) + IDS_ASK_REMIND_AFTER * 86400)];
+    $n = 0; $refused = [];
+    foreach (db_all("SELECT * FROM id_photo_asks WHERE campaignId = ? AND status = 'sent' AND reminders = 0", [$cid]) as $r) {
+        $t = (string)$r['subjectType']; $id = (string)$r['subjectId'];
+        if (!ids_can($g['requester'], $t)) { $refused[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
+        $ct = ids_subject_contact($t, $id);
+        if (!$ct || $ct['photo'] !== '') continue;
+        if ($ct['centre'] !== '' && !admin_centre_allowed($g['requester'], $ct['centre'])) { $refused[] = ['subjectId' => $id, 'error' => 'out_of_scope']; continue; }
+        db_update('id_photo_asks', ['status' => 'remind'], ['id' => (int)$r['id']]);
+        $n++;
+    }
+    if (!$n) return ['ok' => false, 'error' => 'nobody_to_remind', 'refused' => $refused];
+    db_update('id_photo_campaigns', ['remindedAt' => now_iso(), 'remindedBy' => (string)$g['requester']['memberId'], 'status' => 'sending', 'summaryAt' => ''], ['campaignId' => $cid]);
+    ids_photo_drain(IDS_ASK_INLINE, $cid);
+    $left = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'remind'", [$cid])['c'] ?? 0);
+    audit('ids.photo.remind', (string)$g['requester']['memberId'], $cid, ['reminded' => $n, 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'reminded' => $n, 'queued' => $left, 'refused' => $refused];
 }
 
 /**

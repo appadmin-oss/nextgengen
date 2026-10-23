@@ -2230,26 +2230,46 @@ function reshoot_notify_guardian(string $studentId, string $reason): void {
     send_mail((string)$s['parentEmail'], 'A quick new photo for ' . $first, $html);
 }
 
-function reshoot_context(array $p): array {
-    $t = (string)($p['t'] ?? '');
-    if ($t === '') return ['ok' => false, 'error' => 'link_invalid'];
+/**
+ * The person a photo link is for. Two kinds of link reach /reshoot: a Summer
+ * School participant's stored token, and the signed, time-limited link a
+ * photo request sends for any subject (ids_photo_link, id-studio.php).
+ * Returns [subjectType, subjectId, name, photoUrl] or null.
+ */
+function reshoot_subject(string $t): ?array {
+    if ($t === '') return null;
+    if (strncmp($t, 'PL.', 3) === 0 && function_exists('ids_photo_link_verify')) {
+        $v = ids_photo_link_verify($t);
+        if (!$v) return null;
+        [$type, $id] = $v;
+        [$tbl, $key] = $type === 'student' ? ['summer_students', 'studentId'] : ($type === 'volunteer' ? ['volunteers', 'volunteerId'] : ['members', 'memberId']);
+        $r = db_row("SELECT * FROM $tbl WHERE $key = ? LIMIT 1", [$id]);
+        if (!$r || in_array((string)($r['status'] ?? 'active'), ['deleted', 'deactivated'], true)) return null;
+        return [$type, $id, (string)$r['fullName'], (string)($r['photoUrl'] ?? '')];
+    }
     $s = db_row('SELECT * FROM summer_students WHERE photoToken = ? LIMIT 1', [$t]);
-    if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
-    $a = db_row("SELECT status, editedUrl, sourceUrl, decisionNote, aiFindings FROM photo_assets WHERE subjectType = 'student' AND subjectId = ? ORDER BY version DESC LIMIT 1", [$s['studentId']]);
-    $reason = '';
-    if ($a && $a['status'] === 'changes_requested') $reason = (string)$a['decisionNote'];
-    return ['ok' => true,
-        'student' => ['name' => (string)$s['fullName'], 'photoUrl' => (string)($a['editedUrl'] ?? '') ?: (string)$s['photoUrl']],
-        'status' => $a ? (string)$a['status'] : 'none',
-        'reason' => $reason,
+    return $s ? ['student', (string)$s['studentId'], (string)$s['fullName'], (string)$s['photoUrl']] : null;
+}
+
+function reshoot_context(array $p): array {
+    $sub = reshoot_subject((string)($p['t'] ?? ''));
+    if (!$sub) return ['ok' => false, 'error' => 'link_invalid'];
+    [$type, $sid, $sname, $sphoto] = $sub;
+    $a = db_row("SELECT status, editedUrl, sourceUrl, decisionNote, aiFindings FROM photo_assets WHERE subjectType = ? AND subjectId = ? ORDER BY version DESC LIMIT 1", [$type, $sid]);
+    $reason = $a && $a['status'] === 'changes_requested' ? (string)$a['decisionNote'] : '';
+    $first = explode(' ', trim($sname))[0] ?: '';
+    // A photo request's link is for somebody who has none: say so, and what the card is.
+    return ['ok' => true, 'kind' => $type,
+        'student' => ['name' => $sname, 'first' => $first, 'photoUrl' => (string)($a['editedUrl'] ?? '') ?: $sphoto],
+        'card' => $type === 'volunteer' ? 'NGG volunteer card' : ($type === 'student' ? 'Summer School card' : 'NGG ID card'),
+        'status' => $a ? (string)$a['status'] : 'none', 'reason' => $reason,
         'awaiting' => !$a || in_array((string)$a['status'], ['changes_requested', 'rejected'], true)];
 }
 
 function reshoot_submit(array $p): array {
-    $t = (string)($p['t'] ?? '');
-    if ($t === '') return ['ok' => false, 'error' => 'link_invalid'];
-    $s = db_row('SELECT * FROM summer_students WHERE photoToken = ? LIMIT 1', [$t]);
-    if (!$s) return ['ok' => false, 'error' => 'link_invalid'];
+    $sub = reshoot_subject((string)($p['t'] ?? ''));
+    if (!$sub) return ['ok' => false, 'error' => 'link_invalid'];
+    [$type, $sid] = $sub;
     /* Whatever the guardian's browser could manage: a hosted URL if a cloud is
      * configured, the image itself if not. This used to demand https and answer
      * `bad_photo` otherwise — so on a deployment with no Cloudinary the retake
@@ -2262,22 +2282,22 @@ function reshoot_submit(array $p): array {
     // The retake IS the new photo — apply it whether or not the governed
     // pipeline can run, or a guardian who did what they were asked would see
     // the old picture on the card indefinitely.
-    if (function_exists('photo_set_subject')) photo_set_subject('student', (string)$s['studentId'], $url, 'guardian');
-    else db_update('summer_students', ['photoUrl' => photo_store_relativise($url), 'updatedAt' => now_iso()], ['studentId' => (string)$s['studentId']]);
+    if (function_exists('photo_set_subject')) photo_set_subject($type, $sid, $url, 'guardian');
+    elseif ($type === 'student') db_update('summer_students', ['photoUrl' => photo_store_relativise($url), 'updatedAt' => now_iso()], ['studentId' => $sid]);
     if (!function_exists('photo_ingest')) {
-        audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['stored' => true, 'pipeline' => false], (string)($p['ip'] ?? ''));
+        audit('photo.reshoot', 'guardian', $sid, ['stored' => true, 'pipeline' => false], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'status' => 'captured', 'version' => 1];
     }
     $source = function_exists('photo_store_absolute') ? photo_store_absolute($url) : $url;
-    $ing = $source !== '' ? photo_ingest('student', (string)$s['studentId'], $source, 'guardian') : ['ok' => false];
+    $ing = $source !== '' ? photo_ingest($type, $sid, $source, 'guardian') : ['ok' => false];
     if (empty($ing['ok'])) {
         // Stored and applied; only the AI/Cloudinary pass could not run. That is
         // an editor's problem, not the guardian's, so it is not an error to them.
-        audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['stored' => true, 'pipeline' => (string)($ing['error'] ?? 'failed')], (string)($p['ip'] ?? ''));
+        audit('photo.reshoot', 'guardian', $sid, ['stored' => true, 'pipeline' => (string)($ing['error'] ?? 'failed')], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'status' => 'captured', 'version' => 1];
     }
     $pr = function_exists('photo_process') ? photo_process($ing['assetId']) : ['status' => 'captured'];
-    audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['assetId' => $ing['assetId'], 'v' => $ing['version']], (string)($p['ip'] ?? ''));
+    audit('photo.reshoot', 'guardian', $sid, ['assetId' => $ing['assetId'], 'v' => $ing['version']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'status' => $pr['status'] ?? 'analyzing', 'version' => $ing['version']];
 }
 

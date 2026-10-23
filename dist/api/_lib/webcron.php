@@ -182,6 +182,8 @@ function web_cron_run(): void {
             try {
                 if (web_cron_due('deliver', web_cron_cfg('deliver', 60)))       web_cron_guard('deliveries_dispatch', fn() => deliveries_dispatch(8));
                 if (web_cron_due('reminders', web_cron_cfg('reminders', 900)))  web_cron_guard('reminders', 'web_cron_reminders');
+                // Photo requests (id-studio.php): the queued people of a campaign, a batch a minute.
+                if (web_cron_due('photo_asks', web_cron_cfg('photo_asks', 60)) && function_exists('ids_photo_drain')) web_cron_guard('photo_asks', fn() => ids_photo_drain());
                 if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
                 /* Fee accrual. Its own slot rather than a ride on maintenance,
                    because it is the one job an operator will want to reason

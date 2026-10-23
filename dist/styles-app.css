@@ -14183,3 +14183,22 @@ button.m9x-ev-sum { cursor: pointer; }
   body[data-page="community"]:has(.cm3-app) .topnav,
   body[data-page="community"]:has(.cm3-app) .footer { display: none; }
 }
+
+/* The photo request's confirm (IdsAskConfirm, ids-ui.jsx): who it reaches, and the words. */
+.ids-ask-reach { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ids-ink); }
+.ids-ask-reach li { display: flex; gap: 8px; align-items: flex-start; line-height: 1.4; }
+.ids-ask-reach li i { font-size: 16px; flex: none; margin-top: 1px; }
+.ids-ask-reach li.is-ok i { color: var(--ids-ok-fg); }
+.ids-ask-reach li.is-warn i { color: var(--ids-warn-fg); }
+.ids-ask-pv-err { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 10px 12px; border-radius: var(--ids-r); background: var(--ids-bad-bg); color: var(--ids-bad-fg); font-size: 13px; }
+.ids-ask-msgs { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.ids-ask-msgs-h { margin: 0; font-size: 12px; font-weight: 600; color: var(--ids-muted); text-transform: uppercase; letter-spacing: .04em; }
+.ids-ask-msg { border: 1px solid var(--ids-line-2); border-radius: var(--ids-r); background: var(--ids-s0); overflow: hidden; }
+.ids-ask-msg-h { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--ids-ink); text-align: left; cursor: pointer; font: inherit; }
+.ids-ask-msg-h span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ids-ask-msg-h b { font-size: 13px; }
+.ids-ask-msg-h small { font-size: 12px; color: var(--ids-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ids-ask-msg-h:focus-visible { outline: 2px solid var(--ids-ink); outline-offset: -2px; }
+.ids-ask-msg-b { padding: 4px 12px 12px; font-size: 13px; line-height: 1.5; color: var(--ids-ink-2); white-space: pre-line; }
+.ids-ask-msg-b p { margin: 0 0 8px; }
+.ids-ask-msg-cta { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: var(--ids-r-sm); background: var(--ids-ink); color: var(--ids-on-ink); font-size: 12.5px; font-weight: 600; }

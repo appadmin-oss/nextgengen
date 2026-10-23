@@ -314,6 +314,56 @@ function idsAskHistory(text, runs) {
   const r = runs[0];
   return { text: "The last run was " + line(r) + (r.design ? " Design: " + r.design + (r.version ? " " + r.version : "") + "." : ""), runs: [r] };
 }
+/* ── Photo requests, after they have gone ────────────────────────────────
+   "How is the photo request going?", "who has sent a photo?", "remind the
+   rest", "download the list": answered from the server's campaigns
+   (admin.ids.photo.campaigns), with the next useful press as a button. Reply
+   buttons are data ({label, act, arg}), because the chat is kept as JSON. */
+function idsAskIsPhotoReq(text) {
+  const t = String(text || "").toLowerCase();
+  return /\b(photo (requests?|asks?)|requests? for photos?|asked for (a |their )?photos?|(sent|send|sending) (in |us )?(a |their )?photos?|photos? (came|come|coming|arrived|back|in yet|so far)|who (has|have|hasn.?t|haven.?t) (sent|replied|answered)|replied|answered the (photo )?request)\b/.test(t)
+    && (idsAskIsQuestion(text) || /\b(status|progress|update)\b/.test(t)) && !/\b(remind|chase|nudge)\b/.test(t)
+    // "Who hasn't been asked?" is about the people waiting, answered from the studio's own list.
+    && !/(n['’]t|\bnot|\bnever|\byet to) (been )?asked\b|\bunasked\b/.test(t);
+}
+function idsAskIsRemind(text) {
+  const t = String(text || "").toLowerCase();
+  return /\b(remind|chase|nudge|follow up( with)?)\b/.test(t) && /\b(photos?|them|those|people|ones|rest|everyone|parents?)\b/.test(t) && !/\b(what|how|when)\b.*\?$/.test(t);
+}
+function idsAskIsExport(text) {
+  const t = String(text || "").toLowerCase();
+  return /\b(download|export|csv|spreadsheet|excel|send me)\b/.test(t) && /\b(photos?|waiting|blocked|list|unreachable|no email|who)\b/.test(t);
+}
+const idsDay = iso => iso ? new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
+function idsPhotoReqAnswer(campaigns) {
+  const mine = campaigns.filter(c => c.people > 0);
+  if (!mine.length) return { text: "No photo request has been sent from here yet. Say “ask the ones with no photo for photos” and I’ll open one, with the count and the words, for you to send." };
+  const c = mine[0];
+  const sending = c.status !== "done";
+  const unreach = c.counts.unreachable || 0;
+  const head = "**Photo request of " + idsDay(c.createdAt) + "** to " + c.people + (c.people === 1 ? " person" : " people") + ": "
+    + "**" + c.arrived + (c.arrived === 1 ? " photo" : " photos") + " in**, " + c.stillWaiting + " still waiting"
+    + (unreach ? " (" + unreach + " of them have no email or guardian on file, so need asking in person)" : "") + "."
+    + (sending ? " " + c.counts.queued + " messages are still going out." : "");
+  const rem = c.remindedAt ? "A reminder went on " + idsDay(c.remindedAt) + "; a request gets one."
+    : c.canRemind ? "You can send **one reminder** now to the " + (c.stillWaiting - unreach) + " who were reached and still haven’t sent one."
+    : c.stillWaiting && !sending ? "One reminder can go from " + idsDay(c.remindFrom) + "." : "";
+  const older = mine.slice(1, 4).map(o => idsDay(o.createdAt) + ": " + o.people + " asked, " + o.arrived + " in").join(" · ");
+  const btns = [];
+  if (c.canRemind) btns.push({ label: "Send the reminder", icon: "bell", act: "remind", arg: c.campaignId });
+  if (c.stillWaiting) btns.push({ label: "Download who’s still waiting", icon: "download-simple", act: "csvCampaign", arg: c.campaignId });
+  return { text: head + (rem ? "\n\n" + rem : "") + (older ? "\n\nEarlier: " + older + "." : ""), btns };
+}
+/** A CSV the operator downloads; every cell guarded against spreadsheet formulas (nggCsvCell). */
+function idsCsv(name, header, rows) {
+  const cell = typeof nggCsvCell === "function" ? nggCsvCell : (v => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"');
+  const csv = "﻿" + [header.map(cell).join(",")].concat(rows.map(r => r.map(cell).join(","))).join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = name + "-" + new Date().toISOString().slice(0, 10) + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 function idsAskAnswer(text, c) {
   if (!idsAskIsQuestion(text)) return null;
   const t = String(text || "").toLowerCase();
@@ -326,6 +376,7 @@ function idsAskAnswer(text, c) {
       + "**Act**: “fill the gaps”, “ask the ones with no photo for photos”, “improve the photos and remove their backgrounds”, “help position Ada’s photo”, “clear the sheet”.\n\n"
       + "**Photos**: press 📎 to add photos. Name each file after the person or their ID (“Ada Obi.jpg”, “026-014.png”) and I match them; anyone I can’t match, you pick.\n\n"
       + "**Ask**: “why can’t I print yet?”, “who’s blocked?”, “who’s on the sheet?”, “has Ada Obi got a card?”, “how much card stock?”.\n\n"
+      + "**Photo requests**: “how is the photo request going?”, “remind the ones who haven’t sent one”, “download the list of who has no photo”. A request to hundreds is one press: you see who it reaches and the exact words first.\n\n"
       + "I can’t print and I can’t mark anyone as printed: Print stays your press, with the count on it.";
   }
   // A person, by printed ID or name (a near spelling counts). Each comes back with what can be done for them.
@@ -646,6 +697,9 @@ function IdsAskReply({ m, A }) {
       <IdsAskMini text={m.text}/>
       {(m.runs || []).length > 0 && (
         <div className="ids-ai-acts">{m.runs.map(r => <button key={r.runId} type="button" className="ids-btn ids-btn--sm" onClick={() => A.openRun(r)}><IdsIcon name="list-bullets"/>Open {r.runId}</button>)}</div>
+      )}
+      {(m.btns || []).length > 0 && (
+        <div className="ids-ai-acts">{m.btns.map(b => <button key={b.act + b.label} type="button" className="ids-btn ids-btn--sm" disabled={A.busy} onClick={() => A.btn(b.act, b.arg)}>{b.icon && <IdsIcon name={b.icon}/>}{b.label}</button>)}</div>
       )}
       {(m.people || []).map(key => {
         const P = A.person(key);

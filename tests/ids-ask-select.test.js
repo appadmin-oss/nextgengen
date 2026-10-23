@@ -19,7 +19,7 @@ const js = f => esbuild.transformSync(read(f), { loader: 'jsx' }).code;
 const T = { React: { useState: () => [] } };
 vm.createContext(T);
 vm.runInContext(js('src/modules/idcards/ids-core.jsx') + '\n' + js('src/modules/idcards/ids-ask.jsx')
-  + '\n;Object.assign(this, { idsPlanSelect, idsPlanGapNote, idsPlanActs, idsAskAnswer, idsClosest, idsPlanWhat, idsAskNameFrag, idsAskPasteList });', T);
+  + '\n;Object.assign(this, { idsPlanSelect, idsPlanGapNote, idsPlanActs, idsAskAnswer, idsClosest, idsPlanWhat, idsAskNameFrag, idsAskPasteList, idsAskIsPhotoReq, idsAskIsRemind, idsAskIsExport, idsPhotoReqAnswer, idsAskIsQuestion });', T);
 
 let passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
@@ -113,6 +113,24 @@ console.log('filters the rules now read');
     && what.includes('numbers 026-001–026-040') && what.includes('the 20 most recent'));
   const one = T.idsPlanWhat({ centres: ['Ijaiye', 'Ikorodu'] }, null).find(x => x.label === 'Ijaiye').drop({ centres: ['Ijaiye', 'Ikorodu'] });
   chk('…and removing one of two centres leaves a plain one-centre plan', one.centre === 'Ikorodu' && !one.centres);
+}
+
+console.log('photo requests, after they went');
+chk('"how is the photo request going?" and "who has sent a photo?" are about the requests', T.idsAskIsPhotoReq('How is the photo request going?') && T.idsAskIsPhotoReq('who has sent their photo?') && T.idsAskIsPhotoReq('any photos in yet?'));
+chk('…"who hasn’t been asked for a photo yet?" is about the waiting list, not the requests', !T.idsAskIsPhotoReq('Who hasn’t been asked for a photo yet?'));
+chk('…"ask the ones with no photo for photos" is still a request to ask, not a question about one', !T.idsAskIsPhotoReq('ask the ones with no photo for photos') && !T.idsAskIsRemind('ask the ones with no photo for photos'));
+chk('"remind the ones who haven’t sent one" is the reminder', T.idsAskIsRemind('remind the ones who haven’t sent a photo') && T.idsAskIsRemind('chase the parents'));
+chk('"download the list of who has no photo" is the export', T.idsAskIsExport('download the list of who has no photo') && T.idsAskIsExport('export the waiting list as csv') && !T.idsAskIsExport('fronts only'));
+{
+  const ago = d => new Date(Date.now() - d * 864e5).toISOString();
+  const a = T.idsPhotoReqAnswer([{ campaignId: 'PC-1', createdAt: ago(3), people: 412, status: 'done', counts: { queued: 0, sent: 380, unreachable: 32, skipped: 0 }, arrived: 120, stillWaiting: 292, remindedAt: '', canRemind: true, remindFrom: ago(1), waiting: [] },
+    { campaignId: 'PC-0', createdAt: ago(20), people: 12, status: 'done', counts: { queued: 0, sent: 12, unreachable: 0, skipped: 0 }, arrived: 10, stillWaiting: 2, remindedAt: ago(15), canRemind: false, remindFrom: ago(18), waiting: [] }]);
+  chk('the answer counts, never lists: photos in, still waiting, who needs asking in person, and the one reminder', /\*\*120 photos in\*\*/.test(a.text) && /292 still waiting/.test(a.text) && /32 of them have no email/.test(a.text)
+    && /one reminder\*\* now to the 260/.test(a.text) && /Earlier: .*12 asked, 10 in/.test(a.text));
+  chk('…with the reminder and the download as buttons', a.btns.map(b => b.act).join() === 'remind,csvCampaign');
+  const b = T.idsPhotoReqAnswer([{ campaignId: 'PC-2', createdAt: ago(0), people: 60, status: 'sending', counts: { queued: 35, sent: 25, unreachable: 0, skipped: 0 }, arrived: 0, stillWaiting: 60, remindedAt: '', canRemind: false, remindFrom: ago(-2), waiting: [] }]);
+  chk('a request still going out says so, and no reminder is offered', /35 messages are still going out/.test(b.text) && !b.btns.some(x => x.act === 'remind'));
+  chk('with no request yet, it says how to start one', /No photo request has been sent/.test(T.idsPhotoReqAnswer([]).text));
 }
 
 console.log('questions answered here');
