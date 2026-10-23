@@ -31,7 +31,7 @@ const IDS_DEFAULT_SETTINGS = { size: "cr80p", cw: 60, ch: 90, paper: "a4", margi
 const IDS_REASON_LABEL = Object.fromEntries(IDS_REASONS);
 const IDS_KIND_FOR_RUN = { member: "member", summer: "student", volunteer: "volunteer", afrovanguard: "afrovanguard" };
 const IDS_ASK_QUIET_MS = 3 * 864e5;   // the server's quiet period: asking again inside it needs an explicit press
-const IDS_ASK_MAX = 200;              // and its cap per request
+const IDS_ASK_MAX = 2000;             // and its cap per request (a campaign, sent in batches)
 const IDS_QR_WARM_CHUNK = 8;          // hosted QR PNGs sent per request (~30 KB), so no request trips a host's body filter
 /* "The records with no centre on file": a value no real centre can collide with, so the filter stays one value. */
 const IDS_NO_CENTRE = "\u0000none";
@@ -1644,6 +1644,32 @@ function IdCardStudioPage({ setPage }) {
     return (usedNow ? "Your last request was read by **" + usedNow + "**. " : "") + (aiPref ? "You asked for " + (aiPref === "rules" ? "the studio’s rules" : nameOf(aiPref)) + " first. " : "")
       + (setUp ? "Set up for the studio: " + setUp + ". " : "") + "Say “use Gemini” (or Groq, Claude, OpenAI) to choose, or “use the rules” for no AI.";
   };
+  /* The buttons on a reply ({act, arg}) and the requests that do the same thing in words. */
+  const askBtn = (act, arg) => {
+    if (act === "remind") {
+      setAskBusy(true);
+      return NGGApi.admin.idStudio.remindPhoto(arg)
+        .then(r => say2("studio", { kind: "answer", text: "Reminder on its way to **" + idsN(r.reminded, "person", "people") + "** who were reached and still have no photo"
+          + (r.queued ? " (" + r.queued + " go out over the next few minutes)" : "") + ". That was this request’s one reminder; staff get one summary when it has gone." }))
+        .catch(e => say2("studio", { kind: "answer", text: ({ too_soon: "It’s too soon: a reminder can go two days after the request.", reminded_already: "That request has already had its reminder.",
+          nobody_to_remind: "Nobody needs reminding: everyone reached has sent a photo.", still_sending: "The request is still going out. Try once it has all gone." })[e.code || e.message] || idsErrText(e, "Couldn’t send the reminder.") }))
+        .finally(() => setAskBusy(false));
+    }
+    if (act === "csvCampaign") {
+      return NGGApi.admin.idStudio.photoCampaigns().then(r => {
+        const c = (r.campaigns || []).find(x => x.campaignId === arg);
+        if (!c || !c.waiting.length) { say2("studio", { kind: "answer", text: "Nobody from that request is still waiting." }); return; }
+        idsCsv("photo-request-still-waiting", ["Name", "Type", "Centre", "Reached", "Reminded"], c.waiting.map(w => [w.name, IDS_KIND_ONE[w.subjectType === "student" ? "summer" : w.subjectType] || w.subjectType, w.centre, w.unreachable ? "No email or guardian on file" : "Yes", w.reminded ? "Yes" : "No"]));
+        say2("studio", { kind: "answer", text: "Downloaded the **" + c.waiting.length + "** still waiting from the request of " + idsDay(c.createdAt) + "." });
+      }).catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the photo requests. Try again." }));
+    }
+    if (act === "csvBlocked") {
+      const list = data.records.filter(isBlocked);
+      if (!list.length) { say2("studio", { kind: "answer", text: "Nobody is waiting for a photo, so there is nothing to download." }); return; }
+      idsCsv("waiting-for-a-photo", ["Name", "Printed ID", "Type", "Centre", "Last asked"], list.map(r => { const a = askedOf(r); return [r.name, r.displayId, IDS_KIND_ONE[r.kind] || r.kind, r.centre, a && a.at ? idsDay(a.at) : "Not asked"]; }));
+      say2("studio", { kind: "answer", text: "Downloaded the **" + list.length + "** waiting for a photo, with when each was last asked." });
+    }
+  };
   const askPlan = prompt => {
     askLast.current = prompt;
     say2("me", { text: prompt });
@@ -1653,6 +1679,27 @@ function IdCardStudioPage({ setPage }) {
       if (askRes && askUndo.current && liveId) { askUndoIt(); say2("studio", { kind: "answer", text: "Done: the sheet is back as it was before the plan." }); }
       else if (cmd && cmd.undo && !cmd.undone) { undoCmd(cmd); say2("studio", { kind: "answer", text: "Done: undid “" + (cmd.ran || []).join(", ").toLowerCase() + "”." }); }
       else say2("studio", { kind: "answer", text: "There’s nothing of mine to undo. Changes you made by hand have their own Undo on the toast." });
+      return;
+    }
+    // Photo requests after they went: how it is going, one reminder, the list to download.
+    if (idsAskIsExport(prompt)) { askBtn("csvBlocked"); return; }
+    if (idsAskIsRemind(prompt) || idsAskIsPhotoReq(prompt)) {
+      setAskBusy(true);
+      NGGApi.admin.idStudio.photoCampaigns()
+        .then(r => {
+          const camps = r.campaigns || [];
+          if (idsAskIsRemind(prompt)) {
+            const c = camps.find(x => x.people > 0);
+            if (c && c.canRemind) return askBtn("remind", c.campaignId);
+            const a = idsPhotoReqAnswer(camps);
+            say2("studio", { kind: "answer", text: (c && c.remindedAt ? "That request has had its one reminder. " : c && c.stillWaiting && c.status === "done" ? "It’s too soon for a reminder: give people two days. " : "") + a.text, btns: a.btns });
+            return;
+          }
+          const a = idsPhotoReqAnswer(camps);
+          say2("studio", { kind: "answer", text: a.text, btns: a.btns });
+        })
+        .catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the photo requests. Check your connection, then try again." }))
+        .finally(() => setAskBusy(false));
       return;
     }
     // Printing that has happened: read from the print log.
@@ -1781,7 +1828,7 @@ function IdCardStudioPage({ setPage }) {
       { label: "Sorted by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase(), k: "order" },
     ].concat((askRes.changed || []).filter(k => k === "margin" || k === "gap" || k === "skip" || k === "packing").map(k => ({ label: idsCmdLabel(k, st[k], st).replace(/^./, c => c.toUpperCase()), k }))).concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
   } : null;
-  const A = { ask: askPlan, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
+  const A = { ask: askPlan, btn: askBtn, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
     chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => m.kind === "cmd" ? commitCmd(m.id, m.plan) : commit(m.id, m.res, m.prompt),
     lastCmdId, undoCmd, starters: askStarters, next: askNext, person: askPerson,
     openRun: r => openRun(r),
@@ -1891,16 +1938,7 @@ function IdCardStudioPage({ setPage }) {
         : <IdsLookup lookup={lookup} design={designHead} onQueue={queueReprint}/>}
 
       {confirm && <IdsConfirm run={confirm} onCancel={() => setConfirm(null)} onPrint={onConfirmPrint}/>}
-      {askConfirm && (
-        <IdsDialog alert width={480} title={"Ask " + idsN(askConfirm.length, "person", "people") + " for a photo?"} onClose={() => setAskConfirm(null)}
-          footer={<>
-            <button type="button" className="ids-btn" onClick={() => setAskConfirm(null)}>Cancel</button>
-            <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={() => { const l = askConfirm; setAskConfirm(null); askPhotos(l, false); }}>Ask {askConfirm.length}</button>
-          </>}>
-          <p className="ids-note">Each member gets a message saying how to add a photo, and a child’s guardians get it too. Summer School participants’ guardians are asked; volunteers are asked by email. The admins for their centres get one summary.</p>
-          <p className="ids-note">Anyone asked in the last 3 days is left out.{askable.length > IDS_ASK_MAX ? " This sends the first " + IDS_ASK_MAX + "; ask again for the rest." : ""}</p>
-        </IdsDialog>
-      )}
+      {askConfirm && <IdsAskConfirm list={askConfirm} onCancel={() => setAskConfirm(null)} onSend={l => { setAskConfirm(null); askPhotos(l, false); }}/>}
       {after && <IdsAfterPrint items={after.items} renderFace={renderFace} onLater={() => { setAfter(null); say("You can mark failures from the print log later."); }} onDone={afterDone}/>}
       {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
       {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}

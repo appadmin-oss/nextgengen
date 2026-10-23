@@ -1569,6 +1569,10 @@
         printed:   (items, runId) => request('/admin/id-studio.php', { body: { action: 'printed', items, runId } }),
         failed:    (runId, items) => request('/admin/id-studio.php', { body: { action: 'failed', runId, items } }),
         askPhoto:  (items, force) => request('/admin/id-studio.php', { body: { action: 'askPhoto', items, force: !!force } }),
+        // What a photo request would send, to whom, in what words — sending nothing.
+        askPhotoPreview: (items, force) => request('/admin/id-studio.php', { body: { action: 'askPhoto', items, force: !!force, preview: true } }),
+        photoCampaigns: () => request('/admin/id-studio.php?view=photoCampaigns'),
+        remindPhoto: (campaignId) => request('/admin/id-studio.php', { body: { action: 'remindPhoto', campaignId } }),
         design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
         // Printed IDs for those with none, and every member's secure card code; `codesOnly` for a proof.
         // Print from a prompt: the request read into a plan ({plan, notes, by, provider}); nothing is selected or printed by the server.

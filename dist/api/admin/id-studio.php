@@ -11,6 +11,7 @@ if ($method === 'GET') {
     /* Afrovanguard member cards (domain/ngv-portal.php): who has one, and the card's stylesheet. */
     $view = (string)($_GET['view'] ?? '');
     if ($view === 'av') $res = gs_call('admin.ids.av.list', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')]);
+    elseif ($view === 'photoCampaigns') $res = gs_call('admin.ids.photo.campaigns', ['requesterId' => $s['mid']]);
     elseif ($view === 'avStyle') $res = gs_call('admin.ids.av.style', ['requesterId' => $s['mid'], 'design' => (string)($_GET['design'] ?? '')]);
     else $res = gs_call('admin.ids.state', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
@@ -20,7 +21,8 @@ if ($method === 'GET') {
         case 'reprint':   $res = gs_call('admin.ids.reprint.request', $base + ['items' => $b['items'] ?? []]); break;
         case 'printed':   $res = gs_call('admin.ids.reprint.done', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
         case 'failed':    $res = gs_call('admin.ids.run.failed', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
-        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force'])]); break;
+        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force']), 'preview' => !empty($b['preview'])]); break;
+        case 'remindPhoto': $res = gs_call('admin.ids.photo.remind', $base + ['campaignId' => (string)($b['campaignId'] ?? '')]); break;
         case 'design':    $res = gs_call('admin.ids.design.set', $base + ['kind' => (string)($b['kind'] ?? ''), 'templateId' => (string)($b['templateId'] ?? '')]); break;
         // Printed IDs for exactly the members about to be printed.
         case 'avFaces':   $res = gs_call('admin.ids.av.faces', $base + ['ids' => $b['ids'] ?? []]); break;

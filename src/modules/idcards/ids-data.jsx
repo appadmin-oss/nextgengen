@@ -225,22 +225,25 @@ function IdsMemberFace({ rec, back, program, boxW, boxH }) {
 
 const IDS_ASK_CHANNEL = { member: "them by email", member_app: "them in the app", guardians: "their guardians", guardian: "their guardian", volunteer: "them by email" };
 const IDS_ASK_REFUSAL = { has_photo: "already has a photo", asked_recently: "was asked in the last few days", out_of_scope: "is outside your centres",
-  forbidden: "isn’t yours to ask", not_found: "wasn’t found", bad_subject: "wasn’t found" };
+  forbidden: "isn’t yours to ask", not_found: "wasn’t found", bad_subject: "wasn’t found", already_queued: "is already in a request that is still sending" };
 
 /** One sentence for the toast, from the server's per-row verdicts — never from what was pressed. */
 function idsAskSummary(res, nameOf) {
   const rows = (res && res.results) || [];
-  const sent = rows.filter(r => r.sent), refused = rows.filter(r => r.error);
-  const admins = (res && res.admins) || 0;
-  const adminsTxt = admins ? " " + idsN(admins, "admin") + " told." : "";
+  const sent = rows.filter(r => r.sent && !r.queued), queued = rows.filter(r => r.queued), refused = rows.filter(r => r.error);
   if (rows.length === 1 && sent.length === 1) {
-    const ch = sent[0].sent.map(c => IDS_ASK_CHANNEL[c]).filter(Boolean);
-    return ch.length ? "Asked " + ch.join(" and ") + "." + adminsTxt : "Noted, but there was nobody to send it to. Ask them in person." + adminsTxt;
+    const ch = sent[0].sent.filter(c => c !== "member_app" || sent[0].sent.length === 1).map(c => IDS_ASK_CHANNEL[c]).filter(Boolean);
+    return sent[0].unreachable ? (sent[0].sent.length ? "Sent in the app only: there is no email or guardian on file. Ask them in person too." : "There was nobody to send it to. Ask them in person.")
+      : "Asked " + ch.join(" and ") + ". The staff for their centre get one summary.";
   }
   if (rows.length === 1 && refused.length === 1) return nameOf(refused[0]) + " " + (IDS_ASK_REFUSAL[refused[0].error] || "couldn’t be asked") + ".";
-  const quiet = sent.filter(r => !r.sent.length).length;
-  return "Asked " + idsN(sent.length - quiet, "person", "people") + (quiet ? ", " + quiet + " with no one to send to" : "")
-    + (refused.length ? ", " + refused.length + " skipped" : "") + "." + adminsTxt;
+  const quiet = sent.filter(r => r.unreachable).length;
+  const n = sent.length + queued.length;
+  /* A big request is a queue, said as one: how many, and that the rest follow. */
+  return (n ? "Photo request for " + idsN(n, "person", "people") + ": " + (queued.length ? sent.length + " sent now, the other " + queued.length + " go out over the next few minutes" : "all sent") : "Nobody new to ask")
+    + (quiet ? "; " + quiet + " have no email or guardian on file" : "")
+    + (refused.length ? "; " + refused.length + " left out" : "") + "."
+    + (n ? " Staff get one summary when it has all gone." : "");
 }
 function idsAskedOn(a) {
   return a && a.at ? new Date(a.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";

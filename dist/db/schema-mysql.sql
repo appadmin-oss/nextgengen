@@ -3987,3 +3987,22 @@ CREATE TABLE IF NOT EXISTS mentor_supports (
   KEY idx_mentor_supports_mentor (mentorId, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (172) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS id_photo_campaigns (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  campaignId VARCHAR(40) NOT NULL,
+  askedBy VARCHAR(40) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL,
+  total INT NOT NULL DEFAULT 0,
+  status VARCHAR(12) NOT NULL DEFAULT 'sending',
+  summaryAt VARCHAR(32) NOT NULL DEFAULT '',
+  remindedAt VARCHAR(32) NOT NULL DEFAULT '',
+  remindedBy VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_id_photo_campaigns (campaignId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE id_photo_asks ADD COLUMN campaignId VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE id_photo_asks ADD COLUMN status VARCHAR(12) NOT NULL DEFAULT 'sent';
+ALTER TABLE id_photo_asks ADD COLUMN sentAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE id_photo_asks ADD COLUMN reminders INT NOT NULL DEFAULT 0;
+ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_campaign (campaignId, status);
+ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_status (status);
+INSERT INTO schema_version (version) VALUES (173) ON DUPLICATE KEY UPDATE version = version;

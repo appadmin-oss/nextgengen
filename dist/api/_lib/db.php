@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 172;
+const NGG_SCHEMA_TARGET = 173;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5050,6 +5050,29 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_mentor_supports_member ON mentor_supports(memberId, status);
             CREATE INDEX IF NOT EXISTS idx_mentor_supports_mentor ON mentor_supports(mentorId, status);
+        ",
+        /* Photo requests at any size (id-studio.php): one press is a campaign,
+           its people queued on id_photo_asks and sent a batch at a time by the
+           web-cron, with ONE summary to staff when it is done and at most one
+           reminder. Rows from before this are sent (`status` defaults so). */
+        173 => "
+            CREATE TABLE IF NOT EXISTS id_photo_campaigns (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              campaignId TEXT NOT NULL UNIQUE,
+              askedBy TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL,
+              total INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'sending',
+              summaryAt TEXT NOT NULL DEFAULT '',
+              remindedAt TEXT NOT NULL DEFAULT '',
+              remindedBy TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE id_photo_asks ADD COLUMN campaignId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE id_photo_asks ADD COLUMN status TEXT NOT NULL DEFAULT 'sent';
+            ALTER TABLE id_photo_asks ADD COLUMN sentAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE id_photo_asks ADD COLUMN reminders INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_id_photo_asks_campaign ON id_photo_asks(campaignId, status);
+            CREATE INDEX IF NOT EXISTS idx_id_photo_asks_status ON id_photo_asks(status);
         ",
     ];
 

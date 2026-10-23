@@ -291,7 +291,32 @@ function cleanup() {
     await P.waitForSelector('[role=alertdialog]');
     chk('"ask … for photos" opens the request with its count; nothing is sent until it is confirmed',
       /Ask 1 person for a photo\?/.test(await P.innerText('[role=alertdialog]')) && /Opened the photo request for 1 person/.test(card));
-    await P.click('[role=alertdialog] button:has-text("Cancel")');
+    await P.waitForSelector('[role=alertdialog] .ids-ask-reach', { timeout: 15000 });
+    const dlg = await P.innerText('[role=alertdialog]');
+    chk('…the confirm says how they are reached, before anything goes', /1 member by email and in the app/.test(dlg) && /Send to 1 person/.test(dlg));
+    await P.click('[role=alertdialog] .ids-ask-msg-h >> nth=0');
+    const words = await P.innerText('[role=alertdialog] .ids-ask-msg-b');
+    chk('…and shows the exact words they get: to them by name, with a button and how to take a good photo', /Hi Gbenga,/.test(words) && /Add my photo/.test(words) && /plain, light wall/.test(words));
+    await P.click('[role=alertdialog] button:has-text("Send to 1 person")');
+    await P.waitForFunction(() => !document.querySelector('[role=alertdialog]'), null, { timeout: 15000 });
+    const rows = JSON.parse(php(`echo json_encode(db_all("SELECT status, campaignId FROM id_photo_asks WHERE subjectId = 'NGG-A-7'"));`, ['bootstrap']) || '[]');
+    chk('sending it records one request, as a campaign, sent at once (it is small)', rows.length === 1 && /^PC-/.test(rows[0].campaignId) && rows[0].status !== 'queued');
+    card = await ask('How is the photo request going?');
+    chk('"how is the photo request going?" answers from the requests: who was asked, photos in, still waiting', /Photo request of .* to 1 person/.test(card) && /0 photos in/.test(card) && /1 still waiting/.test(card)
+      && /One reminder can go from/.test(card));
+    {
+      const tok = php(`echo ids_photo_link_token('member', 'NGG-A-7');`, ['bootstrap']);
+      const R = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+      await R.goto(BASE + '/reshoot?t=' + encodeURIComponent(tok), { waitUntil: 'domcontentloaded' });
+      await waitForBoot(R);
+      const ok = await R.waitForFunction(() => /A photo for Gbenga’s NGG ID card/.test(document.body.innerText), null, { timeout: 30000 }).then(() => true, () => false);
+      const txt = await R.innerText('body');
+      chk('the link in the message opens the photo page for exactly that member: their card, the tips, and a button', ok && /plain, light wall/.test(txt) && /Take \/ choose photo/.test(txt));
+      await R.goto(BASE + '/reshoot?t=' + encodeURIComponent(tok.slice(0, -2) + 'zz'), { waitUntil: 'domcontentloaded' });
+      await waitForBoot(R);
+      chk('…and a changed link opens nothing', await R.waitForFunction(() => /isn't valid|isn’t valid/.test(document.body.innerText), null, { timeout: 30000 }).then(() => true, () => false));
+      await R.context().close();
+    }
     const beforeClear = await nOnSheet();
     card = await ask('clear the sheet');
     chk('"clear the sheet" takes every card off, and says how many', new RegExp('Took ' + beforeClear + ' cards? off the sheet').test(card) && (await nOnSheet()) <= 0);
@@ -323,7 +348,8 @@ function cleanup() {
     card = await ask('What did we print today?');
     chk('"what did we print today?" counts today’s cards across the runs', /cards? printed today/.test(card));
     card = await ask('Who hasn’t been asked for a photo yet?');
-    chk('"who hasn’t been asked?" names only the people with no photo who were not asked', /Gbenga Nophoto/.test(card) && /been asked in the last 3 days/.test(card));
+    // Gbenga was asked above (the photo request), so the honest answer is that nobody is left unasked.
+    chk('"who hasn’t been asked?" counts the request just sent: nobody with no photo is left unasked', /Everyone with no photo has been asked in the last 3 days/.test(card));
     card = await ask('Reprint 025-103, she lost it');
     chk('"she lost it" is understood as a lost card, which gets a new QR', /lost: new QR/.test(card));
     card = await ask('undo');

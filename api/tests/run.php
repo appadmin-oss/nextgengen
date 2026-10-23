@@ -25882,18 +25882,36 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     unset($GLOBALS['__ai_mock']);
     $GLOBALS['CONFIG']['ai'] = $aiKeep;
 
-    // Photo requests reach the person and the admins who own the card, once per quiet period.
+    // Photo requests: a campaign, written to one person each, with a one-tap link; one summary to staff.
     db_insert('members', ['memberId' => 'NGG-IDS-NOPIC', 'fullName' => 'Pat Nophoto', 'email' => 'pat-nopic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('members', ['memberId' => 'NGG-IDS-PIC', 'fullName' => 'Has Photo', 'email' => 'has-pic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => 'https://example.org/p.jpg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('guardians', ['guardianId' => 'GD-IDS-1', 'email' => 'mum-nopic@example.org', 'fullName' => 'Mrs Nophoto', 'status' => 'active', 'createdAt' => now_iso()]);
+    db_insert('guardian_wards', ['linkId' => 'GL-IDS-1', 'guardianId' => 'GD-IDS-1', 'memberId' => 'NGG-IDS-NOPIC', 'status' => 'active', 'notify' => '', 'createdAt' => now_iso()]);
     $nb = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-IDS-NOPIC'")['c'];
-    $a = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => [
-        ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-PIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-NOBODY']]]);
+    $items3 = [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-PIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-NOBODY']];
+    $GLOBALS['__mail_sink'] = [];
+    $pv = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => $items3, 'preview' => true]);
+    chk('id studio: the preview sends nothing and says who it reaches, who is left out and why, and the exact words',
+        !empty($pv['preview']) && $pv['people'] === 1 && $pv['reach']['member'] === 1 && $pv['reach']['guardians'] === 1 && ($pv['leftOut']['has_photo'] ?? 0) === 1 && ($pv['leftOut']['not_found'] ?? 0) === 1
+        && !$GLOBALS['__mail_sink'] && !db_row("SELECT 1 FROM id_photo_asks WHERE subjectId = 'NGG-IDS-NOPIC'")
+        && in_array('guardian', array_column($pv['messages'], 'to'), true) && str_contains(implode(' ', array_column($pv['messages'], 'subject')), 'Pat, add your photo'));
+    $a = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => $items3]);
     $res = array_column($a['results'] ?? [], null, 'subjectId');
-    chk('id studio: a member is asked for their photo themselves — in the app and by email', !empty($a['ok']) && in_array('member', $res['NGG-IDS-NOPIC']['sent'] ?? [], true)
-        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-IDS-NOPIC'")['c'] === $nb + 1);
-    chk('id studio: …and the NGG admins who own that card are told, in one notice per press', ($a['admins'] ?? 0) >= 1
-        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId != 'NGG-IDS-NOPIC' AND title = 'A card is waiting on a photo'")['c'] === $a['admins']);
-    chk('id studio: …never the operator who pressed the button', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title = 'A card is waiting on a photo'", [$CARDADM])['c'] === 0);
+    $mailTo = array_column($GLOBALS['__mail_sink'], null, 'to');
+    chk('id studio: a member is asked themselves — in the app and by email, in a message written to them by name',
+        !empty($a['ok']) && in_array('member', $res['NGG-IDS-NOPIC']['sent'] ?? [], true) && in_array('member_app', $res['NGG-IDS-NOPIC']['sent'] ?? [], true)
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-IDS-NOPIC'")['c'] === $nb + 1
+        && ($mailTo['pat-nopic@example.org']['subject'] ?? '') === 'Pat, add your photo for your NGG card' && str_contains($mailTo['pat-nopic@example.org']['html'], 'Hi Pat,'));
+    chk('id studio: …and their guardian, greeted by name, told whose card and which centre, with the same one-tap link',
+        isset($mailTo['mum-nopic@example.org']) && str_contains($mailTo['mum-nopic@example.org']['html'], 'Hello Mrs Nophoto,') && str_contains($mailTo['mum-nopic@example.org']['html'], 'Egbeda centre')
+        && preg_match('#/reshoot\?t=(PL\.[^"&<\s]+)#', $mailTo['mum-nopic@example.org']['html'], $lm) && ids_photo_link_verify(rawurldecode($lm[1])) === ['member', 'NGG-IDS-NOPIC']);
+    chk('id studio: the link opens the photo page for exactly that person, and a tampered or expired one does not',
+        (reshoot_context(['t' => rawurldecode($lm[1])])['student']['name'] ?? '') === 'Pat Nophoto' && (reshoot_context(['t' => rawurldecode($lm[1])])['card'] ?? '') === 'NGG ID card'
+        && (reshoot_context(['t' => substr(rawurldecode($lm[1]), 0, -1) . 'x'])['error'] ?? '') === 'link_invalid'
+        && ids_photo_link_verify(ids_photo_link_token('member', 'NGG-IDS-NOPIC', time() - 1)) === null && ids_photo_link_verify(ids_photo_link_token('admin', 'X')) === null);
+    $sumN = db_all("SELECT memberId FROM notifications WHERE title = 'Photo request sent to 1 person'");
+    chk('id studio: the admins who own that card get ONE summary when it has gone — never the operator who pressed', count($sumN) >= 1
+        && !in_array($CARDADM, array_column($sumN, 'memberId'), true) && (string)db_row("SELECT status FROM id_photo_campaigns WHERE campaignId = ?", [$a['campaignId']])['status'] === 'done');
     chk('id studio: somebody who already has a photo is refused by name, not asked', ($res['NGG-IDS-PIC']['error'] ?? '') === 'has_photo' && ($res['NGG-NOBODY']['error'] ?? '') === 'not_found');
     chk('id studio: the channels that went are recorded with the ask', in_array('member', backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['asked']->{'member:NGG-IDS-NOPIC'}['channels'] ?? [], true));
     $again = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
@@ -25901,7 +25919,51 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $forced = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'force' => true, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
     chk('id studio: …unless the operator insists', $forced['asked'] === 1);
     chk('id studio: a Summer admin cannot ask about a member — refused per row', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $SUMADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]])['results'][0]['error'] ?? '') === 'forbidden');
-    chk('id studio: a photo ask is capped, naming the cap', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => array_fill(0, 201, ['subjectType' => 'member', 'subjectId' => 'x'])])['error'] ?? '') === 'too_many');
+    chk('id studio: a photo ask is capped, naming the cap', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => array_fill(0, IDS_ASK_MAX + 1, ['subjectType' => 'member', 'subjectId' => 'x'])])['max'] ?? 0) === IDS_ASK_MAX);
+
+    // A big request is one press: the first batch now, the rest with the web-cron; one summary that counts, not lists.
+    $bigIds = [];
+    for ($k = 1; $k <= 60; $k++) {
+        $bid = sprintf('NGG-IDS-BIG%02d', $k); $bigIds[] = $bid;
+        db_insert('members', ['memberId' => $bid, 'fullName' => 'Big Kid' . $k, 'email' => $k <= 50 ? "big$k@example.org" : '', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+            'centre' => $k <= 40 ? 'Egbeda' : 'Planford', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $GLOBALS['__mail_sink'] = [];
+    db_exec("DELETE FROM notifications WHERE title LIKE 'Photo request sent to%'");
+    $big = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => array_map(fn($x) => ['subjectType' => 'member', 'subjectId' => $x], $bigIds)]);
+    chk('id studio: sixty people is one press — ' . IDS_ASK_INLINE . ' now, the rest queued, and no summary yet', $big['asked'] === 60 && $big['queued'] === 60 - IDS_ASK_INLINE
+        && count($GLOBALS['__mail_sink']) === IDS_ASK_INLINE && !db_row("SELECT 1 FROM notifications WHERE title = 'Photo request sent to 60 people'"));
+    ids_photo_drain(); ids_photo_drain();
+    $sum = db_row("SELECT body FROM notifications WHERE title = 'Photo request sent to 60 people' LIMIT 1");
+    $toKids = fn() => array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_starts_with($m['to'], 'big')));
+    chk('id studio: the web-cron sends the rest, each person once, then the ONE summary counts by centre and names nobody', count($toKids()) === 50 && count(array_unique(array_column($toKids(), 'to'))) === 50
+        && (int)db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status IN ('queued','sending')", [$big['campaignId']])['c'] === 0
+        && $sum && str_contains($sum['body'], 'Egbeda 40') && str_contains($sum['body'], 'Planford 20') && str_contains($sum['body'], '10 have no email or guardian on file') && !str_contains($sum['body'], 'Big Kid'));
+    chk('id studio: someone with no email or guardian is recorded as unreachable, not as asked', (int)db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'unreachable'", [$big['campaignId']])['c'] === 10);
+    chk('id studio: somebody already queued in a request still sending is not queued twice', (function () use ($CARDADM) {
+        db_insert('id_photo_campaigns', ['campaignId' => 'PC-HOLD', 'askedBy' => $CARDADM, 'createdAt' => now_iso(), 'total' => 1, 'status' => 'sending']);
+        db_insert('members', ['memberId' => 'NGG-IDS-Q1', 'fullName' => 'Queued Kid', 'email' => 'q1@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('id_photo_asks', ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-Q1', 'askedBy' => $CARDADM, 'askedAt' => '2020-01-01T00:00:00Z', 'sent' => 0, 'channels' => '[]', 'campaignId' => 'PC-HOLD', 'status' => 'queued']);
+        $r = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'force' => true, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-Q1']]]);
+        return ($r['results'][0]['error'] ?? '') === 'already_queued';
+    })());
+    // One reminder, not before two days, to those still without a photo.
+    chk('id studio: a reminder is refused before two days', (backend_dispatch('admin.ids.photo.remind', ['requesterId' => $CARDADM, 'campaignId' => $big['campaignId']])['error'] ?? '') === 'too_soon');
+    db_exec('UPDATE id_photo_campaigns SET createdAt = ? WHERE campaignId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400), $big['campaignId']]);
+    db_exec("UPDATE members SET photoUrl = 'https://example.org/b1.jpg' WHERE memberId IN ('NGG-IDS-BIG01','NGG-IDS-BIG02')");
+    $camp = array_values(array_filter(backend_dispatch('admin.ids.photo.campaigns', ['requesterId' => $CARDADM])['campaigns'], fn($c) => $c['campaignId'] === $big['campaignId']))[0] ?? [];
+    chk('id studio: a campaign says what came of it — photos arrived, still waiting, unreachable — and that it may be reminded',
+        ($camp['arrived'] ?? 0) === 2 && $camp['stillWaiting'] === 58 && $camp['counts']['unreachable'] === 10 && $camp['canRemind'] === true);
+    $GLOBALS['__mail_sink'] = [];
+    $rm = backend_dispatch('admin.ids.photo.remind', ['requesterId' => $CARDADM, 'campaignId' => $big['campaignId']]);
+    ids_photo_drain(); ids_photo_drain();
+    $rmail = $toKids()[0]['subject'] ?? '';
+    chk('id studio: the reminder goes only to those reached the first time who still have no photo, worded as a reminder', $rm['reminded'] === 48 && count($toKids()) === 48
+        && str_contains($rmail, 'still waiting for your photo'));
+    chk('id studio: …once: a second reminder is refused', (backend_dispatch('admin.ids.photo.remind', ['requesterId' => $CARDADM, 'campaignId' => $big['campaignId']])['error'] ?? '') === 'reminded_already');
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-IDS-BIG%' OR memberId = 'NGG-IDS-Q1'"); db_exec("DELETE FROM id_photo_asks WHERE campaignId IN ('PC-HOLD', ?)", [$big['campaignId']]);
+    db_exec("DELETE FROM guardian_wards WHERE guardianId = 'GD-IDS-1'"); db_exec("DELETE FROM guardians WHERE guardianId = 'GD-IDS-1'");
 
     // The design each card type prints with: a published front of the same kind, or the standard card.
     $draft = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => ['id' => '', 'name' => 'Unpublished member', 'kind' => 'member', 'face' => 'front', 'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []]]);
