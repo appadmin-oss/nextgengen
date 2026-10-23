@@ -2550,3 +2550,11 @@ owner reported while it ran.
   1. `media_usage_refresh_one` kept the last reading whenever `/usage` itself was refused. A stopped account answers 401/403/400 with "disabled"/"limit", so the last reading — possibly *ok* — was kept and uploads stayed on it. Such a refusal (matched by `media_refusal_is_quota`) is now `critical`.
   2. Photos already on the spent account kept spending it on every view. New op `admin.photos.relocate` (settings cap; dryRun; 40 a press; fixed `moved_<md5>` name with overwrite off, so no duplicates) copies record photos off accounts at `warn` or above to the live account. It updates `photo_assets` first, then the record, as materialise does. Wired to Diagnostics → Image storage → **Move photos…**.
   - Tests: 9 more PHP checks and 1 Control Room check.
+- **Follow-up ("copy only the ones I need, when I need them").** The bulk **Move photos…** press was removed, because it would fill the new account with photos nobody uses.
+  - `admin.photos.relocate` now takes `subjects` ([{type, id}], at most `PHOTO_RELOCATE_MAX` 60) and refuses an empty list.
+  - It is gated per subject type by `crun_gate_for` (the permission that prints that card) and scoped per row by centre.
+  - It copies only those on an account at `warn` or above, and returns `moved` [{type, id, url}].
+  - The ID Card Studio calls it in `onConfirmPrint` (`movePhotos`), before photos are measured and drawn, and repoints the records it holds.
+  - Editing already copies on demand (`cloudinary_adopt`).
+  - The Diagnostics note now explains the behaviour; it has no button.
+- **Pre-existing:** `tests/ids-studio.test.js` fails at the photo request's "Ask 2" confirm, on the code before this change as well.

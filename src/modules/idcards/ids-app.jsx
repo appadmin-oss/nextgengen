@@ -704,9 +704,32 @@ function IdCardStudioPage({ setPage }) {
     }
   };
 
+  /* A photo still on a Cloudinary account that has run out is copied to the
+     account uploads go to now — only the photos on this run, only now, when
+     they are about to be drawn (a print size is a new transformation, billed
+     to whichever account holds the photo). The server decides which accounts
+     are spent; a run with none moves nothing. The records then draw from the copy. */
+  const movePhotos = async recs => {
+    const subs = [], seen = new Set();
+    recs.forEach(r => { if (!r || !/^https:\/\/res\.cloudinary\.com\//.test(r.photoUrl || "") || seen.has(r.key)) return; seen.add(r.key); subs.push({ r, type: r.subjectType || IDS_KIND_FOR_RUN[r.kind], id: r.id }); });
+    if (!subs.length || !(NGGApi.admin.photos && NGGApi.admin.photos.relocate)) return;
+    let moved = 0, failed = 0;
+    try {
+      for (let i = 0; i < subs.length; i += 60) {
+        const part = subs.slice(i, i + 60);
+        const res = await NGGApi.admin.photos.relocate(part.map(x => ({ type: x.type, id: x.id })));
+        failed += res.failed || 0;
+        (res.moved || []).forEach(m => { const x = part.find(y => y.type === m.type && String(y.id) === String(m.id)); if (!x) return;
+          x.r.photoUrl = m.url; if (x.r.raw) x.r.raw.photoUrl = m.url; moved++; });
+      }
+    } catch (e) { if (e && e.code !== "forbidden") say("Some photos couldn’t be moved off the full Cloudinary account (" + idsErrText(e, "no answer") + "); they print from where they are."); return; }
+    if (moved) { setData(d => Object.assign({}, d)); say(idsN(moved, "photo") + " copied to the Cloudinary account in use, so printing doesn’t spend the full one" + (failed ? " · " + idsN(failed, "photo") + " couldn’t be copied" : "")); }
+  };
+
   const onConfirmPrint = async ({ mode, batches, range, packing, reason }) => {
     setConfirm(null);
     if (!(await mintMissing(recCards.filter(c => c.rec.kind === "member"), reason === "proof"))) return;
+    await movePhotos(recCards.map(c => c.rec));
     await framePhotos(recCards.map(c => c.rec));
     if (mode === "batch") {
       setJob({ batches, i: 0, total: nSheets, done: batches[0][1], next: batches[1] || batches[0], reason, packing });
