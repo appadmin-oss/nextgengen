@@ -1926,6 +1926,12 @@ a minute while it is open. It never refreshes in the middle of a print. If a
 card on your sheet was printed elsewhere in the meantime, the checks say so
 and offer to take it off, so nobody gets a second card by accident.
 
+**When an email can't be sent.** A photo request says what actually went. If
+the person has an email but the site's mail failed to send it, the studio
+says *"The email couldn't be sent"* and points you at the mail settings —
+it no longer says "no email on file" for someone who has one, and a request
+is only "all sent" when it all went.
+
 **Photo requests, for one person or two thousand.** One press asks everyone you chose (up to 2,000).
 - **Before anything goes**, the confirm shows how each person is reached: members by email and in the app, their parents or guardians by email (each greeted by name), volunteers by email, and Summer School parents with their re-shoot link. It names anyone with no email or guardian on file, who must be asked in person, and says who is left out and why. Open *What they get* to read the exact words.
 - **Each message is written to one person**: their name, their card, their centre, how to take a photo that passes, and a button that opens the photo page for exactly them. Nobody has to find Edit profile or reply to an email. The link works for 21 days; the photo is checked like any other.

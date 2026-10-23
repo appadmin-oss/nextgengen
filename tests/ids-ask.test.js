@@ -336,6 +336,9 @@ function cleanup() {
     await P.waitForSelector('.ids-ai-log');
     chk('after a reload the transcript is still there', /clear the sheet/.test(await P.innerText('.ids-ai-log')) && /clear the sheet/.test(said));
     chk('…as a record: nothing in it is live, and no Undo comes back', !(await P.$('.ids-ai-card.is-live')) && !(await P.$('.ids-ai-card button:has-text("Undo")')));
+    // The workspace is kept too (IndexedDB): the sheet is as it was before the refresh.
+    await P.waitForFunction(n => document.querySelectorAll('.ids-sheet .ids-slot.is-card').length === n, beforeClear, { timeout: 15000 }).catch(() => {});
+    chk('…and the sheet comes back with it', (await nOnSheet()) === beforeClear);
 
     console.log('printing that has happened, reprint reasons, and undo in words');
     await P.click('.ids-ai-bar button[aria-label="New conversation"]');
@@ -350,10 +353,11 @@ function cleanup() {
     card = await ask('Who hasn’t been asked for a photo yet?');
     // Gbenga was asked above (the photo request), so the honest answer is that nobody is left unasked.
     chk('"who hasn’t been asked?" counts the request just sent: nobody with no photo is left unasked', /Everyone with no photo has been asked in the last 3 days/.test(card));
+    const beforeReprint = await nOnSheet();
     card = await ask('Reprint 025-103, she lost it');
     chk('"she lost it" is understood as a lost card, which gets a new QR', /lost: new QR/.test(card));
     card = await ask('undo');
-    chk('"undo" in words undoes the newest change', /back as it was/.test(card) && (await nOnSheet()) <= 0);
+    chk('"undo" in words undoes the newest change', /back as it was/.test(card) && (await nOnSheet()) === beforeReprint);
     card = await ask('undo');
     chk('…and says so when there is nothing left to undo', /nothing of mine to undo/.test(card));
 

@@ -233,15 +233,22 @@ function idsAskSummary(res, nameOf) {
   const sent = rows.filter(r => r.sent && !r.queued), queued = rows.filter(r => r.queued), refused = rows.filter(r => r.error);
   if (rows.length === 1 && sent.length === 1) {
     const ch = sent[0].sent.filter(c => c !== "member_app" || sent[0].sent.length === 1).map(c => IDS_ASK_CHANNEL[c]).filter(Boolean);
+    if (sent[0].mailFailed) return "The email couldn’t be sent" + (sent[0].sent.length ? ", so they only have the note in the app" : "") + ". Check the site’s mail settings, or ask them in person.";
     return sent[0].unreachable ? (sent[0].sent.length ? "Sent in the app only: there is no email or guardian on file. Ask them in person too." : "There was nobody to send it to. Ask them in person.")
       : "Asked " + ch.join(" and ") + ". The staff for their centre get one summary.";
   }
   if (rows.length === 1 && refused.length === 1) return nameOf(refused[0]) + " " + (IDS_ASK_REFUSAL[refused[0].error] || "couldn’t be asked") + ".";
-  const quiet = sent.filter(r => r.unreachable).length;
+  const failedMail = sent.filter(r => r.mailFailed).length, quiet = sent.filter(r => r.unreachable && !r.mailFailed).length;
   const n = sent.length + queued.length;
   /* A big request is a queue, said as one: how many, and that the rest follow. */
-  return (n ? "Photo request for " + idsN(n, "person", "people") + ": " + (queued.length ? sent.length + " sent now, the other " + queued.length + " go out over the next few minutes" : "all sent") : "Nobody new to ask")
+  /* "All sent" only when it all went: a request where the mail failed, or
+     nobody had an address, says that instead of a success it did not have. */
+  const went = sent.length - failedMail - quiet;
+  const head = queued.length ? sent.length + " sent now, the other " + queued.length + " go out over the next few minutes"
+    : went === sent.length ? "all sent" : went ? went + " sent" : "none reached by email";
+  return (n ? "Photo request for " + idsN(n, "person", "people") + ": " + head : "Nobody new to ask")
     + (quiet ? "; " + quiet + " have no email or guardian on file" : "")
+    + (failedMail ? "; " + idsN(failedMail, "email") + " couldn’t be sent — check the site’s mail settings" : "")
     + (refused.length ? "; " + refused.length + " left out" : "") + "."
     + (n ? " Staff get one summary when it has all gone." : "");
 }

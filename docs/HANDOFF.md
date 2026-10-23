@@ -2742,3 +2742,9 @@ The table is editable in the Control Room, with these as the defaults.
   - `api-client.js` `announceChange()` raises those events after any successful write to `/admin/`, a member's profile, photo or account, or `/public/reshoot`. It throttles them to one every 2s.
   - It never refreshes during a print job.
   - A card printed elsewhere since it was put on the sheet raises a check with *Take off*.
+
+- **Photo requests:** `ids_photo_send_one` records `mail_failed` when an address was on file and every mail to it failed.
+  - The ask result carries `mailFailed`.
+  - `idsAskSummary` says "The email couldn't be sent" and reserves "all sent" for when everything went. It used to report a failed send as "no email or guardian on file".
+  - Covered by `ids-studio.test.js`, since its test host has no mail, and by one PHP check on the `__mail_fail` seam.
+- **Test changes:** `ids-ask.test.js` pins that a refresh restores the sheet, and that undo returns to the count before the plan. It used to assume a refresh emptied the sheet.

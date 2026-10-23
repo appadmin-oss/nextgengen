@@ -456,7 +456,7 @@ function ids_photo_send_one(array $row): array {
     if (!$c) return ['status' => 'skipped', 'channels' => []];
     // A photo arrived while it waited in the queue: nothing to ask for.
     if ($c['photo'] !== '') return ['status' => 'skipped', 'channels' => []];
-    $sent = [];
+    $sent = []; $tried = 0;
     if ($t === 'student') {
         if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
             db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
@@ -469,18 +469,23 @@ function ids_photo_send_one(array $row): array {
         if ($t === 'member') {
             $mm = $msg['member'];
             try { push_notification($id, ['kind' => 'photo', 'title' => mb_substr($mm['title'], 0, 160), 'body' => $mm['push'], 'linkPage' => 'dashboard']); $sent[] = 'member_app'; } catch (\Throwable $e) {}
-            if ($c['email'] !== '' && ids_mail_to($c['email'], $mm['title'], $mm['intro'], $mm['body'], $mm['cta'], $link)) $sent[] = 'member';
+            if ($c['email'] !== '') { $tried++; if (ids_mail_to($c['email'], $mm['title'], $mm['intro'], $mm['body'], $mm['cta'], $link)) $sent[] = 'member'; }
             $gOk = 0; $gm = $msg['guardian'];
-            foreach (ids_guardians_for($id) as $g)
+            foreach (ids_guardians_for($id) as $g) {
+                $tried++;
                 if (ids_mail_to($g['email'], $gm['title'], str_replace('{name}', $g['name'] !== '' ? ' ' . $g['name'] : '', $gm['intro']), $gm['body'], $gm['cta'], $link)) $gOk++;
+            }
             if ($gOk) $sent[] = 'guardians';
         } elseif ($t === 'volunteer') {
             $vm = $msg['volunteer'];
-            if (ids_mail_to($c['email'], $vm['title'], $vm['intro'], $vm['body'], $vm['cta'], $link)) $sent[] = 'volunteer';
+            if ($c['email'] !== '') { $tried++; if (ids_mail_to($c['email'], $vm['title'], $vm['intro'], $vm['body'], $vm['cta'], $link)) $sent[] = 'volunteer'; }
         }
     }
     // The app alone is not reaching anyone who never opens it: only an email or a guardian counts as reached.
     $reached = array_values(array_diff($sent, ['member_app']));
+    /* An address was on file and every mail to it failed: that is the site's
+       mail, not a missing address, and the studio says which. */
+    if (!$reached && $tried > 0) $sent[] = 'mail_failed';
     return ['status' => $reached ? 'sent' : 'unreachable', 'channels' => $sent];
 }
 
@@ -668,7 +673,7 @@ function admin_ids_photo_ask(array $p): array {
         $ch = json_decode((string)$r['channels'], true) ?: [];
         $st = (string)$r['status'];
         $results[] = ['subjectId' => (string)$r['subjectId'], 'subjectType' => (string)$r['subjectType']]
-            + ($st === 'queued' ? ['queued' => true, 'sent' => []] : ($st === 'skipped' ? ['error' => 'has_photo'] : ['sent' => $ch] + ($st === 'unreachable' ? ['unreachable' => true] : [])));
+            + ($st === 'queued' ? ['queued' => true, 'sent' => []] : ($st === 'skipped' ? ['error' => 'has_photo'] : ['sent' => array_values(array_diff($ch, ['mail_failed']))] + ($st === 'unreachable' ? ['unreachable' => true] + (in_array('mail_failed', $ch, true) ? ['mailFailed' => true] : []) : [])));
     }
     $queued = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'queued'", [$cid])['c'] ?? 0);
     audit('ids.photo.ask', $by, $cid, ['asked' => count($ok), 'refused' => count($results) - count($ok), 'queued' => $queued, 'force' => $force], (string)($p['ip'] ?? ''));

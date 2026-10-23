@@ -142,13 +142,19 @@ function cleanup() {
     // The confirm previews who it reaches before the Send is live (IdsAskConfirm).
     await P.waitForSelector('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people"):not([disabled])', { timeout: 15000 });
     await P.click('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people")');
-    chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Photo request for 2 people: all sent/) && asks() === '2'
-      && /"member"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
+    /* This test host has no mail server, so the emails fail: the studio must
+       say so, not "all sent", and not "no email on file" (both have one). The
+       first batch sends inline, so allow it longer than a toast usually takes. */
+    const askedAll = await P.waitForFunction(() => /^Photo request for 2 people: none reached by email; 2 emails couldn’t be sent — check the site’s mail settings/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 30000 }).then(() => true, () => false);
+    chk('asking everyone blocked confirms the count first, then reports what the server did — a failed email said as one', askedAll && asks() === '2'
+      // What actually went is recorded: the note in the app, and the email that failed.
+      && /"member_app".*"mail_failed"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
     await P.waitForTimeout(200);
     chk('…each row then says the photo was requested and is waiting, with an "Asked" chip that can ask again (v4)', /Photo requested \d+ \w+ · waiting for approval/.test(await P.innerText('.ids-recs'))
       && (await P.$$('.ids-rec .ids-asked')).length === 2 && !(await P.$('.ids-btn:has-text("Ask all")')));
     await P.click('.ids-rec .ids-asked');
-    chk('"Ask again" inside the quiet period goes through, and says where it went', await toastHas(P, /Asked them by email\./) && asks() === '3');
+    const again = await P.waitForFunction(() => /The email couldn’t be sent, so they only have the note in the app/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 30000 }).then(() => true, () => false);
+    chk('"Ask again" inside the quiet period goes through, and says what actually went', again && asks() === '3');
     await P.click('.ids-statbtn:has-text("New")');
     await P.click('.ids-statbtn:has-text("New")');
     chk('pressing the status that is on again shows everyone (v4)', (await P.getAttribute('.ids-statbtn:has-text("New")', 'aria-pressed')) === 'false');
@@ -323,7 +329,10 @@ function cleanup() {
       return !!(res && res.ok !== false);
     });
     await P.bringToFront();
-    const live = await P.waitForFunction(n => +((document.querySelector('.ids-statbtn:has-text("Blocked") .ids-statbtn-n') || {}).textContent || -1) === n - 1, blocked0, { timeout: 12000 }).then(() => true, () => false);
+    const live = await P.waitForFunction(n => {
+      const b = [...document.querySelectorAll('.ids-statbtn')].find(x => /Blocked/.test(x.textContent));
+      return !!b && +((b.querySelector('.ids-statbtn-n') || {}).textContent || -1) === n - 1;
+    }, blocked0, { timeout: 12000 }).then(() => true, () => false);
     chk('a photo added in another tab unblocks that person here, with no refresh', replaced && blocked0 >= 1 && live);
     await P2.close();
     await P.context().close();
@@ -334,7 +343,8 @@ function cleanup() {
     chk('/cards forwards to /club/id-cards', new URL(Q.url()).pathname === '/club/id-cards');
     chk('on a phone it is a Queue — no sheet, no settings', (await Q.innerText('.ids-tab.is-on')).startsWith('Queue') && !(await Q.$('.ids-sheet')) && !(await Q.$('.ids-set')));
 
-    chk('…with the KPIs and the blocked count in red', /Blocked/.test(await Q.innerText('.ids-kpis')) && (await Q.$eval('.ids-kpi.is-bad b', b => b.textContent)) === '2');
+    // One of the two blocked members was given a photo from another tab above.
+    chk('…with the KPIs and the blocked count in red', /Blocked/.test(await Q.innerText('.ids-kpis')) && (await Q.$eval('.ids-kpi.is-bad b', b => b.textContent)) === '1');
     chk('nothing scrolls sideways', await Q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await Q.context().close();
 

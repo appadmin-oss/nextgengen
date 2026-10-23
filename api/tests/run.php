@@ -25970,6 +25970,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id studio: nobody is asked twice inside the quiet period', ($again['results'][0]['error'] ?? '') === 'asked_recently' && $again['asked'] === 0);
     $forced = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'force' => true, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
     chk('id studio: …unless the operator insists', $forced['asked'] === 1);
+    /* The address is on file but the site's mail fails: that is said as a
+       failed send, never as "no email on file". */
+    $keepSink = $GLOBALS['__mail_sink'] ?? null; unset($GLOBALS['__mail_sink']);
+    $GLOBALS['__mail_fail'] = true;
+    $mf = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'force' => true, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
+    unset($GLOBALS['__mail_fail']); if ($keepSink !== null) $GLOBALS['__mail_sink'] = $keepSink;
+    chk('id studio: an email that fails to send is reported as a failed send, not a missing address',
+        !empty($mf['results'][0]['mailFailed']) && !in_array('mail_failed', $mf['results'][0]['sent'] ?? [], true));
     chk('id studio: a Summer admin cannot ask about a member — refused per row', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $SUMADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]])['results'][0]['error'] ?? '') === 'forbidden');
     chk('id studio: a photo ask is capped, naming the cap', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => array_fill(0, IDS_ASK_MAX + 1, ['subjectType' => 'member', 'subjectId' => 'x'])])['max'] ?? 0) === IDS_ASK_MAX);
 
