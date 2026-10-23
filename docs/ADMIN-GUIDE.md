@@ -1915,6 +1915,17 @@ so a request never just times out.
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
 *Ask for photo*, or *Ask everyone blocked*).
 
+**The studio keeps your work, and keeps up.** The sheet, its settings, the
+filters and any uploaded images are kept on this computer: close the tab or
+refresh, and the sheet is as you left it (the studio says so). The records
+themselves are always read fresh. A change made anywhere else — a photo
+added in the Control Room, a reprint asked for in another tab, a card printed
+on another computer — shows in the studio on its own: soon after a change in
+another tab of the same browser, when you come back to the studio, and once
+a minute while it is open. It never refreshes in the middle of a print. If a
+card on your sheet was printed elsewhere in the meantime, the checks say so
+and offer to take it off, so nobody gets a second card by accident.
+
 **Photo requests, for one person or two thousand.** One press asks everyone you chose (up to 2,000).
 - **Before anything goes**, the confirm shows how each person is reached: members by email and in the app, their parents or guardians by email (each greeted by name), volunteers by email, and Summer School parents with their re-shoot link. It names anyone with no email or guardian on file, who must be asked in person, and says who is left out and why. Open *What they get* to read the exact words.
 - **Each message is written to one person**: their name, their card, their centre, how to take a photo that passes, and a button that opens the photo page for exactly them. Nobody has to find Edit profile or reply to an email. The link works for 21 days; the photo is checked like any other.

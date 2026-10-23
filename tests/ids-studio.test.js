@@ -139,8 +139,10 @@ function cleanup() {
     const asks = () => php(`echo db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE subjectType = 'member'")['c'];`);
     await P.click('.ids-btn:has-text("Ask all 2 for a photo")');
     await P.waitForSelector('[role=alertdialog]:has-text("Ask 2 people for a photo?")');
-    await P.click('[role=alertdialog] .ids-btn--primary:has-text("Ask 2")');
-    chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Asked 2 people\./) && asks() === '2'
+    // The confirm previews who it reaches before the Send is live (IdsAskConfirm).
+    await P.waitForSelector('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people"):not([disabled])', { timeout: 15000 });
+    await P.click('[role=alertdialog] .ids-btn--primary:has-text("Send to 2 people")');
+    chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Photo request for 2 people: all sent/) && asks() === '2'
       && /"member"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
     await P.waitForTimeout(200);
     chk('…each row then says the photo was requested and is waiting, with an "Asked" chip that can ask again (v4)', /Photo requested \d+ \w+ · waiting for approval/.test(await P.innerText('.ids-recs'))
@@ -296,6 +298,34 @@ function cleanup() {
     chk('…recorded with its cause', php(`echo db_row("SELECT cause FROM id_reprints WHERE subjectId = 'NGG-IDS-12' AND doneAt = ''")['cause'] ?? '';`) === 'damaged');
     await P.waitForFunction(() => !document.querySelector('.ids-carded') && /Member L Test/.test((document.querySelector('.ids-recs') || {}).innerText || ''), null, { timeout: 10000 });
     chk('…and they move into the queue, on the sheet', await P.$eval('.ids-rec:has-text("Member L Test") .ids-cb', b => b.getAttribute('aria-checked')) === 'true');
+
+    // The workspace is kept: a refresh brings back the same sheet.
+    await P.fill('.ids-search input', '');
+    await P.waitForTimeout(700);   // the workspace is written a moment after the last change
+    const onSheet = async () => +(((await P.innerText('.ids-stat')).match(/(\d+) cards? ·/) || [])[1] || 0);
+    const before = await onSheet();
+    await P.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    await P.waitForSelector('.ids-rec', { timeout: 20000 });
+    await P.waitForFunction(n => new RegExp('\\b' + n + ' cards? ·').test((document.querySelector('.ids-stat') || {}).innerText || ''), before, { timeout: 10000 }).catch(() => {});
+    chk('a refresh keeps the sheet: the same ' + before + ' cards are on it, and it says so', before > 0 && (await onSheet()) === before && await toastHas(P, /Your sheet is as you left it/));
+
+    // A change made in another tab shows here without a refresh.
+    await P.click('.ids-statbtn:has-text("Blocked")');
+    const blocked0 = await P.$eval('.ids-statbtn:has-text("Blocked") .ids-statbtn-n', e => +e.textContent);
+    const P2 = await P.context().newPage();
+    await P2.goto(BASE + '/club/id-cards', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P2);
+    const replaced = await P2.evaluate(async () => {
+      const b = await (await fetch('/assets/logo.png')).blob();
+      const url = await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+      const res = await NGGApi.admin.photos.replace('member', 'NGG-IDS-13', url);
+      return !!(res && res.ok !== false);
+    });
+    await P.bringToFront();
+    const live = await P.waitForFunction(n => +((document.querySelector('.ids-statbtn:has-text("Blocked") .ids-statbtn-n') || {}).textContent || -1) === n - 1, blocked0, { timeout: 12000 }).then(() => true, () => false);
+    chk('a photo added in another tab unblocks that person here, with no refresh', replaced && blocked0 >= 1 && live);
+    await P2.close();
     await P.context().close();
 
     console.log('phone (390) and the old address');

@@ -21,12 +21,27 @@
     try { await fetch(BASE + '/auth/me.php', { credentials: 'include', cache: 'no-store' }); } catch (_) {}
     return getCookie('ngg_csrf');
   }
+  /* A saved change, said out loud: screens that show records (the ID Card
+     Studio) read them again when one is made — here, or in another tab of the
+     same browser (the storage event). Only writes that change records: staff
+     writes and a person's own photo or profile, not a typing ping. At most one
+     announcement every two seconds. */
+  const CHANGE_PATHS = /^\/(admin\/|member\/(profile|photo|account)|public\/reshoot)/;
+  let changeAt = 0;
+  function announceChange(path) {
+    if (!CHANGE_PATHS.test(String(path || ''))) return;
+    const now = Date.now();
+    if (now - changeAt < 2000) return;
+    changeAt = now;
+    try { window.dispatchEvent(new CustomEvent('ngg:changed', { detail: { path } })); } catch (_) {}
+    try { localStorage.setItem('ngg.changed', now + ' ' + String(path).split('?')[0]); } catch (_) {}
+  }
   async function request(path, opts) {
     const o = opts || {};
     const m = o.method || (o.body ? 'POST' : 'GET');
     const write = m !== 'GET' && m !== 'HEAD';
     if (write && !getCookie('ngg_csrf')) await mintCsrf();
-    try { return await requestRaw(path, opts); }
+    try { const r = await requestRaw(path, opts); if (write) announceChange(path); return r; }
     catch (e) {
       if (write && e && e.code === 'csrf_failed' && await mintCsrf()) return await requestRaw(path, opts);
       /* The record drive locked this member's account until their record is

@@ -89,6 +89,39 @@ function idsReadUploadFiles(files) {
   }))).then(r => ({ ok: r.filter(Boolean), skipped: files && files.length ? files.length - list.length : 0 }));
 }
 
+/* The workspace survives a refresh, a closed tab and a trip to another page:
+   the sheet settings, the filters, what is on the sheet, and uploaded images
+   (data URLs, megabytes at a time — which is why this is IndexedDB, not
+   localStorage). On this device only; the records themselves are the server's. */
+const IDS_WS_DB = "ngg-ids", IDS_WS_STORE = "ws", IDS_WS_VER = 1;
+function idsWsDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("no_idb"));
+    const rq = indexedDB.open(IDS_WS_DB, 1);
+    rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains(IDS_WS_STORE)) rq.result.createObjectStore(IDS_WS_STORE); };
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+}
+function idsWsLoad() {
+  return idsWsDb().then(db => new Promise(resolve => {
+    try {
+      const rq = db.transaction(IDS_WS_STORE, "readonly").objectStore(IDS_WS_STORE).get("current");
+      rq.onsuccess = () => { const v = rq.result; resolve(v && v.v === IDS_WS_VER ? v : null); };
+      rq.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  })).catch(() => null);
+}
+function idsWsSave(ws) {
+  return idsWsDb().then(db => new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDS_WS_STORE, "readwrite");
+      tx.objectStore(IDS_WS_STORE).put(Object.assign({ v: IDS_WS_VER, at: Date.now() }, ws), "current");
+      tx.oncomplete = () => resolve(true); tx.onerror = () => resolve(false); tx.onabort = () => resolve(false);
+    } catch (_) { resolve(false); }
+  })).catch(() => false);
+}
+
 /* The studio's type (§2): Geist, and Geist Mono for IDs and run numbers. Loaded
    once, when the studio first opens — no other page uses them. */
 const IDS_FONT_HREF = "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap";
@@ -117,12 +150,17 @@ function IdCardStudioPage({ setPage }) {
 
   /* ── Data ── */
   const [data, setData] = React.useState({ state: "loading", records: [], queue: [], programs: {}, kinds: [], designs: {}, choices: {} });
-  const load = React.useCallback(() => {
-    setData(d => Object.assign({}, d, { state: "loading" }));
-    idsLoad().then(r => { setData(Object.assign({ state: "ready" }, r)); if (r.avNote) say(r.avNote); })
-      .catch(e => setData(d => Object.assign({}, d, { state: e && e.forbidden ? "forbidden" : "error" })));
+  /* A quiet load refreshes what is on screen without the loading state, and a
+     failed one keeps the records already shown (the next one will try again).
+     Answers are numbered so an older one never lands over a newer one. */
+  const loadSeq = React.useRef(0), lastLoad = React.useRef(0), liveBusy = React.useRef(false);
+  const load = React.useCallback(quiet => {
+    const n = ++loadSeq.current; lastLoad.current = Date.now();
+    if (quiet !== true) setData(d => Object.assign({}, d, { state: "loading" }));
+    idsLoad().then(r => { if (n !== loadSeq.current) return; setData(Object.assign({ state: "ready" }, r)); if (r.avNote && quiet !== true) say(r.avNote); })
+      .catch(e => { if (n !== loadSeq.current) return; setData(d => quiet === true && d.state === "ready" ? d : Object.assign({}, d, { state: e && e.forbidden ? "forbidden" : "error" })); });
   }, []);
-  React.useEffect(load, [load]);
+  React.useEffect(() => { load(); }, [load]);
   const [done, setDone] = React.useState({});     // printed this session: off the queue
   const [asked, setAsked] = React.useState({});   // asked this session: "type:id" => { at, channels }
   const recs = React.useMemo(() => data.queue.filter(r => !done[r.key]), [data.queue, done]);
@@ -157,6 +195,41 @@ function IdCardStudioPage({ setPage }) {
   const [face, setFace] = React.useState("front");
   const [overview, setOverview] = React.useState(false);
   const searchRef = React.useRef(null);
+
+  /* ── The workspace, kept on this device ── */
+  const [wsReady, setWsReady] = React.useState(false);
+  React.useEffect(() => {
+    let live = true;
+    idsWsLoad().then(ws => {
+      if (!live) return;
+      if (ws) {
+        if (ws.st) setSt(Object.assign({}, IDS_DEFAULT_SETTINGS, ws.st));
+        if (ws.scen) setScen(ws.scen);
+        if (ws.src) setSrc(ws.src);
+        if (typeof ws.filter === "string") setFilter(ws.filter);
+        if (typeof ws.kind === "string") setKind(ws.kind);
+        if (typeof ws.centre === "string") setCentre(ws.centre);
+        if (Array.isArray(ws.uploads)) setUploads(ws.uploads);
+        if (Array.isArray(ws.queue)) setQueue(ws.queue.filter(x => x && (x.t === "r" ? typeof x.key === "string" : x.t === "u" && (ws.uploads || []).some(u => u.uid === x.uid))));
+        if (ws.face === "front" || ws.face === "back") setFace(ws.face);
+        if (Number.isFinite(ws.sheetIdx)) setSheetIdx(ws.sheetIdx);
+        if (ws.queue && ws.queue.length) say("Your sheet is as you left it: " + idsN(ws.queue.length, "card") + " on it");
+      }
+      setWsReady(true);   // nothing is saved until what was there has been read back
+    });
+    return () => { live = false; };
+  }, []);
+  React.useEffect(() => {
+    if (!wsReady) return;
+    const t = setTimeout(() => { idsWsSave({ st, scen, src, filter, kind, centre, queue, uploads, face, sheetIdx }); }, 400);
+    return () => clearTimeout(t);
+  }, [wsReady, st, scen, src, filter, kind, centre, queue, uploads, face, sheetIdx]);
+  /* Records on the sheet that no longer exist (deleted, merged) leave it once
+     the records are in — never before, or a slow load would empty the sheet. */
+  React.useEffect(() => {
+    if (data.state !== "ready" || !wsReady) return;
+    setQueue(qq => { const keep = qq.filter(x => x.t !== "r" || byKey[x.key]); return keep.length === qq.length ? qq : keep; });
+  }, [data, wsReady, byKey]);
   // The model names the custom size customW/customH; the settings keep it as cw/ch.
   // G is the grid for UPLOADED images (the "Card size" setting); a record's card prints at its own size.
   const G = idsGrid(Object.assign({}, st, { customW: st.cw, customH: st.ch }));
@@ -270,7 +343,7 @@ function IdCardStudioPage({ setPage }) {
     const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
     const items = list.map(r => ({ subjectType: r.subjectType, subjectId: r.id, cause: cause || "asked", why: rs ? rs[1] : "Reprint asked for by ID" }));
     if (!items.length) return false;
-    try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(); return true; }
+    try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(true); return true; }
     catch (e) { say(idsErrText(e, "Couldn’t queue the reprint. Try again.")); return false; }
   };
   /* Per-card acts the old Card Studio had on every card: resend the digital
@@ -480,6 +553,14 @@ function IdCardStudioPage({ setPage }) {
     const gone = new Set(photoGone.map(c => c.base));
     checks.push({ tone: "bad", text: idsN(photoGone.length, "photo") + " can’t be loaded (" + photoGone.slice(0, 3).map(c => c.label).join(", ") + (photoGone.length > 3 ? "…" : "") + "): the file is missing on the server, so the card would print with an empty photo box. Replace the photo, or take " + (photoGone.length === 1 ? "it" : "them") + " off the sheet.",
       action: "Take " + (photoGone.length === 1 ? "it" : "them") + " off", onAction: () => setQueue(qq => qq.filter(x => !(x.t === "r" && gone.has(x.key)))) });
+  }
+  /* Printed since it was put on the sheet — on another computer, or before a
+     refresh brought the sheet back. A second card is a decision, not a default. */
+  const printedSince = st.reason === "new" ? recCards.filter(c => c.rec.printedBefore && c.rec.reason !== "reprint" && !done[c.rec.key]) : [];
+  if (printedSince.length) {
+    const had = new Set(printedSince.map(c => c.base));
+    checks.push({ tone: "warn", text: idsN(printedSince.length, "card") + " on this sheet " + (printedSince.length === 1 ? "has" : "have") + " been printed since " + (printedSince.length === 1 ? "it was" : "they were") + " put on it (" + printedSince.slice(0, 3).map(c => c.label).join(", ") + (printedSince.length > 3 ? "…" : "") + "). Printing again makes a second card.",
+      action: "Take " + (printedSince.length === 1 ? "it" : "them") + " off", onAction: () => setQueue(qq => qq.filter(x => !(x.t === "r" && had.has(x.key)))) });
   }
   if (lowDpi.length) checks.push({ tone: lowDpi.some(u => idsDpiChip(idsEffDpi(u, G.cw, G.ch), st.dpi).tone === "bad") ? "bad" : "warn", text: idsN(lowDpi.length, "uploaded image") + " " + (lowDpi.length === 1 ? "is" : "are") + " below " + st.dpi + " dpi at this size and may print soft." });
   if (sideways.length) checks.push({ tone: "warn", text: idsN(sideways.length, "image") + " look sideways for this card.", action: "Rotate them", onAction: () => setUploads(us => us.map(u => sideways.some(s => s.uid === u.uid) ? Object.assign({}, u, { rot: ((u.rot || 0) + 90) % 360 }) : u)) });
@@ -787,6 +868,8 @@ function IdCardStudioPage({ setPage }) {
   const [warm, setWarm] = React.useState({ ready: 0, total: 0, busy: false });
   const [xconfirm, setXconfirm] = React.useState(null);
   const [xjob, setXjob] = React.useState(null);        // { i, n, note, print }
+  liveBusy.current = !!(job || xjob);
+
   const [xresult, setXresult] = React.useState(null);
   const xcancel = React.useRef(false);
   React.useEffect(() => {
@@ -1029,7 +1112,7 @@ function IdCardStudioPage({ setPage }) {
     }
     setXjob(null);
     _idsTplDone.clear(); idsFaceForget();
-    if (applied) load();
+    if (applied) load(true);
     setImproveRes({ applied, unchanged, failed });
   };
 
@@ -1218,22 +1301,47 @@ function IdCardStudioPage({ setPage }) {
   });
   const logRef = React.useRef(log);
   logRef.current = log;
-  const loadLog = React.useCallback((f, more) => {
+  const loadLog = React.useCallback((f, more, quiet) => {
     const l = logRef.current;
     const kind = f ? f.kind : l.kind, type = f ? f.type : l.type, page = more ? l.page + 1 : 1;
     const q = { pageSize: IDS_LOG_PAGE, page };
     if (type === "external") q.kind = "graphic";
     else if (kind) q.kind = IDS_KIND_FOR_RUN[kind];
     if (type === "new" || type === "mixed") q.mode = "print"; else if (type === "reprint" || type === "proof") q.mode = type;
-    setLog(cur => Object.assign({}, cur, { kind, type, state: more ? cur.state : "loading", runs: more ? cur.runs : [], moreErr: false, loadingMore: !!more }));
+    if (!quiet) setLog(cur => Object.assign({}, cur, { kind, type, state: more ? cur.state : "loading", runs: more ? cur.runs : [], moreErr: false, loadingMore: !!more }));
     NGGApi.admin.registration.cardRuns(q).then(r => setLog(cur => {
       if (cur.kind !== kind || cur.type !== type) return cur;      // a newer filter has taken over
       // "New issues" and "mixed" share the server's print mode; the reason tells them apart.
       const rows = (r.runs || []).map(logRow).filter(x => type !== "new" && type !== "mixed" ? true : x.type === type);
       return Object.assign({}, cur, { state: "ready", runs: more ? cur.runs.concat(rows) : rows, total: r.total || 0, page, more: page * IDS_LOG_PAGE < (r.total || 0), loadingMore: false });
-    })).catch(() => setLog(cur => Object.assign({}, cur, { state: more ? "ready" : "error", moreErr: !!more, loadingMore: false })));
+    })).catch(() => setLog(cur => quiet ? cur : Object.assign({}, cur, { state: more ? "ready" : "error", moreErr: !!more, loadingMore: false })));
     // eslint-disable-next-line
   }, []);
+
+  /* ── Live: a change made elsewhere shows here ──
+     A photo replaced in the Control Room, a member added, a card printed from
+     another computer: the studio reads the records again, quietly, when it is
+     come back to, once a minute while it is on screen, and soon after any
+     change saved anywhere on the site (this tab or another — api-client.js
+     announces each one). Never in the middle of a print run. */
+  React.useEffect(() => {
+    let soon = null;
+    const refresh = (minGap) => {
+      if (liveBusy.current || document.visibilityState !== "visible") return;
+      if (Date.now() - lastLoad.current < minGap) return;
+      load(true);
+      if (logRef.current.state === "ready" && logRef.current.page === 1) loadLog(null, false, true);
+    };
+    const onChanged = () => { clearTimeout(soon); soon = setTimeout(() => refresh(4000), 1500); };
+    const onVis = () => refresh(15000);
+    const onStore = e => { if (e.key === "ngg.changed") onChanged(); };
+    const tick = setInterval(() => refresh(55000), 60000);
+    window.addEventListener("ngg:changed", onChanged);
+    window.addEventListener("storage", onStore);
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearTimeout(soon); clearInterval(tick); window.removeEventListener("ngg:changed", onChanged); window.removeEventListener("storage", onStore); window.removeEventListener("focus", onVis); document.removeEventListener("visibilitychange", onVis); };
+  }, [load, loadLog]);
   React.useEffect(() => { if (tab === "log" && log.state === "idle") loadLog(); }, [tab, log.state, loadLog]);
   const openRun = async r => {
     setRunOpen(Object.assign({}, r, { people: [], issuesState: "loading" }));
@@ -1251,13 +1359,13 @@ function IdCardStudioPage({ setPage }) {
     try {
       const res = await NGGApi.admin.idStudio.failed(r.runId, list.map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId })));
       say(idsN(res.marked || list.length, "card") + " marked as not printed" + (res.requeued ? ", back in the queue as reprints" : ""));
-      openRun(r); loadLog(); load();
+      openRun(r); loadLog(); load(true);
     } catch (e) { say(idsErrText(e, "Couldn’t mark them. Try again.")); }
   };
   const reprintRun = async r => {
     const items = (r.issues || []).map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId, why: "Reprint of " + r.runId }));
     if (!items.length) return;
-    try { await NGGApi.admin.idStudio.reprint(items); setRunOpen(null); say(idsN(items.length, "card") + " queued as reprints"); load(); }
+    try { await NGGApi.admin.idStudio.reprint(items); setRunOpen(null); say(idsN(items.length, "card") + " queued as reprints"); load(true); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
   /* Look up by printed ID or by the record's own id (member, participant or
@@ -1281,7 +1389,7 @@ function IdCardStudioPage({ setPage }) {
     const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
     const why = rs ? rs[1] : d.changed && d.changed.length ? idsStaleWhy(d.changed) : "Design changed";
     try { await NGGApi.admin.idStudio.reprint([{ subjectType: d.rec.subjectType, subjectId: d.rec.id, cause: cause || (d.changed && d.changed.length ? d.changed[0] : "design"), why }]);
-      say(d.name + " is queued for a reprint" + (cause === "lost" || cause === "never_received" ? ". Their card gets a new QR when it prints" : "")); load(); }
+      say(d.name + " is queued for a reprint" + (cause === "lost" || cause === "never_received" ? ". Their card gets a new QR when it prints" : "")); load(true); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
 
@@ -1626,7 +1734,7 @@ function IdCardStudioPage({ setPage }) {
       }
       setChat(cc => cc.map(x => x.id === m.id ? Object.assign({}, x, { done: results.length }) : x));
     }
-    if (results.some(r => r.ok)) { _idsTplDone.clear(); idsFaceForget(); load(); }
+    if (results.some(r => r.ok)) { _idsTplDone.clear(); idsFaceForget(); load(true); }
     setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { status: "done", results }) : x));
   };
   /* After saving: put the people whose photos just arrived on the sheet (the list has reloaded by the time this is pressed). */
@@ -1967,7 +2075,7 @@ function IdCardStudioPage({ setPage }) {
       {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
-          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(); }} onClose={() => setEditPhoto(null)}/>
+          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(true); }} onClose={() => setEditPhoto(null)}/>
       )}
       {improve && <IdsImproveDialog run={improve} preset={improve.spec} onCancel={() => setImprove(null)} onStart={runImprove}/>}
       {improveRes && <IdsImproveResult res={improveRes} onClose={() => setImproveRes(null)}/>}
