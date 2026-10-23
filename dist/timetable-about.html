@@ -67,7 +67,7 @@
 html { background: var(--tt-lp-ground); scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  * { transition: none !important; }
+  :not(#_):not(#_) { transition: none; }
 }
 body {
   margin: 0; background: var(--tt-lp-ground); color: var(--tt-lp-ink);

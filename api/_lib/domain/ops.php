@@ -242,15 +242,16 @@ function ops_health(): array {
  * Cached for five minutes: this runs on every diagnostics load and on the health
  * probe, and an outbound HTTP call on a shared host is not free.
  */
-function ops_cloudinary_health(): array {
-    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+function ops_cloudinary_health(?array $cfg = null): array {
+    // Default: the account uploads go to now. Settings → API keys tests the main one by passing it.
+    $cfg = $cfg ?? ($GLOBALS['CONFIG']['cloudinary'] ?? []);
     $configured = !empty($cfg['cloud_name']) && !empty($cfg['api_key']) && !empty($cfg['api_secret']);
     if (!$configured) {
         return ['ok' => true, 'configured' => false, 'state' => 'not_configured',
                 'detail' => 'No Cloudinary keys on this host — photographs are stored locally.'];
     }
     $cached = cache_get('ops.cloudinary', 300);
-    if (is_array($cached)) return $cached;
+    if (is_array($cached) && ($cached['cloud'] ?? '') === (string)$cfg['cloud_name']) return $cached;
 
     $out = ['ok' => false, 'configured' => true, 'state' => 'unknown', 'cloud' => (string)$cfg['cloud_name']];
     // Test seam, so the states above can be exercised without a network.

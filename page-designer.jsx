@@ -1693,7 +1693,7 @@ function DesignerPage() {
   /* The studio's own shell rather than a new one — the designer is the same
      surface as the card studio and a second chrome would read as a second app. */
   const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: "#0b1327", color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
+    <div style={{ minHeight: "100vh", background: "#0b1327", color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "var(--rs-p-107, 26px 20px 80px)" }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
         {/* "· DRAW · BIND · PUBLISH · PRINT" was four words of decoration in
             the accent colour, above the only thing anyone came here to read.
@@ -1726,7 +1726,7 @@ function DesignerPage() {
       {auth && auth.loading
         ? <p style={{ fontSize: 14, color: "rgba(230,238,255,.6)" }}>Checking your session…</p>
         : <>
-            <h1 style={{ fontSize: 22, margin: "0 0 8px", fontWeight: 800 }}>Staff sign-in required</h1>
+            <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "0 0 8px", fontWeight: 800 }}>Staff sign-in required</h1>
             <p style={{ color: "rgba(230,238,255,.6)", margin: "0 0 20px", fontSize: 14 }}>
               Sign in with your staff account to open the Design Studio.
             </p>
@@ -1736,7 +1736,7 @@ function DesignerPage() {
                            padding: "11px 22px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Sign in</button>
               : <a href="/nextadmin"
                   style={{ display: "inline-block", background: DSN_GOLD, color: "#2b2100", borderRadius: 10,
-                           padding: "11px 22px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+                           padding: "11px 22px", fontWeight: 700, fontSize: 14, textDecoration: "var(--rs-textdecoration-47, none)" }}>
                   Sign in at the admin console</a>}
           </>}
     </div>
@@ -2435,7 +2435,7 @@ function DesignerPage() {
           {photoTool === "tui" && <button className="btn btn-primary btn-sm" onClick={applyTui}>Use this image</button>}
           <button className="btn btn-ghost btn-sm" onClick={photoTool === "tui" ? closeTui : () => setPhotoTool("")}>Close</button>
         </div>
-        <div id="dsn-photo-host" style={{ minHeight: photoTool ? 560 : 0 }}/>
+        <div id="dsn-photo-host" style={{ minHeight: photoTool ? "var(--rs-minheight-108, 560px)" : 0 }}/>
       </div>
     </>
   );

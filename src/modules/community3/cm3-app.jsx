@@ -23,6 +23,8 @@ const CM3_VIDEO_EXT = /\.(mp4|mov|webm|m4v)$/i;
 
 function cm3Tone(key) { let h = 0; for (const c of String(key || "")) h = (h * 31 + c.codePointAt(0)) >>> 0; return CM3_TONES[h % CM3_TONES.length]; }
 function cm3Ini(name) { return String(name || "?").split(/\s+/).filter(Boolean).map(x => x[0]).slice(0, 2).join("").toUpperCase() || "?"; }
+/* Only http(s) links leave the page — a post body is member-written. */
+function cm3SafeUrl(u) { const t = String(u || "").trim(); return /^https?:\/\//i.test(t) ? t : ""; }
 function cm3Fmt(t) { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }
 function cm3Ago(iso) { const a = typeof cmAgo === "function" ? cmAgo(iso) : ""; return !a ? "" : a === "just now" ? "Just now" : /^\d+[mh]$/.test(a) ? a + " ago" : a; }
 function cm3Err(e, fallback) { return (e && (e.detail || (typeof humanizeError === "function" ? humanizeError(e.code || e.message, "") : ""))) || fallback || "Something went wrong. Try again."; }
@@ -31,8 +33,12 @@ function cm3Reduced() { try { return window.matchMedia && window.matchMedia("(pr
    Emoji, CC BY 4.0). Any other emoji in a post stays text. */
 function cm3EmojiSrc(e) { const k = [...e].map(c => c.codePointAt(0).toString(16)).join("_"); return CM3_REACT_NAMES[e] ? "/assets/emoji/" + k + ".gif" : ""; }
 
+/* A document post's file, from this origin (api/member/community-doc.php):
+   the stored URL is not readable from the browser. */
+function cm3DocUrl(postId, dl) { return "/api/member/community-doc.php?postId=" + encodeURIComponent(postId || "") + (dl ? "&dl=1" : ""); }
+
 /** The real PDF page for the doc viewer: pdf.js through the shared NggPdfPage. */
-function Cm3PdfPage({ url, page, zoom, onPages }) {
+function Cm3PdfPage({ url, dl, page, zoom, onPages }) {
   const [doc, setDoc] = React.useState(null);
   const [err, setErr] = React.useState("");
   React.useEffect(() => {
@@ -40,10 +46,10 @@ function Cm3PdfPage({ url, page, zoom, onPages }) {
     setDoc(null); setErr("");
     loadVendor("pdfjs").then(lib => { nggPdfConfigure(lib); task = lib.getDocument(Object.assign({ url }, NGG_PDF_OPTS)); return task.promise; })
       .then(d => { if (!live) return; setDoc(d); onPages && onPages(d.numPages); })
-      .catch(() => { if (live) setErr("This document can’t be shown here. Download it to read it."); });
+      .catch(() => { if (live) setErr("This document can’t be shown here."); });
     return () => { live = false; try { task && task.destroy(); } catch (e) {} };
   }, [url]);
-  if (err) return <p className="cm3x-pdf-msg">{err}</p>;
+  if (err) return <div className="cm3x-pdf-msg"><p>{err}</p>{dl ? <a className="cm3x-pdf-dl" href={dl} download><i className="ph ph-download-simple" aria-hidden="true"></i>Download it to read it</a> : null}</div>;
   if (!doc) return <p className="cm3x-pdf-msg">Opening the document…</p>;
   return <div className="cm3x-pdf-page"><NggPdfPage doc={doc} page={page + 1} scale={(zoom || 100) / 100 * 1.4}/></div>;
 }
@@ -485,8 +491,8 @@ class Cm3App extends React.Component {
         vSub: m.type === "video" ? (pos > 0 ? "Resume at " + cm3Fmt(pos) : [m.chapters ? m.chapters + " chapters" : "", m.captions ? "captions on" : "", m.dur ? cm3Fmt(m.dur) : ""].filter(Boolean).join(" · ")) : "",
         vProgOn: pos > 0, vProg: (m.dur ? Math.min(100, pos / m.dur * 100) : 0).toFixed(1) + "%", playLabel: "Play video: " + (m.title || "video"),
         docH: m.type === "doc" ? m.name : "",
-        openMedia: () => m.type === "link" ? window.open(m.url, "_blank", "noopener") : m.type === "photo" ? window.open(m.url, "_blank", "noopener") : this.openViewer(m.type, p.id, p.id),
-        isPhoto: m.type === "photo", isVideo: m.type === "video", isDoc: m.type === "doc", isLink: m.type === "link", mName: m.name || "", mMeta: m.type === "doc" ? m.meta : m.type === "link" ? "Opens in a new tab" : "", mHost: m.host || "", mTitle: m.title || "",
+        openMedia: () => m.type === "link" ? window.open(cm3SafeUrl(m.url), "_blank", "noopener") : m.type === "photo" ? window.open(m.url, "_blank", "noopener") : this.openViewer(m.type, p.id, p.id),
+        isPhoto: m.type === "photo", isVideo: m.type === "video", isDoc: m.type === "doc", isLink: m.type === "link", mUrl: m.type === "link" ? cm3SafeUrl(m.url) : "", linkLabel: m.type === "link" ? (m.title || m.host || "Link") + " (opens in a new tab)" : "", mName: m.name || "", mMeta: m.type === "doc" ? m.meta : m.type === "link" ? "Opens in a new tab" : "", mHost: m.host || "", mTitle: m.title || "",
         photoEl: m.type === "photo" ? img(m.url, 900, "cm3x-fill", m.alt) : null,
         thumbEl: m.type === "video" ? (m.poster ? img(m.poster, 900, "cm3x-fill", "") : null) : null,
         isPoll: !!p.poll, pollMeta: tot + " votes · " + (voted >= 0 ? "You voted. Tap again to change." : "Tap a choice to vote"),
@@ -852,9 +858,9 @@ class Cm3App extends React.Component {
       const n = s.pdfPages || vwS.pages || 1, pi = Math.min(s.page || 0, n - 1), zm = s.zoom || 100;
       vw.title = vwS.name || "Document"; vw.sub = "Shared by " + author.name.split(" ")[0] + " · " + n + (n === 1 ? " page" : " pages");
       Object.assign(VW, { pdfRail: !narrow && n > 1, pdfThumbs: Array.from({ length: Math.min(n, 60) }, (_, i) => ({ h: "Page " + (i + 1), n: String(i + 1), label: "Page " + (i + 1), cur: i === pi ? "page" : undefined, ring: i === pi ? "#f5b026" : "transparent", go: () => set({ page: i }) })),
-        pdfPageEl: /pdf$/i.test((s.posts.find(p => p.id === vwS.post) || { media: {} }).media.format || "pdf") ? React.createElement(Cm3PdfPage, { url: vwS.url, page: pi, zoom: zm, onPages: k => this.setState({ pdfPages: k }) }) : React.createElement("p", { className: "cm3x-pdf-msg" }, "This kind of file can’t be previewed. Download it to open it."),
+        pdfPageEl: /pdf$/i.test((s.posts.find(p => p.id === vwS.post) || { media: {} }).media.format || "pdf") ? React.createElement(Cm3PdfPage, { url: cm3DocUrl(vwS.post), dl: cm3DocUrl(vwS.post, true), page: pi, zoom: zm, onPages: k => this.setState({ pdfPages: k }) }) : React.createElement("div", { className: "cm3x-pdf-msg" }, React.createElement("p", null, "This kind of file can’t be previewed here."), React.createElement("a", { className: "cm3x-pdf-dl", href: cm3DocUrl(vwS.post, true), download: vwS.name || "" }, React.createElement("i", { className: "ph ph-download-simple", "aria-hidden": "true" }), "Download it to open it")),
         pgLabel: "Page " + (pi + 1) + " of " + n, pgPrev: () => set({ page: Math.max(0, pi - 1) }), pgNext: () => set({ page: Math.min(n - 1, pi + 1) }), pgPrevOff: pi === 0, pgNextOff: pi >= n - 1,
-        zoomLabel: zm + "%", zoomIn: () => set({ zoom: Math.min(200, zm + 25) }), zoomOut: () => set({ zoom: Math.max(50, zm - 25) }), pdfDownload: () => window.open(vwS.url, "_blank", "noopener") });
+        zoomLabel: zm + "%", zoomIn: () => set({ zoom: Math.min(200, zm + 25) }), zoomOut: () => set({ zoom: Math.max(50, zm - 25) }), pdfDownload: () => { const a = document.createElement("a"); a.href = cm3DocUrl(vwS.post, true); a.download = vwS.name || ""; document.body.appendChild(a); a.click(); a.remove(); } });
     }
     if (vwS.type === "code") {
       const orig = md.code || "", src = s.codeSrc == null ? orig : s.codeSrc, ran = s.codeRan == null ? orig : s.codeRan, lines = src.split("\n").length;

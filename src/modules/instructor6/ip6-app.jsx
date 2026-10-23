@@ -373,6 +373,8 @@ class Ip6Portal extends React.Component {
     // The Curriculum screen: the course's lessons by year, term and week (StaffCurriculumMap, shared with the mentor portal).
     o.currBox = <StaffCurriculumMap data={D.curr || { units: [] }} course={C.cls.course || ''} reload={() => this.load('curr', () => ip6Api.curr())}/>;
     o.units = units.map(u => { const st = u.stats || {}; const done = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0; return { w: u.week, t: u.title, st: 'Published', done, pct: done + '%', donePct: done + '%', avg: st.started ? st.completed + '/' + st.started : '—',
+      // The class's own size, never a number from the design.
+      doneLine: st.audience ? (st.completed || 0) + ' of ' + st.audience + (st.audience === 1 ? ' student' : ' students') + ' finished' : 'Nobody is set this lesson yet',
       mats: (u.materials || []).map(m => m.title || m.kind || 'Material'), hasMats: (u.materials || []).length > 0, fg: '#1d6b30', bg: '#e9f6ec', canPublish: false, pub: () => {},
       upload: () => this.uploadMaterial(u) }; });
     // students

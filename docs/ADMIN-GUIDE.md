@@ -1866,6 +1866,15 @@ picks his record and filters nobody else). *"Exclude summer"* leaves Summer
 School out — it no longer reads as "Summer School only". A name nobody has
 shows the closest names on the lists, with *Use …*.
 
+**More ways to say who.** These are read even with no AI key (the studio's own rules):
+- *"The volunteers from Ijaiye and Ikorodu"* — several centres at once; each shows as its own chip.
+- *"Print 026-001 to 026-040"* — the forty in that block, and only 2026's (025-007 stays off). *"Cards 40 to 80"* without a prefix is every year's.
+- *"The last 20 members who joined"* — the twenty most recent, not the first twenty on the list. (*"The last 7 days"* is still a date.)
+- *"Everyone at Yaba except those already printed"*, *"who still needs a card in Ikorodu?"* — the people still waiting for a card.
+- *"Without a photo"* / *"only the ones with photos"* — a photo filter. *"…without a photo, ask them for one"* opens the photo request for exactly them.
+- *"Volunteers and members together, one sheet per centre"* — both lists, each centre on its own sheet. *"Print the backs too"* turns the backs on.
+- *"Ada Okafor's card"* means Ada Okafor; a two-word centre (*Yaba Hub*) is never read as a person.
+
 **Photo work in words, and photos in the chat.**
 - *"Improve the photos, remove their backgrounds"* opens **Improve photos** for
   the people in that request (or the plan on screen) with *Plain grey
@@ -2202,6 +2211,29 @@ those photos keep showing from where they are.
   **Clean up now** button.
 
 ## Image storage (Cloudinary)
+
+**More than one Cloudinary account.** One free plan holds about fifty people's
+photos a month. Control Room → Settings → **Diagnostics** → *Cloudinary
+accounts* lists the main account (the keys in Settings → API keys) and any you
+add with **Add an account…** — a free account signed up with another email
+address adds its own credits and storage. You need its cloud name, API key and
+API secret (Cloudinary console → Settings → API Keys); the keys are **checked
+with Cloudinary before they are kept**, and the secret is never shown again.
+
+- **Uploads go to the first account, in the order shown, that has room.** When
+  one passes 85% (or is full), new uploads move to the next by themselves, on
+  the next usage reading; when a plan resets or is upgraded it takes uploads
+  back. The list says where uploads go now.
+- **Photos already uploaded stay where they are and keep showing** — an image
+  link names its own account and needs no key. Removing an account from the
+  list only stops uploading to it, reading its usage and deleting from it; the
+  screen says how many photos on record still show from it.
+- Open an account to **check its usage now**, **move it up or down** (the main
+  account is always first), **pause** uploads to it, change its name or keys,
+  or remove it. Every change is recorded in the audit log (never a key).
+- Alerts name the account: "Cloudinary (Second plan) is full — new uploads now
+  go to Third plan". Only when every account is full are uploads paused.
+- **Free space…** frees the resized copies on every account.
 
 Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
 shared between storage, bandwidth — every time a page shows an image — and
@@ -2548,6 +2580,18 @@ the Anchor Circle code. Each has one button. The card disappears when all
 are done, and a member can hide it (Help → Show "Getting started" brings it
 back). Help also has **Take the tour again**.
 
+**Tours that know the device.** Every portal's first-visit tour is written for
+the device it opens on. On a phone it talks about the bar at the bottom and
+shows, in the phone's own words (iPhone or Android), how to put NGG on the
+home screen; on a computer it talks about the list on the left (and, in the
+Control Room, ⌘K). A step about a control **lights it up on the real page**,
+with the card moved out of its way; a step about another screen shows a
+**screenshot** of it, taken from the real portal on a phone and on a computer
+(`node tools/guide-shots.js` retakes them after a layout change). Somebody who
+took the tour on a phone and later signs in on a computer (or the other way
+round) gets a **short tour of what is different there**, once. The children's
+tour (My NGG) reads bigger and ends on the Getting started list.
+
 **Supporting mentors.** A member has one mentor, plus at most **two**
 supporting mentors, each for one thing (Coding, Exams) and optionally until a
 date. Add them in the member's record → Mentor → **Add a supporting mentor**;
@@ -2636,8 +2680,11 @@ Short list. Everything on it is hard or impossible to undo.
 
 Settings → API keys → Photos → **Cloudinary · backup account** takes a second account's cloud name, API key and API secret. A free account is fine. **Test** checks it and shows how much of its credits are used.
 
+- **When the main account runs low** (the image-storage monitor reads it every 6 hours and it reaches *high*), or the moment it **refuses an upload for credits**, new photos and edits move to the backup on their own. You get an email and a Diagnostics entry, and AI photo edits start again.
+- **"Refuses an upload" includes uploads made from people's phones and browsers**, which go straight to Cloudinary. When Cloudinary turns one away for credits, the page tells this site, the site checks the main account itself (it reads the account and, if that doesn't settle it, tries a tiny upload of its own), and only then moves to the backup. The person's upload is then sent to the backup, so they see no error. A refusal for any other reason (a damaged file, say) is shown to them as it was and moves nothing.
+- **No web-cron on your host?** The 6-hourly reading is also taken when somebody uploads and the last reading is older than that, so the switch never waits on a cron job.
 - **When the main account passes 70% used** (checked every 6 hours, and straight away when the backup's keys pass **Test**), or the moment it **refuses an upload for credits**, new photos and edits move to the backup on their own. You get an email and a Diagnostics entry, and AI photo edits start again.
 - **Photos already on the main account keep showing.** One that is edited while the backup is in use is copied across once (editing it again reuses that copy), so the edit doesn't spend the main account. The optional **Upload preset** is for photos on the public application form; without it those go to this site while the backup is in use.
 - **When the main account renews** (back under 70%), work moves back to it with another email.
-- **You can choose.** Settings → Diagnostics → Image storage shows the **Account in use**. **Use the backup now** moves new work there at once, and the choice holds until you press **Back to automatic** (or **Use the main account**).
+- **You can choose.** Settings → Diagnostics → Image storage → **Cloudinary accounts**: open an account and press **Use for new uploads now**. The choice holds (even past 70%) until you press **Back to automatic**; only a full account is still skipped, so uploads never stop.
 - **What a backup can't save:** photos already stored on the main account still use its bandwidth every time a page shows them. Only new photos, and photos edited again, move to the backup.

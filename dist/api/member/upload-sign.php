@@ -22,6 +22,10 @@ require_method('POST');
 // Cheap abuse throttle — a member should never need dozens of signatures/min.
 rate_limit_check('upload.sign');
 
+/* A retry after Cloudinary refused an upload carries what it said; the
+   account is checked (and, when spent, left for the next) before signing. */
+$refusedBody = read_json_body();
+$refusal = media_before_sign(is_array($refusedBody['refused'] ?? null) ? $refusedBody['refused'] : null);
 $cfg = $CONFIG['cloudinary'] ?? [];
 /* A bucket (R2, B2 — api/_lib/object-store.php) wins when one is set: every
    new upload goes there and Cloudinary keeps serving what it already holds. */

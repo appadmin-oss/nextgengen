@@ -6334,7 +6334,7 @@ unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
 (function () {
     $keep = $GLOBALS['CONFIG']['cloudinary'] ?? []; $keepP = $GLOBALS['CLOUDINARY_PRIMARY'] ?? null; unset($GLOBALS['CLOUDINARY_PRIMARY']);
     $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'mainacct', 'api_key' => '111', 'api_secret' => 'mainsecret', 'folder' => 'ngg', 'unsigned_preset' => 'main_preset'];
-    setting_set('cloudinary_active', 'primary', 'system'); setting_set('media.usage', null, 'system');
+    setting_set('cloudinary_active', 'primary', 'system'); setting_set('cloudinary_pin', '', 'system'); setting_set('media.usage', null, 'system');
     cloudinary_account_apply();
     $use = ['mainacct' => 95, 'spareacct' => 10];
     $GLOBALS['__media_api_mock'] = function ($m, $path) use (&$use) { $c = $GLOBALS['CONFIG']['cloudinary']['cloud_name']; return ['code' => 200, 'body' => ['credits' => ['usage' => $use[$c], 'limit' => 100]]]; };
@@ -6366,21 +6366,20 @@ unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
     media_usage_refresh(true);
     chk('…and hands back once the main account is under 70% again', cloudinary_active() === 'primary');
     $adm = db_row("SELECT memberId FROM members WHERE role = 'super_admin' AND status = 'active' LIMIT 1");
-    $pick = fn($use2) => admin_media_account(['requesterId' => (string)($adm['memberId'] ?? ''), 'use' => $use2]);
+    $pick = fn($u2) => admin_media_account(['requesterId' => (string)($adm['memberId'] ?? ''), 'use' => $u2]);
     $r = $pick('backup');
-    chk('cloudinary: an operator can send new work to the backup now', !empty($r['ok']) && $r['account'] === 'backup' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
+    chk('cloudinary: an operator can send new uploads to the backup now', !empty($r['ok']) && $r['uploadsTo'] === 'backup' && $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'spareacct');
     media_usage_refresh(true);
     chk('…and the choice holds: a healthy main account does not pull it back', cloudinary_active() === 'backup');
-    $r = $pick('primary'); $use['mainacct'] = 95; media_usage_refresh(true);
-    chk('cloudinary: chosen main account stays main even past the line (the operator decides)', cloudinary_active() === 'primary');
-    chk('…and an upload refusal does not override that choice', cloudinary_failover('test') === false && cloudinary_active() === 'primary');
+    $r = $pick('primary'); $use['mainacct'] = 75; media_usage_refresh(true);
+    chk('cloudinary: a chosen main account stays in use past 70% (the operator decides)', cloudinary_active() === 'primary');
+    $use['mainacct'] = 97; media_usage_refresh(true);
+    chk('…but a full one is still skipped, so a choice can never stop uploads', cloudinary_active() === 'backup');
     $r = $pick('auto');
-    chk('cloudinary: back to automatic, a spent main account hands over at once', !empty($r['ok']) && $r['pin'] === '' && cloudinary_active() === 'backup');
-    chk('cloudinary: the account choice needs the settings capability', (admin_media_account(['requesterId' => 'NGG-NOBODY', 'use' => 'backup'])['ok'] ?? true) === false);
-    chk('cloudinary: an unknown choice is refused', (admin_media_account(['requesterId' => (string)($adm['memberId'] ?? ''), 'use' => 'both'])['error'] ?? '') === 'bad_choice');
-    $u = admin_media_usage(['requesterId' => (string)($adm['memberId'] ?? '')]);
-    chk('cloudinary: Image storage reports which account is in use, and its name', ($u['account']['active'] ?? '') === 'backup' && ($u['account']['backupName'] ?? '') === 'spareacct' && ($u['account']['mainName'] ?? '') === 'mainacct');
-    setting_set('cloudinary_pin', '', 'system'); $use['mainacct'] = 3; media_usage_refresh(true);
+    chk('cloudinary: back to automatic clears the choice', !empty($r['ok']) && $r['pin'] === '' && cloudinary_active() === 'backup');
+    chk('cloudinary: choosing an account needs the settings capability', (admin_media_account(['requesterId' => 'NGG-NOBODY', 'use' => 'backup'])['ok'] ?? true) === false);
+    chk('cloudinary: an account that is not set up cannot be chosen', ($pick('nope')['error'] ?? '') === 'not_found');
+    $use['mainacct'] = 3; media_usage_refresh(true);
     // An upload the main account refuses moves to the backup at once and is retried there.
     $tries = [];
     $GLOBALS['__cloudinary_upload_mock'] = null; unset($GLOBALS['__cloudinary_upload_mock']);
@@ -6395,7 +6394,7 @@ unset($GLOBALS['__cloudinary_usage_mock'], $GLOBALS['__mail_sink']);
     cloudinary_adopt('https://res.cloudinary.com/mainacct/image/upload/e_sharpen/v1/ngg/photos/old.jpg');
     $copies = array_values(array_filter($names));
     chk('cloudinary: editing the same old photo again reuses its one copy (same fixed name), never a second', count($copies) === 2 && $copies[0] === $copies[1] && strpos($copies[0], 'copy_') === 0);
-    unset($GLOBALS['__cld_upload_http'], $GLOBALS['__media_api_mock'], $GLOBALS['__mail_sink'], $GLOBALS['CLOUDINARY_PRIMARY']);
+    unset($GLOBALS['__cld_upload_http'], $GLOBALS['__media_api_mock'], $GLOBALS['__mail_sink'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active'], $GLOBALS['__media_states']); setting_set('media.usage.accounts', null, 'system');
     setting_set('cloudinary_active', 'primary', 'system'); setting_set('cloudinary_pin', '', 'system'); setting_set('media.usage', null, 'system'); setting_set('cloudinary_credits', 'ok', 'system');
     $GLOBALS['CONFIG']['cloudinary'] = $keep; if ($keepP !== null) $GLOBALS['CLOUDINARY_PRIMARY'] = $keepP;
 })();
@@ -25784,6 +25783,27 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $x = $rd('new cards for Egbda kids, the first ten');
     chk('id plan rules: a misspelt centre, "kids" and "the first ten" are read', $x['centre'] === 'Egbeda' && $x['kind'] === 'member' && $x['limit'] === 10 && $x['which'] === 'new');
     chk('id plan rules: a short word is never a misspelt centre', !isset($rd('print the card for Iya')['centre']));
+    // The upgrade: the requests the rules used to misread (each was read wrongly before).
+    chk('id plan rules: "Ada Okafor\'s card" is Ada Okafor', ($rd("reprint Ada Okafor's card, she lost it")['names'] ?? []) === ['Ada Okafor']);
+    chk('id plan rules: two centres are both kept, in the order said', ($rd('print the volunteers from Ijaiye and Egbeda')['centres'] ?? []) === ['Ijaiye', 'Egbeda']);
+    chk('id plan rules: a range written as two printed IDs is the block between, kept to its year',
+        ($x = $rd('print 026-001 to 026-040')) && $x['numFrom'] === 1 && $x['numTo'] === 40 && $x['numPrefix'] === '026' && empty($x['ids']) && $x['kind'] === 'member');
+    chk('id plan rules: "the last 20 members who joined" is the newest twenty', ($x = $rd('the last 20 members who joined')) && $x['limit'] === 20 && !empty($x['latest']));
+    chk('id plan rules: "the last 7 days" is still a date, not a count', ($x = $rd('members in the last 7 days')) && !isset($x['limit']) && $x['dateFrom'] === '2026-10-08');
+    chk('id plan rules: "except those already printed" is the people still waiting, not a name', ($x = $rd('all members at Egbeda except those already printed')) && $x['which'] === 'new' && $x['centre'] === 'Egbeda' && empty($x['exclude']));
+    chk('id plan rules: "who still needs a card" is the people still waiting', ($rd('who still needs a card in Ijaiye?')['which'] ?? '') === 'new');
+    chk('id plan rules: "without a photo, ask them for one" is the filter and the act', ($x = $rd('summer school participants without a photo, ask them for one')) && $x['hasPhoto'] === false && $x['do'] === 'askPhotos' && $x['kind'] === 'summer');
+    chk('id plan rules: "only the ones with photos" is a filter', ($rd('only the ones with photos')['hasPhoto'] ?? null) === true);
+    chk('id plan rules: "improve the photos" is an edit, not a photo filter', !isset($rd('improve the photos of the summer kids')['hasPhoto']));
+    chk('id plan rules: "volunteers and members together, one sheet per centre" is both lists and a sheet each',
+        ($x = $rd("print Ijaiye's volunteers and members together, one sheet per centre")) && !isset($x['kind']) && $x['notKinds'] === ['summer', 'afrovanguard'] && $x['breakBy'] === true && $x['centre'] === 'Ijaiye');
+    chk('id plan rules: "print the backs too" turns backs on', ($rd('print the backs too')['backs'] ?? '') === 'long');
+    chk('id plan rules: the first word of a longer centre name is that centre ("at Planwick")', ($rd('members at Planwick')['centre'] ?? '') === 'Planwick Hall');
+    chk('id plan rules: a two-word centre is never read as a person', !isset($rd('print Planwick Hall members')['names']));
+    $cl = ids_plan_clean(['centres' => ['Ijaiye', 'Nowhere', 'egbda'], 'hasPhoto' => 'yes', 'numFrom' => 3, 'numPrefix' => 'x; drop'], $K, $C);
+    chk('id plan: a model\'s centres are checked one by one, an unknown one said; a non-boolean photo filter and a bad prefix are dropped',
+        $cl['plan']['centres'] === ['Ijaiye', 'Egbeda'] && count($cl['notes']) === 1 && !isset($cl['plan']['hasPhoto']) && !isset($cl['plan']['numPrefix']));
+    chk('id plan: one centre said in a follow-up replaces several said before', !isset(ids_plan_refine(['centres' => ['Ijaiye', 'Egbeda']], ['centre' => 'Egbeda'])['centres']));
     $x = $rd('Egbeda members except 026-002 and Bayo Ade');
     chk('id plan rules: "except" leaves people out, and never puts them on the sheet', $x['exclude'] === ['ids' => ['026-002'], 'names' => ['Bayo Ade']] && !isset($x['ids']) && $x['centre'] === 'Egbeda');
     $x = $rd('members at Ijaiye, add 026-010 and Ada Obi');
@@ -27389,7 +27409,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $s = photo_supersede('member', 'NGG-PHR-1', $c['url'], $d['url']);
     chk('photo replace: a file another person still uses is kept, and says who', $s['deleted'] === false && str_contains($s['keptFor'], 'members') && photo_store_find($c['id']) !== '');
     // A hosted (Cloudinary) original on our cloud is deleted too — never when the new photo is an edit of the same upload.
-    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null; $keepPrim = $GLOBALS['CLOUDINARY_PRIMARY'] ?? null; unset($GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active']);
     $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggtest', 'api_key' => 'k', 'api_secret' => 's'];
     $destroyed = []; $GLOBALS['__cloudinary_destroy_mock'] = function ($pid) use (&$destroyed) { $destroyed[] = $pid; return true; };
     chk('photo replace: a Cloudinary URL gives its public id, transformations and version skipped',
@@ -27402,7 +27422,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     photo_set_subject('member', 'NGG-PHR-1', 'https://res.cloudinary.com/nggtest/image/upload/v3/ngg/kids/new222.jpg');
     chk('photo replace: a new hosted photo deletes the old hosted original', $destroyed === ['ngg/kids/old111']);
     unset($GLOBALS['__cloudinary_destroy_mock']);
-    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
+    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg; unset($GLOBALS['CLOUDINARY_PRIMARY']); if ($keepPrim !== null) $GLOBALS['CLOUDINARY_PRIMARY'] = $keepPrim;
     $GLOBALS['__photo_ref_force_fail'] = false;
 })();
 
@@ -29049,6 +29069,142 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
 })();
 
+// ── Several Cloudinary accounts: uploads go to the first with room (media-storage.php) ──
+(function () use ($SU) {
+    $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'maincloud', 'api_key' => '111111', 'api_secret' => 'mainsecret123', 'folder' => 'ngg'];
+    setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+    $use = ['primary' => 40.0]; $codes = []; $calls = [];
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q, $acc) use (&$use, &$codes, &$calls) {
+        $calls[] = $acc . ' ' . $m . ' ' . $path;
+        if (isset($codes[$acc])) return ['code' => $codes[$acc], 'body' => null];
+        return ['code' => 200, 'body' => ['plan' => 'Free', 'credits' => ['usage' => 1, 'limit' => 25, 'used_percent' => $use[$acc] ?? 10.0]]];
+    };
+    chk('accounts · the main account alone: uploads go to it, and nothing about the config changes', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud' && count(media_accounts()) === 1);
+    chk('accounts · adding one is for settings holders', (backend_dispatch('admin.media.accountSave', ['requesterId' => 'NOBODY', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1'])['ok'] ?? true) === false);
+    chk('accounts · a malformed key is refused before anything is sent', (backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-one', 'apiKey' => 'abc', 'apiSecret' => 'extrasecret1'])['error'] ?? '') === 'bad_api_key');
+    chk('accounts · the main account cannot be added twice', (backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'maincloud', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1'])['error'] ?? '') === 'duplicate_cloud');
+    $codes = ['new' => 401];
+    $bad = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'wrongsecret1']);
+    chk('accounts · keys Cloudinary refuses are not kept', ($bad['error'] ?? '') === 'bad_credentials' && media_extra_rows() === []);
+    $codes = []; $use['primary'] = 40.0;
+    $add = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'label' => 'Second plan', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'apiSecret' => 'extrasecret1']);
+    $xid = (string)($add['id'] ?? '');
+    $use[$xid] = 20.0;
+    chk('accounts · a working account is added, listed after the main one, its secret never sent back',
+        !empty($add['ok']) && count($add['accounts']) === 2 && $add['accounts'][0]['id'] === 'primary' && $add['accounts'][1]['cloudName'] === 'extra-one'
+        && !str_contains(json_encode($add), 'extrasecret1') && $add['accounts'][1]['keyEnds'] === '2222');
+    chk('accounts · …and the secret is stored sealed, not as typed', !str_contains(json_encode(setting_get('media.accounts')), 'extrasecret1') && media_account($xid)['api_secret'] === 'extrasecret1');
+    chk('accounts · with room on the main account, uploads stay there', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud');
+    db_exec("DELETE FROM ops_events WHERE source = 'media.storage'");
+    $use['primary'] = 97.0;
+    $r = media_usage_refresh(true);
+    chk('accounts · the main plan full: uploads move to the next account by themselves', media_active_id() === $xid && media_cfg()['cloud_name'] === 'extra-one'
+        && media_cfg()['api_secret'] === 'extrasecret1' && media_uploads_allowed() && ($r['account'] ?? '') === $xid);
+    chk('accounts · …the main account\'s own keys are kept beside them', media_primary_cfg()['cloud_name'] === 'maincloud' && media_account('primary')['api_secret'] === 'mainsecret123');
+    chk('accounts · …the alert says where uploads went, and the switch is audited',
+        (bool)db_row("SELECT 1 FROM ops_events WHERE source = 'media.storage' AND detail LIKE '%new uploads now go to Second plan%'")
+        && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.storage.switch' AND subject = ?", [$xid]));
+    chk('accounts · …and the paid AI edits follow the account uploads go to (it has room)', cloudinary_credits_ok());
+    chk('accounts · an image on either account is ours; another cloud is not',
+        cloudinary_public_id('https://res.cloudinary.com/extra-one/image/upload/v1/ngg/photos/a1.jpg') === 'ngg/photos/a1'
+        && cloudinary_public_id('https://res.cloudinary.com/maincloud/image/upload/v1/ngg/photos/b2.jpg') === 'ngg/photos/b2'
+        && cloudinary_public_id('https://res.cloudinary.com/strangers/image/upload/v1/x.jpg') === '');
+    chk('accounts · deleting uses the account the image is on', (media_account_for_url('https://res.cloudinary.com/maincloud/image/upload/v1/x.jpg')['id'] ?? '') === 'primary'
+        && (media_account_for_url('https://res.cloudinary.com/extra-one/image/upload/v1/x.jpg')['id'] ?? '') === $xid);
+    $use[$xid] = 98.0; media_usage_refresh(true);
+    chk('accounts · every plan full: uploads pause, as with one account', !media_uploads_allowed());
+    $use['primary'] = 30.0; media_usage_refresh(true);
+    chk('accounts · a plan that resets takes uploads back, first in the order', media_active_id() === 'primary' && media_cfg()['cloud_name'] === 'maincloud' && media_uploads_allowed());
+    $calls = [];
+    backend_dispatch('admin.media.purgeDerived', ['requesterId' => $SU, 'confirm' => 'FREE SPACE', 'force' => true]);
+    chk('accounts · freeing space frees it on every account', (bool)array_filter($calls, static fn($c) => str_starts_with($c, 'primary DELETE')) && (bool)array_filter($calls, static fn($c) => str_starts_with($c, $xid . ' DELETE')));
+    // A third, paused, then moved and removed.
+    $use['x3'] = 5.0;
+    $a3 = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'cloudName' => 'extra-two', 'apiKey' => '333333', 'apiSecret' => 'thirdsecret1']);
+    $x3 = (string)$a3['id'];
+    $mv = backend_dispatch('admin.media.accountMove', ['requesterId' => $SU, 'id' => $x3, 'dir' => 'up']);
+    chk('accounts · the extra accounts can be put in order; the main one stays first', $mv['accounts'][0]['id'] === 'primary' && $mv['accounts'][1]['id'] === $x3 && $mv['accounts'][2]['id'] === $xid);
+    $pz = backend_dispatch('admin.media.accountSave', ['requesterId' => $SU, 'id' => $x3, 'enabled' => false]);
+    chk('accounts · a paused account takes no uploads but stays on the list', !media_account($x3) && (bool)array_filter($pz['accounts'], static fn($a) => $a['id'] === $x3 && !$a['enabled']));
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-X1'");
+    db_insert('members', ['memberId' => 'MEDIA-X1', 'fullName' => 'Extra Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+        'photoUrl' => 'https://res.cloudinary.com/extra-one/image/upload/v1/ngg/photos/x1.jpg']);
+    $rm = backend_dispatch('admin.media.accountRemove', ['requesterId' => $SU, 'id' => $xid]);
+    chk('accounts · removing one says how many photos it still shows (they keep working), and is audited',
+        !empty($rm['ok']) && $rm['photosStillThere'] === 1 && !media_account($xid) && (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'media.account.remove' AND subject = ?", [$xid]));
+    chk('accounts · the main account is never removed from here', (backend_dispatch('admin.media.accountRemove', ['requesterId' => $SU, 'id' => 'primary'])['error'] ?? '') === 'primary_is_settings');
+    db_exec("DELETE FROM members WHERE memberId = 'MEDIA-X1'");
+    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+    setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+    if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+})();
+
+// ── A refusal the browser saw moves uploads to the backup (media_upload_refused) ──
+(function () {
+    $prevCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $main = ['cloud_name' => 'maincloud', 'api_key' => '111111', 'api_secret' => 'mainsecret123', 'folder' => 'ngg',
+        'backup' => ['cloud_name' => 'backupcloud', 'api_key' => '444444', 'api_secret' => 'backupsecret1']];
+    $GLOBALS['CONFIG']['cloudinary'] = $main;
+    $reset = static function () use ($main) {
+        setting_set('media.usage', null, 'test'); setting_set('media.usage.accounts', null, 'test'); setting_set('media.accounts', null, 'test');
+        setting_set('media.refusal.checked', null, 'test'); setting_set('cloudinary_credits', 'ok', 'test');
+        unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+        $GLOBALS['CONFIG']['cloudinary'] = $main;
+    };
+    $reset();
+    $use = ['primary' => 40.0, 'backup' => 5.0]; $calls = []; $probes = []; $probeAns = ['ok' => false, 'code' => 420, 'message' => 'Upload limit exceeded'];
+    $GLOBALS['__media_api_mock'] = function ($m, $path, $q, $acc) use (&$use, &$calls) {
+        $calls[] = $acc . ' ' . $path;
+        return ['code' => 200, 'body' => ['plan' => 'Free', 'credits' => ['usage' => 1, 'limit' => 25, 'used_percent' => $use[$acc] ?? 10.0]]];
+    };
+    $GLOBALS['__media_probe_mock'] = function ($id) use (&$probes, &$probeAns) { $probes[] = $id; return $probeAns; };
+    media_activate();
+    chk('refusal · with the backup set in API keys, uploads start on the main account', media_active_id() === 'primary' && count(media_accounts()) === 2);
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 400, 'message' => 'Invalid image file']);
+    chk('refusal · a bad file is not a spent plan: nothing is checked, nothing moves', !$v['switched'] && $v['checked'] === 'none' && !$calls && !$probes && media_active_id() === 'primary');
+    db_exec("DELETE FROM ops_events WHERE source = 'media.storage'");
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · the reading still says 40%, so the server tries an upload itself before believing it', $v['checked'] === 'probe' && $probes === ['primary'] && in_array('primary /usage', $calls, true));
+    chk('refusal · …it is refused too: uploads move to the backup, and its keys are the ones signed with', $v['switched'] && media_active_id() === 'backup' && media_cfg()['cloud_name'] === 'backupcloud' && media_cfg()['api_secret'] === 'backupsecret1');
+    chk('refusal · …and the people who run it are told, once', (int)db_row("SELECT COUNT(*) AS n FROM ops_events WHERE source = 'media.storage' AND detail LIKE '%refused an upload%'")['n'] === 1);
+    $probes = [];
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · a second report about the main account (already left) just gets the backup signature', $v['switched'] && $v['active'] === 'backup' && !$probes);
+    $v = media_upload_refused(['cloud' => 'nobodys', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · a report naming somebody else\'s cloud changes nothing', !$v['switched'] && media_active_id() === 'backup');
+
+    // A browser that cries wolf: the account has room and the server's own upload lands.
+    $reset(); $calls = []; $probes = []; $probeAns = ['ok' => true, 'code' => 200, 'message' => '']; media_activate();
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · a report the server cannot confirm moves nothing', !$v['switched'] && $v['checked'] === 'probe' && media_active_id() === 'primary');
+    $probes = [];
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'limit']);
+    chk('refusal · …and a stream of reports costs one check, not one each', $v['checked'] === 'recent' && !$probes);
+
+    // The reading itself shows the plan spent: no test upload needed.
+    $reset(); $calls = []; $probes = []; $use['primary'] = 99.0; media_activate();
+    $v = media_upload_refused(['cloud' => 'maincloud', 'status' => 420, 'message' => 'Upload limit exceeded']);
+    chk('refusal · when the fresh reading shows the plan spent, uploads move without a test upload', $v['switched'] && $v['checked'] === 'usage' && !$probes && media_active_id() === 'backup');
+
+    // No web-cron on the host: signing reads a stale account.
+    $reset(); $calls = []; $use['primary'] = 96.0;
+    setting_set('media.usage', ['configured' => true, 'level' => 'ok', 'pct' => 10.0, 'parts' => [], 'checkedAt' => gmdate('c', time() - MEDIA_REFRESH_SECONDS - 600), 'error' => ''], 'test');
+    media_activate();
+    chk('refusal · (a six-hour-old reading says the main account is fine)', media_active_id() === 'primary');
+    media_before_sign(null);
+    chk('refusal · signing an upload takes the overdue reading, so a host without web-cron still moves to the backup',
+        in_array('primary /usage', $calls, true) && media_active_id() === 'backup' && media_cfg()['cloud_name'] === 'backupcloud');
+    $calls = []; media_before_sign(null);
+    chk('refusal · …and a fresh reading is not taken again on the next upload', !$calls);
+
+    unset($GLOBALS['__media_api_mock'], $GLOBALS['__media_probe_mock']);
+    $reset();
+    if ($prevCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $prevCfg;
+    unset($GLOBALS['__media_active'], $GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_states']);
+})();
+
 // ── A child's own concern from the Member Portal (member_sg_self) ──
 (function () {
     $now = now_iso();
@@ -29928,6 +30084,41 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     if ($code['post']['status'] !== 'published') $approve($code);
     $cmd = backend_dispatch('community.media', ['memberId' => 'CV3-S2', 'postId' => $code['post']['postId']]);
     chk('cm3 code: a code post keeps its source; a student\'s hint is not kept', $code['post']['code']['title'] === 'about.html' && $cmd['code'] === "<h1>Hi</h1>\n<p>About me</p>" && $cmd['hint'] === '');
+    /* A document is served from this origin, fetched only from OUR storage:
+       the stored URL is member-supplied, so a foreign host is never fetched. */
+    $keepCl = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $clReset = static function () { unset($GLOBALS['CLOUDINARY_PRIMARY'], $GLOBALS['__media_active'], $GLOBALS['__media_states']); };
+    $clReset(); $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggdocs', 'api_key' => 'k1', 'api_secret' => 'sec'];
+    $docP = $post('CV3-T', ['body' => 'Robot plan', 'mediaType' => 'doc', 'mediaUrl' => 'https://res.cloudinary.com/nggdocs/image/upload/v1712/community/docs/plan-1.pdf', 'mediaFormat' => 'pdf', 'mediaName' => 'Robot "plan".pdf']);
+    $docX = $post('CV3-T', ['body' => 'Elsewhere', 'mediaType' => 'doc', 'mediaUrl' => 'https://evil.example/internal.pdf', 'mediaFormat' => 'pdf', 'mediaName' => 'x.pdf']);
+    $docR = $post('CV3-T', ['body' => 'Word', 'mediaType' => 'doc', 'mediaUrl' => 'https://res.cloudinary.com/nggdocs/raw/upload/v9/community/docs/notes.docx', 'mediaFormat' => 'docx', 'mediaName' => 'notes.docx']);
+    $seen = [];
+    $GLOBALS['__cm3_doc_fetch_mock'] = function ($src) use (&$seen) { $seen[] = $src; return ['code' => 200, 'body' => '%PDF-1.4 test']; };
+    $d = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docP['post']['postId']]);
+    chk('cm3 doc: a member gets the file from this origin, named and typed', !empty($d['ok']) && $d['body'] === '%PDF-1.4 test' && $d['mime'] === 'application/pdf' && $d['name'] === 'Robot plan.pdf');
+    chk('cm3 doc: an image-pipeline PDF is fetched by public id and format, not the delivery URL',
+        ($seen[0]['kind'] ?? '') === 'cloudinary' && $seen[0]['publicId'] === 'community/docs/plan-1' && $seen[0]['format'] === 'pdf' && $seen[0]['resource'] === 'image');
+    $dr = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docR['post']['postId']]);
+    chk('cm3 doc: a raw file keeps its extension in its public id', !empty($dr['ok']) && ($seen[1]['publicId'] ?? '') === 'community/docs/notes.docx' && $seen[1]['format'] === '' && $dr['mime'] === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    $n = count($seen);
+    $dx = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docX['post']['postId']]);
+    chk('cm3 doc: a URL that is not on our storage is refused and never fetched', ($dx['error'] ?? '') === 'not_ours' && count($seen) === $n);
+    chk('cm3 doc: a post that is not a document is refused', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $code['post']['postId']])['error'] ?? '') === 'not_a_document');
+    chk('cm3 doc: a held post is not served to another member', (backend_dispatch('community.doc', ['memberId' => 'CV3-S2', 'postId' => $p1['post']['postId']])['error'] ?? '') === 'not_found');
+    $GLOBALS['__cm3_doc_fetch_mock'] = fn($src) => ['code' => 401, 'body' => ''];
+    chk('cm3 doc: a storage refusal is reported, not served as an empty file', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docP['post']['postId']])['error'] ?? '') === 'fetch_failed');
+    unset($GLOBALS['__cm3_doc_fetch_mock']);
+    $u = cm3_doc_download_url(cm3_doc_source('https://res.cloudinary.com/nggdocs/image/upload/v1712/community/docs/plan-1.pdf'), 1700000000);
+    parse_str((string)parse_url($u, PHP_URL_QUERY), $q);
+    chk('cm3 doc: the download is signed over the sorted parameters with the account secret',
+        strpos($u, 'https://api.cloudinary.com/v1_1/nggdocs/image/download?') === 0 && $q['api_key'] === 'k1'
+        && $q['signature'] === sha1('expires_at=1700000300&format=pdf&public_id=community/docs/plan-1&timestamp=1700000000&type=uploadsec'));
+    chk('cm3 doc: another cloud, a climbing path or another resource type is not ours',
+        cm3_doc_source('https://res.cloudinary.com/someoneelse/image/upload/v1/a.pdf') === null
+        && cm3_doc_source('https://res.cloudinary.com/nggdocs/image/upload/v1/../x.pdf') === null
+        && cm3_doc_source('https://res.cloudinary.com/nggdocs/video/upload/v1/a.mp4') === null);
+    $GLOBALS['CONFIG']['cloudinary'] = $keepCl; $clReset();
+
     $files = backend_dispatch('community.v3files', ['memberId' => 'CV3-S']);
     chk('cm3 files: code and videos are listed across the member\'s channels', in_array('code', array_column($files['files'], 'kind'), true) && in_array('videos', array_column($files['files'], 'kind'), true));
 

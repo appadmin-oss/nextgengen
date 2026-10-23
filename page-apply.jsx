@@ -346,7 +346,7 @@ function ClubApplyPage({ setPage }) {
   }, 30);
 
   async function send() {
-    if (firstBad >= 0) { setTried(t => Object.assign({}, t, { [firstBad]: true })); go(firstBad); say("Something in “" + steps[firstBad].l + "” needs fixing."); return; }
+    if (firstBad >= 0) { setTried(t => Object.assign({}, t, { [steps[firstBad].id]: true })); go(firstBad); say("Something in “" + steps[firstBad].l + "” needs fixing."); return; }
     setBusy(true); setSendErr("");
     try {
       let photoUrl = v.photoUrl;
@@ -379,12 +379,12 @@ function ClubApplyPage({ setPage }) {
     } catch (e) {
       const w = apfServerWhy(e);
       setSendErr(w.text);
-      if (w.step >= 0) { setTried(t => Object.assign({}, t, { [w.step]: true })); go(w.step); setSendErr(w.text); }
+      if (w.step >= 0 && steps[w.step]) { setTried(t => Object.assign({}, t, { [steps[w.step].id]: true })); go(w.step); setSendErr(w.text); }
     } finally { setBusy(false); }
   }
   function next() {
     if (step === last) return send();
-    if (errs.length) { setTried(t => Object.assign({}, t, { [step]: true })); focusField(errs[0][0].id); return; }
+    if (errs.length) { setTried(t => Object.assign({}, t, { [st.id]: true })); focusField(errs[0][0].id); return; }
     go(step + 1);
   }
   const sibling = () => {
@@ -399,7 +399,11 @@ function ClubApplyPage({ setPage }) {
   };
 
   const cls = "apf" + (mid ? " apf--mid" : "") + (wide ? " apf--wide" : "") + (xl ? " apf--xl" : "") + (tiny ? " apf--tiny" : "");
-  const showErr = id => !!(touched[id] || tried[step]);
+  /* An error shows once the person has left the field, or pressed Continue on
+     this step. "Tried" is keyed by the step's id, not its position: steps come
+     and go with the applicant's age, and a position would carry a Continue
+     press over to a step they have not reached. */
+  const showErr = id => !!(touched[id] || tried[st.id]);
   const ngvOn = st.id === "about" && age != null && age >= 18 && age <= 40;
 
   return (
@@ -538,15 +542,24 @@ function ApfTip({ id, small }) {
 
 function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffer, openPol, addPhotoFile, takePhoto, say, age }) {
   const span = W >= 680 && APF_SPAN[f.id] ? " apf-span-" + APF_SPAN[f.id] : "";
+  /* Never judge a field while it is being typed in. An error already showing
+     when the person comes back to fix it stays until the value is right, then
+     goes; a new one waits for them to leave the field. */
+  const [foc, setFoc] = React.useState(false);
+  const [hold, setHold] = React.useState(false);
+  React.useEffect(() => { if (foc && hold && !err) setHold(false); }, [foc, hold, err]);
+  const onFoc = () => { if (!foc) { setFoc(true); setHold(!!shown); } };
+  const onOut = e => { if (!e.currentTarget.contains(e.relatedTarget)) setFoc(false); };
+  shown = !!shown && (!foc || hold);
   const inputId = "apf-in-" + f.id, errId = "apf-er-" + f.id;
   const val = v[f.id];
   const upd = x => set({ [f.id]: x });
   if (f.type === "heading") return <div className={"apf-fld apf-heading" + span}><h2>{f.label}</h2>{f.hint && <span>{f.hint}</span>}</div>;
   const hasLabel = !!f.label && !["toggle", "info", "agree"].includes(f.type);
   let help = null;
-  if (f.id === "email") { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
+  if (f.id === "email" && !foc) { const fx = apfEmailFix(val); if (fx && fx !== String(val || "").trim().toLowerCase()) help = { tone: "warn", icon: "lightbulb", text: "Did you mean " + fx + "?", fixL: "Use it", fix: () => upd(fx) }; }
   if (f.id === "dob" && age != null && !err) help = { tone: "ok", icon: "check-circle", text: "Age " + age + " today" };
-  if (f.id === "surname" && v.firstName && v.surname && !err) help = { tone: "muted", icon: "identification-card", text: "ID card: " + String(v.surname).toUpperCase() + ", " + v.firstName + (v.middleName ? " " + v.middleName : "") };
+  if (f.id === "surname" && v.firstName && v.surname && !err && !foc) help = { tone: "muted", icon: "identification-card", text: "ID card: " + String(v.surname).toUpperCase() + ", " + v.firstName + (v.middleName ? " " + v.middleName : "") };
   if (f.id === "parent2Phone" && val && apfPhone(val) === apfPhone(v.parent1Phone)) help = { tone: "muted", icon: "info", text: "Same number as the main contact. That’s fine if they share a phone." };
   if (f.id === "class") { const exp = apfExpectedAge(val); if (age != null && exp != null && Math.abs(age - exp) > 2) help = { tone: "warn", icon: "warning", text: val + " is usually age " + exp + ", but the date of birth says " + age + ". Check both are right." }; }
   if (f.id === "resLga" && !v.resState) help = { tone: "muted", icon: "info", text: "Choose the state first." };
@@ -560,7 +573,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
     touch(f.id);
   };
   return (
-    <div id={"apf-fld-" + f.id} className={"apf-fld" + span}>
+    <div id={"apf-fld-" + f.id} className={"apf-fld" + span} onFocus={onFoc} onBlur={onOut}>
       {hasLabel && (
         <div className="apf-label-row">
           <label htmlFor={inputId} className="apf-label">{f.label}{!f.req && f.type !== "photo" && <span>Optional</span>}</label>
@@ -605,7 +618,7 @@ function ApfField({ f, v, set, touch, shown, err, W, offer, offerErr, reloadOffe
         </button>
       )}
       {f.pol && !hasLabel && <button type="button" className="apf-pollink" onClick={() => openPol(f.pol)}><i className="ph ph-book-open-text" aria-hidden="true"/>{"Read the " + APF_POL[f.pol].toLowerCase() + " policy"}</button>}
-      {help && <span className={"apf-help is-" + help.tone}><i className={"ph ph-" + help.icon} aria-hidden="true"/>{help.text}{help.fix && <button type="button" onClick={help.fix}>{help.fixL}</button>}</span>}
+      {help && <span className={"apf-help is-" + help.tone}><i className={"ph ph-" + help.icon} aria-hidden="true"/><span className="apf-help-t">{help.text}</span>{help.fix && <button type="button" onClick={help.fix}>{help.fixL}</button>}</span>}
       {shown && <span className="apf-err" id={errId}><i className="ph ph-warning-circle" aria-hidden="true"/>{err}</span>}
     </div>
   );

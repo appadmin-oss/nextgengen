@@ -732,7 +732,7 @@ function AnDonut({ segments, unit }) {
           const len = Math.max(1, raw - (raw > 6 ? 2 : 0));
           return <circle key={i} cx="65" cy="65" r={R} fill="none" stroke={s.color || AN_SERIES[i % AN_SERIES.length]}
             strokeWidth="18" strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-off}
-            opacity={hi < 0 || hi === i ? 1 : .35} style={{ transition: "opacity .12s" }}/>;
+            opacity={hi < 0 || hi === i ? 1 : .35} style={{ transition: "opacity calc(.12s * var(--motion, 1))" }}/>;
         })}
       </g>
       <text x="65" y="61" textAnchor="middle" fontSize="22" fontWeight="800" fill="#0a1130">{anFmt(total)}</text>
@@ -944,7 +944,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
       <div style={{ padding: 20, display: "grid", gap: 14 }}>
         <div className="an-field" style={{ gap: 5 }}><label>Title</label>
           <input value={form.title} onChange={e => set("title", e.target.value)} placeholder="e.g. STEM robotics lab" style={{ minWidth: 0 }}/></div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 12 }}>
           <div className="an-field" style={{ gap: 5 }}><label>Category</label>
             <select value={form.category} onChange={e => set("category", e.target.value)}>{AN_CATS.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
           <div className="an-field" style={{ gap: 5 }}><label>Date</label>
@@ -1105,7 +1105,7 @@ function AnalyticsWorkspace() {
     {/* Hero */}
     <div className="an-hero">
       <span className="an-live"><i/>Live analytics</span>
-      <h1 className="display" style={{ fontSize: "clamp(30px,4.5vw,46px)", margin: "14px 0 4px", lineHeight: 1.02 }}>Summer School Analytics</h1>
+      <h1 className="display" style={{ fontSize: "var(--rs-fsize-105, clamp(30px, 4.5vw, 46px))", margin: "14px 0 4px", lineHeight: "var(--rs-lheight-106, 1.02)" }}>Summer School Analytics</h1>
       <p style={{ color: "rgba(255,255,255,.7)", margin: 0, fontSize: 14 }}>
         {ws.filters.rangeLabel} · Week {ex.program ? ex.program.week : ""} · Updated {fmtTime(ws.generatedAt)} · Scoped to your centres
       </p>
@@ -1398,7 +1398,7 @@ function AnalyticsWorkspace() {
       {rk.awards.length === 0 ? <div className="an-card"><div className="an-empty">No awards minted yet.</div></div>
         : <div className="an-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))" }}>
           {rk.awards.map((a, i) => <div key={i} className="an-card">
-            <div style={{ fontSize: 22 }}>{["🥇", "🥈", "🥉"][a.tier] || "🏅"}</div>
+            <div style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{["🥇", "🥈", "🥉"][a.tier] || "🏅"}</div>
             <b style={{ display: "block", marginTop: 6 }}>{a.name}</b>
             <div style={{ color: "var(--ink-500)", fontSize: 13 }}>{a.subject}</div>
             <div style={{ color: "var(--ink-400)", fontSize: 12, marginTop: 4 }}>{a.centre} · {a.period}</div>

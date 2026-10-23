@@ -96,7 +96,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
       + `db_insert('members', ['memberId'=>'NGG-FU-ADM','fullName'=>'Family Admin','email'=>'fu-adm@example.org','type'=>'NGG','status'=>'active','role'=>'admin','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('members', ['memberId'=>'NGG-FU-KID','fullName'=>'Tobi Adeyemi','email'=>'fu-kid@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Piano','anchorCode'=>'482913','parentEmail'=>'mum@example.org','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('members', ['memberId'=>'NGG-FU-SIB','fullName'=>'Kemi Adeyemi','email'=>'fu-sib@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','parentEmail'=>'mum@example.org','createdAt'=>${now},'updatedAt'=>${now}]);`
-      + `$d = gmdate('Y-m-d'); db_insert('attendance', ['cohortId'=>'','studentId'=>'NGG-FU-KID','date'=>$d,'checkInAt'=>$d.'T09:12:00Z','checkOutAt'=>'','status'=>'late','lateMinutes'=>12,'method'=>'test','createdAt'=>${now}]);`);
+      + `$d = (new DateTime('now', new DateTimeZone('Africa/Lagos')))->format('Y-m-d'); db_insert('attendance', ['cohortId'=>'','studentId'=>'NGG-FU-KID','date'=>$d,'checkInAt'=>$d.'T09:12:00Z','checkOutAt'=>'','status'=>'late','lateMinutes'=>12,'method'=>'test','createdAt'=>${now}]);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -246,10 +246,17 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('the emailed link signs in on a phone', (await lp.$$('.fam-tab')).length === 2);
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));
     chk('the page fits a phone without sideways scrolling', await lp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-    chk('…with the five screens in a bottom tab bar, and no sidebar', await lp.evaluate(() => {
+    chk('…with every screen in a bottom tab bar (each tab a 44px target, no label cut off), and no sidebar', await lp.evaluate(() => {
       const bar = document.querySelector('.fx-tabbar'), nav = document.querySelector('.fx-nav');
-      return !!bar && getComputedStyle(bar).position === 'fixed' && bar.querySelectorAll('.fx-tab').length === 5 && (!nav || getComputedStyle(nav).display === 'none');
+      const tabs = bar ? Array.from(bar.querySelectorAll('.fx-tab')) : [];
+      const sideItems = document.querySelectorAll('.fx-nav .fx-nav-item').length;
+      return !!bar && getComputedStyle(bar).position === 'fixed' && tabs.length >= 5 && (!sideItems || tabs.length === sideItems - 1)
+        && tabs.every(t => t.getBoundingClientRect().width >= 44 && t.scrollWidth <= t.clientWidth + 1) && (!nav || getComputedStyle(nav).display === 'none');
     }));
+    // The one screen not in the bar, Emails & connection, is in the account menu.
+    await lp.click('.fam-menu > .fam-btn');
+    await lp.click('#fam-account button:has-text("Emails & connection")');
+    chk('…and Emails & connection, the one screen not in the bar, is in the account menu', await lp.waitForFunction(() => /Emails & connection/.test((document.querySelector('.fx-crumb') || {}).innerText || ''), null, { timeout: 8000 }).then(() => true, () => false));
     await lp.screenshot({ path: path.join(SHOTS, 'family-phone.png'), fullPage: true });
 
     /* ── Sign out ── */

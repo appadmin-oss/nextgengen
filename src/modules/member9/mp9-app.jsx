@@ -386,7 +386,7 @@ class Mp9Portal extends React.Component {
         .map(([k, l, icon, n]) => ({ l, icon, n: String(n), hasN: n > 0, go: () => set({ mvTab: k }) })),
       tChat: tab === "chat", tSess: tab === "sess", tSteps: tab === "steps", tFb: tab === "fb",
       replyT: M.has ? mf + " usually replies within a day" : "Your centre will match you with a mentor", openT: quiet ? "Closed · opens 8am" : "Open until 8pm", openBg: quiet ? "#f4f4f2" : "#e9f6ec", openFg: quiet ? "#6b6b72" : "#1d6b30",
-      cd: sat ? (dd > 0 ? "in " + dd + "d " + hh + "h" : "in " + hh + "h") : "", hasCd: !!sat, prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
+      cd: sat ? (ms <= 0 ? "today" : "in " + (dd > 0 ? dd + (dd === 1 ? " day " : " days ") : "") + hh + (hh === 1 ? " hour" : " hours")) : "", hasCd: !!sat, prepL: tsent ? "Prepared" : "Prepare", goPrep: () => set({ mvTab: "sess" }),
       /* A quick reply starts the message; it never sends it. "I need help" is
          not a message to the mentor only: it opens Help, where the people who
          keep children safe are. */
@@ -417,12 +417,6 @@ class Mp9Portal extends React.Component {
        A reply to a check-in or a journal entry is labelled as one, so the
        stream reads as conversations, not one undivided list. */
     const audioOf = m => ((m.media || []).find(x => x.type === "audio") || {}).url || "";
-    const msgs = (c.messages || []).map((m, i) => ({ t: m.body, when: mp9When(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""), mine: m.mine,
-      audio: mp9Abs(audioOf(m)), hasAudio: !!audioOf(m), canRead: !m.mine && this.canSpeak() && !audioOf(m),
-      readL: s.speaking === "msg" + m.id ? "Stop reading" : "Read aloud", readIcon: s.speaking === "msg" + m.id ? "ph-fill ph-stop-circle" : "ph ph-speaker-high", read: () => this.speak(m.body, "msg" + m.id),
-      hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
-      al: m.mine ? "flex-end" : "flex-start", bg: m.mine ? "#0b0b0c" : "#fff", fg: m.mine ? "#fff" : "#0b0b0c", bd: m.mine ? "#0b0b0c" : "#e8e5dd" }));
-    if (!msgs.length) msgs.push({ t: M.has ? "No messages yet. Say hello, or ask " + M.first + " something before Saturday." : "When your centre matches you with a mentor, your messages show here.", when: "", hasAbout: false, about: "", hasAudio: false, audio: "", canRead: false, al: "center", bg: "#f4f4f2", fg: "#4a4a50", bd: "#f4f4f2" });
     /* A voice note: record (up to two minutes), listen back, then send — never sent by the recorder itself. */
     const cr = s.cRec || { rec: "idle" }, upR = (k, p) => this.setState(st => ({ cRec: { ...(st.cRec || {}), ...p } }));
     const canVoice = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -442,7 +436,7 @@ class Mp9Portal extends React.Component {
       crows.push({ key: "m" + (m.id || i), isDay: false, isMsg: true, isEmpty: false,
         cls: "m9c-row " + (m.mine ? "is-mine" : "is-them") + (first ? " is-first" : "") + (last ? " is-last" : ""),
         showAv: !m.mine && first, ini: mp9Ini(m.from || M.name), showWho: !m.mine && first && (m.from || "") !== M.name, who: m.from || "",
-        t: m.body, hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
+        t: m.body, hasT: !!String(m.body || "").trim(), hasAbout: !!m.about, about: m.about ? (m.mine ? m.about : "Reply to " + m.about.charAt(0).toLowerCase() + m.about.slice(1)) : "",
         audio: mp9Abs(a), hasAudio: !!a, showMeta: last,
         when: mp9Clock(m.at) + (m.mine ? (m.read ? " · Seen" : " · Sent") : ""),
         canRead: !m.mine && this.canSpeak() && !a, readL: s.speaking === "msg" + m.id ? "Stop reading" : "Read aloud",
@@ -458,7 +452,7 @@ class Mp9Portal extends React.Component {
     const fbCount = Object.keys(s.fb).length, fbLow = Object.values(s.fb).includes("Not really");
     const done = s.fbSent || (!!mine.relDone && !Object.keys(s.fb).length);
     return {
-      msgs, crows, chatLogRef: this.chatLogRef, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, MAX) }), sendMsg,
+      crows, chatLogRef: this.chatLogRef, msg: s.msg, onMsg: e => this.setState({ msg: e.target.value.slice(0, MAX) }), sendMsg,
       canVoice, vIdle: canVoice && cr.rec === "idle", vRec: cr.rec === "rec", vDone: cr.rec === "done",
       vReady: cr.rec === "done" && !!cr.recUrl, vUploading: cr.rec === "done" && !cr.recUrl, vUrl: cr.recUrl || "",
       vSecs: (cr.recSecs ? Math.floor(cr.recSecs / 60) + ":" + String(cr.recSecs % 60).padStart(2, "0") : "0:00"),

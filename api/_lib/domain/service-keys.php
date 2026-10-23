@@ -379,7 +379,8 @@ function admin_keys_test(array $p): array {
             return ['ok' => true] + $done(['pass' => !empty($r['ok']), 'detail' => !empty($r['ok']) ? 'Answered' . (!empty($r['model']) ? ' using ' . $r['model'] : '') . '.' : trim(($r['detail'] ?? '') . ' (' . ($r['error'] ?? 'failed') . ')')]);
         case 'cloudinary':
             if (function_exists('cache_delete')) cache_delete('ops.cloudinary');
-            $h = ops_cloudinary_health();
+            $h = ops_cloudinary_health(function_exists('media_primary_cfg') ? media_primary_cfg() : null);
+            if (function_exists('cache_delete')) cache_delete('ops.cloudinary');   // the next health read is the active account's own
             return ['ok' => true] + $done(['pass' => !empty($h['ok']) && !empty($h['configured']), 'detail' => (string)($h['detail'] ?? '')]);
         case 'cloudinary_backup':
             if (!cloudinary_backup_cfg()) return ['ok' => true, 'pass' => false, 'detail' => 'Set all three: cloud name, API key and API secret.'];

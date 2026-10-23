@@ -164,7 +164,7 @@ function FamilySignIn({ initialError, onSignedIn, setPage }) {
   );
 }
 
-function FamilyAccountMenu({ me, onChanged, onSignedOut }) {
+function FamilyAccountMenu({ me, onChanged, onSignedOut, onEmails }) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState(me.guardian.fullName || "");
   const [phone, setPhone] = React.useState(me.guardian.phone || "");
@@ -207,6 +207,8 @@ function FamilyAccountMenu({ me, onChanged, onSignedOut }) {
             <button className="fam-btn is-primary" type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
           </form>
           <div className="fam-div"/>
+          {/* The phone has no sidebar, and this is the only other way to the email and Telegram settings. */}
+          {onEmails && <button type="button" className="fam-btn" onClick={() => { setOpen(false); onEmails(); }}>Emails &amp; connection</button>}
           <button type="button" className="fam-btn" onClick={() => signOut(false)}>Sign out</button>
           <button type="button" className="fam-link" onClick={() => signOut(true)}>Sign out on every device</button>
         </div>
@@ -294,7 +296,7 @@ function FamilyHome({ me, reload, setPage, onSignedOut }) {
       <div className="fx-main">
         <header className="fx-header">
           <div className="fx-crumb">Family{current && <> · {kidFirst} · <b>{adding ? "Add a child" : viewDef.label}</b></>}</div>
-          <FamilyAccountMenu me={me} onChanged={reload} onSignedOut={onSignedOut}/>
+          <FamilyAccountMenu me={me} onChanged={reload} onSignedOut={onSignedOut} onEmails={current ? () => go("emails") : null}/>
         </header>
         <main className="fx-body" id="main">
           {/* The page title is the screen's own name; the welcome is for an account with no child yet. */}
@@ -581,7 +583,7 @@ function FamilyAttendance({ d, first }) {
       <section className="fam-card" aria-labelledby="fam-con-h">
         <h3 id="fam-con-h" className="fam-h2">Conduct</h3>
         {d.conduct.enabled ? <>
-          <p className="fam-big" style={{ fontSize: 22, marginTop: 10 }}>{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
+          <p className="fam-big" style={{ fontSize: "var(--rs-fsize-1, 22px)", marginTop: 10 }}>{FAMILY_STATE_LABEL[d.conduct.state] || "In good standing"}</p>
           {d.conduct.reason && <p className="fam-meta">{d.conduct.reason}{d.conduct.until ? " · until " + fmtDate(d.conduct.until) : ""}</p>}
           {d.conduct.fines.length > 0 ? <ul className="fam-list">{d.conduct.fines.map((f, i) => <li key={i} className="fam-list-row"><span>{f.reason || "Fine"}</span><span className="fam-meta">{fmtDate(f.issuedAt)}</span></li>)}</ul>
             : <p className="fam-hint">No outstanding fines.</p>}

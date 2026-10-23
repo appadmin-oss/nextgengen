@@ -213,11 +213,31 @@ function cleanup() {
     const dtext = await D.evaluate(() => document.body.innerText);
     chk('Diagnostics shows image storage as full, with each part of the plan', /Full — new uploads are paused/.test(dtext) && /Plan credits\s*97% used/.test(dtext) && /Storage\s*61% used/.test(dtext));
     chk('…says what that does to uploads, and offers Check now and Free space', /photos are kept on this site instead/.test(dtext) && !!(await D.$('button:has-text("Check now")')) && !!(await D.$('button:has-text("Free space")')));
-    chk('…and, with no backup account yet, says where to add one', /Add a backup Cloudinary account \(Settings → API keys → Photos\)/.test(dtext));
     await D.click('button:has-text("Free space")');
     await D.waitForSelector('text=Type FREE SPACE', { timeout: 10000 });
     chk('…and freeing space asks for the typed confirmation first', /Originals are not touched/.test(await D.evaluate(() => document.body.innerText)));
     await D.context().close();
+
+    console.log('several Cloudinary accounts');
+    /* A second account whose plan has room while the main one is full: the list
+       says where uploads go, an account opens with its usage and its order
+       controls, and adding one asks for the three keys. */
+    php(`setting_set('media.accounts', [['id' => 'acc_t1', 'label' => 'Second plan', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'secret' => ai_ui_seal('extrasecret1'), 'enabled' => true, 'addedAt' => now_iso(), 'addedBy' => 'x']], 'test');
+      setting_set('media.usage.accounts', ['acc_t1' => ['configured' => true, 'level' => 'ok', 'pct' => 20.0, 'plan' => 'Free', 'checkedAt' => gmdate('c'), 'error' => '', 'parts' => ['credits' => ['usage' => 5, 'limit' => 25, 'pct' => 20.0]]]], 'test');`, ['bootstrap']);
+    const MA = await open(1280, 900, '/control/settings/ops');
+    await MA.waitForSelector('text=Cloudinary accounts', { timeout: 30000 });
+    const mtext = await MA.evaluate(() => document.body.innerText);
+    chk('the accounts list names the extra account, its cloud, and that new uploads go to it', /Second plan/.test(mtext) && /extra-one/.test(mtext) && /Uploads go here/.test(mtext));
+    chk('…and never shows a secret', !/extrasecret1/.test(await MA.content()));
+    await MA.click('text=Second plan');
+    await MA.waitForSelector('button:has-text("Check usage now")', { timeout: 10000 });
+    chk('an account opens with its usage and its controls', /20% used/.test(await MA.evaluate(() => document.body.innerText)) && !!(await MA.$('button:has-text("Pause uploads to it")')) && !!(await MA.$('button:has-text("Remove…")')));
+    await MA.keyboard.press('Escape');
+    await MA.click('button:has-text("Add an account…")');
+    await MA.waitForSelector('text=Cloud name', { timeout: 10000 });
+    chk('adding an account asks for the cloud name, API key and secret, and says they are checked', /API secret/.test(await MA.evaluate(() => document.body.innerText)) && /checked with Cloudinary/.test(await MA.evaluate(() => document.body.innerText)));
+    await MA.context().close();
+    php(`setting_set('media.accounts', null, 'test'); setting_set('media.usage.accounts', null, 'test');`, ['bootstrap']);
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

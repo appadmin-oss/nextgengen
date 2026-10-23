@@ -56,10 +56,10 @@ function MediaPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="06 Media">
-      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0 32px"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-70, 64px 0px 32px)"}}>
         <div className="container">
           <span className="chip chip-on-dark">THE MOVEMENT, ON CAMERA</span>
-          <h1 className="display" style={{fontSize:"clamp(64px, 9vw, 132px)", margin:"16px 0", color:"white", lineHeight:0.9}}>
+          <h1 className="display" style={{fontSize:"var(--rs-fsize-51, clamp(64px, 9vw, 132px))", margin:"16px 0", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
             Media<span style={{color:"var(--gold-500)"}}>.room</span>
           </h1>
           <p style={{fontSize:19, color:"rgba(255,255,255,0.75)", maxWidth:660, lineHeight:1.5}}>
@@ -68,7 +68,7 @@ function MediaPage({ setPage }) {
         </div>
       </section>
 
-      <section style={{padding:"28px 0", background:"var(--paper)", borderBottom:"1px solid rgba(12,20,50,0.07)", position:"sticky", top:"60px", zIndex:5, backdropFilter:"saturate(1.2) blur(8px)"}}>
+      <section className="media-filter-bar">
         <div className="container">
           <div role="tablist" aria-label="Media filter" style={{display:"flex", gap:8, flexWrap:"wrap"}}>
             {kinds.map(k => (
@@ -84,7 +84,7 @@ function MediaPage({ setPage }) {
       <section className="section">
         <div className="container">
           {items.length === 0 ? (
-            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
+            <div style={{textAlign:"center", padding:"var(--rs-p-44, 48px 0px)", color:"var(--ink-700)"}}>
               No media in this category yet.
               <div style={{marginTop:14}}>
                 <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
@@ -94,13 +94,13 @@ function MediaPage({ setPage }) {
             <React.Fragment>
               {/* Featured pair */}
               {featuredA && (
-                <div style={{display:"grid", gridTemplateColumns: featuredB ? "2fr 1fr" : "1fr", gap:18, marginBottom:32}}>
+                <div style={{display:"grid", gridTemplateColumns: featuredB ? "var(--rs-gcolumns-62, 2fr 1fr)" : "1fr", gap:18, marginBottom:32}}>
                   <FeatureCard big item={featuredA} onPlay={() => handlePlay(featuredA)}/>
                   {featuredB && <FeatureCard item={featuredB} onPlay={() => handlePlay(featuredB)}/>}
                 </div>
               )}
               {/* Grid */}
-              <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18}}>
+              <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:18}}>
                 {rest.map((m, i) => <FeatureCard key={m.label + i} item={m} onPlay={() => handlePlay(m)}/>)}
               </div>
             </React.Fragment>
@@ -215,12 +215,12 @@ function MediaModal({ item, onClose }) {
 function ParentsPage({ setPage }) {
   return (
     <div className="page" data-screen-label="07 Parents">
-      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"var(--rs-p-48, 72px 0px)"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"end"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-71, 1.3fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end"}}>
             <div>
               <span className="chip chip-navy"><span className="dot dot-gold"/> FOR PARENTS & GUARDIANS</span>
-              <h1 className="display" style={{fontSize:"clamp(56px, 7vw, 108px)", margin:"18px 0 16px"}}>
+              <h1 className="display" style={{fontSize:"var(--rs-fsize-72, clamp(56px, 7vw, 108px))", margin:"18px 0 16px"}}>
                 A safe room<br/>with <em style={{fontStyle:"normal", color:"var(--coral)"}}>high ceilings.</em>
               </h1>
               <p style={{fontSize:19, lineHeight:1.5, color:"var(--ink-700)", maxWidth:560, margin:0}}>
@@ -232,7 +232,7 @@ function ParentsPage({ setPage }) {
                 <button className="btn btn-ghost" onClick={() => setPage("timetable")}>Timetable maker</button>
               </div>
             </div>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:12}}>
               {[
                 { num: "100%", label: "Mentors background-checked" },
                 { num: "2-mentor", label: "Minimum at every session" },
@@ -240,7 +240,7 @@ function ParentsPage({ setPage }) {
                 { num: "0 fee", label: "For accepted summer scholars" },
               ].map(s => (
                 <div key={s.label} className="card" style={{padding:18}}>
-                  <div className="display" style={{fontSize:36, color:"var(--navy-900)"}}>{s.num}</div>
+                  <div className="display" style={{fontSize:"var(--rs-fsize-45, 36px)", color:"var(--navy-900)"}}>{s.num}</div>
                   <div className="mono" style={{fontSize:11, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ink-500)", marginTop:6}}>{s.label}</div>
                 </div>
               ))}
@@ -253,16 +253,16 @@ function ParentsPage({ setPage }) {
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="OUR PHILOSOPHY" title="We train character through public work." sub="A teenager learns who they are by attempting things in front of people who care. Our job is to design the attempts and curate the people." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:20}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:20}}>
             {[
               { h: "Safety is a system, not a slogan.",         d: "Background checks, two-mentor minimum, code-of-conduct training, anonymous reporting, parent digest, monitored channels." },
               { h: "Discipline before charisma.",                d: "We do not chase prodigies. We build habit, attention and follow-through. Talent is downstream of these." },
               { h: "African intelligence is the spine.",         d: "We do not import a foreign curriculum and translate. The lens is ours. The languages we learn serve it." },
             ].map((c, i) => (
-              <div key={c.h} className="card" style={{padding:28, minHeight:240}}>
-                <div className="display" style={{fontSize:48, color:"var(--gold-500)"}}>0{i+1}</div>
-                <h3 style={{fontFamily:"var(--font-display)", fontSize:22, margin:"12px 0", letterSpacing:"-0.02em"}}>{c.h}</h3>
-                <p style={{fontSize:14, color:"var(--ink-500)", lineHeight:1.5, margin:0}}>{c.d}</p>
+              <div key={c.h} className="card" style={{padding:28, minHeight:"var(--rs-minheight-73, 240px)"}}>
+                <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--gold-500)"}}>0{i+1}</div>
+                <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-1, 22px)", margin:"12px 0", letterSpacing:"-0.02em"}}>{c.h}</h3>
+                <p style={{fontSize:14, color:"var(--ink-700)", lineHeight:1.5, margin:0}}>{c.d}</p>
               </div>
             ))}
           </div>
@@ -301,13 +301,13 @@ function FAQList({ items }) {
                 cursor:"pointer", textAlign:"left", fontFamily:"inherit",
               }}
             >
-              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
+              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:"var(--rs-fsize-1, 22px)", letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
               <span aria-hidden="true" style={{
                 width:32, height:32, borderRadius:"50%", flexShrink:0,
                 background: isOpen ? "var(--navy-900)" : "var(--cream-100)",
                 color: isOpen ? "white" : "var(--navy-900)",
                 display:"grid", placeItems:"center", fontSize:18, fontWeight:700,
-                transition:"transform 0.25s cubic-bezier(0.2,0.7,0.2,1), background 0.2s ease, color 0.2s ease",
+                transition:"transform calc(0.25s * var(--motion, 1)) cubic-bezier(0.2,0.7,0.2,1), background calc(0.2s * var(--motion, 1)) ease, color calc(0.2s * var(--motion, 1)) ease",
                 transform: isOpen ? "rotate(45deg)" : "rotate(0)",
               }}>+</span>
             </button>
@@ -363,12 +363,12 @@ function AfrovanguardMentorStrip() {
 function VolunteersPage({ setPage }) {
   return (
     <div className="page" data-screen-label="08 Volunteers">
-      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"72px 0", position:"relative", overflow:"hidden"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-48, 72px 0px)", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 50%, rgba(208,255,58,0.14), transparent 60%)"}}/>
-        <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"center"}}>
+        <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"var(--rs-gcolumns-71, 1.3fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"center"}}>
           <div>
             <span className="chip chip-on-dark"><span className="dot dot-lime"/> ADMINS · MENTORS · INSTRUCTORS</span>
-            <h1 className="display" style={{fontSize:"clamp(56px, 8vw, 124px)", margin:"18px 0 16px", color:"white", lineHeight:0.9}}>
+            <h1 className="display" style={{fontSize:"var(--rs-fsize-74, clamp(56px, 8vw, 124px))", margin:"18px 0 16px", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
               Join the rebuilding<br/>of <span style={{color:"var(--lime)"}}>the next generation.</span>
             </h1>
             <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:560, margin:0}}>
@@ -379,7 +379,7 @@ function VolunteersPage({ setPage }) {
               onClick={() => setPage("volunteer")}
             >Register as a volunteer →</button>
           </div>
-          <Photo name="mentor" style={{height:420}} overlay>
+          <Photo name="mentor" style={{height:"var(--rs-height-29, 420px)"}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>MENTOR CIRCLE · LAGOS</div>
               <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:24, marginTop:4, lineHeight:1.05}}>The Saturday session.</div>
@@ -393,13 +393,13 @@ function VolunteersPage({ setPage }) {
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="THREE WAYS TO BE USEFUL" title="Pick the shape of your time." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}} className="vol-role-grid">
+          <div className="vol-role-grid">
             {VOLUNTEER_ROLES.map((r, i) => (
-              <button key={r.key} className="card vol-role-card" style={{padding:24, minHeight:240, display:"flex", flexDirection:"column", justifyContent:"space-between", textAlign:"left", cursor:"pointer"}}
+              <button key={r.key} className="card vol-role-card" style={{padding:24, minHeight:"var(--rs-minheight-73, 240px)", display:"flex", flexDirection:"column", justifyContent:"space-between", textAlign:"left", cursor:"pointer"}}
                 onClick={() => { history.replaceState({}, "", "/volunteer?role=" + r.key); setPage("volunteer"); }}>
                 <div>
-                  <div className="display" style={{fontSize:36, color:"var(--gold-500)"}}>0{i+1}</div>
-                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, marginTop:8, lineHeight:1.1}}>{r.name}</div>
+                  <div className="display" style={{fontSize:"var(--rs-fsize-45, 36px)", color:"var(--gold-500)"}}>0{i+1}</div>
+                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:"var(--rs-fsize-1, 22px)", marginTop:8, lineHeight:1.1}}>{r.name}</div>
                   <div className="mono" style={{fontSize:11, color:"var(--coral)", marginTop:8, letterSpacing:"0.12em"}}>{r.commit.toUpperCase()}</div>
                 </div>
                 <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{r.ideal}<span style={{display:"block", marginTop:10, fontWeight:600, color:"var(--navy-900)"}}>Register →</span></div>
@@ -414,7 +414,7 @@ function VolunteersPage({ setPage }) {
         <div className="container">
           <div style={{maxWidth:820, margin:"0 auto", textAlign:"center"}}>
             <span className="eyebrow" style={{color:"var(--navy-900)"}}>OUR MENTORING PHILOSOPHY</span>
-            <h2 className="display" style={{fontSize:"clamp(32px, 5vw, 64px)", margin:"10px 0 18px", lineHeight:0.98}}>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-75, clamp(32px, 5vw, 64px))", margin:"10px 0 18px", lineHeight:"var(--rs-lheight-4, 0.98)"}}>
               "These teenagers do not need rescuing.<br/>They need a room with high ceilings."
             </h2>
             <p style={{fontSize:16, color:"var(--ink-700)", lineHeight:1.6, maxWidth:560, margin:"0 auto"}}>
@@ -428,8 +428,8 @@ function VolunteersPage({ setPage }) {
       <section className="section" style={{paddingTop:0}}>
         <div className="container" style={{maxWidth:760, textAlign:"center"}}>
           <div className="card" style={{padding:"44px 36px"}}>
-            <h2 className="display" style={{fontSize:"clamp(28px,4vw,44px)", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
-            <p style={{color:"var(--ink-500)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-76, clamp(28px, 4vw, 44px))", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
+            <p style={{color:"var(--ink-700)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
             <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteer")}>Register as a volunteer →</button>
           </div>
         </div>
@@ -483,22 +483,22 @@ function MentorApplySection() {
       <div className="container" style={{maxWidth:760}}>
         <div style={{textAlign:"center", marginBottom:36}}>
           <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
-          <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 64px)", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
+          <h2 className="display" style={{fontSize:"var(--rs-fsize-77, clamp(40px, 5vw, 64px))", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
           <p style={{fontSize:16, color:"rgba(255,255,255,0.78)", maxWidth:480, margin:"14px auto 0", lineHeight:1.5}}>
             Two minutes. We read every application and reply within a week — yes or no, in writing.
           </p>
         </div>
         {sent ? (
-          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(208,255,58,0.35)", color:"white"}}>
-            <div className="badge-pin lime" style={{width:72, height:72, fontSize:32, margin:"0 auto 18px"}}>✓</div>
-            <h3 style={{fontFamily:"var(--font-display)", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
+          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"var(--rs-border-78, 1px solid rgba(208, 255, 58, 0.35))", color:"white"}}>
+            <div className="badge-pin lime" style={{width:72, height:72, fontSize:"var(--rs-fsize-65, 32px)", margin:"0 auto 18px"}}>✓</div>
+            <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
             <p style={{color:"rgba(255,255,255,0.78)", margin:0, lineHeight:1.5}}>
               Watch your inbox — we reply within a week. Thank you for offering your Saturdays.
             </p>
           </div>
         ) : (
-          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"var(--rs-border-79, 1px solid rgba(255, 255, 255, 0.12))"}}>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
               <div className="field">
                 <label style={{color:"rgba(255,255,255,0.8)"}}>First name</label>
                 <input value={d.firstName} onChange={e => setD({...d, firstName: e.target.value})} placeholder="e.g. Adaeze" autoComplete="given-name"/>
@@ -586,7 +586,7 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
       <style>{"@keyframes ascPop{0%{opacity:0;transform:scale(.7)}70%{transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}@keyframes ascPulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,.5)}70%{box-shadow:0 0 0 14px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}.asc-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:620px){.asc-steps{grid-template-columns:1fr}}"}</style>
       <div style={{ height: 5, width: 64, borderRadius: 3, background: cfg.accent, margin: "0 auto 28px" }}/>
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#e9f7ee", display: "grid", placeItems: "center", animation: "ascPop .5s cubic-bezier(.2,.8,.2,1), ascPulse 2.4s ease-in-out .5s infinite" }}>
+        <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#e9f7ee", display: "grid", placeItems: "center", animation: "ascPop calc(.5s * var(--motion, 1)) cubic-bezier(.2,.8,.2,1), ascPulse calc(2.4s * var(--motion, 1)) ease-in-out calc(.5s * var(--motion, 1)) infinite" }}>
           <i className="ph-fill ph-check-circle" style={{ fontSize: 46, color: "#2f9e44" }}/>
         </div>
       </div>
@@ -610,7 +610,7 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
               <div style={{ fontSize: 12.5, color: "#5a6488", marginTop: 1 }}>Timetables, reminders and updates.</div>
             </div>
           </div>
-          <a href={whatsapp} target="_blank" rel="noopener noreferrer" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 13.5, padding: "10px 18px", borderRadius: 999, textDecoration: "none" }}><i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 17 }}/> Join</a>
+          <a href={whatsapp} target="_blank" rel="noopener noreferrer" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 13.5, padding: "10px 18px", borderRadius: 999, textDecoration: "var(--rs-textdecoration-47, none)" }}><i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 17 }}/> Join</a>
         </div>
       ) : null}
       <h2 style={{ fontFamily: sora, fontWeight: 700, letterSpacing: "0.06em", margin: "30px 0 14px", textTransform: "uppercase", fontSize: 11.5, color: "#5a6488" }}>What happens next</h2>
@@ -723,10 +723,10 @@ function ContactPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Contact">
-      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"64px 0 40px"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"var(--rs-p-80, 64px 0px 40px)"}}>
         <div className="container" style={{maxWidth:980}}>
           <span className="chip chip-navy"><span className="dot dot-gold"/> WE READ EVERY MESSAGE</span>
-          <h1 className="display" style={{fontSize:"clamp(48px, 6.5vw, 96px)", margin:"18px 0 10px"}}>
+          <h1 className="display" style={{fontSize:"var(--rs-fsize-81, clamp(48px, 6.5vw, 96px))", margin:"18px 0 10px"}}>
             Say <em style={{fontStyle:"normal", color:"var(--coral)"}}>hello.</em>
           </h1>
           <p style={{fontSize:18, lineHeight:1.5, color:"var(--ink-700)", maxWidth:600, margin:0}}>
@@ -737,13 +737,13 @@ function ContactPage({ setPage }) {
 
       <section className="section" style={{paddingTop:32}}>
         <div className="container" style={{maxWidth:980}}>
-          <div style={{display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:32, alignItems:"start"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-82, 1.5fr 1fr)", gap:32, alignItems:"start"}}>
             {/* Form */}
             <div>
               {sent ? (
                 <div className="card" style={{padding:40, textAlign:"center"}}>
-                  <div className="badge-pin unlocked" style={{width:80, height:80, fontSize:38, margin:"0 auto 18px"}}>✓</div>
-                  <h2 style={{fontFamily:"var(--font-display)", fontSize:30, margin:"0 0 10px"}}>Message sent.</h2>
+                  <div className="badge-pin unlocked" style={{width:80, height:80, fontSize:"var(--rs-fsize-30, 38px)", margin:"0 auto 18px"}}>✓</div>
+                  <h2 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:30, margin:"0 0 10px"}}>Message sent.</h2>
                   <p style={{color:"var(--ink-700)", margin:"0 0 8px", lineHeight:1.5}}>
                     Thank you — we'll reply within two working days.
                   </p>
@@ -754,7 +754,7 @@ function ContactPage({ setPage }) {
                 </div>
               ) : (
                 <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16}}>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
                     <div className="field">
                       <label>Your name</label>
                       <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
@@ -764,7 +764,7 @@ function ContactPage({ setPage }) {
                       <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
                     </div>
                   </div>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
                     <div className="field">
                       <label>Phone (optional)</label>
                       <input value={d.phone} onChange={e => setD({...d, phone: e.target.value})} placeholder="+234…" autoComplete="tel"/>
@@ -916,11 +916,11 @@ function MentorsPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Mentors">
-      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
+      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "var(--rs-p-83, 72px 0px 56px)", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 82% 25%, rgba(245,176,38,0.16), transparent 60%)" }}/>
         <div className="container" style={{ position: "relative" }}>
           <span className="chip chip-on-dark"><span className="dot dot-gold"/> {av ? av.mentorProgram : "STREET-TO-STARDOM · NEXT GEN"}</span>
-          <h1 className="display" style={{ fontSize: "clamp(52px, 8vw, 116px)", margin: "18px 0 14px", color: "white", lineHeight: 0.92 }}>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-84, clamp(52px, 8vw, 116px))", margin: "18px 0 14px", color: "white", lineHeight: "var(--rs-lheight-50, 0.92)" }}>
             The <span style={{ color: "var(--gold-500)" }}>mentors.</span>
           </h1>
           <p style={{ fontSize: 19, lineHeight: 1.5, color: "rgba(255,255,255,0.78)", maxWidth: 620, margin: 0 }}>
@@ -1008,7 +1008,7 @@ function ProfileCheckin({ token, name }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 20, border: "1px solid var(--gold-500)", background: "rgba(245,176,38,0.07)" }}>
+    <div className="card" style={{ padding: 18, marginBottom: 20, border: "var(--rs-border-85, 1px solid var(--gold-500))", background: "rgba(245,176,38,0.07)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 170 }}>
           <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--ink-500)" }}>STAFF · ATTENDANCE</div>
@@ -1187,8 +1187,8 @@ function SummerProfilePage({ setPage }) {
   if (!state.profile) return (
     <div className="page"><section className="section"><div className="container" style={{ textAlign: "center", padding: "80px 0" }}>
       <div className="mono" style={{ color: "var(--coral)", letterSpacing: "0.14em" }}>PROFILE NOT FOUND</div>
-      <h1 className="display" style={{ fontSize: "clamp(40px,6vw,80px)", margin: "12px 0" }}>Nobody on this card.</h1>
-      <p style={{ color: "var(--ink-500)" }}>That card isn't assigned to anybody yet, or the link is wrong. If it is an NGG member card, ask the centre to check it.</p>
+      <h1 className="display" style={{ fontSize: "var(--rs-fsize-86, clamp(40px, 6vw, 80px))", margin: "12px 0" }}>Nobody on this card.</h1>
+      <p style={{ color: "var(--ink-700)" }}>That card isn't assigned to anybody yet, or the link is wrong. If it is an NGG member card, ask the centre to check it.</p>
       <button className="btn btn-primary mt-24" onClick={() => setPage("home")}>Back to home →</button>
     </div></section></div>
   );
@@ -1307,7 +1307,7 @@ function SummerProfilePage({ setPage }) {
               </div>
             </div>
             {att.length === 0
-              ? <p style={{ color: "var(--ink-500)", marginTop: 12 }}>No check-ins recorded yet.</p>
+              ? <p style={{ color: "var(--ink-700)", marginTop: 12 }}>No check-ins recorded yet.</p>
               : <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
@@ -1317,7 +1317,7 @@ function SummerProfilePage({ setPage }) {
           {milestones.length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Milestones · {milestones.length}</div>
-              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>Earned along the way.</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "8px 0 20px" }}>Earned along the way.</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 14 }}>
                 {milestones.map((b, i) => (
                   <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
@@ -1333,7 +1333,7 @@ function SummerProfilePage({ setPage }) {
           {(m.projects || []).length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Public projects · {m.projects.length}</div>
-              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>What I've put into the world.</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "8px 0 20px" }}>What I've put into the world.</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
                 {m.projects.map(pr => {
                   const inner = (<>
@@ -1342,7 +1342,7 @@ function SummerProfilePage({ setPage }) {
                     {pr.kind ? <div className="mono" style={{ fontSize: 10, letterSpacing: "0.06em", color: "var(--ink-400)", marginTop: 3 }}>{pr.kind}</div> : null}
                   </>);
                   return pr.url
-                    ? <a key={pr.id} href={pr.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", color: "inherit", display: "block" }}>{inner}</a>
+                    ? <a key={pr.id} href={pr.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "var(--rs-textdecoration-47, none)", color: "inherit", display: "block" }}>{inner}</a>
                     : <div key={pr.id}>{inner}</div>;
                 })}
               </div>
@@ -1351,7 +1351,7 @@ function SummerProfilePage({ setPage }) {
 
           {/* Mentor notes — only notes an admin marked public reach this page. */}
           {(m.notes || []).length > 0 && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold-400)" }}>Mentor notes</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 18 }}>
                 {m.notes.map((n, i) => (
@@ -1367,7 +1367,7 @@ function SummerProfilePage({ setPage }) {
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
           {m.kind === "volunteer" && m.game && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
                 <div>
                   <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
@@ -1399,10 +1399,10 @@ function SummerProfilePage({ setPage }) {
           {m.kind === "volunteer" && (m.certificates || []).length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Service certificates</h2>
-              <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Verifiable proof of your hours — open, print or share the link.</p>
+              <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>Verifiable proof of your hours — open, print or share the link.</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {m.certificates.map(c => (
-                  <a key={c.certId} href={"/cert/" + c.certId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 14, background: "var(--cream-50, #faf6ec)", border: "1px solid rgba(12,20,50,0.08)", textDecoration: "none", color: "var(--ink-900)" }}>
+                  <a key={c.certId} href={"/cert/" + c.certId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 14, background: "var(--cream-50, #faf6ec)", border: "1px solid rgba(12,20,50,0.08)", textDecoration: "var(--rs-textdecoration-47, none)", color: "var(--ink-900)" }}>
                     <span><b style={{ fontFamily: "var(--font-display)" }}>{c.milestone} sessions</b> <span style={{ color: "var(--ink-500)" }}>· ≈{c.hours} hours</span></span>
                     <span className="mono" style={{ fontSize: 12, color: "var(--gold-600, #b07c12)" }}>{c.certId} →</span>
                   </a>
@@ -1446,9 +1446,9 @@ function InstructorRoster({ token }) {
     return (
       <div className="card" style={{ padding: 28, marginTop: 20 }}>
         <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Your class{d.courses.length > 1 ? "es" : ""}</h2>
-        <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>{d.courses.join(" · ")} · {d.students.length} student{d.students.length === 1 ? "" : "s"}</p>
+        <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>{d.courses.join(" · ")} · {d.students.length} student{d.students.length === 1 ? "" : "s"}</p>
         {d.students.length === 0
-          ? <p style={{ color: "var(--ink-500)" }}>No verified students in your course{d.courses.length > 1 ? "s" : ""} yet.</p>
+          ? <p style={{ color: "var(--ink-700)" }}>No verified students in your course{d.courses.length > 1 ? "s" : ""} yet.</p>
           : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {d.students.map((st, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: st.todayPresent ? "rgba(118,176,67,0.12)" : "var(--cream-50, #faf6ec)" }}>
@@ -1463,7 +1463,7 @@ function InstructorRoster({ token }) {
   return (
     <div className="card" style={{ padding: 28, marginTop: 20 }}>
       <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Instructor view</h2>
-      <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Confirm your registered email to see today's class roster.</p>
+      <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>Confirm your registered email to see today's class roster.</p>
       <form onSubmit={open} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"
           style={{ flex: "1 1 220px", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(12,20,50,0.15)", fontSize: 15, fontFamily: "inherit" }}/>
@@ -1486,7 +1486,7 @@ function CertificatePage() {
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0a1130", color: "#fff", textAlign: "center", padding: 24 }}>
       <div>
         <div className="mono" style={{ color: "#ff8a8a", letterSpacing: "0.14em" }}>CERTIFICATE NOT FOUND</div>
-        <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0" }}>We can't verify that link.</h1>
+        <h1 className="display" style={{ fontSize: "var(--rs-fsize-36, clamp(32px, 5vw, 56px))", margin: "12px 0" }}>We can't verify that link.</h1>
         <p style={{ color: "rgba(255,255,255,0.6)" }}>The certificate ID is wrong, or it was revoked.</p>
         <a className="btn btn-gold mt-24" href="/">Back to home →</a>
       </div>
@@ -1496,9 +1496,12 @@ function CertificatePage() {
   const isCompletion = c.type === "completion";
   const issued = fmtDateLong(c.issuedAt);
   return (
-    <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
-      <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
-      <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
+    <div className="cert-page">
+      <style>{`.cert-page { min-height: 100vh; background: #0a1130; padding: 48px 20px; display: grid; place-items: center; }
+.cert-card { width: min(760px, 100%); background: #fff; border-radius: 20px; padding: clamp(32px, 6vw, 64px); box-shadow: 0 30px 80px -20px rgba(0,0,0,0.5); position: relative; overflow: hidden; }
+.cert-actions { margin-top: 24px; display: flex; gap: 12px; }
+@media print { .cert-page { background: #fff; padding: 0; } .cert-noprint { display: none; } .cert-card { box-shadow: none; border: 1px solid #ddd; } }`}</style>
+      <div className="cert-card">
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
         {c.revoked && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}><span style={{ transform: "rotate(-18deg)", border: "4px solid rgba(228,21,95,0.5)", color: "rgba(228,21,95,0.5)", fontWeight: 800, fontSize: "clamp(40px,9vw,90px)", letterSpacing: 6, padding: "6px 28px", borderRadius: 12 }}>REVOKED</span></div>}
         <div style={{ position: "relative" }}>
@@ -1507,7 +1510,7 @@ function CertificatePage() {
             <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>{isCompletion ? "CERTIFICATE OF COMPLETION" : "CERTIFICATE OF SERVICE"}</span>
           </div>
           <p style={{ margin: 0, color: "#6b7385", fontSize: 15 }}>This certifies that</p>
-          <h1 className="display" style={{ fontSize: "clamp(34px,5vw,56px)", margin: "6px 0 4px", color: "#0a1130", lineHeight: 1 }}>{c.fullName}</h1>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-88, clamp(34px, 5vw, 56px))", margin: "6px 0 4px", color: "#0a1130", lineHeight: "var(--rs-lheight-7, 1)" }}>{c.fullName}</h1>
           {isCompletion ? (
             <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
               completed <b style={{ color: "#0a1130" }}>NGG Summer School{c.cohort ? " · " + c.cohort : ""}</b>{c.track ? <> on the <b style={{ color: "#0a1130" }}>{c.track}</b> track</> : null},
@@ -1527,7 +1530,7 @@ function CertificatePage() {
           {c.revoked && <p style={{ margin: "20px 0 0", color: "#E4155F", fontWeight: 600, fontSize: 14 }}>This certificate has been revoked and is no longer valid.</p>}
         </div>
       </div>
-      <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
+      <div className="cert-noprint cert-actions">
         <button className="btn btn-gold" onClick={() => window.print()}>Print / Save PDF</button>
         <a className="btn btn-on-dark-ghost" href="/">Home</a>
       </div>
@@ -1576,11 +1579,11 @@ function HandbookSummary() {
     ["Purpose Development", "Life vision aligned with Afrocentric impact."],
   ];
   return (
-    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
       </div>
-      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
+      <h2 style={{ fontFamily: "var(--rs-ffamily-11, var(--font-display))", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
         One movement, one standard.
       </h2>
       <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: "0 0 18px", maxWidth: 620 }}>
@@ -1773,7 +1776,7 @@ function VolunteerRegisterPage({ setPage }) {
 
   if (done) return (
     <div className="page" data-screen-label="Volunteer · done">
-      <section className="section" style={{ padding: "56px 24px" }}><div className="container" style={{ maxWidth: 620 }}>
+      <section className="section" style={{ padding: "var(--rs-p-89, 56px 24px)" }}><div className="container" style={{ maxWidth: 620 }}>
         <ApplySuccessCard
           variant="volunteer"
           refCode={typeof done === "string" ? done : ""}
@@ -2216,7 +2219,7 @@ function CirclePortal({ setPage }) {
       <div style={{ flex: 1 }}><div style={{ font: "800 19px var(--font-display,sans-serif)" }}>{dash.student.name}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.68)" }}>Streak {s.streak} · best {s.longestStreak}</div></div>
       <div style={{ textAlign: "right" }}><div style={{ font: "700 16px var(--font-mono,monospace)", color: "#ffce54" }}>🔥 {s.streak}</div><div className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>DAY STREAK</div></div>
     </div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 14 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-90, 1fr 1fr 1fr)", gap: 10, marginTop: 14 }}>
       {[[s.avgSystems, "avg systems", teal], [s.reflections, "reflections", "#7fb0ff"], [(s.conduct || 0) + "%", "conduct", "#ffce54"]].map((t, i) => (
         <div key={i} style={{ ...card, padding: "15px 12px", textAlign: "center" }}><div style={{ font: "800 22px var(--font-display,sans-serif)", color: t[2] }}>{t[0]}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,.66)", marginTop: 2 }}>{t[1]}</div></div>
       ))}
@@ -2325,8 +2328,8 @@ function ParentVerifyPage() {
   const card = { background: "#fff", border: "1px solid #e6e6e0", borderRadius: 18, padding: 20 };
   const first = ctx && ctx.student ? (ctx.student.name || "").split(" ")[0] : "";
 
-  if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: 48 }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
-  if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: 22, margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
+  if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: "var(--rs-p-91, 48px)" }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
+  if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
   /* The centre's parent group, offered the moment consent is done — the one
      moment a parent is certain to be looking at this page, and the point at
      which the group is most useful to them. Rendered only when the centre has
@@ -2341,15 +2344,15 @@ function ParentVerifyPage() {
           Pickup times, session changes and centre notices go out here first. It is optional, and you can leave at any time.
         </p>
         <a href={g.url} target="_blank" rel="noopener noreferrer"
-          style={{ display: "block", textAlign: "center", padding: "13px 16px", borderRadius: 12, background: "#c9f24e", color: "#243300", fontWeight: 800, fontSize: 15, textDecoration: "none" }}>
+          style={{ display: "block", textAlign: "center", padding: "13px 16px", borderRadius: 12, background: "#c9f24e", color: "#243300", fontWeight: 800, fontSize: 15, textDecoration: "var(--rs-textdecoration-47, none)" }}>
           Open the parent group →
         </a>
       </div>
     );
   };
 
-  if (state === "done") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>{groupPanel()}</>);
-  if (state === "success") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>{groupPanel()}</>);
+  if (state === "done") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>{groupPanel()}</>);
+  if (state === "success") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>{groupPanel()}</>);
 
   return shell(<>
     <div style={{ fontSize: 11, letterSpacing: ".18em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>NGG Summer School</div>
@@ -2541,7 +2544,7 @@ function SelfRegisterPage() {
   }, [g]);
 
   const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 60px" }}>
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "var(--rs-p-92, 26px 18px 60px)" }}>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>{ch}</div>
     </div>
   );
@@ -3084,7 +3087,7 @@ function ReviewDeskPage() {
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "bad") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>This review link isn't open</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>This review link isn't open</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>It has been closed or revoked. Ask an admin for a fresh one.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
     <h1 style={{ fontSize: 21 }}>Couldn't load the queue</h1>
@@ -3415,7 +3418,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
   });
 
   return <>
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }} className="review-grid">
+    <div className="review-grid">
       {/* Left: the photo, at a size you can actually judge, with the machine's
           reading beside it rather than instead of it. */}
       <div style={card}>
@@ -3430,7 +3433,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
           </div>
           <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <h2 style={{ fontSize: 22, margin: 0, fontWeight: 800 }}>{r.fullName}</h2>
+              <h2 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: 0, fontWeight: 800 }}>{r.fullName}</h2>
               {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
               {decided && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#a7e8c6", background: "rgba(127,209,166,.18)" }}>{r.regStatus === "rejected" ? "rejected" : "approved"}</span>}
             </div>
@@ -4172,7 +4175,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
-          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
+          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
           <div><div style={{ fontWeight: 800, fontSize: 16 }}>{regDisplayName(form)}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
         </div>
         <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -4303,7 +4306,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
+      <div style={{ ...card, overflow: "hidden", position: "relative", height: "var(--rs-height-93, 300px)", display: "grid", placeItems: "center" }}>
         {photoUrl ? (
           <PhotoCompare url={photoUrl}/>
         ) : (
@@ -4452,7 +4455,7 @@ function ReshootPage() {
   const mut = { color: "rgba(230,238,255,.62)" };
   const shell = (children) => (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
-      <div style={{ maxWidth: 460, margin: "0 auto", padding: "26px 18px 70px" }}>{children}</div>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "var(--rs-p-94, 26px 18px 70px)" }}>{children}</div>
     </div>
   );
 
@@ -4493,18 +4496,18 @@ function ReshootPage() {
   if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Photo link</h1><p style={mut}>{err}</p></div>);
   if (state === "done") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 50 }}>
     <div style={{ fontSize: 40 }}>✅</div>
-    <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Thank you!</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>Thank you!</h1>
     <p style={mut}>The new photo is in. Our team will check it and finish {first || "your child"}'s ID — no need to do anything else.</p>
   </div>);
 
   return shell(<>
     <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NEW PHOTO</div>
-    <h1 style={{ fontSize: 22, margin: "4px 0 12px", fontWeight: 800 }}>A quick new photo{first ? " for " + first : ""}</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "4px 0 12px", fontWeight: 800 }}>A quick new photo{first ? " for " + first : ""}</h1>
     {ctx && ctx.reason
       ? <div style={{ ...card, padding: 14, marginBottom: 12, fontSize: 13.5, lineHeight: 1.5 }}><b style={{ color: gold }}>What to fix:</b> {ctx.reason}</div>
       : <p style={{ ...mut, fontSize: 13.5, marginBottom: 12 }}>Please use a clear, front-facing photo in good light, with a plain background.</p>}
 
-    <div style={{ ...card, overflow: "hidden", height: 300, display: "grid", placeItems: "center", marginBottom: 12 }}>
+    <div style={{ ...card, overflow: "hidden", height: "var(--rs-height-93, 300px)", display: "grid", placeItems: "center", marginBottom: 12 }}>
       {photoUrl
         ? <PhotoCompare url={photoUrl}/>
         : ctx && ctx.student && ctx.student.photoUrl
@@ -5757,7 +5760,7 @@ function McStats({ d }) {
               border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "12px 14px" }}>
           <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".14em",
                         color: "rgba(230,238,255,.55)", textTransform: "uppercase" }}>{label}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+          <div style={{ fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
           {sub ? <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{sub}</div> : null}
         </div>
       ))}
@@ -6919,7 +6922,7 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
 
   /* Embedded in the NGG mentor portal it is a panel in that page, not a page of its own. */
   const shell = (ch) => embedded ? <div className="m15x-classic">{ch}</div> : (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "var(--rs-p-95, 26px 18px 90px)" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
       {/* First visit to the Summer School mentor portal: a short tour (guide.jsx). */}
       {state === "ready" && programme !== "ngg" && typeof GuideTour === "function" && <GuideTour portal="summer"/>}
@@ -6955,20 +6958,20 @@ function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
      names no centre, is not a stranger and not an error — they are one staff
      action away, and each of these says which one. */
   if (state === "not-cleared") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>Your safeguarding check isn’t cleared yet</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>Your safeguarding check isn’t cleared yet</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
       The portal opens once your screening is cleared — the same check required before anyone takes a
       register. Ask your centre coordinator where yours has got to.
     </p>
   </div>);
   if (state === "no-centre") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>No centre on your record</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>No centre on your record</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
       The portal shows a centre’s children, and yours doesn’t name one yet. A coordinator can add it to
       your volunteer record in the console.
     </p>
   </div>);
-  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
+  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} className="shell-retry">Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
@@ -7811,7 +7814,7 @@ function LegalPage({ setPage }) {
   const [doc, setDoc] = React.useState(LEGAL_DOCS.some(d => d.id === initial) ? initial : "privacy");
   const updated = "July 2026";
   const P = ({ children }) => <p style={{ color: "var(--ink-700)", lineHeight: 1.7, margin: "0 0 14px", fontSize: 15.5 }}>{children}</p>;
-  const H = ({ children }) => <h3 style={{ fontFamily: "var(--font-display)", fontSize: 20, margin: "28px 0 12px", color: "var(--navy-900)" }}>{children}</h3>;
+  const H = ({ children }) => <h3 style={{ fontFamily: "var(--rs-ffamily-11, var(--font-display))", fontSize: 20, margin: "28px 0 12px", color: "var(--navy-900)" }}>{children}</h3>;
   const LI = ({ children }) => <li style={{ color: "var(--ink-700)", lineHeight: 1.65, marginBottom: 8, fontSize: 15.5 }}>{children}</li>;
   const UL = ({ children }) => <ul style={{ margin: "0 0 14px", paddingLeft: 22 }}>{children}</ul>;
 
@@ -7915,13 +7918,13 @@ function LegalPage({ setPage }) {
       <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "56px 0 40px" }}>
         <div className="container">
           <span className="chip chip-on-dark"><span className="dot dot-gold"/> LEGAL &amp; DATA PROTECTION</span>
-          <h1 className="display" style={{ fontSize: "clamp(36px,5vw,64px)", margin: "12px 0 6px", color: "white", lineHeight: 0.98 }}>The fine print, in plain words.</h1>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-96, clamp(36px, 5vw, 64px))", margin: "12px 0 6px", color: "white", lineHeight: "var(--rs-lheight-4, 0.98)" }}>The fine print, in plain words.</h1>
           <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 15, margin: 0 }}>NDPA/NDPR-aligned · last updated {updated}</p>
         </div>
       </section>
       <section className="section">
-        <div className="container legal-layout" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 40, alignItems: "start" }}>
-          <nav className="legal-nav" style={{ position: "sticky", top: 90, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="container legal-layout">
+          <nav className="legal-nav">
             {LEGAL_DOCS.map(d => (
               <button key={d.id} onClick={() => { setDoc(d.id); history.replaceState({}, "", "/legal?doc=" + d.id); }}
                 className="legal-nav-item"
@@ -7932,7 +7935,7 @@ function LegalPage({ setPage }) {
             ))}
           </nav>
           <div className="legal-body" style={{ maxWidth: 720 }}>
-            <h2 className="display" style={{ fontSize: 32, margin: "0 0 6px" }}>{active.label}</h2>
+            <h2 className="display" style={{ fontSize: "var(--rs-fsize-65, 32px)", margin: "0 0 6px" }}>{active.label}</h2>
             <div className="mono" style={{ color: "var(--ink-500)", fontSize: 12, marginBottom: 24 }}>UPDATED {updated.toUpperCase()}</div>
             {bodies[doc]}
             <div style={{ marginTop: 36, paddingTop: 20, borderTop: "1px solid rgba(12,20,50,0.1)", display: "flex", gap: 12, flexWrap: "wrap" }}>

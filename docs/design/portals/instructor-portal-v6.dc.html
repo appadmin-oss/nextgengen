@@ -20,7 +20,7 @@ a{color:#0b0b0c;text-underline-offset:2px}
 a:hover{color:#6b4b00}
 button,input,textarea,select{font:inherit;color:inherit}
 :focus-visible{outline:3px solid #2f6fdb;outline-offset:2px}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none;animation:none}}
 </style>
 </helmet>
 <div style="height:100vh;display:flex;align-items:center;justify-content:center;padding:{{ outerPad }};font-family:'Geist',system-ui,sans-serif;color:#0b0b0c;font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased">
@@ -238,7 +238,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 <sc-if value="{{ on.curriculum }}" hint-placeholder-val="{{ false }}">
   {{ currBox }}
 </sc-if>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:12.5px;color:#6b6b72">{{ u.done }} of 12 students finished</span><button onClick="{{ u.upload }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-upload-simple"></i>Add material</button><sc-if value="{{ u.canPublish }}" hint-placeholder-val="{{ false }}"><button onClick="{{ u.pub }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c">Publish</button></sc-if></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1;font-size:12.5px;color:#6b6b72">{{ u.doneLine }}</span><button onClick="{{ u.upload }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-upload-simple"></i>Add material</button><sc-if value="{{ u.canPublish }}" hint-placeholder-val="{{ false }}"><button onClick="{{ u.pub }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c">Publish</button></sc-if></div>
     </article>
   </sc-for>
 </sc-if>
@@ -833,7 +833,7 @@ class Component extends DCLogic {
     o.mkPrev = () => set({ mi: (mi - 1 + D.marking.length) % D.marking.length }); o.mkNext = () => set({ mi: (mi + 1) % D.marking.length });
     o.assignments = D.assignments.map(a => ({ ...a, w: Math.round(a.sub / a.of * 100) + "%" }));
     // curriculum
-    o.units = D.units.map((u, i) => { const st = s.unitSt[i] || u.st; return { ...u, st, mats: u.mats, hasMats: u.mats.length > 0, fg: st === "Published" ? "#1d6b30" : st === "Draft" ? "#7a5600" : "#6b6b72", bg: st === "Published" ? "#e9f6ec" : st === "Draft" ? "#fdf6e3" : "#f4f4f2", canPublish: st === "Draft", pub: () => { set({ unitSt: { ...this.state.unitSt, [i]: "Published" } }); this.toast("Week " + u.w + " published. Students see it now.", () => { const z = { ...this.state.unitSt }; delete z[i]; set({ unitSt: z }); }); }, upload: () => this.toast("Choose a file to add to week " + u.w), donePct: Math.round(u.done / 12 * 100) + "%" }; });
+    o.units = D.units.map((u, i) => { const st = s.unitSt[i] || u.st; return { ...u, st, doneLine: Math.round(u.done / 100 * 12) + " of 12 students finished", mats: u.mats, hasMats: u.mats.length > 0, fg: st === "Published" ? "#1d6b30" : st === "Draft" ? "#7a5600" : "#6b6b72", bg: st === "Published" ? "#e9f6ec" : st === "Draft" ? "#fdf6e3" : "#f4f4f2", canPublish: st === "Draft", pub: () => { set({ unitSt: { ...this.state.unitSt, [i]: "Published" } }); this.toast("Week " + u.w + " published. Students see it now.", () => { const z = { ...this.state.unitSt }; delete z[i]; set({ unitSt: z }); }); }, upload: () => this.toast("Choose a file to add to week " + u.w), donePct: Math.round(u.done / 12 * 100) + "%" }; });
     // students
     o.studentRows = L.map(m => { const avg = m.sk.reduce((a, b) => a + b, 0) / m.sk.length; return { ...m, attendText: m.attended + "/" + m.ran, top: lv[Math.round(avg)], open: () => this.goTo("student", { sel: m.id }), cells: m.sk.map((v, k) => ({ bg: ["#e8590c", "#e0a100", "#2f9e44", "#0b0b0c"][lvlOf(m, k)], t: D.skillShort[k] + ": " + lv[lvlOf(m, k)] })) }; });
     o.st = { ...selM, rem: (s.remarks[selM.id] || []).map(t => ({ t })), hasRem: (s.remarks[selM.id] || []).length > 0, pct: Math.round(selM.attended / selM.ran * 100) + "%",

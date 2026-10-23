@@ -95,7 +95,7 @@ function CrColumns({ b, phone }) {
   const fmt = v => crNum(v) + (b.pct ? "%" : "");
   if (phone) return (
     <div className="cr-pbox cr-pcols">
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span className="cr-big" style={{ fontSize: 22 }}>{b.big}</span><span className="cr-hint">{b.sub}</span></div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}><span className="cr-big" style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{b.big}</span><span className="cr-hint">{b.sub}</span></div>
       <div className="cr-pcols-plot" role="img" aria-label={(b.title || "Chart") + ": " + b.bars.map(x => (x.l || "") + " " + fmt(x.v)).join(", ")}>
         {b.bars.map((c, j) => <div key={j} className={"cr-cols-bar" + (j === b.bars.length - 1 ? " is-last" : "")} style={{ height: sc.h(c.v) + "%" }}/>)}
       </div>

@@ -152,7 +152,7 @@ i[class^="ph"] { line-height: 1; }
 .aj-tilt { display: block; border-radius: 22px; transform-style: preserve-3d; transition: transform .32s cubic-bezier(.2,.7,.2,1); will-change: transform; position: relative; isolation: isolate; }
 .aj-tilt > * { transform-style: preserve-3d; }
 .aj-tilt.glare::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; z-index: 2; mix-blend-mode: overlay; transition: background .18s ease; background: radial-gradient(circle at var(--tilt-gx,50%) var(--tilt-gy,50%), rgba(255,255,255,var(--tilt-glare,0)) 0%, transparent 60%); }
-@media (hover: none), (prefers-reduced-motion: reduce) { .aj-tilt { transform: none !important; } .aj-tilt.glare::after { display: none; } }
+@media (hover: none), (prefers-reduced-motion: reduce) { .aj-tilt { transform: none; } .aj-tilt.glare::after { display: none; } }
 
 /* ---- Cards ---- */
 .card { border-radius: 22px; background: var(--card); border: 1px solid var(--line); padding: 20px; }

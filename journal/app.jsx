@@ -246,7 +246,7 @@ function Tilt({ children, strength = 9, glare = true, className = "" }) {
   const ref = useRef(null);
   useEffect(() => {
     if (!TILT_ON) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(hover: none)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(hover: none)").matches || document.documentElement.getAttribute("data-motion") === "reduce") return;
     const el = ref.current; if (!el) return;
     let rect = null, raf = 0;
     const onMove = (e) => {

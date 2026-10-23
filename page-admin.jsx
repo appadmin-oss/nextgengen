@@ -5430,14 +5430,14 @@ function AdminAssessment() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0 0 14px" }}>
             {["All"].concat(Array.from(new Set((cat || []).map(c => c.family)))).map(f => (
               <button key={f} className={"chip" + (catFam === f ? " is-active" : "")} onClick={() => setCatFam(f)}
-                style={{ cursor: "pointer", border: "1px solid var(--line,#e5e8ee)", background: catFam === f ? "var(--ink-900,#0a1130)" : "#fff", color: catFam === f ? "#fff" : "inherit" }}>{f}</button>
+                style={{ cursor: "pointer", border: "var(--rs-border-112, 1px solid var(--line,#e5e8ee))", background: catFam === f ? "var(--ink-900,#0a1130)" : "#fff", color: catFam === f ? "#fff" : "inherit" }}>{f}</button>
             ))}
           </div>
           {cat === null ? <div className="admin-empty">Loading…</div>
             : cat.length === 0 ? <div className="admin-empty">The catalogue is empty.</div>
             : <div style={{ display: "grid", gap: 12 }}>
               {cat.filter(c => catFam === "All" || c.family === catFam).map(c => (
-                <div key={c.key} className="admin-card" style={{ padding: 16, border: "1px solid var(--line,#e5e8ee)", borderRadius: 12, background: "#fff" }}>
+                <div key={c.key} className="admin-card" style={{ padding: 16, border: "var(--rs-border-112, 1px solid var(--line,#e5e8ee))", borderRadius: 12, background: "#fff" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                     {!c.adopted && <input type="checkbox" checked={!!picked[c.key]} aria-label={"Adopt " + c.name}
                       style={{ marginTop: 4 }}
@@ -7163,7 +7163,7 @@ function AdminOps() {
     <div className="admin-tile" style={{ cursor: "default" }}>
       {/* Never colour alone: a red dot and a green dot are the same dot to
           about one man in twelve, and this is the screen you read in a hurry. */}
-      <div className="admin-tile-n" style={{ fontSize: 22, color: ok ? "var(--lime-ink)" : "var(--coral, #c0341a)" }}>{ok ? "✓" : "✕"}</div>
+      <div className="admin-tile-n" style={{ fontSize: "var(--rs-fsize-1, 22px)", color: ok ? "var(--lime-ink)" : "var(--coral, #c0341a)" }}>{ok ? "✓" : "✕"}</div>
       <div className="admin-tile-l">{label}</div>
       <div className="mono admin-cell-sub">{ok ? "ok" : detail || "failing"}</div>
     </div>
@@ -8805,7 +8805,7 @@ function FeeEntryForm({ kind, account, busy, onCancel, onSubmit }) {
           </div>
         </label>
         {isPay && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 12, marginBottom: 12 }}>
             <label>
               <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>How it came</span>
               <select className="admin-input" value={f.method} onChange={e => set("method", e.target.value)} style={{ marginTop: 6 }}>
@@ -9398,7 +9398,7 @@ function AdminFees() {
             <div data-fee-microcopy="1" style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 4, fontStyle: "italic" }}>
               Written off in full once the MOU is accomplished.
             </div>)}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 14 }}>
             {num("trainingMonths", "Training months", "", null, { min: B.phaseMin, max: B.phaseMax })}
             {num("serviceMonths", "Service months", "", null, { min: B.phaseMin, max: B.phaseMax })}
           </div>
@@ -9429,7 +9429,7 @@ function AdminFees() {
           <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 10 }}>
             Keeping up with inflation
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 14 }}>
             {num("upratePct", "Raise amounts by", "Per cent. 0 switches it off. At most " + B.uprateMaxPct + "% at a time.",
               null, { min: 0, max: B.uprateMaxPct })}
             {num("uprateEveryMonths", "No more often than every",
@@ -9700,8 +9700,8 @@ function AdminStatusPages() {
               <button type="button" onClick={() => set(b.key, "published", !on)}
                 style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 0", padding: "10px 12px", borderRadius: 12, width: "100%", cursor: "pointer",
                   border: "1px solid " + (on ? "rgba(22,163,74,.4)" : "var(--line-cool,#e5e8ee)"), background: on ? "rgba(22,163,74,.08)" : "var(--cream-50,#faf7ef)" }}>
-                <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background .15s" }}>
-                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }}/>
+                <span style={{ width: 40, height: 22, borderRadius: 99, background: on ? "#16a34a" : "#c4cad8", position: "relative", flex: "none", transition: "background calc(.15s * var(--motion, 1))" }}>
+                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left calc(.15s * var(--motion, 1))" }}/>
                 </span>
                 <span style={{ fontWeight: 700, fontSize: 14, color: on ? "#15803d" : "var(--ink-500)" }}>{on ? "Published — live to the public" : "Unpublished — hidden with an “offline” notice"}</span>
               </button>
@@ -9732,7 +9732,7 @@ function AdminStatusPages() {
                 </StatusGroup>
 
                 <StatusGroup label="KPI tiles">
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 6 }}>
                     {Object.keys(c.kpis || {}).map(kk => (
                       <label key={kk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                         <input type="checkbox" checked={c.kpis[kk] !== false} onChange={e => setSub(b.key, "kpis", kk, e.target.checked)}/> {STATUS_KPI_LABELS[kk] || kk}
@@ -9759,7 +9759,7 @@ function AdminStatusPages() {
 
                 <StatusGroup label={"Centres shown" + (shownAll ? " · all" : " · " + c.centres.length + " selected")}>
                   {meta.centres.length === 0 ? <div style={{ fontSize: 12, color: "var(--ink-400)" }}>No active centres yet.</div>
-                    : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                    : <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 6 }}>
                       {meta.centres.map(ct => (
                         <label key={ct.name} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                           <input type="checkbox" checked={shownAll || c.centres.includes(ct.name)} onChange={() => toggleCentre(b.key, ct.name)}/>
@@ -11215,7 +11215,7 @@ function AdminCentres() {
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
                 <span className="chip" style={{ marginLeft: 8 }} title="Which programme's forms, desks and lists offer this centre">{centreProgrammes(c).length === 2 ? "NGG + Summer" : centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>
                 {c.pageStatus === "published"
-                  ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
+                  ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "var(--rs-textdecoration-47, none)" }}>page live ↗</a>
                   : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}
               </td>
               <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
@@ -11396,7 +11396,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
             <option value="published">Published — live</option>
           </select>
           {effectiveSlug ? (
-            <a className="mono" href={"/centres/" + effectiveSlug} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "var(--ink-500)", textDecoration: "none" }}>
+            <a className="mono" href={"/centres/" + effectiveSlug} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "var(--ink-500)", textDecoration: "var(--rs-textdecoration-47, none)" }}>
               next.afrovanguard.org.ng/centres/<b style={{ color: "var(--ink-800, #0a1130)" }}>{effectiveSlug}</b> ↗
             </a>
           ) : null}
@@ -11801,7 +11801,7 @@ function AdminSite() {
       </div>
       <p className="admin-hint">Edit the public homepage copy. Changes go live immediately — leave a field blank to restore its default.</p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }} className="site-editor">
+      <div className="site-editor">
         <div className="admin-fields">
           <div className="mono admin-cell-sub" style={{ marginBottom: 4 }}>HERO</div>
           <Field label="'Live now' word" value={c.heroEyebrowLive || ""} onChange={set("heroEyebrowLive")} placeholder="Live now"/>
@@ -11820,9 +11820,9 @@ function AdminSite() {
         </div>
 
         {/* Live preview of the hero copy */}
-        <div style={{ position: "sticky", top: 90 }}>
+        <div className="site-editor-preview">
           <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>PREVIEW</div>
-          <div style={{ background: "var(--navy-900)", borderRadius: 16, padding: "28px 24px", color: "#fff", overflow: "hidden" }}>
+          <div style={{ background: "var(--navy-900)", borderRadius: 16, padding: "var(--rs-p-113, 28px 24px)", color: "#fff", overflow: "hidden" }}>
             <span className="chip chip-on-dark" style={{ fontSize: 10 }}><span className="dot dot-coral"/> {(c.heroEyebrowLive || "Live now").toUpperCase()} · SUMMER 2026</span>
             <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 34, lineHeight: 0.98, margin: "12px 0 10px" }}>
               {c.heroTitle1 || "Africa's next geniuses"}<br/>{c.heroTitle2 || "are"} <span style={{ color: "var(--gold-500)" }}>{c.heroEmphasis || "not waiting"}</span>.

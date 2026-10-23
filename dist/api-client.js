@@ -325,9 +325,10 @@
        the server says so and nothing is uploaded (api/_lib/domain/media-objects.php). */
     const sha256 = kind === 'headshot' ? '' : await fileSha256(file);
     if (sha256) about.sha256 = sha256;
-    const sig = kind === 'headshot'
-      ? await request('/public/upload-headshot-sign.php', { body: about })
-      : await request('/member/upload-sign.php', { body: Object.assign({ kind, mediaKind }, about) });
+    const signFor = (refused) => kind === 'headshot'
+      ? request('/public/upload-headshot-sign.php', { body: Object.assign({ refused }, about) })
+      : request('/member/upload-sign.php', { body: Object.assign({ kind, mediaKind, refused }, about) });
+    const sig = await signFor(undefined);
     if (sig.provider === 'existing') {
       if (onProgress) onProgress(100);
       return { url: sig.publicUrl, publicId: sig.key, resourceType: sig.resourceType, format: sig.format, bytes: sig.size,
@@ -339,7 +340,30 @@
       if (sha256) request('/member/upload-done.php', { body: { key: sig.key, sha256 } }).catch(() => {});
       return done;
     }
-    return await new Promise((resolve, reject) => {
+    try {
+      return await postToCloudinary(file, sig, mediaKind, onProgress);
+    } catch (e) {
+      /* The account uploads go to may be spent. Say so when asking for a fresh
+         signature: the server checks the account itself and, if it is, signs
+         for the backup — then this one upload is tried once more there. */
+      if (!e.cldStatus || !QUOTA_RE.test(e.cldStatus + ' ' + e.message)) throw e;
+      let again = null;
+      try { again = await signFor({ cloud: sig.cloudName, status: e.cldStatus, message: e.message.slice(0, 300) }); } catch (_) { throw e; }
+      if (!again || again.provider === 'existing' || again.cloudName === sig.cloudName) throw e;
+      if (again.provider === 's3') return await putToStore(file, again, mediaKind, onProgress);
+      if (onProgress) onProgress(0);
+      return await postToCloudinary(file, again, mediaKind, onProgress);
+    }
+  }
+
+  /* What a spent Cloudinary plan answers with: 420/429, or words about limits. */
+  const QUOTA_RE = /^(420|429)\b|limit|quota|credit|exceed|disabled|suspend|plan/i;
+
+  /* One signed POST straight to Cloudinary. A refusal rejects with Cloudinary's
+     own message and the HTTP status (`cldStatus`), so the caller can tell a
+     spent plan from a bad file. */
+  function postToCloudinary(file, sig, mediaKind, onProgress) {
+    return new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('api_key', sig.apiKey);
@@ -370,7 +394,9 @@
                     format: d.format, bytes: d.bytes, mediaKind: mediaKind,
                     pages: d.pages || 0, originalName: file.name || '' });
         } else {
-          reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
+          const err = new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status));
+          err.cldStatus = xhr.status;
+          reject(err);
         }
       };
       xhr.onerror = () => reject(new Error('upload_network_error'));
@@ -1769,6 +1795,11 @@
         purge:   (confirm) => request('/admin/media.php', { body: { action: 'purgeDerived', confirm } }),
         objects: () => request('/admin/media.php?view=objects'),
         sweep:   () => request('/admin/media.php', { body: { action: 'sweepObjects' } }),
+        accounts:      () => request('/admin/media.php?view=accounts'),
+        accountSave:   (a) => request('/admin/media.php', { body: Object.assign({ action: 'accountSave' }, a) }),
+        accountRemove: (id) => request('/admin/media.php', { body: { action: 'accountRemove', id } }),
+        accountMove:   (id, dir) => request('/admin/media.php', { body: { action: 'accountMove', id, dir } }),
+        accountCheck:  (id) => request('/admin/media.php', { body: { action: 'accountCheck', id } }),
       },
       ops: {
         status: () => request('/admin/ops.php'),

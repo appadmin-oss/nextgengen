@@ -112,7 +112,7 @@ class Sd3Directory extends React.Component {
     const head = ["ID", "Name", "Centre", "Class", "Division", "Course", "Mentor", "Status", "Attendance %", "Guardian", "Guardian phone", "Consent", "ID card"];
     const csv = [head].concat(rows.map(s => [s.id, s.name, s.centre, s.cls, s.division, s.course, s.mentor || "", s.status, s.pct == null ? "" : s.pct, s.guardian, s.phone, s.consent ? "Yes" : "No", s.idCard ? "Printed" : "Not printed"])).map(r => r.map(esc).join(",")).join("\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = "ngg-students-" + rows.length + ".csv"; a.click();
-    this.setState({ dialog: null }); this.toast("Exported " + rows.length.toLocaleString() + " students to CSV");
+    this.setState({ dialog: null }); this.toast("Exported " + fmtNum(rows.length) + " students to CSV");
   }
 
   renderVals() {

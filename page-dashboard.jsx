@@ -40,7 +40,7 @@ function DashMoneyText({ n, currency }) {
 
 function DashSectionShell({ title, sub, children, err, onRetry, loading }) {
   return (
-    <section className="ngg-anchor" style={{ maxWidth: 860 }}>
+    <section className="ngg-anchor ngg-anchor-narrow">
       <header style={{ marginBottom: 16 }}>
         <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>{title}</h2>
         {sub && <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>{sub}</p>}
@@ -57,7 +57,7 @@ function DashSectionShell({ title, sub, children, err, onRetry, loading }) {
  * is its place on the dashboard, in the dashboard's own palette (.dash-results). */
 function DashResults() {
   return (
-    <section className="ngg-anchor dash-results" style={{ maxWidth: 860 }}>
+    <section className="ngg-anchor ngg-anchor-narrow dash-results">
       <header style={{ marginBottom: 16 }}>
         <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>School results</h2>
         <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>Upload your report card, check the scores, and plan next term with your mentor.</p>
@@ -743,7 +743,7 @@ function DashboardShell({ children, setPage }) {
 
 function DashboardSignedOut({ openSignIn, setPage }) {
   return (
-    <section className="signed-out-hero" style={{padding: "112px 0 96px"}}>
+    <section className="signed-out-hero" style={{padding: "var(--rs-p-104, 112px 0px 96px)"}}>
       <div className="container">
         <div className="signed-out-grid">
           <div>
@@ -831,8 +831,8 @@ function DashboardSkeleton() {
 function DashboardError({ code, onRetry }) {
   return (
     <section style={{padding:"120px 0", textAlign:"center"}}>
-      <div className="display" style={{fontSize:48, color:"var(--coral)"}}>off-line</div>
-      <p style={{marginTop:18, color:"var(--ink-500)"}}>{code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Something went wrong loading your dashboard."}</p>
+      <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--coral)"}}>off-line</div>
+      <p style={{marginTop:18, color:"var(--ink-700)"}}>{code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Something went wrong loading your dashboard."}</p>
       <button className="btn btn-primary" onClick={onRetry} style={{marginTop:24}}>Try again</button>
     </section>
   );
@@ -1513,7 +1513,7 @@ function MissionProofModal({ m, busy, onClose, onSubmit }) {
           <button type="button" className="admin-drawer-close" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="admin-fields">
-          <p style={{ color: "var(--ink-500)", margin: "0 0 4px", fontSize: 14 }}>{m.prompt}</p>
+          <p style={{ color: "var(--ink-700)", margin: "0 0 4px", fontSize: 14 }}>{m.prompt}</p>
           {isMedia ? (
             <React.Fragment>
               <label className="admin-field">
@@ -1937,7 +1937,7 @@ function DashboardNgv({ ngv }) {
         <h3 className="dash-card-h-sm">Your NGV role.</h3>
         <span className="chip chip-gold" style={active ? undefined : { opacity: 0.55 }}>{active ? "NGV" : "NGV · paused"}</span>
       </div>
-      <div className="dash-account-figure is-clear" style={{ fontSize: 22 }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
+      <div className="dash-account-figure is-clear" style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>{NGV_ROLE_LABEL[ngv.role] || "Volunteer"}</div>
       <div className="dash-account-sub">
         Volunteer ID <b className="mono">{ngv.volunteerId}</b>
         {ngv.since ? " · since " + String(ngv.since).slice(0, 10) : ""}
@@ -1947,7 +1947,7 @@ function DashboardNgv({ ngv }) {
         <a href={ngv.profileUrl} target="_blank" rel="noopener noreferrer"
           style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px",
             borderRadius: 10, background: "var(--gold, #e8961f)", color: "#1a1205", fontWeight: 700,
-            fontSize: 13, textDecoration: "none" }}>
+            fontSize: 13, textDecoration: "var(--rs-textdecoration-47, none)" }}>
           Open my volunteer ID &amp; check-in QR →
         </a>
       )}

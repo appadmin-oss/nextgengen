@@ -525,8 +525,9 @@ const IDS_PLAN_ORDERS = ['centre', 'kind', 'name'];
 const IDS_PLAN_IDS_MAX = 600;
 const IDS_PLAN_NAMES_MAX = 50;
 const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
-const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
+const IDS_PLAN_SCALARS = ['kind', 'centre', 'centres', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'numPrefix', 'limit', 'latest', 'hasPhoto', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
     'margin', 'gap', 'skip', 'breakBy', 'packing', 'cause', 'notKinds'];
+const IDS_PLAN_CENTRES_MAX = 12;
 /* A kind said of ONE named person ("Badmus should be NGG, not summer"): which
    of their records is meant, when a name is on more than one list. Never a
    filter on everybody else. */
@@ -651,6 +652,22 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
         if ($c !== null) $out['centre'] = $c;
         else $notes[] = 'No centre called “' . mb_substr(trim((string)$in['centre']), 0, 40) . '”, so every centre is included.';
     }
+    /* Several centres ("Ijaiye and Ikorodu"): each must be a real one; one
+       left is just `centre`. A centre nobody has is said, never guessed. */
+    if (is_array($in['centres'] ?? null)) {
+        $cs = [];
+        foreach (array_slice($in['centres'], 0, IDS_PLAN_CENTRES_MAX) as $said) {
+            if (!is_scalar($said) || trim((string)$said) === '') continue;
+            $c = ids_plan_centre_match((string)$said, $centres);
+            if ($c === null) { $notes[] = 'No centre called “' . mb_substr(trim((string)$said), 0, 40) . '”, so it was left out.'; continue; }
+            if (!in_array($c, $cs, true)) $cs[] = $c;
+        }
+        if (isset($out['centre']) && !in_array($out['centre'], $cs, true) && $cs) array_unshift($cs, $out['centre']);
+        if (count($cs) > 1) { $out['centres'] = $cs; unset($out['centre']); }
+        elseif ($cs) $out['centre'] = $cs[0];
+    }
+    if (isset($in['hasPhoto']) && is_bool($in['hasPhoto'])) $out['hasPhoto'] = $in['hasPhoto'];
+    if (!empty($in['latest']) && $in['latest'] === true) $out['latest'] = true;
     $which = strtolower((string)($in['which'] ?? ''));
     if (in_array($which, IDS_PLAN_WHICH, true)) $out['which'] = $which;
     $out += ids_plan_clean_people(['ids' => $in['ids'] ?? [], 'names' => $in['names'] ?? []]);
@@ -661,6 +678,9 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
         if (isset($in[$k]) && is_numeric($in[$k]) && (int)$in[$k] >= 0 && (int)$in[$k] <= 999999) $out[$k] = (int)$in[$k];
     }
     if (isset($out['numFrom'], $out['numTo']) && $out['numFrom'] > $out['numTo']) [$out['numFrom'], $out['numTo']] = [$out['numTo'], $out['numFrom']];
+    // The printed ID's own prefix for a range said as two IDs ("026-001 to 026-040"): 2026's, not every year's.
+    $np = strtoupper(trim((string)($in['numPrefix'] ?? '')));
+    if ($np !== '' && (isset($out['numFrom']) || isset($out['numTo'])) && preg_match('/^(?:\d{3}|[A-Z]{2,4}-\d{2})$/', $np)) $out['numPrefix'] = $np;
     if (isset($in['limit']) && is_numeric($in['limit']) && (int)$in['limit'] >= 1) $out['limit'] = min(IDS_BATCH_MAX, (int)$in['limit']);
     $backs = strtolower((string)($in['backs'] ?? ''));
     if (in_array($backs, IDS_PLAN_BACKS, true)) $out['backs'] = $backs;
@@ -717,13 +737,49 @@ function ids_plan_find_names(string $clause, array $centres): array {
         'Front', 'Fronts', 'Back', 'Backs', 'Double', 'Single', 'Sided', 'Make', 'It', 'I', 'We', 'Need', 'Following', 'These', 'Them', 'They', 'Should', 'Use', 'Fill', 'Clear', 'Then',
         'Crop', 'Marks', 'Long', 'Short', 'Edge', 'Sheet', 'Sheets', 'Name', 'Names', 'Is', 'Are', 'Who', 'What', 'Why', 'How', 'Where', 'When', 'Ok', 'OK', 'Yes', 'No', 'Club'],
         IDS_PLAN_PROVIDER_WORDS, array_map(fn($c) => $c['name'], $centres));
+    // A centre's name is not a person's, however many words it has ("Yaba Hub").
+    foreach ($centres as $c) $clause = (string)preg_replace('/(?<![\p{L}])' . preg_quote((string)$c['name'], '/') . '(?![\p{L}])/u', ' ', $clause);
     preg_match_all('/\b\p{Lu}[\p{Ll}\'’\-]+(?:\s+\p{Lu}[\p{Ll}\'’\-]+)*/u', $clause, $m);
     $out = [];
     foreach ($m[0] as $run) {
+        // "Ada Okafor's card" is Ada Okafor.
+        $run = (string)preg_replace('/[\'’]s?$/u', '', $run);
         $words = array_values(array_filter(preg_split('/\s+/u', $run), fn($w) => !in_array($w, $skip, true) && !preg_match('/^' . IDS_PLAN_MONTH_RE . '$/iu', $w)));
         if ($words) $out[] = implode(' ', $words);
     }
     return array_values(array_unique($out));
+}
+
+/** Every centre the text names, in the order written ("Ijaiye and Ikorodu"). The
+ *  same tests as ids_plan_find_centre, plus the first word of a longer name
+ *  after "at/in/for/from" ("at Yaba" for Yaba Hub) when only one centre has it. */
+function ids_plan_find_centres(string $t, array $centres): array {
+    if (preg_match('/\b(no|without an?)\s+cent(re|er)\b/u', $t)) return [IDS_PLAN_NONE];
+    $words = preg_split('/[^\p{L}]+/u', $t, -1, PREG_SPLIT_NO_EMPTY);
+    $found = [];
+    foreach ($centres as $c) {
+        $n = mb_strtolower($c['name']); $at = -1;
+        if (preg_match('/(?<![\p{L}])' . preg_quote($n, '/') . '(?![\p{L}])/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+        elseif ($c['code'] !== '' && preg_match('/\b(at|in|for|from)\s+' . preg_quote(mb_strtolower($c['code']), '/') . '\b(?!-)/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+        else {
+            $first = explode(' ', $n)[0];
+            $shared = count(array_filter($centres, static fn($o) => explode(' ', mb_strtolower($o['name']))[0] === $first));
+            if ($first !== $n && mb_strlen($first) >= 4 && $shared === 1 && preg_match('/\b(?:at|in|for|from)\s+' . preg_quote($first, '/') . '\b/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+            else {
+                $k = count(preg_split('/\s+/u', $n)); $room = ids_plan_typo_room($n);
+                if ($room > 0) for ($i = 0; $i + $k <= count($words); $i++) {
+                    $w = implode(' ', array_slice($words, $i, $k));
+                    if (mb_strlen($w) >= 4 && levenshtein($w, $n) <= $room && preg_match('/(?<![\p{L}])' . preg_quote($w, '/') . '/u', $t, $m, PREG_OFFSET_CAPTURE)) { $at = $m[0][1]; break; }
+                }
+            }
+        }
+        if ($at >= 0) $found[$c['name']] = $at;
+    }
+    // A longer name wins over a shorter one inside it ("Yaba Hub" over "Yaba").
+    foreach (array_keys($found) as $a) foreach (array_keys($found) as $b)
+        if ($a !== $b && isset($found[$a], $found[$b]) && str_contains(mb_strtolower($b), mb_strtolower($a)) && abs($found[$a] - $found[$b]) <= mb_strlen($b)) unset($found[$a]);
+    asort($found);
+    return array_keys($found);
 }
 
 /** A centre in free text: its name (or a near spelling of it), or its code after "at/in/for/from". */
@@ -757,6 +813,11 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     /* People to leave out, and people to add, are read from their own clause,
        so "except 026-002" never puts 026-002 on the sheet. "without a card",
        "without crop marks" and "no centre" are not exclusions. */
+    /* "Except those already printed" is not a person to leave out: it is the
+       people still waiting for a card. Read before the exclusion clause. */
+    $waitRe = '/\b(?:except|but not|excluding|other than|apart from|not)\s+(?:for\s+)?(?:those|the ones|people|anyone|anybody|everyone|ones)?\s*(?:who|that)?\s*(?:are|is|have|has|\'ve)?\s*(?:already|been)?\s*(?:been\s+)?(?:printed|carded|with (?:a\s+)?cards?|got (?:a\s+)?cards?|have (?:a\s+)?cards?)\b/iu';
+    $waiting = (bool)preg_match($waitRe, $prompt);
+    if ($waiting) $prompt = trim((string)preg_replace($waitRe, ' ', $prompt));
     $main = $prompt;
     $exClause = '';
     if (preg_match(IDS_PLAN_EXCLUDE_RE, $prompt, $m, PREG_OFFSET_CAPTURE) && !preg_match('/^\s*(?:the\s+|a\s+|any\s+)?(cards?|crop|cut|trim|backs?|cent(re|er)s?|marks?|proofs?|draft|limit|dates?|filter)\b/iu', $m[1][0])) {
@@ -790,16 +851,40 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if ($exClause !== '') { $ex = array_filter(['ids' => ids_plan_find_ids($exClause), 'names' => ids_plan_find_names($exClause, $centres)]); if ($ex) $p['exclude'] = $ex; }
     if ($addClause !== '') { $ad = array_filter(['ids' => ids_plan_find_ids($addClause), 'names' => ids_plan_find_names($addClause, $centres)]); if ($ad) $p['also'] = $ad; }
 
-    if (preg_match('/\b(summer|participants?|campers?)\b/u', $mt)) $p['kind'] = 'summer';
+    /* Two kinds or more ("volunteers and members"): the kinds not named are
+       the ones left out, so both lists come. */
+    $named = [];
+    foreach (['summer' => '/\b(summer|participants?|campers?)\b/u', 'volunteer' => '/\b(volunteers?|mentors?|instructors?)\b/u',
+              'afrovanguard' => '/\b(afrovanguard|vanguard|ngv)\b/u', 'member' => '/\b(members?|ngg)\b/u'] as $k => $re)
+        if (preg_match($re, $mt, $km2, PREG_OFFSET_CAPTURE)) $named[$k] = $km2[0][1];
+    if (count($named) >= 2 && empty($p['notKinds']) && preg_match('/\b(?:and|&|plus|together|both)\b/u', $mt) && !preg_match('/\bsummer\s+(?:school\s+)?members?\b|\bngg\s+members?\b/u', $mt)) {
+        $p['notKinds'] = array_values(array_diff(IDS_PLAN_KINDS, array_keys($named)));
+    }
+    if (count($named) >= 2 && isset($p['notKinds']) && count($p['notKinds']) === count(IDS_PLAN_KINDS) - count($named)) { /* both lists: no single kind */ }
+    elseif (preg_match('/\b(summer|participants?|campers?)\b/u', $mt)) $p['kind'] = 'summer';
     elseif (preg_match('/\b(volunteers?|mentors?|instructors?|staff)\b/u', $mt)) $p['kind'] = 'volunteer';
     elseif (preg_match('/\b(afrovanguard|vanguard|ngv)\b/u', $mt)) $p['kind'] = 'afrovanguard';
     elseif (preg_match('/\b(members?|ngg|kids|children|students?)\b/u', $mt)) $p['kind'] = 'member';
-    if (($c = ids_plan_find_centre($mt, $centres)) !== null) $p['centre'] = $c;
+    $cs = ids_plan_find_centres($mt, $centres);
+    if (count($cs) > 1 && !in_array(IDS_PLAN_NONE, $cs, true)) $p['centres'] = $cs;
+    elseif ($cs) $p['centre'] = $cs[0];
+    $stillNeeds = '/\b(?:still\s+)?needs?\s+(?:a\s+|their\s+)?cards?\b|\b(?:don.?t|do not|doesn.?t|does not)\s+have\s+(?:a\s+)?cards?\b|\bwaiting (?:for|on) (?:a\s+|their\s+)?cards?\b|\bno cards? yet\b|\bnot (?:yet\s+)?(?:been\s+)?printed\b|\bhaven.?t been printed\b|\bnot carded\b/u';
     if (preg_match('/\b(reprints?|re-?print|replace(ment)?s?|lost|damaged|stolen)\b/u', $mt)) $p['which'] = 'reprint';
-    elseif (preg_match('/\b(new|first time|never had|haven.?t had|without a card)\b/u', $mt)) $p['which'] = 'new';
+    elseif ($waiting || preg_match($stillNeeds, $mt) || preg_match('/\b(new|first time|never had|haven.?t had|without a card)\b/u', $mt)) $p['which'] = 'new';
     elseif (preg_match('/\b(everyone|everybody|all of them|whole (list|queue)|all waiting)\b/u', $mt)) $p['which'] = 'all';
     $ids = ids_plan_find_ids($main);
+    /* "026-001 to 026-040" is the forty between, not two people: a range on
+       the printed number, kept to that prefix (2026's, not every year's). */
+    if (preg_match('/\b(\d{3}|[a-z]{2,4}-\d{2})-(\d{3,4})\s*(?:-|–|—|to|through|thru|until|till)\s*(?:\1-)?(\d{3,4})\b/iu', $main, $rg)) {
+        $p['numFrom'] = (int)$rg[2]; $p['numTo'] = (int)$rg[3]; $p['numPrefix'] = strtoupper($rg[1]);
+        $ids = array_values(array_diff($ids, [strtoupper($rg[1] . '-' . $rg[2]), strtoupper($rg[1] . '-' . $rg[3])]));
+        if (preg_match('/^\d{3}$/', $rg[1]) && !isset($p['kind']) && empty($p['notKinds'])) $p['kind'] = 'member';
+    }
     if ($ids) $p['ids'] = $ids;
+    /* Photos on file, as a filter: "without a photo", "only the ones with photos". */
+    $picW = '(?:photos?|pictures?|pics?|headshots?|passport(?:s| photos?)?)';
+    if (preg_match('/\b(?:without|no|missing|lacking|need(?:s|ing)?)\s+(?:a\s+|any\s+|their\s+)?' . $picW . '\b|\b' . $picW . '\s+(?:missing|not uploaded|not in)\b|\b(?:haven.?t|hasn.?t|don.?t|doesn.?t)\s+(?:got\s+|have\s+)?(?:a\s+|any\s+)?' . $picW . '\b/u', $mt)) $p['hasPhoto'] = false;
+    elseif (preg_match('/\b(?:with|has|have|having|got)\s+(?:a\s+|their\s+)?' . $picW . '\b(?!\s+(?:edit|fix|improv))/u', $mt) && !preg_match('/\b(?:improve|fix|brighten|sharpen|remove|background)\b/u', $mt)) $p['hasPhoto'] = true;
     /* People named in the request itself ("print these: 1. Agbalaya Habeebat
        2. Idi Oluwadarasimi"). Two words at least: a capital at the start of a
        sentence ("Front and back") is not a person. */
@@ -838,7 +923,7 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if (preg_match('/\b(?:to|until|till)\s+(\d{4}-\d{2}-\d{2})\b/u', $mt, $r)) $p['dateTo'] = $r[1];
 
     if (preg_match('/\bshort[- ]edge\b/u', $t)) $p['backs'] = 'short';
-    elseif (preg_match('/\b(double[- ]sided|two[- ]sided|both sides|front and back|fronts and backs|duplex|with (the )?backs?|long[- ]edge)\b/u', $t)) $p['backs'] = 'long';
+    elseif (preg_match('/\b(double[- ]sided|two[- ]sided|both sides|front and back|fronts and backs|duplex|with (the )?backs?|long[- ]edge|backs? (too|as well)|and (the )?backs?|print (the )?backs?|include (the )?backs?)\b/u', $t)) $p['backs'] = 'long';
     elseif (preg_match('/\b(fronts? only|only (the )?fronts?|single[- ]sided|one[- ]sided|no backs?|without (the )?backs?)\b/u', $t)) $p['backs'] = 'off';
     if (preg_match('/\b(no|without)\s+(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = false;
     elseif (preg_match('/\b(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = true;
@@ -862,7 +947,7 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if (preg_match('/\bskip\s+(?:the\s+)?(?:first\s+)?(\d{1,2})\b/u', $t, $r) || preg_match('/\b(\d{1,2})\s+(?:slots?|spaces?|cards?)\s+(?:are\s+)?(?:already\s+)?used\b/u', $t, $r)) $p['skip'] = (int)$r[1];
     elseif (preg_match('/\b(?:fresh|new|full|unused)\s+sheet of (?:card )?stock\b|\bdon.?t skip\b|\bno skipp?ing\b/u', $t)) $p['skip'] = 0;
     if (preg_match('/\b(?:don.?t|do not|no need to)\s+(?:split|separate|break)\b|\b(?:share|mix)\s+(?:the\s+)?sheets?\b|\bone pile\b/u', $t)) $p['breakBy'] = false;
-    elseif (preg_match('/\b(?:new|own|separate|fresh)\s+sheets?\s+(?:for|per)\s+(?:each\s+|every\s+)?(?:centre|center|kind|group)\b|\bkeep (?:the )?(?:centres|piles) apart\b/u', $t)) $p['breakBy'] = true;
+    elseif (preg_match('/\b(?:new|own|separate|fresh|one|a)\s+sheets?\s+(?:for|per)\s+(?:each\s+|every\s+)?(?:centre|center|kind|group)\b|\bkeep (?:the )?(?:centres|piles) apart\b|\bsheets? (?:per|by) (?:centre|center)\b/u', $t)) $p['breakBy'] = true;
     if (preg_match('/\b(?:no|without(?: a)?)\s+packing list\b/u', $t)) $p['packing'] = false;
     elseif (preg_match('/\bpacking list\b/u', $t)) $p['packing'] = true;
     // Why a reprint, in so many words. Never inferred from "new".
@@ -878,7 +963,7 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     $bgRe = '/\b(?:remove|take (?:off|out)|cut (?:out)?|clear|change|replace|plain|grey|gray|white|clean)\b[^.?!;]*\b(?:bg|bgs|backgrounds?|backdrops?)\b|\b(?:bg|backgrounds?)\b[^.?!;]*\b(?:remov\w*|off|plain|grey|gray|white)\b/u';
     $impRe = '/\b(?:improve|enhance|clean(?:\s|-)?up|fix|touch(?:\s|-)?up|retouch|brighten|sharpen|better)\b[^.?!;]*\b' . $pic . '\b/u';
     $posRe = '/\b(?:position|reposition|move|centre|center|align|frame|reframe|crop|zoom|straighten|fit|adjust)\w*\b[^.?!;]*\b' . $pic . '\b|\b' . $pic . '\b[^.?!;]*\b(?:position|centred|centered|too (?:small|big|low|high)|off[- ]centre|off[- ]center)\b/u';
-    $askRe = '/\b(?:ask|chase|request|remind|nudge)\b[^.?!;]*\b' . $pic . '\b|\b(?:the ones|people|those|anyone|everyone) (?:with(?:out)?|who (?:have|has)n.?t (?:got )?)\s*(?:no |a |any )?' . $pic . '\b[^.?!;]*\bask\b/u';
+    $askRe = '/\b(?:ask|chase|request|remind|nudge)\b[^.?!;]*\b' . $pic . '\b|\b(?:the ones|people|those|anyone|everyone) (?:with(?:out)?|who (?:have|has)n.?t (?:got )?)\s*(?:no |a |any )?' . $pic . '\b[^.?!;]*\bask\b|\b(?:without|no|missing)\s+(?:a\s+|any\s+)?' . $pic . '\b[^.?!]*\b(?:ask|chase|remind|nudge)\s+(?:them|those|the parents|their parents|for one)\b/u';
     $cand = ['clear' => $at('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u'),
              'improvePhotos' => max($at($impRe), $at($bgRe)) >= 0 ? min(array_filter([$at($impRe), $at($bgRe)], static fn($x) => $x >= 0)) : -1,
              'adjustPhoto' => $at($posRe),
@@ -901,6 +986,11 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if ($photo && $acts) $p['photo'] = $photo;
     $nw = implode('|', array_map(fn($w) => preg_quote($w, '/'), array_keys(IDS_PLAN_NUMBER_WORDS)));
     if (!preg_match('/\bskip\b/u', $mt) && preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
+    // "The last 20 who joined", "the 10 newest": the most recent first, then the limit.
+    elseif (preg_match('/\b(?:last|latest|newest|most recent)\s+(\d{1,3}|' . $nw . ')\b(?!\s*(?:days?|weeks?|months?|years?)\b)|\b(\d{1,3}|' . $nw . ')\s+(?:newest|latest|most recent(?:ly)?(?:\s+joined)?)\b/u', $mt, $r)) {
+        $n = $r[1] !== '' ? $r[1] : $r[2];
+        $p['limit'] = is_numeric($n) ? (int)$n : IDS_PLAN_NUMBER_WORDS[$n]; $p['latest'] = true;
+    }
     return ids_plan_clean($p, $kinds, $centres)['plan'];
 }
 
@@ -925,6 +1015,9 @@ function ids_plan_is_refinement(string $prompt, array $current, array $read): bo
 function ids_plan_refine(array $current, array $read): array {
     $plan = $current;
     foreach (IDS_PLAN_SCALARS as $k) if (array_key_exists($k, $read)) $plan[$k] = $read[$k];
+    // One centre said now replaces several said before, and the other way round.
+    if (array_key_exists('centre', $read)) unset($plan['centres']);
+    if (array_key_exists('centres', $read)) unset($plan['centre']);
     if (!empty($read['kindOf'])) $plan['kindOf'] = array_merge($plan['kindOf'] ?? [], $read['kindOf']);
     // An act belongs to this request only; it is never carried into the plan on screen.
     unset($plan['do'], $plan['acts'], $plan['photo']);
@@ -957,14 +1050,16 @@ function ids_plan_instructions(array $kinds, array $centres, string $today, arra
         . "Fields (include ONLY what the request says or clearly implies; omit everything else):\n"
         . "kind: one of the kinds above.\n"
         . "centre: a centre name from the list, or \"none\" for people with no centre.\n"
+        . "centres: a list of centre names, when the request names two or more (\"Ijaiye and Ikorodu\"); then leave centre out.\n"
+        . "hasPhoto: false for people with no photo on file (\"without a photo\"), true for only those with one; leave out otherwise.\n"
         . "which: \"new\" (never had a card), \"reprint\" (replacing a card they have), or \"all\".\n"
         . "ids: printed card numbers or record ids to print, e.g. \"026-014\", \"EG-26-001\".\n"
         . "names: people's names to print (only names, as written).\n"
         . "also: {ids, names} people to add on top of the selection.\n"
         . "exclude: {ids, names} people to leave out (\"except…\", \"not…\").\n"
         . "dateFrom, dateTo: YYYY-MM-DD, for when they registered or joined (\"last week\", \"since Monday\", \"in October\").\n"
-        . "numFrom, numTo: integers, for a block of card numbers (\"cards 40 to 80\").\n"
-        . "limit: integer, at most this many cards (\"the first ten\").\n"
+        . "numFrom, numTo: integers, for a block of card numbers (\"cards 40 to 80\"). numPrefix: when the block is written as two printed IDs (\"026-001 to 026-040\"), their shared prefix (\"026\"), with numFrom 1 and numTo 40.\n"
+        . "limit: integer, at most this many cards (\"the first ten\"). latest: true when they want the most recent ones (\"the last 20 who joined\", \"the 10 newest\").\n"
         . "backs: \"off\" (fronts only), \"long\" (double-sided, long edge, the usual), \"short\" (short edge).\n"
         . "marks: true/false for crop marks.\n"
         . "paper: \"a4\", \"letter\" or \"a3\".\n"
