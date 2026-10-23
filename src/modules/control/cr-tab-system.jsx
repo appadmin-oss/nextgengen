@@ -45,6 +45,9 @@ function crSyMediaBlocks(m, ctx) {
              act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
   out.push({ type: "note", span: 6, icon: "images", text: "Store edited photos as plain images: a photo kept as an edit is edited again at every size a card or page needs. Stored once, it costs one transformation per size instead.",
              act: { l: "Store edited photos…", run: () => crSyPhotoMaterialise(ctx) } });
+  out.push({ type: "note", span: 6, icon: "arrows-left-right", text: "Move photos off a spent account: switching accounts only moves new uploads. A photo already on a full account still spends its credits every time a card or page shows it.",
+             sub: "Each photo is copied once to the account uploads go to now; the old file stays, so shared links keep working.",
+             act: { l: "Move photos…", run: () => crSyPhotoRelocate(ctx) } });
   return out;
 }
 /* ══ Several Cloudinary accounts (media-storage.php) ═════════════════════════
@@ -170,6 +173,20 @@ function crSyMediaPurge(ctx) {
 
 /* Edited photos still kept as a Cloudinary edit chain cost again at every size
    and format a page asks for. This stores each one once as a plain image. */
+/* Photos already on a spent account keep spending it every time they are shown: move them. */
+async function crSyPhotoRelocate(ctx) {
+  try {
+    const d = await NGGApi.admin.photos.relocate(true);
+    if (!d.from || !d.from.length) return ctx.toast("No account is past 70%: every photo can stay where it is.");
+    if (!d.onSpent) return ctx.toast("No photo on file is on " + d.from.join(" or ") + " any more.");
+    const ok = await ctx.confirm({ title: "Move " + crPlural(d.onSpent, "photo") + " to " + d.to + "?", cta: "Move them",
+      body: "They are on " + d.from.join(" and ") + ", which goes on spending credits every time a card or page shows them. Each is copied once, as it looks now, and the record points at the copy; the old file stays, so links already shared keep working. Up to 40 go per press." });
+    if (!ok) return;
+    const r = await NGGApi.admin.photos.relocate(false);
+    ctx.toast("Moved " + crPlural(r.moved, "photo") + " to " + r.to + (r.failed ? ", " + crNum(r.failed) + " couldn’t be copied" : "") + (r.remaining ? " — " + crNum(r.remaining) + " left, press again" : "") + ".", null, !!r.failed);
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t move the photos."), null, true); }
+}
 async function crSyPhotoMaterialise(ctx) {
   try {
     const d = await NGGApi.admin.photos.materialise(true);

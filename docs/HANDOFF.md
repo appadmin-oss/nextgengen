@@ -2546,3 +2546,7 @@ owner reported while it ran.
   - `cloudinary_pin` names an account chosen in the account drawer ("Use for new uploads now" / "Back to automatic", op `admin.media.account`, settings cap). It is honoured until that account is full.
   - A passing backup key test reads usage at once.
 - **Tests:** 10 more checks in `api/tests/run.php`.
+- **Follow-up ("the main account was over 200% and it still didn't work").** Two causes.
+  1. `media_usage_refresh_one` kept the last reading whenever `/usage` itself was refused. A stopped account answers 401/403/400 with "disabled"/"limit", so the last reading — possibly *ok* — was kept and uploads stayed on it. Such a refusal (matched by `media_refusal_is_quota`) is now `critical`.
+  2. Photos already on the spent account kept spending it on every view. New op `admin.photos.relocate` (settings cap; dryRun; 40 a press; fixed `moved_<md5>` name with overwrite off, so no duplicates) copies record photos off accounts at `warn` or above to the live account. It updates `photo_assets` first, then the record, as materialise does. Wired to Diagnostics → Image storage → **Move photos…**.
+  - Tests: 9 more PHP checks and 1 Control Room check.

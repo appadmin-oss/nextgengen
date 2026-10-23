@@ -35,6 +35,7 @@ if ($method === 'GET') {
     elseif ($action === 'edit')    $res = gs_call('admin.photo.edit', ['requesterId' => $s['mid'], 'ip' => $ip, 'assetId' => $b['assetId'] ?? '', 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'spec' => $b['spec'] ?? []]);
     elseif ($action === 'secure')  $res = gs_call('admin.photos.secure', ['requesterId' => $s['mid'], 'ip' => $ip]);
     elseif ($action === 'materialise') $res = gs_call('admin.photos.materialise', ['requesterId' => $s['mid'], 'ip' => $ip, 'dryRun' => !empty($b['dryRun'])]);
+    elseif ($action === 'relocate') $res = gs_call('admin.photos.relocate', ['requesterId' => $s['mid'], 'ip' => $ip, 'dryRun' => !empty($b['dryRun']), 'from' => (string)($b['from'] ?? '')]);
     elseif ($action === 'edit_bulk') $res = gs_call('admin.photo.edit.bulk', ['requesterId' => $s['mid'], 'ip' => $ip, 'items' => $b['items'] ?? [], 'spec' => $b['spec'] ?? []]);
     elseif ($action === 'request_missing') $res = gs_call('admin.photos.requestMissing', ['requesterId' => $s['mid'], 'ip' => $ip,
         'limit' => $b['limit'] ?? 50, 'quietDays' => $b['quietDays'] ?? 3]);

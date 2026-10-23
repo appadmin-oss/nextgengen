@@ -1459,6 +1459,59 @@ function photo_materialise(string $url): string {
 
 /** Photos still on a record as an edit chain (they cost again at every size): how many, and convert a batch. */
 const PHOTO_MATERIALISE_BATCH = 50;
+/**
+ * admin.photos.relocate — move the photos on file off a Cloudinary account that
+ * is past 70% (or one named by `from`), to the account uploads go to now.
+ *
+ * Switching accounts only moves NEW uploads. Every photo already on the spent
+ * account keeps costing it each time a page or card shows it (bandwidth, and a
+ * transformation per new size), which is how an account goes on climbing past
+ * 100% after the switch. Each photo is copied once, as it looks now (its edit
+ * baked in), under a fixed name so a second press never stores it twice, and
+ * the record then points at the copy. The old file is left where it is: links
+ * already printed or cached keep working. A batch at a time; dryRun counts.
+ */
+const PHOTO_RELOCATE_BATCH = 40;
+function admin_photos_relocate(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $to = media_active_id();
+    $toAcc = media_account($to);
+    if (!$toAcc) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    $from = [];
+    foreach (media_accounts() as $a) {
+        if ($a['id'] === $to) continue;
+        $lv = (string)(media_usage_state($a['id'])['level'] ?? 'ok');
+        if (($p['from'] ?? '') !== '' ? $a['id'] === (string)$p['from'] : MEDIA_LEVEL_ORDER[$lv] >= MEDIA_LEVEL_ORDER['warn']) $from[strtolower($a['cloud_name'])] = $a['label'];
+    }
+    if (!$from) return ['ok' => true, 'onSpent' => 0, 'moved' => 0, 'failed' => 0, 'remaining' => 0, 'to' => $toAcc['label'], 'from' => []];
+    $todo = [];
+    foreach (['member' => ['members', 'memberId'], 'volunteer' => ['volunteers', 'volunteerId'], 'student' => ['summer_students', 'studentId']] as $t => [$tbl, $key]) {
+        foreach (db_all("SELECT {$key} AS id, photoUrl FROM {$tbl} WHERE photoUrl LIKE 'https://res.cloudinary.com/%'") as $r) {
+            $u = (string)$r['photoUrl'];
+            if (isset($from[strtolower(media_cloud_of($u))])) $todo[] = [$t, (string)$r['id'], $u];
+        }
+    }
+    $out = ['ok' => true, 'onSpent' => count($todo), 'moved' => 0, 'failed' => 0, 'remaining' => count($todo), 'to' => $toAcc['label'], 'from' => array_values($from)];
+    if (!empty($p['dryRun']) || !$todo) return $out;
+    $limit = max(1, min(PHOTO_RELOCATE_BATCH, (int)($p['limit'] ?? PHOTO_RELOCATE_BATCH)));
+    $who = (string)$g['requester']['memberId'];
+    foreach (array_slice($todo, 0, $limit) as [$t, $id, $u]) {
+        $up = cloudinary_upload_signed($u, 'moved_' . md5($u));
+        $m = !empty($up['ok']) ? (string)$up['url'] : '';
+        if ($m === '' || isset($from[strtolower(media_cloud_of($m))])) { $out['failed']++; continue; }
+        // The asset row first, so replacing the record's photo keeps it live (as admin_photos_materialise does).
+        $n = db_exec('UPDATE photo_assets SET editedUrl = ?, updatedAt = ? WHERE subjectType = ? AND subjectId = ? AND editedUrl = ?', [$m, now_iso(), $t, $id, $u]);
+        if (!$n && !db_row("SELECT 1 FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND editedUrl = ? LIMIT 1", [$t, $id, $m])) {
+            photo_asset_record($t, $id, cloudinary_base($u), $m, photo_chain_of($u), $who);
+        }
+        photo_set_subject($t, $id, $m, $who);
+        $out['moved']++;
+    }
+    $out['remaining'] = count($todo) - $out['moved'];
+    audit('photo.relocate', $who, 'photos', ['to' => $to, 'from' => array_keys($from), 'moved' => $out['moved'], 'failed' => $out['failed'], 'remaining' => $out['remaining']], (string)($p['ip'] ?? ''));
+    return $out;
+}
+
 function admin_photos_materialise(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $limit = max(1, min(PHOTO_MATERIALISE_BATCH, (int)($p['limit'] ?? PHOTO_MATERIALISE_BATCH)));

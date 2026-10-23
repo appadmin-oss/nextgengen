@@ -2688,3 +2688,8 @@ Settings → API keys → Photos → **Cloudinary · backup account** takes a se
 - **When the main account renews** (back under 70%), work moves back to it with another email.
 - **You can choose.** Settings → Diagnostics → Image storage → **Cloudinary accounts**: open an account and press **Use for new uploads now**. The choice holds (even past 70%) until you press **Back to automatic**; only a full account is still skipped, so uploads never stop.
 - **What a backup can't save:** photos already stored on the main account still use its bandwidth every time a page shows them. Only new photos, and photos edited again, move to the backup.
+- **Move photos off a spent account.** Switching accounts only moves *new* uploads. Every photo already on a full account keeps spending its credits each time a card or page shows it, which is how an account keeps climbing past 100% after the switch.
+  - Settings → Diagnostics → Image storage → **Move photos…** first says how many photos are on accounts past 70%, then copies them (up to 40 per press) to the account uploads go to now.
+  - Each photo is copied once, as it looks now. The old file stays, so links already shared keep working.
+  - Press it again until nothing is left.
+- **An account Cloudinary has stopped** ("account disabled", over its limits) now counts as full when its usage is read, instead of keeping its last reading.

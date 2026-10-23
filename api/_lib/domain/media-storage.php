@@ -154,6 +154,12 @@ function media_usage_refresh_one(array $acc, bool $force): array {
         $pcts = array_values(array_filter(array_map(static fn($p) => $p['pct'], $state['parts']), static fn($v) => $v !== null));
         $state['pct'] = $pcts ? max($pcts) : null;
         $state['level'] = media_level_for($state['pct']);
+    } elseif ($code >= 400 && media_refusal_is_quota($code, $msg = (string)(is_array($r['body'] ?? null) ? ($r['body']['error']['message'] ?? '') : ''))) {
+        /* An account Cloudinary has stopped for going over its plan answers the usage
+           request itself with a refusal ("account disabled", "over the limit"). That is
+           as full as an account gets — not "unknown, keep the last reading" (which
+           could be "fine" and kept every upload on it). */
+        $state['pct'] = 100.0; $state['level'] = 'critical'; $state['error'] = 'Cloudinary refused the request (HTTP ' . $code . '): ' . $msg;
     } else {
         // Unreachable or refused credentials: keep the last known level, say what happened.
         $state = ['checkedAt' => gmdate('c'), 'error' => 'Could not read Cloudinary usage (HTTP ' . $code . ').'] + $prev;
