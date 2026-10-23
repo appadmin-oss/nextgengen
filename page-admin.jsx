@@ -1233,13 +1233,19 @@ function AdminMembers() {
      to null first is what made every page turn and every sort flash the table
      away — which reads as the data going missing, on the screen where that is
      the most alarming thing it could read as. */
+  /* Only the LATEST request may draw. Typing "amina" sends a request per
+     pause, and the answers can come back in any order: without this, a slow
+     answer for "am" landing after the one for "amina" put the wrong roster
+     under the right search. */
+  const loadSeq = React.useRef(0);
   const load = React.useCallback((p, so, f) => {
     const pg = p || page, s0 = so || sort, ff = f || filters;
+    const n = ++loadSeq.current;
     setErr(""); setRefreshing(true);
     return NGGApi.admin.members.list(Object.assign({}, ff, { page: pg, pageSize: meta.pageSize, sort: s0.col, dir: s0.dir }))
-      .then(r => { setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
-      .catch(e => setErr(e.code || e.message || "load_failed"))
-      .finally(() => setRefreshing(false));
+      .then(r => { if (n !== loadSeq.current) return; setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
+      .catch(e => { if (n === loadSeq.current) setErr(e.code || e.message || "load_failed"); })
+      .finally(() => { if (n === loadSeq.current) setRefreshing(false); });
     // eslint-disable-next-line
   }, [page, sort, filters, meta.pageSize]);
   /* Dashboard first. Opening the section on a 50-row page of a roster
@@ -1366,7 +1372,7 @@ function AdminMembers() {
         </div>
       )}
       <div className="admin-filters admin-filters-6">
-        <input className="admin-input" placeholder="Search name, ID, email…" aria-label="Search members by name, member id or email"
+        <input className="admin-input" type="search" placeholder="Search name, ID, email or phone…" aria-label="Search members by name, printed ID, email or phone"
           value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" aria-label="Filter by centre" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
           <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}

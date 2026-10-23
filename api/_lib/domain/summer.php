@@ -454,8 +454,10 @@ function admin_summer_students_list(array $p): array {
     $c = summer_ensure_cohort();
     $cohortId = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
     $where = ['cohortId = ?']; $params = [$cohortId];
-    $q = strtolower((string)($p['q'] ?? ''));
-    if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
+    /* The printed ID (EG-26-001) as well as the internal one: it is what the
+       roster's ID column shows and what is on the lanyard. */
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'handle', 'studentId']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT ' . ROSTER_SCAN_MAX, $params);
     $total = count($rows);
 

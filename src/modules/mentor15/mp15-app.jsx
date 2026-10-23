@@ -1310,10 +1310,10 @@ function Mp15Projects({ act, today }) {
             {F.groups.length < d.max.groups && <span className="mpj-addg"><input aria-label="New group name" placeholder="e.g. Team Kola" value={F.newGroup} maxLength={40} onChange={e => setF({ newGroup: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGroup(); } }}/><button type="button" className="grw-btn" onClick={addGroup}>Add group</button></span>}
           </fieldset>
           <fieldset className="mpj-who"><legend>Who is on it <small aria-live="polite">{n} chosen · {d.max.people} at most</small></legend>
-            <div className="mpj-search" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input type="search" aria-label="Find a person" placeholder="Find a person" value={F.q} onChange={e => setF({ q: e.target.value })}/></div>
+            <div className="mpj-search" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input type="search" aria-label="Find a person" placeholder="Find a person" value={F.q} onChange={e => setF({ q: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); /* Enter here finds; it must not submit (and publish) the project around it */ }}/></div>
             {mentors.length > 0 && <><h5>Mentors</h5><ul className="mpj-list">{mentors.map(x => row(x, 'mentor'))}</ul></>}
             <h5>Children</h5>
-            {kids.length ? <ul className="mpj-list">{kids.map(x => row(x, 'member', x.mentee ? 'Your mentee' : ''))}</ul> : <p className="grw-note">{q ? 'Nobody called “' + F.q + '”.' : 'No children you can assign yet.'}</p>}
+            {kids.length ? <ul className="mpj-list">{kids.map(x => row(x, 'member', x.mentee ? 'Your mentee' : ''))}</ul> : <p className="grw-note">{q ? 'Nobody called “' + F.q.trim() + '”.' : 'No children you can assign yet.'}</p>}
           </fieldset>
           <div className="mpj-acts">
             <button type="submit" className="mpj-go" disabled={!ok} title={ok ? undefined : 'A name, a finish date and at least one person'}>{busy ? 'Saving…' : F.projectId ? 'Save' : 'Set the project'}</button>

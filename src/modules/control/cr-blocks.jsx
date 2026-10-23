@@ -377,7 +377,11 @@ function CrTable({ b, ctx, phone }) {
   const [sort, setSort] = React.useState(b.sortInit || null);
   const [page, setPage] = React.useState(0);
   const [sel, setSel] = React.useState({});
-  const [srv, setSrv] = React.useState({ state: server ? "loading" : "ready", rows: [], total: 0, error: null });
+  /* `loaded`: an answer has come back at least once. Only the FIRST load draws
+     the skeleton. Keying it on "no rows yet" swapped the whole table, search
+     box included, for a skeleton on the keystroke after a search that found
+     nobody — the field under the cursor vanished and focus fell to the page. */
+  const [srv, setSrv] = React.useState({ state: server ? "loading" : "ready", rows: [], total: 0, error: null, loaded: false });
   const selectable = !b.nosel && !!(b.bulk && b.bulk.length);
   React.useEffect(() => { const t = setTimeout(() => setQ(qLive), server ? 300 : 0); return () => clearTimeout(t); }, [qLive]);
   React.useEffect(() => { setPage(0); }, [q, JSON.stringify(fv), JSON.stringify(sort)]);
@@ -385,9 +389,9 @@ function CrTable({ b, ctx, phone }) {
   const loadServer = React.useCallback(() => {
     if (!server) return;
     const n = ++seq.current;
-    setSrv(s => Object.assign({}, s, { state: s.rows.length ? "refresh" : "loading", error: null }));
+    setSrv(s => Object.assign({}, s, { state: s.loaded ? "refresh" : "loading", error: null }));
     server.fetch({ q: q.trim(), filters: fv, sort, page, pageSize: CR_PAGE_SIZE })
-      .then(r => { if (n === seq.current) setSrv({ state: "ready", rows: r.rows || [], total: r.total || 0, error: null }); },
+      .then(r => { if (n === seq.current) setSrv({ state: "ready", rows: r.rows || [], total: r.total || 0, error: null, loaded: true }); },
             e => { if (n === seq.current) setSrv(s => Object.assign({}, s, { state: "error", error: e })); });
   }, [server, q, JSON.stringify(fv), JSON.stringify(sort), page]);
   React.useEffect(() => { loadServer(); }, [loadServer]);
@@ -432,7 +436,11 @@ function CrTable({ b, ctx, phone }) {
   const setFilter = (c, v) => { setFv(s => Object.assign({}, s, { [c.id]: s[c.id] === v ? "" : v })); setFopen(null); };
 
   if (server && srv.state === "loading") return <CrSkeleton phone={phone}/>;
-  if (server && srv.state === "error" && !srv.rows.length) return <CrError error={srv.error} onRetry={loadServer} what="this list"/>;
+  if (server && srv.state === "error" && !srv.loaded) return <CrError error={srv.error} onRetry={loadServer} what="this list"/>;
+  /* A search or page that failed after the list had loaded keeps the toolbar
+     (and what was typed) and says so, with a retry, above the rows it had. */
+  const srvErr = server && srv.state === "error" && srv.loaded
+    ? <div className="cr-tfail" role="alert"><CrIcon n="warning-circle"/><span>{crErr(srv.error, "Couldn’t load this list.")}</span><button type="button" className="cr-btn is-sm" onClick={loadServer}>Try again</button></div> : null;
 
   if (phone) {
     const st = x => x.r.cells.find(c => c && c.k === "status");
@@ -447,6 +455,7 @@ function CrTable({ b, ctx, phone }) {
         )}
         {filterOpts && <div className="cr-pbox" role="group" aria-label={"Filter by " + filterOpts.l}>{filterOpts.opts.map(o => <button key={o.v} type="button" className="cr-popt" aria-pressed={fv[filterOpts.id] === o.v} onClick={() => setFilter(filterOpts, o.v)}><span>{o.l}</span>{o.n != null && <em>{crNum(o.n)}</em>}{fv[filterOpts.id] === o.v && <CrIcon n="check"/>}</button>)}</div>}
         <span className="cr-sr" role="status">{crPlural(total, "row")}</span>
+        {srvErr}
         {!view.length ? (
           <div className="cr-tempty" style={{ padding: "24px 12px", fontSize: 14 }}>{emptyText}{applied && <button type="button" className="cr-pbig is-ghost" style={{ height: 44, width: "auto", padding: "0 16px", fontSize: 14 }} onClick={clearAll}>Clear filters</button>}</div>
         ) : (
@@ -490,6 +499,7 @@ function CrTable({ b, ctx, phone }) {
           )}
         </div>
       )}
+      {srvErr}
       {filterOpts && (
         <div className="cr-fopts" role="group" aria-label={"Filter by " + filterOpts.l}>
           <span>{filterOpts.l}</span>

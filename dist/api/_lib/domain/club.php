@@ -46,11 +46,8 @@ const CLUB_BULK_STATUSES = ['active', 'graduated-ngg', 'inactive'];
 function admin_club_promotable(array $p): array {
     $g = admin_cap_gate($p, 'club'); if (!$g['ok']) return $g;
     $where = ["status IN ('active','graduated')"]; $params = [];
-    $q = strtolower(trim((string)($p['q'] ?? '')));
-    if ($q !== '') {
-        $where[] = '(lower(fullName) LIKE ? OR lower(studentId) LIKE ? OR lower(displayId) LIKE ?)';
-        $like = '%' . $q . '%'; array_push($params, $like, $like, $like);
-    }
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'studentId']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     foreach (['centre' => 'centre', 'track' => 'track', 'editionId' => 'cohortId', 'groupId' => 'groupId'] as $k => $col) {
         if (!empty($p[$k])) { $where[] = "$col = ?"; $params[] = (string)$p[$k]; }
     }
@@ -327,16 +324,14 @@ function admin_club_promote(array $p): array {
  */
 function admin_club_members(array $p): array {
     $g = admin_cap_gate($p, 'club'); if (!$g['ok']) return $g;
-    $q = strtolower(trim((string)($p['q'] ?? '')));
     $where = ["type = 'NGG'"]; $params = [];
     /* Absent ⇒ active, which is what this screen has always shown. An explicit
        'all' means every status; anything else is matched exactly. */
     $status = array_key_exists('status', $p) ? (string)$p['status'] : 'active';
     if ($status !== '' && $status !== 'all') { $where[] = 'status = ?'; $params[] = $status; }
-    if ($q !== '') {
-        $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)';
-        $like = '%' . $q . '%'; array_push($params, $like, $like, $like);
-    }
+    // The printed ID too: it is the number on the card and on every roster row.
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'memberId', 'email'], ['phone', 'parentPhone']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     if (!empty($p['centre'])) { $where[] = 'centre = ?'; $params[] = (string)$p['centre']; }
     if (!empty($p['track'])) { $where[] = 'lower(track) = ?'; $params[] = strtolower((string)$p['track']); }
     // A centre-scoped coordinator sees only their centres, same as the member desk.

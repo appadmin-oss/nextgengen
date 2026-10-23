@@ -927,7 +927,12 @@ function public_schools(array $p): array {
     $where = implode(' AND ', array_fill(0, count($words), 'nameKey LIKE ?'));
     $args = array_map(fn($w) => '%' . $w . '%', $words);
     $lga = trim((string)($p['lga'] ?? '')); $state = trim((string)($p['state'] ?? ''));
-    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where LIMIT 400", $args);
+    /* The schools that START with what was typed are chosen in SQL, before
+       the cap: the cap used to come first, so in a list of thousands the 400
+       rows ranked below were whichever the table happened to return, and
+       "st" or "ade" could miss every school whose name begins that way. */
+    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where
+                    ORDER BY CASE WHEN nameKey LIKE ? THEN 0 ELSE 1 END, nameKey LIMIT 400", array_merge($args, [$q . '%']));
     usort($rows, function ($a, $b) use ($q, $lga, $state) {
         $sa = (int)(strpos($a['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($a['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($a['state'], $state) === 0);
         $sb = (int)(strpos($b['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($b['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($b['state'], $state) === 0);

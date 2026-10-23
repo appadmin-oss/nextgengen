@@ -8691,6 +8691,9 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-c-wrap { white-space: normal; max-width: 360px; }
 .cr-tempty { padding: 36px; text-align: center; color: var(--cr-muted-3); font-size: 13.5px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .cr-tempty .cr-btn { height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; }
+/* A server table's refresh that failed: said above the rows it still shows, the toolbar kept. */
+.cr-tfail { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--cr-bad-bg); color: var(--cr-bad-fg); font-size: 13px; }
+.cr-tfail span { flex: 1; }
 .cr-tfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; font-size: 12.5px; color: var(--cr-muted-3); }
 .cr-pager { display: flex; gap: 6px; align-items: center; }
 .cr-pager button { width: 28px; height: 28px; border: 1px solid var(--cr-line-2); border-radius: var(--cr-r-sm); background: var(--cr-bg); display: inline-flex; align-items: center; justify-content: center; }

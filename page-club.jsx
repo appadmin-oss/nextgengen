@@ -40,9 +40,15 @@
 /** Does a haystack contain the needle? Case- and accent-insensitive, because
  *  "Ijaiye" is typed "ijaiye" and Yorùbá diacritics are typed without them. */
 function summerMatch(hay, needle) {
-  if (!needle) return true;
-  const norm = (v) => String(v || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  return norm(hay).indexOf(norm(needle)) !== -1;
+  /* Trimmed, and word by word. A trailing space — which a phone keyboard adds
+     after every suggested word — made "piano " match nothing, and a box
+     holding only spaces emptied every list under a heading that said "Every
+     centre". Each word must appear, in any order, so "coding ijaiye" works. */
+  const norm = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const words = norm(needle).trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const h = norm(hay);
+  return words.every(w => h.indexOf(w) !== -1);
 }
 
 /** "6 July – 14 August 2026", or as much of it as the edition actually has. */
@@ -118,16 +124,17 @@ function SummerPage({ setPage }) {
   // ── Discovery: what matches the search ──────────────────────────────────
   const centres = (disc && disc.centres) || [];
   const academies = (disc && disc.academies) || [];
+  /* One haystack per centre, so the words of "piano ijaiye" can be found in
+     different fields of the same centre. */
   const centreHits = React.useMemo(() => centres.filter(c =>
-    summerMatch(c.name, q) || summerMatch(c.area, q) || summerMatch(c.code, q)
-    || summerMatch(c.tagline, q) || (c.courses || []).some(x => summerMatch(x, q))
+    summerMatch([c.name, c.area, c.code, c.tagline].concat(c.courses || []).join(" "), q)
   ), [centres, q]);
   const academyHits = React.useMemo(() => academies
     .map(a => ({
       name: a.name,
       // Keep an academy when its NAME matches (all its courses are relevant)
       // or when only some courses do (show just those).
-      courses: summerMatch(a.name, q) ? a.courses : (a.courses || []).filter(c => summerMatch(c, q)),
+      courses: summerMatch(a.name, q) ? a.courses : (a.courses || []).filter(c => summerMatch(a.name + " " + c, q)),
     }))
     .filter(a => a.courses.length > 0), [academies, q]);
   /* Where a course is taught. The answer to "can my child learn piano near
@@ -141,7 +148,7 @@ function SummerPage({ setPage }) {
   const faculties = Array.from(new Set(roster.map(m => m.faculty).filter(Boolean)));
   const pool = roster
     .filter(m => track === "all" || m.faculty === track)
-    .filter(m => summerMatch(m.name || m.handle, q) || summerMatch(m.faculty, q) || summerMatch(m.centre, q));
+    .filter(m => summerMatch([m.name || m.handle, m.faculty, m.centre].join(" "), q));
   const filtered = (track === "all" && !q && !showAll) ? pool.slice(0, 8) : pool;
   const hiddenCount = pool.length - filtered.length;
   const maxStars = Math.max(1, ...roster.map(m => m.stars || 0));
@@ -235,8 +242,8 @@ function SummerPage({ setPage }) {
                     + academies.reduce((n, a) => n + a.courses.length, 0) + " courses"
                   : discErr ? "" : "loading…")
               : totalHits === 0
-                ? "Nothing matches “" + q + "”."
-                : totalHits + " match" + (totalHits === 1 ? "" : "es") + " for “" + q + "”"}
+                ? "Nothing matches “" + q.trim() + "”."
+                : totalHits + " match" + (totalHits === 1 ? "" : "es") + " for “" + q.trim() + "”"}
           </p>
 
           {discErr ? (

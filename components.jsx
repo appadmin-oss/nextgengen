@@ -3964,10 +3964,13 @@ function installNggSelect() {
   const render = () => {
     const { sel, list, input } = cur;
     const q = input ? input.value.trim().toLowerCase() : "";
+    // Every word typed, in any order: "college lagos" finds "Lagos State Model College".
+    const words = q.split(/\s+/).filter(Boolean);
+    const hit = text => { const t = String(text || "").toLowerCase(); return words.every(w => t.includes(w)); };
     list.textContent = "";
     cur.items = [];
     const add = (opt) => {
-      if (q && !opt.text.toLowerCase().includes(q)) return;
+      if (q && !hit(opt.text)) return;
       const b = document.createElement("button");
       b.type = "button"; b.className = "ngs-o" + (opt.value === "" ? " is-placeholder" : ""); b.setAttribute("role", "option");
       b.id = "ngs-o-" + cur.items.length;
@@ -3982,7 +3985,7 @@ function installNggSelect() {
     };
     for (const node of sel.children) {
       if (node.tagName === "OPTGROUP") {
-        const kids = [...node.children].filter(o => !q || o.text.toLowerCase().includes(q));
+        const kids = [...node.children].filter(o => !q || hit(o.text));
         if (!kids.length) continue;
         const g = document.createElement("span"); g.className = "ngs-g"; g.setAttribute("role", "presentation"); g.textContent = node.label; list.appendChild(g);
         kids.forEach(add);

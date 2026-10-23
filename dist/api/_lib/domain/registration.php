@@ -2338,20 +2338,14 @@ function admin_registrations_list(array $p): array {
      * calls: the child's name, the ID on the card, and the parent's own phone
      * or email. Matching only the child's name is why this was painful — the
      * caller is the parent, and their number is the thing being read out. */
-    $q = trim((string)($p['q'] ?? ''));
-    if ($q !== '') {
-        $like = '%' . strtolower($q) . '%';
-        // Digits only, so a number typed with spaces or a +234 prefix still finds
-        // a row stored in either shape.
-        $digits = preg_replace('/\D/', '', $q);
-        $terms = ['lower(fullName) LIKE ?', 'lower(studentId) LIKE ?', 'lower(parentEmail) LIKE ?', 'lower(guardianName) LIKE ?'];
-        array_push($args, $like, $like, $like, $like);
-        if ($digits !== '' && strlen($digits) >= 4) {
-            $terms[] = "replace(replace(replace(COALESCE(guardianPhone,''), ' ', ''), '-', ''), '+', '') LIKE ?";
-            $args[] = '%' . $digits . '%';
-        }
-        $where[] = '(' . implode(' OR ', $terms) . ')';
-    }
+    /* "The ID on the card" is the printed displayId (EG-26-001), which this
+     * did not search — only the internal studentId. And a number read off a
+     * form as 0803… never matched one stored as +234803…: the whole digit
+     * string was matched, so the leading 0 against the 234 missed. The tail
+     * is matched now (sql_text_search), the way the self-registration queue
+     * already did it. */
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'studentId', 'parentEmail', 'guardianName'], ['guardianPhone']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $args[] = $a; }
     $whereSql = implode(' AND ', $where);
 
     $total = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE $whereSql", $args)['c'] ?? 0);

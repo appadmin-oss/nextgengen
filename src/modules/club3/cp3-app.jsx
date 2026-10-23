@@ -382,7 +382,11 @@ class Cp3Portal extends React.Component {
     clearTimeout(this.pqT);
     this.setState(s => ({ pq: Object.assign({}, s.pq, { [fid]: q }) }));
     if (q.trim().length < 2) return;
-    this.pqT = setTimeout(() => this.api("search", { q: q.trim() }).then(r => this.setState(s => ({ pres: Object.assign({}, s.pres, { [fid]: { q, rows: r.members || [] } }) }))).catch(() => {}), 200);
+    /* Filed under the TRIMMED query, which is what the picker compares it with:
+       filed as typed, "amina " (a phone keyboard's trailing space) never
+       showed the results it had fetched. */
+    const qt = q.trim();
+    this.pqT = setTimeout(() => this.api("search", { q: qt }).then(r => this.setState(s => ({ pres: Object.assign({}, s.pres, { [fid]: { q: qt, rows: r.members || [] } }) }))).catch(() => this.setState(s => ({ pres: Object.assign({}, s.pres, { [fid]: { q: qt, rows: [], failed: true } }) }))), 200);
   }
 
   /* ── announcements ─────────────────────────────────────────────────── */
@@ -763,7 +767,7 @@ class Cp3Portal extends React.Component {
         res = S.recent.map(r => [r, "Recent"]).concat(sugg.filter(x => !S.recent.some(y => y.id === x[0].id)));
       } else res = res0.filter(r => r.status === "active").map(r => [r, ""]);
       const names = {}; res.forEach(([r]) => names[r.name] = (names[r.name] || 0) + 1);
-      return { q: (S.pq || {})[fid] || "", empty: qq.length >= 2 && S.pres[fid] && S.pres[fid].q === qq && res.length === 0, emptyMsg: "No active member matches “" + qq + "”" + (scope !== "all" ? " at " + scope : "") + ".",
+      return { q: (S.pq || {})[fid] || "", empty: qq.length >= 2 && S.pres[fid] && S.pres[fid].q === qq && res.length === 0, emptyMsg: S.pres[fid] && S.pres[fid].failed ? "Couldn’t search just now. Change the search to try again." : "No active member matches “" + qq + "”" + (scope !== "all" ? " at " + scope : "") + ".",
         hasHead: !qq && res.length > 0, head: S.recent.length ? "Recent and suggested" : "Suggested",
         res: res.map(([r, tag]) => { const t = CP3_TONE.neutral; return { name: r.name, id: r.displayId || r.id, meta: (r.centre || "") + " · " + (r.course || ""), dup: names[r.name] > 1, dupL: names[r.name] + " with this name, check the ID", tag, hasTag: !!tag, cx: r.course || "", cbg: t[0], cfg: t[1], v: r.name + "|" + r.id, rid: r.id, raw: r }; }),
         onQ: e => this.searchPeople(fid, e.target.value) };

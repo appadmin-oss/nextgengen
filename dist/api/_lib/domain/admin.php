@@ -83,8 +83,14 @@ const MEMBER_TYPES = ['NGG', 'Summer'];
 function admin_members_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
-    $q = strtolower((string)($p['q'] ?? ''));
-    if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
+    /* The search. It matched the full name, the internal memberId and the
+       email — not the PRINTED ID, which is the one on the card in the child's
+       hand, on the roster beside every name, and the one anybody reads out;
+       nor a phone number, which is what a parent on the line gives. Typing
+       "026-014" found nobody while the row said 026-014. */
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''),
+        ['fullName', 'displayId', 'memberId', 'email', 'parentEmail'], ['phone', 'parentPhone']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     /* `level` joins the exact-match facets. The roster workbook files every
        member at a level and the column has existed since migration 109, but
        nothing could filter by it — so "show me everyone at level C" meant
@@ -1333,6 +1339,9 @@ function admin_members_suggest(array $p): array {
     foreach (db_all("SELECT memberId, fullName, displayId, centre, status, photoUrl FROM members WHERE type = 'NGG'") as $m) {
         $name = member_name_norm((string)$m['fullName']);
         if ($name === '' || strpos($name, $q) !== false) continue;
+        // The roster finds every word in any order (sql_text_search), so a
+        // name holding them all is already on screen — not a "did you mean".
+        if (count($words) > 1 && !array_filter($words, fn($w) => strpos($name, $w) === false)) continue;
         if (stripos((string)$m['displayId'], $raw) !== false || stripos((string)$m['memberId'], $raw) !== false) continue;
         // Names that differ only in their numbers (a test roster's "Member 07" / "Member 01") are not typos.
         if (preg_replace('/\d+/', '', $name) === preg_replace('/\d+/', '', $q)) continue;

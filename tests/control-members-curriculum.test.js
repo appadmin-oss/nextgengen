@@ -111,7 +111,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.waitForTimeout(2000);
     chk('the roster fetches once, not in a loop (' + listCalls + ')', listCalls <= 2);
     chk('the footer gives the true total', /of 31/.test(await body()));
-    await page.fill('input[aria-label="Search by name, ID or email"]', 'Member 07');
+    await page.fill('input[aria-label="Search by name, ID, email or phone"]', 'Member 07');
     chk('search narrows on the server', await page.waitForFunction(() => document.querySelectorAll('table tbody tr').length === 1, null, { timeout: 15000 }).then(() => true, () => false));
     /* Joined is the roster's join date, not the day the record was made —
        an imported roster used to read as everybody joining on import day. */

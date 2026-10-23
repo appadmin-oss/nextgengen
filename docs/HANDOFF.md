@@ -2717,3 +2717,28 @@ The table is editable in the Control Room, with these as the defaults.
 **Owner decisions pending:**
 - Bucket or disk.
 - Whether to delete from Cloudinary after a photo has moved (frees storage, but breaks old shared links).
+
+## Search across the site; ID Card Studio keeps its work and keeps up
+
+- **Search:** `sql_text_search($q, $cols, $phoneCols)` in `util.php` turns a search box into SQL.
+  - Every word must appear in at least one column.
+  - `%` and `_` are literal (`ESCAPE '!'`).
+  - A phone-shaped query matches the last nine digits with punctuation stripped.
+  - It backs the member, Club, Summer and registration rosters, the self-registration queue, the fees lookup, the MFA desk, and the curriculum list.
+  - Each of those now searches `displayId`, the printed number.
+- **Fees lookup:** the centre scope moved into the SQL. It used to filter the capped page, so a centre lead could be told nobody matched.
+- **Schools:** prefix matches are chosen before the 400-row cap.
+- **Client searches** use the same word-by-word rule: the command palette, the enhanced select, the application form's pickers, the public Summer page, and the Control Room's client tables.
+- **The visible bug:** `crTable` swapped the whole table, search box included, for a skeleton on the keystroke after a search with no results. Focus fell to the page.
+  - Only the first load shows the skeleton now (`loaded`).
+  - A later failure keeps the toolbar and shows `.cr-tfail` with a retry.
+- **Races:** the member list and the Summer roster use sequence guards. The Summer roster has an error state; it used to show an empty roster on an outage.
+- **Command palette:** says "Searching members…" until the member lookup answers.
+- **Club portal member picker:** files results under the trimmed query.
+- **Test change:** "names in another order" is now found by the roster itself, so `admin.members.suggest` no longer offers it as "did you mean". That test now pins the roster.
+- **ID Card Studio:**
+  - The workspace (settings, filters, sheet queue, uploads) is kept in IndexedDB (`ngg-ids`/`ws`) and restored with a notice.
+  - Records reload quietly: on focus or visibility (15s gap), every 60s while visible, and 1.5s after an `ngg:changed` or `storage` `ngg.changed` event.
+  - `api-client.js` `announceChange()` raises those events after any successful write to `/admin/`, a member's profile, photo or account, or `/public/reshoot`. It throttles them to one every 2s.
+  - It never refreshes during a print job.
+  - A card printed elsewhere since it was put on the sheet raises a check with *Take off*.

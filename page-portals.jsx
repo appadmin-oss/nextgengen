@@ -2331,13 +2331,23 @@ function SummerRoster({ cohortId }) {
   const [meta, setMeta] = React.useState({ total: 0, matched: 0, truncated: false, facets: null, applied: {} });
   const [gaps, setGaps] = React.useState(null);
   const [bulk, setBulk] = React.useState(false);
-  const load = () => NGGApi.admin.summer.students(q, cohortId, facets)
-    .then(r => {
-      setList(r.students || []);
-      setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
-                truncated: !!r.truncated, facets: r.facets || null, applied: r.applied || {} });
-    })
-    .catch(() => setList([]));
+  /* Only the latest search may draw (answers can land out of order), and a
+     failed read is said, with a retry: it used to become an empty roster,
+     which reads as "nobody is enrolled" during an outage. */
+  const [loadErr, setLoadErr] = React.useState("");
+  const loadSeq = React.useRef(0);
+  const load = () => {
+    const n = ++loadSeq.current;
+    return NGGApi.admin.summer.students(q, cohortId, facets)
+      .then(r => {
+        if (n !== loadSeq.current) return;
+        setLoadErr("");
+        setList(r.students || []);
+        setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
+                  truncated: !!r.truncated, facets: r.facets || null, applied: r.applied || {} });
+      })
+      .catch(e => { if (n === loadSeq.current) setLoadErr((e && (e.code || e.message)) || "load_failed"); });
+  };
   const loadGaps = () => NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
   /* One effect for all of them: any facet change is the same round trip, and
      debounced together so typing in the search box while a centre is selected
@@ -2527,8 +2537,9 @@ function SummerRoster({ cohortId }) {
           {gaps.awaitingConsent > 0 && <>{gaps.awaitingConsent} {gaps.awaitingConsent === 1 ? "child is" : "children are"} still awaiting consent — an ID cannot be issued until that is recorded.</>}
         </div>
       )}
-      {list === null ? <div className="dash-spinner"/> :
-        rows.length === 0 ? <div className="admin-empty">{(list || []).length ? "No child matches that filter." : "No students enrolled yet."}</div> :
+      {loadErr ? <ErrorState title="Couldn’t load the roster" message="The participants could not be read just now." code={loadErr} onRetry={load}/> :
+        list === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">{activeCount ? "No participant matches that search or filter." : "No participants enrolled yet."}</div> :
         <div className="admin-table-wrap"><table className="admin-table">
           <thead><tr><th>ID</th><th>Name</th><th>Guardian</th><th>Centre</th><th>Course</th><th>Present</th><th>Consent</th><th>Status</th><th></th></tr></thead>
           <tbody>{rows.map(s => (

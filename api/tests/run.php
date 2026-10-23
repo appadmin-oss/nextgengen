@@ -8702,7 +8702,11 @@ db_insert('members', ['memberId' => 'NGG-SG-2', 'fullName' => 'Kosi Ifeanyi', 'e
 db_insert('summer_students', ['studentId' => 'SUM-SG-1', 'cohortId' => '', 'handle' => 'sg-amara', 'fullName' => 'Amarachi Obinna Eze', 'displayId' => 'EG-26-777', 'parentEmail' => 'eze.family@example.com', 'centre' => 'Egbeda', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
 $GLOBALS['__sg'] = fn($q, $who = 'NGG-2025-0099') => backend_dispatch('admin.members.suggest', ['requesterId' => $who, 'q' => $q]);
 chk('suggest: a typo in a member’s name finds them (Chukwurah → Bliss Chukwura)', in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Bliss Chukwurah')['near'] ?? [], 'memberId'), true));
-chk('suggest: the names in another order find them (Ifeanyi Kosi → Kosi Ifeanyi)', in_array('NGG-SG-2', array_column(($GLOBALS['__sg'])('Ifeanyi Kosi')['near'] ?? [], 'memberId'), true));
+/* Names in another order: the roster finds them itself now (every word, any
+   order — sql_text_search), so they are on screen, not a "did you mean". */
+chk('suggest: the names in another order find them (Ifeanyi Kosi → Kosi Ifeanyi), in the roster itself',
+    in_array('NGG-SG-2', array_column(backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'q' => 'Ifeanyi Kosi'])['members'] ?? [], 'memberId'), true)
+    && !in_array('NGG-SG-2', array_column(($GLOBALS['__sg'])('Ifeanyi Kosi')['near'] ?? [], 'memberId'), true));
 chk('suggest: a member the roster search already finds is not repeated as a "close" one', !in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Chukwura')['near'] ?? [], 'memberId'), true));
 chk('suggest: a loose word is NOT a close match (Bless ≠ Bliss Chukwura on its own)', !in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Bless')['near'] ?? [], 'memberId'), true));
 chk('suggest: a Summer School participant on an accurate match — every word of the name, any order', (function () {
@@ -30529,6 +30533,85 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__cloudinary_upload_mock'], $GLOBALS['__cloudinary_destroy_mock']);
     db_exec("DELETE FROM members WHERE memberId IN ('MT-KID','MT-OLD','MT-SU')"); db_exec("DELETE FROM photo_assets WHERE subjectId IN ('MT-KID','MT-OLD')");
     if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
+})();
+
+/* ── Search: what the operator can see, they can find ───────────────────────
+   The roster searched name, internal id and email — not the printed ID shown
+   beside every name, nor a phone, nor the words of a name in another order.
+   The fees lookup filtered its capped page by centre scope; the registration
+   desk matched a phone on its whole digit string; the schools picker ranked
+   the 400 rows it happened to fetch. */
+(function () {
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CEN-SR-A', 'name' => 'Search Alpha', 'code' => 'SA', 'status' => 'active', 'slug' => 'search-alpha', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-SR-B', 'name' => 'Search Beta', 'code' => 'SB', 'status' => 'active', 'slug' => 'search-beta', 'createdAt' => $now]);
+    db_insert('members', ['memberId' => 'SRCH-ADM', 'fullName' => 'Search Admin', 'email' => 'srch-adm@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SRCH-LEAD', 'fullName' => 'Search Lead', 'email' => 'srch-lead@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centreScope' => '["CEN-SR-B"]', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SRCH-M1', 'displayId' => '926-014', 'fullName' => 'Zuwaira Quadri-Bello', 'email' => 'zq_bello@example.org', 'phone' => '+2348039990101', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Search Beta', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SRCH-M2', 'displayId' => '926-015', 'fullName' => 'Yetunde Quadri', 'email' => 'yq@example.org', 'parentPhone' => '0803 999 0202', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Search Alpha', 'createdAt' => $now, 'updatedAt' => $now]);
+    $adm = ['requesterId' => 'SRCH-ADM'];
+    $ids = fn($r) => array_map(fn($m) => (string)$m['memberId'], $r['members'] ?? []);
+
+    [$sql, $args] = sql_text_search('  ', ['fullName']);
+    chk('search · an empty or all-space box adds no condition', $sql === '' && $args === []);
+    [$sql, $args] = sql_text_search('50%_off', ['fullName']);
+    chk('search · % and _ are matched literally, escaped for LIKE', $args === ['%50!%!_off%'] && str_contains($sql, "ESCAPE '!'"));
+
+    chk('search · the roster finds a member by the PRINTED ID shown beside their name',
+        $ids(admin_members_list($adm + ['q' => '926-014'])) === ['SRCH-M1']);
+    chk('search · …by the words of their name in any order',
+        $ids(admin_members_list($adm + ['q' => 'bello zuwaira'])) === ['SRCH-M1']);
+    chk('search · …by a phone read out as 0803…, stored as +234803…',
+        $ids(admin_members_list($adm + ['q' => '0803 999 0101'])) === ['SRCH-M1']);
+    chk('search · …by a parent\'s phone as it was written',
+        $ids(admin_members_list($adm + ['q' => '08039990202'])) === ['SRCH-M2']);
+    chk('search · …by an email holding an underscore',
+        $ids(admin_members_list($adm + ['q' => 'zq_bello'])) === ['SRCH-M1']);
+    chk('search · every word must match: "quadri yetunde" is one person, not two',
+        $ids(admin_members_list($adm + ['q' => 'quadri yetunde'])) === ['SRCH-M2']);
+    $sel = admin_members_ids($adm + ['q' => 'quadri']);
+    chk('search · "select all matching" names exactly who the search found', $sel['total'] === 2 && count(array_intersect($sel['memberIds'], ['SRCH-M1', 'SRCH-M2'])) === 2);
+    $sg = admin_members_suggest($adm + ['q' => 'bello zuwaira']);
+    chk('search · a name the roster already found is not offered again as "did you mean"',
+        !empty($sg['ok']) && !in_array('SRCH-M1', array_column($sg['near'], 'memberId'), true));
+    chk('search · the club roster finds the printed ID too',
+        array_column(admin_club_members($adm + ['q' => '926-015', 'status' => 'all'])['members'] ?? [], 'memberId') === ['SRCH-M2']);
+    chk('search · the security desk finds a member by printed ID',
+        (admin_mfa_overview($adm + ['kind' => 'member', 'q' => '926-014'])['rows'][0]['id'] ?? '') === 'SRCH-M1');
+
+    // Fees: the centre scope is in the query, not applied to its first rows.
+    for ($i = 0; $i < FEES_LOOKUP_MAX + 3; $i++) {
+        db_insert('members', ['memberId' => sprintf('SRCH-F%02d', $i), 'fullName' => sprintf('Adeyinka Aaron %02d', $i), 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Search Alpha', 'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    db_insert('members', ['memberId' => 'SRCH-FZ', 'displayId' => '926-099', 'fullName' => 'Adeyinka Zed', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Search Beta', 'createdAt' => $now, 'updatedAt' => $now]);
+    $fl = admin_fees_lookup(['requesterId' => 'SRCH-LEAD', 'q' => 'adeyinka']);
+    chk('search · a centre lead\'s fees lookup finds their member behind a page of other centres\' matches',
+        !empty($fl['ok']) && array_column($fl['members'], 'memberId') === ['SRCH-FZ']);
+    chk('search · the fees lookup finds the printed ID',
+        array_column(admin_fees_lookup($adm + ['q' => '926-099'])['members'] ?? [], 'memberId') === ['SRCH-FZ']);
+
+    // Registration desk: the printed ID, and a parent's number however it is written.
+    $coh = summer_ensure_cohort()['cohortId'];
+    db_insert('summer_students', ['studentId' => 'SRCH-S1', 'displayId' => 'SB-26-077', 'cohortId' => $coh, 'handle' => 'srch-s1', 'fullName' => 'Kehinde Search', 'guardianName' => 'Mrs Search', 'guardianPhone' => '+2348031112299', 'centre' => 'Search Beta', 'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => $now, 'updatedAt' => $now]);
+    $rl = fn($q) => array_column(admin_registrations_list($adm + ['q' => $q, 'status' => 'all'])['registrations'] ?? [], 'studentId');
+    chk('search · the registration desk finds a child by the ID on their card', $rl('SB-26-077') === ['SRCH-S1']);
+    chk('search · …and by the parent\'s number read off a form as 0803…', $rl('08031112299') === ['SRCH-S1']);
+    chk('search · the Summer roster finds the printed ID',
+        array_column(admin_summer_students_list($adm + ['q' => 'sb-26-077', 'cohortId' => $coh])['students'] ?? [], 'studentId') === ['SRCH-S1']);
+
+    // Schools: names that start with the words are chosen before the cap.
+    $hadGrid = (int)(db_row("SELECT COUNT(*) c FROM schools WHERE source = 'grid3'")['c'] ?? 0);
+    for ($i = 0; $i < 420; $i++) db_insert('schools', ['name' => "Aaa Quixmodel School $i", 'nameKey' => "aaa quixmodel school $i", 'lga' => 'Ikeja', 'state' => 'Lagos', 'source' => 'grid3', 'addedAt' => $now]);
+    db_insert('schools', ['name' => 'Quixmodel College', 'nameKey' => 'quixmodel college', 'lga' => 'Ikeja', 'state' => 'Lagos', 'source' => 'grid3', 'addedAt' => $now]);
+    $sc = public_schools(['q' => 'quixmodel']);
+    chk('search · the school that STARTS with what was typed is first, even past the 400th match',
+        ($sc['schools'][0]['name'] ?? '') === 'Quixmodel College');
+    db_exec("DELETE FROM schools WHERE nameKey LIKE '%quixmodel%'");
+    chk('search · (schools fixture removed)', (int)(db_row("SELECT COUNT(*) c FROM schools WHERE source = 'grid3'")['c'] ?? 0) === $hadGrid);
+
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SRCH-S1'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'SRCH-%'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-SR-A', 'CEN-SR-B')");
 })();
 
 /* ── No back door to a session ──────────────────────────────────────────────

@@ -119,10 +119,16 @@ function crNextSort(cur, ci, numeric) {
  */
 function crTableView(rows, opts) {
   const o = opts || {};
-  const q = String(o.q || "").trim().toLowerCase();
+  /* Every word typed, anywhere in the row and in any order — the same rule
+     the server tables search by (sql_text_search), so "bello amina" finds
+     Amina Bello whichever kind of table she is in. */
+  const words = String(o.q || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   const fv = o.filters || {};
   let out = rows.map((r, ri) => ({ r, ri })).filter(x => {
-    if (q && !x.r.cells.map(c => crCellText(c) + " " + ((c && c.s) || "")).join(" ").toLowerCase().includes(q)) return false;
+    if (words.length) {
+      const hay = x.r.cells.map(c => crCellText(c) + " " + ((c && c.s) || "")).join(" ").toLowerCase();
+      if (!words.every(w => hay.includes(w))) return false;
+    }
     return Object.keys(fv).every(ci => fv[ci] == null || fv[ci] === "" || crCellText(x.r.cells[ci]) === fv[ci]);
   });
   const srt = o.sort;

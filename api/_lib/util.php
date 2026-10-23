@@ -238,6 +238,50 @@ function slugify(string $s): string {
     return substr($s, 0, 80);
 }
 
+/**
+ * A search box as SQL: [fragment, args] for a WHERE, or ['', []] when nothing
+ * was typed.
+ *
+ * Every WORD typed must appear in at least one of $cols, so "bello amina"
+ * finds Amina Bello and "amina egbeda" narrows rather than finding nothing.
+ * One LIKE over the whole string matched only the words in the order they
+ * were stored, and a search that misses a record the operator can see on the
+ * screen is a search they stop trusting.
+ *
+ * Case-insensitive the way SQLite's lower() is (ASCII), and what was typed is
+ * matched literally: '%' and '_' are not wildcards ('!' escapes them — a
+ * backslash is itself an escape inside a MySQL string literal).
+ *
+ * A phone-shaped query (digits, spaces, + - ( ) only, at least four digits)
+ * is also matched against $phoneCols on its last nine digits with the
+ * punctuation stripped, so "0803 111 2222" finds "+2348031112222": the tail
+ * is the part of a Nigerian number that identifies it however it was written.
+ *
+ * $cols are column names written by the CALLER's code, never user input.
+ */
+const SQL_SEARCH_MAX_WORDS = 6;
+function sql_text_search(string $q, array $cols, array $phoneCols = []): array {
+    $q = trim((string)preg_replace('/\s+/u', ' ', mb_substr($q, 0, 120)));
+    if ($q === '' || !$cols) return ['', []];
+    $and = []; $args = [];
+    foreach (array_slice(explode(' ', $q), 0, SQL_SEARCH_MAX_WORDS) as $w) {
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], strtolower($w)) . '%';
+        $or = [];
+        foreach ($cols as $c) { $or[] = "lower(COALESCE($c, '')) LIKE ? ESCAPE '!'"; $args[] = $like; }
+        $and[] = '(' . implode(' OR ', $or) . ')';
+    }
+    $sql = implode(' AND ', $and);
+    $digits = (string)preg_replace('/\D/', '', $q);
+    if ($phoneCols && strlen($digits) >= 4 && preg_match('/^[\d\s+\-()]+$/', $q)) {
+        $tail = '%' . substr($digits, -9) . '%';
+        foreach ($phoneCols as $c) {
+            $sql .= " OR replace(replace(replace(replace(replace(COALESCE($c, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?";
+            $args[] = $tail;
+        }
+    }
+    return ['(' . $sql . ')', $args];
+}
+
 function mask_email(string $e): string {
     $at = strpos($e, '@');
     if ($at === false || $at < 1) return '***@***';

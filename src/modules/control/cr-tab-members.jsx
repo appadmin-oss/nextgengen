@@ -1106,7 +1106,7 @@ Object.assign(CR_TAB_DEFS, {
       ].filter(Boolean);
       if (d.suggest) out.push({ key: "suggest", type: "custom", span: 6, render: c => <CrMbSuggest s={d.suggest} ctx={c}/> });
       out.push({
-        key: "roster", type: "table", span: 6, reloadKey: d.rev, search: "Search by name, ID or email",
+        key: "roster", type: "table", span: 6, reloadKey: d.rev, search: "Search by name, ID, email or phone",
         cols: ["Member", "Centre", "Division", "Programme", "Level", "Status", "Joined"],
         server: d.server,
         filters: [

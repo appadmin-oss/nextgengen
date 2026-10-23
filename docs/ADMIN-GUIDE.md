@@ -2383,8 +2383,20 @@ they all behave the same way. Worth knowing once:
 
 ## Searching and filtering
 
-- Search boxes match **partially** and ignore case. On the member roster,
-  the same box covers name, member ID and email.
+- Search boxes match **partially**, ignore case, and take **every word in
+  any order**: "bello amina" finds Amina Bello, and "amina egbeda" narrows
+  rather than finding nothing. A trailing space (which a phone keyboard adds)
+  changes nothing.
+- The member roster, the Club roster, the Summer roster, the registration
+  desk, the fees lookup and the security desk all find a person by the
+  **printed ID on their card** (026-014, EG-26-001) as well as by name, the
+  internal ID and email. Where there is a phone on file, a number is found
+  however it was written: "0803 111 2222" finds "+2348031112222".
+- A search that fails says so, keeps what you typed, and offers **Try
+  again** — it never shows an empty list as if nobody matched. In the
+  Control Room's tables the search box stays put while results load.
+- A centre lead's searches look only in their centres, and the whole search
+  runs inside them, so a match is never hidden behind other centres' rows.
 - The **public** Summer School page's search ignores accents as well as case,
   so "Iwaya" finds "Ìwàyà" — worth knowing when a family says they cannot
   find their centre.

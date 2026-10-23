@@ -545,7 +545,12 @@ function admin_mfa_overview(array $p): array {
         if (!$scope) $from .= ' AND 1 = 0';
         else { $from .= ' AND t.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = array_merge($args, $scope); }
     }
-    if ($q !== '') { $from .= ' AND (lower(t.fullName) LIKE ? OR lower(' . explode(' ', $sel)[0] . ') LIKE ?)'; $args[] = '%' . $q . '%'; $args[] = '%' . $q . '%'; }
+    /* Name, the record's own id and email — and for a member the PRINTED ID,
+       which is the one on their card and the one they will read out. */
+    $searchCols = ['t.fullName', explode(' ', $sel)[0], 't.email'];
+    if ($who === 'member') $searchCols[] = 't.displayId';
+    [$qSql, $qArgs] = sql_text_search($q, $searchCols);
+    if ($qSql !== '') { $from .= ' AND ' . $qSql; $args = array_merge($args, $qArgs); }
     if ($state === 'none') $from .= ' AND ms.stateValue IS NULL';
     if ($state === 'enrolled') $from .= ' AND ms.stateValue IS NOT NULL';
     $total = (int)(db_row("SELECT COUNT(*) c $from", $args)['c'] ?? 0);

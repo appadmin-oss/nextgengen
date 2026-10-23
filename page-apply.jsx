@@ -679,6 +679,13 @@ function ApfChips({ f, val, upd, say }) {
   </>;
 }
 
+/** Every word of a (lower-cased) search, in any order: "grammar ikeja" finds "Ikeja Grammar School". */
+function apfHit(text, q) {
+  const words = String(q || "").split(/\s+/).filter(Boolean);
+  const t = String(text || "").toLowerCase();
+  return words.every(w => t.includes(w));
+}
+
 /** A searchable picker: a dropdown on a wide form, a full-screen sheet on a phone. */
 function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   const [q, setQ] = React.useState(null);     // null = not typing; shows the value
@@ -699,9 +706,9 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
     return () => { live = false; clearTimeout(t); };
   }, [qq, f.remote]);
   const list = [], flat = [];
-  if (f.groups) f.groups.forEach(([h, items]) => { const it = items.filter(o => !qq || o.toLowerCase().includes(qq)); if (it.length) { list.push({ g: h }); it.forEach(o => { list.push({ o }); flat.push(o); }); } });
+  if (f.groups) f.groups.forEach(([h, items]) => { const it = items.filter(o => apfHit(o, qq)); if (it.length) { list.push({ g: h }); it.forEach(o => { list.push({ o }); flat.push(o); }); } });
   else if (remote) remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
-  else (f.opts || []).filter(o => !qq || o.toLowerCase().includes(qq)).slice(0, 40).forEach(o => { list.push({ o }); flat.push(o); });
+  else (f.opts || []).filter(o => apfHit(o, qq)).slice(0, 40).forEach(o => { list.push({ o }); flat.push(o); });
   const h = Math.min(hi, Math.max(0, flat.length - 1));
   const listId = "apf-lb-" + f.id;
   const choose = o => { pick(o); setQ(null); setOpen(false); setHi(0); };
@@ -773,7 +780,7 @@ function ApfCourses({ offer, val, pick, shown }) {
   const qq = q.trim().toLowerCase();
   const groups = ((offer && offer.faculties) || []).map(d => ({ h: d.faculty, blurb: d.blurb || "", items: d.courses.map(c => [c, d.faculty]) }))
     .concat([{ h: "Not sure yet", items: [[APF_OTHER_COURSE, "Tell us below"]] }])
-    .map(g => Object.assign({}, g, { items: g.items.filter(([l, s]) => !qq || (l + " " + s + " " + g.h).toLowerCase().includes(qq)) })).filter(g => g.items.length);
+    .map(g => Object.assign({}, g, { items: g.items.filter(([l, s]) => apfHit(l + " " + s + " " + g.h, qq)) })).filter(g => g.items.length);
   return (
     <div className="apf-courses">
       <div className="apf-input apf-input--search"><i className="ph ph-magnifying-glass apf-input-ico" aria-hidden="true"/><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search courses" aria-label="Search courses"/></div>

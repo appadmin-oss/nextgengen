@@ -1487,11 +1487,22 @@ function admin_fees_lookup(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $q = trim((string)($p['q'] ?? ''));
     if (strlen($q) < 2) return ['ok' => true, 'members' => [], 'q' => $q, 'tooShort' => true];
-    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
-    $rows = db_all("SELECT * FROM members WHERE status <> 'deleted' AND (fullName LIKE ? OR memberId LIKE ? OR email LIKE ?)
-                    ORDER BY fullName LIMIT " . (FEES_LOOKUP_MAX + 1), [$like, $like, $like]);
+    /* The centre scope is part of the query, not a filter over its first
+       rows: filtering the capped page meant a centre lead searching "Ade"
+       could be told nobody matched when the first twenty-one Ades were all
+       at somebody else's centre. And the printed ID is searched, since that
+       is the number on the card the parent is holding. (The old escaped '%'
+       and '_' had no ESCAPE clause, so an email with an underscore missed.) */
+    [$qSql, $qArgs] = sql_text_search($q, ['fullName', 'displayId', 'memberId', 'email'], ['phone', 'parentPhone']);
     $scope = admin_centre_names_in_scope($g['requester']);
-    if ($scope !== null) $rows = array_values(array_filter($rows, static fn($m) => in_array((string)($m['centre'] ?? ''), $scope, true)));
+    $scopeSql = '';
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'members' => [], 'q' => $q, 'truncated' => false, 'max' => FEES_LOOKUP_MAX];
+        $scopeSql = ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
+        foreach ($scope as $nm) $qArgs[] = $nm;
+    }
+    $rows = db_all("SELECT * FROM members WHERE status <> 'deleted' AND $qSql$scopeSql
+                    ORDER BY fullName LIMIT " . (FEES_LOOKUP_MAX + 1), $qArgs);
     $cfg = fees_settings();
     $out = [];
     foreach (array_slice($rows, 0, FEES_LOOKUP_MAX) as $m) {

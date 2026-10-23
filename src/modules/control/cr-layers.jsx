@@ -180,6 +180,9 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
   const [scope, setScope] = React.useState(initScope || "all");
   const [ci, setCi] = React.useState(0);
   const [people, setPeople] = React.useState([]);
+  /* The member search is a server round trip; until it answers, "nothing
+     called …" would be a claim about members nobody has looked up yet. */
+  const [finding, setFinding] = React.useState(false);
   const inRef = React.useRef(null);
   const listRef = React.useRef(null);
   const box = React.useRef(null);
@@ -187,10 +190,12 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
   React.useEffect(() => { const t = setTimeout(() => inRef.current && inRef.current.focus(), 30); return () => clearTimeout(t); }, []);
   React.useEffect(() => {
     let live = true;
+    const s = q.trim();
+    const asks = !!searchPeople && (scope === "people" || (scope === "all" && s.length >= 2));
+    setFinding(asks);
     const t = setTimeout(() => {
-      const s = q.trim();
-      if (!searchPeople || (scope !== "people" && (scope !== "all" || s.length < 2))) { setPeople([]); return; }
-      searchPeople(s).then(r => { if (live) setPeople(r || []); }, () => { if (live) setPeople([]); });
+      if (!asks) { setPeople([]); return; }
+      searchPeople(s).then(r => { if (live) { setPeople(r || []); setFinding(false); } }, () => { if (live) { setPeople([]); setFinding(false); } });
     }, 200);
     return () => { live = false; clearTimeout(t); };
   }, [q, scope]);
@@ -242,7 +247,7 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
               })}
             </div>
           ))}
-          {!n && <div className="cr-cmd-none">Nothing called “{q}”. Try a member’s name or ID.</div>}
+          {!n && <div className="cr-cmd-none" role="status">{finding ? (q.trim() ? "Nothing called “" + q + "” yet. Searching members…" : "Searching members…") : "Nothing called “" + q + "”. Try a member’s name, printed ID or phone."}</div>}
         </div>
         <div className="cr-cmd-foot" aria-hidden="true">
           <span><kbd>↑↓</kbd>move</span><span><kbd>↵</kbd>open</span><span><kbd>Tab</kbd>switch scope</span>

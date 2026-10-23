@@ -508,8 +508,8 @@ function admin_curriculum_list(array $p): array {
     $status = (string)($p['status'] ?? '');
     if (in_array($status, CURR_STATUSES, true)) { $where[] = 'status = ?'; $args[] = $status; }
     else $where[] = "status <> 'retired'";
-    $q = strtolower(trim((string)($p['q'] ?? '')));
-    if ($q !== '') { $where[] = '(lower(title) LIKE ? OR lower(summary) LIKE ?)'; $args[] = '%' . $q . '%'; $args[] = '%' . $q . '%'; }
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['title', 'summary']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $args[] = $a; }
     $units = db_all('SELECT * FROM curriculum_units WHERE ' . implode(' AND ', $where) . ' ORDER BY course, level, week, position LIMIT 2000', $args);
     $ids = array_map(static fn($u) => (string)$u['unitId'], $units);
     $counts = ['m' => [], 'c' => [], 'p' => []];
