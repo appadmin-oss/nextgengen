@@ -2499,3 +2499,34 @@ owner reported while it ran.
   - "Volunteers and members together" means both lists; "one sheet per centre" breaks sheets by centre; "print the backs too" turns backs on.
   - "Ada Okafor's" is Ada Okafor; "at Yaba" is Yaba Hub; a two-word centre is never read as a person.
 - **Not done.** The studio's "everyday" AI tier still starts with Groq's 8B model. Moving it to a stronger, paid model would spend money, so it is left for the owner to decide (Settings → AI routing).
+
+### Re-runs, and what they found (2026-10-23)
+- **Instructor curriculum.** The "known pre-existing" `instructor-v6` curriculum failure was a real defect. The design hard-coded "of 12 students finished" next to a *percentage*, so every lesson read "0 of 12" whatever the class. The controller now gives `doneLine` from the lesson's own audience.
+- **Family portal on a phone.** Emails & connection (email settings, Telegram, unlinking) was reachable only from the sidebar, which phones hide; it is in the account menu now. The test's sign-in seed used the UTC date while the app's day is Lagos's, so it failed between 23:00 and midnight UTC.
+- **Mentor portal.** Its two `window.confirm()` calls are `dialog.confirm`, and the Club directory's count uses `fmtNum`. Both were caught by `build.test.js`.
+- **Test files.** `control-room.test.js` did not run at all: a duplicate `const` in the accounts check added this batch. That is fixed.
+- **`a11y.test.js`** needs `axe-core`, which is declared in `package.json` but was missing from this container's `node_modules`; run `npm install`. The `aria-prohibited-attr` left open above no longer appears.
+- **Results, each run on its own:**
+
+  | Suite | Result |
+  |---|---|
+  | PHP | 5124/0 |
+  | build | 31/0 |
+  | no-important | pass |
+  | guide | 18/0 |
+  | media-failover | 11/0 |
+  | community-v3 | 56/0 |
+  | ids-ask | 78/0 |
+  | ids-ask-select | 33/0 |
+  | control-room | 43/0 |
+  | instructor-v6 | 25/0 |
+  | family-ui | 34/0 |
+  | curriculum-ui | 35/0 |
+  | member-v9 | 37/0 |
+  | mentor-v15 | 66/0 |
+  | ui-smoke | 661/0 |
+  | a11y | 19/0 |
+  | ids-core | 51/0 |
+  | cr-core | 74/0 |
+  | timetable-core | 62/0 |
+  | route-registry | 60/0 |
