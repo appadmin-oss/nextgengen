@@ -2986,3 +2986,24 @@ Members find the timetable hard to use. Reported, not yet redesigned:
 - the public timetable maker (`?centre=` slug, `tt_for_centre`).
 
 Start from how a child reads "where am I, when, with whom" on a phone. One clear "my class this Saturday" before the full grid. Their own course is highlighted, never mixed into every course's rows. Test it with members, not only in the suite.
+
+## The track decides the division; interests stay inside it (2026-10-24)
+
+- **The fault:** a Tech member was shown Media Lab lessons. `curriculum_member_courses` added the card's disciplines word by word, so "Tech, Media" brought the whole Media division.
+- **The rule now:** with no chosen courses, the track gives the division. Disciplines add only courses inside that division (plus Chess). A child who really takes two divisions gets both by having courses chosen on their record (`members.courses`).
+- This reverses the old promise "two faculties on the card bring both divisions"; its tests now pin the new rule.
+- The rule reaches every consumer: lessons, Community channels, timetable, instructor class lists.
+- **Tests:** PHP 5279/0.
+
+### Proposed: courses as a stored fact, not inferred (awaiting the owner's two decisions)
+
+Root cause of the course faults (Tech child with a media course, "tech · Tech", "0 lessons" for Musical Instruments, a tech child in the media channel): a child's courses are INFERRED on every read, from free text (track, card disciplines, division, word maps), separately in lessons, channels, timetable and instructor lists. The change above is one more patch on that; the fix is structural:
+1. `members.courses` is the one source; every consumer reads it through one function, with no inference at read time. A child with none sees "ask your centre" and is flagged to staff.
+2. A Control Room "Course placement" screen runs today's inference ONCE to propose each child's courses; staff confirm or correct them per centre, ambiguous cases first.
+3. New members choose catalogue courses at application and approval; the division follows from the course.
+4. One catalogue: lessons, instructors, slots and channels all use catalogue names. Aliases are canonicalised at input and import, never at read time.
+5. One cross-consumer test: lessons, channels, timetable and instructor lists all show the same stored courses.
+
+Open decisions for the owner:
+- Do Media Lab and Practical Coding join the catalogue (Media, Technology), or do their lessons move under existing courses?
+- Until confirmed, do children see their proposed courses marked unconfirmed (recommended), or nothing?

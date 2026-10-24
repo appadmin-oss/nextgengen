@@ -29375,7 +29375,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $now = now_iso();
     $mk = function ($id, $track, $disc = '', $div = '') use ($now) { db_insert('members', ['memberId' => $id, 'fullName' => $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'track' => $track, 'disciplines' => $disc, 'division' => $div, 'createdAt' => $now, 'updatedAt' => $now]); };
-    $mk('CMC-T', 'TECH'); $mk('CMC-M', 'MUSIC'); $mk('CMC-2', 'TECH', 'TECH, MEDIA'); $mk('CMC-D', '', '', 'business'); $mk('CMC-X', 'Coding');
+    $mk('CMC-T', 'TECH'); $mk('CMC-M', 'MUSIC'); $mk('CMC-2', 'TECH', 'TECH, MEDIA'); $mk('CMC-MD', 'MEDIA'); $mk('CMC-D', '', '', 'business'); $mk('CMC-X', 'Coding');
     $pos = 900;
     $u = function ($id, $course, $status = 'published') use ($now, &$pos) { db_insert('curriculum_units', ['unitId' => $id, 'course' => $course, 'level' => '', 'week' => 1, 'position' => ++$pos, 'title' => $id,
         'summary' => '', 'status' => $status, 'version' => 1, 'createdAt' => $now, 'updatedAt' => $now]); };
@@ -29390,10 +29390,10 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('curriculum · a TECH member sees the Technology courses’ lessons (was: none)', in_array('CMU-CODE', $t, true) && in_array('CMU-ROBO', $t, true) && in_array('CMU-ALL', $t, true));
     chk('curriculum · and not another division’s, nor a draft', !in_array('CMU-MUS', $t, true) && !in_array('CMU-VID', $t, true) && !in_array('CMU-DRAFT', $t, true));
     chk('curriculum · a MUSIC member sees Music, not every arts course’s', in_array('CMU-MUS', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
-    chk('curriculum · two faculties on the card bring both divisions', in_array('CMU-CODE', $ids('CMC-2'), true) && in_array('CMU-VID', $ids('CMC-2'), true));
+    chk('curriculum · a second faculty on the card does not bring its division: the track decides (choose courses to give both)', in_array('CMU-CODE', $ids('CMC-2'), true) && !in_array('CMU-VID', $ids('CMC-2'), true));
     chk('curriculum · a member with only a division gets that division’s lessons', in_array('CMU-FIN', $ids('CMC-D'), true) && !in_array('CMU-CODE', $ids('CMC-D'), true));
     $u('CMU-ML', 'Media Lab');
-    chk('curriculum · a lesson filed under a course the catalogue never listed still reaches its division', in_array('CMU-ML', $ids('CMC-2'), true) && !in_array('CMU-ML', $ids('CMC-T'), true));
+    chk('curriculum · a lesson filed under a course the catalogue never listed still reaches its division', in_array('CMU-ML', $ids('CMC-MD'), true) && !in_array('CMU-ML', $ids('CMC-T'), true) && !in_array('CMU-ML', $ids('CMC-2'), true));
     $u('CMU-PIANO', 'Piano'); $u('CMU-GUIT', 'Guitar'); $mk('CMC-P', 'MUSIC', 'PIANO');
     chk('curriculum · a MUSIC member takes the instrument courses', in_array('CMU-PIANO', $ids('CMC-M'), true) && in_array('CMU-GUIT', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
     chk('curriculum · and still no other arts course', !in_array('CMU-VID', $ids('CMC-M'), true));
@@ -30818,6 +30818,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
     $card = member_card_public(db_row("SELECT * FROM members WHERE memberId = 'NGG-TM-1'"), true);
     chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
+})();
+
+/* ── A Tech member's interests never bring another division's courses ── */
+(function () {
+    db_insert('members', ['memberId' => 'NGG-TECHMED', 'fullName' => 'Tech Media', 'type' => 'NGG', 'status' => 'active', 'track' => 'Tech', 'disciplines' => 'Media, Photography', 'createdAt' => now_iso()]);
+    $c = array_map('mb_strtolower', curriculum_member_courses(db_row("SELECT * FROM members WHERE memberId = 'NGG-TECHMED'")));
+    chk('courses: a Tech member who also ticked Media gets Technology courses, never Media Lab or Graphic Design', in_array('coding', $c, true) && !in_array('media lab', $c, true) && !in_array('graphic design', $c, true) && !in_array('photography', $c, true));
 })();
 
 /* ── One person, instructor AND mentor; the Academy waived by hand ── */

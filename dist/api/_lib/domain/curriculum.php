@@ -1180,7 +1180,19 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     if ($ctx === null) $ctx = curriculum_course_ctx();
     $out = member_courses_of($m);
     if (!$out) {
-        foreach ([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? '')] as $field) $out = array_merge($out, member_courses_from_text($field, $ctx)[0], member_text_words($field));
+        $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? '');
+        $out = array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track));
+        /* The interests on the card add courses only inside the track's own
+           division. A Tech member who also ticked "Media" was given the whole
+           Media division (Media Lab included) beside their Technology courses. */
+        $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
+        if ($trackDiv === '' && trim((string)($m['division'] ?? '')) !== '' && function_exists('nggc_division') && nggc_division((string)$m['division'])) $trackDiv = (string)nggc_division((string)$m['division'])['id'];
+        $fromDis = array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis));
+        if ($trackDiv !== '' && trim($track) !== '') {
+            $mine = array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess']));
+            $fromDis = array_filter($fromDis, static fn($c) => in_array(mb_strtolower((string)$c), $mine, true));
+        }
+        $out = array_merge($out, $fromDis);
         if (!$out && trim((string)($m['division'] ?? '')) !== '') $out = curriculum_division_courses((string)$m['division'], $ctx);
     }
     $seen = []; $uniq = [];
