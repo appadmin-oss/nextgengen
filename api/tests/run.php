@@ -10031,12 +10031,23 @@ chk('catalogue: an ampersand in a course name is part of the name, not a join',
     && !in_array('Visual Design', academy_courses(), true));
 chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leadership', academy_faculties(), true)
     && !in_array('V3 Fixer', academy_courses(), true) && !in_array('Anchor Journal', academy_courses(), true));
-// Courses are just as editable — an admin edit to the summer-reg Course field
-// round-trips to the public context (no code change; not hard-coded). Run late,
-// after the other summer-reg form tests, so publishing doesn't disturb them.
-$srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
-backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
+/* Courses are just as editable — an admin edit to the VOLUNTEER form's Course
+   field round-trips to the public volunteer context (no code change; not
+   hard-coded).
+
+   This used to publish to `summer-reg` and assert the change appeared in the
+   volunteer context, which is the bug it was quietly describing: the courses a
+   volunteer was offered to TEACH were read off the form a parent fills in for
+   a child joining Summer School. The volunteer context reads the volunteer
+   form now, so the edit is made where it belongs. */
+$vrf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer'])['form']['fields']);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer', 'fields' => $vrf2]);
 chk('course catalogue edit round-trips to the public context', backend_dispatch('public.volunteer.context', [])['courses'] === ['Practical Coding', 'Robotics Lab', 'Chess Club']);
+/* And an edit to the CHILDREN's form no longer leaks into it. */
+$srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Child Course A', 'Child Course B']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
+chk('a child intake edit does not change what a volunteer is offered to teach',
+    !array_intersect(backend_dispatch('public.volunteer.context', [])['courses'], ['Child Course A', 'Child Course B']));
 
 // ── Academy catalogue: per-faculty mapping (setting-backed, admin-editable) ──
 chk('academy_courses_for returns a faculty\'s courses', academy_courses_for('Music') === ['Talking Drums', 'Piano', 'Guitar'] && academy_courses_for('Nope') === []);
@@ -10067,8 +10078,15 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     db_insert('form_defs', ['formId' => 'summer-reg', 'version' => 1, 'name' => 'Summer', 'fields' => json_encode([['key' => 'course', 'type' => 'choice', 'options' => ['Custom Course Kept']]]), 'status' => 'live', 'publishedBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
     setting_set('seed_academy_v1', '0', 'system');
     db_run_seeds($db);
-    return volunteer_faculty_options() === academy_faculties()   // system form re-seeded from defaults
-        && volunteer_course_options() === ['Custom Course Kept']; // human form untouched
+    /* The volunteer form was auto-generated, so it is refreshed from the
+       defaults — which now cover BOTH programmes, because a volunteer may
+       teach on the Club or on Summer School. The summer-reg form was published
+       by a person, so its custom course list is left exactly as they left it. */
+    $humanKept = [];
+    foreach (form_live('summer-reg')['fields'] as $f) if (($f['key'] ?? '') === 'course') $humanKept = $f['options'] ?? [];
+    return volunteer_faculty_options() === volunteer_faculty_options_default()   // system form re-seeded from defaults
+        && $humanKept === ['Custom Course Kept']                                 // human form untouched
+        && in_array('Piano', volunteer_course_options(), true);                  // …and the Club's courses are offered
 })());
 
 /* ── Community 2.0 (channels · posts · reactions · polls · Slack unreads) ── */

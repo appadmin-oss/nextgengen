@@ -300,6 +300,20 @@ function form_default_fields(): array {
     ];
 }
 
+/** Every faculty or division either programme teaches — the volunteer form's
+ *  own default, kept here so reading the live form never recurses into it. */
+function volunteer_faculty_options_default(): array {
+    $out = function_exists('club_catalogue') ? array_keys(club_catalogue()) : [];
+    foreach (academy_faculties() as $f) if (!in_array($f, $out, true)) $out[] = $f;
+    return array_values($out);
+}
+/** Every course either programme teaches, Club first. */
+function volunteer_courses_default(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    foreach (academy_courses() as $c) if (!in_array($c, $out, true)) $out[] = $c;
+    return array_values($out);
+}
+
 /** The public volunteer form. The first block is structural (the wizard +
  *  approval pipeline depend on these keys) and locked; admins append their
  *  own custom questions after them, which render on the public form. */
@@ -320,9 +334,22 @@ function volunteer_default_fields(): array {
         // Faculty is the teaching group mentors & instructors belong to. Locked
         // key (the /v-status board + validation read it), but its OPTIONS are
         // admin-editable here — the single source of truth for the catalogue.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(),
+        /* BOTH programmes. A volunteer may teach on the Club, on Summer School
+           or on both, and offering Summer's faculties alone made every Club
+           division — and so every Club course under it — unreachable from this
+           form. The course picker filters on whatever is chosen here. */
+        ['key' => 'faculty', 'label' => 'Faculty or division', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'options' => volunteer_faculty_options_default(),
          'help' => 'Which teaching group you would join. Required for mentors and instructors.',
-         'adminHelp' => 'The academy / faculty catalogue — edit these options freely (add/rename/remove). Drives the /v-status faculty breakdown.'],
+         'adminHelp' => 'Both programmes: the Club\'s divisions and Summer School\'s faculties. Edit freely (add/rename/remove). Drives the /v-status faculty breakdown.'],
+        /* An instructor has to be able to say WHAT they teach. There was no
+           course field on this form at all, so the one question that decides
+           where an instructor is placed was never asked — and the list that
+           stood in for it was read off the children's Summer School form. */
+        ['key' => 'course', 'label' => 'Course you would teach', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'optionsFrom' => 'faculty', 'options' => volunteer_courses_default(),
+         'help' => 'Required if you are applying to be an instructor. Pick your faculty or division first.',
+         'adminHelp' => 'Filtered by the faculty chosen above. Accepts any course either programme teaches.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }
