@@ -707,6 +707,22 @@ function admin_volunteer_update(array $p): array {
     }
     if (array_key_exists('courses', $d)) {
         $courses = is_array($d['courses']) ? array_values(array_filter(array_map(fn($c) => substr(trim((string)$c), 0, 80), $d['courses']))) : [];
+        /* An NGG instructor's courses ARE their class: "coding " or "Robotic"
+           matched no child, and the portal opened on an empty class. Each is
+           spelt as the catalogue spells it, or refused with the name and the
+           nearest course. Summer School keeps its own tracks. */
+        $prog = (string)($d['programme'] ?? $v['programme'] ?? '');
+        if ($prog === 'ngg' && function_exists('curriculum_course_canonical')) {
+            $clean = [];
+            foreach ($courses as $c) {
+                $canon = curriculum_course_canonical($c);
+                if ($canon === null) { $sug = curriculum_course_suggest($c);
+                    return ['ok' => false, 'error' => 'unknown_course', 'course' => $c, 'suggest' => $sug,
+                            'detail' => '"' . $c . '" is not a course.' . ($sug !== '' ? ' Did you mean ' . $sug . '?' : '') . ' Courses: ' . implode(', ', curriculum_courses()) . '.']; }
+                if ($canon !== '' && !in_array($canon, $clean, true)) $clean[] = $canon;
+            }
+            $courses = $clean;
+        }
         $row['courses'] = json_encode(array_slice($courses, 0, 20));
     }
     if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
@@ -958,7 +974,7 @@ function admin_member_promote_ngv(array $p): array {
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'memberId' => $memberId, 'applicationId' => null,
         'fullName' => (string)$m['fullName'], 'email' => strtolower(trim((string)($m['email'] ?? ''))), 'phone' => (string)($m['phone'] ?? ''),
-        'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
+        'role' => $role, 'courses' => volunteer_promote_courses($m, $p), 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
         'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
@@ -2020,4 +2036,25 @@ function admin_item_needs_delete(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('item.need.delete', $g['requester']['memberId'], $centreId, ['item' => $item], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+
+/**
+ * The courses a member promoted to staff starts with: the ones the promoter
+ * named, else the member's own (their chosen courses, else their track),
+ * each in the catalogue's spelling. An instructor created with none opened
+ * on an empty class, with nothing to say why.
+ */
+function volunteer_promote_courses(array $m, array $p): string {
+    $want = is_array($p['courses'] ?? null) ? $p['courses'] : [];
+    if (!$want) {
+        $own = json_decode((string)($m['courses'] ?? ''), true);
+        $want = is_array($own) && $own ? $own : (trim((string)($m['track'] ?? '')) !== '' ? [(string)$m['track']] : []);
+    }
+    $out = [];
+    foreach ($want as $c) {
+        $canon = function_exists('curriculum_course_canonical') ? curriculum_course_canonical((string)$c) : trim((string)$c);
+        if ($canon !== null && $canon !== '' && !in_array($canon, $out, true)) $out[] = $canon;
+    }
+    return $out ? json_encode(array_slice($out, 0, 20)) : '';
 }

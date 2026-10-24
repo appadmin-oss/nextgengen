@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 175;
+const NGG_SCHEMA_TARGET = 176;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5112,6 +5112,22 @@ function db_migrate(PDO $db): void {
               UNIQUE(commentId, memberId)
             );
             CREATE INDEX IF NOT EXISTS idx_ccr_comment ON community_comment_reactions(commentId);
+        ",
+        /* Time on the portal: one row per person, day and portal, added to by
+           a heartbeat the page sends only while it is visible and in use. */
+        176 => "
+            CREATE TABLE IF NOT EXISTS portal_time (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              day TEXT NOT NULL,
+              portal TEXT NOT NULL,
+              seconds INTEGER NOT NULL DEFAULT 0,
+              beats INTEGER NOT NULL DEFAULT 0,
+              firstAt TEXT NOT NULL,
+              lastAt TEXT NOT NULL,
+              UNIQUE(memberId, day, portal)
+            );
+            CREATE INDEX IF NOT EXISTS idx_pt_day ON portal_time(day);
         ",
     ];
 

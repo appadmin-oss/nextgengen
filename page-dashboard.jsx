@@ -612,6 +612,8 @@ function DashboardPage({ setPage }) {
     return <DashboardShell setPage={setPage}><DashboardSignedOut openSignIn={openSignIn} setPage={setPage}/></DashboardShell>;
   }
   // Full error screen only when we have nothing to show.
+  // A volunteer signed in with their card: their own landing, not an error.
+  if (data && data.volunteer) return <DashboardShell setPage={setPage}><VolunteerHome v={data.volunteer}/></DashboardShell>;
   if (err && !data) {
     if (rec && rec.locked) return <DashboardShell setPage={setPage}><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
     return <DashboardShell setPage={setPage}><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
@@ -828,11 +830,37 @@ function DashboardSkeleton() {
   );
 }
 
+/* A volunteer's landing (instructor, mentor, centre ops): who they are, and
+   their portals. The full volunteer dashboard (time on the portal, analytics)
+   is a later piece of work; this says so rather than pretending. */
+function VolunteerHome({ v }) {
+  const role = { instructor: "Instructor", mentor: "Mentor", admin: "Centre operations" }[v.role] || "Volunteer";
+  const links = [];
+  if (v.role === "instructor") links.push(["/instructor", "Instructor Portal", "Your class: roll, lessons, marking, skills and each child's progress."]);
+  if (v.role === "mentor" || v.isMentor) links.push(["/mentor", "Mentor Portal", "Your mentees: sessions, goals, plans and messages."]);
+  if (v.role === "admin") links.push(["/mentor", "Centre portal", "Your centre's children, attendance and staff."]);
+  if (v.idPath) links.push([v.idPath, "My volunteer ID", "Your digital ID and check-in code, the same as your printed card."]);
+  links.push(["/community", "Community", "The NGG community."]);
+  return (
+    <section className="vol-home">
+      <div className="container">
+        <p className="vol-home-eyebrow">{role}{v.centre ? " · " + v.centre : ""}</p>
+        <h1 className="vol-home-h">Welcome, {String(v.fullName || "").split(/\s+/)[0] || "volunteer"}</h1>
+        <p className="vol-home-sub">You signed in as a volunteer{v.courses && v.courses.length ? ", teaching " + v.courses.join(", ") : ""}. Your work happens in your portal below.{!v.cleared ? " Your safeguarding check is not recorded yet, so children's records stay closed until your centre admin clears it." : ""}</p>
+        <ul className="vol-home-links">{links.map(([href, t, d]) => (
+          <li key={href}><a href={href}><b>{t}</b><span>{d}</span></a></li>))}</ul>
+        <p className="vol-home-note">A volunteer dashboard with your hours and activity is on the way.</p>
+      </div>
+    </section>
+  );
+}
+
 function DashboardError({ code, onRetry }) {
+  const offline = code === "network" || (typeof navigator !== "undefined" && navigator.onLine === false);
   return (
     <section style={{padding:"120px 0", textAlign:"center"}}>
-      <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--coral)"}}>off-line</div>
-      <p style={{marginTop:18, color:"var(--ink-700)"}}>{code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Something went wrong loading your dashboard."}</p>
+      <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--coral)"}}>{offline ? "off-line" : "Not loaded"}</div>
+      <p style={{marginTop:18, color:"var(--ink-700)"}}>{offline ? "You're offline. Check your connection, then try again." : code === "upstream_unreachable" ? "We couldn't reach the data server. Try again in a moment." : "Your dashboard couldn't load (" + (code || "error") + "). Try again; if it keeps happening, tell the NGG desk."}</p>
       <button className="btn btn-primary" onClick={onRetry} style={{marginTop:24}}>Try again</button>
     </section>
   );

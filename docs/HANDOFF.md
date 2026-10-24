@@ -2883,3 +2883,59 @@ The table is editable in the Control Room, with these as the defaults.
   - The prompt describes the CA, exam, total and grade columns, conversion when a card is not out of 100, the check against CA + exam and the grade, and easily confused digits.
   - It runs with thinking on low and 3000 output tokens. A weak read (a third or more of rows without a score or under 0.6 confidence) gets one more careful pass, and the more confident read is kept.
 - **Tests:** instructor 39/0 (checklist, placement); PHP 5247/0.
+
+## Portal time, backup AI keys, volunteer landing, report evaluation, logo home (2026-10-24)
+
+- **Portal time (migration 176, `portal_time`):**
+  - The SPA (`api-client.js`, end of file) beats `/api/member/beat.php` once a minute, and only while the page is on a portal path (dashboard, member, profile, mentor, instructor, community, family), visible, and touched in the last two minutes.
+  - `portal_time_beat` trusts nothing:
+    - at most 75 seconds a beat;
+    - a beat within 40 seconds of the person's last one is dropped, so two tabs do not double the time;
+    - 12 hours per portal per day.
+  - A signed-out page backs off for five minutes.
+  - `admin.engagement.portal` (cap `audit`, centre-scoped) returns totals (reach, total, average and median per active member, days active, not seen), a daily series, time by portal, time of day, by centre, and per member. It does one grouped read; everything after it is arithmetic.
+  - UI: Analytics → Engagement → **Portal time** (`PortalTimePanel`, `.pt-*`), with search and CSV. The merge policy moves `portal_time` with `MOVE_UNIQUE` on day and portal.
+- **Backup AI keys:**
+  - `ai_ui_keys` adds slots `pool1`, `pool2` and `pool3` (Gemini) and `groq`. Every profile tries the pool, rotated per minute.
+  - Groq comes last, and never for photos, framing or report-card reading.
+  - Settings → AI keys has six slots, each with its own test.
+- **Volunteer landing:** `member_dashboard` for a signed-in volunteer with no member row returns `volunteer`. `/dashboard` shows `VolunteerHome` (their portals, their ID, Community) instead of "Something went wrong". `DashboardError` says "off-line" only when the browser is offline.
+- **Report evaluation:**
+  - The prompt is grounded in the numbers: targets, moves, and three specific sentences.
+  - The fallback summary names the strongest and lowest subjects with percentages, and the focus subjects (now → target).
+- **Logo goes home:** the logo in the member, mentor, instructor, Club and Community portals links to `/` (the website).
+- **Tests:** PHP 5260/0.
+
+### Open tasks, as of this entry (owner's list)
+
+1. **Volunteer dashboard:** time on the portal, analytics, essentials. Asked for; not started. `portal_time` already records volunteers who sign in to the portals; the panel needs a volunteer view.
+2. **Tutor inside the Companion:** Socratic, on the backup keys.
+3. **Call room:** parked by the owner. The draft domain is outside the repo.
+4. **Lessons:** improve the feature, and the curriculum ordering UX in admin.
+5. **Member portal:** helpful to children and structured on every device. Also the Messages UX.
+6. **Instructor portal:** managing, assessing and monitoring (ongoing).
+7. **Projects:** verify end to end.
+8. **Companion everywhere:** parent voice; no synchronous AI on page load.
+9. **PDFs that do not display.**
+10. **WhatsApp-style Community:** the remaining parts; and audit every Community fault.
+11. **SMS codes as a second sign-in step**, when SMS is configured.
+12. **Cloudinary failover** across several accounts (in progress); device-aware guides with screenshots.
+13. **Re-baseline `dashboard-results.test.js`:** it waits for `.dash-results` at `/member/grow/results`, which the v9 portal now serves.
+14. **Browser re-runs** (instructor-v6, family-ui, ids-ask, curriculum-ui); audit the commits since 4bd4af1.
+15. **"People get locked out":** confirm whether the owner means the 15-minute sign-in lock (`too_many_attempts`) as well as being stuck inside a portal, which the logo link fixes.
+
+## School results are the mentor's; instructor courses; a channel per course (2026-10-24)
+
+- **School results leave the instructor portal** (owner's decision). This reverses the earlier "instructors see school results".
+  - The tab, its nav item and its load are gone from `ip6-app.jsx`. A bookmarked `results` screen opens Today.
+  - On the server, `results_reader_gate` refuses an instructor `results_are_for_mentors` on `instructor.results` and every `instructor.result*` op. Staff still pass.
+  - The functions stay. The PHP suite exercises them behind `$GLOBALS['__results_instructors']`.
+  - The instructor's To do no longer carries `results-attn`.
+  - The mentor portal keeps results.
+- **Results list:** for a staff reader, `instructor_results` lists the whole class. A child who joined after the term ended is `not_due` (counted in the class, not as missing; `kpis.owed`). Before, a new September class read "0 of 0".
+- **Instructor courses are assigned properly:**
+  - `admin_volunteer_update` saves an NGG volunteer's courses in the catalogue's spelling (`curriculum_course_canonical`). A name that is not a course is refused (`unknown_course`, with the nearest course and the list in `detail`), and the volunteer editor shows it on the Courses field.
+  - A member promoted to staff starts with their own courses (`volunteer_promote_courses`), or the ones named. Before, they started with none, and the instructor portal opened on an empty class.
+  - Summer School keeps its own tracks.
+- **Every course gets a channel automatically:** `community_ensure_channels` now syncs on every load against `curriculum_courses()` (the catalogue plus any course that has lessons). It used to seed only an empty table, so a course added later never got a channel. A channel staff archived stays archived.
+- **Tests:** PHP 5268/0; instructor 39/0.

@@ -289,6 +289,7 @@ function member_merge_policy(): array {
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote
         'community_reactions'    => 'MOVE_UNIQUE',
         'community_comment_reactions' => 'MOVE_UNIQUE',   // one reaction per person per reply
+        'portal_time'          => 'MOVE_UNIQUE',   // one row per person, day and portal; the kept record's day wins
         'post_reactions'         => 'MOVE_UNIQUE',
         'community_bookmarks'    => 'MOVE_UNIQUE',
         'community_stars'        => 'MOVE_UNIQUE',
@@ -570,6 +571,7 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId,
         'community_poll_votes' => ['postId'],
         'community_reactions'  => ['postId', 'emoji'],
         'community_comment_reactions' => ['commentId'],
+        'portal_time'          => ['day', 'portal'],
         'post_reactions'       => ['postId', 'emoji'],
         'community_bookmarks'  => ['postId'],
         'community_stars'      => ['postId'],

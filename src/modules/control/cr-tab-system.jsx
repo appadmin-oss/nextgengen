@@ -1143,33 +1143,40 @@ function CrSyKeysPending({ ctx, svc }) {
    photos and backs the first up. Keys are sealed on the server and never come
    back to the browser — this shows only that one is set and how it ends. */
 function crSyKeysForm(ctx, k) {
+  /* Six slots: two for photos, then the backups every AI job uses (the tutor, the
+     Companion, report cards, marking): three Gemini keys that share the load and
+     cover for each other, and a Groq key as the last resort. */
+  const SL = [["framing", "Key 1 — headshot framing", "Measures each photo so the card shows an accurate head-and-shoulders."],
+    ["second", "Key 2 — photo checks, and backup for framing", ""],
+    ["pool1", "Backup Gemini key A — every AI job", "The tutor, the Companion, report cards and marking use these three in turn, and switch when one runs out for the day."],
+    ["pool2", "Backup Gemini key B — every AI job", ""], ["pool3", "Backup Gemini key C — every AI job", ""],
+    ["groq", "Groq key — last resort", "From console.groq.com (starts gsk_). Used when every Gemini key is out. Not used to read photos or report cards."]];
+  const cap = x => x.charAt(0).toUpperCase() + x.slice(1);
+  const vals = { model: (k && k.model) || "" }; SL.forEach(([id]) => { vals[id + "Key"] = ""; vals["clear" + cap(id)] = false; });
   ctx.form({
-    title: "Gemini keys for photos",
-    intro: "From Google AI Studio (aistudio.google.com → Get API key). Leave a field blank to keep the key already saved. Keys are encrypted on the server and never shown again.",
+    title: "AI keys",
+    intro: "Gemini keys from Google AI Studio (aistudio.google.com → Get API key), each from a different Google account so each has its own free quota. Leave a field blank to keep the key already saved. Keys are encrypted on the server and never shown again.",
     submit: "Save keys",
-    values: { framingKey: "", secondKey: "", model: (k && k.model) || "", clearFraming: false, clearSecond: false },
-    fields: [
-      { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AQ.… or AIza…",
-        help: "Measures each photo so the card shows an accurate head-and-shoulders, whatever shape the photo was." },
-      { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AQ.… or AIza…" },
-      { id: "model", l: "Model", max: 60, ph: "Automatic", help: "Leave blank: each key uses the newest Gemini Flash model Google lets it use (gemini-3.8-flash today), and moves on by itself when Google retires one. Type a model name only to pin one." },
-      k && k.framing.set ? { id: "clearFraming", l: "Remove key 1", type: "switch" } : null,
-      k && k.second.set ? { id: "clearSecond", l: "Remove key 2", type: "switch" } : null,
-    ].filter(Boolean),
+    values: vals,
+    fields: SL.map(([id, l, help]) => ({ id: id + "Key", l, type: "password", ac: "new-password", max: 200, ph: k && k[id] && k[id].set ? "Saved · ends " + k[id].ending : id === "groq" ? "gsk_…" : "AQ.… or AIza…", help: help || undefined }))
+      .concat([{ id: "model", l: "Gemini model", max: 60, ph: "Automatic", help: "Leave blank: each key uses the newest Gemini Flash model Google lets it use, and moves on by itself when Google retires one." }])
+      .concat(SL.filter(([id]) => k && k[id] && k[id].set).map(([id, l]) => ({ id: "clear" + cap(id), l: "Remove " + l.split(" — ")[0].toLowerCase(), type: "switch" }))),
     onSubmit: async v => {
-      try { return await NGGApi.admin.summer.aiKeysSet({ framingKey: v.framingKey.trim(), secondKey: v.secondKey.trim(), model: v.model.trim(), clearFraming: !!v.clearFraming, clearSecond: !!v.clearSecond }); }
+      const body = { model: v.model.trim() }; SL.forEach(([id]) => { body[id + "Key"] = (v[id + "Key"] || "").trim(); body["clear" + cap(id)] = !!v["clear" + cap(id)]; });
+      try { return await NGGApi.admin.summer.aiKeysSet(body); }
       catch (e) { if (e.code === "bad_key") return { fieldErrors: { [((e.data && e.data.field) || "framing") + "Key"]: crErr(e, "") } }; if (e.code === "bad_model") return { fieldErrors: { model: crErr(e, "") } }; throw e; }
     },
-    done: () => { ctx.reload(); return "Saved. Use “Test” to check Google accepts them."; },
+    done: () => { ctx.reload(); return "Saved. Use “Test” to check each key works."; },
   });
 }
 async function crSyKeysTest(ctx) {
   ctx.toast("Sending one small request with each key…");
   try {
     const r = await NGGApi.admin.summer.aiKeysTest();
-    const say = (n, x) => n + ": " + (x.ok ? "works, using " + x.model + " (" + crNum(x.ms) + " ms)"
-      : x.error === "not_set" ? "not set" : "refused — " + (x.detail || x.error) + (x.model ? " [" + x.model + "]" : ""));
-    ctx.toast(say("Key 1", r.results.framing) + " · " + say("Key 2", r.results.second), null, !(r.results.framing.ok || r.results.second.ok));
+    const names = { framing: "Key 1", second: "Key 2", pool1: "Backup A", pool2: "Backup B", pool3: "Backup C", groq: "Groq" };
+    const say = (n, x) => n + ": " + (x.ok ? "works" + (x.model ? " (" + x.model + ")" : "") : x.error === "not_set" ? "not set" : "refused — " + (x.detail || x.error));
+    const res = r.results || {};
+    ctx.toast(Object.keys(names).filter(id => res[id]).map(id => say(names[id], res[id])).join(" · "), null, !Object.values(res).some(x => x.ok));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
 }
 /* AI spending (api/_lib/ai.php ai_route): nobody chooses a provider. Everyday work runs on
@@ -1238,7 +1245,7 @@ function CrSyFraming({ ctx, k }) {
   const stop = React.useRef(false);
   React.useEffect(() => () => { stop.current = true; }, []);
   if (!k) return null;
-  const on = k.framing.set || k.second.set;
+  const on = ["framing", "second", "pool1", "pool2", "pool3", "groq"].some(id => k[id] && k[id].set);
   const frameAll = async () => {
     stop.current = false;
     let done = 0, failed = 0, left = k.backlog;
@@ -1259,6 +1266,7 @@ function CrSyFraming({ ctx, k }) {
       <div className="cr-sy-frame-keys">
         <span><b>Key 1 · framing</b> {k.framing.set ? "set · ends " + k.framing.ending : "not set"}{k.framing.updatedBy ? " · " + k.framing.updatedBy : ""}</span>
         <span><b>Key 2 · checks &amp; backup</b> {k.second.set ? "set · ends " + k.second.ending : "not set"}</span>
+        {[["pool1", "Backup A"], ["pool2", "Backup B"], ["pool3", "Backup C"], ["groq", "Groq · last resort"]].map(([id, l]) => <span key={id}><b>{l} · every AI job</b> {k[id] && k[id].set ? "set · ends " + k[id].ending : "not set"}</span>)}
         <span><b>Model</b> {k.model || "Automatic — the best each key can use"}</span>
       </div>
       <p className="cr-hint" role="status" aria-live="polite">

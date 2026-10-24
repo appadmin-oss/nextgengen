@@ -27,7 +27,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 <div ref="{{ rootRef }}" style="width:{{ frameW }};height:{{ frameH }};max-width:100%;max-height:100%;border-radius:{{ frameR }};box-shadow:{{ frameSh }};overflow:hidden;display:flex;background:#f4f4f2;position:relative">
   <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
     <aside aria-label="Instructor portal" style="width:240px;flex-shrink:0;background:#fbfbfa;border-right:1px solid #e8e5dd;display:flex;flex-direction:column;padding:16px 12px;gap:14px">
-      <div style="display:flex;align-items:center;gap:10px;padding:0 6px"><img src="assets/logo.png" alt="" style="width:28px;height:28px;border-radius:50%"><span style="display:flex;flex-direction:column"><span style="font-size:14px;font-weight:700">Instructor portal</span><span style="font-size:12px;color:#6b6b72">{{ course.division }} · {{ me.centre }}</span></span></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:0 6px"><a href="/" aria-label="Next Generation Genius: website home" title="Website home" style="display:inline-flex;flex:none;border-radius:50%"><img src="assets/logo.png" alt="" style="width:28px;height:28px;border-radius:50%"></a><span style="display:flex;flex-direction:column"><span style="font-size:14px;font-weight:700">Instructor portal</span><span style="font-size:12px;color:#6b6b72">{{ course.division }} · {{ me.centre }}</span></span></div>
       <nav aria-label="Sections" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px">
         <sc-for list="{{ navGroups }}" as="g" hint-placeholder-count="3">
           <div style="display:flex;flex-direction:column;gap:1px">

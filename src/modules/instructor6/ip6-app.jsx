@@ -111,7 +111,7 @@ class Ip6Portal extends React.Component {
       const slot = { course: t.course, centre: t.centre };
       if (this.state.course !== t.course || this.state.centre !== t.centre) this.setState(slot);
       this.load('cls', () => ip6Api.cls(slot)); this.load('hist', () => ip6Api.hist(slot)); this.load('board', () => ip6Api.board(t.course, t.centre));
-      this.load('curr', () => ip6Api.curr()); this.load('res', () => ip6Api.results(Object.assign({ filter: 'all' }, slot)));
+      this.load('curr', () => ip6Api.curr());
       this.load('form', () => NGGApi.public.formation('instructor'));
       this.load('me', () => NGGApi.auth.me());
       this.load('comm', () => NGGApi.member.community.channels().then(c => { const ch = ((c && c.channels) || []).find(x => x.kind === 'course' && (x.name || '').toLowerCase() === String(t.course).toLowerCase()) || ((c && c.channels) || []).find(x => x.slug === ip6Slug(t.course));
@@ -138,7 +138,8 @@ class Ip6Portal extends React.Component {
      portal opens on the Academy, with Support and Report a concern. */
   oriLocked() { const a = this.state.d.acad; return !!(a && a.orientation && a.orientation.ok === false); }
   goTop(scr) { this.setState({ scr, hist: [] }); this.scrollTop(); }
-  goTo(scr, extra) { const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
+  goTo(scr, extra) { if (scr === 'results') scr = 'today';   // school results are the mentor's, not the instructor's
+    const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
   goBack() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'today', hist: h.slice(0, -1) }); this.scrollTop(); }
   loadStu(id) { if (id && !this.state.d['stu:' + id]) this.load('stu:' + id, () => ip6Api.stu(id, this.state.course || ((this.state.d.cls || {}).course) || '')); }
 
@@ -203,7 +204,7 @@ class Ip6Portal extends React.Component {
   }
 
   renderVals() {
-    const C = this.ctx(); const { D, cls, L, isHere, lvlOf, kit, here } = C; const S = this.state, set = o => this.setState(o), cur = S.scr;
+    const C = this.ctx(); const { D, cls, L, isHere, lvlOf, kit, here } = C; const S = this.state, set = o => this.setState(o), cur = S.scr === 'results' ? 'today' : S.scr;
     const today = D.today || {}; const sess = cls.session || {}; const loop = cls.loop || today.loop || { steps: {} };
     const narrow = S.w < 760, wide = !narrow;
     const meM = ((D.me || {}).member) || {}; const meName = meM.fullName || '';
@@ -228,14 +229,14 @@ class Ip6Portal extends React.Component {
       { h: '', items: [['today', 'Today', 'ph ph-sun-horizon', ''], ['roll', 'Class roll', 'ph ph-list-checks', rollClosed ? '' : String(L.filter(m => !m.rollMark && S.here[m.id] === undefined).length || '')]] },
       { h: 'This Saturday', items: [['plan', 'Plan', 'ph ph-path', steps.plan === 'done' ? '' : '1'], ['teach', 'Teach', 'ph ph-presentation-chart', ''], ['exit', 'Exit ticket', 'ph ph-ticket', steps.exit === 'done' ? '' : '1'], ['log', 'Session log', 'ph ph-notebook', steps.log === 'done' ? '' : '1']] },
       { h: 'Teach', items: [['analytics', 'Analytics', 'ph ph-chart-bar', ''], ['skills', 'Skills board', 'ph ph-ladder', ''], ['marking', 'Marking', 'ph ph-check-square', markLeft ? String(markLeft) : ''], ['assignments', 'Assignments', 'ph ph-clipboard-text', ''], ['curriculum', 'Curriculum', 'ph ph-books', '']] },
-      { h: 'People', items: [['students', 'Students', 'ph ph-users-three', ''], ['results', 'School results', 'ph ph-exam', resAttn ? String(resAttn) : ''], ['community', 'Community', 'ph ph-chats-circle', cmNeed.length ? String(cmNeed.length) : ''], ['support', 'Support', 'ph ph-lifebuoy', ''], ['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : '']] },
+      { h: 'People', items: [['students', 'Students', 'ph ph-users-three', ''], ['community', 'Community', 'ph ph-chats-circle', cmNeed.length ? String(cmNeed.length) : ''], ['support', 'Support', 'ph ph-lifebuoy', ''], ['academy', 'Academy', 'ph ph-graduation-cap', acadTodo ? String(acadTodo) : '']] },
     ];
     const navCur = cur === 'student' ? 'students' : cur === 'report' ? 'support' : cur;
     const flat = [].concat(...groups.map(g => g.items));
     const tabIds = ['today', 'roll', 'teach', 'exit'];
     const moreList = flat.filter(x => !tabIds.includes(x[0])).map(([id, label, icon, badge]) => ({ label, icon, badge, hasBadge: !!badge, go: () => this.goTo(id) }));
     const bOf = id => (flat.find(z => z[0] === id) || [])[3] || '';
-    const AREAS = [['Today', 'ph ph-sun-horizon', [['today', 'Today']]], ['Saturday', 'ph ph-presentation-chart', [['roll', 'Roll'], ['plan', 'Plan'], ['teach', 'Teach'], ['exit', 'Exit ticket'], ['log', 'Session log']]], ['Progress', 'ph ph-chart-bar', [['marking', 'Marking'], ['assignments', 'Assignments'], ['skills', 'Skills board'], ['analytics', 'Analytics'], ['results', 'School results']]], ['Students', 'ph ph-users-three', [['students', 'Students'], ['community', 'Community']]], ['Resources', 'ph ph-books', [['curriculum', 'Curriculum'], ['support', 'Support'], ['academy', 'Academy']]]]
+    const AREAS = [['Today', 'ph ph-sun-horizon', [['today', 'Today']]], ['Saturday', 'ph ph-presentation-chart', [['roll', 'Roll'], ['plan', 'Plan'], ['teach', 'Teach'], ['exit', 'Exit ticket'], ['log', 'Session log']]], ['Progress', 'ph ph-chart-bar', [['marking', 'Marking'], ['assignments', 'Assignments'], ['skills', 'Skills board'], ['analytics', 'Analytics']]], ['Students', 'ph ph-users-three', [['students', 'Students'], ['community', 'Community']]], ['Resources', 'ph ph-books', [['curriculum', 'Curriculum'], ['support', 'Support'], ['academy', 'Academy']]]]
       .concat(this.props.onSummer ? [['Summer School', 'ph ph-sun', [['summer', 'Summer School']]]] : [])
       .map(([label, icon, kids]) => { const b = kids.filter(([id]) => bOf(id)).length; return { label, icon, kids, ids: kids.map(k => k[0]), b }; });
     const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
@@ -634,10 +635,10 @@ class Ip6Portal extends React.Component {
     const F = [['all', 'All'], ['attn', 'Needs attention'], ['missing', 'Not uploaded'], ['up', 'Improving']];
     const fk = S.rsF || 'all', qq = (S.rsQ || '').trim().toLowerCase();
     const counts = res.counts || {};
-    const list = rows2.filter(x => fk === 'all' || (fk === 'attn' ? x.attention : fk === 'missing' ? !x.uploaded : x.uploaded && (x.change || 0) > 0)).filter(x => !qq || x.name.toLowerCase().includes(qq));
+    const list = rows2.filter(x => fk === 'all' || (fk === 'attn' ? x.attention : fk === 'missing' ? !x.uploaded && x.status !== 'not_due' : x.uploaded && (x.change || 0) > 0)).filter(x => !qq || x.name.toLowerCase().includes(qq));
     const sgn = n => n === null || n === undefined ? '' : (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n);
     const k = res.kpis || {};
-    o.rsK = [['Uploaded', (k.uploaded || 0) + ' of ' + (k.class || 0), res.dueOn ? 'Due ' + ip6Date(res.dueOn, { weekday: 'long', day: 'numeric', month: 'long' }) : res.termLabel || ''], ['Needs attention', k.attention || 0, 'Low, falling or off-plan'], ['Not uploaded', k.missing || 0, 'A reminder goes to them and the family'], ['Class change', k.avgChange === null || k.avgChange === undefined ? '—' : sgn(k.avgChange), 'on last term, average']].map(([l, v, s2]) => ({ l, v: String(v), s: s2 }));
+    o.rsK = [['Uploaded', (k.uploaded || 0) + ' of ' + (k.owed === undefined ? k.class || 0 : k.owed), k.class && k.owed === 0 ? 'Nobody in this class owes ' + (res.termLabel || 'this term') + ': they joined after it ended' : res.dueOn ? 'Due ' + ip6Date(res.dueOn, { weekday: 'long', day: 'numeric', month: 'long' }) : res.termLabel || ''], ['Needs attention', k.attention || 0, 'Low, falling or off-plan'], ['Not uploaded', k.missing || 0, 'A reminder goes to them and the family'], ['Class change', k.avgChange === null || k.avgChange === undefined ? '—' : sgn(k.avgChange), 'on last term, average']].map(([l, v, s2]) => ({ l, v: String(v), s: s2 }));
     o.rsQ = S.rsQ || ''; o.rsOnQ = e => set({ rsQ: e.target.value });
     o.rsF = F.map(([key, l]) => ({ l, n: key === 'all' ? counts.all || 0 : key === 'attn' ? counts.attn || 0 : key === 'missing' ? counts.missing || 0 : counts.up || 0, on: fk === key ? 'true' : 'false', ring: fk === key ? '#0b0b0c' : '#d6d4cc', bw: fk === key ? '2px' : '1px', pick: () => set({ rsF: key }) }));
     o.rsRows = list.map(x => { const open = S.rsOpen === x.studentId; const det = D['res:' + x.studentId]; const rec = det && det.record; const m = (C.L.find(z => z.id === x.studentId) || {});
@@ -645,13 +646,13 @@ class Ip6Portal extends React.Component {
       /* An average of 0 is a report nobody read (every score typed as 0), not
          a term of zeros: it says so, rather than "0% · Needs attention". */
       const unread = x.uploaded && x.avg === 0;
-      return { name: x.name, first: ip6First(x.name), initials: ip6Ini(x.name), mentor: m.mentor || 'the mentor', up: x.uploaded, missing: !x.uploaded, isOpen: open, exp: open ? 'true' : 'false', chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down', bg: open ? '#fcfcfb' : '#fff',
+      return { name: x.name, first: ip6First(x.name), initials: ip6Ini(x.name), mentor: m.mentor || 'the mentor', up: x.uploaded, missing: !x.uploaded && x.status !== 'not_due', isOpen: open, exp: open ? 'true' : 'false', chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down', bg: open ? '#fcfcfb' : '#fff',
         toggle: () => { set({ rsOpen: open ? null : x.studentId }); if (!open && !det) this.load('res:' + x.studentId, () => ip6Api.result(x.studentId, res.term)); },
         avgT: x.uploaded && x.avg !== null && !unread ? x.avg + '%' : '—', dT: x.uploaded && x.change !== null ? sgn(x.change) + ' on last term' : '', dFg: (x.change || 0) >= 0 ? '#1d6b30' : '#b0361c',
-        stT: unread ? 'Scores not read: every subject says 0. Remind them to type them in' : !x.uploaded ? (x.status === 'in_progress' ? 'Started, not sent' : 'Not uploaded') : x.attention ? (x.adherence !== null && x.adherence < 50 ? 'Off plan · ' + x.adherence + '% of sessions' : 'Needs attention') : x.status === 'live' ? 'On plan' + (x.adherence !== null ? ' · ' + x.adherence + '% of sessions' : '') : 'Plan waiting for the mentor',
+        stT: unread ? 'Scores not read: every subject says 0. Remind them to type them in' : x.status === 'not_due' ? 'Joined after this term: nothing owed' : !x.uploaded ? (x.status === 'in_progress' ? 'Started, not sent' : 'Not uploaded') : x.attention ? (x.adherence !== null && x.adherence < 50 ? 'Off plan · ' + x.adherence + '% of sessions' : 'Needs attention') : x.status === 'live' ? 'On plan' + (x.adherence !== null ? ' · ' + x.adherence + '% of sessions' : '') : 'Plan waiting for the mentor',
         stFg: !x.uploaded ? '#6b6b72' : x.attention ? '#b0361c' : '#1d6b30', stIcon: !x.uploaded ? 'ph ph-clock' : x.attention ? 'ph ph-warning-circle' : 'ph ph-check-circle',
         subs: subsList.map(z => ({ s: z.subject || z.name, sc: unread || z.score === null || z.score === undefined ? '—' : z.score + '%', dT: z.change !== null && z.change !== undefined ? sgn(z.change) : '', dFg: (z.change || 0) >= 0 ? '#1d6b30' : '#b0361c', bd: z.score < 50 ? '#f3cfc5' : '#e8e5dd' })),
-        summary: rec && rec.plan && rec.plan.summary ? rec.plan.summary : open && !det ? 'Loading…' : x.uploaded ? 'Average ' + x.avg + '%.' : 'Not uploaded yet for ' + (res.termLabel || 'this term') + '.',
+        summary: rec && rec.plan && rec.plan.summary ? rec.plan.summary : open && !det ? 'Loading…' : x.uploaded ? 'Average ' + x.avg + '%.' : x.status === 'not_due' ? ip6First(x.name) + ' joined after ' + (res.termLabel || 'this term') + ' ended, so there is no report to upload. Their first one is next term.' : 'Not uploaded yet for ' + (res.termLabel || 'this term') + '.',
         plan: rec && rec.plan && rec.plan.items ? rec.plan.items.map(it => ({ s: it.subject + (it.target ? ' · target ' + it.target + '%' : ''), method: it.method || '', what: it.what || it.text || '', when: it.when || '', w: (it.adherence || 0) + '%', adhT: (it.adherence || 0) + '% of sessions done', barBg: (it.adherence || 0) >= 70 ? '#1d6b30' : (it.adherence || 0) >= 50 ? '#e0a100' : '#b0361c' })) : [],
         noteV: S.rsNote[x.studentId] || '', onNote: e => set({ rsNote: { ...S.rsNote, [x.studentId]: e.target.value } }),
         sendNote: () => { const t = (S.rsNote[x.studentId] || '').trim(); if (!t) return this.toast('Write a note first.'); NGGApi.member.resultNote(x.studentId, res.term, t).then(() => { set({ rsNote: { ...S.rsNote, [x.studentId]: '' } }); this.toast('Note sent to ' + (m.mentor || 'the mentor') + ' and added to ' + ip6First(x.name) + '’s plan.'); }).catch(e => this.toast(ip6Err(e))); },
@@ -677,7 +678,7 @@ class Ip6Portal extends React.Component {
     /* First visit: a short tour. Any visit with something due: the duty reminder,
        whose buttons open the screen that does it. */
     const dutyGo = d => { const k = String(d.key || '').replace(/^instructor:/, '');
-      const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : /^results/.test(k) ? 'results' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
+      const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
       this.goTop(scr); return true; };
     v.openPlace = () => set({ placeOpen: true });
     v.openCheck = () => set({ checkOpen: true });

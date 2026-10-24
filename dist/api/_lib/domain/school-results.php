@@ -645,18 +645,30 @@ function member_results_plan_draft(array $p): array {
         elseif ($s['score'] !== null && $s['score'] < 40) $flags[] = "{$s['name']} is below 40.";
     }
     $first = mp_first((string)$m['fullName']);
-    $summary = $kpis['avg'] === null ? '' : "Your average is {$kpis['avg']}" . ($kpis['change'] !== null ? ' (' . ($kpis['change'] >= 0 ? '+' : '') . $kpis['change'] . ' since last term)' : '')
-        . ". Your strongest subject is {$kpis['best']['name']}. This plan picks " . count($items) . ' subject' . (count($items) === 1 ? '' : 's') . ' to work on, each aiming for 85% or more.';
+    $summary = $kpis['avg'] === null ? '' : "Your average is {$kpis['avg']}%" . ($kpis['change'] !== null ? ' (' . ($kpis['change'] >= 0 ? '+' : '') . $kpis['change'] . ' since last term)' : '')
+        . ". Your strongest subject is {$kpis['best']['name']} at {$kpis['best']['score']}%"
+        . (!empty($kpis['lowest']) && $kpis['lowest']['name'] !== $kpis['best']['name'] ? " and your lowest is {$kpis['lowest']['name']} at {$kpis['lowest']['score']}%" : '') . '. '
+        . ($items ? 'This plan works on ' . implode(', ', array_map(static fn($i) => $i['subject'] . ' (' . ($i['current'] ?? '–') . '% → ' . $i['target'] . '%)', $items)) . '. Start with ' . $items[0]['subject'] . ' this week.' : '');
     $aiModel = '';
     if ($items) {
         $brief = ['firstName' => $first, 'average' => $kpis['avg'], 'change' => $kpis['change'],
             'subjects' => array_map(static fn($s) => ['name' => $s['name'], 'score' => $s['score'], 'last' => $s['last']], $subjects),
             'focus' => array_map(static fn($i) => ['subject' => $i['subject'], 'current' => $i['current'], 'target' => $i['target'], 'method' => $i['method']], $items)];
-        $ai = ai_classify('You help a Nigerian teenager plan study for next term. Write a short, warm summary (2 sentences, no emoji, speak to them as "you", '
-            . 'praise effort and strategy never intelligence, never compare with other children) and one concrete "what" line per focus subject (one sentence, '
-            . 'what they will actually do in a session). Keep each focus subject and method exactly as given. Methods: retrieval (test yourself, R1), spaced (spread it out, R1), '
-            . 'worked (worked examples, R2), interleave (mix problem types, R2), selfexplain (explain it to yourself, R2). '
-            . 'JSON: {"summary":"...","items":[{"subject":"...","what":"..."}]}', json_encode($brief, JSON_UNESCAPED_UNICODE), 700, 'coach');
+        /* The evaluation reads the numbers, not the child: "you're showing
+           great dedication" was written for a card of zeros. It must name the
+           strongest and weakest subjects with their scores, any subject that
+           rose or fell by 5+ since last term, how far each focus subject is
+           from 85, and one first step. No praise the numbers do not support. */
+        $brief['target'] = RESULTS_TARGET_MIN;
+        $brief['moves'] = array_values(array_filter(array_map(static fn($s) => $s['score'] !== null && $s['last'] !== null && abs($s['score'] - $s['last']) >= 5 ? ['name' => $s['name'], 'from' => $s['last'], 'to' => $s['score']] : null, $subjects)));
+        $ai = ai_classify('You evaluate a Nigerian secondary-school student\'s term report and help them plan the next term. Every target is at least 85%. '
+            . 'Write "summary": 3 short sentences to the student ("you"), built ONLY from the numbers given: (1) the average and the strongest subject with its score; '
+            . '(2) the subject(s) that rose or fell by 5+ points since last term (with the numbers), or the weakest subject with its score if none moved; '
+            . '(3) which focus subjects this plan works on and how far each is from 85, and what to do first this week. '
+            . 'Praise effort and method, never intelligence; do not praise anything the numbers do not show; no emoji; never compare with other children. '
+            . 'Then one concrete "what" line per focus subject: what they will actually do in one session, specific to that subject (e.g. "Do 10 past WAEC simultaneous-equation questions without notes, then mark them"). '
+            . 'Keep each focus subject and method exactly as given. Methods: retrieval (test yourself, R1), spaced (spread it out, R1), worked (worked examples, R2), interleave (mix problem types, R2), selfexplain (explain it to yourself, R2). '
+            . 'JSON: {"summary":"...","items":[{"subject":"...","what":"..."}]}', json_encode($brief, JSON_UNESCAPED_UNICODE), 900, 'coach');
         if (!empty($ai['ok']) && is_array($ai['data'])) {
             $sum = trim((string)($ai['data']['summary'] ?? ''));
             if ($sum !== '' && mb_strlen($sum) <= 600) { $summary = $sum; $aiModel = (string)($ai['provider'] ?? 'ai'); }
@@ -1037,6 +1049,19 @@ function results_instructor_gate(array $p): array {
     return $g;
 }
 
+/**
+ * School results are the MENTOR's (owner's decision, 2026-10-24): an
+ * instructor teaches a course and does not read a child's school report.
+ * The instructor.result* ops answer staff only; an instructor is refused with
+ * `results_are_for_mentors`. The functions stay, so a staff reader and the
+ * tests ($GLOBALS['__results_instructors']) still exercise them.
+ */
+function results_reader_gate(array $p): array {
+    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    if ((string)$g['role'] === 'instructor' && empty($GLOBALS['__results_instructors'])) return ['ok' => false, 'error' => 'results_are_for_mentors'];
+    return $g;
+}
+
 /** The NGG members an instructor teaches, as rows. One query. */
 function results_class(array $g, string $q = ''): array {
     $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
@@ -1068,7 +1093,7 @@ function results_class(array $g, string $q = ''): array {
  * the server. Counts and KPIs are for the whole class, not the page.
  */
 function instructor_results(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $today = results_today();
     $terms = results_terms($today);
     $term = (string)($p['term'] ?? '');
@@ -1098,7 +1123,7 @@ function instructor_results(array $p): array {
             foreach (db_all("SELECT planId FROM plan_acks WHERE userId = ? AND planId IN ($ph)", array_merge([(string)$g['member']['memberId']], $pids)) as $r) $acks[(string)$r['planId']] = true;
         }
     }
-    $rows = []; $counts = ['all' => 0, 'attn' => 0, 'missing' => 0, 'up' => 0]; $changes = [];
+    $rows = []; $counts = ['all' => 0, 'owed' => 0, 'attn' => 0, 'missing' => 0, 'up' => 0]; $changes = [];
     foreach ($class as $m) {
         $mid = (string)$m['memberId'];
         $owed = $t ? results_owed($m, $t) : false;
@@ -1108,17 +1133,21 @@ function instructor_results(array $p): array {
         $pl = $plans[$mid] ?? null;
         $adh = ($uploaded && $pl && in_array((string)$pl['status'], ['sent', 'live'], true)) ? results_adherence(results_plan_items((string)$pl['planId']), (string)$pl['sentAt'], $today) : null;
         $attn = $uploaded && (($k['avg'] !== null && $k['avg'] < $cfg['minAvg']) || ($k['change'] !== null && $k['change'] <= -$cfg['dropPts']) || ($adh !== null && $adh < $cfg['minAdh']));
-        if (!$owed && !$uploaded) continue;
+        /* A child who joined after the term ended owes nothing for it, but is
+           still in the class: hiding them showed a new September class as
+           "0 of 0" and an empty list, which read as a broken page. */
+        $notDue = !$owed && !$uploaded;
         $counts['all']++;
+        if (!$notDue) $counts['owed']++;
         if ($attn) $counts['attn']++;
-        if (!$uploaded) $counts['missing']++; else $counts['up']++;
+        if ($notDue) {} elseif (!$uploaded) $counts['missing']++; else $counts['up']++;
         if ($k['change'] !== null) $changes[] = $k['change'];
-        $status = !$uploaded ? ($u ? 'in_progress' : 'missing') : ((string)($pl['status'] ?? '') === 'live' ? 'live' : 'awaiting_mentor');
+        $status = $notDue ? 'not_due' : (!$uploaded ? ($u ? 'in_progress' : 'missing') : ((string)($pl['status'] ?? '') === 'live' ? 'live' : 'awaiting_mentor'));
         $row = ['studentId' => $mid, 'name' => (string)$m['fullName'], 'displayId' => (string)$m['displayId'], 'track' => (string)$m['track'],
             'avg' => $k['avg'], 'change' => $k['change'], 'adherence' => $adh, 'status' => $status, 'attention' => $attn, 'uploaded' => $uploaded,
             'seen' => $pl ? isset($acks[(string)$pl['planId']]) : false];
         if ($filter === 'attn' && !$attn) continue;
-        if ($filter === 'missing' && $uploaded) continue;
+        if ($filter === 'missing' && ($uploaded || $notDue)) continue;
         if ($filter === 'up' && !$uploaded) continue;
         $rows[] = $row;
     }
@@ -1128,7 +1157,7 @@ function instructor_results(array $p): array {
     $page = array_slice($rows, $cursor, 20);
     return ['ok' => true, 'term' => $term, 'termLabel' => $t['label'] ?? '', 'dueOn' => $t['dueOn'] ?? '',
         'terms' => array_map(static fn($x) => ['key' => $x['key'], 'label' => $x['label']], $terms),
-        'kpis' => ['class' => $counts['all'], 'uploaded' => $counts['up'], 'attention' => $counts['attn'], 'missing' => $counts['missing'],
+        'kpis' => ['class' => $counts['all'], 'owed' => $counts['owed'], 'uploaded' => $counts['up'], 'attention' => $counts['attn'], 'missing' => $counts['missing'],
             'avgChange' => $changes ? (int)round(array_sum($changes) / count($changes)) : null],
         'counts' => $counts, 'rows' => $page, 'total' => count($rows),
         'nextCursor' => $cursor + 20 < count($rows) ? $cursor + 20 : null, 'thresholds' => $cfg];
@@ -1136,7 +1165,7 @@ function instructor_results(array $p): array {
 
 /** instructor.result — one member's term for an instructor, with reminders already sent. */
 function instructor_result(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');
@@ -1163,7 +1192,7 @@ function results_remind_wait(string $memberId): int {
 
 /** instructor.result.note — a note to the mentor about this member's plan. */
 function instructor_result_note(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');
@@ -1182,7 +1211,7 @@ function instructor_result_note(array $p): array {
 
 /** instructor.result.seen — "I have read this." */
 function instructor_result_seen(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $plan = db_row('SELECT planId, status FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [(string)$m['memberId'], (string)($p['term'] ?? '')]);
@@ -1196,7 +1225,7 @@ function instructor_result_seen(array $p): array {
 
 /** instructor.result.remind — nudge a member whose results are still owed. One per day. */
 function instructor_result_remind(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');

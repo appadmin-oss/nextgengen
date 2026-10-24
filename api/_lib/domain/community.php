@@ -158,30 +158,40 @@ function community_member_shape(array $who, string $kind): array {
 
 /** Seed a Commons channel + one channel per academy course (idempotent). */
 function community_ensure_channels(): void {
-    $have = (int)(db_row("SELECT COUNT(*) c FROM community_channels")['c'] ?? 0);
-    if ($have > 0) return;
     $now = now_iso();
-    db_insert('community_channels', [
-        'channelId' => 'CH-COMMONS', 'slug' => 'commons', 'name' => 'The Commons', 'kind' => 'commons',
-        'icon' => '🏛️', 'color' => '#3b5bdb', 'description' => 'Everyone, every centre, every track — the shared square.',
-        'sortOrder' => -100, 'pinned' => 1, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
-    ]);
+    if (!db_row("SELECT id FROM community_channels WHERE slug = 'commons'") && (int)(db_row("SELECT COUNT(*) c FROM community_channels")['c'] ?? 0) === 0) {
+        db_insert('community_channels', [
+            'channelId' => 'CH-COMMONS', 'slug' => 'commons', 'name' => 'The Commons', 'kind' => 'commons',
+            'icon' => '🏛️', 'color' => '#3b5bdb', 'description' => 'Everyone, every centre, every track — the shared square.',
+            'sortOrder' => -100, 'pinned' => 1, 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
+        ]);
+    }
+    /* Every course has a channel, automatically. This used to run once, on an
+       empty table, so a course added later (to the catalogue or by writing its
+       first lesson) never got one and its class had nowhere to talk. A channel
+       staff archived is left archived: the slug or name already exists. */
     $palette = ['#e4032b', '#f5b026', '#2f9e44', '#b07cff', '#3b5bdb', '#ff5a3c', '#17a2b8', '#a8d91a'];
     $icons = ['💻', '🎤', '🚀', '🎬', '🎨', '🎵', '📊', '🧠'];
-    $i = 0;
-    foreach ((function_exists('club_catalogue') ? club_catalogue() : academy_catalogue()) as $faculty => $courses) {
-        foreach ((array)$courses as $course) {
-            $slug = centre_slugify((string)$course);
-            if ($slug === '') continue;
-            if (db_row("SELECT id FROM community_channels WHERE slug = ?", [$slug])) continue;
-            db_insert('community_channels', [
-                'channelId' => 'CH-' . strtoupper(rand_hex(5)), 'slug' => $slug, 'name' => (string)$course, 'kind' => 'course',
-                'faculty' => (string)$faculty, 'icon' => $icons[$i % count($icons)], 'color' => $palette[$i % count($palette)],
-                'description' => $faculty . ' · a channel for the ' . $course . ' crew.', 'sortOrder' => $i,
-                'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
-            ]);
-            $i++;
-        }
+    $faculties = [];
+    foreach ((function_exists('club_catalogue') ? club_catalogue() : academy_catalogue()) as $faculty => $courses)
+        foreach ((array)$courses as $course) $faculties[(string)$course] ??= (string)$faculty;
+    $all = array_keys($faculties);
+    if (function_exists('curriculum_courses')) foreach (curriculum_courses() as $c) if (!isset($faculties[$c])) { $all[] = $c; $faculties[$c] = ''; }
+    $slugs = []; $names = [];
+    foreach (db_all("SELECT slug, name FROM community_channels") as $r) { $slugs[(string)$r['slug']] = true; $names[mb_strtolower((string)$r['name'])] = true; }
+    $i = (int)(db_row("SELECT COUNT(*) c FROM community_channels WHERE kind = 'course'")['c'] ?? 0);
+    foreach ($all as $course) {
+        $slug = centre_slugify((string)$course);
+        if ($slug === '' || isset($slugs[$slug]) || isset($names[mb_strtolower((string)$course)])) continue;
+        $faculty = $faculties[$course];
+        db_insert('community_channels', [
+            'channelId' => 'CH-' . strtoupper(rand_hex(5)), 'slug' => $slug, 'name' => (string)$course, 'kind' => 'course',
+            'faculty' => $faculty, 'icon' => $icons[$i % count($icons)], 'color' => $palette[$i % count($palette)],
+            'description' => ($faculty !== '' ? $faculty . ' · ' : '') . 'a channel for the ' . $course . ' crew.', 'sortOrder' => $i,
+            'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now,
+        ]);
+        $slugs[$slug] = true; $names[mb_strtolower((string)$course)] = true;
+        $i++;
     }
 }
 

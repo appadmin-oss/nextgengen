@@ -1506,6 +1506,7 @@
       overview:     () => request('/admin/overview.php'),
       engagement:   (opts) => request('/admin/engagement.php' + qs(opts || {})),
       engagementTrends: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'trends' }, opts || {}))),
+      engagementPortal: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'portal' }, opts || {}))),
       /* Whether the community is a community: reply rate, distinct voices,
          reach, return rate, answer speed, and the posts nobody answered. */
       communityEngagement: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'community' }, opts || {}))),
@@ -2129,7 +2130,37 @@
        skill marks. Each is an upsert on the server, so a replay is safe. */
     'teaching.act':   (p) => request('/member/teaching.php', { body: p }),
   };
+  /* Time on the portal (engagement.php portal_time_beat). */
+  API.portalBeat = (portal, seconds) => request('/member/beat.php', { body: { portal: portal, seconds: seconds } });
 
   global.NGGApi = API;
   global.NGGApiBase = BASE;
+
+  /* How long people actually use the portals. Time counts only while the page
+     is visible AND someone touched it in the last two minutes, so a tab left
+     open overnight adds nothing; it is sent once a minute. A signed-out page
+     gets one refusal and stops asking for five minutes. */
+  var BEAT_PORTALS = { dashboard: 'member', member: 'member', profile: 'member', 'journal-entry': 'member', circle: 'member',
+                       mentor: 'mentor', instructor: 'instructor', community: 'community', family: 'family' };
+  var beatInput = Date.now(), beatTick = Date.now(), beatOwed = 0, beatOffAt = 0;
+  function beatPortal() {
+    var seg = (global.location.pathname || '/').split('/')[1] || '';
+    return BEAT_PORTALS[seg] || '';
+  }
+  ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function (ev) {
+    global.addEventListener(ev, function () { beatInput = Date.now(); }, { passive: true, capture: true });
+  });
+  global.setInterval(function () {
+    var now = Date.now(), gap = Math.min(60, Math.round((now - beatTick) / 1000));
+    beatTick = now;
+    var portal = beatPortal();
+    if (!portal || document.visibilityState !== 'visible' || now - beatInput > 120000) return;
+    if (now - beatOffAt < 300000) return;
+    beatOwed += gap;
+    if (beatOwed < 60) return;
+    var send = beatOwed; beatOwed = 0;
+    API.portalBeat(portal, send).catch(function (e) {
+      if (e && (e.status === 401 || e.status === 403 || e.code === 'not_signed_in' || e.code === 'forbidden' || e.code === 'unauthenticated')) beatOffAt = Date.now();
+    });
+  }, 15000);
 })(window);

@@ -8510,3 +8510,15 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
   .fam-link, .fam-btn, .fam-brand { min-height: 44px; }
 }
 
+
+/* A volunteer's landing on /dashboard (VolunteerHome). */
+.vol-home { padding: 72px 0 96px; }
+.vol-home-eyebrow { margin: 0; font-family: var(--font-mono, monospace); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-700); }
+.vol-home-h { margin: 8px 0 10px; font-size: clamp(28px, 5vw, 44px); }
+.vol-home-sub { margin: 0 0 24px; max-width: 640px; font-size: 16px; line-height: 1.55; color: var(--ink-700); }
+.vol-home-links { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.vol-home-links a { display: flex; flex-direction: column; gap: 4px; padding: 18px; border-radius: 16px; border: 1px solid var(--line-200, #e6e8ee); background: #fff; color: inherit; text-decoration: none; min-height: 44px; }
+.vol-home-links a:hover { border-color: var(--navy-900, #0c1432); }
+.vol-home-links b { font-size: 16px; }
+.vol-home-links span { font-size: 14px; line-height: 1.45; color: var(--ink-700); }
+.vol-home-note { margin: 24px 0 0; font-size: 14px; color: var(--ink-700); }

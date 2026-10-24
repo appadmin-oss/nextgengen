@@ -27718,11 +27718,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (int)db_row("SELECT COUNT(*) c FROM plan_notes WHERE planId = ? AND text LIKE 'Two kept weeks%'", [$pl['planId']])['c'] === 1);
     chk('mentor: a blank line to the child is refused', (backend_dispatch('member.mentor.plan.cheer', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => '']))['error'] ?? '') === 'note_required');
 
-    // Instructor.
+    // Instructor: school results are the mentor's. Refused by default…
+    chk('instructor: school results are for mentors, an instructor is refused', (backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term]))['error'] ?? '') === 'results_are_for_mentors'
+        && (backend_dispatch('instructor.result', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term]))['error'] ?? '') === 'results_are_for_mentors');
+    // …and the staff-reader path below is still held to its promises.
+    $GLOBALS['__results_instructors'] = true;
     $ir = backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term]));
     $ids = array_column($ir['rows'] ?? [], 'studentId');
-    chk('instructor: the class is the NGG members of their centre and course who owe this term', !empty($ir['ok']) && in_array('NGG-RS-1', $ids, true) && in_array('NGG-RS-2', $ids, true)
-        && !in_array('NGG-RS-3', $ids, true) && !in_array('NGG-RS-4', $ids, true) && !in_array('NGG-RS-S', $ids, true));
+    chk('instructor: the class is the NGG members of their centre and course', !empty($ir['ok']) && in_array('NGG-RS-1', $ids, true) && in_array('NGG-RS-2', $ids, true)
+        && !in_array('NGG-RS-4', $ids, true) && !in_array('NGG-RS-S', $ids, true));
+    $nj = array_values(array_filter($ir['rows'] ?? [], fn($r) => $r['studentId'] === 'NGG-RS-3'))[0] ?? [];
+    chk('instructor: a child who joined after the term is still in the class, marked not due, and owes nothing (a new class is not "0 of 0")',
+        ($nj['status'] ?? '') === 'not_due' && $ir['kpis']['owed'] === $ir['kpis']['class'] - 1);
     chk('instructor: counts are for the class, and the uploaded member below 55 needs attention', $ir['counts']['up'] === 1 && $ir['counts']['missing'] >= 1
         && $ir['rows'][0]['studentId'] === 'NGG-RS-1' && $ir['rows'][0]['attention'] === true && $ir['rows'][0]['avg'] === 59 && $ir['rows'][0]['status'] === 'live');
     chk('instructor: filters run on the server — the missing list is the children still owing, never an adult mentor or instructor account',
@@ -27742,6 +27749,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $r1 = backend_dispatch('instructor.result.remind', $pp('NGG-RSI', ['studentId' => 'NGG-RS-2', 'term' => $term]));
     $r2 = backend_dispatch('instructor.result.remind', $pp('NGG-RSI', ['studentId' => 'NGG-RS-2', 'term' => $term]));
     chk('instructor: a reminder goes, and a second one within a day is refused with the wait', !empty($r1['ok']) && ($r2['error'] ?? '') === 'rate_limited' && $r2['retryHours'] >= 23);
+    unset($GLOBALS['__results_instructors']);
 
     // The history is append-only and readable by the member.
     $h = backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-1'])['history'];
@@ -27823,9 +27831,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        time). The date here is fixed, so once the real day has moved past it the
        row is correctly absent — the test follows the rule, not the calendar. */
     $planDue = '2026-10-17' >= results_today();
-    chk('today (instructor): results needing attention come before preparation, and the carry-over is listed', !empty($t['ok'])
-        && array_search('results-attn', $keys, true) !== false && in_array('carry', $keys, true)
-        && ($planDue ? (array_search('plan', $keys, true) !== false && array_search('results-attn', $keys, true) < array_search('plan', $keys, true)) : !in_array('plan', $keys, true)));
+    chk('today (instructor): school results are the mentor\'s, so none in an instructor\'s To do; the carry-over is listed', !empty($t['ok'])
+        && !in_array('results-attn', $keys, true) && in_array('carry', $keys, true)
+        && ($planDue ? in_array('plan', $keys, true) : !in_array('plan', $keys, true)));
     chk('today (instructor): rows carry icon, title, subtitle, cta, route and tone — and no internal rank', isset($t['todo'][0]['icon'], $t['todo'][0]['cta'], $t['todo'][0]['route'], $t['todo'][0]['tone']) && !isset($t['todo'][0]['rank']));
 
     // Member Today.
@@ -30810,6 +30818,67 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
     $card = member_card_public(db_row("SELECT * FROM members WHERE memberId = 'NGG-TM-1'"), true);
     chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
+})();
+
+/* ── Every course has a Community channel, and an NGG instructor's courses are real ones ── */
+(function () {
+    community_ensure_channels();
+    $missing = array_filter(curriculum_courses(), fn($c) => !db_row("SELECT id FROM community_channels WHERE lower(name) = lower(?)", [$c]));
+    chk('community: every course in the catalogue has a channel', !$missing);
+    db_insert('curriculum_units', ['unitId' => 'U-DRONE-1', 'course' => 'Drone Flying', 'title' => 'Lift-off', 'week' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    community_ensure_channels(); community_ensure_channels();
+    chk('community: a course added later gets its channel automatically, once', (int)db_row("SELECT COUNT(*) c FROM community_channels WHERE name = 'Drone Flying' AND kind = 'course'")['c'] === 1);
+    db_exec("UPDATE community_channels SET status = 'archived' WHERE name = 'Drone Flying'");
+    community_ensure_channels();
+    chk('community: a course channel staff archived stays archived', (int)db_row("SELECT COUNT(*) c FROM community_channels WHERE name = 'Drone Flying'")['c'] === 1);
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'U-DRONE-1'");
+
+    db_insert('volunteers', ['volunteerId' => 'VOL-CRS-1', 'fullName' => 'Course Teacher', 'email' => 'crs1@x.example', 'role' => 'instructor', 'courses' => '[]', 'centre' => '', 'status' => 'active', 'programme' => 'ngg', 'token' => 'tokcrs1', 'createdAt' => now_iso()]);
+    $any = curriculum_courses()[0];
+    $ok = admin_volunteer_update(['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-CRS-1', 'data' => ['courses' => ['  ' . strtoupper($any) . ' ']]]);
+    chk('instructor courses: a course is saved in the catalogue\'s spelling, whatever was typed', !empty($ok['ok']) && json_decode((string)db_row("SELECT courses FROM volunteers WHERE volunteerId = 'VOL-CRS-1'")['courses'], true) === [$any]);
+    $bad = admin_volunteer_update(['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-CRS-1', 'data' => ['courses' => ['Basket weaving']]]);
+    chk('instructor courses: a name that is no course is refused and named, nothing saved', ($bad['error'] ?? '') === 'unknown_course' && str_contains((string)$bad['detail'], 'Basket weaving')
+        && json_decode((string)db_row("SELECT courses FROM volunteers WHERE volunteerId = 'VOL-CRS-1'")['courses'], true) === [$any]);
+    chk('instructor courses: a promoted member starts with their own courses', volunteer_promote_courses(['courses' => json_encode([strtolower($any)])], []) === json_encode([$any])
+        && volunteer_promote_courses(['courses' => ''], ['courses' => [$any]]) === json_encode([$any]) && volunteer_promote_courses([], []) === '');
+})();
+
+/* ── Time on the portal: a beat counts what it can prove, and the desk sees it ── */
+(function () {
+    db_insert('members', ['memberId' => 'NGG-PT-0001', 'fullName' => 'Portal Timer', 'email' => 'pt1@x.example', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    $a = portal_time_beat(['memberId' => 'NGG-PT-0001', 'portal' => 'dashboard?', 'seconds' => 500]);
+    $b = portal_time_beat(['memberId' => 'NGG-PT-0001', 'portal' => 'member', 'seconds' => 60]);
+    $row = db_row("SELECT * FROM portal_time WHERE memberId = 'NGG-PT-0001'");
+    chk('portal time: one beat counts at most 75 seconds, an unknown portal is "other"', ($a['counted'] ?? 0) === 75 && ($row['portal'] ?? '') === 'other');
+    chk('portal time: a second beat inside 40 seconds counts nothing (two tabs do not double time)', ($b['counted'] ?? -1) === 0);
+    chk('portal time: no signed-in member, no beat', empty(portal_time_beat(['portal' => 'member', 'seconds' => 60])['ok']));
+    db_exec("UPDATE portal_time SET seconds = 43190, lastAt = ? WHERE memberId = 'NGG-PT-0001'", [date('c', time() - 120)]);
+    $c = portal_time_beat(['memberId' => 'NGG-PT-0001', 'portal' => 'other', 'seconds' => 60]);
+    chk('portal time: a day tops out at 12 hours per portal', ($c['counted'] ?? 0) === 10);
+    db_insert('portal_time', ['memberId' => 'NGG-PT-0001', 'day' => date('Y-m-d', time() - 3 * 86400), 'portal' => 'community', 'seconds' => 600, 'beats' => 10, 'firstAt' => now_iso(), 'lastAt' => date('c', time() - 3 * 86400)]);
+    $r = admin_engagement_portal(['requesterId' => 'NGG-2025-0099', 'days' => 7]);
+    $me = array_values(array_filter($r['rows'] ?? [], fn($x) => $x['memberId'] === 'NGG-PT-0001'))[0] ?? [];
+    chk('portal time report: the member, their minutes, days and most-used portal', !empty($r['ok']) && ($me['daysActive'] ?? 0) === 2 && ($me['minutes'] ?? 0) === 730 && ($me['topPortal'] ?? '') === 'other');
+    chk('portal time report: totals, a day series the length of the window, and by portal', ($r['totals']['active'] ?? 0) >= 1 && count($r['daily'] ?? []) === 7 && count($r['byHour'] ?? []) === 24 && !empty($r['byPortal']));
+    chk('portal time report: an unknown window falls back, it does not fail', !empty(admin_engagement_portal(['requesterId' => 'NGG-2025-0099', 'days' => 'x'])['ok']));
+    chk('portal time report: staff without the audit trust are refused', empty(admin_engagement_portal(['requesterId' => 'NGG-PT-0001'])['ok']));
+})();
+
+/* ── Backup AI keys serve every job; a volunteer's dashboard is not an error ── */
+(function () {
+    if (!function_exists('openssl_encrypt')) { chk('ai keys: openssl missing, skipped', true); return; }
+    $set = admin_ai_keys_set(['requesterId' => 'NGG-2025-0099', 'pool1Key' => 'AIzaPOOLKEYAAAAAAAAAAAAAAAAAAAA1', 'pool2Key' => 'AIzaPOOLKEYAAAAAAAAAAAAAAAAAAAA2', 'pool3Key' => 'AIzaPOOLKEYAAAAAAAAAAAAAAAAAAAA3', 'groqKey' => 'gsk_GROQKEYAAAAAAAAAAAAAAAAAAAAAA']);
+    $c = ai_ui_candidates('coach');
+    $gem = array_values(array_filter($c, fn($x) => $x['provider'] === 'gemini'));
+    chk('ai keys: three backup Gemini keys and a Groq key serve any AI job, Groq last', !empty($set['ok']) && count($gem) === 3 && end($c)['provider'] === 'groq');
+    chk('ai keys: the backups are never shown back, only their endings', ($set['pool2']['ending'] ?? '') === 'AAA2' && !str_contains(json_encode($set), 'POOLKEY'));
+    chk('ai keys: report cards (photos) never go to Groq', !array_filter(ai_ui_candidates('results'), fn($x) => $x['provider'] === 'groq'));
+    admin_ai_keys_set(['requesterId' => 'NGG-2025-0099', 'clearPool1' => true, 'clearPool2' => true, 'clearPool3' => true, 'clearGroq' => true]);
+    chk('ai keys: removed keys are gone', !ai_ui_candidates('coach'));
+    db_insert('volunteers', ['volunteerId' => 'VOL-DASH-1', 'fullName' => 'Dash Volunteer', 'email' => 'dashvol@x.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'token' => 'tokdash1', 'createdAt' => now_iso()]);
+    $d = member_dashboard(['memberId' => 'VOL-DASH-1']);
+    chk('a volunteer signed in with their card gets their own landing, not an error', !empty($d['ok']) && ($d['volunteer']['role'] ?? '') === 'instructor' && ($d['volunteer']['idPath'] ?? '') === '/q/tokdash1');
 })();
 
 /* ── No back door to a session ──────────────────────────────────────────────

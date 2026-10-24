@@ -7,7 +7,19 @@ function member_dashboard(array $p): array {
     if (function_exists('anchor_ensure_seed')) anchor_ensure_seed();
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-    if (!$member) return ['ok' => false, 'error' => 'not_found'];
+    if (!$member) {
+        /* A volunteer (instructor, mentor, centre ops) signed in with their ID
+           card has no member record. That was "not_found", shown as "off-line /
+           something went wrong". It is not an error: say who they are and send
+           them to their own portals. */
+        $v = db_row("SELECT volunteerId, fullName, role, centre, status, token, safeguarding, courses FROM volunteers WHERE volunteerId = ? LIMIT 1", [$memberId]);
+        if (!$v) return ['ok' => false, 'error' => 'not_found'];
+        $isMentor = (bool)db_row("SELECT mentorId FROM mentors WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$memberId]);
+        return ['ok' => true, 'volunteer' => ['volunteerId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName'], 'role' => (string)$v['role'],
+            'centre' => (string)$v['centre'], 'status' => (string)$v['status'], 'cleared' => (string)($v['safeguarding'] ?? '') === 'cleared',
+            'courses' => array_values(array_filter(array_map('strval', json_decode((string)($v['courses'] ?? ''), true) ?: []))),
+            'isMentor' => $isMentor, 'idPath' => (string)$v['token'] !== '' ? '/q/' . (string)$v['token'] : '']];
+    }
 
     $stats = db_row('SELECT * FROM member_stats WHERE memberId = ? LIMIT 1', [$memberId]) ?: [];
     $sc = session_current();

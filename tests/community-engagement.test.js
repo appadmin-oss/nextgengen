@@ -30,6 +30,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.CENG_PORT || 8491;
 const BASE = 'http://127.0.0.1:' + PORT;
 const FIX = path.join(ROOT, 'tests', '_ceng_fixture.html');
+const PTFIX = path.join(ROOT, 'tests', '_pt_fixture.html');
 
 function loadChromium() {
   for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
@@ -99,6 +100,18 @@ const DATA = {
     React.createElement('div', { className: 'admin-section' },
       React.createElement(window.CommunityEngagementPanel)));
 </script></body></html>`);
+
+  /* Portal time: the same shell, its own panel (PortalTimePanel). */
+  const PT = { window: { days: 30 }, totals: { members: 40, active: 25, reach: 63, minutes: 1500, avgMinutes: 60, medianMinutes: 45, avgDaysActive: 4.2, quiet: 15 },
+    daily: Array.from({ length: 30 }, (_, i) => ({ day: '2026-10-' + String(i + 1).padStart(2, '0'), minutes: i * 3, members: i % 5 })),
+    byPortal: [{ portal: 'member', minutes: 1100, members: 24 }, { portal: 'community', minutes: 400, members: 12 }],
+    byCentre: [{ centre: 'Egbeda', members: 30, active: 20, minutes: 1200, reach: 67 }, { centre: 'Ayobo', members: 10, active: 5, minutes: 300, reach: 50 }],
+    byHour: Array.from({ length: 24 }, (_, h) => h * 2),
+    rows: [{ memberId: 'NGG-1', name: 'Amaka Obi', centre: 'Egbeda', minutes: 240, daysActive: 6, avgPerDay: 40, topPortal: 'member', lastAt: '2026-10-23T18:00:00+01:00' },
+           { memberId: 'NGG-2', name: 'Chidi Eze', centre: 'Ayobo', minutes: 0, daysActive: 0, avgPerDay: 0, topPortal: '', lastAt: '' }] };
+  fs.writeFileSync(PTFIX, fs.readFileSync(FIX, 'utf8')
+    .replace(/NGGApi\.admin\.communityEngagement = [^\n]*/, 'NGGApi.admin.engagementPortal = (o) => { window.__asked.push(o); return Promise.resolve(' + JSON.stringify(PT) + '); };')
+    .replace('window.CommunityEngagementPanel', 'window.PortalTimePanel'));
 
   const srv = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, stdio: 'ignore' });
   const browser = await chromium.launch({ executablePath: exe });
@@ -192,6 +205,17 @@ const DATA = {
     ok('…and one channel can be asked about on its own',
        await page.evaluate(() => window.__asked.slice(-1)[0].channel) === 'homework');
 
+    await page.goto(BASE + '/tests/_pt_fixture.html', { waitUntil: 'networkidle' });
+    await page.waitForSelector('.pt-stats', { timeout: 8000 });
+    const pt = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+    ok('portal time: reach, total and per-member time are on screen', /25/.test(pt) && /63% of 40 members/.test(pt) && /25h/.test(pt) && /median 45m/.test(pt));
+    ok('portal time: a chart column per day of the window, and 24 hours', (await page.$$('.pt-chart .pt-col')).length === 30 && (await page.$$('.pt-hours .pt-col')).length === 24);
+    ok('portal time: a member never seen says so', /Chidi Eze[\s\S]*never/.test(pt));
+    await page.fill('input[aria-label="Search members"]', 'amaka');
+    ok('portal time: search narrows the members and announces the count', /1 shown/.test(await page.evaluate(() => document.body.innerText)));
+    await page.selectOption('select[aria-label="Window"]', '7');
+    await page.waitForTimeout(300);
+    ok('portal time: the window is asked of the server', await page.evaluate(() => window.__asked.slice(-1)[0].days) === 7);
     ok('no page errors across the whole run', errs.length === 0);
     if (errs.length) console.log('  errors: ' + errs.slice(0, 3).join(' | '));
     await page.close();
@@ -199,6 +223,7 @@ const DATA = {
     await browser.close();
     srv.kill();
     try { fs.unlinkSync(FIX); } catch (_) {}
+    try { fs.unlinkSync(PTFIX); } catch (_) {}
   }
 
   console.log('\n' + (fail === 0 ? '✅ PASS' : '❌ FAIL') + ': ' + pass + ' passed, ' + fail + ' failed (community engagement)');

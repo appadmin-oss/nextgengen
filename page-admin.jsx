@@ -250,6 +250,98 @@ const CENG_RUNG = {
 
 /** A stat with its own sentence under it. A number with no unit and no
  *  denominator is the thing people misread on a dashboard. */
+/* Portal time: how long members actually use the portals (engagement.php
+   admin_engagement_portal). Counted only while a page is open, visible and
+   touched in the last two minutes; a tab left open overnight counts nothing. */
+const PT_PORTAL_LABEL = { member: "Member portal", mentor: "Mentor portal", instructor: "Instructor portal", community: "Community", family: "Family", club: "Club", site: "Website", other: "Other" };
+function ptMins(n) { n = Number(n) || 0; return n >= 90 ? (Math.round(n / 6) / 10) + "h" : n + "m"; }
+function PortalTimePanel() {
+  const [days, setDays] = React.useState(30);
+  const [centre, setCentre] = React.useState("");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const load = () => { setErr(""); setData(null); return NGGApi.admin.engagementPortal({ days, centre }).then(setData).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [days, centre]);
+  const t = (data && data.totals) || {};
+  const daily = (data && data.daily) || [];
+  const peak = Math.max(1, ...daily.map(d => d.minutes));
+  const hours = (data && data.byHour) || [];
+  const hPeak = Math.max(1, ...hours);
+  const centres = (data && data.byCentre) || [];
+  const rows = ((data && data.rows) || []).filter(r => !q || (r.name + " " + r.memberId + " " + r.centre).toLowerCase().indexOf(q.toLowerCase()) >= 0);
+  const exportCsv = () => {
+    const csv = [["Member ID", "Name", "Centre", "Minutes", "Days active", "Minutes per active day", "Most used", "Last seen"]]
+      .concat(rows.map(r => [r.memberId, r.name, r.centre, r.minutes, r.daysActive, r.avgPerDay, PT_PORTAL_LABEL[r.topPortal] || r.topPortal, r.lastAt]))
+      .map(row => row.map(nggCsvCell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "portal-time-" + days + "d.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  return (
+    <React.Fragment>
+      <div className="pt-bar">
+        <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Window">
+          <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
+        </select>
+        <select className="admin-select" value={centre} onChange={e => setCentre(e.target.value)} aria-label="Centre">
+          <option value="">All centres</option>
+          {centres.filter(c => c.centre !== "No centre").map(c => <option key={c.centre} value={c.centre}>{c.centre}</option>)}
+        </select>
+        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!rows.length}>Export CSV</button>
+      </div>
+      <p className="admin-hint">NGG members only. Time counts while a portal is open, on screen and in use (touched in the last two minutes), so a tab left open adds nothing. Counting started with this release.</p>
+      {err ? <ErrorState code={err} onRetry={load}/> :
+       !data ? <div className="dash-spinner"/> :
+       <React.Fragment>
+         <div className="pt-stats" aria-live="polite">
+           <CengStat label="Used the portal" value={fmtNum(t.active)} sub={t.reach + "% of " + fmtNum(t.members) + " members"} warn={t.members > 0 && t.reach < 40}/>
+           <CengStat label="Total time" value={ptMins(t.minutes)} sub={"in the last " + days + " days"}/>
+           <CengStat label="Per active member" value={ptMins(t.avgMinutes)} sub={"median " + ptMins(t.medianMinutes)}/>
+           <CengStat label="Days active" value={t.avgDaysActive} sub="average, of those who came"/>
+           <CengStat label="Not seen" value={fmtNum(t.quiet)} sub="no time recorded in the window" warn={t.quiet > 0}/>
+         </div>
+         <h3 className="admin-h3">Minutes per day</h3>
+         <div className="pt-chart" role="img" aria-label={"Minutes on the portal per day, last " + days + " days; busiest day " + peak + " minutes"}>
+           {daily.map(d => <span key={d.day} className="pt-col" style={{ height: Math.max(2, Math.round(100 * d.minutes / peak)) + "%" }} title={d.day + ": " + d.minutes + " min, " + d.members + " members"}/>)}
+         </div>
+         <div className="pt-two">
+           <div>
+             <h3 className="admin-h3">Where the time goes</h3>
+             {(data.byPortal || []).length === 0 ? <p className="admin-hint">No time recorded yet.</p> :
+               <table className="admin-table"><thead><tr><th scope="col">Portal</th><th scope="col">Time</th><th scope="col">Members</th></tr></thead>
+                 <tbody>{data.byPortal.map(b => <tr key={b.portal}><td>{PT_PORTAL_LABEL[b.portal] || b.portal}</td><td className="mono">{ptMins(b.minutes)}</td><td className="mono">{b.members}</td></tr>)}</tbody></table>}
+           </div>
+           <div>
+             <h3 className="admin-h3">Time of day</h3>
+             <div className="pt-hours" role="img" aria-label="Minutes by hour of the day">
+               {hours.map((m, h) => <span key={h} className="pt-col" style={{ height: Math.max(2, Math.round(100 * m / hPeak)) + "%" }} title={h + ":00 — " + m + " min"}/>)}
+             </div>
+             <div className="pt-hours-axis mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+           </div>
+         </div>
+         <h3 className="admin-h3">By centre</h3>
+         <table className="admin-table"><thead><tr><th scope="col">Centre</th><th scope="col">Members</th><th scope="col">Used it</th><th scope="col">Reach</th><th scope="col">Time</th></tr></thead>
+           <tbody>{centres.map(c => <tr key={c.centre}><td>{c.centre}</td><td className="mono">{c.members}</td><td className="mono">{c.active}</td><td className="mono">{c.reach}%</td><td className="mono">{ptMins(c.minutes)}</td></tr>)}</tbody></table>
+         <h3 className="admin-h3">Members</h3>
+         <form role="search" className="pt-bar" onSubmit={e => e.preventDefault()}>
+           <input className="admin-input" value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, ID or centre" aria-label="Search members"/>
+           <span role="status" className="admin-hint">{rows.length} shown</span>
+         </form>
+         {rows.length === 0 ? <EmptyState title="No members match" message="Change the search or the centre."/> :
+           <div className="admin-table-wrap"><table className="admin-table">
+             <thead><tr><th scope="col">Member</th><th scope="col">Centre</th><th scope="col">Time</th><th scope="col">Days</th><th scope="col">Per day</th><th scope="col">Most used</th><th scope="col">Last seen</th></tr></thead>
+             <tbody>{rows.slice(0, 300).map(r => (
+               <tr key={r.memberId}><td>{r.name}<div className="mono admin-hint">{r.memberId}</div></td><td>{r.centre || "—"}</td>
+                 <td className="mono">{r.minutes ? ptMins(r.minutes) : "—"}</td><td className="mono">{r.daysActive || "—"}</td>
+                 <td className="mono">{r.avgPerDay ? ptMins(r.avgPerDay) : "—"}</td><td>{PT_PORTAL_LABEL[r.topPortal] || "—"}</td>
+                 <td className="mono">{r.lastAt ? r.lastAt.slice(0, 16).replace("T", " ") : "never"}</td></tr>))}</tbody>
+           </table></div>}
+         {rows.length > 300 && <p className="admin-hint">Showing the first 300. Export the CSV for everyone.</p>}
+       </React.Fragment>}
+    </React.Fragment>
+  );
+}
+
 function CengStat({ label, value, sub, warn }) {
   return (
     <div style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
@@ -517,11 +609,12 @@ function EngagementPanel() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Engagement</h2>
         <div style={{ display: "flex", gap: 6 }}>
-          {tabBtn("now", "Team")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
+          {tabBtn("now", "Team")}{tabBtn("portal", "Portal time")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
         </div>
       </div>
 
       {tab === "community" ? <CommunityEngagementPanel/> :
+       tab === "portal" ? <PortalTimePanel/> :
        tab === "now" ?
         <React.Fragment>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
@@ -10092,7 +10185,7 @@ function volunteerEditForm(v, centres, onSaved, titles) {
       { id: "programme", l: "Programme", type: "chips", req: true, opts: VOL_PROG_OPTS, help: "Moving between Summer School and NGG changes when their card stops opening the door." },
       { id: "centre", l: "Centre", type: "select", opts: centreOpts, ph: "No centre" },
       { id: "faculty", l: "Faculty", max: 80 },
-      { id: "courses", l: "Courses", max: 600, help: "Separate courses with commas." },
+      { id: "courses", l: "Courses", max: 600, help: "What they teach, separated by commas. For NGG this is their class, so each must be a course in the catalogue; spelling and capitals are fixed for you." },
       { id: "dob", l: "Date of birth", type: "date" },
       { id: "status", l: "Status", type: "chips", req: true, opts: VOL_STATUS_OPTS },
       { id: "visibilityConsent", l: "Consented to be featured (photo and first name) on the public site and boards", type: "switch" },
@@ -10110,7 +10203,10 @@ function volunteerEditForm(v, centres, onSaved, titles) {
       if (out.visibilityConsent !== undefined) out.visibilityConsent = out.visibilityConsent ? 1 : 0;
       if (!Object.keys(out).length) return { unchanged: true };
       try { await NGGApi.admin.volunteers.update(v.volunteerId, out); }
-      catch (e) { const fe = VOL_ERR_FIELD[e.code]; if (fe) return { fieldErrors: { [fe[0]]: fe[1] } }; throw e; }
+      catch (e) {
+        if (e.code === "unknown_course") return { fieldErrors: { courses: e.detail || "One of those is not a course in the catalogue." } };
+        const fe = VOL_ERR_FIELD[e.code]; if (fe) return { fieldErrors: { [fe[0]]: fe[1] } }; throw e;
+      }
       onSaved();
       return { saved: Object.keys(out).length };
     },

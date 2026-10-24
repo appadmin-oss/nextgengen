@@ -4043,3 +4043,18 @@ CREATE TABLE IF NOT EXISTS community_comment_reactions (
   KEY idx_ccr_comment (commentId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (175) ON DUPLICATE KEY UPDATE version = version;
+
+-- 176: time on the portal (heartbeat while visible and in use)
+CREATE TABLE IF NOT EXISTS portal_time (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  day VARCHAR(10) NOT NULL,
+  portal VARCHAR(24) NOT NULL,
+  seconds INT NOT NULL DEFAULT 0,
+  beats INT NOT NULL DEFAULT 0,
+  firstAt VARCHAR(32) NOT NULL,
+  lastAt VARCHAR(32) NOT NULL,
+  UNIQUE KEY uq_pt (memberId, day, portal),
+  KEY idx_pt_day (day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (176) ON DUPLICATE KEY UPDATE version = version;

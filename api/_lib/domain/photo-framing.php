@@ -74,6 +74,11 @@ function ai_ui_keys(): array {
     return [
         'framing' => ai_ui_open((string)($s['framing'] ?? '')),
         'second'  => ai_ui_open((string)($s['second'] ?? '')),
+        // Backup keys for EVERY AI job (tutor, companion, report cards, marking…): three Gemini, one Groq.
+        'pool1'   => ai_ui_open((string)($s['pool1'] ?? '')),
+        'pool2'   => ai_ui_open((string)($s['pool2'] ?? '')),
+        'pool3'   => ai_ui_open((string)($s['pool3'] ?? '')),
+        'groq'    => ai_ui_open((string)($s['groq'] ?? '')),
         'model'   => preg_match('/^gemini-[a-z0-9.\-]{1,60}$/', $model) ? $model : PFRAME_MODEL_DEFAULT,   // '' = automatic
         'meta'    => is_array($s['meta'] ?? null) ? $s['meta'] : [],
     ];
@@ -83,12 +88,22 @@ function ai_ui_keys(): array {
  * framing → the framing key, then the second; photo → the second, then the
  * framing key. Read by ai_profile_candidates().
  */
+const AI_UI_SLOTS = ['framing', 'second', 'pool1', 'pool2', 'pool3', 'groq'];
 function ai_ui_candidates(string $profile): array {
-    if (!in_array($profile, ['framing', 'photo'], true)) return [];
     $k = ai_ui_keys();
-    $order = $profile === 'framing' ? [$k['framing'], $k['second']] : [$k['second'], $k['framing']];
     $out = [];
-    foreach ($order as $key) if ($key !== '') $out[] = ['provider' => 'gemini', 'api_key' => $key, 'model' => $k['model']];
+    if (in_array($profile, ['framing', 'photo'], true)) {
+        $order = $profile === 'framing' ? [$k['framing'], $k['second']] : [$k['second'], $k['framing']];
+        foreach ($order as $key) if ($key !== '') $out[] = ['provider' => 'gemini', 'api_key' => $key, 'model' => $k['model']];
+    }
+    /* The backup pool serves every profile. The key tried first turns with the
+       minute, so three free keys share the load instead of one running out
+       while the others sit idle; the rest follow in order when one is refused
+       (a free key's daily quota), and Groq is the last resort. */
+    $pool = array_values(array_filter([$k['pool1'], $k['pool2'], $k['pool3']], static fn($x) => $x !== ''));
+    if ($pool) { $r = (int)floor(time() / 60) % count($pool); $pool = array_merge(array_slice($pool, $r), array_slice($pool, 0, $r)); }
+    foreach ($pool as $key) $out[] = ['provider' => 'gemini', 'api_key' => $key, 'model' => $k['model']];
+    if ($k['groq'] !== '' && $profile !== 'framing' && $profile !== 'photo' && $profile !== 'results') $out[] = ['provider' => 'groq', 'api_key' => $k['groq'], 'model' => AI_DEFAULT_MODEL['groq'] ?? 'llama-3.1-8b-instant'];
     return $out;
 }
 
@@ -102,6 +117,8 @@ function admin_ai_keys_get(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $k = ai_ui_keys();
     return ['ok' => true, 'framing' => ai_ui_key_view($k['framing'], $k['meta'], 'framing'), 'second' => ai_ui_key_view($k['second'], $k['meta'], 'second'),
+            'pool1' => ai_ui_key_view($k['pool1'], $k['meta'], 'pool1'), 'pool2' => ai_ui_key_view($k['pool2'], $k['meta'], 'pool2'),
+            'pool3' => ai_ui_key_view($k['pool3'], $k['meta'], 'pool3'), 'groq' => ai_ui_key_view($k['groq'], $k['meta'], 'groq'),
             'model' => $k['model'], 'defaultModel' => PFRAME_MODEL_DEFAULT, 'sealed' => function_exists('openssl_encrypt'),
             'framed' => (int)(db_row("SELECT COUNT(*) c FROM photo_framing WHERE status = 'ok'")['c'] ?? 0),
             'backlog' => count(photo_frame_backlog_urls(5000))];
@@ -115,13 +132,13 @@ function admin_ai_keys_set(array $p): array {
     $cur = setting_get('ai_ui_keys'); $cur = is_array($cur) ? $cur : [];
     $meta = is_array($cur['meta'] ?? null) ? $cur['meta'] : [];
     $changed = [];
-    foreach (['framing', 'second'] as $slot) {
+    foreach (AI_UI_SLOTS as $slot) {
         if (!empty($p['clear' . ucfirst($slot)])) { $cur[$slot] = ''; $meta[$slot] = ['at' => now_iso(), 'byName' => membership_staff_name($by)]; $changed[] = $slot . ':cleared'; continue; }
         $v = trim((string)($p[$slot . 'Key'] ?? ''));
         if ($v === '') continue;
         /* Both of Google AI Studio's formats: the older "AIza…" keys and the
            newer "AQ.…" ones, which carry a dot. Letters, digits and . _ - only. */
-        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-]{19,199}$/', $v)) return ['ok' => false, 'error' => 'bad_key', 'field' => $slot, 'detail' => 'That doesn’t look like a Gemini API key from Google AI Studio (they start “AQ.” or “AIza”). Paste it without spaces.'];
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-]{19,199}$/', $v)) return ['ok' => false, 'error' => 'bad_key', 'field' => $slot, 'detail' => $slot === 'groq' ? 'That doesn’t look like a Groq API key (they start “gsk_”). Paste it without spaces.' : 'That doesn’t look like a Gemini API key from Google AI Studio (they start “AQ.” or “AIza”). Paste it without spaces.'];
         $cur[$slot] = ai_ui_seal($v);
         $meta[$slot] = ['at' => now_iso(), 'byName' => membership_staff_name($by)];
         $changed[] = $slot;
@@ -143,7 +160,7 @@ function admin_ai_keys_test(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $k = ai_ui_keys();
     $out = [];
-    foreach (['framing', 'second'] as $slot) {
+    foreach (['framing', 'second', 'pool1', 'pool2', 'pool3'] as $slot) {
         if ($k[$slot] === '') { $out[$slot] = ['ok' => false, 'error' => 'not_set']; continue; }
         $t = microtime(true);
         // First: does Google accept the key at all, and which models may it use?
@@ -159,7 +176,11 @@ function admin_ai_keys_test(array $p): array {
         $out[$slot] = ['ok' => !empty($r['ok']), 'error' => empty($r['ok']) ? (string)($r['error'] ?? 'failed') : '', 'detail' => (string)($r['detail'] ?? ''),
                        'model' => (string)($r['model'] ?? ''), 'models' => count($models), 'ms' => (int)round((microtime(true) - $t) * 1000)];
     }
-    audit('ai.keys.test', (string)$g['requester']['memberId'], '', ['framing' => $out['framing']['ok'], 'second' => $out['second']['ok']], (string)($p['ip'] ?? ''));
+    // The Groq backup: one tiny request through the same caller every job uses.
+    if ($k['groq'] === '') $out['groq'] = ['ok' => false, 'error' => 'not_set'];
+    else { $t = microtime(true); $r = ai_call_candidate(['provider' => 'groq', 'api_key' => $k['groq'], 'model' => AI_DEFAULT_MODEL['groq'] ?? 'llama-3.1-8b-instant'], 'Reply with OK.', [['role' => 'me', 'text' => 'Test']], 8, 0.0);
+        $out['groq'] = ['ok' => !empty($r['ok']), 'error' => empty($r['ok']) ? (string)($r['error'] ?? 'failed') : '', 'detail' => (string)($r['detail'] ?? ''), 'model' => (string)($r['model'] ?? ''), 'ms' => (int)round((microtime(true) - $t) * 1000)]; }
+    audit('ai.keys.test', (string)$g['requester']['memberId'], '', array_map(static fn($x) => (bool)$x['ok'], $out), (string)($p['ip'] ?? ''));
     return ['ok' => true, 'results' => $out, 'model' => $k['model']];
 }
 

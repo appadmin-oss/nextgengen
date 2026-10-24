@@ -2856,3 +2856,41 @@ Feedback that an older version saved as an ordinary request is now shown as feed
   - The portal's numbers are an estimate; the instructor's ticks are the validation.
 - **Mission proof review (Control Room):** a child's typed answer shows as their words, not as a broken "View proof" link. The Verify button is readable again.
 - **Reading report cards:** the AI now reads the full table (CA, exam, total, grade). It checks each total against CA + exam and the grade, and reads unclear cards a second time, more carefully.
+
+
+## Portal time (Analytics → Engagement → Portal time)
+
+Shows how long NGG members actually use the portals: who came, for how long, on which days and at what hour, which portal, and which centre.
+
+**How time is counted:**
+- Time counts only while a portal is open, on screen, and in use (touched in the last two minutes).
+- A tab left open overnight adds nothing.
+- Two open tabs do not double the time.
+- A day counts at most 12 hours per portal.
+
+**What you can do:**
+- Pick the window (7, 30 or 90 days) or a centre.
+- Search for a member.
+- Export the CSV.
+
+"Not seen" means no time was recorded in the window. Counting started with this release.
+
+## Backup AI keys (Settings → AI keys)
+
+There are six slots:
+- the main key;
+- three **backup Gemini keys**: create each in a separate Google account at aistudio.google.com;
+- a **Groq** key (console.groq.com), used last and never for photos or report cards;
+- a photo key.
+
+When one key hits its daily limit, the next one serves. Press **Test** on each key after saving it.
+
+
+## Instructors and courses
+
+- **An instructor's courses are their class.** In Mentors & volunteers → Volunteers → edit, type the courses they teach, separated by commas.
+  - Spelling and capitals are corrected to the catalogue's.
+  - A name that is not a course is refused, with the nearest course suggested.
+- **When you promote a member to staff,** they start with their own courses. Change them in the editor if they teach something else.
+- **Instructors do not see school results.** Results are for the child's mentor (Mentor portal), the family and NGG admin.
+- **Every course has its own Community channel,** created automatically, including courses added later. A course channel you archive stays archived.
