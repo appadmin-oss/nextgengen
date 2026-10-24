@@ -25353,7 +25353,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('study helper: the daily allowance is a refusal once used', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'And a tone?'])['error'] ?? '') === 'daily_limit');
     $w = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords on G', 'text' => '', 'course' => 'Piano', 'checks' => 3]);
     chk('lesson writer: with only a title, AI writes the whole lesson in the NGG Saturday standard', !empty($w['ok']) && str_starts_with($w['draft']['body'] ?? '', '## Why it matters')
-        && str_contains($sys, 'Guided hands-on practice (60 minutes)') && str_contains($sys, 'AI, used well'));
+        && str_contains($sys, 'Guided hands-on practice (60 minutes)') && !str_contains($sys, "'AI, used well'"));
+    /* AI is asked for only where the lesson's own work has a step it changes,
+       inside the independent work, and always with the learner checking what
+       comes back. It is NOT a section of every lesson: taught as a ritual it
+       stops being read. */
+    chk('lesson writer: AI is asked for only where the work needs it, as a step inside the independent assignment',
+        str_contains($sys, "Only if this particular lesson's work has a step an AI assistant genuinely changes")
+        && str_contains($sys, "'Independent assignment'") && str_contains($sys, 'checks or judges what it gives back')
+        && str_contains($sys, 'Most lessons do not need one'));
     $n = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords', 'text' => str_repeat('Real notes from the instructor about chords. ', 4), 'course' => 'Piano', 'checks' => 3]);
     chk('lesson writer: with real notes, the notes are never rewritten', !empty($n['ok']) && ($n['draft']['body'] ?? '') === '');
     unset($GLOBALS['__ai_mock']); if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
@@ -25372,15 +25380,32 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('business: every Saturday follows the standard — demonstration, guided practice, independent assignment, feedback — with a deliverable and AI used well',
         !array_filter($rows, fn($r) => !str_contains($r['body'], 'Demonstration (20 minutes)') || !str_contains($r['body'], 'Guided hands-on practice (60 minutes)')
             || !str_contains($r['body'], 'Independent assignment (25 minutes)') || !str_contains($r['body'], 'feedback and submission (15 minutes)')
-            || !str_contains($r['body'], '**Deliverable:**') || !str_contains($r['body'], '## AI, used well') || (int)$r['durationMins'] !== 120));
+            || !str_contains($r['body'], '**Deliverable:**') || (int)$r['durationMins'] !== 120));
     chk('business: the programme team\'s weeks are kept (week 1 Drive, week 27 ChatGPT, week 72 the defence)', str_starts_with($rows[0]['title'], 'Google Drive')
         && str_starts_with($rows[26]['title'], 'ChatGPT') && str_contains($rows[71]['title'], 'defend the final project'));
     $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-BZ-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
     chk('business: every lesson passes the importer', ($dry['tally']['create'] ?? 0) === 72 && ($dry['tally']['failed'] ?? 1) === 0);
     $all = array_merge(backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'practical-coding-2026'])['rows'] ?? [],
                        backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'media-lab-2026'])['rows'] ?? []);
-    chk('the Tech and Media courses now carry AI used well and support and stretch in every lesson', count($all) === 120
-        && !array_filter($all, fn($r) => !str_contains($r['body'], '## AI, used well') || !str_contains($r['body'], 'If you already can')));
+    chk('the Tech and Media courses carry support and stretch in every lesson', count($all) === 120
+        && !array_filter($all, fn($r) => !str_contains($r['body'], 'If you already can')));
+    /* AI in proportion, and inside the work. It was once a trailing section on
+       298 of 336 bundled lessons — more shelf space than the weekly
+       assignment. The budget per course is in api/tests/curriculum-shape.php;
+       what is pinned here is the shape: never an appendix, always a step of
+       the independent work, and never on every lesson. */
+    $every = array_merge($rows, $all);
+    $appendix = array_filter($every, fn($r) => str_contains($r['body'], '## AI, used well'));
+    chk('AI is never a trailing section appended to a lesson (' . count($appendix) . ' of ' . count($every) . ')', !$appendix);
+    $withAi = array_values(array_filter($every, fn($r) => str_contains($r['body'], 'With an AI assistant')));
+    chk('AI appears as a step inside the work, on a minority of lessons (' . count($withAi) . ' of ' . count($every) . ')',
+        $withAi && count($withAi) < count($every) / 3);
+    chk('every AI step sits inside the section where the learner works alone, not after the lesson',
+        !array_filter($withAi, function ($r) {
+            $i = strpos($r['body'], 'With an AI assistant');
+            $host = strrpos(substr($r['body'], 0, $i), '## ');
+            return $host === false || !preg_match('/^## (Independent assignment|What to do|Practise at home)/', substr($r['body'], $host));
+        }));
     db_exec("DELETE FROM members WHERE memberId = 'NGG-BZ-ADM'");
 })();
 
@@ -31012,6 +31037,20 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('no back door · a session is issued only by api/auth, api/admin and the library (' . implode(', ', $odd) . ')', !$odd && $callers);
     $open = array_values(array_filter(glob($root . '/api/tools/*.php') ?: [], static fn($f) => !preg_match("/PHP_SAPI\s*!==\s*'cli'/", (string)file_get_contents($f))));
     chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
+})();
+
+/* The shape every course must hold — retrieval, autonomy, a proportionate AI
+   budget, a project cadence and spacing. The rules and the evidence behind
+   each live in curriculum-shape.php; this runs them over every bundled seed
+   so a new curriculum cannot be merged without the shape. */
+(function () {
+    require_once __DIR__ . '/curriculum-shape.php';
+    $courses = ngg_course_lessons();
+    chk('curriculum shape · the bundled seeds carry lessons to check (' . count($courses) . ' courses)', count($courses) > 10);
+    foreach ($courses as $course => $lessons) {
+        $faults = ngg_course_shape_faults($course, $lessons);
+        chk('curriculum shape · ' . $course . ' (' . count($lessons) . ' lessons)' . ($faults ? ' — ' . implode('; ', $faults) : ''), !$faults);
+    }
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
