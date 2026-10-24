@@ -515,6 +515,14 @@ function db_run_seeds(PDO $db): void {
          * business. Those keep asking for age, which still works — the record
          * derives age from dob when it is given and falls back to the typed age
          * when it is not. */
+        /* The bundled curricula, into the live lessons, one file per request.
+         * A fresh install shipped 336 written lessons and showed a member an
+         * empty Learn screen until an admin found the import and pressed it
+         * four times. See curriculum_seed_bundled_once() for what it refuses
+         * to do — it never touches a lesson somebody else put there. */
+        if (function_exists('curriculum_seed_bundled_once') && db_table_exists($db, 'curriculum_units')) {
+            curriculum_seed_bundled_once();
+        }
         if (setting_raw('seed_dob_v1') !== '1') {
             $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId = 'summer-reg'");
             setting_set('seed_dob_v1', '1', 'system');

@@ -24315,14 +24315,33 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // The member's curriculum.
     $list = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1']);
-    chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok']) && $list['total'] === 3);
-    chk('member: a Guitar member sees only the Club-wide lesson', backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['total'] === 1);
+    /* The bundled curricula seed themselves on boot now, so a Piano member has
+       the shipped Piano course as well as this fixture's two lessons. Counting
+       rows would pin the size of the seed; what matters is WHICH lessons reach
+       them — their own course, plus the Club-wide one, and nothing belonging
+       to a course they are not on. */
+    $coursesOf = static function (string $mid) {
+        $r = backend_dispatch('member.curriculum.list', ['memberId' => $mid]);
+        return array_values(array_unique(array_column($r['units'] ?? [], 'course')));
+    };
+    /* Which COURSES reach them, not which titles: the year-staging decides
+       which weeks of a course a given member is shown, and pinning titles
+       would pin that placement too. Piano is a strand of Music, so a pianist
+       is shown both — reading music is not a piano skill — and '' is the
+       Club-wide lesson every member gets. */
+    $pianoSees = $coursesOf('NGG-CUR-M1');
+    chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok'])
+        && in_array('Piano', $pianoSees, true) && in_array('', $pianoSees, true)
+        && !in_array('Guitar', $pianoSees, true));
+    $guitarSees = $coursesOf('NGG-CUR-M2');
+    chk('member: a Guitar member gets the Club-wide lesson but never another course\'s',
+        in_array('', $guitarSees, true) && !in_array('Piano', $guitarSees, true));
     chk('member: a Summer account has no Club curriculum', (backend_dispatch('member.curriculum.list', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
     // The downloadable document: data in, a template out, nothing a lesson says becomes markup.
     $docR = backend_dispatch('member.curriculum.document', ['memberId' => 'NGG-CUR-M1']);
     $doc = $docR['document'] ?? [];
     chk('document: the member\'s curriculum, by week, with the title of their course',
-        !empty($docR['ok']) && $doc['title'] === 'Piano curriculum' && $doc['total'] === 3 && $doc['weeks'][0]['week'] === 1);
+        !empty($docR['ok']) && $doc['title'] === 'Piano curriculum' && $doc['total'] >= 3 && $doc['weeks'][0]['week'] === 1);
     $flat = json_encode($doc);
     chk('document: carries the checks\' questions but never their answers or rubrics',
         strpos($flat, 'Why curve your fingers?') !== false && strpos($flat, 'Control and speed') === false && strpos($flat, '"rubric"') === false);

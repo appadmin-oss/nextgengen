@@ -697,6 +697,59 @@ function curriculum_seed_files(): array {
     ksort($out);
     return $out;
 }
+/**
+ * Seed the bundled curricula into the live lessons, once, on boot.
+ *
+ * Importing four files by hand in the Control Room is fine for a deployment
+ * somebody is setting up deliberately, and wrong for every other one: a fresh
+ * install had 336 written lessons sitting in the repository and a member
+ * opening Learn saw an empty list until an admin happened to find the import
+ * screen and press it four times.
+ *
+ * Runs from db_run_seeds(), so it happens on the first request after a deploy
+ * with no shell and nothing to remember.
+ *
+ * Three things it will not do:
+ *
+ *  · It never TOUCHES a lesson that already exists. A course, level, week and
+ *    position that is already there belongs to whoever put it there — an
+ *    instructor's own lesson is not overwritten by a shipped one.
+ *  · It records progress PER FILE. 336 lessons with their checks and materials
+ *    is more work than a shared host should do in one request, so each request
+ *    seeds at most one file and the next picks up where it stopped. A timeout
+ *    costs one file's worth of retry, never the whole set.
+ *  · It writes through curriculum_write(), the same path the import screen
+ *    uses, so a seeded lesson is indistinguishable from an imported one and
+ *    carries the same fingerprint, version and audit trail.
+ *
+ * Published, not drafted: these are the programme's own reviewed curricula,
+ * not an AI draft waiting on a human. A lesson nobody can see teaches nobody.
+ */
+function curriculum_seed_bundled_once(): int {
+    if (!function_exists('setting_raw')) return 0;
+    $written = 0;
+    foreach (curriculum_seed_files() as $key => $j) {
+        $flag = 'seed_curriculum_' . preg_replace('/[^a-z0-9]+/', '_', strtolower($key));
+        if ((string)setting_raw($flag) === '1') continue;
+        foreach (($j['lessons'] ?? []) as $row) {
+            if (!is_array($row)) continue;
+            $row['status'] = 'published';
+            $v = curriculum_validate($row, !empty($j['allowNewCourse']));
+            if (!$v['ok']) continue;                       // a bad row is skipped, never guessed at
+            $u = $v['unit'];
+            $existing = db_row('SELECT * FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                               [$u['course'], $u['level'], $u['week'], $u['position']]);
+            if ($existing) continue;                       // somebody else's lesson stays theirs
+            curriculum_write($v, null, 'system', 'seed');
+            $written++;
+        }
+        setting_set($flag, '1', 'system');
+        if (function_exists('audit')) audit('curriculum.seed', null, $key, ['written' => $written], '');
+        break;                                             // one file per request
+    }
+    return $written;
+}
+
 function admin_curriculum_seed(array $p): array {
     $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
     $all = curriculum_seed_files();
