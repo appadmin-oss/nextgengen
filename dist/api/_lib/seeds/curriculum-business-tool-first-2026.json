@@ -508,10 +508,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Produce and present a complete digital business portfolio. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: Folder system, a document, a sheet with formulas, a form with results, a deck and a calendar — all present and named (2); A one-page index linking to each item (2); Presentation explains what each item shows you can do (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Produce and present a complete digital business portfolio",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     },
@@ -1018,10 +1017,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Present a simulated business's financial and operational performance. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: Uses the profit sheet, cashbook, inventory and dashboard (2); Every number on a slide traces to a sheet (2); One clear, evidenced recommendation (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Present a simulated business's financial and operational performance",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     },
@@ -1533,10 +1531,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Present a validated or revised business concept. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: Shows before-and-after from testing (2); Financial projection included (2); Answers questions from a panel (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Present a validated or revised business concept",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     },
@@ -2043,10 +2040,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Plan and manage a simulated or supervised NGGC event. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: Every tool from the module used (2); Roles and responsibilities assigned (2); Evaluation results presented (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Plan and manage a simulated or supervised NGGC event",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     },
@@ -2558,10 +2554,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Demonstrate a working management system with controls and documentation. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: System works end to end (2); Controls: permissions, checks, backups (2); Documentation someone else could follow (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Demonstrate a working management system with controls and documentation",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     },
@@ -3067,10 +3062,9 @@
           "points": 1
         },
         {
-          "kind": "task",
-          "prompt": "Assignment: Demonstrate mastery and defend the final project. Submit your deliverable (a link or file) and one sentence on a decision you made.",
-          "rubric": "Up to 6 points: Portfolio covers all six modules (2); Capstone defended with evidence (2); Personal reflection and next steps (2). Mastery means it was done independently and correctly.",
-          "points": 6
+          "kind": "project",
+          "prompt": "Demonstrate mastery and defend the final project",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
         }
       ]
     }
