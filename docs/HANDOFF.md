@@ -2939,3 +2939,15 @@ The table is editable in the Control Room, with these as the defaults.
   - Summer School keeps its own tracks.
 - **Every course gets a channel automatically:** `community_ensure_channels` now syncs on every load against `curriculum_courses()` (the catalogue plus any course that has lessons). It used to seed only an empty table, so a course added later never got a channel. A channel staff archived stays archived.
 - **Tests:** PHP 5268/0; instructor 39/0.
+
+## Instructor curriculum: a course's lessons include its parts (2026-10-24)
+
+- **Course families:**
+  - `staff_curriculum` reads each of the instructor's courses as a family (`curriculum_course_family`): "Musical Instruments" includes lessons filed under Piano, Guitar and the other instruments.
+  - Each lesson carries `family` (`curriculum_course_parent`), and `StaffCurriculumMap` groups by it. A lesson's audience counts members by its parent course too.
+  - Before, the match was by exact name, so a Musical Instruments instructor saw "0 lessons".
+- **Honest notes in the curriculum view:**
+  - A course with no lessons says so, and names who writes them.
+  - A term with no start date names where an admin sets it.
+- **Class time:** with no slot on the timetable, the header says "No class time on the timetable yet", not "Sat Saturday".
+- **Tests:** PHP 5270/0; instructor 39/0.

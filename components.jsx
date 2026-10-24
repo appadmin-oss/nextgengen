@@ -3828,13 +3828,16 @@ function staffCurrState(u, weekNow) {
 }
 function StaffCurriculumMap({ data, course, reload, intro }) {
   const units0 = (data && data.units) || [];
-  const courses = Array.from(new Set(units0.map(u => u.course || ""))).sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
+  /* A lesson sits under the catalogue course it belongs to (family): "Piano" lessons are Musical Instruments'. */
+  const courseOf = u => u.family || u.course || "";
+  const courses = Array.from(new Set(units0.map(courseOf))).sort((a, b) => (a === "") - (b === "") || a.localeCompare(b));
   const [cSel, setCSel] = React.useState(course || "");
   const [q, setQ] = React.useState("");
   const [open, setOpen] = React.useState("");
   const weekNow = data && data.weekNow;
   const curCourse = course !== undefined && course !== null && course !== "" ? course : cSel || (courses.find(c => c) || "");
-  const inCourse = units0.filter(u => !u.course || !curCourse || String(u.course).toLowerCase() === String(curCourse).toLowerCase());
+  const inCourse = units0.filter(u => !courseOf(u) || !curCourse || String(courseOf(u)).toLowerCase() === String(curCourse).toLowerCase() || String(u.course || "").toLowerCase() === String(curCourse).toLowerCase());
+  const ownLessons = inCourse.filter(u => courseOf(u)).length;
   const years = Array.from(new Set(inCourse.map(u => (u.path && u.path.year) || 0))).sort((a, b) => (a || 99) - (b || 99));
   const yearNow = (inCourse.find(u => weekNow && u.week === weekNow && u.path) || {}).path;
   const [ySel, setYSel] = React.useState(null);
@@ -3886,14 +3889,16 @@ function StaffCurriculumMap({ data, course, reload, intro }) {
           <input type="search" value={q} placeholder="Find a lesson" onChange={e => setQ(e.target.value)}/></label>
       </div>
       <p className="scm-status" role="status" aria-live="polite">{(curCourse || "Whole Club") + " · " + inCourse.length + " lesson" + (inCourse.length === 1 ? "" : "s") + (years.length > 1 ? " over " + years.filter(Boolean).length + " years" : "")
-        + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : data && data.termStart === "" ? " · no term start date set, so no due dates" : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
+        + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
+      {!weekNow && data && data.termStart === "" && <p className="scm-note" role="note"><i className="ph ph-calendar-x" aria-hidden="true"/> Lessons have no due dates yet: the term’s start date is not set. An admin sets it in Control Room → Curriculum → Schedule.</p>}
+      {curCourse && !ownLessons && !t && <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been written for {curCourse} yet. A curriculum lead writes them in Control Room → Curriculum{data && data.selfApprove ? ", and so can you" : ""}. Until then, plan each Saturday from the Plan screen and add your own materials.</p>}
       {now.length > 0 && !t && (
         <section className="scm-now" aria-labelledby="scm-now-h">
           <h3 id="scm-now-h">This week</h3>
           <ul className="scm-list">{now.map(row)}</ul>
         </section>
       )}
-      {!shown.length && <p className="scm-empty">{t ? "No lesson in this year matches “" + q + "”." : "Nothing in this year yet."}</p>}
+      {!shown.length && (t || ownLessons > 0) && <p className="scm-empty">{t ? "No lesson in this year matches “" + q + "”." : "Nothing in this year yet."}</p>}
       {terms.map(tm => {
         const list = shown.filter(u => ((u.path && u.path.term) || 1) === tm).sort((a, b) => a.week - b.week || a.position - b.position);
         const name = (list.find(u => u.path && u.path.termName) || { path: {} }).path.termName;

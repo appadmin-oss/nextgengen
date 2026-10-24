@@ -30820,6 +30820,17 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
 })();
 
+/* ── A course's lessons include those filed under its parts ── */
+(function () {
+    $prevCat = setting_get('club_catalogue'); setting_set('club_catalogue', club_catalogue_default(), 'test');
+    chk('curriculum: "Piano" lessons belong to Musical Instruments; a catalogue course is its own', curriculum_course_parent('Piano') === 'Musical Instruments' && curriculum_course_parent('Coding') === 'Coding' && curriculum_course_parent('') === '');
+    db_insert('curriculum_units', ['unitId' => 'U-PIANO-1', 'course' => 'Piano', 'title' => 'Middle C', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $fam = array_map('mb_strtolower', curriculum_course_family('Musical Instruments'));
+    chk('curriculum: the Musical Instruments family includes a lesson filed as Piano, and Guitar', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('musical instruments', $fam, true));
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'U-PIANO-1'");
+    if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
+})();
+
 /* ── Every course has a Community channel, and an NGG instructor's courses are real ones ── */
 (function () {
     community_ensure_channels();

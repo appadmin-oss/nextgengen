@@ -14339,3 +14339,5 @@ button.m9x-ev-sum { cursor: pointer; }
 .pt-col { flex: 1 1 0; min-width: 2px; background: var(--brand, #1f6feb); border-radius: 2px 2px 0 0; opacity: .85; }
 .pt-hours-axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-400, #5f6874); margin: 2px 0 18px; }
 .pt-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin: 0 0 18px; }
+.scm-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fff8e6; border: 1px solid #f1dca6; color: #5a4300; font-size: 14px; line-height: 1.45; }
+.scm-note .ph { flex: none; margin-top: 2px; }

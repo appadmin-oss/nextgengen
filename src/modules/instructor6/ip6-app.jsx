@@ -208,7 +208,7 @@ class Ip6Portal extends React.Component {
     const today = D.today || {}; const sess = cls.session || {}; const loop = cls.loop || today.loop || { steps: {} };
     const narrow = S.w < 760, wide = !narrow;
     const meM = ((D.me || {}).member) || {}; const meName = meM.fullName || '';
-    const slotInfo = cls.slotInfo || null; const time = slotInfo ? ip6Clock(slotInfo.start) + ' – ' + ip6Clock(slotInfo.end) : 'Saturday';
+    const slotInfo = cls.slotInfo || null; const time = slotInfo ? ip6Clock(slotInfo.start) + ' – ' + ip6Clock(slotInfo.end) : 'time not set';
     const lesson = cls.lesson || today.lesson || null;
     const course = { name: cls.course || today.course || '', division: kit.kitT.split(':')[0], week: lesson ? lesson.week : '', unit: lesson ? lesson.title : 'No lesson scheduled this week', room: slotInfo && slotInfo.room ? slotInfo.room : cls.centre || '', time };
     const me = { first: ip6First(meName), name: meName, role: 'Instructor · ' + kit.short.charAt(0) + kit.short.slice(1).toLowerCase(), centre: cls.centre || today.centre || '', initials: ip6Ini(meName) };
@@ -281,7 +281,7 @@ class Ip6Portal extends React.Component {
     const q = (S.cpQ || '').trim().toLowerCase();
     const list = (t.courses || []).flatMap(c => (t.centres || []).map(ce => ({ c, ce }))).filter(x => !q || (x.c + ' ' + x.ce).toLowerCase().includes(q));
     const pick = (c, ce) => { if (c === C.cls.course && ce === C.cls.centre) return this.setState({ cpOpen: false, cpQ: '' }); this.setState({ course: c, centre: ce, cpOpen: false, cpQ: '', d: { me: S.d.me, form: S.d.form }, here: {}, marks: {}, ev: {}, ex: {}, mc: {}, hq: null, goal: null, phM: {}, phN: {}, log: null, remarks: {}, tIdx: 0, tEnd: null, taught: false }, () => this.loadAll()); this.toast('Now teaching ' + c + ' · ' + ce); };
-    return { cs: { name: C.cls.course || '', short: kit.short, icon: kit.icon, tagBg: '#0b0b0c', tagFg: '#f5b026', meta: [C.cls.centre, 'Sat ' + time, (C.cls.slotInfo || {}).room].filter(Boolean).join(' · '), channel: '#' + (((S.d.comm || {}).channel || {}).slug || ip6Slug(C.cls.course)), evidence: kit.evidence, kitT: kit.kitT, kit: kit.kit },
+    return { cs: { name: C.cls.course || '', short: kit.short, icon: kit.icon, tagBg: '#0b0b0c', tagFg: '#f5b026', meta: [C.cls.centre, C.cls.slotInfo ? 'Sat ' + time : 'No class time on the timetable yet', (C.cls.slotInfo || {}).room].filter(Boolean).join(' · '), channel: '#' + (((S.d.comm || {}).channel || {}).slug || ip6Slug(C.cls.course)), evidence: kit.evidence, kitT: kit.kitT, kit: kit.kit },
       cpOpen: !!S.cpOpen, cpOpenA: S.cpOpen ? 'true' : 'false', cpToggle: () => this.setState({ cpOpen: !S.cpOpen, cpQ: '' }), cpQ: S.cpQ || '', onCpQ: e => this.setState({ cpQ: e.target.value }),
       cpKey: e => { if (e.key === 'Enter' && list[0]) { e.preventDefault(); pick(list[0].c, list[0].ce); } },
       cpList: list.map(({ c, ce }) => { const on = c === C.cls.course && ce === C.cls.centre; return { name: c, short: (IP6_KITS[C.cls.division] || kit).short, sub: ce, cur: on, on: on ? 'true' : 'false', bg: on ? '#f4f4f2' : '#fff', tagBg: on ? '#0b0b0c' : '#f4f4f2', tagFg: on ? '#f5b026' : '#4a4a50', pick: () => pick(c, ce) }; }), cpNone: list.length === 0 };

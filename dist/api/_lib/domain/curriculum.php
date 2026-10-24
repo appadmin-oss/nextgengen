@@ -1879,7 +1879,13 @@ function staff_curriculum(array $p): array {
     $where = "status = 'published'"; $args = [];
     if ($courses !== null) {
         if (!$courses) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
-        $where .= " AND (course = '' OR course IN (" . implode(',', array_fill(0, count($courses), '?')) . '))'; $args = $courses;
+        /* A course's lessons include those filed under its parts: "Piano" and
+           "Guitar" lessons are Musical Instruments lessons. Matching the name
+           exactly gave a Musical Instruments instructor "0 lessons". */
+        $fam = [];
+        foreach ($courses as $c) foreach (curriculum_course_family((string)$c) as $f) $fam[mb_strtolower($f)] = true;
+        $fam = array_keys($fam);
+        $where .= " AND (course = '' OR lower(course) IN (" . implode(',', array_fill(0, count($fam), '?')) . '))'; $args = $fam;
     }
     $units = curriculum_load($where, $args, 'course, week, position');
     $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
@@ -1944,7 +1950,8 @@ function staff_curriculum(array $p): array {
         $audience = 0; $behind = [];
         $due = curriculum_due_date((string)$cfg['startDate'], (int)$b['unit']['week']);
         foreach ($members as $mm) {
-            if ((string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), $coursesOf((string)$mm['memberId'], $mm), true)) continue;
+            $uc = (string)$b['unit']['course'];
+            if ($uc !== '' && !array_intersect([mb_strtolower($uc), mb_strtolower(curriculum_course_parent($uc))], $coursesOf((string)$mm['memberId'], $mm))) continue;
             $audience++;
             if ($due !== '' && $today > $due && $b['checks'] && empty($doneBy[$id][(string)$mm['memberId']])) {
                 // A member who joined after it fell due is not behind on it.
@@ -1954,7 +1961,8 @@ function staff_curriculum(array $p): array {
         }
         $done = $stats[$id]['completed'] ?? 0;
         $out[] = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)
-            + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $done,
+            + ['family' => curriculum_course_parent((string)$b['unit']['course']),
+               'stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $done,
                            'avgScore' => $done ? (int)round(($stats[$id]['scoreSum'] ?? 0) / $done) : null, 'behind' => count($behind), 'behindNames' => array_slice($behind, 0, 12)],
                'due' => $due];
     }
@@ -1963,6 +1971,26 @@ function staff_curriculum(array $p): array {
             'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
+}
+
+/** The catalogue course a lesson's course belongs to: "Piano" → Musical Instruments; a catalogue course is its own. */
+function curriculum_course_parent(string $course): string {
+    $c = trim($course); if ($c === '') return '';
+    // The catalogue first ("Coding" is its own), then the word's one course
+    // ("Piano" → Musical Instruments), even when lessons already exist as "Piano".
+    foreach (club_courses() as $k) if (mb_strtolower($k) === mb_strtolower($c)) return $k;
+    $syn = MEMBER_COURSE_WORDS[mb_strtolower($c)] ?? null;
+    if ($syn !== null) foreach (club_courses() as $k) if (mb_strtolower($k) === mb_strtolower($syn)) return $k;
+    return curriculum_course_canonical($c) ?: $c;
+}
+
+/** A catalogue course and every course name filed under it ("Musical Instruments", "Piano", "Guitar"…). */
+function curriculum_course_family(string $course): array {
+    $out = [$course];
+    foreach (MEMBER_COURSE_WORDS as $w => $parent) if (mb_strtolower($parent) === mb_strtolower($course)) $out[] = $w;
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r)
+        if (mb_strtolower(curriculum_course_parent((string)$r['course'])) === mb_strtolower($course)) $out[] = (string)$r['course'];
+    return array_values(array_unique($out));
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */
