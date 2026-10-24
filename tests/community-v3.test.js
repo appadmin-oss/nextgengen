@@ -196,6 +196,22 @@ function cleanup() {
     await click(s.page, /^Send reply$/);
     await s.page.waitForTimeout(1500);
     chk('a reply is sent', q("SELECT status FROM community_comments WHERE postId = 'CP-Q1' AND memberId = '" + STUDENT + "'").length === 1);
+    // A thread reads as a chat: a day line, your reply on the right, quote a reply, react to one.
+    chk('the thread has a day line', await s.page.evaluate(() => Array.from(document.querySelectorAll('aside[aria-label="Replies"] [role="separator"]')).some(x => /Today|Yesterday|day|\d/.test(x.innerText))));
+    chk('your own reply sits on the right', await s.page.evaluate(() => { const b = Array.from(document.querySelectorAll('aside[aria-label="Replies"] [data-cid]')).find(x => /Thanks, that worked/.test(x.innerText)); return !!b && getComputedStyle(b).flexDirection === 'row-reverse'; }));
+    await click(s.page, /^Reply to /, 'aside[aria-label="Replies"]');
+    chk('replying to a reply shows what you are answering', await waitText(s.page, /Replying to /, 4000));
+    await s.page.fill('textarea[aria-label="Write a reply"]', 'Quoting you on this one');
+    await s.page.press('textarea[aria-label="Write a reply"]', 'Enter');
+    await s.page.waitForTimeout(1500);
+    const qrow = q("SELECT replyTo FROM community_comments WHERE body = 'Quoting you on this one'")[0] || {};
+    chk('Enter sends, and the reply carries the quote', !!qrow.replyTo);
+    chk('the sent reply shows the quote it answers', await s.page.evaluate(() => { const b = Array.from(document.querySelectorAll('aside[aria-label="Replies"] [data-cid]')).find(x => /Quoting you on this one/.test(x.innerText)); return !!b && !!b.querySelector('button[aria-label^="Go to the reply"]'); }));
+    const reacted = await s.page.evaluate(() => { const b = Array.from(document.querySelectorAll('aside[aria-label="Replies"] button')).find(x => /^React to /.test(x.getAttribute('aria-label') || '')); if (!b) return false; b.click(); return true; });
+    await s.page.waitForTimeout(300);
+    await s.page.evaluate(() => { const g = document.querySelector('aside[aria-label="Replies"] [role="group"][aria-label="Pick a reaction"]'); const b = g && g.querySelector('button'); if (b) b.click(); });
+    await s.page.waitForTimeout(1200);
+    chk('a reply takes a reaction from its picker', reacted && q("SELECT COUNT(*) c FROM community_comment_reactions WHERE memberId = '" + STUDENT + "'")[0].c >= 1);
     await click(s.page, /^Close replies$/);
 
     console.log('\n── The video player ────────────────────────────────────────');

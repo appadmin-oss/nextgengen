@@ -62,3 +62,4 @@ tests/screens/
 
 # Source maps for debugging a production stack trace — never shipped (build.js)
 .build/
+*.zip

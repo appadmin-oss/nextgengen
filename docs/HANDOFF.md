@@ -2821,3 +2821,11 @@ The table is editable in the Control Room, with these as the defaults.
 - `community.comment` takes a `replyTo` (on the same post, visible to the replier, else `quote_not_found`).
 - `community.comments` returns each reply's `quote` (resolved from the thread's own rows, "removed" when the viewer can't see it), its `reactions` and `myReaction`, all in one grouped read.
 - `community.comment.react` toggles a reaction like a post's. The person whose reply was quoted is notified.
+- **Client (cm3-app.jsx, community-v3.dc.html):**
+  - Bubbles: your own on the right; one run per author within 10 minutes.
+  - Day lines (`cm3Day`), and a "new replies" line from a per-browser seen count (`cm3.seen` in localStorage).
+  - Quote bar in the composer; tap a quote to jump to the original (`thJump`, a brief highlight).
+  - Reaction picker per reply; swipe right to reply and long-press to react on touch (`thPointer`), each with a button too.
+  - The open thread is polled every 8s on a visible tab (`loadComments(pid, true)`); a "N new" jump button appears when scrolled up.
+  - Enter sends on wide screens. Escape closes the picker, then the quote, then the thread.
+- **Tests:** `community-v3.test.js` 62/0, which adds the day line, the right-hand own reply, quote and Enter, the quote shown, and a reaction.

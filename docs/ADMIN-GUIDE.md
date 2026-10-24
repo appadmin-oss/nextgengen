@@ -2790,3 +2790,16 @@ Settings → API keys → Photos → **Cloudinary · backup account** takes a se
   - Each is copied once, so a second print or edit reuses the copy. The old file stays, so shared links keep working.
   - Photos nobody prints or edits stay where they are. They still use the old account's bandwidth when a page shows them, but no new storage anywhere.
 - **An account Cloudinary has stopped** ("account disabled", over its limits) now counts as full when its usage is read, instead of keeping its last reading.
+
+
+## Community replies work like a chat
+
+A post's replies read like a chat thread:
+
+- **Layout:** your own replies sit on the right. Several replies in a row from one person share one name. Each new day starts under a day line. A "new replies" line marks where the replies you haven't seen begin.
+- **Reply to one reply:** press the curved arrow (or swipe the reply right on a phone). Your reply quotes the one you answered. Tap the quote to jump to the original. The person you quoted is notified.
+- **React:** press the smiley (or hold a reply on a phone) to react with one of the six community reactions. Pressing the same one again takes it back.
+- **Live replies:** new replies appear while the thread is open, checked every few seconds. If you have scrolled up, a button shows how many are new and takes you to the latest.
+- **Sending:** on a computer, Enter sends and Shift+Enter starts a new line. On a phone, the send button sends.
+
+Reporting and deleting a reply work as before. Every action has a button; nothing needs a gesture.
