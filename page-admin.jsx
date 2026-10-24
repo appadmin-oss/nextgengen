@@ -10214,6 +10214,39 @@ function volunteerEditForm(v, centres, onSaved, titles) {
   };
 }
 
+/* What else this volunteer is: a mentor as well (one person, both portals;
+   admin.mentor.promote / demote), and whether the online Instructor Academy is
+   waived because they did it in person (admin.volunteers.academy). */
+function VolunteerRoles({ v, onSaved }) {
+  const [busy, setBusy] = React.useState("");
+  const isMentor = !!v.mentorId, cleared = !!v.academyClearedAt;
+  const run = async (key, fn, ok) => {
+    setBusy(key);
+    try { await fn(); toast.success(ok); onSaved(); }
+    catch (e) { toast.error(e.code === "own_account" ? "You can’t change this on your own record." : e.code === "out_of_scope" ? "That volunteer’s centre is outside the centres you manage." : "Not saved (" + (e.code || e.message) + "). Try again."); }
+    finally { setBusy(""); }
+  };
+  return (
+    <div className="vol-roles">
+      <span className="admin-field-label">Also</span>
+      <label className="vol-role-row">
+        <input type="checkbox" checked={isMentor} disabled={!!busy} onChange={() => run("mentor",
+          () => isMentor ? NGGApi.admin.mentor.demote(v.mentorId) : NGGApi.admin.mentor.promote(v.volunteerId, { rank: "mentor", programme: v.programme === "summer" ? "summer" : "ngg", centre: v.centre || "" }),
+          isMentor ? (v.fullName || "They") + " is no longer a mentor. Their instructor role is unchanged." : (v.fullName || "They") + " is now a mentor too: the Mentor Portal opens for them, and pair mentees in Mentors & volunteers → Pairings.")}/>
+        <span><b>A mentor as well</b><small>{isMentor ? "On the mentor roster" + (v.role === "instructor" ? " and teaching: both portals open for them." : ".") : "Adds them to the mentor roster without changing their role here."}</small></span>
+      </label>
+      {v.role === "instructor" && (
+        <label className="vol-role-row">
+          <input type="checkbox" checked={cleared} disabled={!!busy} onChange={() => run("academy", () => NGGApi.admin.volunteers.academy(v.volunteerId, !cleared),
+            !cleared ? "Academy marked as done in person. Their portal opens without the online modules." : "Academy waiver removed. They complete the online modules again.")}/>
+          <span><b>Skip the online Academy</b><small>{cleared ? "Done in person, recorded " + String(v.academyClearedAt).slice(0, 10) + "." : "Tick when they trained in person or need none. The portal stops asking for the modules."}</small></span>
+        </label>
+      )}
+      {busy && <span className="admin-hint" role="status">Saving…</span>}
+    </div>
+  );
+}
+
 /* The rest of a volunteer's record: the photo (saved on its own, the moment
    it is taken), their public profile, and delete. Portal access sits below. */
 function VolunteerMore({ v, onSaved, onDelete }) {
@@ -10232,6 +10265,7 @@ function VolunteerMore({ v, onSaved, onDelete }) {
         <PhotoCapture value={photo} onChange={savePhoto} size={80} label={"Photo of " + (v.fullName || "the volunteer")}/>
         {busy && <span className="admin-hint" role="status">Saving…</span>}
       </div>
+      <VolunteerRoles v={v} onSaved={onSaved}/>
       <ProfileExtrasEditor subjectType="volunteer" subjectId={v.volunteerId}/>
       <div className="vol-more-acts">
         <button type="button" className="btn btn-ghost btn-sm vol-del" onClick={onDelete}>Delete volunteer</button>

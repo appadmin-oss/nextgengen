@@ -262,8 +262,18 @@ function member_timetable(array $p): array {
     $main = array_values(array_filter($courses, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0));
     $divId = $main && function_exists('nggc_division_for_track') ? nggc_division_for_track((string)$main[0]) : '';
     if ($divId === '' && $main && function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) if (array_intersect(array_map('mb_strtolower', $dv['courses']), array_map('mb_strtolower', $main))) { $divId = $dv['id']; break; }
+    /* No course chosen yet: the division stored on the record, or the one
+       the track names ("Tech"), as its NAME. The raw id leaked through and
+       the card read "tech · Tech". */
+    if ($divId === '' && function_exists('nggc_division_for_track')) {
+        foreach ([(string)($m['division'] ?? ''), (string)($m['track'] ?? '')] as $hint) {
+            $hint = trim($hint); if ($hint === '') continue;
+            if (function_exists('nggc_division') && nggc_division(mb_strtolower($hint))) { $divId = mb_strtolower($hint); break; }
+            $divId = nggc_division_for_track($hint); if ($divId !== '') break;
+        }
+    }
     $div = $divId !== '' && function_exists('nggc_division') ? nggc_division($divId) : null;
-    return ['ok' => true, 'course' => (string)($main[0] ?? $m['track'] ?? ''), 'courses' => $main, 'division' => $div ? (string)$div['name'] : ''] + $tt;
+    return ['ok' => true, 'course' => (string)($main[0] ?? ''), 'courses' => $main, 'division' => $div ? (string)$div['name'] : ''] + $tt;
 }
 
 /**

@@ -2960,3 +2960,29 @@ The table is editable in the Control Room, with these as the defaults.
   - It is a draft for a curriculum lead to publish, or published at once when the instructor holds `curriculum`.
   - The UI is `StaffLessonForm`, in the curriculum view of both portals.
 - **Tests:** PHP 5273/0; instructor 40/0 (writes a lesson from the portal).
+
+## One person instructor and mentor; Academy waived by hand (2026-10-24)
+
+- **Both roles:**
+  - The volunteer drawer (`VolunteerRoles`) has "A mentor as well". It uses the existing `admin.mentor.promote` / `demote` and leaves the volunteer's role (instructor) unchanged.
+  - When the volunteer is also a member, `admin_mentor_promote` copies their `memberId` onto the mentor row, so the gate finds the same person both ways.
+  - The volunteer roster carries `mentorId`, from one grouped read.
+- **Academy waiver (migration 177):**
+  - `volunteers.academyClearedAt` / `academyClearedBy`. `admin.volunteers.academy` (cap `people`, scoped, never one's own record, audited) sets or clears it.
+  - `academy_instructor_cleared` exempts the instructor in the orientation gate and in `instructor.academy`, matching their member id, volunteer id or email.
+  - Mentors already had this, as "Completed in person" in the Pairings workspace.
+- **Tests:** PHP 5278/0.
+
+## Member "My course": division name, honest lesson states (2026-10-24)
+
+- **Division name:** `member_timetable` resolves the division from the record's `division` or the track when no course is chosen, and returns its name. The card read "tech · Tech" (a raw id beside the track). With no course chosen, it says so: "No course chosen yet: ask your centre".
+- **Lesson states:** the curriculum list draws a padlock only on a lesson that has not opened yet ("Opens week N"). A past week not started is "To catch up"; the current one is "Not started". Before, every unstarted lesson looked locked.
+- **Tests:** PHP 5278/0; member 42/0; instructor 40/0; mentor 66/0.
+
+### For the next agent: the timetable UX needs work (owner, 2026-10-24)
+
+Members find the timetable hard to use. Reported, not yet redesigned:
+- the member's timetable view (member portal → Timetable, `mp9-more.jsx` `ttDays` / `division`);
+- the public timetable maker (`?centre=` slug, `tt_for_centre`).
+
+Start from how a child reads "where am I, when, with whom" on a phone. One clear "my class this Saturday" before the full grid. Their own course is highlighted, never mixed into every course's rows. Test it with members, not only in the suite.

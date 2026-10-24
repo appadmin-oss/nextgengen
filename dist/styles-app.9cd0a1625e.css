@@ -14344,3 +14344,9 @@ button.m9x-ev-sum { cursor: pointer; }
 .scm-write { margin: 0 0 14px; }
 .scm-write-form { display: grid; gap: 10px; margin: 0 0 16px; padding: 14px; border: 1px solid #e3e1da; border-radius: 12px; background: #fff; }
 .scm-write-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.vol-roles { display: grid; gap: 8px; margin: 0 0 14px; }
+.vol-role-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line, #e7e9ee); border-radius: 10px; cursor: pointer; }
+.vol-role-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
+.vol-role-row span { display: grid; gap: 2px; }
+.vol-role-row small { color: var(--ink-400, #5f6874); font-size: 13px; }

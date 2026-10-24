@@ -1903,6 +1903,7 @@
         // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
         caps:      (volunteerId, caps) => request('/admin/volunteers.php', { body: { action: 'caps', volunteerId, caps } }),
         update:  (volunteerId, data) => request('/admin/volunteers.php', { body: { action: 'update', volunteerId, data } }),
+        academy: (volunteerId, on) => request('/admin/volunteers.php', { body: { action: 'academy', volunteerId, on: !!on } }),
         /* Summer School → NGG: the open NGG centres nearest their Summer venue,
            then the move (keepSummer = they serve both). */
         nggOptions: (volunteerId) => request('/admin/volunteers.php' + qs({ view: 'nggOptions', volunteerId })),

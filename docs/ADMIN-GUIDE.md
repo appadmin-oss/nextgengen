@@ -2897,3 +2897,11 @@ When one key hits its daily limit, the next one serves. Press **Test** on each k
 
 - **Lessons for a course.** An instructor can write a lesson for their own course from Resources → Curriculum → "Write a lesson for …". It arrives in Control Room → Curriculum → Lessons as a **draft**; publish it there and their class sees it. An instructor you have given the curriculum permission publishes directly.
 - **When a course has lessons of its own,** those are what its class sees. Lessons filed under related names (an instrument for Musical Instruments, "Drama" for Acting) are used only for a course with none of its own.
+
+## Making someone an instructor AND a mentor, and skipping the Academy
+
+Open the person in **Mentors & volunteers → Volunteers**, then go to the "Also" section of their record.
+
+- **A mentor as well:** tick it to add them to the mentor roster. Their role stays Instructor, and both the Instructor and Mentor portals open for them. Pair their mentees in Mentors & volunteers → Pairings. Untick it to take them off the mentor roster.
+- **Skip the online Academy** (instructors): tick it when they trained in person or need no training. Their portal stops asking for the modules. The waiver is recorded with the date and who granted it. You cannot set it on your own record.
+- **For a mentor's Academy,** use Mentors & volunteers → Pairings → the mentor → Academy "Completed in person".

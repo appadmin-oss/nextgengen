@@ -4058,3 +4058,8 @@ CREATE TABLE IF NOT EXISTS portal_time (
   KEY idx_pt_day (day)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (176) ON DUPLICATE KEY UPDATE version = version;
+
+-- 177: an instructor cleared of the online Academy by hand
+ALTER TABLE volunteers ADD COLUMN academyClearedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN academyClearedBy VARCHAR(64) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (177) ON DUPLICATE KEY UPDATE version = version;

@@ -66,7 +66,7 @@ Object.assign(Mp9Portal.prototype, {
        the courses chosen for the member, never a guess from the track's words. */
     const tt = this.dd("tt") || {};
     const myCourses = (tt.courses || []).filter(Boolean), myL = myCourses.map(c => c.toLowerCase());
-    const division = { name: tt.division || (d.member || {}).division || "Your division", course: myCourses.join(", ") || me.track || "Your course", instructor: "Your instructor", room: me.centre + " centre",
+    const division = { name: tt.division || "Your division", course: myCourses.join(", ") || "No course chosen yet: ask your centre", instructor: "Your instructor", room: me.centre + " centre",
       chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
     const slots = (tt.slots || []);
     const byDay = {};
@@ -80,8 +80,12 @@ Object.assign(Mp9Portal.prototype, {
     const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
     const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
       .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: myL.some(c => String(a).toLowerCase().startsWith(c)) })) }));
-    const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : "Not started";
-      return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
+    const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : wk && u.week < wk ? "To catch up" : "Not started";
+      /* The padlock is for a lesson that is not open yet, and only that: a
+         past week the child has not started is open, and drawing it locked
+         told them they could not do it. */
+      return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" || st === "To catch up" ? "#7a5600" : "#6b6b72",
+        icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : /^Opens/.test(st) ? "ph ph-lock-simple" : st === "To catch up" ? "ph ph-arrow-counter-clockwise" : "ph ph-circle" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
     return { lessons, assignments: asg, events: ev, division, ttDays, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
       oppsTop: oppsTop.length ? oppsTop : [{ t: "Nothing picked for you yet", why: "Staff add bootcamps and competitions here", close: "check back soon" }],

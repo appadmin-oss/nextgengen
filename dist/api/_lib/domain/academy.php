@@ -146,10 +146,20 @@ function academy_intercept(string $op, array $args): ?array {
     if (in_array($op, ACADEMY_GATED_INSTRUCTOR_OPS, true)) {
         $g = function_exists('results_instructor_gate') ? results_instructor_gate($args) : ['ok' => false];
         if (empty($g['ok']) || ($g['role'] ?? '') !== 'instructor') return null;
-        $st = academy_orientation_state('instructor', (string)($args['requesterId'] ?? ''));
+        $st = academy_orientation_state('instructor', (string)($args['requesterId'] ?? ''), academy_instructor_cleared((string)($args['requesterId'] ?? '')));
         return $st['ok'] ? null : academy_orientation_refusal($st, 'Instructor Portal');
     }
     return null;
+}
+
+/** Has this instructor been cleared of the online Academy by hand (admin.volunteers.academy)? */
+function academy_instructor_cleared(string $personId): bool {
+    if ($personId === '') return false;
+    $m = db_row('SELECT email FROM members WHERE memberId = ? LIMIT 1', [$personId]);
+    $email = strtolower(trim((string)($m['email'] ?? '')));
+    return (bool)db_row("SELECT id FROM volunteers WHERE status = 'active' AND academyClearedAt <> ''
+                         AND (memberId = ? OR volunteerId = ?" . ($email !== '' ? ' OR lower(email) = ?' : '') . ") LIMIT 1",
+                        $email !== '' ? [$personId, $personId, $email] : [$personId, $personId]);
 }
 
 /* ── The Instructor Academy (instructor.academy, instructor.academy.result) ── */
@@ -192,7 +202,7 @@ function academy_result(string $track, string $personId, array $p): array {
 function instructor_academy(array $p): array {
     $g = function_exists('results_instructor_gate') ? results_instructor_gate($p) : ['ok' => false, 'error' => 'forbidden_role'];
     if (empty($g['ok'])) return $g;
-    return academy_view('instructor', (string)$p['requesterId'], ($g['role'] ?? '') !== 'instructor');
+    return academy_view('instructor', (string)$p['requesterId'], ($g['role'] ?? '') !== 'instructor' || academy_instructor_cleared((string)$p['requesterId']));
 }
 /** instructor.academy.result — {moduleId, answers[]}. */
 function instructor_academy_result(array $p): array {

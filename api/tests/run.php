@@ -30820,6 +30820,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
 })();
 
+/* ── One person, instructor AND mentor; the Academy waived by hand ── */
+(function () {
+    db_insert('members', ['memberId' => 'NGG-BOTH-1', 'fullName' => 'Both Roles', 'email' => 'both1@x.example', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-BOTH-1', 'memberId' => 'NGG-BOTH-1', 'fullName' => 'Both Roles', 'email' => 'both1@x.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'token' => 'tokboth1', 'createdAt' => now_iso()]);
+    $pr = admin_mentor_promote(['requesterId' => 'NGG-2025-0099', 'personId' => 'VOL-BOTH-1', 'programme' => 'ngg']);
+    $mrow = db_row("SELECT memberId, volunteerId FROM mentors WHERE mentorId = ?", [(string)($pr['mentorId'] ?? '')]);
+    chk('both roles: an instructor is made a mentor too, and the mentor row knows them as the member they sign in as', !empty($pr['ok']) && ($mrow['memberId'] ?? '') === 'NGG-BOTH-1' && ($mrow['volunteerId'] ?? '') === 'VOL-BOTH-1'
+        && (string)db_row("SELECT role FROM volunteers WHERE volunteerId = 'VOL-BOTH-1'")['role'] === 'instructor');
+    $list = admin_volunteers_list(['requesterId' => 'NGG-2025-0099']);
+    $row = array_values(array_filter($list['volunteers'] ?? [], fn($v) => $v['volunteerId'] === 'VOL-BOTH-1'))[0] ?? [];
+    chk('both roles: the volunteer roster says they mentor too', ($row['mentorId'] ?? '') === (string)$pr['mentorId']);
+    chk('academy: not cleared until someone clears it', !academy_instructor_cleared('NGG-BOTH-1'));
+    $a = admin_volunteer_academy(['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-BOTH-1', 'on' => true]);
+    chk('academy: an admin waives the online Academy for an instructor, and it counts when they sign in as a member', !empty($a['ok']) && academy_instructor_cleared('NGG-BOTH-1') && academy_instructor_cleared('VOL-BOTH-1'));
+    chk('academy: waiving twice is unchanged; removing it puts the modules back', !empty(admin_volunteer_academy(['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-BOTH-1', 'on' => true])['unchanged'])
+        && !empty(admin_volunteer_academy(['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-BOTH-1', 'on' => false])['ok']) && !academy_instructor_cleared('NGG-BOTH-1'));
+})();
+
 /* ── A course's lessons include those filed under its parts ── */
 (function () {
     $prevCat = setting_get('club_catalogue'); setting_set('club_catalogue', club_catalogue_default(), 'test');

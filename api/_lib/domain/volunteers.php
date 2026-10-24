@@ -634,8 +634,14 @@ function admin_volunteers_list(array $p): array {
     unset($a);
     /* photoUrl is on the row because the editor shows it: without it the
        photo read as empty, and a save wrote that empty back over the picture. */
-    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    $roster = db_all("SELECT volunteerId, memberId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, academyClearedAt, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    // Who is ALSO on the mentor roster, in one read: an instructor can mentor too.
+    $mentorOf = [];
+    foreach (db_all("SELECT mentorId, memberId, volunteerId, lower(email) e FROM mentors WHERE status = 'active'") as $r)
+        foreach (['memberId', 'volunteerId', 'e'] as $k) if (trim((string)$r[$k]) !== '') $mentorOf[(string)$r[$k]] = (string)$r['mentorId'];
     foreach ($roster as &$v) {
+        $v['mentorId'] = $mentorOf[(string)$v['volunteerId']] ?? (trim((string)($v['memberId'] ?? '')) !== '' ? ($mentorOf[(string)$v['memberId']] ?? '') : '')
+            ?: ($mentorOf[strtolower(trim((string)$v['email']))] ?? '');
         $v['programme'] = volunteer_programme($v);
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         // Portal access granted to this person. Always an array so the console
@@ -2057,4 +2063,25 @@ function volunteer_promote_courses(array $m, array $p): string {
         if ($canon !== null && $canon !== '' && !in_array($canon, $out, true)) $out[] = $canon;
     }
     return $out ? json_encode(array_slice($out, 0, 20)) : '';
+}
+
+
+/**
+ * admin.volunteers.academy — clear (or un-clear) an instructor of the online
+ * Instructor Academy by hand: they did it in person, or need none. Never one's
+ * own record; audited.
+ */
+function admin_volunteer_academy(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [(string)($p['volunteerId'] ?? '')]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($v['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $by = (string)$g['requester']['memberId'];
+    if ((string)($v['memberId'] ?? '') === $by) return ['ok' => false, 'error' => 'own_account'];
+    $on = !empty($p['on']);
+    if ($on === ((string)($v['academyClearedAt'] ?? '') !== '')) return ['ok' => true, 'unchanged' => true, 'academyClearedAt' => (string)$v['academyClearedAt']];
+    $at = $on ? now_iso() : '';
+    db_update('volunteers', ['academyClearedAt' => $at, 'academyClearedBy' => $on ? $by : '', 'updatedAt' => now_iso()], ['id' => (int)$v['id']]);
+    audit('admin.volunteer.academy', $by, (string)$v['volunteerId'], ['cleared' => $on], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'academyClearedAt' => $at];
 }

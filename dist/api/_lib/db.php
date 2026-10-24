@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 176;
+const NGG_SCHEMA_TARGET = 177;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5128,6 +5128,12 @@ function db_migrate(PDO $db): void {
               UNIQUE(memberId, day, portal)
             );
             CREATE INDEX IF NOT EXISTS idx_pt_day ON portal_time(day);
+        ",
+        /* An instructor who did the Academy in person (or needs none) is
+           cleared by hand, as a mentor already can be. */
+        177 => "
+            ALTER TABLE volunteers ADD COLUMN academyClearedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN academyClearedBy TEXT NOT NULL DEFAULT '';
         ",
     ];
 
