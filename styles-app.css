@@ -14341,3 +14341,6 @@ button.m9x-ev-sum { cursor: pointer; }
 .pt-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin: 0 0 18px; }
 .scm-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fff8e6; border: 1px solid #f1dca6; color: #5a4300; font-size: 14px; line-height: 1.45; }
 .scm-note .ph { flex: none; margin-top: 2px; }
+.scm-write { margin: 0 0 14px; }
+.scm-write-form { display: grid; gap: 10px; margin: 0 0 16px; padding: 14px; border: 1px solid #e3e1da; border-radius: 12px; background: #fff; }
+.scm-write-actions { display: flex; gap: 8px; flex-wrap: wrap; }

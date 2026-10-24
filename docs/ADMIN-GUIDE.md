@@ -2894,3 +2894,6 @@ When one key hits its daily limit, the next one serves. Press **Test** on each k
 - **When you promote a member to staff,** they start with their own courses. Change them in the editor if they teach something else.
 - **Instructors do not see school results.** Results are for the child's mentor (Mentor portal), the family and NGG admin.
 - **Every course has its own Community channel,** created automatically, including courses added later. A course channel you archive stays archived.
+
+- **Lessons for a course.** An instructor can write a lesson for their own course from Resources → Curriculum → "Write a lesson for …". It arrives in Control Room → Curriculum → Lessons as a **draft**; publish it there and their class sees it. An instructor you have given the curriculum permission publishes directly.
+- **When a course has lessons of its own,** those are what its class sees. Lessons filed under related names (an instrument for Musical Instruments, "Drama" for Acting) are used only for a course with none of its own.

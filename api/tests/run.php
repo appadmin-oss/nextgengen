@@ -30827,7 +30827,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('curriculum_units', ['unitId' => 'U-PIANO-1', 'course' => 'Piano', 'title' => 'Middle C', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     $fam = array_map('mb_strtolower', curriculum_course_family('Musical Instruments'));
     chk('curriculum: the Musical Instruments family includes a lesson filed as Piano, and Guitar', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('musical instruments', $fam, true));
-    db_exec("DELETE FROM curriculum_units WHERE unitId = 'U-PIANO-1'");
+    db_insert('curriculum_units', ['unitId' => 'U-MI-1', 'course' => 'Musical Instruments', 'title' => 'Posture', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('curriculum: a course with lessons of its own is taught from them, not the matched ones', curriculum_course_family('Musical Instruments') === ['Musical Instruments']);
+    chk('curriculum: the matching is not only music ("Drama" lessons are Acting\'s, "Programming" Coding\'s)', curriculum_course_parent('Drama') === 'Acting' && curriculum_course_parent('programming') === 'Coding');
+    db_exec("DELETE FROM curriculum_units WHERE unitId IN ('U-PIANO-1', 'U-MI-1')");
+    chk('instructor lesson: an unknown course, or a requester who is no staff, is refused', !empty(staff_curriculum_lesson(['requesterId' => 'NGG-NOBODY', 'course' => 'Coding', 'title' => 'x'])['error']));
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 

@@ -1986,11 +1986,39 @@ function curriculum_course_parent(string $course): string {
 
 /** A catalogue course and every course name filed under it ("Musical Instruments", "Piano", "Guitar"…). */
 function curriculum_course_family(string $course): array {
+    /* A course with lessons of its own is taught from them: the lessons filed
+       under related names are a fallback for a course nobody has written yet,
+       never mixed into one that has its own. */
+    if (db_row("SELECT unitId FROM curriculum_units WHERE lower(course) = lower(?) AND status = 'published' LIMIT 1", [$course])) return [$course];
     $out = [$course];
     foreach (MEMBER_COURSE_WORDS as $w => $parent) if (mb_strtolower($parent) === mb_strtolower($course)) $out[] = $w;
     foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r)
         if (mb_strtolower(curriculum_course_parent((string)$r['course'])) === mb_strtolower($course)) $out[] = (string)$r['course'];
     return array_values(array_unique($out));
+}
+
+/**
+ * staff.curriculum.lesson — an instructor writes a lesson for one of THEIR
+ * courses, from the portal. It is a draft for a curriculum lead to publish,
+ * unless the instructor holds `curriculum` themselves. Week and position:
+ * the week asked for, at the next free position in it.
+ */
+function staff_curriculum_lesson(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
+    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
+    if ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return ['ok' => false, 'error' => 'not_your_course'];
+    $me = (string)$g['member']['memberId'];
+    $own = in_array('curriculum', member_effective_caps($g['member']), true);
+    $week = max(1, min(104, (int)($p['week'] ?? 1)));
+    $pos = 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, '', $week])['m'] ?? 0);
+    $v = curriculum_validate(['course' => $course, 'level' => '', 'week' => $week, 'position' => $pos,
+        'title' => (string)($p['title'] ?? ''), 'summary' => (string)($p['summary'] ?? ''), 'body' => (string)($p['body'] ?? ''),
+        'objectives' => is_array($p['objectives'] ?? null) ? $p['objectives'] : [], 'status' => $own ? 'published' : 'draft']);
+    if (!$v['ok']) return $v;
+    $unitId = curriculum_write($v, null, $me, 'instructor');
+    audit('curriculum.create', $me, $unitId, ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $own ? 'published' : 'draft'], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'unitId' => $unitId, 'status' => $own ? 'published' : 'draft', 'week' => $week, 'position' => $pos];
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */

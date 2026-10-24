@@ -2951,3 +2951,12 @@ The table is editable in the Control Room, with these as the defaults.
   - A term with no start date names where an admin sets it.
 - **Class time:** with no slot on the timetable, the header says "No class time on the timetable yet", not "Sat Saturday".
 - **Tests:** PHP 5270/0; instructor 39/0.
+
+## A course's own lessons win; instructors write lessons per course (2026-10-24)
+
+- **Precedence:** `curriculum_course_family` returns only the course itself when it has published lessons of its own. Lessons filed under related names ("Piano", or "Drama" for Acting, "Programming" for Coding) are a fallback for a course with none, never mixed in. The matching is the general `MEMBER_COURSE_WORDS` map, not only music.
+- **Writing per course:**
+  - `staff.curriculum.lesson` (POST `/member/curriculum.php` `action=lesson`) lets an instructor write a lesson for one of their own courses (`not_your_course` otherwise), at the week asked for and the next free position.
+  - It is a draft for a curriculum lead to publish, or published at once when the instructor holds `curriculum`.
+  - The UI is `StaffLessonForm`, in the curriculum view of both portals.
+- **Tests:** PHP 5273/0; instructor 40/0 (writes a lesson from the portal).

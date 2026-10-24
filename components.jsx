@@ -3826,6 +3826,49 @@ function staffCurrState(u, weekNow) {
   if (weekNow && u.week < weekNow) return pct >= 80 || !st.audience ? { k: "done", label: "Done" } : { k: "open", label: pct + "% done" };
   return { k: "next", label: weekNow && u.week === weekNow + 1 ? "Next week" : "Coming" };
 }
+/* An instructor writes a lesson for their own course (staff.curriculum.lesson):
+   a draft for the curriculum lead, or published when they hold `curriculum`. */
+function StaffLessonForm({ course, week, canPublish, onDone }) {
+  const [open, setOpen] = React.useState(false);
+  const [f, setF] = React.useState({ title: "", week: week || 1, summary: "", body: "" });
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const set = (k, v) => setF(o => Object.assign({}, o, { [k]: v }));
+  if (!course) return null;
+  if (!open) return (
+    <div className="scm-write">
+      {msg && <p className="scm-note" role="status"><i className="ph ph-check-circle" aria-hidden="true"/> {msg}</p>}
+      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setOpen(true); setMsg(""); }}><i className="ph ph-plus" aria-hidden="true"/> Write a lesson for {course}</button>
+    </div>
+  );
+  const save = async e => {
+    e.preventDefault();
+    if (f.title.trim().length < 2) { setMsg("Give the lesson a title."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const r = await NGGApi.member.curriculumLesson({ course, week: Number(f.week) || 1, title: f.title.trim(), summary: f.summary.trim(), body: f.body.trim() });
+      setOpen(false); setF({ title: "", week: f.week, summary: "", body: "" });
+      setMsg(r && r.status === "published" ? "Published for " + course + ", week " + r.week + "." : "Saved as a draft for " + course + ", week " + (r && r.week) + ". A curriculum lead publishes it in the Control Room; your class sees it then.");
+      if (onDone) onDone();
+    } catch (err) {
+      setMsg(err.code === "not_your_course" ? "You can only write lessons for the courses you teach." : err.code === "title_required" ? "Give the lesson a title." : "Not saved: " + (err.code || err.message) + ". Try again.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <form className="scm-write-form" onSubmit={save} aria-label={"Write a lesson for " + course}>
+      <h3 className="scm-h4">New lesson · {course}</h3>
+      <label className="admin-field"><span className="admin-label">Title</span><input className="admin-input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Finding middle C" required/></label>
+      <label className="admin-field"><span className="admin-label">Week</span><input className="admin-input" type="number" min={1} max={104} value={f.week} onChange={e => set("week", e.target.value)}/></label>
+      <label className="admin-field"><span className="admin-label">What it covers (one line)</span><input className="admin-input" value={f.summary} onChange={e => set("summary", e.target.value)}/></label>
+      <label className="admin-field"><span className="admin-label">The lesson</span><textarea className="admin-input" rows={6} value={f.body} onChange={e => set("body", e.target.value)} placeholder="Steps, examples and practice, as the children will read it."/></label>
+      {msg && <p className="scm-note" role="alert">{msg}</p>}
+      <div className="scm-write-actions">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>{busy ? "Saving…" : canPublish ? "Publish lesson" : "Save for review"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+      </div>
+    </form>
+  );
+}
 function StaffCurriculumMap({ data, course, reload, intro }) {
   const units0 = (data && data.units) || [];
   /* A lesson sits under the catalogue course it belongs to (family): "Piano" lessons are Musical Instruments'. */
@@ -3848,7 +3891,12 @@ function StaffCurriculumMap({ data, course, reload, intro }) {
   const now = inCourse.filter(u => weekNow && u.week === weekNow);
   const pctOf = list => { const a = list.reduce((n, u) => n + ((u.stats || {}).audience || 0), 0); return a ? Math.round(list.reduce((n, u) => n + ((u.stats || {}).completed || 0), 0) / a * 100) : null; };
   const dateW = d => d ? new Date(d + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
-  if (!units0.length) return <p className="scm-empty">No published lessons for your courses yet. They appear here as a curriculum lead publishes them.</p>;
+  if (!units0.length) return (
+    <div className="scm">
+      <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {course || "your courses"} yet. A curriculum lead writes them in Control Room → Curriculum{course ? ", or write the first one here" : ""}.</p>
+      <StaffLessonForm course={course} week={weekNow} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
+    </div>
+  );
   const row = u => {
     const st = u.stats || {}, s = staffCurrState(u, weekNow), pct = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0, isOpen = open === u.unitId;
     return (
@@ -3891,7 +3939,8 @@ function StaffCurriculumMap({ data, course, reload, intro }) {
       <p className="scm-status" role="status" aria-live="polite">{(curCourse || "Whole Club") + " · " + inCourse.length + " lesson" + (inCourse.length === 1 ? "" : "s") + (years.length > 1 ? " over " + years.filter(Boolean).length + " years" : "")
         + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
       {!weekNow && data && data.termStart === "" && <p className="scm-note" role="note"><i className="ph ph-calendar-x" aria-hidden="true"/> Lessons have no due dates yet: the term’s start date is not set. An admin sets it in Control Room → Curriculum → Schedule.</p>}
-      {curCourse && !ownLessons && !t && <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been written for {curCourse} yet. A curriculum lead writes them in Control Room → Curriculum{data && data.selfApprove ? ", and so can you" : ""}. Until then, plan each Saturday from the Plan screen and add your own materials.</p>}
+      {curCourse && !ownLessons && !t && <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {curCourse} yet. A curriculum lead writes them in Control Room → Curriculum, or write the first one below.</p>}
+      <StaffLessonForm course={course || curCourse} week={weekNow} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
       {now.length > 0 && !t && (
         <section className="scm-now" aria-labelledby="scm-now-h">
           <h3 id="scm-now-h">This week</h3>

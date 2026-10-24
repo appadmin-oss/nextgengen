@@ -270,6 +270,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'staff.curriculum.placement' => 'staff_curriculum_placement',
             'staff.curriculum.place'   => 'staff_curriculum_place',
             'staff.curriculum.confirm' => 'staff_curriculum_confirm',
+            'staff.curriculum.lesson'  => 'staff_curriculum_lesson',
             'staff.curriculum.mark'    => 'staff_curriculum_mark',
             'staff.curriculum.material' => 'staff_curriculum_material',
             'staff.curriculum.file' => 'staff_curriculum_file_put',

@@ -928,6 +928,7 @@
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
       /* Place a class in the curriculum: the list with suggested years, and one save for all. */
       curriculumPlacement: (course) => request('/member/curriculum.php' + qs({ view: 'placement', course: course || '' })),
+      curriculumLesson: (o) => request('/member/curriculum.php', { body: Object.assign({ action: 'lesson' }, o) }),
       curriculumPlace: (placements) => request('/member/curriculum.php', { body: { action: 'place', placements } }),
       curriculumConfirm: (memberId, unitIds, done) => request('/member/curriculum.php', { body: { action: 'confirm', memberId, unitIds, done: done !== false } }),
       curriculumAsk:     (unitId, question) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question }, timeout: 60000 }),

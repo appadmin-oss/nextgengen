@@ -4,7 +4,7 @@
  *   GET               their lessons, with progress
  *   GET ?unit=ID      one lesson (starts it)
  *   GET ?view=staff   an instructor's or mentor's view; &memberId= one member's
- *   POST action=submit | ask | mark | year | material   (multipart `file` → an instructor's upload)
+ *   POST action=submit | ask | mark | year | material | lesson   (multipart `file` → an instructor's upload)
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
@@ -44,6 +44,9 @@ if ($method === 'GET') {
         $res = gs_call('staff.curriculum.year', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'year' => $b['year'] ?? null, 'ip' => client_ip()]);
     } elseif ($action === 'confirm') {
         $res = gs_call('staff.curriculum.confirm', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'unitIds' => is_array($b['unitIds'] ?? null) ? $b['unitIds'] : [], 'done' => !isset($b['done']) || !empty($b['done']), 'ip' => client_ip()]);
+    } elseif ($action === 'lesson') {
+        $res = gs_call('staff.curriculum.lesson', ['requesterId' => $mid, 'course' => (string)($b['course'] ?? ''), 'week' => $b['week'] ?? 1,
+            'title' => (string)($b['title'] ?? ''), 'summary' => (string)($b['summary'] ?? ''), 'body' => (string)($b['body'] ?? ''), 'ip' => client_ip()]);
     } elseif ($action === 'place') {
         $res = gs_call('staff.curriculum.place', ['requesterId' => $mid, 'placements' => is_array($b['placements'] ?? null) ? $b['placements'] : [], 'ip' => client_ip()]);
     } elseif ($action === 'material') {

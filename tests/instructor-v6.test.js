@@ -185,6 +185,14 @@ async function as(memberId, admin, viewport) {
     const curTxt = await ip.innerText('main');
     chk('Curriculum: lessons grouped by term with the week the Club is on and this week’s lesson first, never a made-up class size',
       /Term 1/.test(curTxt) && /the Club is on week 3/.test(curTxt) && /This week[\s\S]*Coding week 3/.test(curTxt) && !/of 12 students/.test(curTxt));
+    // Write a lesson for their own course, from the portal: a draft for the curriculum lead.
+    await ip.click('main >> text=Write a lesson for Coding');
+    await ip.fill('form[aria-label="Write a lesson for Coding"] input[placeholder="e.g. Finding middle C"]', 'Loops with a robot');
+    await ip.click('form[aria-label="Write a lesson for Coding"] button[type=submit]');
+    await ip.waitForFunction(() => /Saved as a draft for Coding/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    const drafted = q(`db_row("SELECT course, status, createdBy FROM curriculum_units WHERE title = 'Loops with a robot'")`) || {};
+    chk('Curriculum: an instructor writes a lesson for their course from the portal; it is a draft for the curriculum lead',
+      drafted.course === 'Coding' && drafted.status === 'draft' && /Saved as a draft for Coding/.test(await ip.innerText('main')));
     const views = ['src/modules/instructor6/ip6-view.jsx', 'src/modules/member9/mp9-view.jsx', 'src/modules/mentor15/mp15-view.jsx'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'));
     chk('Generated views: every loop variable is prefixed, so none can shadow h or F', views.every(t => !/\.map\(\((?!l_)/.test(t)));
     // Students → one student
