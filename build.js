@@ -42,6 +42,7 @@ const ORDER = [
   'auth.jsx',
   'command.jsx',
   'tweaks-panel.jsx',
+  'lesson-blocks.jsx',
   'components.jsx',
   'table.jsx',
   'card-photo.jsx',

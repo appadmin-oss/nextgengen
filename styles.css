@@ -8522,3 +8522,58 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .vol-home-links b { font-size: 16px; }
 .vol-home-links span { font-size: 14px; line-height: 1.45; color: var(--ink-700); }
 .vol-home-note { margin: 24px 0 0; font-size: 14px; color: var(--ink-700); }
+
+/* ── Lesson diagrams (lesson-blocks.jsx) ─────────────────────────────────────
+   Drawn, not photographed, so they stay legible at any size and cost nothing
+   to download. Colours come from the site's own tokens; §9's 4.5:1 applies to
+   every label here exactly as it does to body text. */
+.lb { margin: 18px 0; padding: 0; }
+.lb-svg { width: 100%; height: auto; display: block; max-width: 520px; }
+.lb-cap { margin-top: 8px; font-size: 13px; color: var(--ink-500, #5a6488); }
+.lb-note { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-500, #5a6488); }
+
+/* Keyboard */
+.lb-key { stroke: var(--ink-900, #0c1432); stroke-width: 1.2; }
+.lb-key-white { fill: #ffffff; }
+.lb-key-black { fill: var(--ink-900, #0c1432); }
+.lb-key-white.is-on { fill: var(--gold-400, #ffd166); }
+.lb-key-black.is-on { fill: #b4761a; }
+.lb-key-label { font-size: 10px; text-anchor: middle; fill: var(--ink-700, #3a4256); font-family: inherit; }
+
+/* Guitar chords */
+.lb-chord-row { display: flex; flex-wrap: wrap; gap: 18px; }
+.lb-chord { margin: 0; width: 124px; }
+.lb-chord .lb-svg { max-width: 124px; }
+.lb-chord .lb-cap { text-align: center; font-weight: 700; color: var(--ink-900, #0c1432); }
+.lb-fret-line { stroke: var(--ink-700, #3a4256); stroke-width: 1.2; }
+.lb-fret-line.is-nut { stroke-width: 4; }
+.lb-chord-dot { fill: var(--ink-900, #0c1432); }
+.lb-chord-finger { fill: #ffffff; font-size: 9px; font-weight: 700; text-anchor: middle; }
+.lb-chord-open { fill: none; stroke: var(--ink-700, #3a4256); stroke-width: 1.6; }
+.lb-chord-mark { font-size: 12px; text-anchor: middle; fill: var(--ink-700, #3a4256); }
+.lb-chord-missing { font-size: 13px; color: var(--ink-500, #5a6488); }
+
+/* Staff */
+.lb-staff-line { stroke: var(--ink-700, #3a4256); stroke-width: 1.1; }
+.lb-clef { font-size: 40px; fill: var(--ink-900, #0c1432); }
+.lb-note-head { fill: var(--ink-900, #0c1432); }
+.lb-note-stem { stroke: var(--ink-900, #0c1432); stroke-width: 1.6; }
+.lb-note-name { font-size: 10px; text-anchor: middle; fill: var(--ink-500, #5a6488); }
+
+/* Colour */
+.lb-swatch-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.lb-swatch { width: 128px; display: flex; flex-direction: column; gap: 2px; }
+.lb-swatch-chip { height: 70px; border-radius: 8px; border: 1px solid rgba(12,20,50,0.14); }
+.lb-swatch-name { font-size: 13px; margin-top: 4px; }
+.lb-swatch-hex { font-size: 11.5px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
+.lb-swatch-verdict { font-size: 11.5px; }
+.lb-swatch-ratio { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb-swatch-verdict.is-pass { color: #1b6f47; }
+.lb-swatch-verdict.is-fail { color: #b3261e; }
+
+/* The shape of the session */
+.lb-step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lb-step { display: grid; grid-template-columns: 4px 62px 1fr; align-items: center; gap: 10px; }
+.lb-step-bar { height: 100%; min-height: 22px; border-radius: 2px; background: var(--gold-500, #f5b026); }
+.lb-step-min { font-size: 12px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
+.lb-step-label { font-size: 14.5px; }

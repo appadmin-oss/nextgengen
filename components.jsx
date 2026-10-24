@@ -2966,14 +2966,28 @@ function NggMarkdown({ text, className }) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code — taken verbatim, including any markdown inside it.
-    const fence = line.match(/^```\s*([a-z0-9+#-]*)\s*$/i);
+    /* Fenced code — taken verbatim, including any markdown inside it.
+       A fence may carry arguments after its language (```keys C E G). When the
+       language names a lesson diagram (lesson-blocks.jsx) it is DRAWN; any
+       other language, and any fence where that file is not loaded, stays a
+       code block — which is what a Coding lesson wants and what the Word
+       export and a plain-text copy fall back to. */
+    const fence = line.match(/^```\s*([a-z0-9+#-]*)\s*(.*)$/i);
     if (fence) {
       const body = [];
       i++;
       while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
       i++; // closing fence (or end of input — an unclosed fence still renders)
-      blocks.push(<pre key={key++} className="md-pre"><code>{body.join("\n")}</code></pre>);
+      const inlineArgs = (fence[2] || "").trim();
+      const diagram = typeof lessonBlockFor === "function"
+        ? lessonBlockFor(fence[1], inlineArgs || body.join(" ").trim()) : null;
+      if (diagram) {
+        const D = diagram.Component;
+        blocks.push(<D key={key++} args={diagram.args}/>);
+      } else {
+        const full = inlineArgs ? [inlineArgs].concat(body) : body;
+        blocks.push(<pre key={key++} className="md-pre"><code>{full.join("\n")}</code></pre>);
+      }
       continue;
     }
     if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { blocks.push(<hr key={key++} className="md-hr"/>); i++; continue; }

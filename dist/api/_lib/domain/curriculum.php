@@ -923,8 +923,8 @@ function admin_curriculum_ai(array $p): array {
     $write = mb_strlen($text) < 80;
     $bodySpec = $write ? "body (the lesson in Markdown, using exactly these '## ' sections in this order: 'Why it matters', 'Demonstration (20 minutes)', "
         . "'Guided hands-on practice (60 minutes)', 'Independent assignment (25 minutes)', 'Demonstration, feedback and submission (15 minutes)', "
-        . "'Success criteria' (3 bullet points a learner can check themselves), 'AI, used well' (one way to use an AI assistant to explain or check, and how to verify it; "
-        . "never to do the work), 'Make it fit you' (a bullet starting '**If this is new to you:**' and one starting '**If you already can:**'), "
+        . "'Success criteria' (3 bullet points a learner can check themselves), "
+        . "'Make it fit you' (a bullet starting '**If this is new to you:**' and one starting '**If you already can:**'), "
         . "and 'This week's assignment' (one sentence naming the deliverable). Use bullets, short sentences, Nigerian examples where natural), " : "";
     $instructions = "You help instructors at Next Generation Genius, a youth programme for 10–17 year olds in Nigeria, "
         . ($write ? "write a complete 120-minute Saturday lesson from its title. " : "turn lesson notes into a clear lesson. ")
@@ -933,7 +933,18 @@ function admin_curriculum_ai(array $p): array {
         . "Return JSON with keys: " . $bodySpec . "summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
         . "checks (exactly $n items; each {kind:'mcq'|'short', prompt, options (4 strings, mcq only), answer (mcq: the "
         . "0-based index of the correct option; short: a model answer), rubric (short only: what a full-mark answer includes)}). "
-        . "Mix recall with understanding; no trick questions.";
+        . "Mix recall with understanding; no trick questions. "
+        /* AI belongs where the lesson's own work has a step an assistant
+           genuinely changes — not as a section in every lesson. Taught as a
+           ritual it stops being read; taught where it is true it is a skill.
+           When it does belong it goes INSIDE the independent work, as the
+           last step, and it always ends with the learner checking the output
+           or judging it. See api/tests/curriculum-shape.php. */
+        . "Only if this particular lesson's work has a step an AI assistant genuinely changes, add ONE final bullet to "
+        . "'Independent assignment' starting '**With an AI assistant —**', saying what to ask it and how the learner "
+        . "checks or judges what it gives back. Most lessons do not need one — a physical skill, a rehearsal or a "
+        . "conversation is not improved by it. Never add it to more than one section, and never let it produce the "
+        . "deliverable.";
     $input = "Course: " . ($course ?: 'General') . ($level ? "\nLevel: $level" : '') . "\nLesson title: $title\n\nLesson notes:\n$text";
     $r = ai_classify($instructions, $input, $write ? 3600 : 1800, 'default');
     if (empty($r['ok'])) {
