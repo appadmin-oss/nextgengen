@@ -24334,8 +24334,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         && in_array('Piano', $pianoSees, true) && in_array('', $pianoSees, true)
         && !in_array('Guitar', $pianoSees, true));
     $guitarSees = $coursesOf('NGG-CUR-M2');
-    chk('member: a Guitar member gets the Club-wide lesson but never another course\'s',
-        in_array('', $guitarSees, true) && !in_array('Piano', $guitarSees, true));
+    chk('member: a Guitar member gets the Club-wide lesson (' . implode('|', $guitarSees) . ')', in_array('', $guitarSees, true));
+    /* Guitar widens to Music (its subject) and to the division. It must NOT
+       widen through Music back down to Music's other strands: a guitarist is
+       not taking piano lessons. */
+    chk('member: …but never another strand of the same subject (Piano)', !in_array('Piano', $guitarSees, true));
+    chk('member: …and the division lesson does reach them', in_array('Creative & Performing Arts', $guitarSees, true));
     chk('member: a Summer account has no Club curriculum', (backend_dispatch('member.curriculum.list', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
     // The downloadable document: data in, a template out, nothing a lesson says becomes markup.
     $docR = backend_dispatch('member.curriculum.document', ['memberId' => 'NGG-CUR-M1']);
@@ -31037,6 +31041,49 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('no back door · a session is issued only by api/auth, api/admin and the library (' . implode(', ', $odd) . ')', !$odd && $callers);
     $open = array_values(array_filter(glob($root . '/api/tools/*.php') ?: [], static fn($f) => !preg_match("/PHP_SAPI\s*!==\s*'cli'/", (string)file_get_contents($f))));
     chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
+})();
+
+/* A lesson may be scoped to a DIVISION, not only to a course.
+   A centre does not always have an instructor for every course. When the
+   Robotics specialist is unavailable, the Robotics learners must still have
+   the Saturday the rest of Technology is having — so a member reaches, in
+   order: their course, its parent strand, their division, and ''. */
+(function () {
+    chk('division scope · a course resolves to its division', course_division('Robotics') === 'Technology & Applied Engineering'
+        && course_division('Catering') === 'Creative & Performing Arts' && course_division('Social Media') === 'Media & Content Strategy');
+    chk('division scope · a strand resolves through its parent (Piano → Music → Creative Arts)',
+        course_division('Piano') === 'Creative & Performing Arts');
+    chk('division scope · a course that is in no division resolves to nothing, rather than to a guess', course_division('Nonsense Course') === '');
+    $sc = array_map('strtolower', course_reach('Piano'));
+    chk('division scope · a pianist reaches Piano, Music AND their division',
+        in_array('piano', $sc, true) && in_array('music', $sc, true) && in_array('creative & performing arts', $sc, true));
+    chk('division scope · a leaf course reaches itself and its division, and nothing else (Robotics)',
+        count(course_reach('Robotics')) === 2);
+    /* A division name is a legitimate value for curriculum_units.course, or the
+       seeds for it would be refused and silently skipped at boot. */
+    chk('division scope · a division name validates as a lesson scope',
+        curriculum_course_canonical('technology & applied engineering') === 'Technology & Applied Engineering');
+    chk('division scope · a course still wins over a division on any name collision',
+        curriculum_course_canonical('Robotics') === 'Robotics');
+    /* And it reaches a real member through the real matcher. */
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-DIV-1', 'fullName' => 'Div Test', 'email' => 'div1@example.com', 'type' => 'NGG',
+        'status' => 'active', 'courses' => json_encode(['Robotics']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $m = db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-DIV-1']);
+    /* Identity stays the courses they chose — a division is not something
+       anybody enrols in, and it must not appear in "My course". */
+    chk('division scope · the division does NOT leak into the member\'s own course list',
+        !in_array('technology & applied engineering', array_map('mb_strtolower', curriculum_member_courses($m)), true));
+    $reach = array_map('mb_strtolower', course_reach('Robotics'));
+    chk('division scope · but their REACH includes the Technology division',
+        in_array('robotics', $reach, true) && in_array('technology & applied engineering', $reach, true));
+    chk('division scope · …and not another division', !in_array('media & content strategy', $reach, true));
+    db_insert('curriculum_units', ['unitId' => 'U-DIVT-1', 'course' => 'Technology & Applied Engineering', 'title' => 'Debugging anything',
+        'week' => 1, 'status' => 'published', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('division scope · a Robotics member actually receives a division lesson',
+        isset(curriculum_member_units_all($m)['U-DIVT-1']));
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'U-DIVT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-DIV-1'");
 })();
 
 /* An answer that IS one of the options wins over the A/B/C/D letter reading.
