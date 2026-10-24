@@ -622,6 +622,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.centres.list'          => 'admin_centres_list',
             'admin.centres.upsert'        => 'admin_centres_upsert',
             'admin.centres.delete'        => 'admin_centres_delete',
+            'admin.centres.idaudit'       => 'admin_centres_idaudit',
             'admin.academy.catalogue.get' => 'admin_academy_catalogue_get',
             'admin.academy.catalogue.set' => 'admin_academy_catalogue_set',
             'admin.profile.extras.get'    => 'admin_profile_extras_get',

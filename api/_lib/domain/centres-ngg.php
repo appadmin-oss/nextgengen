@@ -42,6 +42,167 @@ declare(strict_types=1);
       Every suggestion says what it was measured from.
    ========================================================================== */
 
+/* ══ Phase 1 of the centre-key migration: a centre's ID beside its name ═════
+ *
+ * A centre is stored as a NAME in the tables below — thirty-two of them,
+ * including safeguarding_cases and community_safeguarding. The `centres` table
+ * has had a proper unique `centreId` all along, and almost nothing uses it.
+ *
+ * WHAT THAT COSTS TODAY. Renaming a centre rewrites the name in three tables
+ * (members, summer_students, applications). The other twenty-nine keep the old
+ * string and stop matching from that moment. Nothing errors and nothing is
+ * logged: a safeguarding case filed against "Egbeda" is simply not in the list
+ * once the centre is called "Egbeda Centre", and the only way anyone finds out
+ * is by already knowing it should be there.
+ *
+ * THIS RELEASE ADDS THE COLUMN AND WRITES BOTH. It changes no reads, so
+ * nothing behaves differently: `centre` is still what every query matches on.
+ * What it buys is a live deployment in which the two can be compared —
+ * admin.centres.idaudit reports, per table, how many rows resolved and which
+ * names resolved to nothing. That report is the inventory, and it is worth
+ * more than the constraint it leads to.
+ *
+ * THE NEXT RELEASE switches reads to centreId and makes a rename one row.
+ * Deliberately not this one: a name that resolves to nothing must be seen by a
+ * person before anything depends on it, and guessing the mapping would move a
+ * child's attendance, marks or safeguarding record to the wrong centre with
+ * nothing to say it happened.
+ *
+ * A table joins this list by having BOTH columns; api/tests/run.php fails the
+ * build if a table carries `centre` and is not here, so a new one cannot be
+ * added without its id.
+ */
+const CENTRE_NAME_TABLES = [
+    'activities',
+    'arcade_scores',
+    'attendance_duty',
+    'awards',
+    'club_announcements',
+    'community_homework_state',
+    'community_safeguarding',
+    'courage_marks',
+    'course_sessions',
+    'engagement_snapshots',
+    'insight_threads',
+    'match_games',
+    'member_requests',
+    'member_stars',
+    'members',
+    'mentor_goals',
+    'mentor_interventions',
+    'mentor_matches',
+    'mentor_meetings',
+    'mentor_nudges',
+    'mentor_reviews',
+    'mentor_scorecards',
+    'mentor_tasks',
+    'photo_change_requests',
+    'projects',
+    'safeguarding_cases',
+    'skill_marks',
+    'student_remarks',
+    'tournament_entrants',
+    'tournament_invites',
+    'tournament_pairings',
+    'volunteers',
+    'applications',
+    'assignments',
+    'club_class_sessions',
+    'events',
+    'mentor_record_cover',
+    'mentors',
+    'summer_students',
+    'v3_scores',
+];
+
+/** centreId for a centre NAME, or '' when the name resolves to no centre.
+ *  Cached per request: this is called on the insert path. */
+function centre_id_for_name(string $name, bool $reset = false): string {
+    static $map = null;
+    if ($reset) { $map = null; return ''; }
+    $k = mb_strtolower(trim($name));
+    if ($k === '') return '';
+    if ($map === null) {
+        $map = [];
+        foreach (db_all('SELECT centreId, name FROM centres') as $r) {
+            $map[mb_strtolower(trim((string)$r['name']))] = (string)$r['centreId'];
+        }
+    }
+    return $map[$k] ?? '';
+}
+
+/** Does this table carry a centre name we mirror an id for? */
+function centre_table_tracked(string $table): bool {
+    return in_array($table, CENTRE_NAME_TABLES, true);
+}
+
+/** Drop the name→id cache. Called whenever `centres` is written, because a
+ *  centre created earlier in the same request must be resolvable after it. */
+function centre_id_cache_clear(): void { centre_id_for_name('', true); }
+
+/**
+ * Backfill centreId from the centre NAME, once per deployment.
+ *
+ * Runs from db_run_seeds rather than inside migration 178, for two reasons: a
+ * long UPDATE does not belong in a DDL transaction on shared hosting, and this
+ * must be safely re-runnable. It only ever fills a row whose centreId is still
+ * empty, so re-running it cannot overwrite anything that has since been set,
+ * and a row whose name resolves to no centre is LEFT empty for the audit.
+ */
+function centre_ids_backfill_once(): int {
+    if ((string)setting_raw('centre_ids_backfilled') === '1') return 0;
+    $centres = db_all('SELECT centreId, name FROM centres');
+    if (!$centres) return 0;                       // nothing to resolve against; try again next boot
+    $filled = 0;
+    foreach (CENTRE_NAME_TABLES as $t) {
+        if (!db_table_exists(db_conn(), $t)) continue;
+        foreach ($centres as $c) {
+            try {
+                $filled += db_exec(
+                    "UPDATE $t SET centreId = ? WHERE centreId = '' AND lower(trim(centre)) = lower(trim(?))",
+                    [(string)$c['centreId'], (string)$c['name']]);
+            } catch (\Throwable $e) { /* a table without the column yet: the migration will add it */ }
+        }
+    }
+    setting_set('centre_ids_backfilled', '1', 'system');
+    if (function_exists('audit')) audit('centres.idbackfill', null, '', ['filled' => $filled], '');
+    return $filled;
+}
+
+/**
+ * admin.centres.idaudit — the inventory this release exists to produce.
+ *
+ * Per table: how many rows carry a centre name, how many resolved to an id,
+ * and the distinct names that resolved to nothing. Those unresolved names are
+ * the real answer to "has a centre already been renamed in production", and
+ * they must be read by a person before the next release switches reads over.
+ */
+function admin_centres_idaudit(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $rows = []; $unresolved = []; $totalNamed = 0; $totalResolved = 0;
+    foreach (CENTRE_NAME_TABLES as $t) {
+        if (!db_table_exists(db_conn(), $t)) continue;
+        try {
+            $named = (int)(db_row("SELECT COUNT(*) n FROM $t WHERE trim(centre) <> ''")['n'] ?? 0);
+            $ok    = (int)(db_row("SELECT COUNT(*) n FROM $t WHERE trim(centre) <> '' AND centreId <> ''")['n'] ?? 0);
+        } catch (\Throwable $e) { continue; }
+        $bad = $named - $ok;
+        $totalNamed += $named; $totalResolved += $ok;
+        if ($bad > 0) {
+            foreach (db_all("SELECT DISTINCT centre FROM $t WHERE trim(centre) <> '' AND centreId = '' LIMIT 25") as $r) {
+                $unresolved[(string)$r['centre']][] = $t;
+            }
+        }
+        if ($named > 0) $rows[] = ['table' => $t, 'named' => $named, 'resolved' => $ok, 'unresolved' => $bad];
+    }
+    usort($rows, static fn($a, $b) => [$b['unresolved'], $b['named']] <=> [$a['unresolved'], $a['named']]);
+    return ['ok' => true, 'tables' => $rows, 'totalNamed' => $totalNamed, 'totalResolved' => $totalResolved,
+        'totalUnresolved' => $totalNamed - $totalResolved,
+        'names' => array_map(static fn($n, $ts) => ['centre' => $n, 'tables' => array_values(array_unique($ts))],
+            array_keys($unresolved), array_values($unresolved))];
+}
+
+
 const NGG_DEFAULT_CENTRES = [
     ['name' => 'Egbeda', 'codes' => ['EGB', 'EGD', 'NEG', 'EG'], 'color' => '#E9A21B'],
     ['name' => 'Ayobo',  'codes' => ['AYO', 'AYB', 'NAY', 'AY'], 'color' => '#76B043'],

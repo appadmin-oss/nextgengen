@@ -1,0 +1,2345 @@
+{
+  "key": "curriculum-divisions-2026",
+  "title": "Division Curriculum — the spine every course in a division shares (2026)",
+  "allowNewCourse": false,
+  "description": "One 12-Saturday term for each of the four divisions, teaching what every course inside it has in common: deliberate practice and critique for the arts, audience and story for media, computational thinking and debugging for technology, and evidence and margin for business. A member reaches it through their own course, so it runs when a specialist instructor is unavailable and sits alongside the course curriculum when one is.",
+  "source": "Written for NGG by the programme team (2026). Not adapted from any third-party curriculum.",
+  "lessons": [
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Why you make things",
+      "summary": "What creative work is for, and the difference between making and performing for an audience.",
+      "objectives": [
+        "You will say who your work is for",
+        "You will describe one piece that moved you and why",
+        "You will name what you want to be good at"
+      ],
+      "body": "## What to do\n\n- Discuss: who is this for, and what should it do to them?\n- Each person describes one piece of work that moved them\n- Write what you want to be able to do by the end of the term\n\n## Practise at home\n\n1. Write your aim in one sentence and keep it\n1. Find one piece of work you admire and write why\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** State who your work is for and what you want it to do, and defend one piece you admire.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "State who your work is for and what you want it to do, and defend one piece you admire.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: say who your work is for; describe one piece that moved you and why; name what you want to be good at.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Creative work that is only for yourself is…",
+          "options": [
+            "Worthless",
+            "Legitimate — but a performance is for an audience, and that changes the decisions",
+            "The only honest kind",
+            "Easier"
+          ],
+          "answer": "Legitimate — but a performance is for an audience, and that changes the decisions",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "How skill is actually built",
+      "summary": "Deliberate practice: short, specific, uncomfortable and repeated, rather than long and vague.",
+      "objectives": [
+        "You will break a skill into one specific weakness",
+        "You will practise only that for ten minutes",
+        "You will say why repeating what you can already do is not practice"
+      ],
+      "body": "## What to do\n\n- Name one thing you cannot yet do in your craft\n- Practise only that, slowly, for ten minutes\n- Learn the difference between practising and performing\n\n```steps 10 Warm up | 15 One named weakness | 35 New material | 40 Put it together | 20 Show and take notes\n```\n\n## Practise at home\n\n1. Ten minutes a day on one named weakness, nothing else\n1. Write down the weakness and what changed\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Name one specific weakness, practise only it for ten minutes, and report what changed.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Name one specific weakness, practise only it for ten minutes, and report what changed.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: break a skill into one specific weakness; practise only that for ten minutes; say why repeating what you can already do is not practice.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Running through what you can already do is…",
+          "options": [
+            "Practice",
+            "Performance — comfortable, and it does not build anything new",
+            "The best warm-up",
+            "Necessary first"
+          ],
+          "answer": "Performance — comfortable, and it does not build anything new",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Looking and listening properly",
+      "summary": "Critique: giving it usefully, and taking it without defending.",
+      "objectives": [
+        "You will give a specific critique with evidence",
+        "You will take a critique without explaining yourself",
+        "You will say why \"I like it\" is useless"
+      ],
+      "body": "## What to do\n\n- Learn the shape: what you saw, what it did, one thing to try\n- Take a critique in silence, write it down, then say thank you\n- Practise on two classmates' work\n\n## Practise at home\n\n1. Critique one piece of work in writing, in that shape\n1. Practise receiving without defending\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Give two specific critiques in the correct shape and take one without defending yourself.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Give two specific critiques in the correct shape and take one without defending yourself.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: give a specific critique with evidence; take a critique without explaining yourself; say why \"I like it\" is useless.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Explaining your intentions when someone critiques your work…",
+          "options": [
+            "Helps them understand",
+            "Does not reach the audience, who will never get your explanation",
+            "Is polite",
+            "Is expected"
+          ],
+          "answer": "Does not reach the audience, who will never get your explanation",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Where you are making from",
+      "summary": "Nigerian creative heritage, and why the work in front of you has a history.",
+      "objectives": [
+        "You will name three Nigerian artists or traditions in your field",
+        "You will connect one to what you make",
+        "You will say why copying a foreign model uncritically is weak work"
+      ],
+      "body": "## What to do\n\n- Research three figures or traditions in your own discipline\n- Find one thing in your own work that connects\n- Discuss: work rooted in somewhere is stronger than work rooted in nowhere\n\n## Practise at home\n\n1. Research one more and write three sentences\n1. Find one local influence you can use\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Present three figures or traditions in your field and one connection to your own work.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Present three figures or traditions in your field and one connection to your own work.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: name three Nigerian artists or traditions in your field; connect one to what you make; say why copying a foreign model uncritically is weak work.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Work that imitates a foreign style with nothing of its own tends to be…",
+          "options": [
+            "More marketable",
+            "Weaker, because the original already exists and does it better",
+            "More professional",
+            "Safer"
+          ],
+          "answer": "Weaker, because the original already exists and does it better",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Working to a brief",
+      "summary": "Somebody else decides what is needed, and you still make it good.",
+      "objectives": [
+        "You will read a brief and list its constraints",
+        "You will make something inside them",
+        "You will say why constraints help"
+      ],
+      "body": "## What to do\n\n- Take a brief and list every constraint: time, materials, audience, length\n- Make something that meets all of them\n- Notice that the constraints made deciding easier\n\n## Practise at home\n\n1. Complete the brief at home\n1. Write which constraint was hardest\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce work that meets every constraint of a given brief, and name the hardest one.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce work that meets every constraint of a given brief, and name the hardest one.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: read a brief and list its constraints; make something inside them; say why constraints help.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A brief with no constraints is…",
+          "options": [
+            "Freedom",
+            "Harder, because nothing tells you when you are finished",
+            "Ideal",
+            "Professional"
+          ],
+          "answer": "Harder, because nothing tells you when you are finished",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Rehearsal",
+      "summary": "Doing it again, and again, until it holds up when you are nervous.",
+      "objectives": [
+        "You will rehearse one piece to a schedule",
+        "You will run it start to finish without stopping",
+        "You will say why stopping at every mistake is a bad habit"
+      ],
+      "body": "## What to do\n\n- Rehearse with a plan, not by playing favourite bits\n- Run it once start to finish, mistakes and all\n- Practise carrying on after a mistake — that is the skill on the night\n\n## Practise at home\n\n1. Daily full run-through, no stopping\n1. One section practised slowly, separately\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Run your piece start to finish without stopping, and recover visibly from one mistake.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Run your piece start to finish without stopping, and recover visibly from one mistake.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: rehearse one piece to a schedule; run it start to finish without stopping; say why stopping at every mistake is a bad habit.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Stopping and restarting every time you make a mistake teaches you to…",
+          "options": [
+            "Be accurate",
+            "Stop when you make a mistake, which is exactly what you must not do in front of people",
+            "Practise efficiently",
+            "Find errors"
+          ],
+          "answer": "Stop when you make a mistake, which is exactly what you must not do in front of people",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Critiquing your own earlier work",
+      "summary": "Returning to what you made in week 5 with the eyes you have now.",
+      "objectives": [
+        "You will critique your own week 5 work in the week 3 shape",
+        "You will name one thing to change",
+        "You will make that change"
+      ],
+      "body": "## What to do\n\n- Look at your week 5 work as if it were someone else's\n- Write the critique in the proper shape\n- Make the one change you named\n\n## Practise at home\n\n1. Make the change and keep both versions\n1. Ask someone which is better and why\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Critique your own earlier work specifically and show the one change you made.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Critique your own earlier work specifically and show the one change you made.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: critique your own week 5 work in the week 3 shape; name one thing to change; make that change.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Critiquing your own work gets easier when you…",
+          "options": [
+            "Wait until you are confident",
+            "Let time pass and look at it as a stranger would",
+            "Ask a friend",
+            "Compare it with professionals"
+          ],
+          "answer": "Let time pass and look at it as a stranger would",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "In front of people",
+      "summary": "Nerves, presence and the first ten seconds.",
+      "objectives": [
+        "You will use a settling routine before performing",
+        "You will hold the first ten seconds without rushing",
+        "You will finish properly instead of fleeing"
+      ],
+      "body": "## What to do\n\n- Learn a breathing routine and use it before you start\n- Walk on, settle, breathe, then begin — do not rush the start\n- Finish, hold, acknowledge, then leave\n\n## Practise at home\n\n1. Perform to one person daily, including the walk-on and the ending\n1. Practise your settling routine every time\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform a short piece with a settled start and a proper ending.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform a short piece with a settled start and a proper ending.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: use a settling routine before performing; hold the first ten seconds without rushing; finish properly instead of fleeing.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The commonest mistake in the first ten seconds is…",
+          "options": [
+            "Being too loud",
+            "Rushing the start because of nerves, before the audience has settled",
+            "Looking at the floor",
+            "Starting too quietly"
+          ],
+          "answer": "Rushing the start because of nerves, before the audience has settled",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Working with other people, and crediting them",
+      "summary": "Collaboration, and naming everyone who contributed.",
+      "objectives": [
+        "You will make something with at least one other person",
+        "You will credit everyone involved by name",
+        "You will say why credit matters materially"
+      ],
+      "body": "## What to do\n\n- Make a short piece collaboratively\n- Write the credit list, in full, by name and role\n- Discuss: credit is how creative people get hired and paid\n\n## Practise at home\n\n1. Write the credit list for everything you have made this term\n1. Check you have left nobody out\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Make something collaboratively and present a complete credit list.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Make something collaboratively and present a complete credit list.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: make something with at least one other person; credit everyone involved by name; say why credit matters materially.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Leaving a collaborator off the credits…",
+          "options": [
+            "Saves space",
+            "Takes away the evidence they need to be hired next time",
+            "Is normal",
+            "Only matters professionally"
+          ],
+          "answer": "Takes away the evidence they need to be hired next time",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Your portfolio",
+      "summary": "Documenting work so it exists after the day it happened.",
+      "objectives": [
+        "You will photograph or record three pieces properly",
+        "You will write a caption that gives the context",
+        "You will say why undocumented work disappears"
+      ],
+      "body": "## What to do\n\n- Record or photograph three pieces in good light\n- Caption each: what, when, your role, what it was for\n- Store them somewhere you will still have in two years\n\n## Practise at home\n\n1. Document two more pieces\n1. Back the folder up somewhere other than your phone\n1. **With an AI assistant —** ask it to draft a caption for a piece from your own notes, then rewrite it in your own voice and check every fact. It does not know what you actually did.\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce three documented pieces with captions and your role on each.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce three documented pieces with captions and your role on each.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: photograph or record three pieces properly; write a caption that gives the context; say why undocumented work disappears.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Work you never documented is…",
+          "options": [
+            "Still yours",
+            "Invisible to anyone deciding whether to hire or admit you",
+            "Better remembered",
+            "Fine for beginners"
+          ],
+          "answer": "Invisible to anyone deciding whether to hire or admit you",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Making a living from this",
+      "summary": "What creative people actually get paid for, and how to ask.",
+      "objectives": [
+        "You will cost a piece of creative work including your time",
+        "You will state a price out loud",
+        "You will name three ways people in your field earn"
+      ],
+      "body": "## What to do\n\n- Cost one piece: materials, time, travel, revisions\n- Practise saying the price out loud without apologising\n- List the real income routes in your field: commissions, teaching, performance, licensing\n\n## Practise at home\n\n1. Cost a second piece completely\n1. Practise the price sentence until it is steady\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce a full costing for one piece and state the price without apologising for it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce a full costing for one piece and state the price without apologising for it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: cost a piece of creative work including your time; state a price out loud; name three ways people in your field earn.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Creative people most often underprice because they…",
+          "options": [
+            "Are generous",
+            "Leave their own time out and treat the skill as free",
+            "Work slowly",
+            "Have no training"
+          ],
+          "answer": "Leave their own time out and treat the skill as free",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Creative & Performing Arts",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Division showcase",
+      "summary": "Performing or showing finished work to an audience outside the class.",
+      "objectives": [
+        "You will present finished work to an outside audience",
+        "You will present your portfolio and credits",
+        "You will take notes and say which you will act on"
+      ],
+      "body": "## What to do\n\n- Show or perform your finished piece\n- Present your documentation, credits and costing\n- Take notes from the audience and name the one you will act on\n\n## Practise at home\n\n1. Full rehearsal including the entrance and the ending\n1. Have your portfolio and credits ready\n\n## Make it fit you\n\n- **If this is new to you:** Work small and finish it. A finished small thing teaches you more than an unfinished ambitious one.\n- **If you already can:** Take the same brief and make a second, different answer to it, then say which is stronger and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Present finished work to an audience outside the class, with documentation, credits and a costing.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications",
+          "title": "Trinity College London — graded music and drama exams, with centres in Nigeria",
+          "kind": "link"
+        },
+        {
+          "url": "https://nbte.gov.ng/",
+          "title": "NBTE National Skills Qualification — the recognised route for the making trades",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Present finished work to an audience outside the class, with documentation, credits and a costing.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: present finished work to an outside audience; present your portfolio and credits; take notes and say which you will act on.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Present a finished creative piece to an outside audience, with documentation, a full credit list and an honest costing",
+          "rubric": "Technical skill 35% · Musicality and expression 25% · Preparation and reliability 20% · Presentation 10% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Who is it for, and what should they do",
+      "summary": "Every piece of media is aimed at somebody and wants something. Decide both before you make anything.",
+      "objectives": [
+        "You will name your audience specifically",
+        "You will state the one action you want",
+        "You will say why \"everyone\" is not an audience"
+      ],
+      "body": "## What to do\n\n- Describe one real person who is your audience — age, place, what they care about\n- Write the one thing you want them to do after seeing it\n- Discuss: aiming at everyone reaches nobody\n\n## Practise at home\n\n1. Write audience and action for three pieces you see this week\n1. Pick one and say whether it worked\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** State a specific audience and a single desired action for your planned piece.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "State a specific audience and a single desired action for your planned piece.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: name your audience specifically; state the one action you want; say why \"everyone\" is not an audience.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "\"My audience is everyone\" usually means…",
+          "options": [
+            "Broad appeal",
+            "You have not decided, so no choice in the piece can be made well",
+            "A big market",
+            "A general brief"
+          ],
+          "answer": "You have not decided, so no choice in the piece can be made well",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "The story spine",
+      "summary": "The shape underneath anything that holds attention.",
+      "objectives": [
+        "You will write a story spine in five sentences",
+        "You will identify the turn",
+        "You will say why a list is not a story"
+      ],
+      "body": "## What to do\n\n- Write it: who, what they want, what is in the way, what they do, what changes\n- Mark the turn — the moment it could go either way\n- Compare with a piece that is just a list of facts\n\n## Practise at home\n\n1. Write the spine for a story you know well\n1. Find the turn in one advert\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write a five-sentence story spine with the turn marked.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write a five-sentence story spine with the turn marked.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: write a story spine in five sentences; identify the turn; say why a list is not a story.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A piece with no obstacle is…",
+          "options": [
+            "Positive",
+            "A list, not a story — nothing is at stake, so there is no reason to keep watching",
+            "Easier to follow",
+            "Better for brands"
+          ],
+          "answer": "A list, not a story — nothing is at stake, so there is no reason to keep watching",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Composition",
+      "summary": "Where you put things in the frame, which applies to a photo, a video and a page alike.",
+      "objectives": [
+        "You will compose a frame deliberately",
+        "You will use leading lines or thirds on purpose",
+        "You will say what your frame leaves out"
+      ],
+      "body": "## What to do\n\n- Shoot or lay out the same subject three ways\n- Use the rule of thirds, then break it on purpose\n- Name what you excluded — that decision is half of composition\n\n## Practise at home\n\n1. Shoot ten frames of one subject with different composition\n1. Pick the best and say why\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce three compositions of one subject and defend the strongest.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce three compositions of one subject and defend the strongest.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: compose a frame deliberately; use leading lines or thirds on purpose; say what your frame leaves out.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Composition is as much about…",
+          "options": [
+            "The camera",
+            "What you leave out of the frame as what you put in",
+            "The lighting",
+            "The subject"
+          ],
+          "answer": "What you leave out of the frame as what you put in",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Light",
+      "summary": "The single biggest difference between amateur and professional work, and it is free.",
+      "objectives": [
+        "You will shoot the same subject in three lighting conditions",
+        "You will use a window as a light source",
+        "You will say why midday sun is difficult"
+      ],
+      "body": "## What to do\n\n- Shoot the same face by a window, in shade, and in midday sun\n- Use a white surface to bounce light back\n- Compare the three honestly\n\n## Practise at home\n\n1. Shoot one subject at three times of day\n1. Note which was best and why\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce three lit versions of one subject and explain which is best and why.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce three lit versions of one subject and explain which is best and why.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: shoot the same subject in three lighting conditions; use a window as a light source; say why midday sun is difficult.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Harsh midday sun is difficult because…",
+          "options": [
+            "It is too bright",
+            "It casts hard shadows straight down, which is unflattering and loses detail",
+            "It changes colour",
+            "Cameras cannot handle it"
+          ],
+          "answer": "It casts hard shadows straight down, which is unflattering and loses detail",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Sound",
+      "summary": "Audiences forgive bad pictures and leave over bad sound.",
+      "objectives": [
+        "You will record clean audio with what you have",
+        "You will get the microphone close",
+        "You will say why room noise cannot be removed later"
+      ],
+      "body": "## What to do\n\n- Record the same line from three distances\n- Record in a soft small space and a hard empty one\n- Learn: get the mic close, kill the room, check with headphones\n\n## Practise at home\n\n1. Record one minute of clean audio at home\n1. Listen back on headphones before you keep it\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Record 30 seconds of clean, close audio with low room noise.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Record 30 seconds of clean, close audio with low room noise.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: record clean audio with what you have; get the microphone close; say why room noise cannot be removed later.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Viewers tolerate a poor picture but stop watching over…",
+          "options": [
+            "Slow pacing",
+            "Bad audio they cannot follow",
+            "Shaky framing",
+            "Colour"
+          ],
+          "answer": "Bad audio they cannot follow",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Words that carry",
+      "summary": "Writing for the ear and the scroll: short, concrete, specific.",
+      "objectives": [
+        "You will cut a paragraph by half without losing meaning",
+        "You will replace abstract words with concrete ones",
+        "You will read your copy aloud"
+      ],
+      "body": "## What to do\n\n- Write 100 words, then cut to 50\n- Replace every vague word with something you could photograph\n- Read it aloud — if you stumble, rewrite it\n\n## Practise at home\n\n1. Cut two more pieces of writing by half\n1. Read every piece aloud before you publish it\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Cut a 100-word piece to 50 without losing its meaning, and read it aloud cleanly.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Cut a 100-word piece to 50 without losing its meaning, and read it aloud cleanly.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: cut a paragraph by half without losing meaning; replace abstract words with concrete ones; read your copy aloud.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Reading your copy aloud catches…",
+          "options": [
+            "Spelling",
+            "Sentences that are too long and words nobody says",
+            "Grammar",
+            "Facts"
+          ],
+          "answer": "Sentences that are too long and words nobody says",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Rewriting the week 2 spine",
+      "summary": "Returning to the story spine with everything learnt since.",
+      "objectives": [
+        "You will rewrite your earlier story spine",
+        "You will say what changed and why",
+        "You will cut one thing you liked"
+      ],
+      "body": "## What to do\n\n- Reread your week 2 spine\n- Rewrite it with a sharper turn and a clearer audience\n- Cut one element you were attached to\n\n## Practise at home\n\n1. Rewrite once more after a night away from it\n1. Show both versions to someone\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Present the original and rewritten spine, naming what changed and the thing you cut.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Present the original and rewritten spine, naming what changed and the thing you cut.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: rewrite your earlier story spine; say what changed and why; cut one thing you liked.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Being unable to cut anything from your own work usually means…",
+          "options": [
+            "It is already tight",
+            "You are too close to it — a second pair of eyes or a night away helps",
+            "It is finished",
+            "It is too short"
+          ],
+          "answer": "You are too close to it — a second pair of eyes or a night away helps",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "Consent, truth, and what you may publish",
+      "summary": "Permission to film someone, honesty about what you changed, and the law.",
+      "objectives": [
+        "You will get and record consent before filming a person",
+        "You will say what you must disclose",
+        "You will name what you may never publish"
+      ],
+      "body": "## What to do\n\n- Practise asking permission and recording that you got it\n- Learn what must be disclosed: paid promotion, staging, AI-generated or altered content\n- Learn what is never published: a child without a guardian's consent, someone's private details, a person in distress\n\n## Practise at home\n\n1. Get and record consent for one piece of footage\n1. Write your own publishing rules on a card\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Obtain and record consent for one piece of footage and state your publishing rules.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Obtain and record consent for one piece of footage and state your publishing rules.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: get and record consent before filming a person; say what you must disclose; name what you may never publish.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "You filmed a child in the street who appears clearly in your video. You…",
+          "options": [
+            "May publish it, it was public",
+            "Need a guardian's consent, or you must not publish it",
+            "Should blur their face and publish",
+            "May publish if you do not name them"
+          ],
+          "answer": "Need a guardian's consent, or you must not publish it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Platforms and formats",
+      "summary": "The same story cut three ways, because the platform changes the piece.",
+      "objectives": [
+        "You will adapt one piece for two platforms",
+        "You will change the opening for a scrolling audience",
+        "You will say why reposting the same file everywhere underperforms"
+      ],
+      "body": "## What to do\n\n- Cut one story as a vertical short and as a longer landscape piece\n- Rebuild the first three seconds for a scroll\n- Compare what each format forced you to drop\n\n## Practise at home\n\n1. Cut a third version for a different platform\n1. Note what you lost each time\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce the same story in two platform-appropriate versions and explain the differences.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce the same story in two platform-appropriate versions and explain the differences.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: adapt one piece for two platforms; change the opening for a scrolling audience; say why reposting the same file everywhere underperforms.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The first three seconds matter most on a scrolling feed because…",
+          "options": [
+            "They set the tone",
+            "That is all you get before the viewer scrolls past",
+            "The algorithm checks them",
+            "They load first"
+          ],
+          "answer": "That is all you get before the viewer scrolls past",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Did it work?",
+      "summary": "Choosing the measure before publishing, and ignoring the flattering one.",
+      "objectives": [
+        "You will choose one success measure before publishing",
+        "You will record the result honestly",
+        "You will name a vanity metric"
+      ],
+      "body": "## What to do\n\n- Pick the one number that matches your week 1 desired action\n- Publish, wait, and record the result\n- Spot the vanity metrics: views, likes, follows\n\n## Practise at home\n\n1. Record the result for your published piece\n1. Compare it against your chosen measure, not the flattering one\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Publish a piece with a pre-stated measure and report the result honestly.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Publish a piece with a pre-stated measure and report the result honestly.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: choose one success measure before publishing; record the result honestly; name a vanity metric.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Your video got 10,000 views and nobody did the thing you asked. That is…",
+          "options": [
+            "A success",
+            "A failure against your own measure — views were never the goal",
+            "Good for the algorithm",
+            "A reason to post more"
+          ],
+          "answer": "A failure against your own measure — views were never the goal",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Working to a client brief",
+      "summary": "Someone else is paying, and revisions are part of the job.",
+      "objectives": [
+        "You will take a brief and confirm it in writing",
+        "You will agree how many revisions are included",
+        "You will handle one revision request professionally"
+      ],
+      "body": "## What to do\n\n- Take a brief and write back what you understood — this prevents most disputes\n- Agree the number of revisions and what counts as a new job\n- Take a revision without arguing, and deliver it\n\n## Practise at home\n\n1. Write a confirmation for a second brief\n1. Draft your standard revision terms\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Take a brief, confirm it in writing, and deliver one revision to agreement.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Take a brief, confirm it in writing, and deliver one revision to agreement.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: take a brief and confirm it in writing; agree how many revisions are included; handle one revision request professionally.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Writing back what you understood from a brief prevents…",
+          "options": [
+            "Extra work",
+            "The dispute at delivery, when the client expected something else",
+            "Revisions",
+            "Late payment"
+          ],
+          "answer": "The dispute at delivery, when the client expected something else",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Media & Content Strategy",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Publish a piece",
+      "summary": "A finished, consented, measured piece published for a real audience.",
+      "objectives": [
+        "You will publish a finished piece to a real audience",
+        "You will present consent, measure and result",
+        "You will say what you would change"
+      ],
+      "body": "## What to do\n\n- Publish your finished piece\n- Present the audience, the desired action, the measure and the result\n- Say what you would do differently and why\n\n## Practise at home\n\n1. Finish, check consent, check sound on headphones, then publish\n1. Prepare your measure and result for presentation\n\n## Make it fit you\n\n- **If this is new to you:** Make one short piece and finish it. Thirty good seconds beats five unfinished minutes.\n- **If you already can:** Make the same piece for a second platform and audience, and say what you changed and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Publish a finished piece with recorded consent, a stated measure and an honest result.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free Fundamentals of Digital Marketing, with a certificate",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School — free, with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Publish a finished piece with recorded consent, a stated measure and an honest result.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: publish a finished piece to a real audience; present consent, measure and result; say what you would change.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Publish a finished media piece for a real audience, with recorded consent, a pre-stated success measure and an honest report of the result",
+          "rubric": "Craft and technical quality 30% · Story and audience 25% · Measurement and honesty 20% · Ethics and consent 15% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Computational thinking",
+      "summary": "Breaking a problem down, finding the pattern, ignoring the detail, writing the steps.",
+      "objectives": [
+        "You will decompose a real task into steps",
+        "You will find the repeating pattern in it",
+        "You will write it as an algorithm somebody else can follow"
+      ],
+      "body": "## What to do\n\n- Take a real task — making tea, marking a register — and decompose it\n- Find what repeats\n- Write the steps precisely enough for a classmate to follow exactly\n\n## Practise at home\n\n1. Decompose a second task and have someone follow it\n1. Fix every step they got stuck on\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write an algorithm for a real task that a classmate follows exactly with no questions.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write an algorithm for a real task that a classmate follows exactly with no questions.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: decompose a real task into steps; find the repeating pattern in it; write it as an algorithm somebody else can follow.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Your written steps work for you and fail for a classmate. That means…",
+          "options": [
+            "They misread it",
+            "A step you do without thinking is missing from the instructions",
+            "The task is hard",
+            "They need practice"
+          ],
+          "answer": "A step you do without thinking is missing from the instructions",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Data",
+      "summary": "What data actually is, where it lives, and what shape it should be in.",
+      "objectives": [
+        "You will put messy data into a consistent shape",
+        "You will name the fields and their types",
+        "You will say why inconsistent data cannot be counted"
+      ],
+      "body": "## What to do\n\n- Take a messy list and give it consistent columns\n- Name each field and what kind of value it holds\n- Try to count something in the messy version and feel why it fails\n\n## Practise at home\n\n1. Clean a second list and count something in it\n1. Write down every inconsistency you had to fix\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Turn a messy list into consistent, typed fields and answer one question by counting it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Turn a messy list into consistent, typed fields and answer one question by counting it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: put messy data into a consistent shape; name the fields and their types; say why inconsistent data cannot be counted.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A column holding \"12\", \"twelve\" and \"12 years\" cannot be…",
+          "options": [
+            "Stored",
+            "Counted, sorted or compared, because the values are not the same kind of thing",
+            "Displayed",
+            "Edited"
+          ],
+          "answer": "Counted, sorted or compared, because the values are not the same kind of thing",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Systems",
+      "summary": "Input, process, output, feedback — in software, in a robot, and in a queue at the gate.",
+      "objectives": [
+        "You will draw a system diagram for something real",
+        "You will identify its feedback loop",
+        "You will find where it would fail"
+      ],
+      "body": "## What to do\n\n- Draw a real system: the check-in desk, a traffic light, a bank app\n- Mark the feedback — what tells the system how it is doing\n- Mark the point where it breaks if one part is slow\n\n## Practise at home\n\n1. Draw a second system from your own life\n1. Mark its weakest point\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Draw a real system with its feedback loop and name its weakest point.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Draw a real system with its feedback loop and name its weakest point.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: draw a system diagram for something real; identify its feedback loop; find where it would fail.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A system with no feedback…",
+          "options": [
+            "Is simpler",
+            "Cannot correct itself, so errors accumulate unnoticed",
+            "Is faster",
+            "Needs no maintenance"
+          ],
+          "answer": "Cannot correct itself, so errors accumulate unnoticed",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Debugging anything",
+      "summary": "Reproduce, isolate, fix, verify — the method, applied to code and to a broken fan alike.",
+      "objectives": [
+        "You will reproduce a fault reliably before changing anything",
+        "You will halve the search space to isolate it",
+        "You will verify the fix against the original symptom"
+      ],
+      "body": "## What to do\n\n- Reproduce the fault on demand first\n- Halve the possibilities repeatedly until you find it\n- Fix one thing, then verify against the original steps\n\n## Practise at home\n\n1. Debug two faults using the method and write each up\n1. Change one thing at a time, always\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Diagnose two faults, documenting reproduce, isolate, fix and verify for each.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Diagnose two faults, documenting reproduce, isolate, fix and verify for each.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: reproduce a fault reliably before changing anything; halve the search space to isolate it; verify the fix against the original symptom.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "You changed four things and it works. You…",
+          "options": [
+            "Fixed it",
+            "Do not know what was wrong, so it will come back",
+            "Saved time",
+            "Should document all four"
+          ],
+          "answer": "Do not know what was wrong, so it will come back",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Evidence",
+      "summary": "Testing: proving something works rather than believing it does.",
+      "objectives": [
+        "You will write a test that would catch a real failure",
+        "You will test an edge case",
+        "You will say why \"it worked when I tried it\" is not evidence"
+      ],
+      "body": "## What to do\n\n- Write a check that fails when the thing is broken\n- Test the edges: empty, zero, very large, missing, duplicated\n- Discuss: one successful try is an anecdote\n\n## Practise at home\n\n1. Write three tests, including two edge cases\n1. Run them before you call anything finished\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write three checks including two edge cases, and show one catching a real failure.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write three checks including two edge cases, and show one catching a real failure.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: write a test that would catch a real failure; test an edge case; say why \"it worked when I tried it\" is not evidence.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "An edge case is…",
+          "options": [
+            "A rare bug",
+            "The boundary where behaviour changes — empty, zero, maximum, missing",
+            "A hardware fault",
+            "An error message"
+          ],
+          "answer": "The boundary where behaviour changes — empty, zero, maximum, missing",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Safe by default",
+      "summary": "Security and privacy as a design decision, not a step at the end.",
+      "objectives": [
+        "You will list what data your project holds",
+        "You will remove what you do not need",
+        "You will say why collecting less is safer"
+      ],
+      "body": "## What to do\n\n- List every piece of data your project touches\n- Delete every field you do not actually need\n- Learn the rule: data you never collected cannot leak\n\n## Practise at home\n\n1. Audit a second project the same way\n1. Write what you removed and why\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Audit a project's data, remove what is unnecessary, and justify what remains.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Audit a project's data, remove what is unnecessary, and justify what remains.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: list what data your project holds; remove what you do not need; say why collecting less is safer.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The safest way to protect a piece of personal data is…",
+          "options": [
+            "Encrypt it",
+            "Not to collect it in the first place",
+            "Restrict access",
+            "Back it up"
+          ],
+          "answer": "Not to collect it in the first place",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Debugging something that is not software",
+      "summary": "Returning to the week 4 method and applying it to a physical fault.",
+      "objectives": [
+        "You will apply the debugging method to a physical object",
+        "You will prove the cause before replacing anything",
+        "You will say what transfers between the two"
+      ],
+      "body": "## What to do\n\n- Find a physical fault — a torch, a fan, a cable — and work the method\n- Prove the cause by swapping one thing at a time\n- Compare with how you debugged code in week 4\n\n## Practise at home\n\n1. Diagnose one more physical fault the same way\n1. Write what the two have in common\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Diagnose a physical fault using the week 4 method and prove the cause.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Diagnose a physical fault using the week 4 method and prove the cause.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: apply the debugging method to a physical object; prove the cause before replacing anything; say what transfers between the two.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The debugging method transfers between code and hardware because…",
+          "options": [
+            "They are both electrical",
+            "It is a method of elimination, which does not care what is being eliminated",
+            "Code controls hardware",
+            "Both have errors"
+          ],
+          "answer": "It is a method of elimination, which does not care what is being eliminated",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "AI in engineering work, honestly",
+      "summary": "Where it genuinely helps an engineer, where it is confidently wrong, and what you remain responsible for.",
+      "objectives": [
+        "You will use an assistant on a real task and verify its output",
+        "You will find one thing it got wrong",
+        "You will say who is responsible for shipped code"
+      ],
+      "body": "## What to do\n\n- Use it to explain an error or review a design, then check it\n- Find one confident wrong answer and record it\n- Agree: the person who ships it is responsible, not the tool\n\n## Practise at home\n\n1. Keep a log this week: asked, answered, checked, verdict\n1. Record one thing it got wrong\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Use an assistant on a real task, verify its output, and document one confident error.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Use an assistant on a real task, verify its output, and document one confident error.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: use an assistant on a real task and verify its output; find one thing it got wrong; say who is responsible for shipped code.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "An assistant writes code you do not understand and it works. You should…",
+          "options": [
+            "Ship it",
+            "Not ship it — you cannot maintain, debug or take responsibility for it",
+            "Ship it and learn later",
+            "Ask it to explain and ship"
+          ],
+          "answer": "Not ship it — you cannot maintain, debug or take responsibility for it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Writing it down",
+      "summary": "Documentation that a stranger can act on.",
+      "objectives": [
+        "You will document a project for someone else",
+        "You will have it tested by a classmate",
+        "You will fix what blocked them"
+      ],
+      "body": "## What to do\n\n- Write: what it is, how to run it, what breaks it, who to ask\n- Give it to a classmate and watch without helping\n- Fix every place they stopped\n\n## Practise at home\n\n1. Document a second project\n1. Have it tested by someone outside the class\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write documentation a classmate can follow unaided, and fix what blocked them.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write documentation a classmate can follow unaided, and fix what blocked them.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: document a project for someone else; have it tested by a classmate; fix what blocked them.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The test of documentation is…",
+          "options": [
+            "Its length",
+            "Whether a stranger can act on it without asking you",
+            "Whether it has diagrams",
+            "Whether it is up to date"
+          ],
+          "answer": "Whether a stranger can act on it without asking you",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Working in a team",
+      "summary": "Version control, issues and review — how more than one person works on one thing.",
+      "objectives": [
+        "You will track your work in version control",
+        "You will write an actionable issue",
+        "You will review someone else's work usefully"
+      ],
+      "body": "## What to do\n\n- Put a project under version control and commit with real messages\n- Write an issue: what happens, what should happen, how to reproduce\n- Review a classmate's work with two specific comments\n\n## Practise at home\n\n1. Make ten real commits\n1. Review one more classmate's work\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce ten meaningful commits, one actionable issue and two specific review comments.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce ten meaningful commits, one actionable issue and two specific review comments.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: track your work in version control; write an actionable issue; review someone else's work usefully.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A useful issue contains…",
+          "options": [
+            "A complaint",
+            "What happens, what should happen, and how to reproduce it",
+            "A fix",
+            "A screenshot"
+          ],
+          "answer": "What happens, what should happen, and how to reproduce it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Who is affected",
+      "summary": "Engineering ethics: the people on the other side of what you build.",
+      "objectives": [
+        "You will list who your project affects, including indirectly",
+        "You will name one way it could do harm",
+        "You will change one thing to reduce that"
+      ],
+      "body": "## What to do\n\n- List everyone affected, including people who never use it\n- Name the most likely harm, honestly\n- Change one design decision to reduce it\n\n## Practise at home\n\n1. Repeat the exercise for a widely used app\n1. Write the change you made and why\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** List who your project affects, name one likely harm, and show one change that reduces it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "List who your project affects, name one likely harm, and show one change that reduces it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: list who your project affects, including indirectly; name one way it could do harm; change one thing to reduce that.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "\"I only built the tool, I am not responsible for how it is used\" is…",
+          "options": [
+            "Correct",
+            "Not a position an engineer can hold — design decisions shape use",
+            "Legally sound",
+            "The standard view"
+          ],
+          "answer": "Not a position an engineer can hold — design decisions shape use",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Technology & Applied Engineering",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Build and defend",
+      "summary": "Something built, tested, documented and defended in front of people.",
+      "objectives": [
+        "You will present a working build",
+        "You will show its tests and its failure modes",
+        "You will defend three decisions"
+      ],
+      "body": "## What to do\n\n- Demonstrate your build working\n- Show the tests passing and one failure mode you handled\n- Defend three decisions, including one thing you deliberately left out\n\n## Practise at home\n\n1. Final run: tests pass, documentation works, demo rehearsed\n1. Prepare your three decisions\n\n## Make it fit you\n\n- **If this is new to you:** Do it on paper first. If you cannot describe the steps, the computer cannot do them for you either.\n- **If you already can:** Make it fail on purpose, handle the failure, and write the test that proves it is handled.\n\n## Assessed this week\n\n**Practical (6 marks) —** Demonstrate a working, tested, documented build and defend three engineering decisions.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.freecodecamp.org/learn/",
+          "title": "freeCodeCamp — free certifications; each needs its projects finished before the exam",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.netacad.com/",
+          "title": "Cisco Networking Academy — free courses with certificates",
+          "kind": "link"
+        },
+        {
+          "url": "https://developer.mozilla.org/",
+          "title": "MDN Web Docs — the reference to check an answer against",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Demonstrate a working, tested, documented build and defend three engineering decisions.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: present a working build; show its tests and its failure modes; defend three decisions.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Build, test, document and present a working project, showing its failure modes and defending three engineering decisions. Keep every project in one repository — a freeCodeCamp certification requires its projects finished before its exam, and this is what you submit.",
+          "rubric": "Technical skill 30% · Problem solving 25% · Evidence and accuracy 20% · Presentation 15% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "What a business actually is",
+      "summary": "Somebody has a problem, you solve it, they pay more than it cost you.",
+      "objectives": [
+        "You will explain a real business in one sentence",
+        "You will name its customer and its cost",
+        "You will say why revenue is not profit"
+      ],
+      "body": "## What to do\n\n- Pick a real business near you and explain it in one sentence\n- Name who pays, what it costs to serve them, what is left\n- Learn the difference between money in and money kept\n\n## Practise at home\n\n1. Explain two more local businesses the same way\n1. Ask one owner what their biggest cost is\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Explain a real local business in one sentence, naming its customer, its cost and its margin.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Explain a real local business in one sentence, naming its customer, its cost and its margin.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: explain a real business in one sentence; name its customer and its cost; say why revenue is not profit.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A shop takes ₦100,000 a week and spends ₦95,000. It…",
+          "options": [
+            "Is making ₦100,000",
+            "Is keeping ₦5,000, and one bad week wipes it out",
+            "Is profitable and safe",
+            "Should raise prices"
+          ],
+          "answer": "Is keeping ₦5,000, and one bad week wipes it out",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Customers, and evidence",
+      "summary": "What people say, what they do, and which to believe.",
+      "objectives": [
+        "You will ask about a past behaviour rather than a future intention",
+        "You will observe one real transaction",
+        "You will say why \"would you buy this?\" is a weak question"
+      ],
+      "body": "## What to do\n\n- Interview: ask about the last time they bought, not whether they would\n- Watch one real transaction happen\n- Compare what you were told with what you saw\n\n## Practise at home\n\n1. Interview one more person about a past purchase\n1. Write the gap between word and action\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Interview one person about a real past purchase and report the gap from what they claim they would do.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Interview one person about a real past purchase and report the gap from what they claim they would do.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: ask about a past behaviour rather than a future intention; observe one real transaction; say why \"would you buy this?\" is a weak question.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The strongest evidence that people will pay for something is…",
+          "options": [
+            "They say they would",
+            "They already pay for something like it, or work around not having it",
+            "A survey",
+            "Their enthusiasm"
+          ],
+          "answer": "They already pay for something like it, or work around not having it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Money: revenue, cost, margin",
+      "summary": "The three numbers, and knowing which one you are looking at.",
+      "objectives": [
+        "You will separate fixed from variable costs",
+        "You will calculate margin per unit",
+        "You will find the break-even point"
+      ],
+      "body": "## What to do\n\n- List costs that happen anyway and costs that happen per sale\n- Work out what is left on one unit\n- Work out how many units cover the fixed costs\n\n## Practise at home\n\n1. Do the same for a real local business\n1. Check your arithmetic twice\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce a margin and break-even calculation for a real small business.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce a margin and break-even calculation for a real small business.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: separate fixed from variable costs; calculate margin per unit; find the break-even point.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Fixed costs are the ones that…",
+          "options": [
+            "Never change price",
+            "Happen whether you sell one unit or a hundred — rent, salaries",
+            "Are paid in cash",
+            "Are the largest"
+          ],
+          "answer": "Happen whether you sell one unit or a hundred — rent, salaries",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Records that outlive you",
+      "summary": "Writing down what happened, so the business is not held in one person's head.",
+      "objectives": [
+        "You will design a simple record for a real activity",
+        "You will record a week of it",
+        "You will say what happens when only one person knows"
+      ],
+      "body": "## What to do\n\n- Design the smallest record that answers a real question\n- Record a week of real activity in it\n- Discuss: a business that lives in one head cannot be handed over, sold or audited\n\n## Practise at home\n\n1. Keep your record for the full week\n1. Ask someone else to read it and tell you what it says\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Design and keep a record for a week, and show someone else can read it correctly.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Design and keep a record for a week, and show someone else can read it correctly.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: design a simple record for a real activity; record a week of it; say what happens when only one person knows.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A business whose records are only in the owner's head…",
+          "options": [
+            "Is efficient",
+            "Cannot be handed over, checked, or survive the owner being ill",
+            "Is more private",
+            "Is normal and fine"
+          ],
+          "answer": "Cannot be handed over, checked, or survive the owner being ill",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Processes",
+      "summary": "Writing down how something is done, so it is done the same way every time.",
+      "objectives": [
+        "You will write a process another person can follow",
+        "You will mark every decision point",
+        "You will have it tested"
+      ],
+      "body": "## What to do\n\n- Write a real process as numbered steps\n- Mark every point where someone has to decide, and what decides it\n- Give it to a classmate and watch them follow it\n\n## Practise at home\n\n1. Fix every step they got stuck on\n1. Test it on a second person\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write a process a classmate follows with no questions, and fix what tripped them up.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write a process a classmate follows with no questions, and fix what tripped them up.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: write a process another person can follow; mark every decision point; have it tested.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A written process that only works when you explain it is…",
+          "options": [
+            "Nearly finished",
+            "Not a process — the explanation is the part that is missing from it",
+            "Fine for a small team",
+            "Normal"
+          ],
+          "answer": "Not a process — the explanation is the part that is missing from it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Writing that gets a decision",
+      "summary": "The short message that makes a busy person able to say yes or no.",
+      "objectives": [
+        "You will write a request with the ask in the first line",
+        "You will give the options and a recommendation",
+        "You will keep it under 150 words"
+      ],
+      "body": "## What to do\n\n- Put the ask first — a busy reader may not reach paragraph three\n- Give two or three options and say which you recommend\n- Cut to under 150 words\n\n## Practise at home\n\n1. Write two more requests in that shape\n1. Send one for real and see how fast it is answered\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Write a request under 150 words with the ask first, options and a recommendation.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Write a request under 150 words with the ask first, options and a recommendation.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: write a request with the ask in the first line; give the options and a recommendation; keep it under 150 words.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Burying the ask at the end of a long message usually means…",
+          "options": [
+            "It is polite",
+            "The reader never reaches it, and you get no decision",
+            "It is thorough",
+            "It is more persuasive"
+          ],
+          "answer": "The reader never reaches it, and you get no decision",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Re-costing with real numbers",
+      "summary": "Returning to the week 3 calculation with figures you actually checked.",
+      "objectives": [
+        "You will replace your estimates with real prices",
+        "You will compare the two versions",
+        "You will say what you had underestimated"
+      ],
+      "body": "## What to do\n\n- Go to a market or a supplier and get real prices\n- Redo the week 3 calculation\n- Name what you had got most wrong\n\n## Practise at home\n\n1. Check two more prices and update again\n1. Write what the gap was and why\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Redo the week 3 costing with checked prices and name your largest error.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Redo the week 3 costing with checked prices and name your largest error.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: replace your estimates with real prices; compare the two versions; say what you had underestimated.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Estimated costs are usually wrong in which direction?",
+          "options": [
+            "Too high",
+            "Too low — the small costs people forget add up",
+            "About right",
+            "It varies randomly"
+          ],
+          "answer": "Too low — the small costs people forget add up",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "Deciding what not to do",
+      "summary": "Prioritisation, and saying no so that something can actually be finished.",
+      "objectives": [
+        "You will rank six tasks by value and effort",
+        "You will cut the bottom half",
+        "You will refuse one request with a reason and an alternative"
+      ],
+      "body": "## What to do\n\n- Score six real tasks: value against effort\n- Draw the line and cut\n- Practise refusing: acknowledge, reason, alternative\n\n## Practise at home\n\n1. Re-rank after a day\n1. Practise one refusal aloud\n1. **With an AI assistant —** ask it to argue for the task you cut, as strongly as it can, then decide again yourself. If the argument changes your mind, your ranking was weak.\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Rank six real tasks, cut half, and deliver one refusal with a reason and an alternative.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Rank six real tasks, cut half, and deliver one refusal with a reason and an alternative.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: rank six tasks by value and effort; cut the bottom half; refuse one request with a reason and an alternative.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Everything being a priority means…",
+          "options": [
+            "The team is busy",
+            "Nothing is prioritised, and the least important thing may be done first",
+            "Good planning",
+            "High standards"
+          ],
+          "answer": "Nothing is prioritised, and the least important thing may be done first",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Working with people",
+      "summary": "Delegating, following up, and handling it when someone does not deliver.",
+      "objectives": [
+        "You will delegate a task with a clear outcome and date",
+        "You will follow up without nagging",
+        "You will handle one missed deadline"
+      ],
+      "body": "## What to do\n\n- Delegate: say the outcome, the date and who decides — not the method\n- Agree one check-in point in advance\n- Practise the conversation when it is late: ask what is blocking, not why they failed\n\n## Practise at home\n\n1. Delegate one real task this week\n1. Hold your check-in as agreed\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Delegate a real task with a clear outcome and date, and run one check-in.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Delegate a real task with a clear outcome and date, and run one check-in.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: delegate a task with a clear outcome and date; follow up without nagging; handle one missed deadline.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Telling someone exactly how to do the task as well as what to achieve…",
+          "options": [
+            "Is thorough management",
+            "Removes their judgement and makes you responsible for the method",
+            "Saves time",
+            "Reduces errors"
+          ],
+          "answer": "Removes their judgement and makes you responsible for the method",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "The one number",
+      "summary": "Choosing the measure that tells you whether it is working.",
+      "objectives": [
+        "You will choose one measure before acting",
+        "You will state the number that would mean failure",
+        "You will name a vanity metric"
+      ],
+      "body": "## What to do\n\n- Pick the one number that would show it worked\n- State in advance what number would mean stop\n- Spot the flattering numbers that tell you nothing\n\n## Practise at home\n\n1. Track your measure for a week\n1. Record it honestly, including a bad result\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** State one success measure and one failure threshold, and report a week of real data.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "State one success measure and one failure threshold, and report a week of real data.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: choose one measure before acting; state the number that would mean failure; name a vanity metric.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A measure chosen after seeing the results is…",
+          "options": [
+            "Evidence based",
+            "Chosen to flatter the result, and tells you nothing",
+            "Practical",
+            "Standard"
+          ],
+          "answer": "Chosen to flatter the result, and tells you nothing",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "What goes wrong",
+      "summary": "Risk: naming the three things most likely to break, before they do.",
+      "objectives": [
+        "You will list the three most likely failures",
+        "You will say what you would do about each",
+        "You will name which you accept"
+      ],
+      "body": "## What to do\n\n- List what could go wrong, then rank by likelihood and damage\n- For the top three, decide: prevent, prepare, or accept\n- Write down what you are accepting, explicitly\n\n## Practise at home\n\n1. Do the same for a real local business\n1. Ask an owner what has actually gone wrong\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce a ranked risk list with a decision for each of the top three.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce a ranked risk list with a decision for each of the top three.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: list the three most likely failures; say what you would do about each; name which you accept.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Deciding to accept a risk is…",
+          "options": [
+            "Negligence",
+            "A legitimate decision, as long as it is made deliberately and written down",
+            "Avoidable",
+            "Only for small risks"
+          ],
+          "answer": "A legitimate decision, as long as it is made deliberately and written down",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Business Strategy, Operations & Administration",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Pitch and defend",
+      "summary": "A real proposal with real numbers, defended under questioning.",
+      "objectives": [
+        "You will pitch a proposal with checked numbers",
+        "You will state your measure and your risks",
+        "You will answer three hard questions"
+      ],
+      "body": "## What to do\n\n- Pitch: the problem, the evidence, the numbers, the measure, the risks\n- Say what you will not do\n- Take three hard questions and answer with evidence\n\n## Practise at home\n\n1. Rehearse to time\n1. Prepare for the three hardest questions you can think of\n\n## Make it fit you\n\n- **If this is new to you:** Use real numbers from somewhere real, even if they are small. An invented example teaches you nothing you can trust.\n- **If you already can:** Run the same analysis on a second, different business and say what the two have in common.\n\n## Assessed this week\n\n**Practical (6 marks) —** Pitch a proposal with checked costings, a success measure, a risk list and an explicit not-doing list.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://grow.google/certificates/project-management/",
+          "title": "Google Project Management Certificate — the professional route after this course",
+          "kind": "link"
+        },
+        {
+          "url": "https://learndigital.withgoogle.com/digitalgarage",
+          "title": "Google Digital Garage — free business and marketing courses with certificates",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Pitch a proposal with checked costings, a success measure, a risk list and an explicit not-doing list.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: pitch a proposal with checked numbers; state your measure and your risks; answer three hard questions.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Pitch a business proposal with checked numbers, a success measure, a ranked risk list and an explicit not-doing list, and defend it under questioning",
+          "rubric": "Evidence and numbers 30% · Judgement and prioritisation 25% · Measurement and risk 20% · Presentation and defence 15% · Working with others 10%"
+        }
+      ]
+    }
+  ]
+}

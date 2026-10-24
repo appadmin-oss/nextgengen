@@ -1007,8 +1007,15 @@ function member_mp_messages(array $p): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $read = [];
         foreach (db_all("SELECT threadId FROM mentor_messages WHERE fromId = ? AND (kind = 'read' OR kind = 'Reply')", [$g['me']]) as $r) $read[$r['threadId']] = true;
-        foreach (db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, j.mediaJson, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
-                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $peer ? [] : $ids) as $j) {
+        /* A peer mentor never sees a shared journal, so the query does not run
+           for them. It used to run with an EMPTY parameter list against
+           IN (?,?,?) — starving the statement instead of skipping it. SQLite
+           tolerated the mismatch and returned nothing, which looked like the
+           guard working; MySQL does not, and a child's journal entries
+           reached a peer mentor's inbox. A privacy rule has to be a branch,
+           never a malformed query that happens to fail safe on one driver. */
+        foreach ($peer ? [] : db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, j.mediaJson, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
+                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $ids) as $j) {
             $t = 'journal:' . $j['entryId'];
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
                       'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t]),

@@ -109,7 +109,42 @@ function curriculum_material_url(string $u): string {
     $u = trim($u);
     if (preg_match('#^https://[^\s<>"]+$#i', $u)) return mb_substr($u, 0, 1000);
     if (preg_match('#^/api/member/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}$#', $u)) return $u;
+    if (curriculum_media_key($u) !== '') return $u;
     return '';
+}
+
+/**
+ * A storage-independent reference to a lesson's own media: `media:<key>`,
+ * where the key is a path like `drums/backbeat.gif`.
+ *
+ * WHY THIS EXISTS. A lesson's diagrams, GIFs and audio outlive whatever is
+ * hosting them this year. Writing `https://res.cloudinary.com/...` into three
+ * hundred lesson rows means that moving to a bucket is a data migration over
+ * published content — and published content is the thing we promise not to
+ * rewrite under people. A `media:` key stores WHICH file the lesson wants and
+ * nothing about where it currently lives, so the move is one setting.
+ *
+ * Resolution is at read time (curriculum_media_url), never at write time, so
+ * the stored row never acquires a host.
+ */
+function curriculum_media_key(string $u): string {
+    if (!preg_match('#^media:([a-z0-9][a-z0-9/_-]{0,180}\.[a-z0-9]{2,5})$#i', trim($u), $m)) return '';
+    if (str_contains($m[1], '..') || str_contains($m[1], '//')) return '';     // no traversal, no empty segment
+    return $m[1];
+}
+
+/** `media:drums/backbeat.gif` → the configured base plus that key. */
+function curriculum_media_url(string $u): string {
+    $key = curriculum_media_key($u);
+    if ($key === '') return $u;
+    $base = '';
+    if (function_exists('setting_raw')) $base = trim((string)setting_raw('curriculum_media_base'));
+    if ($base === '') $base = trim((string)($GLOBALS['CONFIG']['curriculum_media_base'] ?? ''));
+    /* No base configured yet: resolve to nothing rather than to a broken host,
+       so a lesson shows the material it has and silently omits what is not
+       hosted yet. A half-built link is worse than no link. */
+    if ($base === '' || !preg_match('#^https://#i', $base)) return '';
+    return rtrim($base, '/') . '/' . $key;
 }
 
 function curriculum_unit_public(array $u, array $materials, array $checks, bool $withAnswers): array {
@@ -121,8 +156,16 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
         'body' => (string)$u['body'], 'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
         'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
         'updatedAt' => (string)$u['updatedAt'], 'publishedAt' => (string)$u['publishedAt'],
-        'materials' => array_map(static fn($m) => ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
-            'title' => (string)$m['title'], 'url' => (string)$m['url']], $materials),
+        /* `media:` keys resolve here, at read time, so no stored row carries a
+           host and moving buckets is one setting. A key with no base
+           configured resolves to '' and the material is dropped rather than
+           shown as a dead link. */
+        'materials' => array_values(array_filter(array_map(static function ($m) {
+            $url = curriculum_media_url((string)$m['url']);
+            if ($url === '') return null;
+            return ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
+                    'title' => (string)$m['title'], 'url' => $url];
+        }, $materials))),
         'checks' => array_map(static function ($c) use ($withAnswers) {
             $o = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'],
                   'options' => json_decode((string)$c['options'], true) ?: [], 'points' => (int)$c['points'],
@@ -337,6 +380,9 @@ function curriculum_course_canonical(string $course): ?string {
     $want = strtolower(preg_replace('/\s+/', ' ', trim($course)) ?? '');
     if ($want === '') return '';
     foreach (curriculum_courses() as $c) if (strtolower($c) === $want) return $c;
+    /* A DIVISION is also a legitimate scope for a lesson — see course_division.
+       Checked after the courses so a course always wins a name collision. */
+    foreach (curriculum_divisions() as $d) if (strtolower($d) === $want) return $d;
     return null;
 }
 
@@ -417,11 +463,20 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
         if ($kind === 'mcq') {
             if (count($opts) < 2) return ['ok' => false, 'error' => 'mcq_needs_options', 'detail' => 'check ' . ($i + 1)];
             /* The answer is an option's index — or its text, or its letter,
-               because a sheet typed by a person says "B" or "photosynthesis". */
+               because a sheet typed by a person says "B" or "photosynthesis".
+
+               THE TEXT IS TRIED FIRST, and that order matters. A music theory
+               question whose options are D / E / F / G and whose answer is "E"
+               means the option reading "E", not the fifth option, which does
+               not exist. Reading the letter first rejected the lesson, and the
+               boot seeder skips a row it cannot validate — so a whole lesson
+               vanished with nothing turning red. Where an answer exactly
+               matches an option, that is what was meant; the letter convention
+               is the fallback for when nothing matches. */
             $idx = null;
-            if (ctype_digit($answer) && (int)$answer < count($opts)) $idx = (int)$answer;
-            elseif (preg_match('/^[A-Ha-h]$/', $answer)) $idx = ord(strtoupper($answer)) - 65;
-            else foreach ($opts as $k => $o) if (strcasecmp($o, $answer) === 0) $idx = $k;
+            foreach ($opts as $k => $o) if (strcasecmp($o, $answer) === 0) { $idx = $k; break; }
+            if ($idx === null && ctype_digit($answer) && (int)$answer < count($opts)) $idx = (int)$answer;
+            if ($idx === null && preg_match('/^[A-Ha-h]$/', $answer)) $idx = ord(strtoupper($answer)) - 65;
             if ($idx === null || $idx >= count($opts)) return ['ok' => false, 'error' => 'mcq_answer_missing', 'detail' => 'check ' . ($i + 1) . ': the answer must be one of its options'];
             $answer = (string)$idx;
         }
@@ -1182,6 +1237,64 @@ function course_scope(string $course): array {
     $kids = course_strands($course);
     return $kids ? array_merge([$course], $kids) : [$course];
 }
+
+/**
+ * Everything a member on this course can REACH — the course, its subject, and
+ * their division. This is deliberately NOT course_scope().
+ *
+ * A member's courses are their identity: what they chose, what the roster
+ * shows, what "My course" says, what an instructor is assigned against. A
+ * division is none of those — nobody enrols in Technology & Applied
+ * Engineering. Putting it in course_scope() pushed the division's NAME into
+ * the member's own course list, where it read as a course they had taken, and
+ * that is the failure the roster tests were written to catch.
+ *
+ * So reach is its own idea, used only where lessons are matched.
+ */
+function course_reach(string $course): array {
+    $out = course_scope($course);
+    $div = course_division($course);
+    if ($div !== '' && !in_array($div, $out, true)) $out[] = $div;
+    return $out;
+}
+
+/**
+ * The division a course sits in — Robotics → Technology & Applied Engineering.
+ *
+ * WHY A LESSON MAY BE SCOPED TO A DIVISION. A centre does not always have an
+ * instructor for every course. When the Robotics instructor is unavailable for
+ * a term, the Robotics learners must still have a Saturday that teaches them
+ * something, and it should be the same Saturday the rest of their division is
+ * having rather than an improvised one. So a lesson may be filed against a
+ * DIVISION as well as against a course, and a member reaches, in order:
+ *
+ *     their course   →   its parent strand   →   their division   →   ''
+ *     Robotics           (none)                  Technology          everyone
+ *     Piano              Music                   Creative Arts       everyone
+ *
+ * The division curriculum is the one that holds when the specialist is not in
+ * the room. It is not a replacement for the course: a member who has both sees
+ * both, and the course lesson is the one that carries their week.
+ */
+function course_division(string $course): string {
+    $course = trim($course);
+    if ($course === '') return '';
+    $parent = course_parent($course);
+    foreach (club_catalogue() as $division => $courses) {
+        foreach ($courses as $c) {
+            if (strcasecmp($c, $course) === 0 || ($parent !== '' && strcasecmp($c, $parent) === 0)) return (string)$division;
+        }
+    }
+    return '';
+}
+
+/** Every division name, as the catalogue spells it. */
+function curriculum_divisions(): array { return array_keys(club_catalogue()); }
+
+/** Every value a lesson may be filed against: the courses, plus the divisions. */
+function curriculum_scopes(): array {
+    return array_values(array_unique(array_merge(curriculum_courses(), curriculum_divisions())));
+}
 /* Words that name a SUBJECT rather than a course — including "Musical
    Instruments", the umbrella that was retired when the instruments became
    courses of their own. Each resolves to a broad course, and from there to its
@@ -1487,7 +1600,19 @@ function curriculum_stage_due(string $stage, int $year, int $placedYear): bool {
 
 /** Every published lesson of the member's courses, before the year is applied. */
 function curriculum_member_units_all(array $m): array {
-    $courses = array_map('mb_strtolower', curriculum_member_courses($m));
+    /* Reach, not identity. curriculum_member_courses() has ALREADY widened each
+       course to its subject — a guitarist's list holds Guitar and Music — so
+       only the DIVISION is added here. Running the full course_reach() over
+       that list widens Music a second time, back down to every strand under
+       it, and the guitarist starts receiving Piano's lessons. Add the
+       division; do not re-widen. */
+    $courses = [];
+    foreach (curriculum_member_courses($m) as $c) {
+        $courses[mb_strtolower((string)$c)] = true;
+        $div = course_division((string)$c);
+        if ($div !== '') $courses[mb_strtolower($div)] = true;
+    }
+    $courses = array_keys($courses);
     if (!$courses) return curriculum_load("status = 'published' AND course = ''", [], 'week, course, position');
     $ph = implode(',', array_fill(0, count($courses), '?'));
     return curriculum_load("status = 'published' AND (course = '' OR lower(course) IN ($ph))", $courses, 'week, course, position');

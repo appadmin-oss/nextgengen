@@ -31043,6 +31043,89 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
 })();
 
+/* Phase 1 of the centre-key migration (domain/centres-ngg.php).
+
+   A centre is a NAME in 39 tables, and renaming one rewrites three of them.
+   This release adds centreId beside the name everywhere and writes both; it
+   changes no reads. What is pinned here is the thing that made the original
+   problem invisible: that a table can carry a centre and be forgotten. */
+(function () {
+    $db = db_conn();
+    /* Every table the schema says carries a centre name is in the registry,
+       and has the id column. Derived from the live schema, not from a second
+       hand-maintained list — a second list is how this started. */
+    $missing = []; $noCol = [];
+    /* Read the live schema on either driver. The repository ships two — the
+       SQLite ladder and the hand-written MySQL file — and a check that only
+       runs on one of them would miss exactly the drift it is here to catch. */
+    if (db_driver() === 'mysql') {
+        $byTable = [];
+        foreach (db_all("SELECT table_name t, column_name c FROM information_schema.columns WHERE table_schema = DATABASE()") as $r) {
+            $byTable[(string)($r['t'] ?? $r['table_name'])][(string)($r['c'] ?? $r['column_name'])] = true;
+        }
+    } else {
+        $byTable = [];
+        foreach (db_all("SELECT name FROM sqlite_master WHERE type = 'table'") as $r) {
+            $t = (string)$r['name'];
+            if (str_starts_with($t, 'sqlite_')) continue;
+            foreach (db_all("PRAGMA table_info('" . $t . "')") as $c) $byTable[$t][(string)$c['name']] = true;
+        }
+    }
+    foreach ($byTable as $t => $cols) {
+        if (!isset($cols['centre'])) continue;
+        if (!centre_table_tracked((string)$t)) { $missing[] = $t; continue; }
+        if (!isset($cols['centreId'])) $noCol[] = $t;
+    }
+    chk('centre keys · every table carrying a centre name is in CENTRE_NAME_TABLES (' . implode(', ', $missing) . ')', !$missing);
+    chk('centre keys · …and every one of them has the centreId column (' . implode(', ', $noCol) . ')', !$noCol);
+    chk('centre keys · the registry is not empty and covers the serious tables',
+        centre_table_tracked('safeguarding_cases') && centre_table_tracked('community_safeguarding')
+        && centre_table_tracked('members') && centre_table_tracked('skill_marks'));
+
+    /* The mirror writes both columns, through the ordinary helpers, so a
+       table joins the migration by being in the registry rather than by
+       somebody remembering at 288 call sites. */
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CTR-KEYT', 'name' => 'Keytest Centre', 'code' => 'KYT', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-KEY-1', 'fullName' => 'Key One', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'Keytest Centre', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('centre keys · an insert naming a centre gets its id without asking',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-1'")['centreId'] ?? '') === 'CTR-KEYT');
+    /* A name that resolves to NOTHING is left empty rather than guessed: those
+       rows are the inventory admin.centres.idaudit exists to report. */
+    db_insert('members', ['memberId' => 'NGG-KEY-2', 'fullName' => 'Key Two', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'A Centre That Was Renamed', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('centre keys · an unresolvable centre name is left empty, never guessed',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? 'x') === '');
+    db_update('members', ['centre' => 'Keytest Centre'], ['memberId' => 'NGG-KEY-2']);
+    chk('centre keys · an update naming a centre gets its id too',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? '') === 'CTR-KEYT');
+    /* An explicit centreId is never overwritten by the name. */
+    db_update('members', ['centre' => 'Keytest Centre', 'centreId' => 'CTR-EXPLICIT'], ['memberId' => 'NGG-KEY-2']);
+    chk('centre keys · an explicit centreId wins over the name',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? '') === 'CTR-EXPLICIT');
+
+    /* And the report that this whole release exists to produce. */
+    $aud = admin_centres_idaudit(['requesterId' => 'NGG-2025-0099']);
+    chk('centre keys · the audit reports per table, and counts the unresolved',
+        !empty($aud['ok']) && is_array($aud['tables']) && ($aud['totalUnresolved'] ?? -1) >= 0);
+    /* A row whose centre resolves to nothing must move the unresolved count.
+       Asserted as a delta rather than by looking for the name: the audit lists
+       at most 25 names per table, and the suite leaves plenty of others. */
+    db_insert('members', ['memberId' => 'NGG-KEY-3', 'fullName' => 'Key Three', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'Renamed Away Centre', 'createdAt' => $now, 'updatedAt' => $now]);
+    $after = admin_centres_idaudit(['requesterId' => 'NGG-2025-0099']);
+    chk('centre keys · …and an unresolvable row is counted as unresolved',
+        ($after['totalUnresolved'] ?? 0) === ($aud['totalUnresolved'] ?? 0) + 1);
+    chk('centre keys · …and its name is reported for a person to decide on',
+        in_array('Renamed Away Centre', array_column($after['names'] ?? [], 'centre'), true));
+    chk('centre keys · reads are unchanged this release — the name still matches',
+        (int)(db_row("SELECT COUNT(*) n FROM members WHERE centre = 'Keytest Centre'")['n'] ?? 0) >= 1);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KEY-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CTR-KEYT'");
+    centre_id_cache_clear();
+})();
+
 /* A lesson may be scoped to a DIVISION, not only to a course.
    A centre does not always have an instructor for every course. When the
    Robotics specialist is unavailable, the Robotics learners must still have

@@ -378,8 +378,15 @@ function community_search(array $p): array {
     if (mb_strlen($q) >= 2) {
         /* The words, or the name on the post: "Ada" finds what Ada wrote as
            well as what mentions her. */
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
-        $where .= " AND (body LIKE ? ESCAPE '\\' OR authorName LIKE ? ESCAPE '\\')"; $args[] = $like; $args[] = $like;
+        /* '!' as the escape, which is what every other search in the codebase
+           uses (util.php, member-self.php, curriculum.php). A backslash does
+           not survive the trip: "ESCAPE '\\'" in PHP is ESCAPE '\' in SQL, and
+           MySQL reads that backslash as escaping the closing quote, so the
+           statement runs on and the whole query is a syntax error. SQLite
+           treats it literally and never noticed — community search has been
+           returning a 500 on MySQL, and passing its test on SQLite. */
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $q) . '%';
+        $where .= " AND (body LIKE ? ESCAPE '!' OR authorName LIKE ? ESCAPE '!')"; $args[] = $like; $args[] = $like;
     }
     $chSlug = (string)($p['channel'] ?? 'all');
     if ($chSlug !== 'all' && $chSlug !== '' && $chSlug !== 'bookmarks') {

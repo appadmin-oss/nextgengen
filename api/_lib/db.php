@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 177;
+const NGG_SCHEMA_TARGET = 178;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -522,6 +522,13 @@ function db_run_seeds(PDO $db): void {
          * to do — it never touches a lesson somebody else put there. */
         if (function_exists('curriculum_seed_bundled_once') && db_table_exists($db, 'curriculum_units')) {
             curriculum_seed_bundled_once();
+        }
+        /* Phase 1 of the centre-key migration: fill centreId from the centre
+           name once, wherever it resolves. A name that resolves to nothing is
+           left empty on purpose — those rows are the inventory that
+           admin.centres.idaudit reports. */
+        if (function_exists('centre_ids_backfill_once') && db_table_exists($db, 'centres')) {
+            centre_ids_backfill_once();
         }
         if (setting_raw('seed_dob_v1') !== '1') {
             $db->exec("DELETE FROM form_defs WHERE status = 'live' AND publishedBy = 'system' AND formId = 'summer-reg'");
@@ -5143,6 +5150,94 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteers ADD COLUMN academyClearedAt TEXT NOT NULL DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN academyClearedBy TEXT NOT NULL DEFAULT '';
         ",
+        /* Phase 1 of the centre-key migration (domain/centres-ngg.php).
+           A centreId beside the centre NAME in all 32 tables that carry one.
+           Adds columns only: nothing reads centreId this release, so nothing
+           behaves differently. The backfill is centre_ids_backfill_once(),
+           run from db_run_seeds so it is idempotent and does not sit inside
+           the DDL transaction. */
+        178 => "
+            ALTER TABLE activities ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE arcade_scores ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE attendance_duty ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE awards ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE club_announcements ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE community_homework_state ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE courage_marks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE course_sessions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE engagement_snapshots ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE insight_threads ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE member_requests ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE member_stars ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_interventions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_matches ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_meetings ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_nudges ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_scorecards ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_tasks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE photo_change_requests ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE projects ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE safeguarding_cases ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE skill_marks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE student_remarks ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_entrants ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_invites ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tournament_pairings ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_activities_centreid ON activities(centreId);
+            CREATE INDEX IF NOT EXISTS idx_arcade_scores_centreid ON arcade_scores(centreId);
+            CREATE INDEX IF NOT EXISTS idx_attendance_duty_centreid ON attendance_duty(centreId);
+            CREATE INDEX IF NOT EXISTS idx_awards_centreid ON awards(centreId);
+            CREATE INDEX IF NOT EXISTS idx_club_announcements_centreid ON club_announcements(centreId);
+            CREATE INDEX IF NOT EXISTS idx_community_homework_state_centreid ON community_homework_state(centreId);
+            CREATE INDEX IF NOT EXISTS idx_community_safeguarding_centreid ON community_safeguarding(centreId);
+            CREATE INDEX IF NOT EXISTS idx_courage_marks_centreid ON courage_marks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_course_sessions_centreid ON course_sessions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_engagement_snapshots_centreid ON engagement_snapshots(centreId);
+            CREATE INDEX IF NOT EXISTS idx_insight_threads_centreid ON insight_threads(centreId);
+            CREATE INDEX IF NOT EXISTS idx_match_games_centreid ON match_games(centreId);
+            CREATE INDEX IF NOT EXISTS idx_member_requests_centreid ON member_requests(centreId);
+            CREATE INDEX IF NOT EXISTS idx_member_stars_centreid ON member_stars(centreId);
+            CREATE INDEX IF NOT EXISTS idx_members_centreid ON members(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_goals_centreid ON mentor_goals(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_interventions_centreid ON mentor_interventions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_matches_centreid ON mentor_matches(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_meetings_centreid ON mentor_meetings(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_nudges_centreid ON mentor_nudges(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_reviews_centreid ON mentor_reviews(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_scorecards_centreid ON mentor_scorecards(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_tasks_centreid ON mentor_tasks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_photo_change_requests_centreid ON photo_change_requests(centreId);
+            CREATE INDEX IF NOT EXISTS idx_projects_centreid ON projects(centreId);
+            CREATE INDEX IF NOT EXISTS idx_safeguarding_cases_centreid ON safeguarding_cases(centreId);
+            CREATE INDEX IF NOT EXISTS idx_skill_marks_centreid ON skill_marks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_student_remarks_centreid ON student_remarks(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_entrants_centreid ON tournament_entrants(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_invites_centreid ON tournament_invites(centreId);
+            CREATE INDEX IF NOT EXISTS idx_tournament_pairings_centreid ON tournament_pairings(centreId);
+            CREATE INDEX IF NOT EXISTS idx_volunteers_centreid ON volunteers(centreId);
+            ALTER TABLE applications ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE assignments ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE club_class_sessions ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE events ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentor_record_cover ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE summer_students ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE v3_scores ADD COLUMN centreId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_applications_centreid ON applications(centreId);
+            CREATE INDEX IF NOT EXISTS idx_assignments_centreid ON assignments(centreId);
+            CREATE INDEX IF NOT EXISTS idx_club_class_sessions_centreid ON club_class_sessions(centreId);
+            CREATE INDEX IF NOT EXISTS idx_events_centreid ON events(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentor_record_cover_centreid ON mentor_record_cover(centreId);
+            CREATE INDEX IF NOT EXISTS idx_mentors_centreid ON mentors(centreId);
+            CREATE INDEX IF NOT EXISTS idx_summer_students_centreid ON summer_students(centreId);
+            CREATE INDEX IF NOT EXISTS idx_v3_scores_centreid ON v3_scores(centreId);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -5183,7 +5278,31 @@ function db_migrate(PDO $db): void {
 
 // ── Query helpers ────────────────────────────────────────────────────────
 
+/**
+ * Mirror a centre NAME into centreId on the way in.
+ *
+ * Phase 1 of the centre-key migration writes both columns while reads still
+ * use the name (domain/centres-ngg.php). Doing it here rather than at the 288
+ * call sites means a table joins the migration by being in CENTRE_NAME_TABLES,
+ * not by someone remembering — which is the failure the migration exists to
+ * end, so it would be a poor way to run it.
+ *
+ * A name that resolves to NOTHING is left alone, so the column keeps its ''
+ * default. That is deliberate: the empty rows are the inventory that
+ * admin.centres.idaudit reports, and filling them with a guess would move a
+ * child's record to the wrong centre with nothing to say it happened.
+ */
+function db_centre_mirror(string $table, array $data): array {
+    if (!isset($data['centre']) || isset($data['centreId'])) return $data;
+    if (!function_exists('centre_table_tracked') || !centre_table_tracked($table)) return $data;
+    $id = centre_id_for_name((string)$data['centre']);
+    if ($id !== '') $data['centreId'] = $id;
+    return $data;
+}
+
 function db_insert(string $table, array $data): int {
+    $data = db_centre_mirror($table, $data);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
     $cols = array_keys($data);
     $ph = array_fill(0, count($cols), '?');
     $sql = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
@@ -5192,6 +5311,8 @@ function db_insert(string $table, array $data): int {
 }
 
 function db_update(string $table, array $data, array $where): int {
+    $data = db_centre_mirror($table, $data);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
     $set = []; $vals = [];
     foreach ($data as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
     $wh = []; foreach ($where as $k => $v) { $wh[] = "$k = ?"; $vals[] = $v; }
@@ -5203,6 +5324,9 @@ function db_update(string $table, array $data, array $where): int {
 
 /** Cross-driver insert-or-update. $conflict = unique/PK column(s). */
 function db_upsert(string $table, array $insert, array $conflict, array $update): void {
+    $insert = db_centre_mirror($table, $insert);
+    $update = db_centre_mirror($table, $update);
+    if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
     $cols = array_keys($insert);
     $ph = implode(',', array_fill(0, count($cols), '?'));
     $vals = array_values($insert);
