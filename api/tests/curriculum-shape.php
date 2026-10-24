@@ -85,12 +85,19 @@ function ngg_course_shape_faults(string $course, array $lessons): array {
     $ai = array_filter($lessons, fn($L) => str_contains(ngg_lesson_text($L), ' ai '));
     if (!$ai) $bad[] = "$course: nothing in the course teaches using AI";
 
-    // PROJECT — something is made, and not only at the very end.
+    /* PROJECT — a block ends in something made, and a block is about six
+       sessions. Proportionate, not a flat number: a six-lesson course
+       legitimately has one project and a seventy-two-lesson course should have
+       a dozen. A flat "at least two" asked a short course for busywork. */
     $projects = array_values(array_filter($lessons, function ($L) {
         foreach ($L['checks'] ?? [] as $c) if (($c['kind'] ?? '') === 'project') return true;
         return false;
     }));
-    if (count($projects) < 2) $bad[] = "$course: " . count($projects) . ' project(s) — a block should end in something made';
+    $wantProjects = max(1, intdiv(count($lessons), 6));
+    if (count($projects) < $wantProjects) {
+        $bad[] = "$course: " . count($projects) . ' project(s) for ' . count($lessons)
+            . ' lessons — wants ' . $wantProjects . ' (a block of ~6 ends in something made)';
+    }
 
     // SPACING — the last lesson of a block reaches back to earlier weeks.
     if (count($lessons) >= NGG_TERM_WEEKS) {

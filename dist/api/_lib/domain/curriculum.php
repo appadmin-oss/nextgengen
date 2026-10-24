@@ -736,12 +736,19 @@ const CURR_PLAN_ARC = [
     ['{c} fundamentals: practising the basics', 'Short, repeated practice of the basics, with feedback from a partner.'],
     ['{c} fundamentals: putting it together', 'Combine the basics into one complete piece of work.'],
     ['Mini project: plan it', 'Choose a small project, plan it in steps, and agree what "done" looks like.'],
-    ['Mini project: make it', 'Build the mini project, test it, and fix what does not work.'],
-    ['Show and improve: a feedback round', 'Show the mini project, take two pieces of feedback, and act on one.'],
-    ['Going further: a new technique', 'A technique that takes your {c} work up a level.'],
+    ['Mini project: make it and show it', 'Build the mini project, test it, fix what does not work, and show it to the group.'],
+    /* Weeks 7 and 11 reach BACK before they go forward. Spacing and retrieval
+     * are the best-evidenced things in this arc — a concept met again a few
+     * weeks later sticks far better than the same time spent re-reading it —
+     * and nothing in the old arc did either. Every other week ends in a recall
+     * check; these two are where the course revisits on purpose. */
+    ['Looking back, and a new technique', 'Pick up the fundamentals from weeks 1–4 again, this time to serve a technique that takes your {c} work up a level.'],
+    /* Every trade in this programme now uses AI, and a child who cannot check
+     * what it tells them is not safer for having avoided it. */
+    ['AI in {c}: what it does well, and where it is wrong', 'Use an AI tool on a real {c} task, then find where it was confidently wrong and correct it.'],
     ['Real-world brief: a problem in our community', 'Use {c} on a real problem someone in Nigeria has, and explain your choices.'],
     ['Capstone: plan and prototype', 'Plan the term capstone and make a first rough version.'],
-    ['Capstone: build and test', 'Finish the capstone and test it with someone who has not seen it.'],
+    ['Capstone: build and test', 'Finish the capstone using what you learned earlier in the term, and test it with someone who has not seen it.'],
     ['Showcase and reflection', 'Present the capstone, celebrate the term, and set one goal for next term.'],
 ];
 
