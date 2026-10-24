@@ -47,7 +47,9 @@ if ($method === 'GET') {
     } elseif ($action === 'comment') {
         rate_limit_check('community.post.ip');
         rate_limit_check('community.post', $s['mid']);
-        $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
+        $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'replyTo' => $b['replyTo'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'commentReact') {
+        $res = gs_call('community.comment.react', ['memberId' => $s['mid'], 'commentId' => $b['commentId'] ?? '', 'emoji' => $b['emoji'] ?? '']);
     } elseif ($action === 'bookmark') {
         $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);
     } elseif ($action === 'vote') {

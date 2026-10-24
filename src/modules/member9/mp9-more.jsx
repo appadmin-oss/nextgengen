@@ -62,9 +62,12 @@ Object.assign(Mp9Portal.prototype, {
         pick: () => { const next = going ? "not_going" : "going"; this.setState({ rsvp: { ...(this.state.rsvp || {}), [e.eventId]: next } });
           NGGApi.member.rsvp({ eventId: e.eventId, status: next }).then(() => this.toast(next === "going" ? "You’re going. We’ll remind you." : "Changed to not going.")).catch(er => { this.setState({ rsvp: { ...(this.state.rsvp || {}), [e.eventId]: r } }); this.toast(mp9Err(er)); }); } }; });
     if (!ev.length) ev.push({ t: "Nothing coming up yet", when: "Events at your centre show here", going: "false", gBg: "#fff", gFg: "#0b0b0c", label: "–", pick: () => {} });
-    const division = { name: (d.member || {}).division || me.track || "Your division", course: me.track || "Your course", instructor: "Your instructor", room: me.centre + " centre",
-      chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
+    /* Courses and division as the server resolves them (member_timetable):
+       the courses chosen for the member, never a guess from the track's words. */
     const tt = this.dd("tt") || {};
+    const myCourses = (tt.courses || []).filter(Boolean), myL = myCourses.map(c => c.toLowerCase());
+    const division = { name: tt.division || (d.member || {}).division || "Your division", course: myCourses.join(", ") || me.track || "Your course", instructor: "Your instructor", room: me.centre + " centre",
+      chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
     const slots = (tt.slots || []);
     const byDay = {};
     const DN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -76,7 +79,7 @@ Object.assign(Mp9Portal.prototype, {
     const form = this.dd("form") || {};
     const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
     const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
-      .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: me.track && new RegExp(me.track.split(/\s+/)[0], "i").test(a) })) }));
+      .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: myL.some(c => String(a).toLowerCase().startsWith(c)) })) }));
     const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : "Not started";
       return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" ? "#7a5600" : "#6b6b72", icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
@@ -233,7 +236,7 @@ Object.assign(Mp9Portal.prototype, {
       /* The whole record, as the desk holds it. What a member may change
          themselves (photo, bio) is under Edit profile; the rest is asked for. */
       profileRows: [["Full name", p.fullName || m.fullName], ["NGG ID", p.displayId || m.displayId || "Not printed yet"], ["Date of birth", p.dob ? mp9Date(p.dob, { day: "numeric", month: "long", year: "numeric" }) + ((this.dd("today") || {}).age ? " · " + this.dd("today").age + " years old" : "") : ""],
-        ["Centre", p.centre], ["Course", p.track], ["Class", p.level || m.level], ["School", p.school], ["Joined NGG", p.joinDate ? mp9Date(p.joinDate, { month: "long", year: "numeric" }) : (p.intakeYear ? String(p.intakeYear) : "")],
+        ["Centre", p.centre], [(p.courses || []).length > 1 ? "Courses" : "Course", (p.courses || []).join(", ") || p.track], ["Class", p.level || m.level], ["School", p.school], ["Joined NGG", p.joinDate ? mp9Date(p.joinDate, { month: "long", year: "numeric" }) : (p.intakeYear ? String(p.intakeYear) : "")],
         ["Email", p.email], ["Your phone", p.phone], ["Guardian", p.guardianName], ["Guardian phone", p.guardianPhone]]
         .map(([l, v]) => ({ l, v: v ? String(v) : "Not on record", none: !v })),
       bioShown: p.bio || m.bio || "", hasBio: !!(p.bio || m.bio),
@@ -618,8 +621,10 @@ Object.assign(Mp9Portal.prototype, {
       doDel: () => NGGApi.member.deleteAccount().then(() => { set({ delStep: 0, sheet: null }); this.toast("Request sent. Your centre lead will call your guardian before anything is deleted."); }).catch(e => this.toast(mp9Err(e))),
       onBio: e => set({ pf: { ...this.state.pf, bio: e.target.value } }), bioV: s.pf.bio !== undefined ? s.pf.bio : acct.bio || "",
       saveProfile: () => NGGApi.member.updateProfile({ bio: s.pf.bio !== undefined ? s.pf.bio : acct.bio || "" }).then(() => { this.closeSheet(); this.refresh(["dash", "today"]); this.toast("Profile saved"); }).catch(e => this.toast(mp9Err(e))),
-      photoL: s.sBusy ? "Uploading…" : "Change photo",
-      onPhoto: e => { const f = e.target.files && e.target.files[0]; if (!f) return; set({ sBusy: true }); NGGApi.uploadOrInline(f, "headshot").then(u => NGGApi.member.updateProfile({ photoUrl: u.url })).then(() => { set({ sBusy: false }); this.refresh(["dash"]); this.toast("Photo changed"); }).catch(er => { set({ sBusy: false }); this.toast(mp9Err(er)); }); },
+      /* The photo is the face on a printed ID, so it is changed by asking: the
+         member chooses the photo they want, it goes to the desk with a reason,
+         and the desk approves or declines it (photo_change_requests). */
+      ph: mp9PhotoAsk(this, me, s, set),
       shForm: ["proof", "assign", "idea", "request", "change", "team", "portfolio"].includes(sh.k) && !(sh.k === "assign" && aDone),
       sText: s.sText, onSText: e => set({ sText: e.target.value }), sAnon: s.sAnon ? "true" : "false", toggleAnon: () => set({ sAnon: !s.sAnon }), anonIcon: s.sAnon ? "ph-fill ph-check-square" : "ph ph-square",
       lRead: () => this.speak(U ? [U.title, (U.objectives || []).join(". "), U.body || ""].filter(Boolean).join(". ") : "", "lesson"),
@@ -749,7 +754,7 @@ Object.assign(Mp9Portal.prototype, {
     const wrote = ((jm.stats || {}).entries || 0) > 0 || (jm.entries || []).some(e => (e.body || "").trim());
     const linked = cir ? (cir.family || cir.links || []).length > 0 : null;
     return [
-      { k: "photo", t: "Add your photo", s: "It goes on your NGG card and your profile.", done: !!me.hasPhoto, cta: "Add a photo", go: () => this.openSheet({ k: "profile" }) },
+      { k: "photo", t: "Add your photo", s: "It goes on your NGG card and your profile, once the desk has checked it.", done: !!me.hasPhoto || (((this.dd("phc") || {}).request || {}).status === "pending"), cta: "Add a photo", go: () => this.openSheet({ k: "profile" }) },
       { k: "hello", t: M.has ? "Say hello to " + M.first : "Meet your mentor", s: M.has ? "Send your first message. They usually reply within a day." : "Your centre matches you with a mentor. We’ll tell you when.",
         done: (c.messages || []).some(m => m.mine), wait: !M.has, cta: "Write a message", go: () => this.go("mentor") },
       { k: "journal", t: "Write your first reflection", s: "One line is enough. It starts your streak.", done: wrote, cta: "Write it", href: MP9_JOURNAL_URL + "?write=1" },
@@ -1037,4 +1042,31 @@ function mp9AsgTips(a) {
   if (a.attachmentUrl) out.push("Worksheet: " + a.attachmentUrl);
   if (a.state === "submitted" && a.canSubmit) out.push("You can still change it until it is marked.");
   return out;
+}
+
+/** The "Your photo" block on the profile sheet: the photo now, a chosen photo
+ *  to send, or the ask waiting with the desk (and the last answer, if declined). */
+function mp9PhotoAsk(app, me, s, set) {
+  const r = (app.dd("phc") || {}).request || null, pending = !!r && r.status === "pending";
+  const declined = !!r && r.status === "declined", draft = s.phDraft;
+  const when = r ? mp9Date(String(r.requestedAt || "").slice(0, 10), { day: "numeric", month: "short" }) : "";
+  return {
+    cur: me.photo ? nggPhotoSrc(me.photo) : "", hasCur: !!me.photo, noCur: !me.photo,
+    line: pending ? "You asked for a new photo on " + when + ". The desk checks it, then it goes on your profile and your next ID card."
+      : declined ? "The desk kept your photo" + (r.note ? ": " + r.note : ".") + " You can ask again with another photo."
+      : r && r.status === "approved" ? "Your new photo was approved." : "To change it, choose the photo you want. The desk checks it first.",
+    canPick: !pending && !draft, pickL: me.photo ? "Ask to change my photo" : "Send my photo",
+    onPick: e => { const f = e.target.files && e.target.files[0]; if (!f) return; set({ phDraft: { busy: true, url: "", local: URL.createObjectURL(f) } });
+      NGGApi.uploadOrInline(f, "headshot").then(u => set({ phDraft: { busy: false, url: u.url, local: (app.state.phDraft || {}).local || "" } }))
+        .catch(er => { set({ phDraft: null }); app.toast(mp9Err(er)); }); },
+    hasDraft: !!draft, draft: draft ? (draft.local || nggPhotoSrc(draft.url)) : "",
+    reason: s.phReason || "", onReason: e => set({ phReason: e.target.value.slice(0, 300) }),
+    busy: !draft || !!draft.busy || !draft.url, sendL: draft && draft.busy ? "Getting it ready…" : "Send to the desk", sendOp: !draft || draft.busy ? 0.5 : 1,
+    send: () => { if (!draft || !draft.url) return; set({ phDraft: { ...draft, busy: true } });
+      NGGApi.member.photoChange.ask(draft.url, s.phReason || "").then(() => { set({ phDraft: null, phReason: "" }); app.load("phc"); app.toast("Sent. The desk will check your photo."); })
+        .catch(er => { set({ phDraft: { ...draft, busy: false } }); app.toast(er && (er.code || er.message) === "same_photo" ? "That’s the photo you have now." : mp9Err(er)); }); },
+    cancel: () => set({ phDraft: null, phReason: "" }),
+    isPending: pending, pendSrc: pending ? nggPhotoSrc(r.photoUrl) : "",
+    withdraw: () => NGGApi.member.photoChange.withdraw().then(() => { app.load("phc"); app.toast("Withdrawn. Your photo stays as it is."); }).catch(er => app.toast(mp9Err(er))),
+  };
 }

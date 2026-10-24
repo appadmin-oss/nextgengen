@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 174;
+const NGG_SCHEMA_TARGET = 175;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5098,6 +5098,20 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_pcr_subject ON photo_change_requests(subjectType, subjectId, status);
             CREATE INDEX IF NOT EXISTS idx_pcr_status ON photo_change_requests(status, requestedAt);
+        ",
+        /* A reply can quote the reply it answers, and carry reactions of its own,
+           as in a chat: the thread is a conversation, not a list of comments. */
+        175 => "
+            ALTER TABLE community_comments ADD COLUMN replyTo TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS community_comment_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              commentId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              emoji TEXT NOT NULL,
+              createdAt TEXT NOT NULL,
+              UNIQUE(commentId, memberId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_ccr_comment ON community_comment_reactions(commentId);
         ",
     ];
 

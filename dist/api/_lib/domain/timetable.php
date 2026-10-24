@@ -234,12 +234,14 @@ function admin_timetable_remove(array $p): array {
 }
 
 /** A centre's active slots, shaped for a member, a parent or the public. */
-function tt_for_centre(string $centreName, bool $withInstructor, string $highlightCourse = ''): array {
+/** $mine: the course(s) to mark as the viewer's — a member takes several (curriculum_member_courses). */
+function tt_for_centre(string $centreName, bool $withInstructor, string|array $mine = ''): array {
+    $mineL = array_values(array_filter(array_map(static fn($c) => mb_strtolower(trim((string)$c)), (array)$mine), static fn($c) => $c !== ''));
     [$centres, $vol] = tt_lookups();
     $cid = null; foreach ($centres as $id => $c) if (strcasecmp((string)$c['name'], trim($centreName)) === 0) $cid = $id;
     if ($cid === null) return ['centre' => $centreName, 'slots' => [], 'meetDays' => '', 'meetTime' => ''];
     $slots = array_map(static fn($r) => tt_public_slot($r, $centres, $vol, $withInstructor)
-                       + ['mine' => $highlightCourse !== '' && strcasecmp((string)$r['course'], $highlightCourse) === 0],
+                       + ['mine' => in_array(mb_strtolower(trim((string)$r['course'])), $mineL, true)],
         db_all("SELECT * FROM timetable_slots WHERE centreId = ? AND status = 'active' ORDER BY weekday, startTime, course", [$cid]));
     // The slug opens the public timetable maker on this centre's week (?centre=).
     return ['centre' => (string)$centres[$cid]['name'], 'slug' => (string)($centres[$cid]['slug'] ?? ''), 'meetDays' => (string)$centres[$cid]['meetDays'], 'meetTime' => (string)$centres[$cid]['meetTime'], 'slots' => $slots];
@@ -247,13 +249,21 @@ function tt_for_centre(string $centreName, bool $withInstructor, string $highlig
 
 /** member.timetable — the member's own centre, their course marked. */
 function member_timetable(array $p): array {
-    $m = db_row('SELECT memberId, centre, track FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    $m = db_row('SELECT memberId, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    $tt = tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? ''));
+    $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : [(string)($m['track'] ?? '')];
+    $tt = tt_for_centre((string)($m['centre'] ?? ''), true, $courses);
     // The member's own week names who teaches as a child addresses them.
     $titled = staff_public_names(array_column($tt['slots'], 'instructorId'));
     foreach ($tt['slots'] as $i => $sl) if ((string)($sl['instructorId'] ?? '') !== '') $tt['slots'][$i]['instructor'] = $titled[$sl['instructorId']] ?? 'Your instructor';
-    return ['ok' => true, 'course' => (string)($m['track'] ?? '')] + $tt;
+    /* The division the member's courses are in (the first that is not Chess,
+       which every division takes): a placement stored long ago must not name
+       Media for a member whose courses are Technology's. */
+    $main = array_values(array_filter($courses, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0));
+    $divId = $main && function_exists('nggc_division_for_track') ? nggc_division_for_track((string)$main[0]) : '';
+    if ($divId === '' && $main && function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) if (array_intersect(array_map('mb_strtolower', $dv['courses']), array_map('mb_strtolower', $main))) { $divId = $dv['id']; break; }
+    $div = $divId !== '' && function_exists('nggc_division') ? nggc_division($divId) : null;
+    return ['ok' => true, 'course' => (string)($main[0] ?? $m['track'] ?? ''), 'courses' => $main, 'division' => $div ? (string)$div['name'] : ''] + $tt;
 }
 
 /**

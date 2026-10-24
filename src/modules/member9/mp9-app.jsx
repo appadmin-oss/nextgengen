@@ -36,7 +36,7 @@ const MP9_LOADERS = {
   jm: () => NGGApi.member.journalMine(0), res: () => NGGApi.member.results(""), comp: () => NGGApi.member.companion(),
   cur: () => NGGApi.member.curriculum(), tt: () => NGGApi.member.timetable(), opps: () => NGGApi.member.opps(),
   feed: () => NGGApi.member.community.feed("all", "latest", 0), rec: () => NGGApi.member.records(), circle: () => NGGApi.member.circle(),
-  sec: () => NGGApi.member.security(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
+  sec: () => NGGApi.member.security(), phc: () => NGGApi.member.photoChange.mine(), stmt: () => NGGApi.member.statement(), comp9: () => NGGApi.member.compliance(),
   reqs: () => NGGApi.member.requests(), prj: () => NGGApi.member.projects(),
   // The mentor's Saturday evaluations of me: criteria, a strength and a next step — never their ratings or notes.
   evals: () => NGGApi.member.pod.read("evals"),
@@ -238,7 +238,7 @@ class Mp9Portal extends React.Component {
   }
   goF(scr, extra) { return () => this.go(scr, extra); }
   goBack() { const h = this.state.hist; if (!h.length) return this.go("today"); const to = h[h.length - 1]; this.go(to); this.setState({ hist: h.slice(0, -1) }); }
-  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, ...(extra || {}) , pwCode: null }); if (sheet && (sheet.k === "profile" || sheet.k === "password") && !this.dd("sec")) this.load("sec"); }
+  openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, phDraft: null, phReason: "", ...(extra || {}) , pwCode: null }); if (sheet && (sheet.k === "profile" || sheet.k === "password") && !this.dd("sec")) this.load("sec"); if (sheet && sheet.k === "profile") this.load("phc"); }
   closeSheet() { this.setState({ sheet: null }); }
   /* Read aloud, with the voices the phone already has (works offline on
      Android). Pressing it again stops. A Nigerian English voice when the

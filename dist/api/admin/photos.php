@@ -22,7 +22,9 @@ if ($method === 'GET') {
     // question from the review queue, which only shows photos that exist.
     $res = (string)($_GET['view'] ?? '') === 'missing'
         ? gs_call('admin.photos.missing', ['requesterId' => $s['mid'], 'limit' => (int)($_GET['limit'] ?? 200)])
-        : gs_call('admin.photo.queue', ['requesterId' => $s['mid']]);
+        : ((string)($_GET['view'] ?? '') === 'changes'
+            ? gs_call('admin.photo.changes', ['requesterId' => $s['mid']])
+            : gs_call('admin.photo.queue', ['requesterId' => $s['mid']]));
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -40,6 +42,8 @@ if ($method === 'GET') {
     elseif ($action === 'request_missing') $res = gs_call('admin.photos.requestMissing', ['requesterId' => $s['mid'], 'ip' => $ip,
         'limit' => $b['limit'] ?? 50, 'quietDays' => $b['quietDays'] ?? 3]);
     elseif ($action === 'replace') $res = gs_call('admin.photo.replace', ['requesterId' => $s['mid'], 'ip' => $ip, 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'sourceUrl' => $b['sourceUrl'] ?? '']);
+    elseif ($action === 'change_decide') $res = gs_call('admin.photo.change.decide', ['requesterId' => $s['mid'], 'ip' => $ip,
+        'requestId' => $b['requestId'] ?? '', 'decision' => $b['decision'] ?? '', 'note' => $b['note'] ?? '']);
     else json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

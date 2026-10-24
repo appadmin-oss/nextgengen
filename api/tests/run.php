@@ -7938,10 +7938,10 @@ chk('…and only an image type is taken', (function () {
     $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789dd', 'index' => 0, 'total' => 1, 'mime' => 'text/html', 'data' => 'PGgxPg==']);
     return ($r['error'] ?? '') === 'photo_format';
 })());
-chk('…and so is one a member sets on their own profile', (function () use ($png) {
+chk('…and so is one a member sends with a request to change theirs', (function () use ($png) {
     $r = backend_dispatch('member.update', ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(640, 800)]);
-    $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
-    return !empty($r['ok']) && photo_is_stored_locally($url) && strlen($url) <= 512;
+    $url = (string)($r['photoRequest']['photoUrl'] ?? '');
+    return !empty($r['photoRequested']) && photo_is_stored_locally($url) && strlen($url) <= 512;
 })());
 chk('…content-addressed, so the same photo twice is one file and one URL', (function () use ($png) {
     $a = photo_store_put($png(600, 750));
@@ -10087,6 +10087,24 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('community: markRead is accepted', backend_dispatch('community.markRead', ['memberId' => 'CM-A', 'channel' => 'commons'])['ok']);
     $after = 0; foreach (backend_dispatch('community.channels', ['memberId' => 'CM-A'])['channels'] as $c) if ($c['slug'] === 'commons') $after = $c['unread'];
     chk('community: markRead clears the unread counter', $after === 0);
+
+    // A thread is a conversation: a reply quotes the reply it answers, and replies take reactions.
+    $c1 = backend_dispatch('community.comment', ['memberId' => 'CM-A', 'postId' => $pid, 'body' => 'What is your capstone about?']);
+    $c2 = backend_dispatch('community.comment', ['memberId' => 'CM-B', 'postId' => $pid, 'body' => 'A water filter for our street.', 'replyTo' => $c1['comment']['commentId'] ?? '']);
+    chk('community chat: a reply can quote another on the same post', !empty($c2['ok']) && ($c2['comment']['quote']['body'] ?? '') === 'What is your capstone about?');
+    chk('community chat: a quote of a reply that is not on this post is refused', (backend_dispatch('community.comment', ['memberId' => 'CM-B', 'postId' => $pid, 'body' => 'x y z', 'replyTo' => 'CC-NOPE'])['error'] ?? '') === 'quote_not_found');
+    $th = backend_dispatch('community.comments', ['memberId' => 'CM-A', 'postId' => $pid]);
+    $byBody = []; foreach ($th['comments'] as $x) $byBody[$x['body']] = $x;
+    chk('community chat: the thread carries the quote, resolved from the thread', ($byBody['A water filter for our street.']['quote']['name'] ?? '') !== '' && ($byBody['A water filter for our street.']['replyTo'] ?? '') === $c1['comment']['commentId']);
+    chk('community chat: the quoted person is told', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND title LIKE '%replied to you'")['c'] === 1);
+    $cr = backend_dispatch('community.comment.react', ['memberId' => 'CM-A', 'commentId' => $c2['comment']['commentId'], 'emoji' => '💡']);
+    chk('community chat: a reply takes a reaction', !empty($cr['ok']) && $cr['myReaction'] === '💡' && ((array)$cr['reactions'])['💡'] === 1);
+    $th2 = backend_dispatch('community.comments', ['memberId' => 'CM-A', 'postId' => $pid]);
+    $mineR = array_values(array_filter($th2['comments'], fn($x) => $x['commentId'] === $c2['comment']['commentId']))[0] ?? [];
+    chk('community chat: the thread shows the reaction and whose it is, in one read', ($mineR['myReaction'] ?? '') === '💡' && ((array)$mineR['reactions'])['💡'] === 1);
+    chk('community chat: the same reaction again takes it back', backend_dispatch('community.comment.react', ['memberId' => 'CM-A', 'commentId' => $c2['comment']['commentId'], 'emoji' => '💡'])['myReaction'] === '');
+    chk('community chat: an unknown emoji on a reply is refused', (backend_dispatch('community.comment.react', ['memberId' => 'CM-A', 'commentId' => $c2['comment']['commentId'], 'emoji' => '🦄'])['error'] ?? '') === 'bad_emoji');
+    chk('community chat: a reply that does not exist takes no reaction', (backend_dispatch('community.comment.react', ['memberId' => 'CM-A', 'commentId' => 'CC-NOPE', 'emoji' => '💡'])['error'] ?? '') === 'not_found');
 
     // Reactions toggle.
     $r1 = backend_dispatch('community.react', ['memberId' => 'CM-A', 'postId' => $pid, 'emoji' => '🔥']);
@@ -27496,7 +27514,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_update('mentors', ['photoUrl' => $a['url']], ['mentorId' => 'MEN-PHR']);
     db_insert('photo_assets', ['assetId' => 'PA-PHR-1', 'subjectType' => 'member', 'subjectId' => 'NGG-PHR-1', 'version' => 1, 'status' => 'approved', 'sourceUrl' => $a['url'], 'editedUrl' => $a['url']]);
     audit('photo.test', null, 'x', ['url' => $a['url']]);   // the audit trail quoting it must not keep it alive
-    $r = member_update(['memberId' => 'NGG-PHR-1', 'photoUrl' => $mkPng(22)]);
+    // A member cannot change it themselves (they ask); the desk's replacement is what replaces.
+    photo_set_subject('member', 'NGG-PHR-1', photo_intake_url($mkPng(22)), 'NGG-2025-0099'); $r = ['ok' => true];
     chk('photo replace: the new photo is on the record', !empty($r['ok']) && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHR-1'")['photoUrl'] === $b['url']);
     chk('photo replace: the old file is deleted at once, though the audit trail quotes it', photo_store_find($a['id']) === '');
     chk('photo replace: earlier versions are superseded and keep no picture', db_row("SELECT status, sourceUrl, editedUrl FROM photo_assets WHERE assetId = 'PA-PHR-1'") == ['status' => 'superseded', 'sourceUrl' => '', 'editedUrl' => '']);
@@ -30690,6 +30709,84 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM summer_students WHERE studentId = 'SRCH-S1'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'SRCH-%'");
     db_exec("DELETE FROM centres WHERE centreId IN ('CEN-SR-A', 'CEN-SR-B')");
+})();
+
+/* ── A member's photo is changed by asking, never by writing it ─────────────
+   The photo is the face on a printed ID: the member sends the one they want,
+   the desk approves (it goes on the record) or declines with a reason, and
+   the member is told either way. */
+(function () {
+    if (!function_exists('imagecreatetruecolor')) { chk('photo ask: GD missing, skipped', true); return; }
+    $mk = function (int $seed) { $im = imagecreatetruecolor(40, 40); imagefill($im, 0, 0, imagecolorallocate($im, $seed % 255, 30, 90)); ob_start(); imagepng($im); $b = ob_get_clean(); imagedestroy($im); return 'data:image/png;base64,' . base64_encode($b); };
+    $now = now_iso();
+    $old = photo_store_put($mk(5))['url'];
+    db_insert('members', ['memberId' => 'NGG-PCR-1', 'fullName' => 'Ask Photo', 'email' => 'pcr1@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => $old, 'createdAt' => $now, 'updatedAt' => $now]);
+    $r = backend_dispatch('member.update', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $mk(6), 'bio' => 'I like maths']);
+    $row = db_row("SELECT photoUrl, bio FROM members WHERE memberId = 'NGG-PCR-1'");
+    chk('photo ask: a profile save with a new photo leaves the photo as it was', $row['photoUrl'] === $old);
+    chk('photo ask: …saves the rest, and says the photo went to the desk', $row['bio'] === 'I like maths' && !empty($r['photoRequested']) && ($r['photoRequest']['status'] ?? '') === 'pending');
+    $same = backend_dispatch('member.update', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $old, 'bio' => 'x']);
+    chk('photo ask: the same photo sent back by a form is no ask at all', !empty($same['ok']) && empty($same['photoRequested']));
+    chk('photo ask: asking with the photo you already have is refused by name', (backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $old])['error'] ?? '') === 'same_photo');
+    chk('photo ask: an ask with no photo is refused', (backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => ''])['error'] ?? '') === 'bad_photo');
+    $second = backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $mk(7), 'reason' => 'Newer one']);
+    chk('photo ask: a second ask replaces the first, so the desk sees one', ($second['replaced'] ?? 0) === 1
+        && (int)db_row("SELECT COUNT(*) c FROM photo_change_requests WHERE subjectId = 'NGG-PCR-1' AND status = 'pending'")['c'] === 1);
+    $mine = backend_dispatch('member.photo.change.mine', ['memberId' => 'NGG-PCR-1']);
+    chk('photo ask: the member sees their ask, waiting, with the old photo kept beside it', ($mine['request']['status'] ?? '') === 'pending' && ($mine['request']['reason'] ?? '') === 'Newer one' && $mine['request']['oldPhotoUrl'] === $old);
+    $q = backend_dispatch('admin.photo.changes', ['requesterId' => 'NGG-2025-0099']);
+    $mineQ = array_values(array_filter($q['requests'] ?? [], fn($x) => $x['subjectId'] === 'NGG-PCR-1'));
+    chk('photo ask: the desk queue shows it with the name', count($mineQ) === 1 && $mineQ[0]['subjectName'] === 'Ask Photo');
+    chk('photo ask: a member cannot read the desk queue', empty(backend_dispatch('admin.photo.changes', ['requesterId' => 'NGG-PCR-1'])['ok']));
+    chk('photo ask: a decline needs a reason the member will read', (backend_dispatch('admin.photo.change.decide', ['requesterId' => 'NGG-2025-0099', 'requestId' => $mineQ[0]['requestId'], 'decision' => 'decline'])['error'] ?? '') === 'note_required');
+    $dec = backend_dispatch('admin.photo.change.decide', ['requesterId' => 'NGG-2025-0099', 'requestId' => $mineQ[0]['requestId'], 'decision' => 'decline', 'note' => 'Your face is hidden']);
+    chk('photo ask: declined, the photo stays and the member is told why', !empty($dec['ok']) && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PCR-1'")['photoUrl'] === $old
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-PCR-1' AND body = 'Your face is hidden'")['c'] === 1);
+    chk('photo ask: a decided ask cannot be decided again', (backend_dispatch('admin.photo.change.decide', ['requesterId' => 'NGG-2025-0099', 'requestId' => $mineQ[0]['requestId'], 'decision' => 'approve'])['error'] ?? '') === 'already_decided');
+    $third = backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $mk(8)]);
+    chk('photo ask: withdrawn, nothing is waiting', !empty(backend_dispatch('member.photo.change.withdraw', ['memberId' => 'NGG-PCR-1'])['ok'])
+        && (backend_dispatch('member.photo.change.withdraw', ['memberId' => 'NGG-PCR-1'])['error'] ?? '') === 'no_pending_request');
+    $fourth = backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $mk(9)]);
+    $ok = backend_dispatch('admin.photo.change.decide', ['requesterId' => 'NGG-2025-0099', 'requestId' => $fourth['request']['requestId'], 'decision' => 'approve']);
+    chk('photo ask: approved, the photo they sent is on their record', !empty($ok['ok']) && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PCR-1'")['photoUrl'] === $fourth['request']['photoUrl']);
+    chk('photo ask: …and they are told', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-PCR-1' AND title = 'Your new photo is on your profile'")['c'] === 1);
+    chk('photo ask: one audit event per decision', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event IN ('photo.change.approved','photo.change.declined') AND subject = 'member:NGG-PCR-1'")['c'] === 2);
+    $fifth = backend_dispatch('member.photo.change', ['memberId' => 'NGG-PCR-1', 'photoUrl' => $mk(10)]);
+    db_update('members', ['centreScope' => json_encode(['Ayobo'])], ['memberId' => 'NGG-2025-0099']);
+    $scoped = backend_dispatch('admin.photo.change.decide', ['requesterId' => 'NGG-2025-0099', 'requestId' => $fifth['request']['requestId'], 'decision' => 'approve']);
+    $scopedQ = backend_dispatch('admin.photo.changes', ['requesterId' => 'NGG-2025-0099']);
+    db_update('members', ['centreScope' => ''], ['memberId' => 'NGG-2025-0099']);
+    chk('photo ask: a desk scoped to another centre is refused per row, and does not see it', ($scoped['error'] ?? '') === 'out_of_scope'
+        && !array_filter($scopedQ['requests'] ?? [], fn($x) => $x['subjectId'] === 'NGG-PCR-1'));
+    chk('photo ask: the routes are registered', function_exists('photo_change_request_create') && is_file(dirname(__DIR__) . '/member/photo-change.php'));
+})();
+
+/* ── A Tech member's courses are Tech's, everywhere they are read ───────────
+   "Tech" names no channel exactly, and the community used to count every
+   course channel as theirs — Media's included. */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-TM-1', 'fullName' => 'Tech Only', 'email' => 'tm1@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Tech', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-TM-2', 'fullName' => 'Tech Chosen', 'email' => 'tm2@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Coding', 'courses' => json_encode(['Coding']), 'division' => 'media', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-TM-3', 'fullName' => 'Nothing Yet', 'email' => 'tm3@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    community_ensure_channels();
+    $kind = []; $fac = []; $media = [];
+    foreach (db_all("SELECT slug, name, kind, faculty FROM community_channels WHERE status = 'active'") as $c) {
+        $kind[$c['slug']] = $c['kind']; $fac[$c['slug']] = $c['name'];
+        if ($c['kind'] === 'course' && nggc_division_for_track((string)$c['faculty']) === 'media' || stripos((string)$c['faculty'], 'media') !== false) $media[] = mb_strtolower($c['name']);
+    }
+    $courseNames = fn(array $slugs) => array_values(array_map(fn($x) => mb_strtolower($fac[$x]), array_filter($slugs, fn($x) => ($kind[$x] ?? '') === 'course')));
+    chk('tech member: the test catalogue has Media course channels to leak', count($media) > 0);
+    foreach (['NGG-TM-1', 'NGG-TM-2'] as $id) {
+        $mine = $courseNames(cm3_my_channels($id));
+        chk("tech member ($id): none of Media's course channels are theirs", !array_intersect($mine, $media));
+    }
+    chk('tech member: a "Tech" track is in the Technology course channels', count($courseNames(cm3_my_channels('NGG-TM-1'))) > 0);
+    chk('tech member: a member with no course is in the shared channels only, not every course', $courseNames(cm3_my_channels('NGG-TM-3')) === []);
+    $tt = member_timetable(['memberId' => 'NGG-TM-2']);
+    chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
+    $card = member_card_public(db_row("SELECT * FROM members WHERE memberId = 'NGG-TM-1'"), true);
+    chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
 })();
 
 /* ── No back door to a session ──────────────────────────────────────────────

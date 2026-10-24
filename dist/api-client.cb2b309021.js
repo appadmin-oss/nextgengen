@@ -898,6 +898,12 @@
       notifications: () => request('/member/notifications.php'),
       markRead:      (notifId) => request('/member/notifications.php', { body: { notifId } }),
       updateProfile: (data) => request('/member/profile.php', { body: data }),
+      /* The photo is changed by asking: the new photo goes to the desk, which approves or declines it. */
+      photoChange: {
+        mine:     () => request('/member/photo-change.php'),
+        ask:      (photoUrl, reason) => request('/member/photo-change.php', { body: { photoUrl, reason: reason || '' } }),
+        withdraw: () => request('/member/photo-change.php', { body: { action: 'withdraw' } }),
+      },
       assignments:      () => request('/member/assignments.php'),
       /* An instructor's assignments desk — the same calls as the Control Room's, through the member door. */
       assignDesk:       () => assignDesk('/member/assign-desk.php'),
@@ -999,7 +1005,8 @@
         digest:   (channel) => request('/member/community.php' + qs({ view: 'digest', channel: channel || 'all' })),
         post:     (data) => request('/member/community.php', { body: { action: 'post', data } }),
         react:    (postId, emoji) => request('/member/community.php', { body: { action: 'react', postId, emoji } }),
-        comment:  (postId, body) => request('/member/community.php', { body: { action: 'comment', postId, body } }),
+        comment:  (postId, body, replyTo) => request('/member/community.php', { body: { action: 'comment', postId, body, replyTo: replyTo || '' } }),
+        commentReact: (commentId, emoji) => request('/member/community.php', { body: { action: 'commentReact', commentId, emoji } }),
         bookmark: (postId) => request('/member/community.php', { body: { action: 'bookmark', postId } }),
         report:   (targetType, targetId, reason) => request('/member/community.php', { body: { action: 'report', targetType, targetId, reason: reason || '' } }),
         remove:   (targetType, targetId) => request('/member/community.php', { body: { action: 'delete', targetType, targetId } }),
@@ -1906,6 +1913,9 @@
         // The photos of these people, copied off a spent Cloudinary account just before they are used (admin_photos_relocate).
         relocate: (subjects) => request('/admin/photos.php', { body: { action: 'relocate', subjects: subjects || [] } }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
+        // Members' asks to change their photo (photo_change_requests).
+        changes: () => request('/admin/photos.php' + qs({ view: 'changes' })),
+        changeDecide: (requestId, decision, note) => request('/admin/photos.php', { body: { action: 'change_decide', requestId, decision, note: note || '' } }),
         /* Children with NO photograph on file — a different question from the
            review queue, which can only show photos that exist. */
         missing: (limit) => request('/admin/photos.php' + qs({ view: 'missing', limit })),

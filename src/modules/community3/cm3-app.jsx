@@ -16,6 +16,7 @@
    ========================================================================== */
 
 const CM3_REACT_NAMES = { "👏": "Clap", "❤️": "Love", "🔥": "Fire", "💡": "Great idea", "🎉": "Celebrate", "🙌": "Hooray" };
+const CM3_REACT_LIST = Object.keys(CM3_REACT_NAMES);
 const CM3_TONES = ["#f2c98a", "#b9d5c0", "#c8d1f2", "#f2c4d3", "#d9c9f2", "#f2d8b5", "#bfe0e6", "#e6d7c3"];
 const CM3_KIND = { question: ["Question", "ph ph-question", "#fdf1d6", "#6b4b00"], work: ["Show my work", "ph ph-paint-brush-broad", "#e5efe7", "#1d4f2a"], poll: ["Poll", "ph ph-chart-bar", "#eceefb", "#2a3f9e"], announce: ["Announcement", "ph ph-megaphone", "#0b0b0c", "#ffffff"], homework: ["Homework", "ph ph-backpack", "#fbe7ee", "#7d2347"] };
 const CM3_FEED_FILTER = { all: "all", unread: "unread", mentions: "mentions", questions: "questions", saved: "bookmarks", mine: "mine" };
@@ -28,6 +29,16 @@ function cm3SafeUrl(u) { const t = String(u || "").trim(); return /^https?:\/\//
 function cm3Fmt(t) { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }
 function cm3Ago(iso) { const a = typeof cmAgo === "function" ? cmAgo(iso) : ""; return !a ? "" : a === "just now" ? "Just now" : /^\d+[mh]$/.test(a) ? a + " ago" : a; }
 function cm3Err(e, fallback) { return (e && (e.detail || (typeof humanizeError === "function" ? humanizeError(e.code || e.message, "") : ""))) || fallback || "Something went wrong. Try again."; }
+/* A day line in a thread: Today, Yesterday, a weekday this week, else the date. */
+function cm3Day(iso) {
+  const t = Date.parse(iso || ""); if (!t) return "";
+  const d = new Date(t), n = new Date(), day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(n) - day(d)) / 864e5);
+  if (diff <= 0) return "Today"; if (diff === 1) return "Yesterday";
+  if (diff < 7) return d.toLocaleDateString("en-GB", { weekday: "long" });
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: d.getFullYear() === n.getFullYear() ? undefined : "numeric" });
+}
+function cm3Clock(iso) { const t = Date.parse(iso || ""); return t ? new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : ""; }
 function cm3Reduced() { try { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } }
 /* The six reactions are self-hosted (assets/emoji, downscaled Noto Animated
    Emoji, CC BY 4.0). Any other emoji in a post stays text. */
@@ -60,9 +71,12 @@ class Cm3App extends React.Component {
     comments: {}, hw: null, files: null, slides: [], queue: null, qComments: [], cases: null, stats: null, health: null, modLocked: false, modErr: "",
     thread: null, comp: null, report: null, toast: "", toastUndo: null, digest: false, digestText: "", modTab: "queue", modFilter: "all", modeAsk: null,
     sheet: false, w: 1280, stars: 0, picker: null, hwSel: null, hwFilter: "all", reply: "", fileKind: "all", hidden: {}, read: {}, hwNotes: {}, hwLinks: {},
-    nudged: {}, card: null, burst: null, car: 0, carPaused: false, viewer: null, media: {}, vt: 0, vPlay: false, crisis: "", busy: false, typing: "", edit: null
+    nudged: {}, card: null, burst: null, car: 0, carPaused: false, viewer: null, media: {}, vt: 0, vPlay: false, crisis: "", busy: false, typing: "", edit: null,
+    quote: null, rxOpen: null, hl: null, thNew: 0, thAway: false, thSeenAt: undefined
   };
   rootRef = React.createRef();
+  thRef = React.createRef();
+  replyRef = React.createRef();
   vStageRef = React.createRef();
   vRef = React.createRef();
   promptRef = React.createRef();
@@ -97,7 +111,7 @@ class Cm3App extends React.Component {
     this.onWin = () => { const w = window.innerWidth || 1280; if (w !== this.state.w) this.setState({ w }); };
     window.addEventListener("resize", this.onWin); this.onWin();
     this.carT = setInterval(() => { if (!this.state.carPaused && !this.carHover && !this.state.comp && !this.state.viewer && !cm3Reduced()) this.setState(st => ({ car: (st.car || 0) + 1 })); }, 6500);
-    this.onKey = e => { if (e.key === "Escape") { const s = this.state; if (s.viewer) { if (s.viewer.type !== "video") this.closeViewer(); return; } if (s.report) return this.setState({ report: null }); if (s.comp) return this.setState({ comp: null }); if (s.card) return this.setState({ card: null }); if (s.thread) return this.setState({ thread: null }); if (s.sheet) return this.setState({ sheet: false }); } };
+    this.onKey = e => { if (e.key === "Escape") { const s = this.state; if (s.viewer) { if (s.viewer.type !== "video") this.closeViewer(); return; } if (s.report) return this.setState({ report: null }); if (s.comp) return this.setState({ comp: null }); if (s.card) return this.setState({ card: null }); if (s.rxOpen) return this.setState({ rxOpen: null }); if (s.thread && s.quote) return this.setState({ quote: null }); if (s.thread) { this.thLanded = null; return this.setState({ thread: null }); } if (s.sheet) return this.setState({ sheet: false }); } };
     document.addEventListener("keydown", this.onKey);
     /* Paste a picture straight into an open composer and it uploads as the post's photo. */
     this.onPaste = e => { if (!this.state.comp || this.state.comp.media) return; const it = Array.from((e.clipboardData || {}).items || []).find(x => x.kind === "file" && /^image\//.test(x.type)); if (it) { e.preventDefault(); this.upload("photo", it.getAsFile()); } };
@@ -110,6 +124,9 @@ class Cm3App extends React.Component {
        visible; shared hosting has no push (domain/community.php §typing). */
     this.typT = setInterval(() => { const s = this.state; if (s.view !== "channel" || document.visibilityState !== "visible" || !s.boot) return; const ch = s.ch; this.api().typingWho(ch).then(r => { if (this.state.ch === ch && this.state.view === "channel" && (r.says || "") !== this.state.typing) this.setState({ typing: r.says || "" }); }).catch(() => {}); }, 6000);
     this.refT = setInterval(() => this.refresh(), 60000);
+    /* An open thread is a conversation: new replies arrive while it is open
+       (polled, visible tab only — shared hosting has no push). */
+    this.thT = setInterval(() => { const s = this.state; if (!s.thread || document.visibilityState !== "visible" || !s.boot) return; this.loadComments(s.thread, true); }, 8000);
     // Deep link: /community?post=CP-… opens that post's thread.
     // A "Copy link at 0:42" link carries #t=42: the video opens at that moment.
     try { const pid = new URLSearchParams(location.search).get("post"); if (pid) this.openPost(pid, parseInt((String(location.hash).match(/t=(\d+)/) || [])[1] || "0", 10)); } catch (e) {}
@@ -119,7 +136,7 @@ class Cm3App extends React.Component {
     document.removeEventListener("paste", this.onPaste);
     document.removeEventListener("scroll", this.onDockScr, true); cancelAnimationFrame(this.dockRaf);
     window.removeEventListener("online", this.onNet); window.removeEventListener("offline", this.onNet);
-    clearInterval(this.carT); clearTimeout(this.tt); clearTimeout(this.tb); clearInterval(this.typT); clearInterval(this.refT); this.vOff(); this.flushUndo();
+    clearInterval(this.carT); clearTimeout(this.tt); clearTimeout(this.tb); clearInterval(this.typT); clearInterval(this.refT); clearInterval(this.thT); this.vOff(); this.flushUndo();
   }
   api() { return NGGApi.member.community; }
   /* Whether a new post belongs in the list on screen: a post is not "saved",
@@ -298,11 +315,74 @@ class Cm3App extends React.Component {
       this.loadComments(p.id);
     }).catch(() => this.flash("That post isn’t available any more."));
   }
-  loadComments(pid) {
+  /* `quiet` is the open thread's own refresh: an error then is not news, and
+     replies that arrive while the reader is scrolled up are counted for the
+     "new replies" button instead of moving the page under them. */
+  loadComments(pid, quiet) {
     this.api().comments(pid).then(r => {
       (r.comments || []).forEach(c => this.person(c.authorKey, { name: c.name, staff: !!c.staff, role: c.role || (c.staff ? "Staff" : "Student"), photo: c.photo }));
-      this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: r.comments || [] }) }));
-    }).catch(() => this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [pid]: true }) })));
+      const had = this.state.comments[pid], list = r.comments || [];
+      if (quiet && had && had.length === list.length && list.every((c, i) => had[i] && had[i].commentId === c.commentId && JSON.stringify(had[i].reactions || {}) === JSON.stringify(c.reactions || {}))) return;
+      const added = had ? list.filter(c => !had.some(h => h.commentId === c.commentId) && !c.isMe).length : 0;
+      const away = this.state.thAway && this.state.thread === pid;
+      const landing = this.state.thread === pid && this.thLanded !== pid;
+      const patch = { comments: Object.assign({}, this.state.comments, { [pid]: list }), thNew: away ? this.state.thNew + added : 0 };
+      if (landing) { this.thLanded = pid; patch.thSeenAt = this.thSeen(pid); }
+      this.setState(patch, () => {
+        if (this.state.thread !== pid) return;
+        this.thSeen(pid, list.length);
+        if (landing) this.thOpened(pid); else if (!away && added) this.thBottom(true);
+      });
+    }).catch(() => { if (!quiet) this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [pid]: true }) })); });
+  }
+  /* Where a reader left a thread: how many replies they had seen (this
+     browser only). Opening it again lands on the first new one, under a
+     "new replies" line, as a chat does. */
+  thSeen(pid, n) {
+    let m = {}; try { m = JSON.parse(localStorage.getItem("cm3.seen") || "{}") || {}; } catch (e) {}
+    if (n === undefined) return m[pid];
+    m[pid] = n; const keys = Object.keys(m); if (keys.length > 300) delete m[keys[0]];
+    try { localStorage.setItem("cm3.seen", JSON.stringify(m)); } catch (e) {}
+  }
+  thOpened(pid) {
+    const el = this.thRef.current; if (!el) return;
+    const first = el.querySelector("[data-newline]");
+    if (first) first.scrollIntoView({ block: "center" }); else el.scrollTop = el.scrollHeight;
+  }
+  thBottom(smooth) { const el = this.thRef.current; if (!el) return; el.scrollTo({ top: el.scrollHeight, behavior: smooth && !cm3Reduced() ? "smooth" : "auto" }); this.setState({ thNew: 0, thAway: false }); }
+  thScroll(e) {
+    const el = e.currentTarget, away = el.scrollHeight - el.scrollTop - el.clientHeight > 120;
+    if (away !== this.state.thAway) this.setState(away ? { thAway: true } : { thAway: false, thNew: 0 });
+  }
+  /* Jump to the reply a quote points at, and light it for a moment. */
+  thJump(cid) {
+    const el = this.thRef.current && this.thRef.current.querySelector('[data-cid="' + cid + '"]');
+    if (!el) return this.flash("That reply isn’t here any more.");
+    el.scrollIntoView({ block: "center", behavior: cm3Reduced() ? "auto" : "smooth" });
+    clearTimeout(this.hlT); this.setState({ hl: cid }); this.hlT = setTimeout(() => this.setState({ hl: null }), 1600);
+  }
+  quoteReply(c) {
+    this.setState({ quote: { commentId: c.commentId, name: c.name || "Member", body: String(c.body || "").slice(0, 140) }, rxOpen: null });
+    setTimeout(() => this.replyRef.current && this.replyRef.current.focus(), 0);
+  }
+  reactReply(pid, c, e) {
+    const keep = c;
+    const upd = f => this.setState(st => ({ comments: Object.assign({}, st.comments, { [pid]: (st.comments[pid] || []).map(x => x.commentId === c.commentId ? f(Object.assign({}, x)) : x) }) }));
+    upd(x => { const r = Object.assign({}, x.reactions || {}); if (x.myReaction) r[x.myReaction] = Math.max(0, (r[x.myReaction] || 0) - 1); if (x.myReaction === e) x.myReaction = ""; else { r[e] = (r[e] || 0) + 1; x.myReaction = e; } x.reactions = r; return x; });
+    this.setState({ rxOpen: null });
+    this.api().commentReact(c.commentId, e).then(r => upd(x => Object.assign(x, { reactions: r.reactions || {}, myReaction: r.myReaction || "" })))
+      .catch(err => { upd(x => Object.assign(x, { reactions: keep.reactions, myReaction: keep.myReaction })); this.flash(cm3Err(err, "Couldn’t react.")); });
+  }
+  /* Touch: swipe a reply to the right to answer it; hold it for reactions.
+     Both have a button too — nothing here needs a gesture. */
+  thPointer(e) {
+    const t = e.target.closest && e.target.closest("[data-cid]"); if (!t || e.pointerType === "mouse" || e.target.closest("button,a")) return;
+    const cid = t.getAttribute("data-cid"), x0 = e.clientX, y0 = e.clientY; let dx = 0, moved = false;
+    const hold = setTimeout(() => { if (!moved) this.setState({ rxOpen: cid }); }, 520);
+    const move = ev => { const mx = ev.clientX - x0, my = ev.clientY - y0; if (Math.abs(mx) > 8 || Math.abs(my) > 8) moved = true; if (Math.abs(my) > Math.abs(mx)) return; dx = Math.max(0, Math.min(72, mx)); t.style.transform = dx ? "translateX(" + dx + "px)" : ""; };
+    const up = () => { clearTimeout(hold); t.style.transform = ""; window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+      if (dx >= 56) { const pid = this.state.thread, c = (this.state.comments[pid] || []).find(x => x.commentId === cid); if (c) this.quoteReply(c); } };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
   }
 
   /* ── actions ─────────────────────────────────────────────────────────── */
@@ -366,10 +446,11 @@ class Cm3App extends React.Component {
   sendReply() {
     const s = this.state, t = s.reply.trim(), pid = s.thread; if (!t || !pid || s.busy) return;
     this.setState({ busy: true });
-    this.api().comment(pid, t).then(r => {
+    const q = s.quote;
+    this.api().comment(pid, t, q ? q.commentId : "").then(r => {
       const c = Object.assign({ authorKey: s.boot.me.key, role: s.boot.me.staff ? s.boot.me.roleLabel : "" }, r.comment);
       this.person(s.boot.me.key, { name: s.boot.me.name, staff: s.boot.me.staff, role: s.boot.me.roleLabel });
-      this.setState(st => ({ reply: "", busy: false, comments: Object.assign({}, st.comments, { [pid]: (st.comments[pid] || []).concat([c]) }) }));
+      this.setState(st => ({ reply: "", busy: false, quote: null, comments: Object.assign({}, st.comments, { [pid]: (st.comments[pid] || []).concat([c]) }) }), () => this.thBottom(true));
       this.updPost(pid, p => Object.assign(p, { n: p.n + (r.queued ? 0 : 1) }));
       if (r.queued) this.flash("Your reply is waiting for a quick check before others see it.");
     }).catch(e => { this.setState({ busy: false }); if (e.code === "crisis") this.setState({ crisis: e.detail || "" }); else this.flash(cm3Err(e, "Couldn’t send your reply.")); });
@@ -615,7 +696,7 @@ class Cm3App extends React.Component {
         reacts: R.filter(e => (p.reacts[e] || 0) > 0 || p.mine === e).map(e => { const on = p.mine === e, cnt = p.reacts[e] || 0; return { e, n: cnt, pressed: on ? "true" : "false", aria: e + " " + cnt + (on ? ", your reaction" : ""), bg: on ? "#fdf1d6" : "#fff", bd: on ? "#f5b026" : "#e8e5dd", src: cm3EmojiSrc(e), anim: s.burst && s.burst.id === p.id && s.burst.e === e ? "cmPop .35s ease-out" : "none", toggle: () => this.react(p.id, e) }; }),
         showPicker: s.picker === p.id, pickerExp: s.picker === p.id ? "true" : "false", openPicker: () => set({ picker: s.picker === p.id ? null : p.id }),
         picker: R.map(e => ({ e, src: cm3EmojiSrc(e), name: CM3_REACT_NAMES[e] || e, aria: "React with " + e, pick: () => { this.react(p.id, e); set({ picker: null }); } })),
-        replies: n ? n + (n === 1 ? " reply" : " replies") : "Reply", openThread: () => { set({ thread: p.id, picker: null, reply: "" }); this.loadComments(p.id); },
+        replies: n ? n + (n === 1 ? " reply" : " replies") : "Reply", openThread: () => { set({ thread: p.id, picker: null, reply: "", quote: null, rxOpen: null, thNew: 0, thAway: false }); this.loadComments(p.id); },
         canStar, starOff: !!p.myStar || s.stars < 1, starBg: p.myStar ? "#fdf1d6" : "#fffaf0", starIcon: p.myStar ? "ph-fill ph-star" : "ph ph-star", starLabel: p.myStar ? "Star given" : "Genius Star", starTitle: s.stars + " Genius Stars left today",
         giveStar: () => this.star(p, a.name.split(" ")[0]),
         savedP: p.saved ? "true" : "false", saveIcon: p.saved ? "ph-fill ph-bookmark-simple" : "ph ph-bookmark-simple", saveLabel: p.saved ? "Saved" : "Save", toggleSave: () => this.save(p.id),
@@ -787,11 +868,30 @@ class Cm3App extends React.Component {
 
     const tPost = s.thread ? (visible.find(p => p.id === s.thread) || (opened && opened.id === s.thread ? opened : null)) : null;
     const tp = tPost ? pv(tPost) : {};
-    const tComments = tPost ? (s.comments[tPost.id] || []).filter(c => !s.hidden[c.commentId]).map(c => { const nm = c.name || "Member"; return { name: nm, ini: cm3Ini(nm), tone: cm3Tone(c.authorKey), hasRole: !!c.staff, role: c.role || "Staff", ago: cm3Ago(c.createdAt), body: c.body, segs: this.segs(c.body), answer: !!c.isAnswer, pending: c.status !== "published", bg: c.isAnswer ? "#eef6f0" : "#f6f5f1", bd: c.isAnswer ? "#cfe3d3" : "transparent",
+    /* The thread reads as a chat: your replies on the right, a run of replies
+       from one person under one name, a line for each new day, a line where
+       the replies you have not seen begin, and a quote on a reply that
+       answers another. */
+    const tList = tPost ? (s.comments[tPost.id] || []).filter(c => !s.hidden[c.commentId]) : [];
+    const newAt = tPost && typeof s.thSeenAt === "number" && s.thSeenAt < tList.length ? tList.findIndex((c, i) => i >= s.thSeenAt && !c.isMe) : -1;
+    const tComments = tPost ? tList.map((c, i) => { const nm = c.name || "Member", prev = tList[i - 1], day = cm3Day(c.createdAt);
+      const run = !!prev && prev.authorKey === c.authorKey && cm3Day(prev.createdAt) === day && i !== newAt && (Date.parse(c.createdAt) - Date.parse(prev.createdAt)) < 10 * 60000;
+      const rx = Object.keys(c.reactions || {}).filter(e => c.reactions[e] > 0).map(e => ({ e, n: String(c.reactions[e]), src: cm3EmojiSrc(e), on: c.myReaction === e ? "true" : "false", bd: c.myReaction === e ? "#0b0b0c" : "#e8e5dd", label: e + " " + c.reactions[e] + (c.myReaction === e ? ", yours. Tap to take it back" : ""), go: () => this.reactReply(tPost.id, c, e) }));
+      const q = c.quote || null, mine = !!c.isMe, live = c.status === "published" && !!c.commentId;
+      return { id: c.commentId || "", name: nm, ini: cm3Ini(nm), tone: cm3Tone(c.authorKey), hasRole: !!c.staff, role: c.role || "Staff", ago: cm3Ago(c.createdAt), time: cm3Clock(c.createdAt), body: c.body, segs: this.segs(c.body), answer: !!c.isAnswer, pending: c.status !== "published",
+      bg: c.isAnswer ? "#eef6f0" : s.hl && s.hl === c.commentId ? "#fbe3a4" : mine ? "#fdf1d6" : "#f6f5f1", bd: c.isAnswer ? "#cfe3d3" : "transparent",
+      dir: mine ? "row-reverse" : "row", mine, showHead: !run, showName: !run && !mine, showAv: !run && !mine, avGap: run && !mine, rad: mine ? (run ? "14px 4px 14px 14px" : "14px 4px 14px 14px") : (run ? "4px 14px 14px 14px" : "4px 14px 14px 14px"), gapTop: run ? "-8px" : "0px",
+      hasDay: !prev || cm3Day(prev.createdAt) !== day, day, isNew: i === newAt, newLabel: (tList.length - i) + " new " + (tList.length - i === 1 ? "reply" : "replies"),
+      hasQuote: !!q, qName: q ? (q.gone ? "" : q.name) : "", qBody: q ? (q.gone ? "This reply was removed." : q.body) : "", qGo: () => q && !q.gone && this.thJump(q.commentId), qLabel: q ? "Go to the reply from " + (q.name || "someone") : "",
+      rx, hasRx: rx.length > 0, canReact: live, rxOpen: s.rxOpen === c.commentId, rxToggle: () => set({ rxOpen: s.rxOpen === c.commentId ? null : c.commentId }), rxLabel: "React to " + nm.split(" ")[0] + "’s reply",
+      rxSet: (s.boot && s.boot.reactions || CM3_REACT_LIST).map(e => ({ e, src: cm3EmojiSrc(e), name: CM3_REACT_NAMES[e] || e, on: c.myReaction === e ? "true" : "false", bg: c.myReaction === e ? "#fdf1d6" : "transparent", go: () => this.reactReply(tPost.id, c, e) })),
+      canQuote: live, doQuote: () => this.quoteReply(c), quoteLabel: "Reply to " + nm.split(" ")[0],
+      copy: () => { try { navigator.clipboard.writeText(c.body || "").then(() => this.flash("Copied.")); } catch (e) { this.flash("Couldn’t copy."); } },
       canMark: tPost.kind === "question" && c.status === "published" && (staff || tPost.isMine) && !c.isMe, mark: () => this.markAnswer(tPost.id, c.commentId),
       /* A reply can be reported like a post (that is where unkindness happens), and its author can take it back. */
       canReport: !c.isMe && !!c.commentId, reportLabel: "Report " + nm.split(" ")[0] + "’s reply", report: () => set({ report: { id: c.commentId, type: "comment", reason: null } }),
       canDelete: !!c.isMe && !!c.commentId, del: () => this.removeReply(tPost.id, c), hasActs: !!c.commentId }; }) : [];
+    const tq = s.quote ? { name: s.quote.name, body: s.quote.body, clear: () => set({ quote: null }) } : null;
     const tErr = tPost ? !!(s.commentsErr || {})[tPost.id] && !(s.comments[tPost.id] || []).length : false;
     const rchkRaw = s.reply.trim().length > 3 ? this.check(s.reply) : null;
     const rchk = rchkRaw && rchkRaw.v !== "ok" ? { ...rchkRaw, bg: "#fdf1d6", fg: "#6b4b00" } : {};
@@ -915,8 +1015,14 @@ class Cm3App extends React.Component {
       modSettings: onMod && s.modTab === "settings", modes, modeAskOpen: !!s.modeAsk, modeAskText, modeNow: mode[0].toUpperCase() + mode.slice(1), cancelMode: () => set({ modeAsk: null }),
       confirmMode: () => { const m = s.modeAsk; NGGApi.admin.community.moderation(m).then(r => { set({ modeAsk: null, boot: Object.assign({}, B, { mode: m }) }); this.flash("Mode set to " + m + ". " + (r.released ? r.released + " held items released. " : "") + "Change logged."); this.loadMod(); }).catch(e => { set({ modeAsk: null }); this.flash(cm3Err(e)); }); },
       showRail: rail && !threadOpen && (s.view === "home" || s.view === "channel"), railAbout: s.view === "channel", about, railHw: !!railTask && !admin, rh, railStars: staff && !admin, starsLeftLabel: s.stars + " Genius Stars left today", promise,
-      threadOpen, threadOverlay: threadOpen && !rail, thPos: rail ? "relative" : "absolute", thW: narrow ? "100%" : "420px", tp, tComments, tEmpty: !tComments.length && !tErr, tErr, tRetry: () => { this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [tPost.id]: false }) })); this.loadComments(tPost.id); }, closeThread: () => set({ thread: null, reply: "" }),
-      reply: s.reply, onReply: e => { set({ reply: e.target.value }); if (tPost) this.typingPing(tPost.ch); }, sendReply: () => this.sendReply(), replyOff: !s.reply.trim() || s.busy, sendBg: s.reply.trim() ? "#0b0b0c" : "#b9b9b4", replyPh: tPost && tPost.kind === "question" && staff ? "Answer the question…" : "Say something kind and specific…", hasReplyChk: !!rchk.msg, rchk,
+      threadOpen, threadOverlay: threadOpen && !rail, thPos: rail ? "relative" : "absolute", thW: narrow ? "100%" : "420px", tp, tComments, tEmpty: !tComments.length && !tErr, tErr, tRetry: () => { this.setState(st => ({ commentsErr: Object.assign({}, st.commentsErr, { [tPost.id]: false }) })); this.loadComments(tPost.id); }, closeThread: () => { this.thLanded = null; set({ thread: null, reply: "", quote: null, rxOpen: null }); },
+      reply: s.reply, onReply: e => { set({ reply: e.target.value }); if (tPost) this.typingPing(tPost.ch); }, sendReply: () => this.sendReply(),
+      /* Enter sends and Shift+Enter is a new line, with a keyboard that has
+         both; on a phone Enter is a new line and the button sends. */
+      replyKey: e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !narrow) { e.preventDefault(); this.sendReply(); } },
+      replyRef: this.replyRef, thRef: this.thRef, thScroll: e => this.thScroll(e), thPointer: e => this.thPointer(e),
+      hasQuote: !!tq, tq: tq || {}, thTyping: s.typing || "", hasThTyping: !!s.typing && !!tPost && tPost.ch === s.ch,
+      showJump: s.thAway, jumpLabel: s.thNew ? s.thNew + " new" : "", hasJumpN: s.thNew > 0, jump: () => this.thBottom(true), jumpAria: s.thNew ? "Go to the " + s.thNew + " new " + (s.thNew === 1 ? "reply" : "replies") : "Go to the latest reply", replyOff: !s.reply.trim() || s.busy, sendBg: s.reply.trim() ? "#0b0b0c" : "#b9b9b4", replyPh: tPost && tPost.kind === "question" && staff ? "Answer the question…" : "Say something kind and specific…", hasReplyChk: !!rchk.msg, rchk,
       ...compV, closeComp: () => set({ comp: null }), submit: () => this.submit(),
       modalAlign: narrow ? "flex-end" : "center", modalPad: narrow ? "0" : "24px", modalR: narrow ? "20px 20px 0 0" : "16px",
       reportOpen: !!rp, reasons, reportSafety: !!rp && rp.reason === "safety", reportOff: !(rp && rp.reason), reportBtnBg: rp && rp.reason ? (rp.reason === "safety" ? "#b42318" : "#0b0b0c") : "#b9b9b4", closeReport: () => set({ report: null }), sendReport: () => this.sendReport(),

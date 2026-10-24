@@ -174,7 +174,7 @@ function member_update(array $p): array {
      * programme's record — checked with the family and changed by the desk
      * through a "Correct my details" request — so a write of any of those is
      * refused, not silently dropped. */
-    $allowed = ['bio', 'photoUrl', 'socials'];
+    $allowed = ['bio', 'socials'];
     $managed = array_values(array_intersect(['phone', 'parentEmail', 'parentPhone', 'school', 'fullName', 'dob', 'centre', 'track', 'email'], array_keys($p)));
     if ($managed) return ['ok' => false, 'error' => 'managed_by_ngg', 'fields' => $managed];
     $patch = ['updatedAt' => now_iso()];
@@ -183,16 +183,20 @@ function member_update(array $p): array {
             $patch[$k] = ($k === 'socials' && is_array($p[$k])) ? json_encode($p[$k], JSON_UNESCAPED_SLASHES) : $p[$k];
         }
     }
-    // An inline photo is stored and replaced by its short URL (see admin_members_upsert).
-    if (isset($patch['photoUrl']) && is_string($patch['photoUrl']) && preg_match('#^data:#i', trim($patch['photoUrl']))) {
-        $patch['photoUrl'] = photo_intake_url($patch['photoUrl']);
-        if ($patch['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo'];
+    /* The photo is not theirs to change: it is the face on a printed ID. A
+     * different photo becomes a request the desk approves or declines
+     * (photo_change_request_create); the same photo sent back by a form that
+     * always posts every field is no change at all. */
+    $photoRequest = null;
+    $sent = array_key_exists('photoUrl', $p) ? trim((string)$p['photoUrl']) : '';
+    if ($sent !== '' && photo_store_relativise($sent) !== photo_store_relativise((string)($member['photoUrl'] ?? ''))) {
+        $req = photo_change_request_create(['memberId' => $memberId, 'photoUrl' => $sent, 'reason' => (string)($p['photoReason'] ?? ''), 'ip' => (string)($p['ip'] ?? '')]);
+        if (empty($req['ok'])) return $req;
+        $photoRequest = $req['request'];
     }
-    db_update('members', $patch, ['id' => $member['id']]);
-    // A new photo replaces the old one; it does not sit beside it.
-    if (isset($patch['photoUrl']) && function_exists('photo_supersede')) photo_supersede('member', $memberId, (string)($member['photoUrl'] ?? ''), (string)$patch['photoUrl'], $memberId);
-    audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    if (count($patch) > 1) db_update('members', $patch, ['id' => $member['id']]);
+    audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch), 'photoRequested' => (bool)$photoRequest], (string)($p['ip'] ?? ''));
+    return ['ok' => true] + ($photoRequest ? ['photoRequested' => true, 'photoRequest' => $photoRequest] : []);
 }
 
 /** Public, privacy-safe cohort leaderboard: top active NGG members by XP,

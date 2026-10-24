@@ -4030,3 +4030,16 @@ CREATE TABLE IF NOT EXISTS photo_change_requests (
   KEY idx_pcr_status (status, requestedAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (174) ON DUPLICATE KEY UPDATE version = version;
+
+-- 175: a reply quotes the reply it answers; reactions on replies
+ALTER TABLE community_comments ADD COLUMN replyTo VARCHAR(40) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS community_comment_reactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  commentId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(32) NOT NULL,
+  UNIQUE KEY uq_ccr (commentId, memberId),
+  KEY idx_ccr_comment (commentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (175) ON DUPLICATE KEY UPDATE version = version;

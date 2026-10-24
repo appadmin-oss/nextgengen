@@ -1622,9 +1622,28 @@ function community_comments(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     $pid = (string)($p['postId'] ?? '');
     $answerId = (string)(db_row('SELECT answerId FROM community_posts WHERE postId = ?', [$pid])['answerId'] ?? '');
-    $rows = db_all("SELECT commentId, memberId, memberName, body, status, reportCount, createdAt FROM community_comments
+    $rows = db_all("SELECT commentId, memberId, memberName, body, status, reportCount, createdAt, replyTo FROM community_comments
                     WHERE postId = ? AND (status = 'published'" . ($viewer !== '' ? " OR memberId = ?" : "") . ") ORDER BY createdAt ASC",
         $viewer !== '' ? [$pid, $viewer] : [$pid]);
+    /* A quoted reply is resolved from the rows already read: one the viewer
+       cannot see (removed, or still held for someone else) is quoted as gone,
+       never by its text. Reactions: one grouped read for the whole thread. */
+    $byId = [];
+    foreach ($rows as $r) $byId[(string)$r['commentId']] = $r;
+    $reacts = []; $mine = [];
+    if ($rows) {
+        $ids = array_keys($byId); $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT commentId, emoji, COUNT(*) c FROM community_comment_reactions WHERE commentId IN ($ph) GROUP BY commentId, emoji", $ids) as $x)
+            $reacts[(string)$x['commentId']][(string)$x['emoji']] = (int)$x['c'];
+        if ($viewer !== '') foreach (db_all("SELECT commentId, emoji FROM community_comment_reactions WHERE memberId = ? AND commentId IN ($ph)", array_merge([$viewer], $ids)) as $x)
+            $mine[(string)$x['commentId']] = (string)$x['emoji'];
+    }
+    $quote = function (string $id) use ($byId): ?array {
+        if ($id === '') return null;
+        $q = $byId[$id] ?? null;
+        if (!$q) return ['commentId' => $id, 'name' => '', 'body' => '', 'gone' => true];
+        return ['commentId' => $id, 'name' => community_staff_name((string)$q['memberId']) ?? (string)$q['memberName'], 'body' => mb_substr((string)$q['body'], 0, 140), 'gone' => false];
+    };
     $out = array_map(fn($r) => [
         'commentId' => (string)$r['commentId'], 'name' => community_staff_name((string)$r['memberId']) ?? (string)$r['memberName'], 'body' => (string)$r['body'],
         'status' => (string)$r['status'], 'createdAt' => (string)$r['createdAt'], 'isMe' => (string)$r['memberId'] === $viewer,
@@ -1634,8 +1653,10 @@ function community_comments(array $p): array {
         'note' => ((string)$r['status'] !== 'published' && (string)$r['memberId'] === $viewer) ? community_status_note((string)$r['status']) : '',
         'authorKey' => cm3_key((string)$r['memberId']), 'role' => cm3_role_label((string)$r['memberId']),
         'isAnswer' => $answerId !== '' && (string)$r['commentId'] === $answerId,
+        'replyTo' => (string)($r['replyTo'] ?? ''), 'quote' => $quote((string)($r['replyTo'] ?? '')),
+        'reactions' => (object)($reacts[(string)$r['commentId']] ?? []), 'myReaction' => $mine[(string)$r['commentId']] ?? '',
     ], $rows);
-    return ['ok' => true, 'comments' => $out];
+    return ['ok' => true, 'comments' => $out, 'reactionSet' => COMMUNITY_REACTIONS];
 }
 
 function community_comment_create(array $p): array {
@@ -1648,6 +1669,13 @@ function community_comment_create(array $p): array {
     if ((string)$post['status'] !== 'published' && (string)$post['authorId'] !== $viewer && (!function_exists('cm3_role') || cm3_role($viewer) !== 'admin')) return ['ok' => false, 'error' => 'not_found'];
     $body = mb_substr(trim((string)($p['body'] ?? '')), 0, 1000);
     if ($body === '') return ['ok' => false, 'error' => 'empty'];
+    /* Quoting a reply: it must be on this post, and one the replier can see. */
+    $replyTo = (string)($p['replyTo'] ?? '');
+    $quoted = null;
+    if ($replyTo !== '') {
+        $quoted = db_row("SELECT commentId, memberId, memberName, body, status FROM community_comments WHERE commentId = ? AND postId = ? LIMIT 1", [$replyTo, $pid]);
+        if (!$quoted || ((string)$quoted['status'] !== 'published' && (string)$quoted['memberId'] !== $viewer)) return ['ok' => false, 'error' => 'quote_not_found'];
+    }
     $screen = community_screen($body);
     if ($screen['verdict'] === 'block') {
         if ($screen['crisis']) {
@@ -1668,7 +1696,7 @@ function community_comment_create(array $p): array {
     $now = now_iso();
     db_insert('community_comments', [
         'commentId' => $id, 'postId' => $pid, 'memberId' => $viewer, 'memberName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''),
-        'body' => $body, 'status' => $status,
+        'body' => $body, 'status' => $status, 'replyTo' => $replyTo,
         'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'], 'mode' => $mode,
                                      'rule' => $rule['code'], 'why' => $rule['v'] === 'review' ? $rule['msg'] : '',
                                      'autoFlagged' => $hold['flagged'] === 1], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
@@ -1681,7 +1709,28 @@ function community_comment_create(array $p): array {
         'commentId' => $id, 'name' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'body' => $body,
         'status' => $status, 'createdAt' => $now, 'isMe' => true, 'photo' => community_photo_for($viewer),
         'note' => $status !== 'published' ? community_status_note($status) : '',
+        'replyTo' => $replyTo, 'quote' => $quoted ? ['commentId' => $replyTo, 'name' => community_staff_name((string)$quoted['memberId']) ?? (string)$quoted['memberName'], 'body' => mb_substr((string)$quoted['body'], 0, 140), 'gone' => false] : null,
+        'reactions' => (object)[], 'myReaction' => '',
     ]];
+}
+
+/** React to a reply, as to a post: one reaction each, the same one again takes it back. */
+function community_comment_react(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    $cid = (string)($p['commentId'] ?? '');
+    $emoji = (string)($p['emoji'] ?? '');
+    if (!in_array($emoji, COMMUNITY_REACTIONS, true)) return ['ok' => false, 'error' => 'bad_emoji'];
+    $c = db_row("SELECT c.status, c.memberId, p.status pstatus, p.authorId FROM community_comments c JOIN community_posts p ON p.postId = c.postId WHERE c.commentId = ? LIMIT 1", [$cid]);
+    // Only a reply the viewer can see, on a post the viewer can see.
+    if (!$c || ((string)$c['status'] !== 'published' && (string)$c['memberId'] !== $viewer) || ((string)$c['pstatus'] !== 'published' && (string)$c['authorId'] !== $viewer)) return ['ok' => false, 'error' => 'not_found'];
+    $ex = db_row("SELECT emoji FROM community_comment_reactions WHERE commentId = ? AND memberId = ?", [$cid, $viewer]);
+    if ($ex && (string)$ex['emoji'] === $emoji) { db_exec("DELETE FROM community_comment_reactions WHERE commentId = ? AND memberId = ?", [$cid, $viewer]); $mine = ''; }
+    elseif ($ex) { db_update('community_comment_reactions', ['emoji' => $emoji], ['commentId' => $cid, 'memberId' => $viewer]); $mine = $emoji; }
+    else { db_insert('community_comment_reactions', ['commentId' => $cid, 'memberId' => $viewer, 'emoji' => $emoji, 'createdAt' => now_iso()]); $mine = $emoji; }
+    $reacts = [];
+    foreach (db_all("SELECT emoji, COUNT(*) c FROM community_comment_reactions WHERE commentId = ? GROUP BY emoji", [$cid]) as $r) $reacts[(string)$r['emoji']] = (int)$r['c'];
+    return ['ok' => true, 'reactions' => (object)$reacts, 'myReaction' => $mine];
 }
 
 /**
@@ -1703,6 +1752,10 @@ function community_comment_on_published(string $commentId): void {
     $name   = explode(' ', trim((string)$c['memberName']))[0] ?? 'A member';
     $post = db_row("SELECT authorId, postId, channelId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
     if ($post) community_notify((string)$post['authorId'], $viewer, 'community.reply', $name . ' replied to your post', mb_substr($body, 0, 120), true, (string)$post['postId']);
+    // The person whose reply was quoted is told too (once: not again if they wrote the post).
+    $qid = (string)($c['replyTo'] ?? '');
+    $qa = $qid !== '' ? (string)(db_row("SELECT memberId FROM community_comments WHERE commentId = ? LIMIT 1", [$qid])['memberId'] ?? '') : '';
+    if ($qa !== '' && (!$post || $qa !== (string)$post['authorId'])) community_notify($qa, $viewer, 'community.reply', $name . ' replied to you', mb_substr($body, 0, 120), false, $pid);
     // @mentions inside a reply notify (and email) too.
     community_notify_mentions($body, $viewer, $name, $pid, $post ? (string)$post['channelId'] : '');
 }

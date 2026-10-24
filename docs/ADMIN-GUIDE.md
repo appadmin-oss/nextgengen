@@ -2116,6 +2116,19 @@ Logging a print closes the requests it satisfied. A proof closes nothing.
 
 A replaced or edited photo replaces the old one. The old file is deleted at once and older versions keep no picture. The only exception is when another person's record still uses the same file; then it stays until that changes.
 
+### When a member asks to change their photo
+
+Members cannot change their own photo. It is the face on their printed ID, so they **ask**. On their profile they choose the photo they want, add a reason, and send it. Their photo stays as it is until someone decides.
+
+The ask arrives in **Inbox → Photos** as **Photo change** (needs the `content` capability; a centre-scoped desk sees only its centres). It shows the photo **Now** beside the one **Asked for**.
+
+- **Approve** puts it on their profile and on the next card printed. A card already printed is not reissued.
+- **Decline** needs a reason, because they see it. Their photo stays.
+
+Either way the member gets a notice. Only one ask per person waits: a newer one replaces the older. The member can **Withdraw** an ask while it waits.
+
+A reshoot that staff asked for (a guardian's retake link) is still applied directly, because staff asked for it.
+
 ## Quote of the week
 
 **Content → Quote of the week** (needs the `content` capability). The home page

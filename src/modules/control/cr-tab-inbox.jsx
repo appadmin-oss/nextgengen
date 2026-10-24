@@ -227,8 +227,25 @@ const CR_INBOX_SOURCES = {
   photos: {
     cap: "content",
     async load(ctx) {
-      const r = await NGGApi.admin.photos.queue();
-      return (r.queue || []).map(p => {
+      /* Two kinds of photo work: headshots the pipeline routed to review, and
+         members asking to change their photo (they send the new one; nothing
+         changes until it is approved here). */
+      const [r, ch] = await Promise.all([NGGApi.admin.photos.queue(), NGGApi.admin.photos.changes()]);
+      const asks = (ch.requests || []).map(q => {
+        const who = q.subjectName || q.subjectId;
+        return crItem({
+          id: "pcr:" + q.requestId, cat: "photos", kind: "Photo change", icon: "image", who, at: q.requestedAt, unread: true,
+          title: "Asks to change their photo", photoUrl: nggPhotoSrc(q.photoUrl), oldPhotoUrl: nggPhotoSrc(q.oldPhotoUrl), search: [q.subjectId, q.subjectCentre, q.reason].join(" "),
+          facts: [["Member", q.subjectId + (q.subjectCentre ? " · " + q.subjectCentre : "")], ["Why", q.reason || "No reason given"]],
+          note: "Approving puts it on their profile and on the next ID card printed. A card already printed is not reissued.",
+          actions: [
+            { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.photos.changeDecide(q.requestId, "approve", ""); return { text: "New photo approved · " + who }; } },
+            { l: "Decline", note: { l: "Why (they see this)", req: true, ph: "Please send one with your face clear and a plain background.", help: "Their photo stays as it is, and they are told why." },
+              run: async (it, v) => { await NGGApi.admin.photos.changeDecide(q.requestId, "decline", v.why); return { text: "Declined · " + who + " was told why" }; } },
+          ],
+        });
+      });
+      return asks.concat((r.queue || []).map(p => {
         const fd = p.aiFindings || {};
         const flags = (fd.flags || []).map(x => String(x).replace(/_/g, " "));
         const who = p.subjectName || (p.subjectType + " " + p.subjectId);
@@ -247,7 +264,7 @@ const CR_INBOX_SOURCES = {
           note: p.status === "in_review" ? "Another reviewer has this open." : "",
           actions,
         });
-      });
+      }));
     },
   },
 };
@@ -603,7 +620,13 @@ function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
       <div className="cr-ib-pbody">
         <h3 className="cr-ib-subject">{it.title}</h3>
         {it.note && <p className="cr-ib-callout"><CrIcon n="info"/>{it.note}</p>}
-        {it.photoUrl && it.cat === "photos" && <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>}
+        {it.photoUrl && it.cat === "photos" && (it.kind === "Photo change" ? (
+          <div className="cr-ib-photos">
+            <figure><figcaption>Now</figcaption>{it.oldPhotoUrl ? <img className="cr-ib-photo" src={it.oldPhotoUrl} alt={"Current photo of " + it.who}/> : <span className="cr-ib-photo is-empty">No photo yet</span>}</figure>
+            <CrIcon n="arrow-right"/>
+            <figure><figcaption>Asked for</figcaption><img className="cr-ib-photo" src={it.photoUrl} alt={"Photo " + it.who + " asked for"}/></figure>
+          </div>
+        ) : <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>)}
         {it.facts.length > 0 && <dl className="cr-ib-facts">{it.facts.map((f, i) => <div key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></div>)}</dl>}
         {it.thread ? (
           <ol className="cr-ib-thread" aria-label="Conversation">

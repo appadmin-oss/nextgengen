@@ -255,7 +255,13 @@ function member_card_public(array $m, bool $secure): array {
             'active' => (string)($m['status'] ?? 'active') === 'active',
             'fullName' => '', 'initials' => '', 'photoUrl' => '', 'centre' => '', 'track' => '', 'division' => '', 'attendance' => [], 'attendanceCount' => 0];
     }
-    $division = function_exists('club_division_of') ? club_division_of((string)($m['track'] ?? '')) : '';
+    /* The division of the member's first course (chosen, else what the track
+       names), not of the raw track: "Tech" names no single course. */
+    $division = '';
+    if (function_exists('club_division_of')) {
+        $mc = function_exists('curriculum_member_courses') && array_key_exists('courses', $m) ? curriculum_member_courses($m) : [];
+        foreach (array_merge([(string)($m['track'] ?? '')], $mc) as $c) if (strcasecmp($c, 'Chess') !== 0 && ($division = club_division_of($c)) !== '') break;
+    }
     $meta = null;
     if ($division !== '' && function_exists('club_divisions')) foreach (club_divisions() as $d) if ($d['name'] === $division) $meta = $d;
     $name = trim((string)($m['fullName'] ?? ''));

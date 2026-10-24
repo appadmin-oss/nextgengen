@@ -91,7 +91,7 @@ function admin_member_record(array $p): array {
 
     // Their classes: their course's slots on their centre's timetable.
     if (function_exists('tt_for_centre') && (string)$m['centre'] !== '') {
-        $tt = tt_for_centre((string)$m['centre'], true, (string)($m['track'] ?? ''));
+        $tt = tt_for_centre((string)$m['centre'], true, function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : (string)($m['track'] ?? ''));
         $out['classes'] = array_values(array_filter($tt['slots'], static fn($s) => !empty($s['mine'])));
     }
     return $out;

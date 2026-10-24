@@ -288,6 +288,7 @@ function member_merge_policy(): array {
         'community_reads'        => 'MOVE_UNIQUE',
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote
         'community_reactions'    => 'MOVE_UNIQUE',
+        'community_comment_reactions' => 'MOVE_UNIQUE',   // one reaction per person per reply
         'post_reactions'         => 'MOVE_UNIQUE',
         'community_bookmarks'    => 'MOVE_UNIQUE',
         'community_stars'        => 'MOVE_UNIQUE',
@@ -568,6 +569,7 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId,
         'community_reads'      => ['postId'],
         'community_poll_votes' => ['postId'],
         'community_reactions'  => ['postId', 'emoji'],
+        'community_comment_reactions' => ['commentId'],
         'post_reactions'       => ['postId', 'emoji'],
         'community_bookmarks'  => ['postId'],
         'community_stars'      => ['postId'],

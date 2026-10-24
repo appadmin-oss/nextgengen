@@ -2789,3 +2789,35 @@ The table is editable in the Control Room, with these as the defaults.
   - The next five runs passed 30/0, and the previous commit passed 3 of 3.
   - It could not be reproduced afterwards. Nothing in the changed client code loops, and the server log of a passing run shows no stalled request.
   - If it recurs, capture the PHP server log (`stdio` to a file) and look for an "Accepted" with no response line.
+
+## Photo changes are asked for, not made (2026-10-24)
+
+- **Before:** a member's "Change photo" wrote the new photo straight onto their record, and so onto their next ID card. Nobody checked it.
+- **Now:** `member_update` no longer takes `photoUrl`. A different photo becomes a `photo_change_requests` row (migration 174), holding the new photo and the old one.
+  - The same photo, re-sent by a form that posts every field, is not a change.
+  - Ops: `member.photo.change`, `.mine` and `.withdraw` (route `api/member/photo-change.php`); `admin.photo.changes` and `admin.photo.change.decide` (route `api/admin/photos.php`, `?view=changes` and `action: change_decide`).
+- **Approving** goes through `admin_photo_replace`, so there is one replacement path, not two. **Declining** needs a note. The member is notified either way, and there is one audit event per decision.
+  - Scope is checked per row (`out_of_scope`). A second pending ask marks the first `replaced`.
+- **Member portal:** the profile sheet has a "Your photo" block: the photo now, the photo chosen (with a preview and a reason), the ask waiting (with Withdraw), and the last decline with its reason.
+  - The classic dashboard's profile modal tells the member that the photo went to the desk.
+- **Control Room:** Inbox → Photos lists photo changes beside the review queue, showing the current photo next to the requested one.
+- **Unchanged:** the guardian reshoot (`reshoot_submit`) is still applied directly, because staff asked for it.
+- **Tests:** 20 checks in `run.php` ("photo ask"); two older checks were updated, since a member can no longer set their own photo. `member-v9.test.js` covers the child sending an ask and an admin approving it in the Inbox.
+
+## A Tech member still had a Media course (2026-10-24)
+
+- **Community:** `cm3_my_channels` counted EVERY course channel as a member's when their raw track matched no channel name exactly.
+  - So a member whose track was "Tech" was in Media's channels too.
+  - Fix: it now reads `curriculum_member_courses`, so "Tech" means the Technology courses. With no match, a member is in the shared channels only; they can still open any channel.
+- **Timetable:** `tt_for_centre` marks every course the member takes, not the old track.
+  - `member_timetable` returns `courses` and the `division` of those courses, so a stale `members.division` placement no longer names Media.
+  - The member portal used a regex on the first word of the track to mark "your" slots; it now uses the server's list.
+- **Profile and card:** the member's profile shows their resolved courses. The member card's division comes from the first non-Chess course.
+- **Tests:** "tech member" checks in `run.php` (Media channels and course resolution).
+
+## Community threads read as a chat (server, migration 175)
+
+- Migration 175 adds `community_comments.replyTo` and the table `community_comment_reactions` (one reaction per person per reply; added to the merge policy).
+- `community.comment` takes a `replyTo` (on the same post, visible to the replier, else `quote_not_found`).
+- `community.comments` returns each reply's `quote` (resolved from the thread's own rows, "removed" when the viewer can't see it), its `reactions` and `myReaction`, all in one grouped read.
+- `community.comment.react` toggles a reaction like a post's. The person whose reply was quoted is notified.

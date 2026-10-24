@@ -584,6 +584,8 @@ function member_today(array $p): array {
     $age = trim((string)($m['dob'] ?? '')) !== '' ? mp_age(substr((string)$m['dob'], 0, 10), $today) : null;
     $profile = ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'memberId' => $mid,
         'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'school' => (string)($m['school'] ?? ''),
+        // The courses as the curriculum reads them (chosen ones first), Chess aside: what "My course" shows.
+        'courses' => function_exists('curriculum_member_courses') ? array_values(array_filter(curriculum_member_courses($m), static fn($c) => strcasecmp((string)$c, 'Chess') !== 0)) : [],
         'dob' => (string)($m['dob'] ?? ''), 'joinDate' => (string)($m['joinDate'] ?? ''), 'email' => (string)($m['email'] ?? ''),
         'phone' => (string)($m['phone'] ?? ''), 'guardianName' => (string)($m['parentName'] ?? ''),
         'level' => (string)($m['level'] ?? ''), 'gender' => (string)($m['gender'] ?? ''), 'bio' => (string)($m['bio'] ?? ''),

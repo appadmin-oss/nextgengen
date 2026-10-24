@@ -1940,3 +1940,113 @@ function photo_backup_zip(array $p): array {
     return ['ok' => true, 'path' => $tmp, 'images' => $n, 'name' => 'ngg-photos-' . gmdate('Y-m-d') . '.zip'];
 }
 
+
+/* ── Photo change requests ───────────────────────────────────────────────────
+ *
+ * A member does not change the photograph on their record: it is the face on
+ * a printed ID, and for a child it is a safeguarding decision. They ASK, and
+ * send the photo they want instead; a member of staff holding `content`
+ * approves it (applied through admin_photo_replace — one replacement, not two)
+ * or declines it with a note. Either way the member is told.
+ *
+ * One pending request per subject: a second ask replaces the first (status
+ * `replaced`), so the desk never decides between two photos of the same child.
+ */
+const PHOTO_CHANGE_STATUSES = ['pending', 'approved', 'declined', 'withdrawn', 'replaced'];
+
+function photo_change_public(array $r): array {
+    return [
+        'requestId' => (string)$r['requestId'], 'subjectType' => (string)$r['subjectType'], 'subjectId' => (string)$r['subjectId'],
+        'centre' => (string)$r['centre'], 'photoUrl' => (string)$r['photoUrl'], 'oldPhotoUrl' => (string)$r['oldPhotoUrl'],
+        'reason' => (string)$r['reason'], 'via' => (string)$r['via'], 'requestedBy' => (string)$r['requestedBy'],
+        'requestedAt' => (string)$r['requestedAt'], 'status' => (string)$r['status'],
+        'decidedAt' => (string)$r['decidedAt'], 'note' => (string)$r['note'],
+    ];
+}
+
+/** A member's own ask. `photoUrl` is a hosted URL or the image itself. */
+function photo_change_request_create(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT memberId, fullName, centre, photoUrl, status FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $reason = trim(mb_substr((string)($p['reason'] ?? ''), 0, 300));
+    $url = photo_intake_url((string)($p['photoUrl'] ?? ''));
+    if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    $old = (string)($m['photoUrl'] ?? '');
+    if ($old !== '' && photo_store_relativise($old) === photo_store_relativise($url)) return ['ok' => false, 'error' => 'same_photo'];
+    $now = now_iso();
+    $prev = db_all("SELECT requestId FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status = 'pending'", [$memberId]);
+    foreach ($prev as $r) db_update('photo_change_requests', ['status' => 'replaced', 'decidedAt' => $now, 'decidedBy' => $memberId], ['requestId' => $r['requestId']]);
+    $id = new_id('PCR', 'photo_change_requests', 'requestId');
+    db_insert('photo_change_requests', [
+        'requestId' => $id, 'subjectType' => 'member', 'subjectId' => $memberId, 'centre' => (string)($m['centre'] ?? ''),
+        'photoUrl' => photo_store_relativise($url), 'oldPhotoUrl' => $old, 'reason' => $reason,
+        'via' => (string)($p['via'] ?? 'member'), 'requestedBy' => $memberId, 'requestedAt' => $now, 'status' => 'pending',
+    ]);
+    audit('photo.change.requested', $memberId, 'member:' . $memberId, ['requestId' => $id, 'replaced' => count($prev)], (string)($p['ip'] ?? ''));
+    $row = db_row('SELECT * FROM photo_change_requests WHERE requestId = ? LIMIT 1', [$id]);
+    return ['ok' => true, 'request' => photo_change_public($row), 'replaced' => count($prev)];
+}
+
+/** The member's own latest ask (pending first), or null. */
+function photo_change_request_mine(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $r = db_row("SELECT * FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status != 'replaced'
+                 ORDER BY (status = 'pending') DESC, requestedAt DESC, id DESC LIMIT 1", [$memberId]);
+    return ['ok' => true, 'request' => $r ? photo_change_public($r) : null];
+}
+
+/** Withdraw the member's own pending ask. */
+function photo_change_request_withdraw(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $r = db_row("SELECT * FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", [$memberId]);
+    if (!$r) return ['ok' => false, 'error' => 'no_pending_request'];
+    db_update('photo_change_requests', ['status' => 'withdrawn', 'decidedAt' => now_iso(), 'decidedBy' => $memberId], ['requestId' => $r['requestId']]);
+    audit('photo.change.withdrawn', $memberId, 'member:' . $memberId, ['requestId' => $r['requestId']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** The desk's queue: pending asks, scoped to the requester's centres. */
+function admin_photo_changes(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $rows = db_all("SELECT * FROM photo_change_requests WHERE status = 'pending' ORDER BY requestedAt ASC, id ASC LIMIT 300");
+    $rows = array_values(array_filter($rows, fn($r) => admin_centre_allowed($g['requester'], (string)$r['centre'])));
+    $names = photo_subject_names($rows);
+    $out = array_map(function ($r) use ($names) {
+        $n = $names[$r['subjectType'] . ':' . $r['subjectId']] ?? null;
+        return photo_change_public($r) + ['subjectName' => $n['name'] ?? '', 'subjectCentre' => $n['centre'] ?? (string)$r['centre']];
+    }, $rows);
+    return ['ok' => true, 'requests' => $out, 'pending' => count($out)];
+}
+
+/** Approve (apply the photo) or decline (keep the current one, with a note). */
+function admin_photo_change_decide(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $decision = (string)($p['decision'] ?? '');
+    if (!in_array($decision, ['approve', 'decline'], true)) return ['ok' => false, 'error' => 'bad_decision'];
+    $r = db_row('SELECT * FROM photo_change_requests WHERE requestId = ? LIMIT 1', [(string)($p['requestId'] ?? '')]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)$r['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ($r['status'] !== 'pending') return ['ok' => false, 'error' => 'already_decided', 'status' => $r['status']];
+    $by = (string)$g['requester']['memberId'];
+    if ($r['subjectId'] === $by) return ['ok' => false, 'error' => 'own_account'];
+    $note = trim(mb_substr((string)($p['note'] ?? ''), 0, 300));
+    if ($decision === 'decline' && $note === '') return ['ok' => false, 'error' => 'note_required'];
+    $applied = '';
+    if ($decision === 'approve') {
+        $rep = admin_photo_replace(['requesterId' => $by, 'ip' => (string)($p['ip'] ?? ''), 'subjectType' => $r['subjectType'],
+            'subjectId' => $r['subjectId'], 'sourceUrl' => (string)$r['photoUrl']]);
+        if (empty($rep['ok'])) return $rep;
+        $applied = (string)($rep['editedUrl'] ?? '');
+    }
+    db_update('photo_change_requests', ['status' => $decision === 'approve' ? 'approved' : 'declined', 'decidedBy' => $by,
+        'decidedAt' => now_iso(), 'note' => $note], ['requestId' => $r['requestId']]);
+    if ($r['subjectType'] === 'member') {
+        push_notification((string)$r['subjectId'], $decision === 'approve'
+            ? ['kind' => 'profile', 'title' => 'Your new photo is on your profile', 'body' => $note !== '' ? $note : 'Your photo change was approved.', 'linkPage' => 'profile']
+            : ['kind' => 'profile', 'title' => 'Your photo change was not approved', 'body' => $note, 'linkPage' => 'profile']);
+    }
+    audit('photo.change.' . ($decision === 'approve' ? 'approved' : 'declined'), $by, $r['subjectType'] . ':' . $r['subjectId'],
+        ['requestId' => $r['requestId'], 'note' => $note], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => $decision === 'approve' ? 'approved' : 'declined', 'applied' => $applied];
+}

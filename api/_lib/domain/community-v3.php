@@ -132,10 +132,12 @@ function cm3_my_channels(string $viewer): array {
     $all = db_all("SELECT slug, name, kind FROM community_channels WHERE status = 'active' ORDER BY pinned DESC, sortOrder, name");
     if (community_actor_is_staff($viewer)) return array_column($all, 'slug');
     $courses = [];
-    $m = db_row('SELECT track, profileJson, courses FROM members WHERE memberId = ? LIMIT 1', [$viewer]);
+    $m = db_row('SELECT memberId, track, profileJson, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [$viewer]);
     if ($m) {
-        foreach (member_courses_of($m) as $c) $courses[] = strtolower(trim($c));
-        if (trim((string)$m['track']) !== '') $courses[] = strtolower(trim((string)$m['track']));
+        /* The member's courses as the curriculum reads them (chosen, else what
+           the track names: "Tech" is the Technology courses), so a Tech member's
+           channels are Tech's, never the Media ones. */
+        foreach (curriculum_member_courses($m) as $c) $courses[] = mb_strtolower(trim((string)$c));
         $pj = safe_json((string)($m['profileJson'] ?? '')) ?: [];
         foreach ((array)($pj['courses'] ?? []) as $c) if (is_string($c) && trim($c) !== '') $courses[] = strtolower(trim($c));
     } else {
@@ -147,7 +149,11 @@ function cm3_my_channels(string $viewer): array {
         if ((string)$c['kind'] !== 'course') { $mine[] = (string)$c['slug']; continue; }
         if (in_array(strtolower((string)$c['name']), $courses, true)) { $mine[] = (string)$c['slug']; $courseHit = true; }
     }
-    return $courseHit ? $mine : array_column($all, 'slug');
+    /* No course channel matched: the shared channels only. Every course's
+       channel used to be counted as theirs, so a member with an unmatched track
+       was put in every course: Media's included. They can still open any
+       channel; it is just not "theirs". */
+    return $mine;
 }
 
 /* ── Boot ─────────────────────────────────────────────────────────────────── */

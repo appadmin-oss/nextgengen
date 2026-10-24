@@ -648,6 +648,7 @@ function admin_overview_waiting(): array {
         'toGrade'      => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM assignment_submissions WHERE status = 'submitted'"),
         'messages'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM contact_messages WHERE status = 'new'"),
         'photos'       => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM photo_assets WHERE status IN ('pending_review','in_review')"),
+        'photoChanges' => $q("SELECT COUNT(*) c, MIN(requestedAt) o FROM photo_change_requests WHERE status = 'pending'"),
         'approvals'    => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM admin_approvals WHERE status = 'pending'"),
         'requests'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM member_requests WHERE status = 'open'"),
         'comments'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM post_comments WHERE status = 'pending'"),

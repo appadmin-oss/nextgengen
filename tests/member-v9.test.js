@@ -268,6 +268,21 @@ async function as(memberId, admin, viewport) {
     chk('Profile: switching to Full is the member’s own choice, saved', q(`db_row("SELECT stateValue FROM member_state WHERE memberId = 'NGG-MV-K2' AND stateKey = 'mp9.view'")['stateValue'] ?? ''`).replace(/"/g, '') === 'full' && /Account/.test(await kid.innerText('aside nav')));
     chk('Full view by default from 13: a 14-year-old sees no big buttons', !(await mb.isVisible('.m9x-kid')));
     await shot(kid, 'kid-profile');
+
+    // ── The photo is changed by asking: the child sends one, the desk decides ──
+    await kid.click('button:has-text("Edit profile")');
+    await kid.waitForSelector('input[aria-label="Choose the photo you want"]', { timeout: 15000 });
+    const png = await kid.evaluate(() => { const c = document.createElement('canvas'); c.width = 240; c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#3a6'; g.fillRect(0, 0, 240, 300); g.fillStyle = '#fc9'; g.beginPath(); g.arc(120, 130, 60, 0, 7); g.fill(); return c.toDataURL('image/png').split(',')[1]; });
+    await kid.setInputFiles('input[aria-label="Choose the photo you want"]', { name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await kid.waitForSelector('img[alt="The photo you chose"]', { timeout: 15000 });
+    await kid.fill('input[aria-label="Why you want to change it"]', 'My old one is from last year');
+    await kid.waitForFunction(() => { const b = [...document.querySelectorAll('button')].find(x => /Send to the desk/.test(x.textContent)); return b && !b.disabled; }, null, { timeout: 30000 });
+    await kid.click('button:has-text("Send to the desk")');
+    await kid.waitForSelector('text=Waiting for the desk', { timeout: 15000 }).catch(() => {});
+    chk('Photo: the child’s new photo goes to the desk as an ask, with their reason', q(`db_row("SELECT reason FROM photo_change_requests WHERE subjectId = 'NGG-MV-K2' AND status = 'pending'")['reason'] ?? ''`) === 'My old one is from last year');
+    chk('Photo: …and nothing on their record changes yet', q(`db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-MV-K2'")['photoUrl'] ?? ''`) === '');
+    chk('Photo: the sheet says it is waiting, and offers to withdraw', await kid.isVisible('text=Waiting for the desk') && await kid.isVisible('button:has-text("Withdraw")'));
+    await shot(kid, 'kid-photo-ask');
     chk('no page errors (11-year-old)', kid.errs.length === 0);
     if (kid.errs.length) console.error(kid.errs.join('\n'));
 
@@ -294,6 +309,19 @@ async function as(memberId, admin, viewport) {
     await ad.waitForTimeout(1500);
     chk('Control Room: an opportunity added there is offered to the member', (q(`member_opps(['memberId' => 'NGG-MV-K1'])['items']`) || []).some(o => o.title === 'Young Speakers competition'));
     await shot(ad, 'control-opps');
+
+    // ── The desk approves the child's photo from the Inbox ──
+    await ad.goto(BASE + '/control/inbox/photos', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ad);
+    await ad.waitForSelector('text=Asks to change their photo', { timeout: 60000 }).catch(() => {});
+    await ad.click('text=Asks to change their photo').catch(() => {});
+    await ad.waitForSelector('figcaption:has-text("Asked for")', { timeout: 15000 }).catch(() => {});
+    chk('Inbox: the ask shows the photo now beside the one asked for', await ad.isVisible('figcaption:has-text("Asked for")') && await ad.isVisible('figcaption:has-text("Now")'));
+    await shot(ad, 'control-photo-ask');
+    await ad.click('.cr-ib-pane button:has-text("Approve")').catch(() => ad.click('button:has-text("Approve")'));
+    await ad.waitForTimeout(1500);
+    chk('Inbox: approved, the photo the child sent is on their record', q(`db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-MV-K2'")['photoUrl'] ?? ''`) !== ''
+      && q(`db_row("SELECT status FROM photo_change_requests WHERE subjectId = 'NGG-MV-K2' ORDER BY id DESC LIMIT 1")['status'] ?? ''`) === 'approved');
     chk('no page errors (admin)', ad.errs.length === 0);
     if (ad.errs.length) console.error(ad.errs.join('\n'));
   } catch (e) {

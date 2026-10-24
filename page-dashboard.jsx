@@ -1214,11 +1214,12 @@ function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
   const save = async () => {
     setBusy(true);
     try {
-      await NGGApi.member.updateProfile({
+      const r = await NGGApi.member.updateProfile({
         photoUrl: d.photoUrl, bio: d.bio,
         socials: { instagram: d.instagram },
       });
-      toast.success("Profile updated");
+      // A different photo is an ask the desk approves, not a change (member_update).
+      toast.success(r && r.photoRequested ? "Saved. Your new photo is with the desk to approve." : "Profile updated");
       onSaved();
     } catch (e) {
       toast.error("Couldn't save: " + humanError(e));
