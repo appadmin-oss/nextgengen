@@ -2059,7 +2059,7 @@ function CmFiles({ slug, channelName, onBack, onOpenThread }) {
                      onOpenThread={onOpenThread}/>
       )}
       {reading && (
-        <NggPdf src={reading.url} name={reading.name} pages={reading.pages} bytes={reading.bytes}
+        <NggPdf src={reading.postId ? cm3DocUrl(reading.postId) : reading.url} name={reading.name} pages={reading.pages} bytes={reading.bytes}
                 open onClose={() => setReading(null)}/>
       )}
       {gallery >= 0 && photos[gallery] && (
@@ -9974,7 +9974,7 @@ function CmBodyBlock({ post, onVote }) {
       {post.mediaType === "doc" && post.mediaUrl && (
         cmIsPdf(post) ? (
           <div className="cm-msg-media">
-            <NggPdf src={post.mediaUrl} name={post.altText || "Document"}
+            <NggPdf src={cm3DocUrl(post.postId)} name={post.altText || "Document"}
                     pages={post.mediaPages || 0} bytes={post.mediaBytes || 0}/>
           </div>
         ) : (

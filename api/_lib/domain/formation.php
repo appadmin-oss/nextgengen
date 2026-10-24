@@ -63,6 +63,27 @@ function nggc_divisions(): array {
     return $base;
 }
 
+/**
+ * The courses a member of this division can be put on, from the LIVE
+ * catalogue (the one admins edit under Divisions & courses), plus Chess.
+ * A catalogue division is this one when its name, or a word of it, maps here;
+ * with no such division the seeded list stands, so the picker is never empty.
+ */
+function nggc_division_course_list(string $id): array {
+    $out = [];
+    if (function_exists('club_divisions')) {
+        foreach (club_divisions() as $d) {
+            $name = (string)$d['name'];
+            $hit = nggc_division_for_track($name) === $id;
+            if (!$hit) foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) if ($w !== '' && nggc_division_for_track($w) === $id) { $hit = true; break; }
+            if ($hit) foreach ($d['courses'] as $c) if (!in_array($c, $out, true)) $out[] = (string)$c;
+        }
+    }
+    if (!$out) { $d = nggc_division($id); $out = $d ? array_values(array_diff($d['courses'], ['Chess'])) : []; }
+    if (!in_array('Chess', $out, true)) $out[] = 'Chess';
+    return $out;
+}
+
 /** The four ids, for a closed-set check. */
 function nggc_division_ids(): array {
     return array_map(static fn($d) => $d['id'], nggc_divisions());
@@ -234,12 +255,15 @@ function admin_divisions_overview(array $p): array {
         $n = (int)($counts[$d['id']] ?? 0);
         $placed += $n;
         $out[] = ['id' => $d['id'], 'code' => $d['code'], 'name' => $d['name'],
-                  'mandate' => $d['mandate'], 'courses' => count($d['courses']), 'members' => $n];
+                  'mandate' => $d['mandate'], 'courses' => count($d['courses']), 'members' => $n,
+                  // The picker's options: this division's courses as admins have them now.
+                  'courseList' => nggc_division_course_list((string)$d['id'])];
     }
     $total = array_sum($counts);
     /* Anything not one of the four counts as unplaced, including a value that
        predates the closed set. It cannot go negative and it cannot hide. */
-    return ['ok' => true, 'divisions' => $out, 'unplaced' => max(0, $total - $placed), 'total' => $total];
+    return ['ok' => true, 'divisions' => $out, 'unplaced' => max(0, $total - $placed), 'total' => $total,
+            'allCourses' => function_exists('member_course_names') ? member_course_names() : []];
 }
 
 /* ── §20 · Progression is evidence of formation, never time served ─────────

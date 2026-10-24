@@ -130,6 +130,24 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const m7 = one("SELECT phone, centre, email, joinDate FROM members WHERE memberId='CRMC-7'");
     chk('…and the record holds the change, untouched fields intact', m7.phone === '08031234567' && m7.centre === 'Ijaiye' && m7.email === 'crmc7@example.org');
     chk('…the join date untouched by the edit', m7.joinDate === '2021-05-02');
+
+    // ── Courses are chosen from the catalogue, by division ──
+    await page.waitForFunction(() => !document.querySelector('#crf-phone'), null, { timeout: 8000 }).catch(() => {});
+    if (!(await page.$('.cr-sheet button:has-text("Edit")'))) await page.click('table tbody tr');
+    await page.click('.cr-sheet button:has-text("Edit")');
+    await page.waitForSelector('#crf-division', { timeout: 10000 });
+    chk('the editor has a Courses picker, not a free-text track', !!(await page.$('#crf-courses')) && !(await page.$('#crf-track')));
+    await page.selectOption('#crf-division', 'tech');
+    const chips = await page.$$eval('#crf-courses .cr-chip', b => b.map(x => x.textContent.trim()));
+    chk('choosing Technology offers its courses, with Chess, and not another division\'s',
+        chips.includes('Coding') && chips.includes('Robotics') && chips.includes('Chess') && !chips.includes('Acting') && !chips.includes('Finance'));
+    await page.click('#crf-courses .cr-chip:text-is("Coding")');
+    await page.click('#crf-courses .cr-chip:text-is("Robotics")');
+    chk('ticked chips say so (aria-checked)', (await page.$$eval('#crf-courses .cr-chip[aria-checked="true"]', b => b.length)) === 2);
+    await page.click('button:has-text("Save changes")');
+    chk('saving the courses says so', await until(/Saved · Member 07/));
+    const c7 = one("SELECT courses, track, division FROM members WHERE memberId='CRMC-7'");
+    chk('…and the record holds exactly the chosen courses, the first as its track', c7.courses === '["Coding","Robotics"]' && c7.track === 'Coding' && c7.division === 'tech');
     // Corrected through its own action, inside the intake year the printed ID carries.
     const did = one("SELECT displayId FROM members WHERE memberId='CRMC-7'").displayId || '';
     const yr = /^\d{3}-/.test(did) ? 2000 + (Number(did.slice(0, 3)) % 100) : 2021;

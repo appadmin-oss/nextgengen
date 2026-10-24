@@ -4006,3 +4006,27 @@ ALTER TABLE id_photo_asks ADD COLUMN reminders INT NOT NULL DEFAULT 0;
 ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_campaign (campaignId, status);
 ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_status (status);
 INSERT INTO schema_version (version) VALUES (173) ON DUPLICATE KEY UPDATE version = version;
+
+-- 174: a member's chosen courses; photo changes as requests
+ALTER TABLE members ADD COLUMN courses TEXT NULL;
+CREATE TABLE IF NOT EXISTS photo_change_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  requestId VARCHAR(40) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  photoUrl TEXT NOT NULL,
+  oldPhotoUrl TEXT NULL,
+  reason VARCHAR(400) NOT NULL DEFAULT '',
+  via VARCHAR(16) NOT NULL DEFAULT '',
+  requestedBy VARCHAR(64) NOT NULL DEFAULT '',
+  requestedAt VARCHAR(32) NOT NULL,
+  status VARCHAR(12) NOT NULL DEFAULT 'pending',
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(400) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_pcr_request (requestId),
+  KEY idx_pcr_subject (subjectType, subjectId, status),
+  KEY idx_pcr_status (status, requestedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (174) ON DUPLICATE KEY UPDATE version = version;

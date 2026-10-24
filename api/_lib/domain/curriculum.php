@@ -259,7 +259,9 @@ function admin_club_catalogue_get(array $p): array {
     foreach (db_all("SELECT DISTINCT course FROM timetable_slots WHERE status = 'active'") as $r) $inUse[(string)$r['course']] = true;
     // How many members are in each course and division, so the editor can say what a change touches.
     $members = [];
-    foreach (db_all("SELECT track, COUNT(*) c FROM members WHERE COALESCE(type,'NGG') = 'NGG' AND COALESCE(status,'active') = 'active' AND COALESCE(track,'') <> '' GROUP BY track") as $r) $members[(string)$r['track']] = (int)$r['c'];
+    // A member on two courses counts in both: their chosen courses, or the old track when none are chosen.
+    foreach (db_all("SELECT track, courses FROM members WHERE COALESCE(type,'NGG') = 'NGG' AND COALESCE(status,'active') = 'active' AND (COALESCE(track,'') <> '' OR COALESCE(courses,'') <> '')") as $r)
+        foreach (member_courses_of($r) ?: [(string)$r['track']] as $c) if ($c !== '') $members[$c] = ($members[$c] ?? 0) + 1;
     $divs = club_divisions();
     return ['ok' => true, 'catalogue' => array_map(static fn($d) => ['faculty' => $d['name'], 'courses' => $d['courses']], $divs),
             'divisions' => $divs, 'defaults' => array_map(static fn($d) => array_merge(['faculty' => $d['name']], $d), CLUB_DIVISIONS_DEFAULT),
@@ -763,7 +765,7 @@ function admin_curriculum_coverage(array $p): array {
     $members = [];
     $none = 0; $ctx = null;
     $taught = []; foreach ($stat as $k => $s) if ($s['published'] > 0) $taught[$k] = true;
-    foreach (db_all("SELECT memberId, track, disciplines, division FROM members WHERE $where", $args) as $m) {
+    foreach (db_all("SELECT memberId, track, courses, disciplines, division FROM members WHERE $where", $args) as $m) {
         $mine = array_map(static fn($c) => mb_strtolower(trim((string)$c)), curriculum_member_courses($m, $ctx));
         $has = false;
         foreach (array_unique($mine) as $k) { if (isset($courses[$k])) $members[$k] = ($members[$k] ?? 0) + 1; if (isset($taught[$k])) $has = true; }
@@ -914,7 +916,7 @@ function admin_curriculum_report(array $p): array {
     }
     $mid = trim((string)($p['memberId'] ?? ''));
     if ($mid !== '') {
-        $m = db_row("SELECT memberId, fullName, displayId, centre, track, joinDate, createdAt, type FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
+        $m = db_row("SELECT memberId, fullName, displayId, centre, track, courses, joinDate, createdAt, type FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
         if (!$m) return ['ok' => false, 'error' => 'not_found'];
         return ['ok' => true, 'member' => $m + ['curriculum' => curriculum_for_member($m)]];
     }
@@ -931,8 +933,11 @@ function admin_curriculum_report(array $p): array {
                     ORDER BY u.course, u.level, u.week, u.position", array_merge($mArgs, $uArgs));
     // How many members each course is FOR, so "12 completed" has a denominator.
     $enrolled = [];
-    foreach (db_all("SELECT m.track, COUNT(*) n FROM members m WHERE $mWhere GROUP BY m.track", $mArgs) as $r) $enrolled[(string)$r['track']] = (int)$r['n'];
-    $everyone = array_sum($enrolled);
+    $everyone = 0;
+    foreach (db_all("SELECT m.track, m.courses FROM members m WHERE $mWhere", $mArgs) as $r) {
+        $everyone++;
+        foreach (member_courses_of($r) ?: [(string)$r['track']] as $c) $enrolled[$c] = ($enrolled[$c] ?? 0) + 1;
+    }
     $units = array_map(static fn($r) => [
         'unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'level' => (string)$r['level'], 'week' => (int)$r['week'],
         'position' => (int)$r['position'], 'title' => (string)$r['title'], 'started' => (int)$r['started'], 'completed' => (int)$r['completed'],
@@ -973,15 +978,181 @@ function curriculum_course_ctx(): array {
     return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => []];
 }
 
-function curriculum_member_courses(array $m, ?array &$ctx = null): array {
+/* ── A member's courses, chosen, not guessed ─────────────────────────────────
+ *
+ * `members.courses` is a JSON list of catalogue course names, picked in the
+ * Control Room. When it is set it IS the member's courses: lessons, channels
+ * and assignments read it as it stands. Free text in `track` ("Tech", a typo)
+ * was matched by words and gave whole families of courses or none; it stays
+ * only as the fallback for records nobody has assigned yet, and is kept equal
+ * to the first chosen course so every older reader still sees one. */
+const MEMBER_COURSES_MAX = 8;
+
+/** Every course a member can be put on: the live catalogue, plus Chess (every division's). */
+function member_course_names(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    if (!in_array('Chess', $out, true)) $out[] = 'Chess';
+    return $out;
+}
+
+/** [clean list, unknown names] from a list or a comma-separated string, matched case-insensitively to the catalogue. */
+function member_courses_clean($raw): array {
+    $items = is_array($raw) ? $raw : preg_split('/\s*[,;\n]\s*/', (string)$raw);
+    $byLower = [];
+    foreach (member_course_names() as $c) $byLower[mb_strtolower($c)] = $c;
+    $out = []; $bad = [];
+    foreach ($items ?: [] as $c) {
+        $c = trim((string)$c);
+        if ($c === '') continue;
+        $k = mb_strtolower($c);
+        if (!isset($byLower[$k])) { $bad[] = mb_substr($c, 0, 60); continue; }
+        if (!in_array($byLower[$k], $out, true)) $out[] = $byLower[$k];
+    }
+    return [$out, $bad];
+}
+
+/**
+ * SQL for "this member takes this course": one of their chosen courses, or —
+ * when they have none chosen — their old track. [fragment, args]; `$a` is the
+ * table alias with its dot ("m.") or ''. A course is stored JSON-encoded, so
+ * the quoted name matches exactly, never a course whose name merely holds it.
+ */
+function member_course_sql(string $course, string $a = ''): array {
+    $json = json_encode($course, JSON_UNESCAPED_UNICODE);
+    $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string)$json) . '%';
+    return ["(COALESCE({$a}courses,'') LIKE ? ESCAPE '!' OR (COALESCE({$a}courses,'') = '' AND lower({$a}track) = lower(?)))", [$like, $course]];
+}
+
+/**
+ * Does this person take any of these courses? Their chosen courses, or their
+ * track when none are chosen (a Summer participant has only a track), compared
+ * without regard to case. When the row was read without `courses`, it is read
+ * here, once per person per request — a scope check must not miss a second
+ * course because a caller selected fewer columns.
+ */
+function member_takes_any(array $m, array $courses): bool {
+    if (!$courses) return false;
+    if (!array_key_exists('courses', $m) && ($id = (string)($m['memberId'] ?? '')) !== '') {
+        static $cache = [];
+        $m['courses'] = $cache[$id] ??= (string)(db_row('SELECT courses FROM members WHERE memberId = ? LIMIT 1', [$id])['courses'] ?? '');
+    }
+    $mine = array_map(fn($c) => mb_strtolower(trim((string)$c)), member_courses_of($m) ?: [(string)($m['track'] ?? '')]);
+    foreach ($courses as $c) if (in_array(mb_strtolower(trim((string)$c)), $mine, true)) return true;
+    return false;
+}
+
+/** The courses chosen for this member ([] when none have been). */
+function member_courses_of(array $m): array {
+    $v = json_decode((string)($m['courses'] ?? ''), true);
+    return is_array($v) ? array_values(array_filter(array_map('strval', $v), fn($c) => trim($c) !== '')) : [];
+}
+
+/* Words that name ONE course, when nobody chose courses from the list. Each
+ * maps to a single catalogue course (used only when the catalogue has it). A
+ * word with no single meaning — "Tech", "Media", "Design" — maps to nothing:
+ * the member is listed for staff to choose, never given a division's worth of
+ * courses they did not sign up for ("Piano" once brought Catering and Adire). */
+const MEMBER_COURSE_WORDS = [
+    'piano' => 'Musical Instruments', 'keyboard' => 'Musical Instruments', 'guitar' => 'Musical Instruments',
+    'drums' => 'Musical Instruments', 'drum' => 'Musical Instruments', 'violin' => 'Musical Instruments',
+    'saxophone' => 'Musical Instruments', 'sax' => 'Musical Instruments', 'trumpet' => 'Musical Instruments',
+    'flute' => 'Musical Instruments', 'bass' => 'Musical Instruments', 'instrument' => 'Musical Instruments',
+    'instruments' => 'Musical Instruments',
+    'vocal' => 'Vocal Training', 'vocals' => 'Vocal Training', 'singing' => 'Vocal Training', 'voice' => 'Vocal Training', 'choir' => 'Vocal Training',
+    'drama' => 'Acting', 'theatre' => 'Acting', 'theater' => 'Acting',
+    'ai' => 'Artificial Intelligence', 'code' => 'Coding', 'programming' => 'Coding', 'software' => 'Software Development',
+    'robots' => 'Robotics', 'robot' => 'Robotics', 'cyber' => 'Cybersecurity', 'cyber security' => 'Cybersecurity',
+    'film' => 'Video Production', 'video' => 'Video Production', 'videography' => 'Video Production',
+    'pm' => 'Project Management',
+];
+
+/**
+ * Once per deployment: every NGG member with no chosen courses whose track
+ * names courses exactly and nothing vague ("Coding, Robotics", "Piano") has
+ * them written as chosen courses. A vague track ("Tech") is left for a person
+ * to choose (the roster's "No courses chosen" filter lists them). Recorded,
+ * so it never runs twice; one audit event with the count.
+ */
+const MEMBER_COURSES_BACKFILL = 'member_courses_backfill_v1';
+function member_courses_backfill_once(): int {
+    if ((string)setting_raw(MEMBER_COURSES_BACKFILL) !== '') return 0;
+    setting_set(MEMBER_COURSES_BACKFILL, gmdate('c'), 'system');
+    $ctx = null; $n = 0; $now = now_iso();
+    foreach (db_all("SELECT memberId, track FROM members WHERE COALESCE(courses,'') = '' AND COALESCE(type,'NGG') = 'NGG' AND TRIM(COALESCE(track,'')) <> ''") as $m) {
+        // Only a track that names its courses precisely: a broad word (Music, TECH) is left as it is.
+        [$c, $vague, $broad] = member_courses_from_text((string)$m['track'], $ctx);
+        if (!$c || $vague || $broad) continue;
+        db_update('members', ['courses' => json_encode(array_slice($c, 0, MEMBER_COURSES_MAX), JSON_UNESCAPED_UNICODE), 'updatedAt' => $now], ['memberId' => (string)$m['memberId']]);
+        $n++;
+    }
+    audit('member.courses.backfill', 'system', '', ['converted' => $n], '');
+    return $n;
+}
+
+/** The words that stand for a whole division (as on the card: TECH, MEDIA), never an instrument or a hobby. */
+const MEMBER_DIVISION_WORDS = [
+    'tech' => 'tech', 'technology' => 'tech', 'media' => 'media', 'business' => 'business',
+    'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts', 'performing arts' => 'arts', 'creative arts' => 'arts',
+];
+/** The music courses (the music faculty's own: Music, its instruments, voice and production). */
+function member_music_courses(array $ctx): array {
+    $out = [];
+    foreach (array_merge(array_values($ctx['byLower']), $ctx['unitCourses']) as $c) {
+        // An instrument or a voice course counts too ("Piano", "Guitar" lessons are music lessons).
+        $isMusic = preg_match('/\b(music|musical|vocal|instruments?)\b/i', (string)$c)
+            || in_array(MEMBER_COURSE_WORDS[mb_strtolower((string)$c)] ?? '', ['Musical Instruments', 'Vocal Training'], true);
+        if ($isMusic && !in_array((string)$c, $out, true)) $out[] = (string)$c;
+    }
+    // And the instruments and voice by name, so a lesson filed under exactly "Piano" is a music lesson.
+    foreach (MEMBER_COURSE_WORDS as $w => $c)
+        if (in_array($c, ['Musical Instruments', 'Vocal Training'], true) && mb_strlen($w) > 3 && !in_array(ucfirst($w), $out, true)) $out[] = ucfirst($w);
+    return $out;
+}
+
+/**
+ * What free text names, word by word: [courses, vague words, broad].
+ *   - a course's exact name → that course;
+ *   - a word in MEMBER_COURSE_WORDS → its one course ("Piano" → Musical Instruments);
+ *   - "music" → the music courses (broad);
+ *   - a division word (TECH, MEDIA…) → that division's courses (broad);
+ *   - anything else → nothing, and it is reported as vague.
+ * An instrument used to be read as "the arts" and brought the whole division:
+ * Piano was given Catering and Adire. That path is gone.
+ */
+function member_courses_from_text(string $text, ?array &$ctx = null): array {
     if ($ctx === null) $ctx = curriculum_course_ctx();
-    $catalogue = $ctx['catalogue']; $byLower = $ctx['byLower']; $unitCourses = $ctx['unitCourses'];
-    /* A division's courses: the seeded list, plus every course of each
-     * catalogue division that is the same division under the admin's own name
-     * ("AI & Technology" is Technology; "Creative Arts" is the arts), plus
-     * every course lessons are actually filed under that reads as the division
-     * ("Media Lab" is Media): an imported programme can name a course the
-     * catalogue never listed. */
+    $byLower = $ctx['byLower'];
+    foreach ($ctx['unitCourses'] as $c) $byLower[mb_strtolower((string)$c)] ??= (string)$c;
+    $byLower['chess'] ??= 'Chess';
+    $out = []; $vague = []; $broad = false;
+    foreach (preg_split('/\s*[,;\/|:]\s*|\s+and\s+|\s*&\s*/i', trim($text)) ?: [] as $w) {
+        $w = trim($w); if ($w === '') continue;
+        $lw = mb_strtolower($w);
+        if ($lw === 'music') { $out = array_merge($out, member_music_courses($ctx)); $broad = true; continue; }
+        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; continue; }
+        $syn = MEMBER_COURSE_WORDS[$lw] ?? null;
+        if ($syn !== null && isset($byLower[mb_strtolower($syn)])) { $out[] = $byLower[mb_strtolower($syn)]; continue; }
+        if (isset(MEMBER_DIVISION_WORDS[$lw])) { $out = array_merge($out, curriculum_division_courses(MEMBER_DIVISION_WORDS[$lw], $ctx)); $broad = true; continue; }
+        $vague[] = $w;
+    }
+    return [array_values(array_unique($out)), $vague, $broad];
+}
+/** The words themselves too, as course names: a lesson filed under exactly "Design" is a Design member's. */
+function member_text_words(string $text): array {
+    return array_values(array_filter(array_map('trim', preg_split('/\s*[,;\/|:]\s*|\s+and\s+|\s*&\s*/i', trim($text)) ?: []), fn($w) => $w !== ''));
+}
+
+/**
+ * A division's courses: the seeded list, plus every course of each catalogue
+ * division that is the same division under the admin's own name ("AI &
+ * Technology" is Technology), plus every course lessons are filed under that
+ * reads as the division ("Media Lab" is Media). Names only — a division is
+ * found from a division's or a course's NAME, never from an instrument.
+ */
+function curriculum_division_courses(string $divId, array &$ctx): array {
+    if (isset($ctx['div'][$divId])) return $ctx['div'][$divId];
+    $d = function_exists('nggc_division') ? nggc_division($divId) : null;
+    if (!$d) return $ctx['div'][$divId] = [];
     $divOf = function (string $name): string {
         if (!function_exists('nggc_division_for_track')) return '';
         $id = nggc_division_for_track($name);
@@ -989,54 +1160,34 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
         foreach (preg_split('/[^\p{L}]+/u', $name) ?: [] as $w) { if ($w !== '' && ($id = nggc_division_for_track($w)) !== '') return $id; }
         return '';
     };
-    $divCourses = function (string $divId) use ($catalogue, $divOf, $unitCourses, &$ctx): array {
-        if (isset($ctx['div'][$divId])) return $ctx['div'][$divId];
-        $d = function_exists('nggc_division') ? nggc_division($divId) : null;
-        if (!$d) return $ctx['div'][$divId] = [];
-        $out = array_values($d['courses'] ?? []);
-        foreach ($catalogue as $name => $courses) {
-            if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
-            foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
-        }
-        foreach ($unitCourses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
-        return $ctx['div'][$divId] = $out;
-    };
-    $words = [];
-    foreach ([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? '')] as $field) {
-        foreach (preg_split('/\s*[,;\/|]\s*|\s+and\s+/i', trim($field)) ?: [] as $w) {
-            $w = trim($w);
-            if ($w !== '') $words[] = $w;
-        }
+    $out = array_values($d['courses'] ?? []);
+    foreach ($ctx['catalogue'] as $name => $courses) {
+        if ($divOf((string)$name) === $d['id']) { $out = array_merge($out, array_values($courses)); continue; }
+        foreach ($courses as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
     }
-    /* Every course name anyone has used, with its words, for "a course that
-     * names this word" — PIANO on a card takes "Piano" and "Music: Piano". */
-    $known = array_values(array_unique(array_merge(array_values($byLower), $unitCourses)));
-    $tokens = fn(string $x): array => array_values(array_filter(preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($x)) ?: [], fn($t) => mb_strlen($t) >= 3));
-    // A faculty word that stands for a family of courses: the music faculty takes its instruments.
-    $family = ['music' => ['music', 'piano', 'keyboard', 'guitar', 'drums', 'violin', 'saxophone', 'vocal', 'vocals', 'singing', 'voice', 'instrument', 'instruments']];
-    $out = [];
-    foreach ($words as $w) {
-        $lw = mb_strtolower($w);
-        /* A STRONG hit (the word is a course, or names a division) answers it.
-         * A course that merely contains the word ("Tech Product Design" for
-         * TECH) is a weak hit: it is added, but the division the word stands
-         * for still is too — or TECH would get one course and no Coding. */
-        $hit = false;
-        if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; $hit = true; }
-        // A catalogue division named by this word ("Music") is taken whole.
-        foreach ($catalogue as $name => $courses) if (in_array($lw, $tokens((string)$name), true)) { $out = array_merge($out, array_values($courses)); $hit = true; }
-        $want = $family[$lw] ?? [$lw];
-        foreach ($known as $c) if (array_intersect($want, $tokens((string)$c))) { $out[] = (string)$c; if (isset($family[$lw])) $hit = true; }
-        if (!$hit) {
-            $div = function_exists('nggc_division_for_track') ? nggc_division_for_track($w) : '';
-            if ($div !== '') $out = array_merge($out, $divCourses($div));
-        }
-        $out[] = $w;
+    foreach ($ctx['unitCourses'] as $c) if ($divOf((string)$c) === $d['id']) $out[] = (string)$c;
+    return $ctx['div'][$divId] = array_values(array_unique($out));
+}
+
+/**
+ * A member's courses: the ones chosen for them (members.courses), or — for a
+ * record nobody has assigned yet — what their track and the disciplines on
+ * their card name (member_courses_from_text), or, when those name nothing,
+ * the division they are placed in. Chess is every division's (§6), so a
+ * member who takes anything takes Chess too.
+ */
+function curriculum_member_courses(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx();
+    $out = member_courses_of($m);
+    if (!$out) {
+        foreach ([(string)($m['track'] ?? ''), (string)($m['disciplines'] ?? '')] as $field) $out = array_merge($out, member_courses_from_text($field, $ctx)[0], member_text_words($field));
+        if (!$out && trim((string)($m['division'] ?? '')) !== '') $out = curriculum_division_courses((string)$m['division'], $ctx);
     }
-    if (!$words && trim((string)($m['division'] ?? '')) !== '') $out = array_merge($out, $divCourses((string)$m['division']));
     $seen = []; $uniq = [];
-    foreach ($out as $c) { $k = mb_strtolower(trim($c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = $c; } }
-    return $uniq;
+    foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
+    $out = $uniq;
+    if ($out && !isset($seen['chess'])) $out[] = 'Chess';
+    return $out;
 }
 
 /* ── A three-year programme that adapts to the member ───────────────────────
@@ -1136,6 +1287,43 @@ function curriculum_adapt(array $units, int $placedYear, array $prog, ?array &$c
     return $out;
 }
 
+/**
+ * curriculum.material — a lesson's PDF (or other file), served from this
+ * origin. Lesson files live on Cloudinary or the bucket, and a Cloudinary
+ * account refuses to DELIVER a PDF unless "Allow delivery of PDF and ZIP
+ * files" is switched on — so the link opened a 401 page, and a PDF never
+ * displayed. This fetches it through the signed download the Community's
+ * documents already use (cm3_doc_get), for a member whose lessons include it,
+ * or for staff. A link that is not ours (Google Drive, YouTube) is not
+ * fetched: `external` tells the page to open it as a link.
+ */
+function curriculum_material_doc(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $mat = db_row("SELECT * FROM curriculum_materials WHERE materialId = ? LIMIT 1", [(string)($p['materialId'] ?? '')]);
+    if ($viewer === '' || !$mat) return ['ok' => false, 'error' => 'not_found'];
+    $unit = db_row("SELECT * FROM curriculum_units WHERE unitId = ? LIMIT 1", [(string)$mat['unitId']]);
+    if (!$unit) return ['ok' => false, 'error' => 'not_found'];
+    $staff = function_exists('community_actor_is_staff') && community_actor_is_staff($viewer);
+    if (!$staff) {
+        // A member sees an approved file of a published lesson that is theirs.
+        if ((string)$unit['status'] !== 'published' || (string)($mat['status'] ?? 'approved') !== 'approved') return ['ok' => false, 'error' => 'not_found'];
+        $m = curriculum_member_row($viewer);
+        if (!$m || !isset(curriculum_member_units_all($m)[(string)$unit['unitId']])) return ['ok' => false, 'error' => 'not_found'];
+    }
+    $url = trim((string)$mat['url']);
+    $src = function_exists('cm3_doc_source') ? cm3_doc_source($url) : null;
+    if (!$src) return ['ok' => false, 'error' => 'external', 'url' => $url];
+    $got = cm3_doc_get($src);
+    if ((int)$got['code'] !== 200 || $got['body'] === '') return ['ok' => false, 'error' => 'fetch_failed'];
+    if (strlen($got['body']) > CM3_DOC_MAX_BYTES) return ['ok' => false, 'error' => 'doc_too_big'];
+    $ext = strtolower($src['format'] ?? '') ?: strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+    if ($ext === '' && strncmp($got['body'], '%PDF', 4) === 0) $ext = 'pdf';
+    $types = (defined('STORE_TYPES') ? STORE_TYPES['pdf'] + STORE_TYPES['raw'] : []) + ['pdf' => 'application/pdf'];
+    $name = trim((string)preg_replace('/[^A-Za-z0-9 ._()-]+/', '', (string)$mat['title'])) ?: 'Lesson file';
+    if ($ext !== '' && !preg_match('/\.' . preg_quote($ext, '/') . '$/i', $name)) $name .= '.' . $ext;
+    return ['ok' => true, 'name' => $name, 'ext' => $ext, 'mime' => (string)($types[$ext] ?? 'application/octet-stream'), 'body' => $got['body']];
+}
+
 /** Whether a lesson of this stage and year falls due on the term's clock. */
 function curriculum_stage_due(string $stage, int $year, int $placedYear): bool {
     return $stage === '' || ($stage === 'current' && ($year === 0 || $year <= $placedYear));
@@ -1225,7 +1413,7 @@ function curriculum_for_member(array $m): array {
 }
 
 function curriculum_member_row(string $memberId): ?array {
-    $m = db_row('SELECT memberId, fullName, track, disciplines, division, centre, type, status, cohort, displayId, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, track, courses, disciplines, division, centre, type, status, cohort, displayId, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     return ($m && member_is_ngg($m)) ? $m : null;
 }
 
@@ -1595,9 +1783,19 @@ function staff_curriculum(array $p): array {
     if ($g['centres'] !== null && !$noChildren) {
         $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
     }
-    if ($courses !== null) { $mWhere .= ' AND track IN (' . implode(',', array_fill(0, count($courses), '?')) . ')'; $mArgs = array_merge($mArgs, $courses); }
-    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    if ($courses !== null) {
+        // Members who take any of the instructor's courses, chosen or by their old track.
+        $or = [];
+        foreach ($courses as $c) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $mArgs = array_merge($mArgs, $ca); }
+        $mWhere .= $or ? ' AND (' . implode(' OR ', $or) . ')' : ' AND 1 = 0';
+    }
+    $members = $noChildren ? [] : db_all("SELECT memberId, fullName, displayId, centre, track, courses, disciplines, division, joinDate, createdAt FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
     $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
+    // Each member's courses, worked out once (the same matching their own page uses).
+    $cCtx = null; $cCache = [];
+    $coursesOf = function (string $id, array $mm) use (&$cCtx, &$cCache): array {
+        return $cCache[$id] ??= array_map('mb_strtolower', curriculum_member_courses($mm, $cCtx));
+    };
     $stats = []; $pending = []; $doneBy = [];
     if ($units && $byId) {
         $uids = array_keys($units); $mids = array_keys($byId);
@@ -1639,7 +1837,7 @@ function staff_curriculum(array $p): array {
         $audience = 0; $behind = [];
         $due = curriculum_due_date((string)$cfg['startDate'], (int)$b['unit']['week']);
         foreach ($members as $mm) {
-            if ((string)$b['unit']['course'] !== '' && strcasecmp((string)$mm['track'], (string)$b['unit']['course']) !== 0) continue;
+            if ((string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), $coursesOf((string)$mm['memberId'], $mm), true)) continue;
             $audience++;
             if ($due !== '' && $today > $due && $b['checks'] && empty($doneBy[$id][(string)$mm['memberId']])) {
                 // A member who joined after it fell due is not behind on it.
@@ -1666,7 +1864,8 @@ function staff_curriculum_member(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
-    if ($g['courses'] !== null && !in_array((string)$m['track'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    // An instructor reaches a member who takes ANY of their courses.
+    if ($g['courses'] !== null && !array_intersect(array_map('mb_strtolower', member_courses_of($m) ?: [(string)$m['track']]), array_map('mb_strtolower', $g['courses']))) return ['ok' => false, 'error' => 'out_of_scope'];
     return ['ok' => true, 'member' => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'track' => (string)$m['track']]] + curriculum_for_member($m);
 }
 
@@ -1873,7 +2072,7 @@ function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH):
     if (!$units) return $out + ['skipped' => 'no_assessments'];
     $byCourse = [];
     foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
-    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, disciplines, division, cohort, displayId, centre, joinDate, createdAt, type FROM members
+    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, courses, disciplines, division, cohort, displayId, centre, joinDate, createdAt, type FROM members
                        WHERE COALESCE(type,'NGG') <> 'Summer' AND status = 'active'");
     $prog = [];
     foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
@@ -1992,8 +2191,9 @@ function curriculum_overdue_board(string $mWhere, array $mArgs, string $course =
     if (!$units) return [];
     $byCourse = [];
     foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
-    $members = db_all("SELECT m.memberId, m.fullName, m.displayId, m.centre, m.track, m.joinDate, m.createdAt FROM members m WHERE $mWhere"
-                      . ($course !== '' ? ' AND lower(m.track) = lower(?)' : ''), $course !== '' ? array_merge($mArgs, [$course]) : $mArgs);
+    [$cSql, $cArgs] = $course !== '' ? member_course_sql($course, 'm.') : ['', []];
+    $members = db_all("SELECT m.memberId, m.fullName, m.displayId, m.centre, m.track, m.courses, m.joinDate, m.createdAt FROM members m WHERE $mWhere"
+                      . ($cSql !== '' ? ' AND ' . $cSql : ''), array_merge($mArgs, $cArgs));
     $prog = [];
     foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
     $fined = [];

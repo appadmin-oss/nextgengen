@@ -902,6 +902,14 @@ function admin_application_convert(array $p): array {
         'disciplines' => $division !== '' && function_exists('club_division_short') ? club_division_short($division) : '',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
+    /* The courses the applicant chose become the member's courses, exactly
+       (members.courses): their lessons and channels follow them from day one,
+       instead of being guessed from the first course's name. */
+    if ($type === 'NGG' && function_exists('member_courses_clean')) {
+        $chose = json_decode((string)($a['courses'] ?? ''), true);
+        [$picked] = member_courses_clean(array_merge(is_array($chose) ? $chose : [], [(string)($a['track'] ?? '')]));
+        if ($picked) { $__m['courses'] = json_encode(array_slice($picked, 0, MEMBER_COURSES_MAX), JSON_UNESCAPED_UNICODE); if ($__m['track'] === '') $__m['track'] = $picked[0]; }
+    }
     /* The Club application (v2026.10) knows more: the parent by name and
        their own number, the school and class, and the child's own mobile when
        it is not the parent's. The rest stays on the application. */

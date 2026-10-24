@@ -324,7 +324,7 @@ function mentor_scope_ok(array $g, array $subject): bool {
     $centres = $g['centres'] ?? null;
     if ($centres !== null && !in_array(trim((string)($subject['centre'] ?? '')), $centres, true)) return false;
     $courses = $g['courses'] ?? null;
-    if ($courses !== null && !in_array(trim((string)($subject['track'] ?? '')), $courses, true)) return false;
+    if ($courses !== null && !member_takes_any($subject, $courses)) return false;
     return true;
 }
 

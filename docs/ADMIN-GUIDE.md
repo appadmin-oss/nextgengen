@@ -292,6 +292,29 @@ accounts and your own are refused and named. A Club coordinator's change is
 sent to a second admin to approve, and the screen says so. Roles are not
 edited here: that is **Settings → Access & roles**.
 
+### A member's courses
+
+A member's **courses** are chosen, not typed. In **Edit**, pick their
+**Division** and the **Courses** list shows that division's courses as they
+are under **Divisions & courses** (Chess is in every division). Tick what
+they study. Their lessons, their Community channels, the assignments that
+reach them and the instructors' class lists all follow exactly those courses.
+A member on two courses is in both classes.
+
+- **Several at once:** tick members in the roster → **Set courses**, then
+  *Add these*, *Replace theirs with these*, or *Take these off*. Running it
+  twice reports "unchanged", not applied again.
+- **A course that is not in the catalogue is refused by name.** Add it under
+  **Divisions & courses** first.
+- **Older records** had a typed *track* instead ("Coding", "Piano", "Tech").
+  Where it names courses exactly, it was turned into chosen courses
+  automatically. Where it is broad ("Tech", "Media", "Music") the member keeps
+  that division's or the music courses until you choose; a word that names no
+  course ("Design") gives none. Filter the roster by **Missing → No courses
+  chosen** to find them, select all, and use **Set courses**.
+- An instrument is the **Musical Instruments** course, never the whole arts
+  division: a pianist is no longer given Catering, Adire and Crafts.
+
 ### The dashboard
 
 The **Dashboard** tab counts the membership and, under **Conduct &

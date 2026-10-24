@@ -628,7 +628,12 @@ Object.assign(Mp9Portal.prototype, {
         parts: parts.map((p, pi) => ({ p, n: pi + 1, done: pi < lPart, now: pi === lPart, icon: pi < lPart ? "ph-fill ph-check-circle" : pi === lPart ? "ph-fill ph-circle-half" : "ph ph-circle", ic: pi < lPart ? "#1d6b30" : pi === lPart ? "#a07400" : "#c9c6bc", fw: pi === lPart ? 600 : 400 })),
         finished: lPart >= parts.length, notFinished: lPart < parts.length && lPart !== checkAt, nowPart: (parts[lPart] || "").toLowerCase(),
         body: String(U.body || U.summary || "This lesson has no written part. Open its materials.").replace(/[#*_>`]/g, "").slice(0, 1800),
-        mats: (U.materials || []).map(m => ({ t: m.title || m.kind, url: m.url, icon: m.kind === "video" ? "ph ph-video" : m.kind === "pdf" ? "ph ph-file-pdf" : "ph ph-link" })) }
+        /* A PDF opens in the reader here, fetched through this site
+           (lesson-file.php): a PDF on the image cloud is not delivered to a
+           browser, so its link opened an error page. Other links stay links. */
+        mats: (U.materials || []).map(m => { const isPdf = m.kind === "pdf" || /\.pdf(\?|$)/i.test(m.url || ""); const via = isPdf && m.materialId ? mp9LessonFile(m.materialId) : "";
+          return { t: m.title || m.kind, url: via || m.url, icon: m.kind === "video" ? "ph ph-video" : isPdf ? "ph ph-file-pdf" : "ph ph-link",
+            open: e => { if (!via) return; e.preventDefault(); set({ pdfView: { src: via, name: m.title || "Lesson file" } }); } }; }) }
         : { div: s.lessonErr || "", parts: [], finished: false, notFinished: false, nowPart: "", body: s.lessonErr || "Loading…", mats: [] },
       lLearn: U ? (U.objectives || []).slice(0, 5) : [],
       lcShow: !!U && checkAt >= 0 && lPart >= checkAt && !lDone, lcDone: lDone, lcPass: U ? U.passMark || 0 : 0, lcScore: res ? (res.pct !== undefined ? res.pct : res.bestPct || 0) + "%" : "",
@@ -940,9 +945,14 @@ Object.assign(Mp9Portal.prototype, {
   },
   render() {
     const dutyGo = d => { const scr = MP9_ROUTE[d.route] || (/results/.test(d.route) ? "results" : /money|account/.test(d.route) ? "money" : /learn/.test(d.route) ? "learn" : /mentor/.test(d.route) ? "mentor" : "today"); this.go(scr); return true; };
-    return <>{Mp9View(this.renderVals())}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/></>;
+    const pv = this.state.pdfView;
+    return <>{Mp9View(this.renderVals())}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/>
+      {pv ? <NggPdf open src={pv.src} name={pv.name} onClose={() => this.setState({ pdfView: null })}/> : null}</>;
   },
 });
+
+/** A lesson file, from this site (api/member/lesson-file.php). */
+function mp9LessonFile(id) { return "/api/member/lesson-file.php?id=" + encodeURIComponent(id || ""); }
 
 function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"; }
 

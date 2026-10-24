@@ -29347,6 +29347,57 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $u('CMU-PIANO', 'Piano'); $u('CMU-GUIT', 'Guitar'); $mk('CMC-P', 'MUSIC', 'PIANO');
     chk('curriculum · a MUSIC member takes the instrument courses', in_array('CMU-PIANO', $ids('CMC-M'), true) && in_array('CMU-GUIT', $ids('CMC-M'), true) && !in_array('CMU-CODE', $ids('CMC-M'), true));
     chk('curriculum · and still no other arts course', !in_array('CMU-VID', $ids('CMC-M'), true));
+
+    /* ── Courses are chosen, not guessed ──
+       This catalogue (set above): AI & Technology (Practical Coding, Coding,
+       Robotics), Music (Piano, Music), Media (Video Production), Business (Finance). */
+    $ctxW = null;
+    chk('courses · a word that is a course is that course, and nothing from another division',
+        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Chess']);
+    chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
+        !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
+    chk('courses · "Design" names no division: it gets no division\'s courses',
+        !array_intersect(curriculum_member_courses(['track' => 'Design'], $ctxW), ['Video Production', 'Coding', 'Finance', 'Piano']));
+    db_insert('members', ['memberId' => 'CMC-CH', 'fullName' => 'Chooser', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'TECH', 'createdAt' => $now, 'updatedAt' => $now]);
+    $up = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['coding', 'Robotics']]]);
+    $cx = db_row("SELECT * FROM members WHERE memberId = 'CMC-CH'");
+    chk('courses · chosen courses are stored as the catalogue names them, the first kept as the track',
+        !empty($up['ok']) && member_courses_of($cx) === ['Coding', 'Robotics'] && $cx['track'] === 'Coding');
+    chk('courses · chosen courses ARE the member\'s courses (plus Chess), not the old track\'s whole division',
+        curriculum_member_courses($cx, $ctxW) === ['Coding', 'Robotics', 'Chess']);
+    chk('courses · …so their lessons are exactly those courses', in_array('CMU-CODE', $ids('CMC-CH'), true) && in_array('CMU-ROBO', $ids('CMC-CH'), true) && !in_array('CMU-VID', $ids('CMC-CH'), true));
+    $bad = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'CMC-CH', 'courses' => ['Coding', 'Underwater Basketry']]]);
+    chk('courses · a course the catalogue does not have is refused by name, and nothing changes',
+        ($bad['error'] ?? '') === 'unknown_course' && ($bad['courses'] ?? []) === ['Underwater Basketry'] && member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-CH'")) === ['Coding', 'Robotics']);
+    chk('courses · a member\'s SECOND course reaches them too (the instructor\'s class list)',
+        (function () { [$q, $a] = member_course_sql('Robotics'); return (bool)db_row("SELECT memberId FROM members WHERE memberId = 'CMC-CH' AND $q", $a); })()
+        && !(function () { [$q, $a] = member_course_sql('Robot'); return (bool)db_row("SELECT memberId FROM members WHERE memberId = 'CMC-CH' AND $q", $a); })());
+    db_insert('members', ['memberId' => 'CMC-CH2', 'fullName' => 'Chooser Two', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    $bk = fn($mode, $list) => backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'courses', 'memberIds' => ['CMC-CH', 'CMC-CH2'], 'mode' => $mode, 'courses' => $list]);
+    $b1 = $bk('add', ['finance']);
+    chk('courses · bulk "add" adds to each member\'s own list', ($b1['applied'] ?? 0) === 2
+        && member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-CH'")) === ['Coding', 'Robotics', 'Finance']
+        && member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-CH2'")) === ['Finance']);
+    $b2 = $bk('add', ['Finance']);
+    chk('courses · running it again is reported as unchanged, not applied', ($b2['applied'] ?? -1) === 0 && count(array_filter($b2['results'] ?? [], fn($r) => !empty($r['unchanged']))) === 2);
+    $bk('remove', ['Finance']);
+    chk('courses · bulk "remove" takes it off', member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-CH'")) === ['Coding', 'Robotics']);
+    chk('courses · bulk refuses a course not in the catalogue before touching anyone', ($bk('replace', ['Nope'])['error'] ?? '') === 'unknown_course');
+    $dv = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099']);
+    $tech = array_values(array_filter($dv['divisions'] ?? [], fn($d) => $d['id'] === 'tech'))[0] ?? [];
+    chk('courses · the picker lists a division\'s courses as admins have them, with Chess',
+        in_array('Practical Coding', $tech['courseList'] ?? [], true) && in_array('Chess', $tech['courseList'] ?? [], true)
+        && !in_array('Finance', $tech['courseList'] ?? [], true) && in_array('Finance', $dv['allCourses'] ?? [], true));
+    $noC = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'missing' => 'courses', 'pageSize' => 500]);
+    chk('courses · the roster lists who has no courses chosen', in_array('CMC-T', array_column($noC['members'] ?? [], 'memberId'), true) && !in_array('CMC-CH', array_column($noC['members'] ?? [], 'memberId'), true));
+    db_insert('members', ['memberId' => 'CMC-BF1', 'fullName' => 'Backfill One', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Coding, Piano', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'CMC-BF2', 'fullName' => 'Backfill Two', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'track' => 'Tech', 'createdAt' => $now, 'updatedAt' => $now]);
+    setting_set(MEMBER_COURSES_BACKFILL, '', 'system');
+    member_courses_backfill_once();
+    chk('courses · the one-time conversion makes a precise track chosen courses',
+        member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-BF1'")) === ['Coding', 'Piano']);
+    chk('courses · …and leaves a broad one ("Tech") for a person to choose', member_courses_of(db_row("SELECT courses FROM members WHERE memberId = 'CMC-BF2'")) === []);
+    db_exec("DELETE FROM members WHERE memberId IN ('CMC-BF1', 'CMC-BF2', 'CMC-CH', 'CMC-CH2')");
     // Three years, by mastery: Year 1 first; 80% of it opens Year 2; what is left of Year 1 stays as catch-up.
     $y = function ($id, $lv, $wk) use ($now) { db_insert('curriculum_units', ['unitId' => $id, 'course' => 'Piano', 'level' => $lv, 'week' => $wk, 'position' => 1, 'title' => $id,
         'summary' => '', 'status' => 'published', 'version' => 1, 'createdAt' => $now, 'updatedAt' => $now]); };
@@ -30234,6 +30285,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $dx = backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docX['post']['postId']]);
     chk('cm3 doc: a URL that is not on our storage is refused and never fetched', ($dx['error'] ?? '') === 'not_ours' && count($seen) === $n);
     chk('cm3 doc: a post that is not a document is refused', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $code['post']['postId']])['error'] ?? '') === 'not_a_document');
+    /* Lesson files go the same way: a PDF on the image cloud is not delivered
+       to a browser, so a lesson's PDF link opened an error page. */
+    $nowL = now_iso();
+    db_insert('curriculum_units', ['unitId' => 'CV3-LU1', 'course' => 'Cv3 Coding', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Pages', 'summary' => '', 'status' => 'published', 'version' => 1, 'createdAt' => $nowL, 'updatedAt' => $nowL]);
+    db_insert('curriculum_units', ['unitId' => 'CV3-LU2', 'course' => 'Cv3 Robotics', 'level' => '', 'week' => 1, 'position' => 1, 'title' => 'Motors', 'summary' => '', 'status' => 'published', 'version' => 1, 'createdAt' => $nowL, 'updatedAt' => $nowL]);
+    db_insert('curriculum_materials', ['materialId' => 'CV3-LM1', 'unitId' => 'CV3-LU1', 'kind' => 'pdf', 'title' => 'Worksheet', 'url' => 'https://res.cloudinary.com/nggdocs/image/upload/v1/curriculum/worksheet.pdf', 'position' => 1, 'createdAt' => $nowL]);
+    db_insert('curriculum_materials', ['materialId' => 'CV3-LM2', 'unitId' => 'CV3-LU2', 'kind' => 'pdf', 'title' => 'Wiring', 'url' => 'https://res.cloudinary.com/nggdocs/image/upload/v1/curriculum/wiring.pdf', 'position' => 1, 'createdAt' => $nowL]);
+    db_insert('curriculum_materials', ['materialId' => 'CV3-LM3', 'unitId' => 'CV3-LU1', 'kind' => 'link', 'title' => 'Drive', 'url' => 'https://drive.google.com/file/d/abc/view', 'position' => 2, 'createdAt' => $nowL]);
+    $lf = backend_dispatch('curriculum.material', ['memberId' => 'CV3-S', 'materialId' => 'CV3-LM1']);
+    chk('lesson file: a member\'s lesson PDF comes from this site, fetched by public id, typed as a PDF',
+        !empty($lf['ok']) && $lf['mime'] === 'application/pdf' && $lf['ext'] === 'pdf' && $lf['name'] === 'Worksheet.pdf' && strncmp($lf['body'], '%PDF', 4) === 0
+        && (end($seen)['publicId'] ?? '') === 'curriculum/worksheet');
+    chk('lesson file: a file from a lesson that is not theirs is not served', (backend_dispatch('curriculum.material', ['memberId' => 'CV3-S', 'materialId' => 'CV3-LM2'])['error'] ?? '') === 'not_found');
+    chk('lesson file: …but staff can open it', !empty(backend_dispatch('curriculum.material', ['memberId' => 'CV3-T', 'materialId' => 'CV3-LM2'])['ok']));
+    chk('lesson file: a link that is not ours is handed back to open, never fetched',
+        ($ex = backend_dispatch('curriculum.material', ['memberId' => 'CV3-S', 'materialId' => 'CV3-LM3']))['error'] === 'external' && $ex['url'] === 'https://drive.google.com/file/d/abc/view');
+    db_update('curriculum_units', ['status' => 'draft'], ['unitId' => 'CV3-LU1']);
+    chk('lesson file: a lesson taken back to draft stops serving its files to members', (backend_dispatch('curriculum.material', ['memberId' => 'CV3-S', 'materialId' => 'CV3-LM1'])['error'] ?? '') === 'not_found');
+    db_exec("DELETE FROM curriculum_units WHERE unitId IN ('CV3-LU1', 'CV3-LU2')"); db_exec("DELETE FROM curriculum_materials WHERE materialId LIKE 'CV3-LM%'");
     chk('cm3 doc: a held post is not served to another member', (backend_dispatch('community.doc', ['memberId' => 'CV3-S2', 'postId' => $p1['post']['postId']])['error'] ?? '') === 'not_found');
     $GLOBALS['__cm3_doc_fetch_mock'] = fn($src) => ['code' => 401, 'body' => ''];
     chk('cm3 doc: a storage refusal is reported, not served as an empty file', (backend_dispatch('community.doc', ['memberId' => 'CV3-S', 'postId' => $docP['post']['postId']])['error'] ?? '') === 'fetch_failed');

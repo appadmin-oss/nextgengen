@@ -528,7 +528,8 @@ function instructor_skills_board(array $p): array {
     /* The Club's class too: NGG members of this centre and course — children
      * only (results_in_loop), the same class the Saturday screens read. */
     if (mentor_covers($g, 'ngg') && function_exists('results_in_loop')) {
-        foreach (db_all("SELECT memberId, fullName, role, dob FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND centre = ? AND track = ? ORDER BY fullName LIMIT 200", [$centre, $course]) as $mm)
+        [$cSql, $cArgs] = member_course_sql($course);
+        foreach (db_all("SELECT memberId, fullName, role, dob FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND centre = ? AND $cSql ORDER BY fullName LIMIT 200", array_merge([$centre], $cArgs)) as $mm)
             if (results_in_loop($mm)) $roster[] = ['studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName']];
     }
     $ids = array_column($roster, 'studentId');

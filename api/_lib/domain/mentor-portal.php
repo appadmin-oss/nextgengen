@@ -2166,7 +2166,7 @@ const MP_GROWTH_SATURDAYS = 12;
 const MP_GROWTH_MONTHS = 6;
 
 function mp_growth(string $id, string $audience = 'mentor', ?string $today = null): array {
-    $m = db_row('SELECT memberId, fullName, centre, track, joinDate, createdAt, dob, status, type, role FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, joinDate, createdAt, dob, status, type, role FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $family = $audience === 'family';
     $today = $today ?: gmdate('Y-m-d', mp_lagos_now());

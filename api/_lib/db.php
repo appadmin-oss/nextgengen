@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 173;
+const NGG_SCHEMA_TARGET = 174;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5073,6 +5073,31 @@ function db_migrate(PDO $db): void {
             ALTER TABLE id_photo_asks ADD COLUMN reminders INTEGER NOT NULL DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_id_photo_asks_campaign ON id_photo_asks(campaignId, status);
             CREATE INDEX IF NOT EXISTS idx_id_photo_asks_status ON id_photo_asks(status);
+        ",
+        /* 174 — a member's courses, chosen from the catalogue (a JSON list),
+           instead of guessed from free text in `track`; and a photo change as
+           a request with the new photo, decided by staff, never a direct swap. */
+        174 => "
+            ALTER TABLE members ADD COLUMN courses TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS photo_change_requests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              requestId TEXT NOT NULL UNIQUE,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              photoUrl TEXT NOT NULL,
+              oldPhotoUrl TEXT NOT NULL DEFAULT '',
+              reason TEXT NOT NULL DEFAULT '',
+              via TEXT NOT NULL DEFAULT '',
+              requestedBy TEXT NOT NULL DEFAULT '',
+              requestedAt TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              decidedBy TEXT NOT NULL DEFAULT '',
+              decidedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pcr_subject ON photo_change_requests(subjectType, subjectId, status);
+            CREATE INDEX IF NOT EXISTS idx_pcr_status ON photo_change_requests(status, requestedAt);
         ",
     ];
 

@@ -2748,3 +2748,29 @@ The table is editable in the Control Room, with these as the defaults.
   - `idsAskSummary` says "The email couldn't be sent" and reserves "all sent" for when everything went. It used to report a failed send as "no email or guardian on file".
   - Covered by `ids-studio.test.js`, since its test host has no mail, and by one PHP check on the `__mail_fail` seam.
 - **Test changes:** `ids-ask.test.js` pins that a refresh restores the sheet, and that undo returns to the count before the plan. It used to assume a refresh emptied the sheet.
+
+## Courses are chosen, not guessed
+
+- **Fault:** a member's course was a free-text `track`. `curriculum_member_courses` read it by words, and `nggc_division_for_track` mapped instruments to "arts", which then expanded to the whole division. So "Piano" gave Catering, Adire, Acting and Crafts; "Design" spread across two divisions; and a typo gave nothing.
+- **Migration 174:**
+  - `members.courses` holds a JSON list of catalogue names.
+  - `photo_change_requests` is added for the photo request flow.
+- **Server:**
+  - `member_courses_clean` canonicalises names to the catalogue and refuses unknown ones by name (`unknown_course`), up to `MEMBER_COURSES_MAX` (8). `admin_members_upsert` keeps `track` equal to the first course.
+  - A bulk `courses` action has modes `add`, `replace` and `remove`, and reports unchanged rows.
+  - `nggc_division_course_list` gives the picker the live catalogue, with Chess, as `courseList` and `allCourses` on `admin.divisions.overview`.
+- **Matching:**
+  - Chosen courses win.
+  - Without them, `member_courses_from_text` maps exact names, then `MEMBER_COURSE_WORDS` synonyms (one course each), then "music" to the music courses, then `MEMBER_DIVISION_WORDS` (TECH, MEDIA…) to that division. Anything else gives nothing.
+  - A placed division with no matching words gives that division.
+  - Chess is always added.
+- **Rows read:** `courses` is now selected wherever the matcher runs (`curriculum_member_row` did not select it).
+- **Instructor class lists and overdue-by-course:** use `member_course_sql`, an exact JSON-quoted match or, with nothing chosen, the old track. So a member's second course reaches them.
+- **Coverage counts:** a member on two courses is counted in both.
+- **Assignments:** one set for a division word reaches members who take any of its courses.
+- **Conversion:** `member_courses_backfill_once` (hourly cron, and the roster's new `missing=courses` filter) converts precise tracks only.
+- **Application conversion and Club portal enrol:** write the chosen courses.
+- **Control Room:**
+  - A Courses multi-chip field filtered by division. `crFieldOpts` takes `optsFor(values)`.
+  - A **Set courses** bulk action.
+  - A **No courses chosen** filter.

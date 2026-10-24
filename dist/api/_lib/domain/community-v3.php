@@ -132,8 +132,9 @@ function cm3_my_channels(string $viewer): array {
     $all = db_all("SELECT slug, name, kind FROM community_channels WHERE status = 'active' ORDER BY pinned DESC, sortOrder, name");
     if (community_actor_is_staff($viewer)) return array_column($all, 'slug');
     $courses = [];
-    $m = db_row('SELECT track, profileJson FROM members WHERE memberId = ? LIMIT 1', [$viewer]);
+    $m = db_row('SELECT track, profileJson, courses FROM members WHERE memberId = ? LIMIT 1', [$viewer]);
     if ($m) {
+        foreach (member_courses_of($m) as $c) $courses[] = strtolower(trim($c));
         if (trim((string)$m['track']) !== '') $courses[] = strtolower(trim((string)$m['track']));
         $pj = safe_json((string)($m['profileJson'] ?? '')) ?: [];
         foreach ((array)($pj['courses'] ?? []) as $c) if (is_string($c) && trim($c) !== '') $courses[] = strtolower(trim($c));

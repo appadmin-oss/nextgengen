@@ -26,7 +26,7 @@ const CR_MEM_TONE = { active: "ok", suspended: "bad", inactive: "neutral", "grad
 const CR_MEM_SORT = { 0: "fullName", 1: "centre", 3: "type", 5: "status", 6: "joined" };
 const CR_MB_LEVELS = "ABCDEFG".split("");
 /* What is missing from a member's ID card — the values of $missingSql. */
-const CR_MB_MISSING = [["photo", "No photograph"], ["printedId", "No printed ID"], ["discipline", "No discipline"]];
+const CR_MB_MISSING = [["photo", "No photograph"], ["printedId", "No printed ID"], ["discipline", "No discipline"], ["courses", "No courses chosen"]];
 /* The roster filtered to exactly what a dashboard figure counted (member_segment_sql). */
 const CR_MB_SEG = {
   no_email: "members with no email address", no_phone: "members with no phone number", no_centre: "members not in any centre",
@@ -67,8 +67,24 @@ function crMemProfileValues(m) {
   let j = {}; try { j = JSON.parse((m && m.profileJson) || "{}") || {}; } catch (_) {}
   const v = {}; CR_MEM_PROFILE.forEach(f => { v[f.id] = j[f.key] != null ? String(j[f.key]) : ""; }); return v;
 }
-function crMemFields(centres, divisions, editing) {
-  const f = crMemFieldsAll(centres, divisions);
+/* A member's courses, as stored (a JSON list) — or [] when none were chosen. */
+function crMemCourses(m) {
+  const v = m && m.courses;
+  if (Array.isArray(v)) return v.filter(Boolean);
+  try { const a = JSON.parse(v || "[]"); return Array.isArray(a) ? a.filter(Boolean) : []; } catch (_) { return []; }
+}
+/* The course chips: the chosen division's courses as admins have them, every
+   course when no division is chosen, and always whatever is already ticked —
+   so changing the division never hides a course the member is on. */
+function crMemCourseOpts(divisions, allCourses) {
+  return v => {
+    const d = (divisions || []).find(x => x.id === v.division);
+    const base = d && (d.courseList || []).length ? d.courseList : (allCourses || []);
+    return base.concat((v.courses || []).filter(c => !base.includes(c)));
+  };
+}
+function crMemFields(centres, divisions, editing, allCourses) {
+  const f = crMemFieldsAll(centres, divisions, allCourses);
   /* The join date is set when the member is made and corrected only with a
      reason ("Correct the join date"), so the edit form does not carry it. */
   const base = editing ? f.filter(x => x.id !== "joinDate") : f;
@@ -76,7 +92,7 @@ function crMemFields(centres, divisions, editing) {
   const classes = typeof APF_CLASSES !== "undefined" ? APF_CLASSES.flatMap(g => g[1]) : [];
   return base.slice(0, at).concat(CR_MEM_PROFILE.map(x => { const y = Object.assign({}, x, x.key === "class" ? { opts: classes } : {}); delete y.key; return y; }), base.slice(at));
 }
-function crMemFieldsAll(centres, divisions) {
+function crMemFieldsAll(centres, divisions, allCourses) {
   return [
     { id: "fullName", l: "Full name", req: true, max: 120 },
     { id: "email", l: "Email", type: "email", email: true, help: "The address they sign in with." },
@@ -86,8 +102,9 @@ function crMemFieldsAll(centres, divisions) {
     { id: "centre", l: "Centre", type: "select", ph: "No centre", opts: centres.map(c => [c, c]) },
     { id: "division", l: "Division", type: "select", ph: "Not placed yet", opts: divisions.map(d => [d.id, d.name]) },
     { id: "level", l: "Level", max: 1, ph: "A", help: "One letter, as on the roster workbook.", check: v => /^[A-Za-z]$/.test(v) ? "" : "Use one letter." },
-    { id: "track", l: "Track", max: 64, ph: "Music" },
-    { id: "disciplines", l: "Disciplines on the card", max: 60, ph: "TECH, MEDIA", help: "One or two, comma-separated. Blank shows the track." },
+    { id: "courses", l: "Courses", type: "multi", optsFor: crMemCourseOpts(divisions, allCourses),
+      help: "What they study. Their lessons, Community channels and assignments follow exactly these. Choose a division to see its courses." },
+    { id: "disciplines", l: "Disciplines on the card", max: 60, ph: "TECH, MEDIA", help: "One or two, comma-separated. Blank shows their first course." },
     { id: "displayId", l: "Printed ID", max: 24, help: "Leave blank and a new member is given the next number. A printed ID is never reissued." },
     { id: "photo", l: "Photograph", type: "file", accept: "image/*", help: "A head-and-shoulders photo for the ID card. Leave empty to keep the one on file." },
     { id: "dob", l: "Date of birth", type: "date" },
@@ -100,11 +117,17 @@ function crMemFieldsAll(centres, divisions) {
   ];
 }
 const CR_MEM_KEYS = ["fullName", "email", "phone", "type", "status", "centre", "division", "level", "track", "disciplines", "displayId", "dob", "joinDate", "school", "parentName", "parentPhone", "parentEmail", "notes"];
-function crMemValues(m) { const v = {}; CR_MEM_KEYS.forEach(k => { v[k] = m && m[k] != null ? String(m[k]) : ""; }); return v; }
+function crMemValues(m) {
+  const v = {}; CR_MEM_KEYS.forEach(k => { v[k] = m && m[k] != null ? String(m[k]) : ""; });
+  v.courses = crMemCourses(m);
+  return v;
+}
 /** What changed on screen, and nothing else. */
 function crMemPatch(before, after) {
   const out = {};
   CR_MEM_KEYS.forEach(k => { const a = String(after[k] == null ? "" : after[k]).trim(); if (a !== String(before[k] == null ? "" : before[k]).trim()) out[k] = k === "level" ? a.toUpperCase() : a; });
+  const ca = after.courses || [], cb = before.courses || [];
+  if (ca.join("\u0001") !== cb.join("\u0001")) out.courses = ca;
   return out;
 }
 /** A chosen photograph → the photoUrl the record stores (uploaded, or inline when uploads are off). */
@@ -138,7 +161,7 @@ async function crMemOpen(ctx, memberId) {
     sub: [m.displayId || m.memberId, m.centre, m.type === "Summer" ? "Summer School" : "NGG"].filter(Boolean).join(" · "),
     stats: [["XP", crNum(d.stats && d.stats.xp)], ["Missions verified", crNum(d.progress && d.progress.verified)], ["Streak", crNum(d.stats && d.stats.streak)]],
     fields: [["Status", crMemStatusLabel(m.status)], ["Member ID", m.memberId], ["Printed ID", m.displayId], ["Email", m.email], ["Phone", m.phone],
-      ["Centre", m.centre], ["Division", div ? div.name : (m.division || "Not placed")], ["Level", m.level], ["Track", m.track], ["School", m.school],
+      ["Centre", m.centre], ["Division", div ? div.name : (m.division || "Not placed")], ["Level", m.level], ["Courses", crMemCourses(m).join(", ") || (m.track ? m.track + " (not chosen from the list yet)" : "")], ["School", m.school],
       ["Date of birth", m.dob ? crDate(m.dob) : ""], ["Joined", crMemJoined(m)]],
     sections: [
       { h: "Parent or guardian", rows: [["Name", m.parentName], ["Phone", m.parentPhone], ["Email", m.parentEmail]] },
@@ -162,7 +185,11 @@ function crMemEdit(ctx, m, after) {
     /* A field whose STORED value already breaks its own format rule ("N/A" for
        an email) is not checked here: the rule would refuse every save of the
        record for a field nobody touched. The server still checks it if changed. */
-    values: before, fields: crMemFields(data.centres || [], data.divisions || [], true).map(f => {
+    /* No courses chosen yet: an old free-text track that names a real course
+       is ticked on the form (not in `before`), so saving turns it into a choice. */
+    values: Object.assign({}, before, { courses: before.courses.length ? before.courses
+      : (data.allCourses || []).filter(c => c.toLowerCase() === String(m.track || "").trim().toLowerCase()) }),
+    fields: crMemFields(data.centres || [], data.divisions || [], true, data.allCourses || []).map(f => {
       const v = before[f.id];
       if (!v) return f;
       const breaks = (f.email && !/^\S+@\S+\.\S+$/.test(v)) || (f.check && f.check(v, before)) || (f.max && v.length > f.max);
@@ -213,9 +240,10 @@ function crMemAdd(ctx) {
     title: "Add member", submit: "Add member", busyLabel: "Adding…",
     intro: "They get a member record and, as an NGG member, the next printed ID.",
     values: Object.assign(crMemValues({}), crMemProfileValues({}), { type: "NGG", status: "active", centre: (data.centres || []).length === 1 ? data.centres[0] : "" }),
-    fields: crMemFields(data.centres || [], data.divisions || []),
+    fields: crMemFields(data.centres || [], data.divisions || [], false, data.allCourses || []),
     onSubmit: async v => {
       const row = {}; CR_MEM_KEYS.forEach(k => { if (String(v[k] || "").trim() !== "") row[k] = k === "level" ? String(v[k]).trim().toUpperCase() : String(v[k]).trim(); });
+      if ((v.courses || []).length) row.courses = v.courses;
       const prof = {}; CR_MEM_PROFILE.forEach(f => { if (String(v[f.id] || "").trim() !== "") prof[f.key] = String(v[f.id]).trim(); });
       if (Object.keys(prof).length) row.profile = prof;
       const photoUrl = await crMbPhotoUrl(v.photo);
@@ -285,7 +313,7 @@ function crMemServer(d) {
           cells: [
             { k: "person", t: m.fullName || m.memberId, s: [m.displayId || m.memberId, m.email].filter(Boolean).join(" · "), photo: crMbPhoto(m.photoUrl) },
             { k: "text", t: m.centre || "—" },
-            { k: "text", t: divName(m.division) || "Not placed", s: m.track || "" },
+            { k: "text", t: divName(m.division) || "Not placed", s: crMemCourses(m).join(", ") || m.track || "" },
             { k: "text", t: m.type === "Summer" ? "Summer School" : "NGG" },
             { k: "mono", t: m.level || "—" },
             { k: "status", t: crMemStatusLabel(m.status), tone: CR_MEM_TONE[m.status] || "neutral" },
@@ -399,8 +427,8 @@ async function crMbExport(ctx, onlyKeys) {
     let out = r.members || [];
     if (onlyKeys) { const want = new Set(onlyKeys); out = out.filter(m => want.has(m.memberId)); }
     if (!out.length) return ctx.toast("Nothing to export — no member matches.", null, true);
-    crDownloadCsv("members", ["memberId", "displayId", "fullName", "email", "type", "status", "centre", "level", "track", "division", "joinDate"],
-      out.map(m => [m.memberId, m.displayId || "", m.fullName, m.email, m.type, m.status, m.centre, m.level || "", m.track || "", m.division || "", m.joinDate || ""]));
+    crDownloadCsv("members", ["memberId", "displayId", "fullName", "email", "type", "status", "centre", "level", "courses", "division", "joinDate"],
+      out.map(m => [m.memberId, m.displayId || "", m.fullName, m.email, m.type, m.status, m.centre, m.level || "", crMemCourses(m).join("; ") || m.track || "", m.division || "", m.joinDate || ""]));
     ctx.toast("Exported " + crPlural(out.length, "member") + (r.total > out.length && !onlyKeys ? " (the first " + crNum(out.length) + " of " + crNum(r.total) + ")" : ""));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t export the roster."), null, true); }
 }
@@ -836,7 +864,7 @@ function crMbRecBlocks(d, ctx) {
     out.push({ type: "list", span: 3, title: "Details", action: "Edit", onAction: () => crMemEdit(ctx, m, () => crMbRecReload(ctx, m.memberId)), rows: [
       kv("identification-badge", "Member ID · printed ID", m.memberId + (m.displayId ? " · " + m.displayId : "")), kv("envelope-simple", "Email", m.email), kv("phone", "Phone", m.phone),
       kv("map-pin", "Centre", m.centre), kv("compass", "Division", div ? div.name : (m.division || "Not placed yet")), kv("stairs", "NGG level", m.level),
-      kv("music-notes", "Track · disciplines", [m.track, m.disciplines].filter(Boolean).join(" · ")), kv("cake", "Date of birth", m.dob ? crDate(m.dob) : ""),
+      kv("music-notes", "Courses · disciplines", [crMemCourses(m).join(", ") || m.track, m.disciplines].filter(Boolean).join(" · ")), kv("cake", "Date of birth", m.dob ? crDate(m.dob) : ""),
       kv("calendar-check", "Joined", crMemJoined(m)),
     ] });
     out.push({ type: "list", span: 3, title: "Guardian and school", rows: [kv("user", "Parent or guardian", m.parentName), kv("phone", "Guardian phone", m.parentPhone), kv("envelope-simple", "Guardian email", m.parentEmail), kv("graduation-cap", "School", m.school)] });
@@ -1035,7 +1063,7 @@ Object.assign(CR_TAB_DEFS, {
       ]);
       const centres = (cs.centres || []).filter(c => c.status !== "retired").map(c => c.name).filter(Boolean).sort((a, b) => a.localeCompare(b));
       const seg = crMbPending.seg; crMbPending.seg = "";
-      return crMbWithSeg({ centres, divisions: dv.divisions || [], overview: ov.overview || null, rev: 0, imp: null, rec: null }, seg);
+      return crMbWithSeg({ centres, divisions: dv.divisions || [], allCourses: dv.allCourses || [], overview: ov.overview || null, rev: 0, imp: null, rec: null }, seg);
     },
     actions: (d, ctx) => {
       if (ctx.sub) {
@@ -1086,7 +1114,11 @@ Object.assign(CR_TAB_DEFS, {
         { l: "Set level", max: 500, run: crMemBulk(ctx, "level", "Set level", { id: "level", l: "Level", type: "select", ph: "No level (clears it)", opts: CR_MB_LEVELS.map(x => [x, "Level " + x]) }, "updated") },
         { l: "Set programme", max: 500, run: crMemBulk(ctx, "type", "Set programme", { id: "type", l: "Programme", type: "chips", req: true, opts: CR_MEM_TYPE }, "updated",
           { values: { type: "NGG" }, intro: "NGG is the year-round membership; Summer School is a participant record." }) },
-        { l: "Set track", max: 500, run: crMemBulk(ctx, "track", "Set track", { id: "track", l: "Track", max: 64, ph: "Music", help: "Blank clears it." }, "updated") },
+        { l: "Set courses", max: 500, run: crMemBulk(ctx, "courses", "Set courses", [
+          { id: "mode", l: "How", type: "chips", req: true, opts: [["add", "Add these"], ["replace", "Replace theirs with these"], ["remove", "Take these off"]] },
+          { id: "courses", l: "Courses", type: "multi", optsFor: () => d.allCourses || [], help: "From the catalogue. Their lessons, channels and assignments follow these." },
+        ], "updated", { values: { mode: "add" }, intro: "Courses come from the catalogue under Divisions & courses.",
+          payload: v => ({ mode: v.mode, courses: v.courses || [] }) }) },
         { l: "Record consent", max: 500, run: crMemBulk(ctx, "consent", "Record consent", [
           { id: "consentType", l: "What for", type: "chips", req: true, opts: CR_MB_CONSENT_TYPES.map(t => [t[0], t[1]]) },
           { id: "consentStatus", l: "Decision", type: "chips", req: true, opts: [["granted", "Granted"], ["withdrawn", "Withdrawn"]] },
@@ -1114,7 +1146,7 @@ Object.assign(CR_TAB_DEFS, {
           { id: "type", l: "Programme", opts: CR_MEM_TYPE.map(s => ({ v: s[0], l: s[1] })) },
           { id: "centre", l: "Centre", opts: (d.centres || []).map(c => ({ v: c, l: c })) },
           { id: "level", l: "Level", opts: CR_MB_LEVELS.map(x => ({ v: x, l: "Level " + x })) },
-          { id: "missing", l: "Missing from the card", opts: CR_MB_MISSING.map(x => ({ v: x[0], l: x[1] })) },
+          { id: "missing", l: "Missing", opts: CR_MB_MISSING.map(x => ({ v: x[0], l: x[1] })) },
         ],
         selectAllMatching: async ({ q, filters }) => {
           const r = await NGGApi.admin.members.ids(Object.assign(crMbQuery(d, q, filters), { sort: crMbSortCol(crMbLast.current.sort), dir: crMbLast.current.sort ? crMbLast.current.sort.dir : "" }));

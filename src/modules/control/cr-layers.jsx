@@ -54,7 +54,9 @@ function CrDrawer({ d, phone, onClose }) {
 }
 
 /* ── Form (§4.3): validate on submit, then live ── */
-function crFieldOpts(f) { return (f.opts || []).map(o => Array.isArray(o) ? o : [o, o]); }
+/* A field's options; `optsFor(values)` lets them follow another field (a
+   member's courses follow their division). */
+function crFieldOpts(f, vals) { return ((typeof f.optsFor === "function" ? f.optsFor(vals || {}) : f.opts) || []).map(o => Array.isArray(o) ? o : [o, o]); }
 function CrFormSheet({ f, phone, onClose, toast }) {
   const init = React.useMemo(() => {
     const v = Object.assign({}, f.values || {});
@@ -101,7 +103,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
       const multi = x.type === "multi";
       control = (
         <div className="cr-wrap" role={multi ? "group" : "radiogroup"} aria-label={x.l} id={id} tabIndex={-1}>
-          {crFieldOpts(x).map(o => {
+          {crFieldOpts(x, vals).map(o => {
             const on = multi ? (v || []).includes(o[0]) : v === o[0];
             return <button key={o[0]} type="button" className="cr-chip" role={multi ? "checkbox" : "radio"} aria-checked={on}
                            onClick={() => set(x.id, multi ? (on ? (v || []).filter(y => y !== o[0]) : (v || []).concat([o[0]])) : (on && !x.req ? "" : o[0]))}>{o[1]}</button>;
@@ -109,7 +111,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
         </div>
       );
     } else if (x.type === "select") {
-      control = <select id={id} className="cr-select" value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}>{!x.req && <option value="">{x.ph || "None"}</option>}{crFieldOpts(x).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>;
+      control = <select id={id} className="cr-select" value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}>{!x.req && <option value="">{x.ph || "None"}</option>}{crFieldOpts(x, vals).map(o => <option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>;
     } else if (x.type === "textarea") {
       control = <textarea id={id} rows={x.rows || 5} placeholder={x.ph} maxLength={x.max} value={v == null ? "" : v} aria-invalid={err ? true : undefined} aria-describedby={desc} onChange={e => set(x.id, e.target.value)}/>;
     } else if (x.type === "switch") {

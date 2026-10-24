@@ -944,7 +944,9 @@ function admin_clubp_create(array $p): array {
             if (!strtotime($dob) || $age < 8 || $age > 19) return ['ok' => false, 'error' => 'bad_age', 'message' => 'NGG is for ages 8 to 19.'];
             $isEmail = str_contains($contact, '@');
             if ($isEmail && !filter_var($contact, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_contact'];
-            $r = $run('admin.members.upsert', ['data' => ['fullName' => $name, 'type' => 'NGG', 'status' => 'active', 'centre' => $centre, 'track' => $course, 'dob' => $dob,
+            // The course picked is a course chosen (members.courses), when the catalogue has it.
+            $chosen = function_exists('member_courses_clean') ? member_courses_clean([$course])[0] : [];
+            $r = $run('admin.members.upsert', ['data' => ($chosen ? ['courses' => $chosen] : []) + ['fullName' => $name, 'type' => 'NGG', 'status' => 'active', 'centre' => $centre, 'track' => $course, 'dob' => $dob,
                 'parentName' => $gname, 'parentEmail' => $isEmail ? strtolower($contact) : '', 'parentPhone' => $isEmail ? '' : $contact, 'joinDate' => gmdate('Y-m-d')]]);
             if (empty($r['ok'])) return $r;
             $mid = (string)($r['memberId'] ?? '');

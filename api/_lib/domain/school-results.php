@@ -791,7 +791,7 @@ function results_staff_can(array $g, array $m): bool {
     $role = (string)($g['mpRole'] ?? $g['role'] ?? '');
     if (in_array($role, ['pod', 'peer', 'lead'], true)) return in_array((string)$m['memberId'], mp_caseload_ids($g), true);
     if (($g['centres'] ?? null) !== null && !in_array((string)$m['centre'], $g['centres'], true)) return false;
-    if (($g['courses'] ?? null) !== null && !in_array((string)$m['track'], $g['courses'], true)) return false;
+    if (($g['courses'] ?? null) !== null && !member_takes_any($m, $g['courses'])) return false;
     return true;
 }
 function results_staff_actor(array $g): array {
@@ -933,14 +933,27 @@ function results_instructor_gate(array $p): array {
 /** The NGG members an instructor teaches, as rows. One query. */
 function results_class(array $g, string $q = ''): array {
     $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
-    foreach (['centre' => $g['centres'] ?? null, 'track' => $g['courses'] ?? null] as $col => $vals) {
-        if ($vals === null) continue;
-        if (!$vals) return [];
-        $where .= " AND $col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
-        $args = array_merge($args, $vals);
+    $centres = $g['centres'] ?? null; $courses = $g['courses'] ?? null;
+    if ($centres !== null) {
+        if (!$centres) return [];
+        $where .= ' AND centre IN (' . implode(',', array_fill(0, count($centres), '?')) . ')';
+        $args = array_merge($args, $centres);
+    }
+    /* A member is in a course's class when it is one of their chosen courses
+       (or, with none chosen, their track — any case). `track IN (…)` left out
+       a member on Robotics as their SECOND course, and one whose track was
+       typed "coding": the instructor could not see, mark or follow them. */
+    if ($courses !== null) {
+        if (!$courses) return [];
+        $or = [];
+        foreach ($courses as $c) {
+            if (function_exists('member_course_sql')) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $args = array_merge($args, $ca); }
+            else { $or[] = 'lower(track) = lower(?)'; $args[] = (string)$c; }
+        }
+        $where .= ' AND (' . implode(' OR ', $or) . ')';
     }
     if ($q !== '') { $where .= ' AND lower(fullName) LIKE ?'; $args[] = '%' . mb_strtolower($q) . '%'; }
-    return array_values(array_filter(db_all("SELECT memberId, fullName, displayId, centre, track, role, dob, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT 2000", $args), 'results_in_loop'));
+    return array_values(array_filter(db_all("SELECT memberId, fullName, displayId, centre, track, courses, role, dob, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT 2000", $args), 'results_in_loop'));
 }
 
 /**

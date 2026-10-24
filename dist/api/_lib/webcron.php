@@ -185,6 +185,8 @@ function web_cron_run(): void {
                 // Photo requests (id-studio.php): the queued people of a campaign, a batch a minute.
                 if (web_cron_due('photo_asks', web_cron_cfg('photo_asks', 60)) && function_exists('ids_photo_drain')) web_cron_guard('photo_asks', fn() => ids_photo_drain());
                 if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
+                // Once: tracks that name courses exactly become chosen courses (curriculum.php).
+                if (function_exists('member_courses_backfill_once') && (string)setting_raw(MEMBER_COURSES_BACKFILL) === '') web_cron_guard('courses_backfill', 'member_courses_backfill_once');
                 /* Fee accrual. Its own slot rather than a ride on maintenance,
                    because it is the one job an operator will want to reason
                    about on its own — "has anybody been charged today" — and a

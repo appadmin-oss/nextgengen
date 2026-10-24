@@ -68,7 +68,15 @@ function assignment_matches_member(array $a, array $member, string $currentSessi
     $track = trim((string)($a['track'] ?? ''));
     if ($track === '' || $track === 'All') return true;
     $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($member, $ctx) : [(string)($member['track'] ?? '')];
-    foreach ($courses as $mc) if (mb_strtolower(trim($mc)) === mb_strtolower($track)) return true;
+    $mine = array_map(fn($x) => mb_strtolower(trim((string)$x)), $courses);
+    if (in_array(mb_strtolower($track), $mine, true)) return true;
+    /* An assignment set for a division word or a family ("Tech", "Music")
+       reaches a member who takes any course it stands for — the same reading
+       a member's own track gets, so it works for chosen courses too. */
+    if (function_exists('member_courses_from_text')) {
+        [$want] = member_courses_from_text($track, $ctx);
+        foreach ($want as $w) if ($w !== 'Chess' && in_array(mb_strtolower($w), $mine, true)) return true;
+    }
     return false;
 }
 
@@ -100,7 +108,7 @@ function assignment_session_id(): string {
 function assignment_audience(array $a): array {
     $sid = assignment_session_id();
     $args = [];
-    $sql = "SELECT memberId, fullName, email, centre, track, disciplines, division, status, type, role FROM members WHERE (status IS NULL OR LOWER(TRIM(status)) IN ('active', ''))";
+    $sql = "SELECT memberId, fullName, email, centre, track, courses, disciplines, division, status, type, role FROM members WHERE (status IS NULL OR LOWER(TRIM(status)) IN ('active', ''))";
     $c = trim((string)($a['centre'] ?? ''));
     if ($c !== '' && $c !== 'All' && $c !== 'Both') { $sql .= ' AND LOWER(TRIM(centre)) = ?'; $args[] = mb_strtolower($c); }
     $ctx = null; $out = [];

@@ -881,6 +881,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.home'          => 'community_v3_home',
             'community.media'         => 'community_v3_media',
             'community.doc'           => 'community_v3_doc',
+            'curriculum.material'     => 'curriculum_material_doc',
             'community.videoPos'      => 'community_v3_video_pos',
             'community.videoPoints'   => 'community_v3_video_points',
             'community.answer'        => 'community_v3_answer',

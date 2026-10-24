@@ -133,7 +133,11 @@ function admin_members_list(array $p): array {
         // The card shows `disciplines` and falls back to `track`, so a member is
         // only missing one when BOTH are blank.
         'discipline' => "(TRIM(COALESCE(disciplines,'')) = '' AND TRIM(COALESCE(track,'')) = '')",
+        // No courses chosen from the list: their lessons and channels rest on
+        // whatever the old track names exactly, which may be nothing.
+        'courses'    => "COALESCE(courses,'') = '' AND COALESCE(type,'NGG') = 'NGG'",
     ];
+    if (($p['missing'] ?? '') === 'courses' && function_exists('member_courses_backfill_once')) member_courses_backfill_once();
     $missing = (string)($p['missing'] ?? '');
     // Unknown value ⇒ no filter, same as a stale sort key: a bookmark that has
     // gone out of date should show the roster, not an error.
@@ -663,7 +667,20 @@ function admin_members_upsert(array $p): array {
         }
     }
 
-    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
+    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division','courses'];
+
+    /* ── Courses: chosen from the catalogue, refused by name when not in it ──
+       The first chosen course is kept in `track` too, so every reader that
+       still looks at one course sees the right one. */
+    if (array_key_exists('courses', $data)) {
+        [$picked, $unknown] = member_courses_clean($data['courses']);
+        if ($unknown) return ['ok' => false, 'error' => 'unknown_course', 'courses' => $unknown,
+                              'detail' => 'Not a course in the catalogue: ' . implode(', ', $unknown) . '. Pick from the list, or add it under Divisions & courses first.'];
+        if (count($picked) > MEMBER_COURSES_MAX) return ['ok' => false, 'error' => 'too_many_courses', 'max' => MEMBER_COURSES_MAX,
+                                                         'detail' => 'At most ' . MEMBER_COURSES_MAX . ' courses.'];
+        $data['courses'] = $picked ? json_encode($picked, JSON_UNESCAPED_UNICODE) : '';
+        if (!array_key_exists('track', $data)) $data['track'] = $picked[0] ?? '';
+    }
 
     /* ── The join date is not a free field (domain/profile-drive.php) ──
        Set when the member is made (blank means today), and changed afterwards
