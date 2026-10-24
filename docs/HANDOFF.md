@@ -2785,4 +2785,7 @@ The table is editable in the Control Room, with these as the defaults.
 - **The portal** reloads `curr` after a mark, so the Today, Marking and Analytics counts follow.
 - **Analytics lesson rows** read `{{ u.doneOf }}` (completed/audience) and the average score. The design had a hard-coded "/12" after a percentage, and "avg" showed completed/started.
 - **Tests:** `instructor-v6.test.js` checks a second-course member in the class, the analytics ratio, marking through the screen, the feedback on record and the child's notice (31 checks).
-- **assign-desk.test.js** has one intermittent hang: the member page reload fails to mount within 180s. It fails in some runs and passes in others, and was compared against the previous commit.
+- **assign-desk.test.js** hung in its first two runs on this code: the member page reload did not mount within 180s.
+  - The next five runs passed 30/0, and the previous commit passed 3 of 3.
+  - It could not be reproduced afterwards. Nothing in the changed client code loops, and the server log of a passing run shows no stalled request.
+  - If it recurs, capture the PHP server log (`stdio` to a file) and look for an "Accepted" with no response line.
