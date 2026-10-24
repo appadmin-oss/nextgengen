@@ -31039,6 +31039,44 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
 })();
 
+/* An answer that IS one of the options wins over the A/B/C/D letter reading.
+   Options D/E/F/G with the answer "E" means the option "E" — not option
+   number five, which does not exist. The letter reading came first and
+   rejected the row; the boot seeder skips what it cannot validate, so the
+   lesson disappeared silently. */
+(function () {
+    $mk = fn($answer) => curriculum_validate(['course' => 'Violin', 'title' => 'Reading', 'week' => 1, 'position' => 1,
+        'checks' => [['kind' => 'mcq', 'prompt' => 'The bottom line of the treble stave is…',
+                      'options' => ['D', 'E', 'F', 'G'], 'answer' => $answer]]], true);
+    $v = $mk('E');
+    chk('mcq · an answer that is one of the options wins over the letter reading (D/E/F/G, answer "E")',
+        !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '1');
+    $v = $mk('B');
+    chk('mcq · a letter that is not one of the options still reads as the letter', !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '1');
+    $v = $mk('2');
+    chk('mcq · a numeric answer is still an index', !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '2');
+    chk('mcq · an answer matching nothing is still refused', empty($mk('photosynthesis')['ok']));
+})();
+
+/* Every bundled lesson survives the real importer.
+   curriculum_seed_bundled_once() SKIPS a row that does not validate — which is
+   right at boot, where one bad row must not stop the rest, and silent in a
+   test suite, where a whole course can go missing without anything turning
+   red. A material with no https URL is enough to lose the lesson. So the
+   seeds are run through the actual validator here, and a skip is a failure. */
+(function () {
+    foreach (curriculum_seed_files() as $key => $j) {
+        $bad = [];
+        foreach ($j['lessons'] ?? [] as $i => $row) {
+            $v = curriculum_validate($row, !empty($j['allowNewCourse']));
+            if (empty($v['ok'])) $bad[] = ($row['course'] ?? '?') . ' w' . ($row['week'] ?? '?')
+                . ' — ' . ($v['error'] ?? '?') . (isset($v['detail']) ? ' (' . $v['detail'] . ')' : '');
+        }
+        chk('seed · every lesson in ' . $key . ' passes the importer (' . count($j['lessons'] ?? []) . ' rows)'
+            . ($bad ? ' — ' . implode('; ', array_slice($bad, 0, 3)) : ''), !$bad);
+    }
+})();
+
 /* The shape every course must hold — retrieval, autonomy, a proportionate AI
    budget, a project cadence and spacing. The rules and the evidence behind
    each live in curriculum-shape.php; this runs them over every bundled seed

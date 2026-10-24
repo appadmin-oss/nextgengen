@@ -71,6 +71,9 @@ const NGG_AI_INTERVAL = [
 ];
 const NGG_AI_INTERVAL_DEFAULT = 4;
 
+/** Courses where AI is the subject, not a tool used inside another subject. */
+const NGG_AI_IS_THE_SUBJECT = ['Artificial Intelligence' => true];
+
 /** Lessons grouped by course, from the bundled seeds plus anything published. */
 function ngg_course_lessons(): array {
     $out = [];
@@ -118,6 +121,13 @@ function ngg_course_shape_faults(string $course, array $lessons): array {
        not safer for having avoided it. The ceiling is there because it was
        once stamped on 298 of 336 lessons — more shelf space than the weekly
        assignment — and a lesson a learner skips teaches nothing. */
+    /* A course whose SUBJECT is the tool is exempt from the budget: in
+       Artificial Intelligence, AI is not an aside used in proportion, it is
+       the thing being taught, and every lesson is properly about it. Budgeting
+       it like a course that merely uses the tool would be the rule mistaking
+       its own units for the point. */
+    if (isset(NGG_AI_IS_THE_SUBJECT[$course])) return $bad;
+
     $ai = array_values(array_filter($lessons, fn($L) => preg_match('/\bai\b|chatgpt|copilot/u', ngg_lesson_text($L))));
     if (!$ai) {
         $bad[] = "$course: nothing in the course teaches using AI";
