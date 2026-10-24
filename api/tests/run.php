@@ -24245,12 +24245,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 /* ── The NGG Club curriculum ─────────────────────────────────────────────── */
 (function () {
     $now = now_iso();
-    /* These fixtures are written against the legacy course names (Piano,
-       Guitar…). They test lessons, checks and the timetable, not which courses
-       the Club teaches, so the Club's list is pinned to those names — with the
-       NGG divisions seed marked done, so the first read does not replace it. */
-    setting_set('club_catalogue_seed', CLUB_DIVISIONS_SEED, 'test');
-    setting_set('club_catalogue', academy_catalogue_default(), 'test');
+    /* These fixtures are written against Piano and Guitar, which ARE Club
+       courses now that an instrument is its own course. They used to need the
+       Club's list swapped for Summer School's to make those names resolve —
+       and that swap was never undone, so every later test saw Summer's
+       catalogue where the Club's belonged. Nothing is pinned now. */
     $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cur ' . $id, 'email' => strtolower($id) . '@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-CUR-ADM', 'club_admin'); $mk('NGG-CUR-ED', 'editor');
@@ -25231,9 +25230,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_insert('members', ['memberId' => 'NGG-ML-ADM', 'fullName' => 'Media Admin', 'email' => 'ml-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
     $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-ML-ADM', 'key' => 'media-lab-2026']);
     $rows = $s['rows'] ?? [];
+    $cat = array_map('mb_strtolower', club_courses());
     chk('media lab: the course ships, 24 weeks of two sessions, every lesson with a check', count($rows) === 48
-        && count(array_unique(array_column($rows, 'week'))) === 24 && !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Media Lab'));
-    chk('media lab: the seed says it files under a course outside the catalogue', ($s['allowNewCourse'] ?? false) === true);
+        && count(array_unique(array_column($rows, 'week'))) === 24 && !array_filter($rows, fn($r) => !$r['checks']));
+    /* It used to file all 48 under "Media Lab", a course nobody could enrol on,
+       so every one of them reached nobody. Each lesson now names the media
+       course that teaches it — or '' for the handful (safety, honest AI use,
+       research) that belong to every member of the programme. */
+    chk('media lab: every lesson names a real catalogue course, or everyone',
+        !array_filter($rows, fn($r) => $r['course'] !== '' && !in_array(mb_strtolower($r['course']), $cat, true)));
+    chk('media lab: the design, photography, video and social weeks each reach their own course',
+        count(array_unique(array_filter(array_column($rows, 'course')))) >= 6);
+    chk('media lab: it no longer needs the uncatalogued-course flag', ($s['allowNewCourse'] ?? false) === false);
     $proj = 0; $refl = 0;
     foreach ($rows as $r) foreach ($r['checks'] as $c) { if ($c['kind'] === 'project') $proj++; if ($c['kind'] === 'reflection') $refl++; }
     chk('media lab: a team challenge every month, marked on the programme\'s rubric, with a reflection', $proj >= 6 && $refl >= 6
@@ -25241,12 +25249,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $bodies = implode("\n", array_map(fn($r) => $r['title'] . ' ' . $r['body'] . ' ' . $r['summary'], $rows));
     chk('media lab: consent and age rules are taught before the first photograph of a person', stripos($bodies, 'consent') !== false && stripos($bodies, '13+') !== false
         && array_search('Staying safe online, and asking before you post', array_column($rows, 'title')) < array_search('Portraits — with permission', array_column($rows, 'title')));
-    $refused = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true]);
-    chk('media lab: without the flag the importer refuses an uncatalogued course', ($refused['tally']['failed'] ?? 0) === 48);
-    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
-    chk('media lab: with it, every lesson passes', ($dry['tally']['create'] ?? 0) === 48 && ($dry['tally']['failed'] ?? 1) === 0);
-    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'allowNewCourse' => true, 'digest' => $dry['digest']]);
-    chk('media lab: imported as 48 drafts, and the course can then be timetabled', ($ap['tally']['create'] ?? 0) === 48 && in_array('Media Lab', tt_courses(), true));
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('media lab: every lesson passes WITHOUT the uncatalogued-course flag', ($dry['tally']['create'] ?? 0) === 48 && ($dry['tally']['failed'] ?? 1) === 0);
+    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
+    chk('media lab: imported as 48 drafts against courses that can be timetabled', ($ap['tally']['create'] ?? 0) === 48
+        && in_array('Graphic Design', tt_courses(), true) && in_array('Video Production', tt_courses(), true));
     $ids = array_column(db_all("SELECT unitId FROM curriculum_units WHERE level = 'Media Lab 2026'"), 'unitId');
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
@@ -25524,7 +25531,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $divs = club_divisions();
     chk('separation: the Club is seeded with the four NGG divisions, not a copy of Summer School\'s catalogue',
         array_column($divs, 'name') === ['Creative & Performing Arts', 'Media & Content Strategy', 'Technology & Applied Engineering', 'Business Strategy, Operations & Administration']
-        && in_array('Robotics', $first, true) && in_array('Adire', $first, true) && !in_array('Piano', $first, true) && (string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED);
+        && in_array('Robotics', $first, true) && in_array('Adire', $first, true)
+        /* Piano used to be the discriminator; it is a Club course now, so it
+           proves nothing. The two programmes name the same subjects
+           differently — the Club teaches Adire and Graphic Design, Summer
+           School Tie & Dye and Graphics Design — and THAT is the difference
+           that matters, because a copy would carry Summer's spellings. */
+        && !array_intersect($first, ['Tie & Dye', 'Dance / Acting'])
+        && !array_intersect(club_courses(), ['Graphics Design', 'Video Editing', 'Practical Coding'])
+        && (string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED);
     chk('separation: each division carries its icon, the short label its card prints, and its description',
         $divs[2]['icon'] === '💻' && $divs[2]['short'] === 'TECH' && str_contains($divs[2]['blurb'], 'cybersecurity') && club_division_of('Robotics') === 'Technology & Applied Engineering');
     chk('separation: the seed runs once — an admin\'s later edit is not overwritten',
@@ -29402,8 +29417,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        This catalogue (set above): AI & Technology (Practical Coding, Coding,
        Robotics), Music (Piano, Music), Media (Video Production), Business (Finance). */
     $ctxW = null;
-    chk('courses · a word that is a course is that course, and nothing from another division',
-        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Chess']);
+    /* Piano is a strand of Music (COURSE_STRANDS), so a pianist is shown
+       Piano's lessons AND Music's shared ones — reading music is not a piano
+       skill. What they must NOT pick up is another division's courses, which
+       the next two checks hold. */
+    chk('courses · a strand carries its own course and its subject, and nothing from another division',
+        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Music', 'Chess']);
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
     chk('courses · "Design" names no division: it gets no division\'s courses',
@@ -30848,12 +30867,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 /* ── A course's lessons include those filed under its parts ── */
 (function () {
     $prevCat = setting_get('club_catalogue'); setting_set('club_catalogue', club_catalogue_default(), 'test');
-    chk('curriculum: "Piano" lessons belong to Musical Instruments; a catalogue course is its own', curriculum_course_parent('Piano') === 'Musical Instruments' && curriculum_course_parent('Coding') === 'Coding' && curriculum_course_parent('') === '');
+    /* An instrument is its own course now, and "Music" is the subject above it
+       (COURSE_STRANDS). The relationship is structural: nothing reads the
+       spelling of a course name to decide what it belongs to. */
+    chk('curriculum: an instrument is its own course, and so is a course that is just itself',
+        curriculum_course_parent('Piano') === 'Piano' && curriculum_course_parent('Coding') === 'Coding' && curriculum_course_parent('') === '');
+    chk('curriculum: a strand is shown its own lessons AND its subject\'s', course_scope('Piano') === ['Piano', 'Music']);
+    chk('curriculum: a leaf course widens to nothing but itself', course_scope('Acting') === ['Acting']);
     db_insert('curriculum_units', ['unitId' => 'U-PIANO-1', 'course' => 'Piano', 'title' => 'Middle C', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-    $fam = array_map('mb_strtolower', curriculum_course_family('Musical Instruments'));
-    chk('curriculum: the Musical Instruments family includes a lesson filed as Piano, and Guitar', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('musical instruments', $fam, true));
-    db_insert('curriculum_units', ['unitId' => 'U-MI-1', 'course' => 'Musical Instruments', 'title' => 'Posture', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-    chk('curriculum: a course with lessons of its own is taught from them, not the matched ones', curriculum_course_family('Musical Instruments') === ['Musical Instruments']);
+    $fam = array_map('mb_strtolower', curriculum_course_family('Music'));
+    chk('curriculum: the Music family teaches across every instrument under it', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('music', $fam, true));
+    db_insert('curriculum_units', ['unitId' => 'U-MI-1', 'course' => 'Music', 'title' => 'Posture', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* A STRAND is part of the subject, so lessons of its own do not cut the
+       strands off — unlike a merely matched name, which they do. */
+    chk('curriculum: a broad course keeps its strands even once it has lessons of its own',
+        in_array('Piano', curriculum_course_family('Music'), true));
+    chk('curriculum: the retired umbrella still resolves, so no member is orphaned',
+        member_courses_from_text('Musical Instruments')[0] === course_family('Music'));
     chk('curriculum: the matching is not only music ("Drama" lessons are Acting\'s, "Programming" Coding\'s)', curriculum_course_parent('Drama') === 'Acting' && curriculum_course_parent('programming') === 'Coding');
     db_exec("DELETE FROM curriculum_units WHERE unitId IN ('U-PIANO-1', 'U-MI-1')");
     chk('instructor lesson: an unknown course, or a requester who is no staff, is refused', !empty(staff_curriculum_lesson(['requesterId' => 'NGG-NOBODY', 'course' => 'Coding', 'title' => 'x'])['error']));

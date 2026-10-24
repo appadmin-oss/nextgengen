@@ -131,7 +131,7 @@ const NGGC_DIVISIONS = [
     chip: "chip-gold", accent: "var(--gold-500)", icon: "♪",
     mandate: "Develop and monetize artistic, cultural and performance abilities.",
     audience: "For children interested in music, catering, musical instruments, acting, stagecraft, vocal training, adire, crafts, music production and other creative expressions.",
-    courses: ["Music", "Musical Instruments", "Vocal Training", "Music Production", "Acting", "Stagecraft", "Catering", "Adire", "Crafts", "Chess"],
+    courses: ["Music", "Piano", "Guitar", "Drums", "Violin", "Saxophone", "Vocal Training", "Music Production", "Acting", "Stagecraft", "Catering", "Adire", "Crafts", "Chess"],
   },
   {
     id: "media", code: "02", name: "Media & Content Strategy",

@@ -174,11 +174,17 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
  * `club_catalogue_before_seed`, and an admin's later edits are never
  * overwritten, because the seed runs once.
  */
-const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10';
+const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10b-instruments';
 const CLUB_DIVISIONS_DEFAULT = [
     ['name' => 'Creative & Performing Arts', 'icon' => '🎭', 'short' => 'CREATIVE ARTS',
      'blurb' => 'For children interested in music, catering, musical instruments, acting, stagecraft, vocal training, adire, crafts, music production and other creative expressions.',
-     'courses' => ['Music', 'Musical Instruments', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
+     /* An instrument is its own course. "Musical Instruments" taught nothing in
+        particular: a child learning piano and a child learning drums were on
+        the same course and could not both be given the right lesson, and the
+        144 written piano and guitar lessons had nowhere to live that a member
+        could reach. The umbrella name still resolves (member_courses_from_text
+        expands it to every instrument) so nobody on the old track is orphaned. */
+     'courses' => ['Music', 'Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
     ['name' => 'Media & Content Strategy', 'icon' => '🎥', 'short' => 'MEDIA',
      'blurb' => 'For children interested in video production, cinematography, graphic design, branding, digital content creation, social media and visual storytelling.',
      'courses' => ['Video Production', 'Cinematography', 'Graphic Design', 'Branding', 'Digital Content Creation', 'Social Media', 'Visual Storytelling']],
@@ -1052,12 +1058,75 @@ function member_courses_of(array $m): array {
  * word with no single meaning — "Tech", "Media", "Design" — maps to nothing:
  * the member is listed for staff to choose, never given a division's worth of
  * courses they did not sign up for ("Piano" once brought Catering and Adire). */
+/**
+ * Broad courses, and the strands under them.
+ *
+ * Some courses are a subject, not a skill: "Music" does not say whether a child
+ * is at a piano or behind a drum kit, and one lesson cannot serve both. The
+ * strand is what is actually taught and timetabled; the parent is the subject
+ * they belong to.
+ *
+ * This replaces three separate pieces of string-matching that each tried to
+ * infer the same relationship — a regex over course names, a hardcoded
+ * `$lw === 'music'` branch, and a word map pointing at a course that taught
+ * nothing in particular. One map, read by everything:
+ *
+ *   course_scope('Piano')  → ['Piano', 'Music']       a strand, plus its subject
+ *   course_scope('Music')  → ['Music', …every strand]  the subject, taught across
+ *   course_scope('Acting') → ['Acting']                a course that is just itself
+ *
+ * To make another broad course behave this way, add a row. Nothing else changes.
+ */
+const COURSE_STRANDS = [
+    'Music' => ['Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone', 'Vocal Training', 'Music Production'],
+];
+
+/** The strands under a broad course; [] when the course is a leaf. */
+function course_strands(string $course): array {
+    foreach (COURSE_STRANDS as $parent => $kids) if (strcasecmp($parent, $course) === 0) return $kids;
+    return [];
+}
+/** The broad course a strand sits under; '' when it sits under nothing. */
+function course_parent(string $course): string {
+    foreach (COURSE_STRANDS as $parent => $kids) foreach ($kids as $k) if (strcasecmp($k, $course) === 0) return (string)$parent;
+    return '';
+}
+/** Every course name that belongs to the same subject, parent first. */
+function course_family(string $course): array {
+    $parent = course_parent($course);
+    if ($parent !== '') return array_merge([$parent], course_strands($parent));
+    $kids = course_strands($course);
+    return $kids ? array_merge([$course], $kids) : [$course];
+}
+/**
+ * What a member on `$course` should be shown.
+ *
+ * A strand gets its own lessons AND the subject's shared ones — a pianist
+ * should still learn to read music. A broad course gets everything under it.
+ * A leaf gets itself. Nothing here looks at the spelling of a name.
+ */
+function course_scope(string $course): array {
+    $parent = course_parent($course);
+    if ($parent !== '') return [$course, $parent];
+    $kids = course_strands($course);
+    return $kids ? array_merge([$course], $kids) : [$course];
+}
+/* Words that name a SUBJECT rather than a course — including "Musical
+   Instruments", the umbrella that was retired when the instruments became
+   courses of their own. Each resolves to a broad course, and from there to its
+   whole family, so no member on an old track is left with nothing. */
+const BROAD_COURSE_WORDS = [
+    'musical instruments' => 'Music', 'instruments' => 'Music', 'instrument' => 'Music', 'musical' => 'Music',
+];
 const MEMBER_COURSE_WORDS = [
-    'piano' => 'Musical Instruments', 'keyboard' => 'Musical Instruments', 'guitar' => 'Musical Instruments',
-    'drums' => 'Musical Instruments', 'drum' => 'Musical Instruments', 'violin' => 'Musical Instruments',
-    'saxophone' => 'Musical Instruments', 'sax' => 'Musical Instruments', 'trumpet' => 'Musical Instruments',
-    'flute' => 'Musical Instruments', 'bass' => 'Musical Instruments', 'instrument' => 'Musical Instruments',
-    'instruments' => 'Musical Instruments',
+    /* An instrument names its own course now. 'trumpet', 'flute' and 'bass' have
+       no course of their own yet and stay pointed at the nearest one that does,
+       so a child who wrote one on their card still reaches a real lesson. */
+    'piano' => 'Piano', 'keyboard' => 'Piano',
+    'guitar' => 'Guitar', 'bass' => 'Guitar', 'bass guitar' => 'Guitar',
+    'drums' => 'Drums', 'drum' => 'Drums', 'percussion' => 'Drums',
+    'violin' => 'Violin', 'strings' => 'Violin',
+    'saxophone' => 'Saxophone', 'sax' => 'Saxophone', 'trumpet' => 'Saxophone', 'flute' => 'Saxophone',
     'vocal' => 'Vocal Training', 'vocals' => 'Vocal Training', 'singing' => 'Vocal Training', 'voice' => 'Vocal Training', 'choir' => 'Vocal Training',
     'drama' => 'Acting', 'theatre' => 'Acting', 'theater' => 'Acting',
     'ai' => 'Artificial Intelligence', 'code' => 'Coding', 'programming' => 'Coding', 'software' => 'Software Development',
@@ -1095,19 +1164,13 @@ const MEMBER_DIVISION_WORDS = [
     'arts' => 'arts', 'art' => 'arts', 'creative' => 'arts', 'performing arts' => 'arts', 'creative arts' => 'arts',
 ];
 /** The music courses (the music faculty's own: Music, its instruments, voice and production). */
-function member_music_courses(array $ctx): array {
-    $out = [];
-    foreach (array_merge(array_values($ctx['byLower']), $ctx['unitCourses']) as $c) {
-        // An instrument or a voice course counts too ("Piano", "Guitar" lessons are music lessons).
-        $isMusic = preg_match('/\b(music|musical|vocal|instruments?)\b/i', (string)$c)
-            || in_array(MEMBER_COURSE_WORDS[mb_strtolower((string)$c)] ?? '', ['Musical Instruments', 'Vocal Training'], true);
-        if ($isMusic && !in_array((string)$c, $out, true)) $out[] = (string)$c;
-    }
-    // And the instruments and voice by name, so a lesson filed under exactly "Piano" is a music lesson.
-    foreach (MEMBER_COURSE_WORDS as $w => $c)
-        if (in_array($c, ['Musical Instruments', 'Vocal Training'], true) && mb_strlen($w) > 3 && !in_array(ucfirst($w), $out, true)) $out[] = ucfirst($w);
-    return $out;
-}
+/**
+ * Kept as the name other code may still call, but it is now one line over
+ * COURSE_STRANDS. It used to match course names with a regex and a word map,
+ * which is how "Piano" ended up a music course by spelling rather than by
+ * belonging to one.
+ */
+function member_music_courses(array $ctx = []): array { return course_family('Music'); }
 
 /**
  * What free text names, word by word: [courses, vague words, broad].
@@ -1128,7 +1191,11 @@ function member_courses_from_text(string $text, ?array &$ctx = null): array {
     foreach (preg_split('/\s*[,;\/|:]\s*|\s+and\s+|\s*&\s*/i', trim($text)) ?: [] as $w) {
         $w = trim($w); if ($w === '') continue;
         $lw = mb_strtolower($w);
-        if ($lw === 'music') { $out = array_merge($out, member_music_courses($ctx)); $broad = true; continue; }
+        /* A broad course named directly, or the retired umbrella that used to
+           stand for one. Either way the answer is the subject's whole family,
+           read off COURSE_STRANDS rather than matched against spellings. */
+        $broadName = (BROAD_COURSE_WORDS[$lw] ?? '') ?: (course_strands($byLower[$lw] ?? $w) ? ($byLower[$lw] ?? $w) : '');
+        if ($broadName !== '') { $out = array_merge($out, course_family($broadName)); $broad = true; continue; }
         if (isset($byLower[$lw])) { $out[] = $byLower[$lw]; continue; }
         $syn = MEMBER_COURSE_WORDS[$lw] ?? null;
         if ($syn !== null && isset($byLower[mb_strtolower($syn)])) { $out[] = $byLower[mb_strtolower($syn)]; continue; }
@@ -1195,6 +1262,12 @@ function curriculum_member_courses(array $m, ?array &$ctx = null): array {
         $out = array_merge($out, $fromDis);
         if (!$out && trim((string)($m['division'] ?? '')) !== '') $out = curriculum_division_courses((string)$m['division'], $ctx);
     }
+    /* Widen each course to its subject: a pianist is shown Piano's lessons and
+       Music's shared ones, because reading music is not a piano skill. A leaf
+       course widens to itself, so this is a no-op for most of the catalogue. */
+    $wide = [];
+    foreach ($out as $c) foreach (course_scope((string)$c) as $x) $wide[] = $x;
+    $out = $wide;
     $seen = []; $uniq = [];
     foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
     $out = $uniq;
@@ -1996,11 +2069,20 @@ function curriculum_course_parent(string $course): string {
     return curriculum_course_canonical($c) ?: $c;
 }
 
-/** A catalogue course and every course name filed under it ("Musical Instruments", "Piano", "Guitar"…). */
+/**
+ * A course and every course name whose lessons it should teach from.
+ *
+ * Two different relationships, kept apart on purpose:
+ *   · A STRAND of a broad course (COURSE_STRANDS) is a real part of the
+ *     subject, so a broad course always teaches across its strands — even
+ *     when it has lessons of its own.
+ *   · A name nobody catalogued ("Drone Flying") is a FALLBACK: it is taught
+ *     only while the course has nothing written, and is dropped the moment it
+ *     does, so a half-matched name can never dilute a real curriculum.
+ */
 function curriculum_course_family(string $course): array {
-    /* A course with lessons of its own is taught from them: the lessons filed
-       under related names are a fallback for a course nobody has written yet,
-       never mixed into one that has its own. */
+    $strands = course_strands($course);
+    if ($strands) return array_merge([$course], $strands);
     if (db_row("SELECT unitId FROM curriculum_units WHERE lower(course) = lower(?) AND status = 'published' LIMIT 1", [$course])) return [$course];
     $out = [$course];
     foreach (MEMBER_COURSE_WORDS as $w => $parent) if (mb_strtolower($parent) === mb_strtolower($course)) $out[] = $w;
