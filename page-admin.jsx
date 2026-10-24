@@ -4467,12 +4467,14 @@ function AdminMissionQueue() {
       </div>
       {!subs.length && <p className="admin-hint" style={{ margin: "8px 0 0" }}>Nothing waiting — proof-requiring submissions land here for a mentor or admin to verify.</p>}
       {subs.map(s => (
-        <div key={s.memberId + "/" + s.missionId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--line-200, #e6e8ee)", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+        <div key={s.memberId + "/" + s.missionId} className="admin-proof-row">
+          <div>
             <div style={{ fontWeight: 700 }}>{s.fullName || s.memberId} <span className="mono" style={{ color: "var(--ink-500)", fontWeight: 400 }}>· {s.centre || ""}</span></div>
             <div style={{ fontSize: 13, color: "var(--ink-700)" }}>Wk {s.week} · {s.title} <span className="mono">+{s.xp} XP</span></div>
             {s.note ? <div style={{ fontSize: 12.5, color: "var(--ink-500)", marginTop: 2 }}>“{s.note}”</div> : null}
-            {s.proofUrl ? <a href={s.proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>View proof ↗</a> : null}
+            {/* A link only when the proof IS a link; a child's typed answer is shown as their words (it was opened as a broken address). */}
+            {s.proofUrl && /^https?:\/\//i.test(String(s.proofUrl).trim()) ? <a href={s.proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>View proof ↗</a>
+              : s.proofUrl ? <div className="admin-proof-text">{s.proofUrl}</div> : null}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => act(s, false)}>Return</button>

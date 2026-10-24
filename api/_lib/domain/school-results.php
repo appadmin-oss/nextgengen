@@ -165,20 +165,44 @@ function results_ocr(string $url, string $mime): array {
     $img = ai_fetch_image($url);
     if (empty($img['ok'])) return $img;
     $mimeIn = str_starts_with($mime, 'application/pdf') ? 'application/pdf' : $img['mime'];
-    $system = 'You read Nigerian secondary and primary school report cards. Extract each subject and its total score for the term as a whole number from 0 to 100. '
-        . 'Reply with ONLY JSON: {"subjects":[{"name":"Mathematics","score":64,"confidence":0.0-1.0}]}. '
-        . 'Use the subject names as printed. Use the TERM TOTAL (not CA or exam alone). If a score is unreadable, give your best reading with low confidence. '
-        . 'Never invent a subject that is not printed. Skip conduct, attendance, position and remarks rows.';
-    $r = gemini_generate($cand, $system, [['role' => 'user', 'parts' => [
-        ['inline_data' => ['mime_type' => $mimeIn, 'data' => $img['b64']]],
-        ['text' => 'Read the subjects and term totals from this report card.'],
-    ]]], ['maxTokens' => 900, 'temperature' => 0.0, 'thinking' => 'off', 'json' => true]);
+    /* How these cards are laid out, so totals are not missed: a table with a
+       row per subject and columns such as 1st CA, 2nd CA, (3rd CA), Exam,
+       TOTAL (or "Term Total", "Total Score", "Wtd"), Grade, Position, Remark.
+       Photos are often skewed, folded or handwritten in the total column. The
+       first pass read "some scores" as unreadable; it now thinks first, has
+       room for every row, and checks each total against CA + exam. */
+    $system = 'You read Nigerian primary and secondary school report cards (photos or PDFs, often skewed, shadowed, folded or with handwritten totals). '
+        . 'There is a table with one row per subject and columns like "1st CA", "2nd CA", "3rd CA", "Exam", "Total" (also printed "Term Total", "Total Score", "Wtd Total"), "Grade", "Position", "Remark". '
+        . 'For EVERY subject row extract the TERM TOTAL out of 100 as a whole number. If the total cell is blank or unreadable, add the CA and exam marks of that row. '
+        . 'If the card is marked out of something other than 100 (e.g. CA 40 + Exam 60, or a total out of 200), convert to a percentage. '
+        . 'Check each total: it should equal the row\'s CA + exam, and match its grade letter (A is 70+ or 75+, F is below 40). If they disagree, re-read the digits and lower the confidence. '
+        . 'Read digits carefully: 1/7, 3/8, 5/6 and 0/6 are easily confused in handwriting. Use the subject names as printed (keep full names like "Computer Hardware & GSM Repair"). '
+        . 'Never invent a subject; skip conduct, attendance, affective/psychomotor traits, position and remarks rows. '
+        . 'Reply with ONLY JSON: {"subjects":[{"name":"Mathematics","score":64,"ca":24,"exam":40,"grade":"B","confidence":0.0-1.0}],"outOf":100,"notes":"anything unclear"}.';
+    $read = function (string $thinking, string $ask) use ($cand, $system, $mimeIn, $img) {
+        $r = gemini_generate($cand, $system, [['role' => 'user', 'parts' => [
+            ['inline_data' => ['mime_type' => $mimeIn, 'data' => $img['b64']]],
+            ['text' => $ask],
+        ]]], ['maxTokens' => 3000, 'temperature' => 0.0, 'thinking' => $thinking, 'json' => true]);
+        if (empty($r['ok'])) return $r;
+        $text = (string)$r['text'];
+        if (preg_match('/\{.*\}/s', $text, $mm)) $text = $mm[0];
+        $j = json_decode($text, true);
+        if (!is_array($j) || !is_array($j['subjects'] ?? null)) return ['ok' => false, 'error' => 'ai_bad_json'];
+        return ['ok' => true, 'subjects' => $j['subjects'], 'by' => (string)($r['model'] ?? 'gemini')];
+    };
+    $r = $read('low', 'Read every subject row and its term total from this report card.');
+    if (empty($r['ok'])) $r = $read('off', 'Read every subject row and its term total from this report card.');
     if (empty($r['ok'])) return $r;
-    $text = (string)$r['text'];
-    if (preg_match('/\{.*\}/s', $text, $mm)) $text = $mm[0];
-    $j = json_decode($text, true);
-    if (!is_array($j) || !is_array($j['subjects'] ?? null)) return ['ok' => false, 'error' => 'ai_bad_json'];
-    return ['ok' => true, 'subjects' => $j['subjects'], 'by' => (string)($r['model'] ?? 'gemini')];
+    /* Unclear reads (no score, or low confidence on a third or more of rows):
+       one more careful pass, keeping whichever read is more confident. */
+    $weak = static fn(array $subs) => count(array_filter($subs, static fn($x) => !is_numeric($x['score'] ?? null) || (float)($x['confidence'] ?? 1) < 0.6));
+    $w1 = $weak($r['subjects']);
+    if ($r['subjects'] && $w1 * 3 >= count($r['subjects'])) {
+        $r2 = $read('', 'Read this report card again, slowly, row by row. For each subject give the TOTAL; if it is unclear, add that row\'s CA and exam marks.');
+        if (!empty($r2['ok']) && $weak($r2['subjects']) < $w1) $r = $r2;
+    }
+    return $r;
 }
 
 /** Normalise subjects from any source: names cleaned and de-duplicated, scores 0–100 or null. */

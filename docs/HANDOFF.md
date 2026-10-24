@@ -2867,3 +2867,19 @@ The table is editable in the Control Room, with these as the defaults.
   - Only signing in still goes through the older portal's sign-in doors.
 - **Email:** the footer never prints the example config's placeholder address ("hello@yourdomain.com"); it falls back to next@afrovanguard.org.ng. The button's "→" stays on the button's line.
 - **Known failing suite:** `dashboard-results.test.js` times out waiting for `.dash-results` at `/member/grow/results`. The member portal now serves that address. This was not re-baselined on the previous commit, for lack of time.
+
+## Placement, the course checklist, proof review and report reading (2026-10-24)
+
+- **Placement:**
+  - `staff.curriculum.placement` lists the class with each child's current year and `curriculum_suggest_year` (intake year, then one up or back by lesson completion).
+  - `staff.curriculum.place` saves up to 200 at once through `staff_curriculum_year`, with per-row verdicts and one audit event.
+  - The UI is `Ip6Place`, from the Students screen.
+- **Checklist:**
+  - `staff.curriculum.confirm` (`unitIds`, `done`) marks lessons completed with `markedBy = confirmed:<staff>`, or takes back only such ticks. It is scoped to the instructor's centres and courses.
+  - `curriculum_child_state` returns `confirmed`. The UI is `Ip6Checklist`, from the child's Assess tab.
+- **Control Room:** `.cr-app button { color: inherit }` outranked `.btn-primary`, giving navy text on navy buttons. It now applies only to `button:not(.btn)`.
+  - Mission proofs: a `proofUrl` that is not http(s) is the child's text, shown as text.
+- **`results_ocr`:**
+  - The prompt describes the CA, exam, total and grade columns, conversion when a card is not out of 100, the check against CA + exam and the grade, and easily confused digits.
+  - It runs with thinking on low and 3000 output tokens. A weak read (a third or more of rows without a score or under 0.6 confidence) gets one more careful pass, and the more confident read is kept.
+- **Tests:** instructor 39/0 (checklist, placement); PHP 5247/0.

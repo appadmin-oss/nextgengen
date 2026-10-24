@@ -265,8 +265,31 @@ async function as(memberId, admin, viewport) {
     await ip.click('main [role="tab"]:has-text("Work")');
     await ip.waitForFunction(() => /lessons done/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     const wk = await ip.innerText('main');
+    const wk2 = await ip.innerText('main');
     const cs = q(`curriculum_child_state(db_row("SELECT * FROM members WHERE memberId = 'NGG-IN-K2'"), 'Coding')`) || {};
-    chk('Work: a child’s lessons, done and not, with their scores, as the server counts them', /lessons done/.test(wk) && cs.total > 0 && new RegExp(cs.done + ' of ' + cs.total + ' lessons done').test(wk) && /Coding week 2|Done|Not started/.test(wk));
+    // ── The course checklist: tick what the child has really done ──
+    await ip.click('main [role="tab"]:has-text("Assess")');
+    await ip.click('main button:has-text("Tick what they’ve done")');
+    await ip.waitForSelector('[role="dialog"] input[type="checkbox"]:not([disabled])', { timeout: 20000 }).catch(() => {});
+    await ip.click('[role="dialog"] input[type="checkbox"]:not([disabled]) >> nth=0');
+    await ip.click('[role="dialog"] button:has-text("Save 1 change")');
+    await ip.waitForTimeout(1500);
+    chk('Checklist: an instructor ticks a lesson done for one child, and it is on their record as confirmed', Number(q(`(int)db_row("SELECT COUNT(*) c FROM curriculum_progress WHERE memberId = 'NGG-IN-K2' AND status = 'completed' AND markedBy LIKE 'confirmed:%'")['c']`)) === 1);
+    await ip.click('[role="dialog"] button[aria-label="Close"]');
+    // ── Place the class: one press for every child ──
+    await ip.click('nav >> text=Students');
+    await ip.click('main button:has-text("Place the class")');
+    await ip.waitForSelector('[role="dialog"] button:has-text("Use every suggestion")', { timeout: 20000 }).catch(() => {});
+    await ip.click('[role="dialog"] button:has-text("Use every suggestion")');
+    await ip.click('[role="dialog"] .ip6-place-go');
+    await ip.waitForTimeout(2000);
+    chk('Place the class: every child gets a year in one press', Number(q(`(int)db_row("SELECT COUNT(*) c FROM member_state WHERE stateKey = 'staff.curriculum.year' AND memberId LIKE 'NGG-IN-K%'")['c']`)) >= 4);
+    await ip.keyboard.press('Escape');
+    await ip.click('nav >> text=Students');
+    await ip.click('main button:has-text("Kelechi Ike")');
+    await ip.click('main [role="tab"]:has-text("Work")');
+    await ip.waitForFunction(() => /lessons done/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('Work: a child’s lessons, done and not, with their scores, as the server counts them', /lessons done/.test(wk2) && cs.total > 0 && new RegExp(cs.done + ' of ' + cs.total + ' lessons done').test(wk2) && /Coding week 2|Done|Not started/.test(wk2));
     chk('no page errors (instructor)', ip.errs.length === 0);
     if (ip.errs.length) console.error(ip.errs.join('\n'));
 

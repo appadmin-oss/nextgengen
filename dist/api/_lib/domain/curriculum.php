@@ -1378,6 +1378,113 @@ function staff_curriculum_year(array $p): array {
     return ['ok' => true, 'placement' => $now, 'unchanged' => $was['year'] === $now['year'] && $was['source'] === $now['source']];
 }
 
+/* ── Placing a whole class in the curriculum, quickly ──────────────────────
+ *
+ * "We have to assess all of them where they should be in the curriculum: how
+ * do we quickly do that?" One screen: every child of the class with the year
+ * they are placed in now and a SUGGESTED year with its reason, from how long
+ * they have been in NGG (their intake year) and how much of their current
+ * year's lessons they have done. The instructor confirms or changes each and
+ * saves the class in one press; each row goes through staff_curriculum_year,
+ * so there is one placement, not two. */
+const CURR_PLACE_MAX = 200;
+
+function curriculum_suggest_year(array $m, ?array $state = null): array {
+    $intake = function_exists('member_intake_year') ? member_intake_year($m) : 0;
+    $byTime = $intake > 0 ? max(1, min(CURR_PROGRAMME_YEARS, (int)gmdate('Y') - $intake + 1)) : 1;
+    $why = $intake > 0 ? 'Joined in ' . $intake . ': year ' . $byTime . ' of NGG' : 'No intake year on record: starts at Year 1';
+    $year = $byTime;
+    if ($state && $state['total'] >= 4) {
+        $share = $state['done'] / max(1, $state['total']);
+        if ($share >= 0.8 && $year < CURR_PROGRAMME_YEARS && ($state['avg'] ?? 0) >= 70) { $year++; $why .= '; has done ' . $state['done'] . ' of ' . $state['total'] . ' lessons well, so one year up'; }
+        elseif ($share < 0.2 && $year > 1 && $state['done'] < 2) { $year--; $why .= '; has done little of the lessons yet, so a year back to fill the gaps'; }
+    }
+    return ['year' => $year, 'why' => $why];
+}
+
+/** staff.curriculum.placement — the class (or the admin's members) with their placement and a suggestion. */
+function staff_curriculum_placement(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $where = "status = 'active' AND lower(COALESCE(type,'NGG')) = 'ngg'"; $args = [];
+    $centres = $g['centres'] ?? null;
+    if ($centres !== null) { if (!$centres) return ['ok' => true, 'rows' => [], 'max' => CURR_PROGRAMME_YEARS];
+        $where .= ' AND centre IN (' . implode(',', array_fill(0, count($centres), '?')) . ')'; $args = array_merge($args, $centres); }
+    $course = trim((string)($p['course'] ?? ''));
+    if ($course !== '') { [$cs, $ca] = member_course_sql($course); $where .= ' AND ' . $cs; $args = array_merge($args, $ca); }
+    $rows = [];
+    foreach (db_all("SELECT memberId, fullName, centre, track, courses, disciplines, division, cohort, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT " . CURR_PLACE_MAX, $args) as $m) {
+        if (($g['courses'] ?? null) !== null && !member_takes_any($m, (array)$g['courses'])) continue;
+        $st = curriculum_child_state($m, $course);
+        $now = curriculum_member_year($m);
+        $sug = curriculum_suggest_year($m, $st);
+        $rows[] = ['memberId' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'centre' => (string)$m['centre'],
+            'year' => (int)$now['year'], 'placed' => $now['source'] === 'set', 'suggested' => $sug['year'], 'why' => $sug['why'],
+            'done' => $st['done'], 'total' => $st['total'], 'avg' => $st['avg']];
+    }
+    return ['ok' => true, 'rows' => $rows, 'max' => CURR_PROGRAMME_YEARS, 'course' => $course];
+}
+
+/** staff.curriculum.place — save many placements at once; per-row verdicts, one audit event. */
+function staff_curriculum_place(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $in = is_array($p['placements'] ?? null) ? $p['placements'] : [];
+    if (!$in) return ['ok' => false, 'error' => 'nothing_to_place'];
+    if (count($in) > CURR_PLACE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_PLACE_MAX];
+    foreach ($in as $x) if (!is_array($x) || !is_numeric($x['year'] ?? null) || (int)$x['year'] < 1 || (int)$x['year'] > CURR_PROGRAMME_YEARS) return ['ok' => false, 'error' => 'bad_year', 'max' => CURR_PROGRAMME_YEARS];
+    $results = []; $applied = 0; $unchanged = 0; $failed = 0;
+    foreach ($in as $x) {
+        $r = staff_curriculum_year(['requesterId' => (string)$p['requesterId'], 'memberId' => (string)($x['memberId'] ?? ''), 'year' => (int)$x['year']] + (isset($p['as']) ? ['as' => $p['as']] : []));
+        $results[] = ['memberId' => (string)($x['memberId'] ?? ''), 'ok' => !empty($r['ok']), 'error' => (string)($r['error'] ?? ''), 'unchanged' => !empty($r['unchanged'])];
+        if (empty($r['ok'])) $failed++; elseif (!empty($r['unchanged'])) $unchanged++; else $applied++;
+    }
+    audit('curriculum.place', (string)$g['member']['memberId'], 'class', ['applied' => $applied, 'unchanged' => $unchanged, 'failed' => $failed], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'failed' => $failed, 'results' => $results];
+}
+
+/**
+ * staff.curriculum.confirm — the instructor says what a child HAS done: ticks
+ * lessons done (or takes a tick back). The portal's numbers are an estimate;
+ * this is the instructor's validation. A lesson the child completed online
+ * keeps its score; a ticked one is completed with no score and says who
+ * confirmed it. Only the instructor's own children and courses.
+ */
+const CURR_CONFIRM_MAX = 300;
+function staff_curriculum_confirm(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['member']['memberId'];
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (($g['centres'] ?? null) !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $done = !array_key_exists('done', $p) || !empty($p['done']);
+    $ids = array_values(array_unique(array_filter(array_map('strval', (array)($p['unitIds'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_to_confirm'];
+    if (count($ids) > CURR_CONFIRM_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_CONFIRM_MAX];
+    $mine = curriculum_member_units($m, $placement);
+    $all = curriculum_member_units_all($m);   // their courses' lessons, any year
+    $now = now_iso(); $applied = 0; $unchanged = 0; $refused = [];
+    foreach ($ids as $uid) {
+        $b = $all[$uid] ?? $mine[$uid] ?? null;
+        if (!$b) { $refused[] = ['unitId' => $uid, 'error' => 'not_their_lesson']; continue; }
+        if (($g['courses'] ?? null) !== null && (string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), array_map('mb_strtolower', (array)$g['courses']), true)) { $refused[] = ['unitId' => $uid, 'error' => 'not_your_course']; continue; }
+        $pr = db_row('SELECT * FROM curriculum_progress WHERE memberId = ? AND unitId = ? LIMIT 1', [(string)$m['memberId'], $uid]);
+        if ($done) {
+            if ($pr && (string)$pr['status'] === 'completed') { $unchanged++; continue; }
+            if ($pr) db_update('curriculum_progress', ['status' => 'completed', 'completedAt' => $now, 'updatedAt' => $now, 'markedBy' => 'confirmed:' . $by, 'pending' => 0], ['id' => (int)$pr['id']]);
+            else db_insert('curriculum_progress', ['unitId' => $uid, 'memberId' => (string)$m['memberId'], 'status' => 'completed', 'unitVersion' => (int)($b['unit']['version'] ?? 1),
+                'score' => 0, 'maxScore' => 0, 'bestPct' => 0, 'attempts' => 0, 'answers' => '', 'marks' => '', 'feedback' => '', 'pending' => 0,
+                'markedBy' => 'confirmed:' . $by, 'startedAt' => $now, 'completedAt' => $now, 'updatedAt' => $now]);
+            $applied++;
+        } else {
+            // Only a tick can be taken back; a lesson the child did online stays theirs.
+            if (!$pr || !str_starts_with((string)$pr['markedBy'], 'confirmed:') || (int)$pr['attempts'] > 0) { $unchanged++; continue; }
+            db_exec('DELETE FROM curriculum_progress WHERE id = ?', [(int)$pr['id']]);
+            $applied++;
+        }
+    }
+    audit('curriculum.confirm', $by, (string)$m['memberId'], ['done' => $done, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused, 'state' => curriculum_child_state($m)];
+}
+
 /** A member's curriculum with their progress — the portal, a mentor's view and the report share it. */
 function curriculum_for_member(array $m): array {
     $units = curriculum_member_units($m, $placement);
@@ -2395,7 +2502,8 @@ function curriculum_child_state(array $m, string $course = ''): array {
         $state = !$pr ? 'not_started' : ((int)$pr['pending'] > 0 ? 'to_mark' : ((string)$pr['status'] === 'completed' ? 'done' : 'started'));
         $out[] = ['unitId' => (string)$id, 'title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'], 'level' => (string)$u['level'],
             'stage' => (string)($b['stage'] ?? ''), 'state' => $state, 'pct' => $pr ? (int)$pr['bestPct'] : null, 'attempts' => $pr ? (int)$pr['attempts'] : 0,
-            'feedback' => $pr ? mb_substr((string)$pr['feedback'], 0, 200) : '', 'at' => $pr ? substr((string)($pr['completedAt'] ?: $pr['updatedAt']), 0, 10) : ''];
+            'feedback' => $pr ? mb_substr((string)$pr['feedback'], 0, 200) : '', 'at' => $pr ? substr((string)($pr['completedAt'] ?: $pr['updatedAt']), 0, 10) : '',
+            'confirmed' => $pr ? str_starts_with((string)$pr['markedBy'], 'confirmed:') : false];
     }
     usort($out, static fn($a, $b) => [$a['week'], $a['course'], $a['title']] <=> [$b['week'], $b['course'], $b['title']]);
     $done = count(array_filter($out, static fn($x) => $x['state'] === 'done'));

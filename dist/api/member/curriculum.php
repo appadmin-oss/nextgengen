@@ -16,6 +16,8 @@ if ($method === 'GET') {
         $res = isset($_GET['memberId'])
             ? gs_call('staff.curriculum.member', ['requesterId' => $mid, 'memberId' => (string)$_GET['memberId']])
             : gs_call('staff.curriculum', ['requesterId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'placement') {
+        $res = gs_call('staff.curriculum.placement', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? '')]);
     } elseif (isset($_GET['unit'])) {
         $res = gs_call('member.curriculum.unit', ['memberId' => $mid, 'unitId' => (string)$_GET['unit']]);
     } else {
@@ -40,6 +42,10 @@ if ($method === 'GET') {
         $res = gs_call('member.curriculum.ask', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'question' => (string)($b['question'] ?? '')]);
     } elseif ($action === 'year') {
         $res = gs_call('staff.curriculum.year', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'year' => $b['year'] ?? null, 'ip' => client_ip()]);
+    } elseif ($action === 'confirm') {
+        $res = gs_call('staff.curriculum.confirm', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'unitIds' => is_array($b['unitIds'] ?? null) ? $b['unitIds'] : [], 'done' => !isset($b['done']) || !empty($b['done']), 'ip' => client_ip()]);
+    } elseif ($action === 'place') {
+        $res = gs_call('staff.curriculum.place', ['requesterId' => $mid, 'placements' => is_array($b['placements'] ?? null) ? $b['placements'] : [], 'ip' => client_ip()]);
     } elseif ($action === 'material') {
         $res = gs_call('staff.curriculum.material', ['requesterId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'title' => (string)($b['title'] ?? ''),
             'url' => (string)($b['url'] ?? ''), 'kind' => (string)($b['kind'] ?? ''), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);

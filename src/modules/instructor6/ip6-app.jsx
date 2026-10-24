@@ -679,7 +679,11 @@ class Ip6Portal extends React.Component {
     const dutyGo = d => { const k = String(d.key || '').replace(/^instructor:/, '');
       const scr = /^log-/.test(k) ? 'log' : k === 'marking' ? 'marking' : /^results/.test(k) ? 'results' : /^(plan|carry)/.test(k) ? 'plan' : k === 'safeguarding' ? 'students' : 'today';
       this.goTop(scr); return true; };
-    return <>{Ip6View(v)}{typeof GuideTour === 'function' && <GuideTour portal="instructor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="instructor" onGo={dutyGo}/>}</>;
+    v.openPlace = () => set({ placeOpen: true });
+    v.openCheck = () => set({ checkOpen: true });
+    const selId = S.sel || (((this.ctx() || {}).L || [])[0] || {}).id;
+    const selName = ((((this.ctx() || {}).L || []).find(m => m.id === selId)) || {}).name || '';
+    return <>{Ip6View(v)}{S.checkOpen && selId && <Ip6Checklist memberId={selId} name={selName} course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => { set({ checkOpen: false }); const d = { ...this.state.d }; delete d['stu:' + selId]; this.setState({ d }, () => this.loadStu(selId)); }} say={t => this.toast(t)}/>}{S.placeOpen && <Ip6Place course={(this.state.d.cls || {}).course || this.state.course || ''} onClose={() => set({ placeOpen: false })} say={t => this.toast(t)}/>}{typeof GuideTour === 'function' && <GuideTour portal="instructor"/>}{typeof DutyPopup === 'function' && <DutyPopup role="instructor" onGo={dutyGo}/>}</>;
   }
 }
 
@@ -735,3 +739,103 @@ function InstructorHome() {
 }
 
 
+
+/* Place the class in the curriculum, in one go (staff.curriculum.placement /
+   .place): every child, the year they are in now, a suggested year with its
+   reason (time in NGG, and how much of their lessons they have done), Year 1–3
+   buttons, and one save. "We have to assess all of them where they should be
+   in the curriculum: how do we quickly do that?" */
+function Ip6Place({ course, onClose, say }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [pick, setPick] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const ref = React.useRef(null);
+  const load = React.useCallback(() => { setErr(null); NGGApi.member.curriculumPlacement(course).then(r => { setD(r); }).catch(setErr); }, [course]);
+  React.useEffect(() => { load(); const prev = document.activeElement; const k = e => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k);
+    setTimeout(() => ref.current && ref.current.focus(), 30); return () => { document.removeEventListener('keydown', k); try { prev && prev.focus(); } catch (_) {} }; }, [load]);
+  const rows = (d && d.rows) || [];
+  const yearOf = r => pick[r.memberId] !== undefined ? pick[r.memberId] : (r.placed ? r.year : r.suggested);
+  const changes = rows.filter(r => yearOf(r) !== r.year || !r.placed);
+  const acceptAll = () => setPick(Object.fromEntries(rows.map(r => [r.memberId, r.suggested])));
+  const save = () => {
+    if (!changes.length || busy) return; setBusy(true);
+    NGGApi.member.curriculumPlace(changes.map(r => ({ memberId: r.memberId, year: yearOf(r) })))
+      .then(x => { say('Placed ' + x.applied + ' child' + (x.applied === 1 ? '' : 'ren') + (x.unchanged ? ' · ' + x.unchanged + ' already there' : '') + (x.failed ? ' · ' + x.failed + ' could not be placed' : '') + '. Their lessons follow their year now.'); setPick({}); load(); })
+      .catch(e => say((e && e.detail) || 'Couldn’t save the placements. Try again.')).finally(() => setBusy(false));
+  };
+  return (
+    <div className="ip6-place" role="dialog" aria-modal="true" aria-labelledby="ip6-place-h" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ip6-place-panel" ref={ref} tabIndex={-1}>
+        <div className="ip6-place-head"><h2 id="ip6-place-h">Place the class in the curriculum{course ? ' · ' + course : ''}</h2><button type="button" className="ip6-place-x" aria-label="Close" onClick={onClose}><i className="ph ph-x" aria-hidden="true"/></button></div>
+        <p className="ip6-place-sub">NGG runs three years. A child’s lessons come from the year they are placed in; finishing most of a year opens the next on its own. The suggestion comes from how long they have been in NGG and how much of their lessons they have done. Check it, change any that are wrong, then save.</p>
+        {err ? <div className="ip6-place-msg" role="alert">Couldn’t load the class. <button type="button" onClick={load}>Try again</button></div>
+          : !d ? <div className="ip6-place-msg" role="status">Loading the class…</div>
+          : !rows.length ? <div className="ip6-place-msg" role="status">No children to place in this class yet.</div>
+          : <>
+            <div className="ip6-place-bar"><span role="status">{rows.length} children · {changes.length} to save</span><button type="button" onClick={acceptAll}>Use every suggestion</button></div>
+            <ul className="ip6-place-list">{rows.map(r => { const y = yearOf(r); return (
+              <li key={r.memberId}>
+                <div className="ip6-place-who"><b>{r.name}</b><small>{r.placed ? 'Placed in Year ' + r.year : 'Not placed yet'} · {r.total ? r.done + ' of ' + r.total + ' lessons done' + (r.avg != null ? ', ' + r.avg + '%' : '') : 'no lessons yet'}</small><small className="ip6-place-why">Suggested: Year {r.suggested}. {r.why}</small></div>
+                <div className="ip6-place-years" role="radiogroup" aria-label={'Year for ' + r.name}>{[1, 2, 3].slice(0, d.max || 3).map(n => (
+                  <button type="button" key={n} role="radio" aria-checked={y === n ? 'true' : 'false'} className={y === n ? 'is-on' : ''} onClick={() => setPick(p => ({ ...p, [r.memberId]: n }))}>Year {n}</button>))}</div>
+              </li>); })}</ul>
+            <div className="ip6-place-foot"><button type="button" className="ip6-place-ghost" onClick={onClose}>Close</button><button type="button" className="ip6-place-go" disabled={!changes.length || busy} onClick={save}>{busy ? 'Saving…' : changes.length ? 'Save ' + changes.length + ' placement' + (changes.length === 1 ? '' : 's') : 'Nothing to save'}</button></div>
+          </>}
+      </div>
+    </div>
+  );
+}
+
+/* The course checklist for one child: every lesson of the course by week, with
+   what the portal knows (done online, with the score) and the instructor's own
+   ticks. "I should be able to say they have done this, done this, done this."
+   Tick lessons, or "done up to week N", then save (staff.curriculum.confirm). */
+function Ip6Checklist({ memberId, name, course, onClose, say }) {
+  const [st, setSt] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [tick, setTick] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const ref = React.useRef(null);
+  const first = String(name || '').split(/\s+/)[0] || 'them';
+  const load = React.useCallback(() => { setErr(null); NGGApi.member.teachStudent(memberId, course).then(r => setSt(r.curriculum || { lessons: [] })).catch(setErr); }, [memberId, course]);
+  React.useEffect(() => { load(); const prev = document.activeElement; const k = e => { if (e.key === 'Escape') onClose(); }; document.addEventListener('keydown', k);
+    setTimeout(() => ref.current && ref.current.focus(), 30); return () => { document.removeEventListener('keydown', k); try { prev && prev.focus(); } catch (_) {} }; }, [load]);
+  const L = (st && st.lessons) || [];
+  const isDone = l => tick[l.unitId] !== undefined ? tick[l.unitId] : l.state === 'done';
+  const online = l => l.state === 'done' && !l.confirmed;
+  const add = L.filter(l => isDone(l) && l.state !== 'done').map(l => l.unitId), drop = L.filter(l => !isDone(l) && l.state === 'done' && l.confirmed).map(l => l.unitId);
+  const weeks = [...new Set(L.map(l => l.week))].sort((a, b) => a - b);
+  const upTo = w => setTick(t => { const n = { ...t }; L.forEach(l => { if (!online(l)) n[l.unitId] = l.week <= w; }); return n; });
+  const save = async () => {
+    if (busy || (!add.length && !drop.length)) return; setBusy(true);
+    try {
+      let a = 0, refused = 0;
+      if (add.length) { const r = await NGGApi.member.curriculumConfirm(memberId, add, true); a += r.applied; refused += (r.refused || []).length; }
+      if (drop.length) { const r = await NGGApi.member.curriculumConfirm(memberId, drop, false); a += r.applied; }
+      say('Saved ' + first + '’s checklist: ' + a + ' change' + (a === 1 ? '' : 's') + (refused ? ' · ' + refused + ' not theirs to tick' : '') + '.'); setTick({}); load();
+    } catch (e) { say((e && e.detail) || 'Couldn’t save the checklist. Try again.'); } finally { setBusy(false); }
+  };
+  const n = add.length + drop.length, doneN = L.filter(isDone).length;
+  return (
+    <div className="ip6-place" role="dialog" aria-modal="true" aria-labelledby="ip6-chk-h" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="ip6-place-panel" ref={ref} tabIndex={-1}>
+        <div className="ip6-place-head"><h2 id="ip6-chk-h">{name}: what they have done{course ? ' in ' + course : ''}</h2><button type="button" className="ip6-place-x" aria-label="Close" onClick={onClose}><i className="ph ph-x" aria-hidden="true"/></button></div>
+        <p className="ip6-place-sub">Ticked lessons count as done for {first}: their lessons and their year move on from there. A lesson {first} finished in the portal keeps its score and cannot be unticked here.</p>
+        {err ? <div className="ip6-place-msg" role="alert">Couldn’t load the course. <button type="button" onClick={load}>Try again</button></div>
+          : !st ? <div className="ip6-place-msg" role="status">Loading the course…</div>
+          : !L.length ? <div className="ip6-place-msg" role="status">No lessons are published for this course yet.</div>
+          : <>
+            <div className="ip6-place-bar"><span role="status">{doneN} of {L.length} lessons done{n ? ' · ' + n + ' change' + (n === 1 ? '' : 's') + ' to save' : ''}</span>
+              <label className="ip6-chk-upto">Done up to week <select aria-label="Mark everything done up to this week" value="" onChange={e => e.target.value && upTo(+e.target.value)}><option value="">…</option>{weeks.map(w => <option key={w} value={w}>{w}</option>)}</select></label></div>
+            <ul className="ip6-place-list">{L.map(l => { const d = isDone(l), on = online(l); return (
+              <li key={l.unitId}>
+                <label className="ip6-chk-row"><input type="checkbox" checked={d} disabled={on} onChange={e => setTick(t => ({ ...t, [l.unitId]: e.target.checked }))}/>
+                  <span className="ip6-place-who"><b>Week {l.week} · {l.title}</b><small>{on ? 'Done in the portal' + (l.pct != null ? ' · ' + l.pct + '%' : '') : l.state === 'to_mark' ? 'Answers waiting for your mark' : l.confirmed ? 'Ticked by an instructor' : l.state === 'started' ? 'Started in the portal' : 'Not done yet'}{l.stage === 'catchup' ? ' · catch-up' : ''}</small></span></label>
+              </li>); })}</ul>
+            <div className="ip6-place-foot"><button type="button" className="ip6-place-ghost" onClick={onClose}>Close</button><button type="button" className="ip6-place-go" disabled={!n || busy} onClick={save}>{busy ? 'Saving…' : n ? 'Save ' + n + ' change' + (n === 1 ? '' : 's') : 'Nothing to save'}</button></div>
+          </>}
+      </div>
+    </div>
+  );
+}

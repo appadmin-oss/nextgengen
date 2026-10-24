@@ -8170,7 +8170,13 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-app.is-compact { --cr-pad: 6px; --cr-row-font: 13px; }
 .cr-app.is-comfortable { --cr-pad: 14px; }
 .cr-app *, .cr-app *::before, .cr-app *::after { box-sizing: border-box; }
-.cr-app button, .cr-app input, .cr-app textarea, .cr-app select { font: inherit; color: inherit; }
+/* Legacy .btn buttons keep their own colour: `color: inherit` here outranked
+   .btn-primary and drew navy text on a navy button across the Control Room. */
+.cr-app button, .cr-app input, .cr-app textarea, .cr-app select { font: inherit; }
+.cr-app button:not(.btn), .cr-app input, .cr-app textarea, .cr-app select { color: inherit; }
+.admin-proof-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-200, #e6e8ee); flex-wrap: wrap; text-align: left; }
+.admin-proof-row > div:first-child { flex: 1; min-width: 200px; }
+.admin-proof-text { font-size: 13px; color: var(--ink-700); margin-top: 4px; padding: 8px 10px; border-left: 3px solid var(--gold-400, #f5b026); background: var(--cream-50, #faf7ee); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cr-app a { color: var(--cr-ink); text-underline-offset: 2px; }
 .cr-app a:hover { color: var(--cr-gold-fg); }
 .cr-app :focus-visible { outline: 2px solid var(--cr-ink); outline-offset: 2px; }
@@ -10675,6 +10681,10 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-9b73402{display:block;height:100%;width:var(--dc-width, unset);background:#0b0b0c}
 .i6-61f488c{height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
 .i6-71c0028{height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c}
+.i6-7162b42{background:#fffbf0;border:1px solid #f1e3b8;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.i6-4792dfd{font-size:22px;color:#a07400}
+.i6-2f0cec7{flex:1;min-width:200px;font-size:14px;line-height:1.45}
+.i6-3d349d4{height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .i6-effd9c3{width:100%;display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 16px;border:0;border-bottom:1px solid #f0efea;background:none;cursor:pointer;text-align:left}
 .i6-1b657ed{display:flex;gap:2px}
 .i6-82d18e3{width:10px;height:22px;border-radius:3px;background:var(--dc-background, unset)}
@@ -10702,6 +10712,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-f90c461{border-radius:12px;border:1px solid #d6d4cc;padding:12px;font-size:15px;line-height:1.45;resize:vertical;outline:0;background:#fff}
 .i6-fa696ab{height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;opacity:var(--dc-opacity, unset)}
 .i6-e4120af{flex:1;min-width:180px;font-size:12.5px;color:#4a4a50}
+.i6-b366349{background:#fffbf0;border:1px solid #f1e3b8;border-radius:18px;padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .i6-e48553a{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .i6-881f70f{font-size:22px}
 .i6-24e8b27{flex:1;min-width:180px;font-size:14.5px}
@@ -14285,3 +14296,30 @@ button.m9x-ev-sum { cursor: pointer; }
 .cm3x-qvideo { display: block; width: 100%; max-height: 320px; border-radius: 10px; background: #1b1b1e; }
 .cm3x-qphoto { display: block; max-width: 100%; max-height: 320px; object-fit: contain; }
 .m15c-list > li.m15c-row-static { padding: 10px 0; align-items: center; }
+
+/* Instructor: place the class in the curriculum (Ip6Place). */
+.ip6-place { position: fixed; inset: 0; z-index: 90; background: rgba(11,11,12,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.ip6-place-panel { width: min(720px, 100%); max-height: 100%; overflow-y: auto; background: #fff; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px; outline: 0; }
+.ip6-place-head { display: flex; align-items: center; gap: 10px; }
+.ip6-place-head h2 { margin: 0; flex: 1; font-size: 17px; font-weight: 600; }
+.ip6-place-x { width: 44px; height: 44px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; font-size: 18px; }
+.ip6-place-sub { margin: 0; font-size: 13.5px; line-height: 1.5; color: #3a3a40; }
+.ip6-place-msg { padding: 14px; border-radius: 12px; background: #f6f5f1; font-size: 14px; }
+.ip6-place-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; color: #3a3a40; }
+.ip6-place-bar span { flex: 1; }
+.ip6-place-bar button, .ip6-place-ghost { height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #d6d4cc; background: #fff; font-weight: 600; font-size: 13.5px; cursor: pointer; }
+.ip6-place-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ip6-place-list li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-top: 1px solid #f0efea; }
+.ip6-place-who { flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px; font-size: 14.5px; }
+.ip6-place-who small { font-size: 12.5px; color: #4a4a50; }
+.ip6-place-why { color: #7a5600; }
+.ip6-place-years { display: flex; gap: 6px; }
+.ip6-place-years button { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #d6d4cc; background: #fff; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.ip6-place-years button.is-on { background: #0b0b0c; border-color: #0b0b0c; color: #fff; }
+.ip6-place-foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.ip6-place-go { height: 44px; padding: 0 18px; border-radius: 12px; border: 0; background: #0b0b0c; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+.ip6-place-go:disabled { opacity: .45; cursor: default; }
+.ip6-chk-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; cursor: pointer; }
+.ip6-chk-row input { width: 22px; height: 22px; margin-top: 2px; flex: none; accent-color: #0b0b0c; }
+.ip6-chk-upto { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.ip6-chk-upto select { height: 40px; padding: 0 8px; border: 1px solid #d6d4cc; border-radius: 10px; background: #fff; font-size: 14px; }

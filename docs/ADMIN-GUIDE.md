@@ -2844,3 +2844,15 @@ Someone who both teaches and mentors gets the **Instructor Portal** at `/instruc
 ## Feedback in the Inbox
 
 Feedback that an older version saved as an ordinary request is now shown as feedback, with **Thank and close** and **Pass to centre lead**, never Approve or Decline.
+
+## Placing children in the curriculum, and checking off what they have done (Instructor Portal)
+
+- **Students → Place the class:**
+  - Every child is listed with the year they are placed in now, and a **suggested year** with the reason. The suggestion comes from how long they have been in NGG (their intake year) and how much of their lessons they have done.
+  - Press **Use every suggestion** or choose Year 1–3 per child, then save the whole class at once.
+- **A child → Assess → Tick what they've done:**
+  - Every lesson of the course is listed by week. Tick the ones the child has really done, or use **Done up to week N**.
+  - A lesson the child finished in the portal keeps its score and can't be unticked here.
+  - The portal's numbers are an estimate; the instructor's ticks are the validation.
+- **Mission proof review (Control Room):** a child's typed answer shows as their words, not as a broken "View proof" link. The Verify button is readable again.
+- **Reading report cards:** the AI now reads the full table (CA, exam, total, grade). It checks each total against CA + exam and the grade, and reads unclear cards a second time, more carefully.

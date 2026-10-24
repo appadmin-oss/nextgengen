@@ -926,6 +926,10 @@
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
       curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
+      /* Place a class in the curriculum: the list with suggested years, and one save for all. */
+      curriculumPlacement: (course) => request('/member/curriculum.php' + qs({ view: 'placement', course: course || '' })),
+      curriculumPlace: (placements) => request('/member/curriculum.php', { body: { action: 'place', placements } }),
+      curriculumConfirm: (memberId, unitIds, done) => request('/member/curriculum.php', { body: { action: 'confirm', memberId, unitIds, done: done !== false } }),
       curriculumAsk:     (unitId, question) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question }, timeout: 60000 }),
       curriculumYear:    (memberId, year) => request('/member/curriculum.php', { body: { action: 'year', memberId, year } }),
       curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
