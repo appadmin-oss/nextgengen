@@ -369,7 +369,7 @@ return [
     'org' => [
         'name'  => 'Next Generation Genius',
         'short' => 'NGG',
-        'email' => 'hello@yourdomain.com',
+        'email' => 'next@afrovanguard.org.ng',
     ],
 
     // -----------------------------------------------------------------------

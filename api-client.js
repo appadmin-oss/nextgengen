@@ -796,6 +796,7 @@
       mentorRoster:  (centre, scope, programme) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '', programme: programme || '' })),
       // The mentoring record for one child: history, meetings, goals.
       mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
+      mentorChildLessons: (subjectId) => request('/member/mentor.php' + qs({ view: 'lessons', subjectId })),
       // Open a record that is not my mentee's, for a week, saying why.
       mentorCover:   (subjectId, reason) => request('/member/mentor.php', { body: { action: 'cover', subjectId, reason } }),
       mentorAttention: (centre) => request('/member/mentor.php' + qs({ view: 'attention', centre: centre || '' })),
@@ -850,7 +851,8 @@
       /* Growth plans waiting for the mentor, and one mentee's term (results + plan + history). */
       mentorPlans:   (centre) => request('/member/mentor.php' + qs({ view: 'plans', centre: centre || '' })),
       mentorPlan:    (subjectId, term) => request('/member/mentor.php' + qs({ view: 'plan', subjectId, term: term || '' })),
-      mentorPlanApprove: (planId, note) => request('/member/mentor.php', { body: { action: 'planApprove', planId, note: note || '' } }),
+      mentorPlanApprove: (planId, note, items) => request('/member/mentor.php', { body: { action: 'planApprove', planId, note: note || '', items: items || [] } }),
+      mentorPlanCheer: (planId, note) => request('/member/mentor.php', { body: { action: 'planCheer', planId, note } }),
       mentorPlanReturn:  (planId, note) => request('/member/mentor.php', { body: { action: 'planReturn', planId, note } }),
       /* School results and the growth plan — the member's own (Grow → School results). */
       today:          () => request('/member/today.php'),

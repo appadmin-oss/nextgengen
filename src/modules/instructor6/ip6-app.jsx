@@ -194,7 +194,7 @@ class Ip6Portal extends React.Component {
     const S = this.state; const need = ['today', 'cls'];
     if (S.scr === 'assignments' || S.scr === 'academy') return null;   // the desk and the Academy load their own data, and say so
     const e = need.map(k => S.er[k]).find(Boolean);
-    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_course' || c === 'not_your_centre' ? 'That class isn’t yours.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
+    if (e) { const c = (e && (e.code || e.message)) || ''; return <div className="m15x-slot"><div className="m15x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{c === 'network' ? 'You’re offline and this class hasn’t been opened on this device yet.' : c === 'not_your_centre' ? 'No centre is set on your instructor record yet, so there is no class to open. Ask your centre admin to set your centre; your courses are under Curriculum meanwhile.' : c === 'not_your_course' ? 'The courses on your record are not in the Club’s course list yet. Ask your centre admin to choose your courses from the list.' : c === 'not_cleared' ? (e.detail || 'Your safeguarding check has not been recorded yet. Your courses are under Curriculum; your learners appear once your centre admin clears the check.') : 'Your class couldn’t load (' + (c || 'error') + ').'}</span><button type="button" onClick={() => { this.setState({ er: {} }); this.loadAll(); }}>Retry</button></div></div>; }
     if (need.some(k => S.ld[k] || !S.d[k])) return <div className="m15x-slot"><div className="m15x-load" role="status" aria-live="polite"><span className="m15x-bar"/><span className="m15x-sr">Loading your class</span></div></div>;
     // Analytics before any Saturday has a closed roll: say why the attendance chart is empty, and what fills it.
     if (S.scr === 'analytics' && S.d.hist && !((S.d.hist.weeks) || []).some(w => w.closed))
@@ -571,7 +571,12 @@ class Ip6Portal extends React.Component {
     o.stHistL = 'Before and now';
     o.stHist = C.skills.map((t, k) => { const now = lvlOf(selM, k), p = selM.prev[k]; return { t, now: now === null || now === undefined ? 'Not marked' : IP6_LEVELS[now], bars: [p, now].map((v, w) => ({ h: v === null || v === undefined ? '6%' : Math.round((v + 1) / 4 * 100) + '%', bg: v === null || v === undefined ? '#e6e5e0' : IP6_LVCOL[v], tip: (w ? 'Now: ' : 'Before: ') + (v === null || v === undefined ? 'not marked' : IP6_LEVELS[v]) })) }; });
     const tl = (sd && sd.timeline) || [];
-    o.stWork = tl.filter(x => x.exit).map(x => ({ w: ip6Date(x.date), t: 'Exit ticket', s: x.exit === 'got' ? 'Got it' : x.exit === 'partly' ? 'Partly' : 'Not yet', fg: x.exit === 'got' ? '#1d6b30' : x.exit === 'partly' ? '#7a5600' : '#b0361c', w100: x.exit === 'got' ? '100%' : x.exit === 'partly' ? '50%' : '15%' }));
+    /* Where the child is in the course's lessons (curriculum_child_state), then their exit tickets. */
+    const CS = (sd && sd.curriculum) || null, ST = { done: ['Done', '#1d6b30'], to_mark: ['Waiting for your mark', '#7a5600'], started: ['Started', '#7a5600'], not_started: ['Not started', '#6b6b72'] };
+    o.stCur = CS ? (CS.total ? CS.done + ' of ' + CS.total + ' lessons done' + (CS.avg !== null && CS.avg !== undefined ? ' · average ' + CS.avg + '%' : '') + (CS.toMark ? ' · ' + CS.toMark + ' waiting for your mark' : '') + ' · Year ' + CS.year : 'No lessons are published for this course yet.') : 'Loading their lessons…';
+    o.stWork = (CS ? CS.lessons : []).map(l => ({ w: l.week, t: l.title + (l.stage === 'catchup' ? ' (catch-up)' : ''), s: (ST[l.state] || ST.not_started)[0] + (l.pct !== null && l.state === 'done' ? ' · ' + l.pct + '%' : ''),
+      fg: (ST[l.state] || ST.not_started)[1], w100: l.state === 'done' ? Math.max(8, l.pct || 0) + '%' : l.state === 'not_started' ? '4%' : '40%' }))
+      .concat(tl.filter(x => x.exit).map(x => ({ w: ip6Date(x.date), t: 'Exit ticket', s: x.exit === 'got' ? 'Got it' : x.exit === 'partly' ? 'Partly' : 'Not yet', fg: x.exit === 'got' ? '#1d6b30' : x.exit === 'partly' ? '#7a5600' : '#b0361c', w100: x.exit === 'got' ? '100%' : x.exit === 'partly' ? '50%' : '15%' })));
     o.stAtt = ((sd && sd.attendance) || []).map(a => ({ d: ip6Date(a.date, { weekday: 'short', day: 'numeric', month: 'short' }), st: a.status === 'late' ? 'Late' : 'Present', bg: a.status === 'late' ? '#e0a100' : '#2f9e44', fg: a.status === 'late' ? '#7a5600' : '#1d6b30', inT: a.method === 'instructor' ? 'By roll' : a.method === 'mentor' ? 'By mentor' : 'At the gate' }));
     o.stRemHist = ((this._remarksAll || {})[selM.id] || []).map(t => ({ d: 'Today', t })).concat(((sd && sd.remarks) || []).map(r => ({ d: ip6Date(r.createdAt), t: r.body })));
     const sm = S.sumText[selM.id];
@@ -637,12 +642,15 @@ class Ip6Portal extends React.Component {
     o.rsF = F.map(([key, l]) => ({ l, n: key === 'all' ? counts.all || 0 : key === 'attn' ? counts.attn || 0 : key === 'missing' ? counts.missing || 0 : counts.up || 0, on: fk === key ? 'true' : 'false', ring: fk === key ? '#0b0b0c' : '#d6d4cc', bw: fk === key ? '2px' : '1px', pick: () => set({ rsF: key }) }));
     o.rsRows = list.map(x => { const open = S.rsOpen === x.studentId; const det = D['res:' + x.studentId]; const rec = det && det.record; const m = (C.L.find(z => z.id === x.studentId) || {});
       const subsList = rec && rec.subjects ? rec.subjects : [];
+      /* An average of 0 is a report nobody read (every score typed as 0), not
+         a term of zeros: it says so, rather than "0% · Needs attention". */
+      const unread = x.uploaded && x.avg === 0;
       return { name: x.name, first: ip6First(x.name), initials: ip6Ini(x.name), mentor: m.mentor || 'the mentor', up: x.uploaded, missing: !x.uploaded, isOpen: open, exp: open ? 'true' : 'false', chev: open ? 'ph ph-caret-up' : 'ph ph-caret-down', bg: open ? '#fcfcfb' : '#fff',
         toggle: () => { set({ rsOpen: open ? null : x.studentId }); if (!open && !det) this.load('res:' + x.studentId, () => ip6Api.result(x.studentId, res.term)); },
-        avgT: x.uploaded && x.avg !== null ? x.avg + '%' : '—', dT: x.uploaded && x.change !== null ? sgn(x.change) + ' on last term' : '', dFg: (x.change || 0) >= 0 ? '#1d6b30' : '#b0361c',
-        stT: !x.uploaded ? (x.status === 'in_progress' ? 'Started, not sent' : 'Not uploaded') : x.attention ? (x.adherence !== null && x.adherence < 50 ? 'Off plan · ' + x.adherence + '% of sessions' : 'Needs attention') : x.status === 'live' ? 'On plan' + (x.adherence !== null ? ' · ' + x.adherence + '% of sessions' : '') : 'Plan waiting for the mentor',
+        avgT: x.uploaded && x.avg !== null && !unread ? x.avg + '%' : '—', dT: x.uploaded && x.change !== null ? sgn(x.change) + ' on last term' : '', dFg: (x.change || 0) >= 0 ? '#1d6b30' : '#b0361c',
+        stT: unread ? 'Scores not read: every subject says 0. Remind them to type them in' : !x.uploaded ? (x.status === 'in_progress' ? 'Started, not sent' : 'Not uploaded') : x.attention ? (x.adherence !== null && x.adherence < 50 ? 'Off plan · ' + x.adherence + '% of sessions' : 'Needs attention') : x.status === 'live' ? 'On plan' + (x.adherence !== null ? ' · ' + x.adherence + '% of sessions' : '') : 'Plan waiting for the mentor',
         stFg: !x.uploaded ? '#6b6b72' : x.attention ? '#b0361c' : '#1d6b30', stIcon: !x.uploaded ? 'ph ph-clock' : x.attention ? 'ph ph-warning-circle' : 'ph ph-check-circle',
-        subs: subsList.map(z => ({ s: z.subject || z.name, sc: z.score, dT: z.change !== null && z.change !== undefined ? sgn(z.change) : '', dFg: (z.change || 0) >= 0 ? '#1d6b30' : '#b0361c', bd: z.score < 50 ? '#f3cfc5' : '#e8e5dd' })),
+        subs: subsList.map(z => ({ s: z.subject || z.name, sc: unread || z.score === null || z.score === undefined ? '—' : z.score + '%', dT: z.change !== null && z.change !== undefined ? sgn(z.change) : '', dFg: (z.change || 0) >= 0 ? '#1d6b30' : '#b0361c', bd: z.score < 50 ? '#f3cfc5' : '#e8e5dd' })),
         summary: rec && rec.plan && rec.plan.summary ? rec.plan.summary : open && !det ? 'Loading…' : x.uploaded ? 'Average ' + x.avg + '%.' : 'Not uploaded yet for ' + (res.termLabel || 'this term') + '.',
         plan: rec && rec.plan && rec.plan.items ? rec.plan.items.map(it => ({ s: it.subject + (it.target ? ' · target ' + it.target + '%' : ''), method: it.method || '', what: it.what || it.text || '', when: it.when || '', w: (it.adherence || 0) + '%', adhT: (it.adherence || 0) + '% of sessions done', barBg: (it.adherence || 0) >= 70 ? '#1d6b30' : (it.adherence || 0) >= 50 ? '#e0a100' : '#b0361c' })) : [],
         noteV: S.rsNote[x.studentId] || '', onNote: e => set({ rsNote: { ...S.rsNote, [x.studentId]: e.target.value } }),
@@ -692,7 +700,12 @@ function InstructorHome() {
   const probe = React.useCallback(() => {
     /* An instructor whose check isn't recorded yet still gets this portal: the
        Academy and Curriculum are theirs now, and the class says plainly why it's empty. */
-    Promise.all([NGGApi.member.teachToday({}).then(() => true).catch(e => (e && (e.code === 'unauthorized')) ? 'auth' : (e && e.code === 'not_cleared') ? true : false),
+    /* Only "you are not an instructor" sends someone elsewhere. A new
+       instructor whose course or centre does not resolve yet is still an
+       instructor: this portal says what is missing, where the old one only
+       said "No courses are assigned to you yet". */
+    const NOT_INSTRUCTOR = ['forbidden_role', 'not_a_mentor', 'no_requester', 'not_ngg_staff', 'mentor_record_ambiguous'];
+    Promise.all([NGGApi.member.teachToday({}).then(() => true).catch(e => (e && (e.code === 'unauthorized')) ? 'auth' : (e && NOT_INSTRUCTOR.includes(e.code)) ? false : true),
                  NGGApi.member.mentorRoster('', '', 'summer').then(() => true).catch(() => false)])
       .then(([n, s]) => setSt({ state: n === 'auth' ? 'auth' : 'ready', ngg: n === true, summer: s === true }));
   }, []);
@@ -704,9 +717,15 @@ function InstructorHome() {
   if (st.state === 'loading' && sub !== 'summer') return <div className="m15x-boot" role="status" aria-live="polite"><img src="/assets/logo.png" alt="" width="40" height="40"/><span className="m15x-bar"/><span className="m15x-sr">Loading the instructor portal</span></div>;
   const hub = st.ngg && st.summer;
   if (sub === 'summer') return <>{hub && <button type="button" className="m15x-back" onClick={() => go('')}><i className="ph ph-squares-four" aria-hidden="true"/>Instructor portals</button>}<MentorPortal key="i-summer" programme="summer"/></>;
-  /* Not signed in, not cleared, or teaching nothing: the class portal owns those answers and its sign-in doors. */
-  if (st.state !== 'ready' || (!st.ngg && !st.summer)) return <MentorPortal key="i-any"/>;
-  if (sub === 'ngg' || (!hub && st.ngg)) return st.ngg ? <Ip6Portal onSignOut={auth && auth.signOut} onSummer={st.summer ? () => go('summer') : null}/> : <MentorPortal key="i-any2"/>;
+  /* Signing in is the only thing handed to the older portal (it owns the sign-in doors). Anyone signed in who
+     is not an instructor is TOLD so, with what to do: never dropped into another portal that looks like this one. */
+  if (st.state !== 'ready') return <MentorPortal key="i-any"/>;
+  const notHere = (title, body) => <div className="m15x-hub"><div className="m15x-hub-in" role="status"><img src="/assets/logo.png" alt="" width="40" height="40"/><h1>{title}</h1><p>{body}</p>
+    <ul className="m15x-cards"><li><a href="/mentor"><i className="ph ph-users-three" aria-hidden="true"/><span><b>Mentor Portal</b><span>If you mentor children, your portal is here.</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li>
+      <li><a href="/dashboard"><i className="ph ph-house" aria-hidden="true"/><span><b>My dashboard</b><span>Your own account.</span></span><i className="ph ph-caret-right" aria-hidden="true"/></a></li></ul></div></div>;
+  if (!st.ngg && !st.summer) return notHere('This account is not an instructor', 'The Instructor Portal is for people with an instructor record. Yours does not have one, so there is no class to show. If you teach at NGG, ask your centre admin to add the instructor role, your centre and your courses to your record.');
+  if (sub === 'ngg' && !st.ngg) return notHere('You do not teach an NGG Club class', 'Your instructor record is for Summer School only. Ask your centre admin if you should teach a Club course.');
+  if (sub === 'ngg' || (!hub && st.ngg)) return <Ip6Portal onSignOut={auth && auth.signOut} onSummer={st.summer ? () => go('summer') : null}/>;
   return <div className="m15x-hub"><div className="m15x-hub-in"><img src="/assets/logo.png" alt="" width="40" height="40"/><h1>Which class?</h1>
     <p>You teach in both programmes. NGG and Summer School are separate, so each has its own portal and its own class.</p>
     <ul className="m15x-cards">

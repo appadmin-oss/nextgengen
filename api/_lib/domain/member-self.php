@@ -87,6 +87,10 @@ const MEMBER_REQUEST_PAGE = 50;
  */
 function member_request_public(array $r): array
 {
+    /* A row with a feedback topic IS feedback, whatever kind an older build
+       saved it under: it was showing in the inbox with Approve and Decline,
+       which mean nothing for "How NGG is going for me". */
+    if ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']])) $r['kind'] = 'feedback';
     return [
         'requestId' => (string)$r['requestId'],
         'kind'      => (string)$r['kind'],
@@ -688,7 +692,7 @@ function admin_request_decide(array $p): array
     $rCentre = (string)($owner['centre'] ?? ($r['centre'] ?? ''));
     if (!admin_centre_allowed($g['requester'], $rCentre)) return ['ok' => false, 'error' => 'out_of_scope'];
     if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
-    if ((string)$r['kind'] === 'feedback') return admin_feedback_answer($g, $r, $rCentre, $p);
+    if ((string)$r['kind'] === 'feedback' || ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']]))) return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
     /* Approving a payment claim posts money to the fees ledger, and money is

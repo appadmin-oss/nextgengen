@@ -2374,3 +2374,32 @@ function curriculum_review_notify(string $memberId, array $list, string $to, str
     @send_mail($email, $head, email_template(['title' => $head, 'eyebrow' => 'NGG Club · Curriculum', 'intro' => 'A curriculum editor has looked at what you sent.',
         'bodyHtml' => $body, 'ctaLabel' => 'Open my portal →', 'ctaUrl' => $origin . '/mentor']));
 }
+
+
+/**
+ * Where one child is in their curriculum, lesson by lesson, for the adults
+ * who teach or mentor them: done (with the score), waiting for a mark, started,
+ * not started, opens later; and catch-up from a year moved past. Optionally one
+ * course. One read of the lessons, one of the progress rows.
+ */
+function curriculum_child_state(array $m, string $course = ''): array {
+    $units = function_exists('curriculum_member_units') ? curriculum_member_units($m, $placement) : [];
+    if ($course !== '') $units = array_filter($units, static fn($b) => strcasecmp((string)$b['unit']['course'], $course) === 0 || (string)$b['unit']['course'] === '');
+    $ids = array_keys($units);
+    $prog = [];
+    if ($ids) foreach (db_all('SELECT unitId, status, bestPct, attempts, pending, feedback, completedAt, updatedAt FROM curriculum_progress WHERE memberId = ? AND unitId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')',
+        array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    $out = [];
+    foreach ($units as $id => $b) {
+        $u = $b['unit']; $pr = $prog[$id] ?? null;
+        $state = !$pr ? 'not_started' : ((int)$pr['pending'] > 0 ? 'to_mark' : ((string)$pr['status'] === 'completed' ? 'done' : 'started'));
+        $out[] = ['unitId' => (string)$id, 'title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'], 'level' => (string)$u['level'],
+            'stage' => (string)($b['stage'] ?? ''), 'state' => $state, 'pct' => $pr ? (int)$pr['bestPct'] : null, 'attempts' => $pr ? (int)$pr['attempts'] : 0,
+            'feedback' => $pr ? mb_substr((string)$pr['feedback'], 0, 200) : '', 'at' => $pr ? substr((string)($pr['completedAt'] ?: $pr['updatedAt']), 0, 10) : ''];
+    }
+    usort($out, static fn($a, $b) => [$a['week'], $a['course'], $a['title']] <=> [$b['week'], $b['course'], $b['title']]);
+    $done = count(array_filter($out, static fn($x) => $x['state'] === 'done'));
+    $scores = array_values(array_filter(array_column(array_filter($out, static fn($x) => $x['state'] === 'done'), 'pct'), static fn($v) => $v !== null));
+    return ['lessons' => $out, 'total' => count($out), 'done' => $done, 'toMark' => count(array_filter($out, static fn($x) => $x['state'] === 'to_mark')),
+        'avg' => $scores ? (int)round(array_sum($scores) / count($scores)) : null, 'year' => (int)($placement['year'] ?? 1)];
+}

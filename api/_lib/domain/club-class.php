@@ -693,5 +693,7 @@ function instructor_student(array $p): array {
             'mentor' => $mentor ? (string)$mentor['fullName'] : ''],
         'skills' => $skills, 'marks' => (object)$marks, 'levels' => SKILL_LEVELS, 'attendance' => $att, 'timeline' => $timeline,
         'remarks' => (array)($rem['remarks'] ?? []), 'remarkKinds' => REMARK_KINDS,
-        'results' => $term !== '' ? results_record($m, $term, results_today()) : null, 'history' => array_slice($history, 0, 40)];
+        'results' => $term !== '' ? results_record($m, $term, results_today()) : null, 'history' => array_slice($history, 0, 40),
+        // Where they are in the course's lessons (curriculum_child_state).
+        'curriculum' => function_exists('curriculum_child_state') ? curriculum_child_state($m, $course) : null];
 }

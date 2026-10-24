@@ -2815,3 +2815,32 @@ Reporting and deleting a reply work as before. Every action has a button; nothin
 This works for a child who takes the course as their second course too.
 
 Someone who both teaches and mentors gets the **Instructor Portal** at `/instructor`. Before this fix they were shown the Mentor Portal there.
+
+## Study plans: targets of 85% and more, and what a mentor can do
+
+- **Targets:** every target is at least **85%**. The plan drafts 85, or the next band up (90, 95, 100) at least 5 points above where the child already is. A target under 85 is refused, whether the child or the mentor sets it.
+- **Making 85 realistic:** a bigger climb gets more study sessions a week (3, 4 or 5). Every subject shows a **mid-term mark**, halfway between the current score and the target, to check against at mid-term. A child scoring under 50 has their mentor drafted as the helper.
+- **When they study:** the child picks the **days**, a **time** (before school, in a free period, after school, in the evening, at the weekend) and a **place**, instead of typing a sentence. The plan reads, for example, "Mon, Wed, Fri · after school · at home". The number of days sets the sessions a week.
+- **A score of 0** is flagged to the child to check before sending, because it is usually a misread report.
+- **The mentor:** before approving, a mentor can change any subject's target (never under 85), its sessions a week and what the child will do. They then press **Approve with my changes**; the child is told what changed. Once a plan is live, the mentor can **write to the child about the plan** (praise a kept week, or ask what got in the way). It goes on the plan's record and reaches the child as a notice.
+
+## A child's lessons (instructors and mentors)
+
+- **Instructor:** Students → a child → **Work** shows every lesson of the course: done (with the score), waiting for your mark, started or not started, plus a line such as "4 of 9 lessons done · average 78% · Year 1".
+- **Mentor:** a mentee's **Growth and lessons** tab shows the same, for every course the child takes.
+- **A mentor's class:** it is their mentees whenever they have any, including mentees paired before the current session started.
+
+## Editing a mentor
+
+- **Role:** Mentor, Lead mentor or Peer mentor. Changing a lead back to Mentor steps them down. The change is in the audit log.
+- **Department:** a course, which narrows the children they see. Leave it empty for a mentor who works across courses.
+- The cursor now stays in the field you are editing. Before this fix it could jump back to Full name.
+
+## School results that read 0 everywhere
+
+- A report where every subject is 0 was not read; it is not a term of zeros. It is now refused when the child confirms it ("Every score says 0…").
+- Older ones show to the instructor as **Scores not read**, not "0% · Needs attention". Use **Remind** to ask the child to type the scores in.
+
+## Feedback in the Inbox
+
+Feedback that an older version saved as an ordinary request is now shown as feedback, with **Thank and close** and **Pass to centre lead**, never Approve or Decline.

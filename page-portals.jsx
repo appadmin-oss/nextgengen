@@ -32,12 +32,18 @@ function useAdminDrawer(onClose, guard = true) {
         .then(ok => { if (ok) onClose(); });
     } else { onClose(); }
   }, [onClose, guard]);
+  /* The latest close, read by the key handler. The effect below runs ONCE: it
+     used to depend on `close`, which changes whenever the parent re-renders
+     with a fresh onClose — and each re-run focused the first field again, so
+     someone editing the Email of a mentor was thrown back to Full name. */
+  const closeRef = React.useRef(close);
+  closeRef.current = close;
   React.useEffect(() => {
     const prev = document.activeElement;
     const el = panelRef.current;
-    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { f.focus(); } catch (_) {} }, 40); }
+    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { if (!el.contains(document.activeElement)) f.focus(); } catch (_) {} }, 40); }
     const onKey = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key === "Escape") { e.preventDefault(); closeRef.current(); return; }
       if (e.key === "Tab" && el) {
         const f = el.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
         if (!f.length) return;
@@ -48,7 +54,7 @@ function useAdminDrawer(onClose, guard = true) {
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
-  }, [close]);
+  }, []);
   return {
     panelRef, close, onInput: () => { touched.current = true; },
     titleProps: { "aria-labelledby": titleId },

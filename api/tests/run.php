@@ -1006,6 +1006,13 @@ chk('converted member exists', db_row('SELECT memberId FROM members WHERE email=
 chk('application marked accepted', db_row('SELECT status FROM applications WHERE id=?', [$appId])['status'] === 'accepted');
 // mentor assign
 backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Mentor Zed', 'email' => 'mz@example.com', 'status' => 'active', 'tracks' => 'Tech', 'centre' => 'Egbeda']]);
+chk('a lead mentor can be stepped down in the editor, and a made-up rank is refused', (function () {
+    $id = (string)db_row("SELECT mentorId FROM mentors WHERE email = 'mz@example.com'")['mentorId'];
+    $up = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'lead']]);
+    $down = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'mentor']]);
+    $bad = backend_dispatch('admin.mentors.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['mentorId' => $id, 'rank' => 'boss']]);
+    return !empty($up['ok']) && !empty($down['ok']) && db_row('SELECT rank FROM mentors WHERE mentorId = ?', [$id])['rank'] === 'mentor' && ($bad['error'] ?? '') === 'bad_rank';
+})());
 $mz = db_row("SELECT mentorId FROM mentors WHERE email='mz@example.com'")['mentorId'];
 backend_dispatch('admin.mentor.assign', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001', 'mentorId' => $mz]);
 $det = backend_dispatch('admin.member.detail', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0001']);
@@ -27607,6 +27614,8 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('results: a plan cannot be drafted before the scores are checked', (backend_dispatch('member.results.plan.draft', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId']])['error'] ?? '') === 'check_first');
     chk('results: a missing score is named, not guessed', (backend_dispatch('member.results.confirm', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId'],
         'subjects' => [['name' => 'Mathematics', 'score' => 48], ['name' => 'Biology', 'score' => null]]])['subjects'] ?? []) === ['Biology']);
+    chk('results: a report where every score is 0 is refused as unread, not planned from', (backend_dispatch('member.results.confirm', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId'],
+        'subjects' => [['name' => 'Mathematics', 'score' => 0], ['name' => 'Physics', 'score' => 0], ['name' => 'Biology', 'score' => 0]]])['error'] ?? '') === 'scores_all_zero');
     $cf = backend_dispatch('member.results.confirm', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId'], 'subjects' => [
         ['name' => 'Mathematics', 'score' => 48], ['name' => 'English Language', 'score' => 72], ['name' => 'Biology', 'score' => 61], ['name' => 'Physics', 'score' => 55]]]);
     $log = array_column(results_history('NGG-RS-1', $term), 'what');
@@ -27621,7 +27630,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $pl = $dr['plan'] ?? [];
     $subs = array_column($pl['items'] ?? [], 'subject');
     chk('results: the draft picks at most three subjects, lowest and falling first', !empty($dr['ok']) && $subs === ['Mathematics', 'Physics', 'Biology']);
-    chk('results: each target is current + 8 and each method is from the five, with its evidence line', $pl['items'][0]['target'] === 56 && $pl['items'][0]['method'] === 'worked'
+    chk('results: every target is at least 85%, and each method is from the five, with its evidence line', $pl['items'][0]['target'] === 85 && $pl['items'][0]['method'] === 'worked'
         && $pl['items'][0]['ref'] === 'R2' && $pl['items'][1]['method'] === 'interleave');
     chk('results: the AI words the summary and the "what", and cannot add a subject', $pl['summary'] === 'You worked steadily this term.'
         && $pl['items'][0]['what'] === 'Do one past question cold, then check the worked answer.' && $pl['draftedBy'] === 'ai' && count($pl['items']) === 3);
@@ -27631,11 +27640,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     $items = $pl['items'];
     $save = static fn(array $its, array $x = []) => backend_dispatch('member.results.plan.save', $x + ['memberId' => 'NGG-RS-1', 'planId' => $pl['planId'], 'items' => $its, 'habit' => 'Phone in the kitchen at 9pm', 'recipients' => ['family' => true]]);
-    chk('results: a fourth subject is refused', ($save(array_merge($items, [['subject' => 'English Language', 'target' => 80, 'method' => 'retrieval', 'sessionsPerWeek' => 2]]))['error'] ?? '') === 'too_many_subjects');
+    chk('results: a fourth subject is refused', ($save(array_merge($items, [['subject' => 'English Language', 'target' => 90, 'method' => 'retrieval', 'sessionsPerWeek' => 2]]))['error'] ?? '') === 'too_many_subjects');
     chk('results: a subject not on the report is refused', ($save([['subject' => 'Geography', 'target' => 70, 'method' => 'retrieval']])['error'] ?? '') === 'unknown_subject');
     chk('results: a target below the current score is refused', ($save([['subject' => 'Mathematics', 'target' => 40, 'method' => 'worked']])['error'] ?? '') === 'target_below_current');
     chk('results: an unknown method is refused', ($save([['subject' => 'Mathematics', 'target' => 60, 'method' => 'highlighting']])['error'] ?? '') === 'bad_method');
-    chk('results: 8 sessions a week is refused', ($save([['subject' => 'Mathematics', 'target' => 60, 'method' => 'worked', 'sessionsPerWeek' => 8]])['error'] ?? '') === 'bad_sessions');
+    chk('results: 8 sessions a week is refused', ($save([['subject' => 'Mathematics', 'target' => 90, 'method' => 'worked', 'sessionsPerWeek' => 8]])['error'] ?? '') === 'bad_sessions');
+    chk('results: a target under 85% is refused, with the floor named', ($save([['subject' => 'Mathematics', 'target' => 70, 'method' => 'worked']])['min'] ?? 0) === 85);
     $items[0]['whenWhere'] = 'Monday and Thursday after school, at the dining table';
     $items[1]['whenWhere'] = '';
     $items[2]['whenWhere'] = 'Saturday 4pm at the centre';
@@ -27655,11 +27665,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     // Ticks.
     $it0 = $items[0]['itemId'];
+    $planned0 = (int)$items[0]['sessionsPerWeek'];
     $t1 = backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
-    backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]); backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
+    for ($k = 1; $k < $planned0; $k++) backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
     $t4 = backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
-    chk('results: ticks count up to the sessions planned and no further', !empty($t1['ok']) && $t1['done'] === 1 && $t4['done'] === 3 && $t4['planned'] === 3);
-    chk('results: a tick can be taken back', backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0, 'delta' => -1])['done'] === 2);
+    chk('results: ticks count up to the sessions planned and no further', !empty($t1['ok']) && $t1['done'] === 1 && $t4['done'] === $planned0 && $t4['planned'] === $planned0);
+    chk('results: a tick can be taken back', backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0, 'delta' => -1])['done'] === $planned0 - 1);
+    chk('results: a realistic 85: the climb sets the sessions (48 → 85 is 4 a week) and there is a mid-term mark', $planned0 === 4 && results_plan_items($pl['planId'])[0]['midterm'] !== null);
     chk('results: an old week cannot be ticked', (backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0, 'weekStart' => '2026-01-05'])['error'] ?? '') === 'week_closed');
     chk('results: another member cannot tick this plan', (backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-2', 'itemId' => $it0])['error'] ?? '') === 'not_found');
 
@@ -27688,12 +27700,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_insert('guardians', ['guardianId' => 'GRD-RS', 'email' => 'mum.results@rs.example', 'fullName' => 'Mrs Results', 'status' => 'active', 'createdAt' => $now]);
     db_insert('guardian_wards', ['linkId' => 'GW-RS', 'guardianId' => 'GRD-RS', 'memberId' => 'NGG-RS-1', 'status' => 'active', 'notify' => json_encode(['weekly' => true]), 'createdAt' => $now]);
     $mails = []; $GLOBALS['__mail_mock'] = function ($to, $subject) use (&$mails) { $mails[] = [$to, $subject]; return true; };
-    $ap = backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => 'Good plan.']));
+    chk('results: no target below 85%: 0 → 85, 48 → 85, 82 → 90, 96 → 100', results_target_for(0) === 85 && results_target_for(48) === 85 && results_target_for(82) === 90 && results_target_for(96) === 100 && results_target_for(null) === 85);
+    chk('mentor: a target under 85% is refused, named with the floor', (backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId'], 'items' => [['itemId' => results_plan_items($pl['planId'])[0]['itemId'], 'target' => 70]]]))['error'] ?? '') === 'target_too_low');
+    $its = results_plan_items($pl['planId']);
+    chk('mentor: a target below where the child is now is refused, and nothing is approved', (backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId'], 'items' => [['itemId' => $its[0]['itemId'], 'target' => 1]]]))['error'] ?? '') === 'bad_target'
+        && db_row('SELECT status FROM growth_plans WHERE planId = ?', [$pl['planId']])['status'] === 'sent');
+    $ap = backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => 'Good plan.', 'items' => [['itemId' => $its[0]['itemId'], 'target' => 90, 'sessionsPerWeek' => 5]]]));
+    $its2 = results_plan_items($pl['planId']);
+    chk('mentor: approving with a change applies it, counts it, and tells the child what changed', ($ap['changed'] ?? 0) === 2 && $its2[0]['target'] === 90 && $its2[0]['sessionsPerWeek'] === 5
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-RS-1' AND body LIKE '%target%90%'")['c'] === 1);
     unset($GLOBALS['__mail_mock']);
     $live = db_row('SELECT * FROM growth_plans WHERE planId = ?', [$pl['planId']]);
     chk('mentor: approving makes the plan live, records who, and only now tells the family', !empty($ap['ok']) && $live['status'] === 'live' && $live['approvedByName'] === 'Remi Mentor'
         && $ap['family'] === 1 && $live['familySentAt'] !== '');
     chk('mentor: approving twice changes nothing', !empty(backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId']]))['unchanged']));
+    chk('mentor: on a live plan the mentor writes to the child, and it is on the plan’s record', !empty(backend_dispatch('member.mentor.plan.cheer', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => 'Two kept weeks in a row. Keep the kitchen rule.']))['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM plan_notes WHERE planId = ? AND text LIKE 'Two kept weeks%'", [$pl['planId']])['c'] === 1);
+    chk('mentor: a blank line to the child is refused', (backend_dispatch('member.mentor.plan.cheer', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => '']))['error'] ?? '') === 'note_required');
 
     // Instructor.
     $ir = backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term]));

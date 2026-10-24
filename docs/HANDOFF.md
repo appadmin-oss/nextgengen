@@ -2843,3 +2843,27 @@ The table is editable in the Control Room, with these as the defaults.
 - **Assess tab** on the instructor's student page (`ip6-app.jsx` and the design): mark every skill on four levels, with evidence for a move up, in one save; a typed note (`member.remark.add`); and the child's waiting answers, linked to Marking.
 - **Member check-in to the mentor:** it now says which week it is, what each promise was, whether it was kept, and why not. It used to read "FRENCH: kept it".
 - **Tests:** `instructor-v6.test.js` 36/0. The main instructor now also holds a mentor record, and the suite assesses a second-course child (skills, the evidence rule, a note).
+
+## Plans: 85% floor, realistic steps, a mentor who can act; a child's lessons for their adults (2026-10-24)
+
+- **Targets:** `results_target_for` gives 85, or the next band (90, 95, 100) at least 5 points above the current score. `results_target_floor` refuses anything under 85 (`target_too_low`, with `min`) in `results_items_clean` and in the mentor's edits. It replaced `current + 8`, which made a child on 0 aim for 8.
+- **Realistic:** `results_sessions_for` sets 3, 4 or 5 sessions a week by the size of the gap. `results_plan_items` returns `midterm` (halfway). A score of 0 is flagged.
+- **When they study:** the member's plan editor picks days, time and place (`mp9PlanWhen`; constants `MP9_PLAN_*`) and stores one readable line that parses back into the picks. Free text produced "When I am at school and in school when I have free period".
+- **Mentor:**
+  - `member.mentor.plan.approve` takes `items` (target, sessionsPerWeek, what). They are validated whole before any write, logged, counted (`changed`) and named in the child's notice.
+  - New `member.mentor.plan.cheer` writes to the child on a live plan. It is Academy-gated like the other mentor writes.
+  - `mp15-class.jsx` has the steppers, "Approve with my changes", and the write box.
+- **Mentor roster:** a mentor's pairings are read across sessions when the current session has none. Reading only this session's made a paired mentor see the whole centre.
+- **Curriculum state:** `curriculum_child_state($m, $course)` lists every lesson with its state, score and stage, plus totals. It is shown on the instructor's Work tab (`instructor_student` returns `curriculum`) and on the mentor's mentee page (`member.mentor.child.lessons`, behind the same gate as the record).
+- **Mentor editor** (`AdminMentorEditor`):
+  - `rank` (mentor, lead, peer; anything else is `bad_rank`) and `department` are now editable through `admin_mentors_upsert`; a rank change is in the audit detail.
+  - `useAdminDrawer` registers its focus and key effect once, with `closeRef`. The old `[close]` dependency re-ran it on every parent render and refocused the first field. That is fixed for every drawer.
+- **Results:**
+  - `member_results_confirm` refuses a report where every score is 0 (`scores_all_zero`).
+  - The instructor's results card shows an average of 0 as "Scores not read", and scores as "—".
+- **Feedback kind:** `member_request_public` and the answer op treat any row with a feedback topic as feedback. Rows saved under another kind by an older build showed Approve and Decline.
+- **Instructor portal, no fallback:** `/instructor` no longer drops anyone into the old Mentor Portal. A signed-in person who is not an instructor sees a status screen that says so, with what to do and links to their own portal and dashboard.
+  - Course and centre problems (`not_your_centre`, `not_your_course`) keep an instructor in their portal, with a plain message about which part of their record is missing.
+  - Only signing in still goes through the older portal's sign-in doors.
+- **Email:** the footer never prints the example config's placeholder address ("hello@yourdomain.com"); it falls back to next@afrovanguard.org.ng. The button's "→" stays on the button's line.
+- **Known failing suite:** `dashboard-results.test.js` times out waiting for `.dash-results` at `/member/grow/results`. The member portal now serves that address. This was not re-baselined on the previous commit, for lack of time.

@@ -963,7 +963,10 @@ function admin_mentors_upsert(array $p): array {
     // Client may send tracks as an array — flatten to the CSV the column stores.
     if (isset($data['tracks']) && is_array($data['tracks'])) $data['tracks'] = implode(', ', array_filter(array_map('trim', $data['tracks'])));
     $mentorId = trim((string)($data['mentorId'] ?? ''));
-    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef','programme'];
+    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef','programme','rank','department'];
+    /* Rank is editable here, so a lead can be stepped down (or appointed)
+       without re-promoting the person. Only the three the portal knows. */
+    if (isset($data['rank']) && !in_array((string)$data['rank'], ['mentor', 'lead', 'peer'], true)) return ['ok' => false, 'error' => 'bad_rank'];
     // Which cohort they supervise. Anything unrecognised falls back to the
     // narrowest option rather than the widest — a typo must not hand somebody
     // both cohorts.
@@ -991,7 +994,8 @@ function admin_mentors_upsert(array $p): array {
         $patch['updatedAt'] = now_iso();
         db_update('mentors', $patch, ['id' => $existing['id']]);
         if (array_key_exists('honorific', $data)) staff_honorific_set((string)($existing['memberId'] ?? ''), $mentorId, (string)($existing['volunteerId'] ?? ''), (string)$data['honorific']);
-        audit('admin.mentor.update', $g['requester']['memberId'], $mentorId, [], (string)($p['ip'] ?? ''));
+        audit('admin.mentor.update', $g['requester']['memberId'], $mentorId,
+            isset($patch['rank']) && (string)$patch['rank'] !== (string)($existing['rank'] ?? 'mentor') ? ['rank' => [(string)($existing['rank'] ?? 'mentor'), (string)$patch['rank']]] : [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'mentorId' => $mentorId];
     }
     $newId = new_id('MEN', 'mentors', 'mentorId');

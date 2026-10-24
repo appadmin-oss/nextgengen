@@ -438,11 +438,11 @@ Object.assign(Mp9Portal.prototype, {
       aiBusy: !!s.rsDrafting, summary: s.rsDraftErr || pp.summary || "",
       flags: (pp.flags || []).map(f => ({ l: f, bg: "#fdf6e3", fg: "#7a5600" })).concat(pp.returnNote ? [{ l: mf + " sent it back: “" + pp.returnNote + "”", bg: "#fdeeea", fg: "#b0361c" }] : []),
       plan: items.map((x, i) => { const why = (methods.find(m => m.key === x.method) || {}).why || "";
-        return { s: x.subject, now: x.current === null || x.current === undefined ? "–" : x.current, target: x.target, act: x.what || "", onAct: e => updP(i, { what: e.target.value }),
-          when: x.whenWhere || "", onWhen: e => updP(i, { whenWhere: e.target.value }), whenBd: s.rsWhenTried && String(x.whenWhere || "").trim().length < 4 ? "#b0361c" : "#d6d4cc",
+        return { s: x.subject, now: (x.current === null || x.current === undefined ? "–" : x.current) + " · mid-term " + Math.ceil((x.current || 0) + (x.target - (x.current || 0)) / 2), target: x.target, act: x.what || "", onAct: e => updP(i, { what: e.target.value }),
+          ...mp9PlanWhen(x, ww => updP(i, ww), s.rsWhenTried),
           method: methodLabel(x.method), onMethod: e => updP(i, { method: methodKey(e.target.value) }), methodWhy: why,
           sessT: x.sessionsPerWeek + (x.sessionsPerWeek === 1 ? " session" : " sessions"), help: helperLabel(x.helper), onHelp: e => updP(i, { helper: helperKey(e.target.value) }),
-          tUp: () => updP(i, { target: Math.min(100, x.target + 1) }), tDn: () => updP(i, { target: Math.max(x.current || 0, x.target - 1) }),
+          tUp: () => updP(i, { target: Math.min(100, x.target + 1) }), tDn: () => updP(i, { target: Math.max(85, x.current || 0, x.target - 1) }),
           hUp: () => updP(i, { sessionsPerWeek: Math.min(7, x.sessionsPerWeek + 1) }), hDn: () => updP(i, { sessionsPerWeek: Math.max(1, x.sessionsPerWeek - 1) }) }; }),
       methods: methods.map(m => m.label), helpers: helpers.map(h => h.label),
       habit: s.rsHabit !== undefined ? s.rsHabit : pp.habit || "", onHabit: e => set({ rsHabit: e.target.value }),
@@ -452,8 +452,8 @@ Object.assign(Mp9Portal.prototype, {
       sendOp: commit && items.length ? 1 : 0.4, sendHint: !!s.rsSendTried && !commit,
       send: () => {
         if (!P) return;
-        const noWhen = items.filter(x => String(x.whenWhere || "").trim().length < 4), noWhat = items.filter(x => !String(x.what || "").trim());
-        if (noWhen.length) { set({ rsSendTried: true, rsWhenTried: true }); return this.toast("Add when and where for " + noWhen.map(x => x.subject).join(" and ") + "."); }
+        const noWhen = items.filter(x => !mp9WhenOk(x.whenWhere)), noWhat = items.filter(x => !String(x.what || "").trim());
+        if (noWhen.length) { set({ rsSendTried: true, rsWhenTried: true }); return this.toast("Pick the days and a time for " + noWhen.map(x => x.subject).join(" and ") + "."); }
         if (noWhat.length) return this.toast("Say what you’ll do for " + noWhat.map(x => x.subject).join(" and ") + ".");
         if (!commit) return set({ rsSendTried: true });
         NGGApi.member.resultsSend(body()).then(r => { set({ rsSendTried: false, rsWhenTried: false, rsItems: null, rsHabit: undefined, rsCommit: undefined, rsFam: undefined }); reload();
@@ -1083,4 +1083,32 @@ function mp9Subject(x) {
   const t = String(x || "").trim();
   if (t !== t.toUpperCase() || !/[A-Z]{3}/.test(t)) return t;
   return t.toLowerCase().replace(/\b([a-z])([a-z]*)/g, (m, a, b) => (["and", "of", "the", "in"].includes(a + b) ? a + b : a.toUpperCase() + b)).replace(/^./, c => c.toUpperCase());
+}
+
+/* When a plan's study happens, picked rather than typed: days, a time, a
+   place. Typed, it came out as "When I am at school and in school when I have
+   free period", which nobody could plan around. Stored as one readable line
+   ("Mon, Wed, Fri · after school · at home") that reads back into the picks;
+   the number of days is the sessions a week. */
+const MP9_PLAN_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MP9_PLAN_TIMES = ["before school", "in a free period at school", "after school", "in the evening", "at the weekend"];
+const MP9_PLAN_PLACES = ["at home", "at school", "in a library", "at the NGG centre"];
+function mp9WhenParse(ww) {
+  const t = String(ww || "");
+  return { days: MP9_PLAN_DAYS.filter(d => new RegExp("\\b" + d + "\\b").test(t)), time: MP9_PLAN_TIMES.find(x => t.includes(x)) || "", place: MP9_PLAN_PLACES.find(x => t.includes(x)) || "" };
+}
+function mp9WhenLine(w) { return [w.days.join(", "), w.time, w.place].filter(Boolean).join(" · "); }
+function mp9WhenOk(ww) { const w = mp9WhenParse(ww); return w.days.length > 0 && !!w.time; }
+function mp9PlanWhen(x, upd, tried) {
+  const w = mp9WhenParse(x.whenWhere), bad = tried && !mp9WhenOk(x.whenWhere);
+  const put = nw => upd(Object.assign({ whenWhere: mp9WhenLine(nw) }, nw.days.length ? { sessionsPerWeek: nw.days.length } : {}));
+  return {
+    whenBd: bad ? "#b0361c" : "#d6d4cc",
+    days: MP9_PLAN_DAYS.map(d => { const on = w.days.includes(d); return { l: d, on: on ? "true" : "false", bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#0b0b0c",
+      go: () => put({ ...w, days: on ? w.days.filter(z => z !== d) : MP9_PLAN_DAYS.filter(z => z === d || w.days.includes(z)) }) }; }),
+    time: w.time, onTime: e => put({ ...w, time: e.target.value }), times: [{ v: "", l: "What time?" }].concat(MP9_PLAN_TIMES.map(v => ({ v, l: v.charAt(0).toUpperCase() + v.slice(1) }))),
+    place: w.place, onPlace: e => put({ ...w, place: e.target.value }), places: [{ v: "", l: "Where?" }].concat(MP9_PLAN_PLACES.map(v => ({ v, l: v.charAt(0).toUpperCase() + v.slice(1) }))),
+    whenSay: mp9WhenOk(x.whenWhere) ? "Your plan: " + mp9WhenLine(w) + ". A set time and place makes you far more likely to do it."
+      : String(x.whenWhere || "").trim() && !w.days.length ? "You wrote: “" + x.whenWhere + "”. Pick the days and a time instead." : "Pick the days and a time. A set time and place makes you far more likely to do it.",
+  };
 }

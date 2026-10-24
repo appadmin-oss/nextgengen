@@ -92,7 +92,7 @@ function mp9Err(e) {
   const c = e && (e.code || e.message);
   const T = { network: "You’re offline. It will send when you’re back.", rate_limited: "That’s a lot at once. Wait a moment and try again.", no_mentor: "You don’t have a mentor yet. Your centre matches one to you.",
     quiet_hours: "Messages open at 8am.", uploads_disabled: "Uploads aren’t switched on here yet.", answer_all_four: "Answer all four first.", too_short: "Say a little more first.",
-    managed_by_ngg: "NGG keeps that on your record. Ask the desk to change it.", not_ngg_member: "This portal is for NGG members.",
+    managed_by_ngg: "NGG keeps that on your record. Ask the desk to change it.", not_ngg_member: "This portal is for NGG members.", scores_all_zero: "Every score says 0. Type each score from your report card, or upload a clearer photo.", target_too_low: "Every target is 85% or more. Aim high: your mentor will help.",
     bad_current_password: "That isn’t your current password. Forgot it? Get a code by email instead.", too_many_attempts: "Too many tries. Wait 15 minutes, or get a code by email.",
     password_too_short: "Your new password needs 8 or more characters.", password_too_long: "That password is too long. Try a shorter one.",
     too_many_open: "You already have some of these waiting. The team will answer them soon." };

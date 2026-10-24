@@ -504,10 +504,10 @@ class Mp15Portal extends React.Component {
       facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
               ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
               ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
-      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
+      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth and lessons']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
       kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
       // Growth: the whole record as a trend (mp_growth), loaded when the tab opens; the four series below it stay.
-      growthBox: S.ktab === 'prog' && S.kid ? <GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/> : null,
+      growthBox: S.ktab === 'prog' && S.kid ? <><GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/><Mp15KidLessons key={S.kid} subjectId={S.kid}/></> : null,
       noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
       timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
       relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
@@ -1375,5 +1375,29 @@ function Mp15Projects({ act, today }) {
         ))}
       </section>}
     </div>
+  );
+}
+
+/* Where a mentee is in their lessons: done with the score, waiting for a
+   mark, started, not started. Read on the mentee's Growth tab. */
+function Mp15KidLessons({ subjectId }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => { setErr(null); setD(null); return NGGApi.member.mentorChildLessons(subjectId).then(r => setD(r.curriculum || { lessons: [], total: 0 })).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const ST = { done: ["Done", "is-ok"], to_mark: ["Waiting for a mark", "is-warn"], started: ["Started", "is-warn"], not_started: ["Not started", ""] };
+  return (
+    <section className="m15c-card" aria-labelledby={"kl-" + subjectId}>
+      <h2 className="m15c-h" id={"kl-" + subjectId}>Lessons</h2>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their lessons.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their lessons</span></div>
+        : !d.total ? <p className="m15c-empty">No lessons are published for their courses yet.</p>
+        : <>
+          <p className="m15c-sub" role="status">{d.done} of {d.total} done{d.avg != null ? " · average " + d.avg + "%" : ""}{d.toMark ? " · " + d.toMark + " waiting for a mark" : ""} · Year {d.year}</p>
+          <ul className="m15c-list">{d.lessons.map(l => (
+            <li key={l.unitId} className="m15c-row-static"><span><b>Week {l.week}</b> · {l.title}<small className="m15c-sub"> {l.course}{l.stage === "catchup" ? " · catch-up" : ""}</small></span>
+              <span className={"m15c-pill " + ((ST[l.state] || ST.not_started)[1])}>{(ST[l.state] || ST.not_started)[0]}{l.state === "done" && l.pct != null ? " · " + l.pct + "%" : ""}</span></li>))}</ul>
+        </>}
+    </section>
   );
 }

@@ -37,7 +37,8 @@ const MENTOR_PORTAL_ACTIONS = [
     'messageLead'     => ['member.mentor.message.lead', ['body', 'toId'], 'mentor.meeting'],
     'summerReview'    => ['member.mentor.summer.review', ['subjectId', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
     'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
-    'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note'], 'mentor.meeting'],
+    'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note', 'items'], 'mentor.meeting'],
+    'planCheer'       => ['member.mentor.plan.cheer', ['planId', 'note'], 'mentor.meeting'],
     'planReturn'      => ['member.mentor.plan.return', ['planId', 'note'], 'mentor.meeting'],
     'projectSave'     => ['member.mentor.project.save', ['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'people'], 'mentor.meeting'],
     'projectMark'     => ['member.mentor.project.mark', ['projectId', 'kind', 'personId', 'status', 'note'], 'mentor.meeting'],
@@ -54,6 +55,8 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'subjectId'   => (string)($_GET['subjectId'] ?? ''),
         ]);
+    } elseif ($view === 'lessons') {
+        $res = gs_call('member.mentor.child.lessons', ['requesterId' => $s['mid'], 'subjectId' => (string)($_GET['subjectId'] ?? '')]);
     } elseif ($view === 'due') {
         // §18's actual question: who has nobody looked at this week.
         $res = gs_call('member.mentor.reviews.due', [

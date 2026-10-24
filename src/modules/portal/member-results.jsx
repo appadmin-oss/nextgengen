@@ -70,6 +70,7 @@ const RS_ERR = {
   file_too_large: "That file is over 10 MB. Take a photo instead, or use a smaller PDF.",
   already_sent: "These results were already sent.",
   score_required: "Add a score for every subject, or remove the ones you didn’t take.",
+  scores_all_zero: "Every score says 0. Type each score from your report card, or upload a clearer photo.",
   no_subjects: "Add at least one subject.",
   too_many_subjects: "Pick at most three subjects for the plan.",
   target_below_current: "A target can’t be below your current score.",

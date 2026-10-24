@@ -446,6 +446,11 @@ function mentor_roster(array $p): array {
         // are not this year's class.
         if ($sessionId !== '') { $sql .= ' AND sessionId = ?'; $args[] = $sessionId; }
         $mineIds = array_values(array_unique(array_map('strval', array_column(db_all($sql, $args), 'memberId'))));
+        /* A pairing made without a session (or before this one) is still a
+           pairing. Reading only this session's made such a mentor "have no
+           mentees", and the portal showed the whole centre as their class. */
+        if (!$mineIds && $sessionId !== '')
+            $mineIds = array_values(array_unique(array_map('strval', array_column(db_all("SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'", [$mentorId]), 'memberId'))));
     }
     $scope = (string)($p['scope'] ?? '');
     if ($scope !== 'mine' && $scope !== 'centre') $scope = $mineIds ? 'mine' : 'centre';

@@ -259,6 +259,14 @@ async function as(memberId, admin, viewport) {
     const rn = q(`db_row("SELECT kind, body, course FROM student_remarks WHERE subjectId = 'NGG-IN-K5' ORDER BY id DESC LIMIT 1")`) || {};
     chk('Assess: a written note on one child goes on their record, with its kind', rn.kind === 'strength' && /explains her steps/.test(rn.body || ''));
     await shot(ip, 'assess-one-child');
+    // ── One child's curriculum state ──
+    await ip.click('nav >> text=Students');
+    await ip.click('main button:has-text("Kelechi Ike")');
+    await ip.click('main [role="tab"]:has-text("Work")');
+    await ip.waitForFunction(() => /lessons done/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    const wk = await ip.innerText('main');
+    const cs = q(`curriculum_child_state(db_row("SELECT * FROM members WHERE memberId = 'NGG-IN-K2'"), 'Coding')`) || {};
+    chk('Work: a child’s lessons, done and not, with their scores, as the server counts them', /lessons done/.test(wk) && cs.total > 0 && new RegExp(cs.done + ' of ' + cs.total + ' lessons done').test(wk) && /Coding week 2|Done|Not started/.test(wk));
     chk('no page errors (instructor)', ip.errs.length === 0);
     if (ip.errs.length) console.error(ip.errs.join('\n'));
 

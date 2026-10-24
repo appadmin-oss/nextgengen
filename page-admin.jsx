@@ -4161,7 +4161,7 @@ function AdminMentorEditor({ data, titles: titlesIn, onClose, onSaved }) {
   const save = async (e) => {
     e.preventDefault(); setBusy(true);
     try { await NGGApi.admin.mentors.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code === "bad_title" ? "Choose a title from the list." : (e.code || e.message)); }
+    catch (e) { toast.error(e.code === "bad_title" ? "Choose a title from the list." : e.code === "email_taken" ? "Another active mentor already uses that email." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -4188,6 +4188,10 @@ function AdminMentorEditor({ data, titles: titlesIn, onClose, onSaved }) {
               existed. */}
           <FieldSelect label="Supervises" value={d.programme||"summer"} onChange={v => set("programme", v)}
             options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both programmes" }]}/>
+          {/* Lead or not is set here, so a lead can be stepped down without re-promoting them. */}
+          <FieldSelect label="Role" value={d.rank||"mentor"} onChange={v => set("rank", v)}
+            options={[{ value: "mentor", label: "Mentor" }, { value: "lead", label: "Lead mentor (runs the centre's mentors)" }, { value: "peer", label: "Peer mentor (supports a mentor; cannot approve)" }]}/>
+          <Field label="Department (a course, to narrow who they see)" value={d.department||""} onChange={v => set("department", v)} placeholder="Leave empty to mentor across courses"/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>

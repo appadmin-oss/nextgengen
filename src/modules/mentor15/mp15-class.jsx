@@ -323,14 +323,20 @@ function Mp15CPlan({ subjectId, term, onBack }) {
   const [note, setNote] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const [msg, setMsg] = React.useState("");
-  const load = React.useCallback(() => { setErr(null); return NGGApi.member.mentorPlan(subjectId, term).then(setD).catch(setErr); }, [subjectId, term]);
+  /* The mentor's adjustments before approving: { itemId: { target, sessionsPerWeek, what } }. */
+  const [ed, setEd] = React.useState({});
+  const load = React.useCallback(() => { setErr(null); setEd({}); return NGGApi.member.mentorPlan(subjectId, term).then(setD).catch(setErr); }, [subjectId, term]);
   React.useEffect(() => { load(); }, [load]);
+  const val = (it, k) => (ed[it.itemId] && ed[it.itemId][k] !== undefined ? ed[it.itemId][k] : it[k]);
+  const setV = (it, k, v) => setEd(x => ({ ...x, [it.itemId]: { ...(x[it.itemId] || {}), [k]: v } }));
+  const edits = () => Object.keys(ed).map(itemId => ({ itemId, ...ed[itemId] }));
   const act = kind => {
     if (busy) return;
-    if (kind === "return" && note.trim().length < 4) { setMsg(MP15C_ERR.note_required); return; }
+    if ((kind === "return" || kind === "cheer") && note.trim().length < 4) { setMsg(kind === "cheer" ? "Write a line to them first." : MP15C_ERR.note_required); return; }
     setBusy(kind); setMsg("");
-    const call = kind === "approve" ? NGGApi.member.mentorPlanApprove(d.record.plan.planId, note.trim()) : NGGApi.member.mentorPlanReturn(d.record.plan.planId, note.trim());
-    call.then(r => { setNote(""); setMsg(kind === "approve" ? "Approved. The plan is live" + (r && r.family ? ", and the family has been sent it." : ".") : "Sent back with your note."); load(); })
+    const id = d.record.plan.planId;
+    const call = kind === "approve" ? NGGApi.member.mentorPlanApprove(id, note.trim(), edits()) : kind === "cheer" ? NGGApi.member.mentorPlanCheer(id, note.trim()) : NGGApi.member.mentorPlanReturn(id, note.trim());
+    call.then(r => { setNote(""); setMsg(kind === "approve" ? "Approved. The plan is live" + (r && r.changed ? " with your " + r.changed + " change" + (r.changed === 1 ? "" : "s") : "") + (r && r.family ? ", and the family has been sent it." : ".") : kind === "cheer" ? "Sent. It is on the plan's record too." : "Sent back with your note."); load(); })
       .catch(e => setMsg(mp15cErr(e))).finally(() => setBusy(""));
   };
   const back = <button type="button" className="m15c-back" onClick={onBack}><i className="ph ph-caret-left" aria-hidden="true"/>All plans</button>;
@@ -359,11 +365,30 @@ function Mp15CPlan({ subjectId, term, onBack }) {
       <section className="m15c-card">
         <h2 className="m15c-h">The plan</h2>
         {!plan ? <p className="m15c-empty">{first} hasn't written a plan for this term yet.</p> : <>
-          <ol className="m15c-items">{plan.items.map(it => (
-            <li key={it.itemId}><div className="m15c-row-static"><b>{it.subject}</b><span className="m15c-num">{it.current == null ? "—" : it.current} → {it.target}</span></div>
-              <p>{it.methodLabel ? it.methodLabel + " · " : ""}{it.what}</p>
-              <small className="m15c-sub">{it.whenWhere} · {it.sessionsPerWeek} a week{plan.status === "live" ? " · " + it.doneThisWeek + " done this week" : ""}</small></li>
-          ))}</ol>
+          <ol className="m15c-items">{plan.items.map(it => {
+            const t = val(it, "target"), n = val(it, "sessionsPerWeek"), cur = Math.min(100, Math.max(85, it.current == null ? 0 : it.current));   // no target under 85%
+            return (
+            <li key={it.itemId}><div className="m15c-row-static"><b>{it.subject}</b><span className="m15c-num">Now {it.current == null ? "—" : it.current} · mid-term {it.midterm == null ? "—" : Math.ceil((it.current || 0) + (t - (it.current || 0)) / 2)} · aiming for {t}</span></div>
+              {waiting && d.canApprove ? (
+                <div className="m15c-plan-edit">
+                  <div className="m15c-steps">
+                    <span className="m15c-step" role="group" aria-label={"Target for " + it.subject}><span className="m15c-label">Target</span>
+                      <button type="button" className="m15c-btn" aria-label="Lower target" disabled={t <= cur} onClick={() => setV(it, "target", Math.max(cur, t - 5))}><i className="ph ph-minus" aria-hidden="true"/></button>
+                      <b className="m15c-num" aria-live="polite">{t}</b>
+                      <button type="button" className="m15c-btn" aria-label="Raise target" disabled={t >= 100} onClick={() => setV(it, "target", Math.min(100, t + 5))}><i className="ph ph-plus" aria-hidden="true"/></button></span>
+                    <span className="m15c-step" role="group" aria-label={"Sessions a week for " + it.subject}><span className="m15c-label">A week</span>
+                      <button type="button" className="m15c-btn" aria-label="Fewer sessions" disabled={n <= 1} onClick={() => setV(it, "sessionsPerWeek", Math.max(1, n - 1))}><i className="ph ph-minus" aria-hidden="true"/></button>
+                      <b className="m15c-num" aria-live="polite">{n}</b>
+                      <button type="button" className="m15c-btn" aria-label="More sessions" disabled={n >= 7} onClick={() => setV(it, "sessionsPerWeek", Math.min(7, n + 1))}><i className="ph ph-plus" aria-hidden="true"/></button></span>
+                  </div>
+                  <label className="m15c-field"><span className="m15c-label">What {first} will do{it.methodLabel ? " · " + it.methodLabel : ""}</span>
+                    <textarea className="m15c-input" rows={2} maxLength={400} value={val(it, "what")} onChange={e => setV(it, "what", e.target.value)}/></label>
+                  <small className="m15c-sub">{it.whenWhere || "No time set"}</small>
+                </div>
+              ) : <>
+                <p>{it.methodLabel ? it.methodLabel + " · " : ""}{it.what}</p>
+                <small className="m15c-sub">{it.whenWhere} · {it.sessionsPerWeek} a week{plan.status === "live" ? " · " + it.doneThisWeek + " done this week" : ""}</small></>}
+            </li>); })}</ol>
           {plan.habit && <p><b>Habit for the term:</b> {plan.habit}</p>}
           {plan.status === "live" && plan.adherence != null && <p className="m15c-sub">{plan.adherence}% of study sessions kept so far.</p>}
           {plan.recipients && plan.recipients.family && <p className="m15c-sub">{first} chose to share it with their family once you approve it.</p>}
@@ -372,12 +397,19 @@ function Mp15CPlan({ subjectId, term, onBack }) {
               <label className="m15c-field"><span className="m15c-label">A note for {first} <small>(needed to send it back)</small></span>
                 <textarea className="m15c-input" rows={3} maxLength={600} value={note} onChange={e => setNote(e.target.value)}/></label>
               <div className="m15c-actions">
-                <button type="button" className="m15c-btn is-primary" disabled={!!busy} onClick={() => act("approve")}>{busy === "approve" ? "Approving…" : "Approve the plan"}</button>
+                <button type="button" className="m15c-btn is-primary" disabled={!!busy} onClick={() => act("approve")}>{busy === "approve" ? "Approving…" : Object.keys(ed).length ? "Approve with my changes" : "Approve the plan"}</button>
                 <button type="button" className="m15c-btn" disabled={!!busy} onClick={() => act("return")}>{busy === "return" ? "Sending…" : "Send it back"}</button>
               </div>
             </div>
           )}
           {waiting && !d.canApprove && <p className="m15c-sub">{MP15C_ERR.peer_cannot_approve}</p>}
+          {plan.status === "live" && (
+            <div className="m15c-decide">
+              <label className="m15c-field"><span className="m15c-label">Write to {first} about the plan</span>
+                <textarea className="m15c-input" rows={2} maxLength={600} value={note} placeholder={"Praise a kept week, or ask what got in the way and agree one change."} onChange={e => setNote(e.target.value)}/></label>
+              <div className="m15c-actions"><button type="button" className="m15c-btn is-primary" disabled={!!busy} onClick={() => act("cheer")}>{busy === "cheer" ? "Sending…" : "Send to " + first}</button></div>
+            </div>
+          )}
           {msg && <p className="m15c-ok" role="status">{msg}</p>}
           {(rec.notes || []).length > 0 && <div className="m15c-notes">{rec.notes.map((n, i) => <article key={i} className="m15c-note"><b>{n.who}</b><p>{n.text}</p></article>)}</div>}
         </>}

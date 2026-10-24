@@ -162,6 +162,15 @@ function mentoring_periods(int $n): array {
  * the child in front of them, and six round trips on a Lagos phone connection
  * is the difference between a tool that gets used and one that does not.
  */
+/** member.mentor.child.lessons — where a mentee is in their lessons (the same gate as their record). */
+function mentor_child_lessons(array $p): array {
+    $o = mentoring_open($p);
+    if (empty($o['ok'])) return $o;
+    if ((string)$o['subject']['kind'] !== 'member') return ['ok' => true, 'curriculum' => null];
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [(string)$o['subject']['id']]);
+    return ['ok' => true, 'curriculum' => $m && function_exists('curriculum_child_state') ? curriculum_child_state($m) : null];
+}
+
 function mentor_child(array $p): array {
     $o = mentoring_open($p);
     if (empty($o['ok'])) return $o;

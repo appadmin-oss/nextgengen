@@ -318,8 +318,20 @@ function results_plan_items(string $planId): array {
         'method' => (string)$r['method'], 'methodLabel' => RESULTS_METHODS[(string)$r['method']]['label'] ?? '',
         'why' => RESULTS_METHODS[(string)$r['method']]['why'] ?? '', 'ref' => RESULTS_METHODS[(string)$r['method']]['ref'] ?? '',
         'what' => (string)$r['what'], 'whenWhere' => (string)$r['whenWhere'],
-        'sessionsPerWeek' => (int)$r['sessionsPerWeek'], 'helper' => (string)$r['helper']],
+        'sessionsPerWeek' => (int)$r['sessionsPerWeek'], 'helper' => (string)$r['helper'],
+        'midterm' => results_midterm($r['current'] === null ? null : (int)$r['current'], $r['target'] === null ? null : (int)$r['target'])],
         db_all('SELECT * FROM growth_plan_items WHERE planId = ? ORDER BY position, id', [$planId]));
+}
+
+/* What makes an 85% target realistic: a halfway mark to check against at
+   mid-term, and enough sessions for the size of the climb. */
+function results_midterm(?int $current, ?int $target): ?int {
+    if ($target === null) return null;
+    return $current === null ? $target : (int)ceil($current + ($target - $current) / 2);
+}
+function results_sessions_for(?int $current, int $target): int {
+    $gap = $target - (int)$current;
+    return $gap >= 40 ? 5 : ($gap >= 25 ? 4 : 3);
 }
 
 /** The plan as every reader sees it. $week: this week's ticks, per item. */
@@ -525,6 +537,13 @@ function member_results_confirm(array $p): array {
     if (!$subs) return ['ok' => false, 'error' => 'no_subjects'];
     $missing = array_values(array_map(static fn($s) => $s['name'], array_filter($subs, static fn($s) => $s['score'] === null)));
     if ($missing) return ['ok' => false, 'error' => 'score_required', 'subjects' => $missing];
+    /* Every score 0 is a report that was not read, not a term of zeros. It was
+       accepted, and became a plan, a "needs attention" flag and a class
+       average built on nothing. Two or more zeros among real scores are kept:
+       that can be true. */
+    $zeros = count(array_filter($subs, static fn($s) => (int)$s['score'] === 0));
+    if (count($subs) >= 2 && $zeros === count($subs)) return ['ok' => false, 'error' => 'scores_all_zero',
+        'message' => 'Every score says 0. Type each score from your report card, or upload a clearer photo.'];
     $ocr = [];
     foreach ((json_decode((string)$u['ocrJson'], true)['subjects'] ?? []) as $o) $ocr[mb_strtolower((string)$o['name'])] = $o;
     $last = results_last_scores((string)$m['memberId'], (string)$u['term']);
@@ -559,6 +578,22 @@ function member_results_confirm(array $p): array {
  * "what I'll do" lines when one is configured. The AI cannot choose subjects,
  * targets or methods outside the lists — those are validated and fall back.
  */
+/**
+ * A child's target. "current + 8" made a child on 0 aim for 8 and one on 48
+ * aim for 56: a programme for geniuses does not plan towards a pass.
+ */
+const RESULTS_GRADE_BANDS = [85, 90, 95, 100];
+/* NGG raises geniuses: no target is below 85%, whoever sets it (the draft,
+   the child, the mentor). Above 85, the next band at least 5 points up. */
+const RESULTS_TARGET_MIN = 85;
+function results_target_for(?int $score): int {
+    if ($score === null) return RESULTS_TARGET_MIN;
+    foreach (RESULTS_GRADE_BANDS as $b) if ($b >= $score + 5) return $b;
+    return 100;
+}
+/** The lowest target allowed for a subject: 85, or where the child already is. */
+function results_target_floor(?int $current): int { return min(100, max(RESULTS_TARGET_MIN, (int)$current)); }
+
 function member_results_plan_draft(array $p): array {
     $m = results_member((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
@@ -576,17 +611,18 @@ function member_results_plan_draft(array $p): array {
     $items = [];
     foreach ($focus as $s) {
         $method = results_default_method($s['name']);
-        $items[] = ['subject' => $s['name'], 'current' => $s['score'], 'target' => min(100, $s['score'] + RESULTS_TARGET_STEP),
-            'method' => $method, 'what' => results_default_what($s['name'], $method), 'whenWhere' => '', 'sessionsPerWeek' => 3, 'helper' => 'self'];
+        $items[] = ['subject' => $s['name'], 'current' => $s['score'], 'target' => results_target_for($s['score']),
+            'method' => $method, 'what' => results_default_what($s['name'], $method), 'whenWhere' => '', 'sessionsPerWeek' => results_sessions_for($s['score'], results_target_for($s['score'])), 'helper' => $s['score'] !== null && $s['score'] < 50 ? 'mentor' : 'self'];
     }
     $flags = [];
     foreach ($subjects as $s) {
         if ($s['change'] !== null && $s['change'] <= -10) $flags[] = "{$s['name']} dropped {$s['change']} points since last term.";
-        if ($s['score'] !== null && $s['score'] < 40) $flags[] = "{$s['name']} is below 40.";
+        if ($s['score'] !== null && $s['score'] === 0) $flags[] = "{$s['name']} shows 0. If that is not your real score, fix it before you send.";
+        elseif ($s['score'] !== null && $s['score'] < 40) $flags[] = "{$s['name']} is below 40.";
     }
     $first = mp_first((string)$m['fullName']);
     $summary = $kpis['avg'] === null ? '' : "Your average is {$kpis['avg']}" . ($kpis['change'] !== null ? ' (' . ($kpis['change'] >= 0 ? '+' : '') . $kpis['change'] . ' since last term)' : '')
-        . ". Your strongest subject is {$kpis['best']['name']}. This plan picks " . count($items) . ' subject' . (count($items) === 1 ? '' : 's') . ' to work on, with a target a little above where you are now.';
+        . ". Your strongest subject is {$kpis['best']['name']}. This plan picks " . count($items) . ' subject' . (count($items) === 1 ? '' : 's') . ' to work on, each aiming for 85% or more.';
     $aiModel = '';
     if ($items) {
         $brief = ['firstName' => $first, 'average' => $kpis['avg'], 'change' => $kpis['change'],
@@ -648,6 +684,7 @@ function results_items_clean(array $in, array $scores): array {
         $target = (int)($it['target'] ?? 0);
         if ($target < 0 || $target > 100) return [null, ['error' => 'bad_target', 'subject' => $subject]];
         if ($cur !== null && $target < $cur) return [null, ['error' => 'target_below_current', 'subject' => $subject]];
+        if ($target < results_target_floor($cur)) return [null, ['error' => 'target_too_low', 'subject' => $subject, 'min' => results_target_floor($cur)]];
         $spw = (int)($it['sessionsPerWeek'] ?? 3);
         if ($spw < 1 || $spw > 7) return [null, ['error' => 'bad_sessions', 'subject' => $subject]];
         $out[] = ['subject' => $subject, 'current' => $cur, 'target' => $target, 'method' => $method,
@@ -855,12 +892,36 @@ function member_mp_plan_approve(array $p): array {
     if ((string)$plan['status'] !== 'sent') return ['ok' => false, 'error' => 'not_waiting'];
     $actor = results_staff_actor($g);
     $now = now_iso();
+    /* The mentor can adjust before approving: a target, how many sessions a
+       week, what the child will do. Validated whole before any write; each
+       change is logged and named to the child, so the plan stays theirs. */
+    $changes = [];
+    if (is_array($p['items'] ?? null) && $p['items']) {
+        $byId = []; foreach (results_plan_items((string)$plan['planId']) as $it) $byId[(string)$it['itemId']] = $it;
+        $edits = [];
+        foreach ($p['items'] as $e) {
+            if (!is_array($e) || !isset($byId[(string)($e['itemId'] ?? '')])) return ['ok' => false, 'error' => 'not_found'];
+            $it = $byId[(string)$e['itemId']]; $row = [];
+            if (array_key_exists('target', $e)) { $t = (int)$e['target'];
+                if ($t < 0 || $t > 100 || ($it['current'] !== null && $t < (int)$it['current'])) return ['ok' => false, 'error' => 'bad_target', 'subject' => $it['subject']];
+                if ($t < results_target_floor($it['current'] === null ? null : (int)$it['current'])) return ['ok' => false, 'error' => 'target_too_low', 'subject' => $it['subject'], 'min' => results_target_floor($it['current'] === null ? null : (int)$it['current'])];
+                if ($t !== (int)$it['target']) { $row['target'] = $t; $changes[] = $it['subject'] . ' target ' . (int)$it['target'] . ' → ' . $t; } }
+            if (array_key_exists('sessionsPerWeek', $e)) { $n = (int)$e['sessionsPerWeek'];
+                if ($n < 1 || $n > 7) return ['ok' => false, 'error' => 'bad_sessions', 'subject' => $it['subject']];
+                if ($n !== (int)$it['sessionsPerWeek']) { $row['sessionsPerWeek'] = $n; $changes[] = $it['subject'] . ' ' . $n . ' sessions a week'; } }
+            if (array_key_exists('what', $e)) { $w = mb_substr(trim((string)$e['what']), 0, 400);
+                if ($w === '') return ['ok' => false, 'error' => 'what_required', 'subject' => $it['subject']];
+                if ($w !== (string)$it['what']) { $row['what'] = $w; $changes[] = $it['subject'] . ': what to do'; } }
+            if ($row) $edits[(string)$e['itemId']] = $row;
+        }
+        foreach ($edits as $iid => $row) db_update('growth_plan_items', $row, ['itemId' => $iid]);
+    }
     db_update('growth_plans', ['status' => 'live', 'approvedBy' => $actor['id'], 'approvedByName' => $actor['name'], 'approvedAt' => $now, 'updatedAt' => $now], ['id' => (int)$plan['id']]);
     $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
     if ($note !== '') db_insert('plan_notes', ['planId' => (string)$plan['planId'], 'authorId' => $actor['id'], 'authorName' => $actor['name'], 'authorRole' => 'mentor', 'text' => $note, 'createdAt' => $now]);
     $first = mp_first((string)$m['fullName']);
-    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => staff_public_name($actor['id'], 'Your mentor') . ' approved your plan.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
-    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Approved the plan' . ($note !== '' ? ' with a note' : ''), 'approve');
+    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => staff_public_name($actor['id'], 'Your mentor') . ' approved your plan' . ($changes ? ', with a change: ' . implode('; ', array_slice($changes, 0, 3)) : '') . '.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
+    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Approved the plan' . ($changes ? ' after changing ' . implode('; ', $changes) : '') . ($note !== '' ? ' with a note' : ''), 'approve');
     $family = 0;
     if (json_decode((string)$plan['recipientsJson'], true)['family'] ?? false) {
         $family = results_family_send($m, $plan, staff_public_name($actor['id'], mp_first($actor['name'])));
@@ -869,7 +930,28 @@ function member_mp_plan_approve(array $p): array {
             results_log((string)$m['memberId'], (string)$plan['term'], ['id' => '', 'name' => 'NGG', 'role' => 'system'], "Shared the plan with {$family} family contact" . ($family === 1 ? '' : 's'), 'family');
         }
     }
-    return ['ok' => true, 'status' => 'live', 'family' => $family];
+    return ['ok' => true, 'status' => 'live', 'family' => $family, 'changed' => count($changes)];
+}
+
+/**
+ * member.mentor.plan.cheer — on a live plan, the mentor sends the child a word
+ * about how it is going (a nudge after a missed week, praise after a kept one).
+ * It is on the plan's record and reaches the child as a notification.
+ */
+function member_mp_plan_cheer(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    $plan = db_row('SELECT * FROM growth_plans WHERE planId = ? LIMIT 1', [(string)($p['planId'] ?? '')]);
+    if (!$plan) return ['ok' => false, 'error' => 'not_found'];
+    $m = results_staff_member($g, (string)$plan['memberId']);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$plan['status'] !== 'live') return ['ok' => false, 'error' => 'not_live'];
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
+    if (mb_strlen($note) < 4) return ['ok' => false, 'error' => 'note_required'];
+    $actor = results_staff_actor($g);
+    db_insert('plan_notes', ['planId' => (string)$plan['planId'], 'authorId' => $actor['id'], 'authorName' => $actor['name'], 'authorRole' => 'mentor', 'text' => $note, 'createdAt' => now_iso()]);
+    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => staff_public_name($actor['id'], 'Your mentor') . ' on your study plan', 'body' => '“' . mb_substr($note, 0, 160) . '”', 'linkPage' => 'dashboard']);
+    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Wrote about the plan: ' . mb_substr($note, 0, 120), 'note');
+    return ['ok' => true];
 }
 
 /** The family mail: the plan and a conversation to have, not a score to police (R13). */
