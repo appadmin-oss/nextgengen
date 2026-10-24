@@ -56,10 +56,16 @@
     }
   }
 
+  /* Which of the signed-in person's own roles a portal is acting as. A person
+     who both mentors and teaches is an instructor in the Instructor Portal
+     (mentor_gate reads X-NGG-As); it never adds a role they do not hold. Set
+     while that portal is mounted, cleared when it unmounts. */
+  let portalAs = '';
   async function requestRaw(path, opts) {
     opts = opts || {};
     const method = opts.method || (opts.body ? 'POST' : 'GET');
     const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});
+    if (portalAs) headers['X-NGG-As'] = portalAs;
     // Echo the CSRF cookie back as a header on every write — required by
     // the PHP `csrf_require()` middleware. GETs are exempt.
     if (method !== 'GET' && method !== 'HEAD') {
@@ -739,6 +745,8 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    /* Act as one of the person's own roles ('instructor') while a portal is open; '' clears it. */
+    setPortalAs: (v) => { portalAs = v === 'instructor' ? 'instructor' : ''; },
     // Exposed for the browser test: the no-network fallback shrink, which
     // decides whether a photo is accepted when the optimiser cannot be fetched.
     __canvasShrink: canvasShrink,
@@ -878,7 +886,7 @@
       classHinge:  (slot, h) => request('/member/teaching.php', { body: Object.assign({ action: 'classHinge' }, slot || {}, h || {}) }),
       classExit:   (slot, x) => request('/member/teaching.php', { body: Object.assign({ action: 'classExit' }, slot || {}, x || {}) }),
       classHistory: (slot) => request('/member/teaching.php' + qs(Object.assign({ view: 'history' }, slot || {}))),
-      teachStudent: (studentId) => request('/member/teaching.php' + qs({ view: 'student', studentId })),
+      teachStudent: (studentId, course) => request('/member/teaching.php' + qs({ view: 'student', studentId, course: course || '' })),
       classLog:    (slot, l) => request('/member/teaching.php', { body: Object.assign({ action: 'classLog' }, slot || {}, l || {}) }),
       /* The class's school results (Progress → School results). Filtered and paged on the server. */
       classResults:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'results' }, o || {}))),

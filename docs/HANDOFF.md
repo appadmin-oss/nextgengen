@@ -2829,3 +2829,17 @@ The table is editable in the Control Room, with these as the defaults.
   - The open thread is polled every 8s on a visible tab (`loadComments(pid, true)`); a "N new" jump button appears when scrolled up.
   - Enter sends on wide screens. Escape closes the picker, then the quote, then the thread.
 - **Tests:** `community-v3.test.js` 62/0, which adds the day line, the right-hand own reply, quote and Enter, the quote shown, and a reaction.
+
+## Instructors: assess one child; a mentor who also teaches is an instructor at /instructor (2026-10-24)
+
+- **The `/instructor/ngg` fault:** `mentor_gate` found a `mentors` row before the instructor volunteer record. A person holding both was a "mentor" to every instructor op (`forbidden_role`), and `/instructor` fell back to the old Mentor Portal.
+  - `mentor_gate` now takes `as: 'instructor'`, from the op or from the `X-NGG-As` header. `NGGApi.setPortalAs('instructor')` is set while the Instructor Portal is mounted.
+  - It only chooses among records the person already holds: the volunteer row linked by `volunteerId`, then by `memberId`, then by email.
+  - `results_instructor_gate` and the routes in `teaching.php` pass it.
+- **Second-course children:** `instructor_skills_mark` refused any child whose single track was not the course letter for letter (`not_their_course`). It now uses `member_takes_any`.
+  - `remark_subject` reads `courses`, so the scope check sees every course.
+  - `instructor_student` shows the course being taught (the `course` param, else the instructor's course the child takes), not the child's first track.
+  - `results_member` selects `courses`, `disciplines` and `division`.
+- **Assess tab** on the instructor's student page (`ip6-app.jsx` and the design): mark every skill on four levels, with evidence for a move up, in one save; a typed note (`member.remark.add`); and the child's waiting answers, linked to Marking.
+- **Member check-in to the mentor:** it now says which week it is, what each promise was, whether it was kept, and why not. It used to read "FRENCH: kept it".
+- **Tests:** `instructor-v6.test.js` 36/0. The main instructor now also holds a mentor record, and the suite assesses a second-course child (skills, the evidence rule, a note).

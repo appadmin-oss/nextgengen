@@ -127,7 +127,7 @@ function results_in_loop(array $m): bool {
 /** The member's own row: NGG, and a child in the results loop. A Summer account has none. */
 function results_member(string $memberId): ?array {
     if ($memberId === '') return null;
-    $m = db_row('SELECT memberId, fullName, centre, track, type, status, role, joinDate, createdAt, dob FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division, type, status, role, joinDate, createdAt, dob FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$m || !member_is_ngg($m) || !results_in_loop($m)) return null;
     return $m;
 }
@@ -924,7 +924,8 @@ function member_mp_plan_return(array $p): array {
 /* ── Instructor ops ──────────────────────────────────────────────────── */
 
 function results_instructor_gate(array $p): array {
-    $g = mentor_gate($p);
+    // As an instructor: someone who also holds a mentor record is still an instructor here.
+    $g = mentor_gate(['as' => 'instructor'] + $p);
     if (empty($g['ok'])) return $g;
     if (!in_array((string)$g['role'], ['instructor', 'admin'], true)) return ['ok' => false, 'error' => 'forbidden_role'];
     return $g;

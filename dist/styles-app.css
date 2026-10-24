@@ -10681,6 +10681,24 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-61ee462{display:block;font-size:12px;color:#6b6b72;margin-bottom:2px}
 .i6-0b4f506{margin:0;font-size:14.5px;line-height:1.5}
 .i6-8e96f26{height:44px;padding:0 14px;border-radius:12px;border:1px solid #f1e3b8;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.i6-08328da{font-size:12.5px;color:#4a4a50}
+.i6-7eeafd0{margin:0;font-size:14px;color:#4a4a50}
+.i6-f92d497{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid #f0efea}
+.i6-573af37{flex:1;min-width:160px;font-size:14.5px;font-weight:600;line-height:1.35}
+.i6-b374d54{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px}
+.i6-2304345{min-height:44px;padding:0 10px;border-radius:12px;border:1px solid #d6d4cc;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.i6-ae834a9{width:10px;height:10px;border-radius:50%;background:var(--dc-background, unset);flex:none}
+.i6-2dca902{height:46px;padding:0 12px;border-radius:12px;border:1px solid #d6d4cc;font-size:15px;outline:0;background:#fff}
+.i6-89ae93f{height:48px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:15px;font-weight:600;cursor:pointer;opacity:var(--dc-opacity, unset)}
+.i6-3c5abe7{height:40px;padding:0 14px;border-radius:999px;border:1px solid #d6d4cc;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:13.5px;font-weight:600;cursor:pointer}
+.i6-f90c461{border-radius:12px;border:1px solid #d6d4cc;padding:12px;font-size:15px;line-height:1.45;resize:vertical;outline:0;background:#fff}
+.i6-fa696ab{height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;opacity:var(--dc-opacity, unset)}
+.i6-e4120af{flex:1;min-width:180px;font-size:12.5px;color:#4a4a50}
+.i6-e48553a{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.i6-881f70f{font-size:22px}
+.i6-24e8b27{flex:1;min-width:180px;font-size:14.5px}
+.i6-0dd09b8{height:44px;padding:0 16px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
+.i6-777c78b{flex:1;font-size:14.5px;color:#4a4a50}
 .i6-e7468ff{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:4px}
 .i6-8cb48de{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
 .i6-e1c5c2c{display:grid;grid-template-columns:minmax(0,1fr) 120px 96px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid #f0efea}
@@ -10783,7 +10801,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-63c5100{padding:4px 16px 16px;display:flex;flex-direction:column;gap:12px;background:#fcfcfb}
 .i6-c3adb99{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
 .i6-8d1fc14{background:#fff;border:var(--dc-border, unset);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
-.i6-08328da{font-size:12.5px;color:#4a4a50}
 .i6-763bedf{display:flex;align-items:baseline;gap:6px}
 .i6-319ff2f{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
 .i6-7fb3ea7{background:#fffbf0;border:1px solid #f1e3b8;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
@@ -10812,7 +10829,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-6665463{font-size:28px;color:#9a9aa0}
 .i6-c582f20{align-self:center;height:44px;padding:0 18px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .i6-a4f23c8{width:100%;display:flex;align-items:center;gap:14px;min-height:60px;padding:8px 16px;border:0;border-bottom:1px solid #f0efea;background:none;cursor:pointer;text-align:left}
-.i6-881f70f{font-size:22px}
 .i6-f20f655{flex:1;font-size:15.5px;font-weight:600}
 .i6-0033b23{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#f5b026;font-size:12px;font-weight:700;display:grid;place-items:center}
 .i6-05ec411{min-height:52px;border-radius:14px;border:1px solid #d6d4cc;background:#fff;font-size:15px;font-weight:600;color:#0b0b0c;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}

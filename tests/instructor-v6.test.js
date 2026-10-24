@@ -79,6 +79,8 @@ async function as(memberId, admin, viewport) {
       $mk('NGG-IN-INS', 'Tunde Teacher');
       db_insert('volunteers', ['volunteerId' => 'VOL-IN-1', 'fullName' => 'Tunde Teacher', 'email' => 'tunde.teacher@class.example', 'role' => 'instructor', 'courses' => '["Coding"]', 'centre' => 'Egbeda',
         'status' => 'active', 'programme' => 'ngg', 'safeguarding' => 'cleared', 'memberId' => 'NGG-IN-INS', 'createdAt' => $now]);
+      // Tunde ALSO mentors (a Summer mentor record at another centre): in the instructor portal he is still an instructor.
+      db_insert('mentors', ['mentorId' => 'MEN-IN-T', 'fullName' => 'Tunde Teacher', 'email' => 'tunde.teacher@class.example', 'status' => 'active', 'centre' => 'Ayobo', 'programme' => 'summer', 'memberId' => 'NGG-IN-INS', 'createdAt' => $now]);
       // Tunde has taught here for a while: the Academy's "Start here" is behind him. Femi starts today.
       foreach (academy_required_ids('instructor') as $mod) db_insert('academy_passes', ['track' => 'instructor', 'personId' => 'NGG-IN-INS', 'moduleId' => $mod, 'score' => 100, 'passedAt' => $now]);
       $mk('NGG-IN-NEW', 'Femi New');
@@ -229,6 +231,34 @@ async function as(memberId, admin, viewport) {
     chk('Marking: the child is told — the lesson, the score and the instructor\'s words', /Coding week 2/.test(nt.title || '') && /%/.test(nt.title || '') && /Exactly right/.test(nt.body || ''));
     await ip.waitForFunction(() => /All clear|Every written answer is marked/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
     chk('Marking: the queue empties once it is marked', /All clear|Every written answer is marked/.test(await ip.innerText('main')));
+    // ── Assess one child: Bisi takes Coding as a SECOND course, and is assessed on Coding's skills ──
+    await ip.click('nav >> text=Students');
+    await ip.click('main button:has-text("Bisi Okafor")');
+    await ip.click('main [role="tab"]:has-text("Assess")');
+    await ip.waitForFunction(() => /Mark Bisi’s skills/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    const asTxt = await ip.innerText('main');
+    chk('Assess: one child’s page lists every skill of the course being taught, on four levels', /Mark Bisi’s skills/.test(asTxt) && /Reads an error message/.test(asTxt) && /Breaks a problem into steps/.test(asTxt) && /Can teach it/.test(asTxt));
+    await ip.click('main [role="radiogroup"][aria-label="Reads an error message and acts on it"] [role="radio"]:has-text("Getting there")');
+    await ip.click('main [role="radiogroup"][aria-label="Breaks a problem into steps"] [role="radio"]:has-text("Can do it")');
+    await ip.click('main button:has-text("Save 2 skill marks")');
+    await ip.waitForFunction(() => /skills are saved/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    const bm = q(`db_all("SELECT skill, level FROM skill_marks WHERE subjectId = 'NGG-IN-K5' AND course = 'Coding' ORDER BY skill")`) || [];
+    chk('Assess: a second-course child’s skills are saved for the course taught (the server refused them before)', bm.length === 2 && bm.some(r => /Breaks a problem/.test(r.skill) && Number(r.level) === 3) && bm.some(r => /Reads an error/.test(r.skill) && Number(r.level) === 2));
+    await ip.click('main [role="radiogroup"][aria-label="Reads an error message and acts on it"] [role="radio"]:has-text("Can do it")');
+    await ip.click('main button:has-text("Save 1 skill mark")');
+    await ip.waitForTimeout(800);
+    chk('Assess: moving a child up asks what you saw first, and saves nothing without it', Number((q(`db_row("SELECT level FROM skill_marks WHERE subjectId = 'NGG-IN-K5' AND skill = 'Reads an error message and acts on it'")`) || {}).level) === 2 && await ip.isVisible('main input[aria-label="What you saw"]'));
+    await ip.fill('main input[aria-label="What you saw"]', 'Fixed her own syntax error from the message alone');
+    await ip.click('main button:has-text("Save 1 skill mark")');
+    await ip.waitForTimeout(1500);
+    chk('Assess: with the evidence, the move up is saved with it', /syntax error/.test((q(`db_row("SELECT level, evidence FROM skill_marks WHERE subjectId = 'NGG-IN-K5' AND skill = 'Reads an error message and acts on it'")`) || {}).evidence || ''));
+    await ip.click('main [role="radio"]:has-text("Strength")');
+    await ip.fill('main textarea[aria-label="Your note"]', 'Bisi explains her steps to the pair beside her before she types.');
+    await ip.click('main button:has-text("Save the note")');
+    await ip.waitForTimeout(1500);
+    const rn = q(`db_row("SELECT kind, body, course FROM student_remarks WHERE subjectId = 'NGG-IN-K5' ORDER BY id DESC LIMIT 1")`) || {};
+    chk('Assess: a written note on one child goes on their record, with its kind', rn.kind === 'strength' && /explains her steps/.test(rn.body || ''));
+    await shot(ip, 'assess-one-child');
     chk('no page errors (instructor)', ip.errs.length === 0);
     if (ip.errs.length) console.error(ip.errs.join('\n'));
 

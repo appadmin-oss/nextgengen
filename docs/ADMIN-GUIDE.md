@@ -2803,3 +2803,15 @@ A post's replies read like a chat thread:
 - **Sending:** on a computer, Enter sends and Shift+Enter starts a new line. On a phone, the send button sends.
 
 Reporting and deleting a reply work as before. Every action has a button; nothing needs a gesture.
+
+## Assessing one child (Instructor Portal)
+
+**Students → a child → Assess** is where an instructor assesses one child:
+
+- **Skills:** every skill of the course being taught, on four levels (Not yet, Getting there, Can do it, Can teach it). Moving a child up needs one line of what you saw. One press saves all the changes.
+- **A note:** choose Progress, Strength, Concern or Tell the family, and write what you noticed. It goes on the child's record, where their mentor reads it. A worrying note is flagged to the safeguarding lead.
+- **Lesson answers:** shows how many of the child's answers are waiting for your mark, with a button straight to them.
+
+This works for a child who takes the course as their second course too.
+
+Someone who both teaches and mentors gets the **Instructor Portal** at `/instructor`. Before this fix they were shown the Mentor Portal there.

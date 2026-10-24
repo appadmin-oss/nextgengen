@@ -45,6 +45,7 @@ const IP6_LOG_PROMPTS = ['What we covered', 'What went well', 'What I’d change
 const IP6_CONCERN_KINDS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
 const IP6_SUPPORT = ['A student is struggling to keep up', 'Behaviour in the room', 'I need materials or equipment', 'I can’t make Saturday', 'Talk to the centre lead'];
 const IP6_ERR = {
+  not_their_course: 'This child does not take this course, so its skills cannot be marked for them.', no_skills_for_course: 'No skills are set for this course yet. Ask the club admin to add them.',
   not_your_course: 'That course isn’t yours.', not_your_centre: 'That centre isn’t yours.', unmarked: 'Mark everyone first, or close with the rest as away.',
   aim_required: 'Write the lesson goal first.', question_and_two_options: 'The hinge needs a question and two options.', no_results: 'Mark at least one exit ticket.',
   summary_required: 'Write what you covered first.', roll_not_closed: 'Close the roll before filing the log.', evidence_required: 'Say what you saw for each child who moved up.',
@@ -66,7 +67,7 @@ function ip6Slug(s) { return String(s || '').toLowerCase().normalize('NFKD').rep
 
 const ip6Api = {
   today: o => NGGApi.member.teachToday(o), cls: o => NGGApi.member.teachClass(o), hist: o => NGGApi.member.classHistory(o),
-  board: (c, ce) => NGGApi.member.skillsBoard(c, ce), stu: id => NGGApi.member.teachStudent(id), curr: () => NGGApi.member.curriculumStaff(),
+  board: (c, ce) => NGGApi.member.skillsBoard(c, ce), stu: (id, course) => NGGApi.member.teachStudent(id, course), curr: () => NGGApi.member.curriculumStaff(),
   results: o => NGGApi.member.classResults(o), result: (id, t) => NGGApi.member.classResult(id, t),
   /* A Saturday write: banked on the device, then sent. */
   act: (body, label) => (window.outbox ? window.outbox.send('teaching.act', body, { label }) : NGGApi.__outboxOps['teaching.act'](body)),
@@ -139,7 +140,7 @@ class Ip6Portal extends React.Component {
   goTop(scr) { this.setState({ scr, hist: [] }); this.scrollTop(); }
   goTo(scr, extra) { const s = this.state; this.setState(Object.assign({ scr, hist: s.hist.concat([s.scr]) }, extra || {})); this.scrollTop(); if (scr === 'student' && extra && extra.sel) this.loadStu(extra.sel); }
   goBack() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'today', hist: h.slice(0, -1) }); this.scrollTop(); }
-  loadStu(id) { if (id && !this.state.d['stu:' + id]) this.load('stu:' + id, () => ip6Api.stu(id)); }
+  loadStu(id) { if (id && !this.state.d['stu:' + id]) this.load('stu:' + id, () => ip6Api.stu(id, this.state.course || ((this.state.d.cls || {}).course) || '')); }
 
   /* ── The class, as the design reads a child ─────────────────────────── */
   ctx() {
@@ -212,8 +213,9 @@ class Ip6Portal extends React.Component {
     const me = { first: ip6First(meName), name: meName, role: 'Instructor · ' + kit.short.charAt(0) + kit.short.slice(1).toLowerCase(), centre: cls.centre || today.centre || '', initials: ip6Ini(meName) };
     const hereN = here.length;
     const pending = ((D.curr || {}).pending) || [];
-    const markItems = []; pending.forEach(p => (p.checks || []).forEach(c => { if (String(p.unitId) && (!cls.course || true)) markItems.push({ progressId: p.progressId, checkId: c.checkId, who: p.memberName, unit: p.unitTitle, q: c.prompt, a: c.answer, max: c.points || 1, model: c.modelAnswer || '', rubric: c.rubric || '' }); }));
+    const markItems = []; pending.forEach(p => (p.checks || []).forEach(c => { if (String(p.unitId) && (!cls.course || true)) markItems.push({ memberId: p.memberId || '', progressId: p.progressId, checkId: c.checkId, who: p.memberName, unit: p.unitTitle, q: c.prompt, a: c.answer, max: c.points || 1, model: c.modelAnswer || '', rubric: c.rubric || '' }); }));
     const markLeft = markItems.filter((x, i) => !S.mk[i + '_saved']).length;
+    this._markItems = markItems;   // read by the student page's Assess tab
     const hw = (D.comm || {}).hw; const toGrade = hw && hw.submitted ? hw.submitted.filter(x => !x.reviewedAt).length : 0;
     const remN = Object.values(S.remarks).reduce((n, a) => n + a.length, 0);
     const rollClosed = !!sess.rollClosedAt && !S.rollEdit;
@@ -521,8 +523,46 @@ class Ip6Portal extends React.Component {
     o.hasWatch = o.watch.length > 0; o.hasStretch = o.stretch.length > 0;
     // one student
     const sd = D['stu:' + selM.id] || null;
-    o.stTabs = [['overview', 'Overview'], ['skills', 'Skills'], ['work', 'Work'], ['attendance', 'Attendance'], ['remarks', 'Remarks']].map(([id, l]) => ({ l, on: S.stTab === id, ring: S.stTab === id ? '#0b0b0c' : 'transparent', fw: S.stTab === id ? 600 : 500, pick: () => set({ stTab: id }) }));
-    ['overview', 'skills', 'work', 'attendance', 'remarks'].forEach(t => { o['st_' + t] = S.stTab === t; });
+    o.stTabs = [['overview', 'Overview'], ['assess', 'Assess'], ['skills', 'Skills'], ['work', 'Work'], ['attendance', 'Attendance'], ['remarks', 'Remarks']].map(([id, l]) => ({ l, on: S.stTab === id, ring: S.stTab === id ? '#0b0b0c' : 'transparent', fw: S.stTab === id ? 600 : 500, pick: () => set({ stTab: id }) }));
+    ['overview', 'assess', 'skills', 'work', 'attendance', 'remarks'].forEach(t => { o['st_' + t] = S.stTab === t; });
+    /* Assess one child: every skill of the course on its four levels (a move
+       up needs a line of what you saw, as on the board), a written note for
+       their record and their mentor, and their answers waiting to be marked.
+       One save for all the skills, through the same op the board uses. */
+    { const id = selM.id, lvKey = k => id + ':' + k, asLv = S.asLv || {}, asEv = S.asEv || {};
+      const rows = C.skills.map((t, k) => { const cur = lvlOf(selM, k), has = cur !== null && cur !== undefined;
+        const pick = asLv[lvKey(k)] !== undefined ? asLv[lvKey(k)] : (has ? cur : null), up = pick !== null && has && pick > cur;
+        return { t, k, cur: has ? cur : null, pick, changed: pick !== null && pick !== (has ? cur : null), up,
+          now: has ? 'Now: ' + IP6_LEVELS[cur] : 'Not marked yet',
+          opts: IP6_LEVELS.map((l, x) => ({ l, on: pick === x ? 'true' : 'false', bg: pick === x ? '#0b0b0c' : '#fff', fg: pick === x ? '#fff' : '#0b0b0c', dot: IP6_LVCOL[x],
+            go: () => set({ asLv: { ...(this.state.asLv || {}), [lvKey(k)]: x } }) })),
+          ev: asEv[lvKey(k)] || '', onEv: e => set({ asEv: { ...(this.state.asEv || {}), [lvKey(k)]: e.target.value } }), needEv: up,
+          evPh: 'What did ' + (selM.first || 'they') + ' do that showed it?' }; });
+      const changed = rows.filter(r => r.changed), missing = changed.filter(r => r.up && (asEv[lvKey(r.k)] || '').trim().length < 4);
+      o.asRows = rows; o.asHasSkills = rows.length > 0; o.asNoSkills = rows.length === 0;
+      o.asChanged = changed.length; o.asSaveL = S.asBusy ? 'Saving…' : changed.length ? 'Save ' + changed.length + ' skill mark' + (changed.length === 1 ? '' : 's') : 'No changes yet';
+      o.asSaveOff = !changed.length || !!S.asBusy; o.asSaveOp = changed.length && !S.asBusy ? 1 : 0.45;
+      o.asSave = () => { if (!changed.length || S.asBusy) return; if (missing.length) return this.toast('Say what you saw for ' + missing.map(r => ip6Short(r.t).toLowerCase()).join(' and ') + '.');
+        const marks = {}, evidence = {}; changed.forEach(r => { marks[r.t] = r.pick + 1; const e = (asEv[lvKey(r.k)] || '').trim(); if (e) evidence[r.t] = e; });
+        set({ asBusy: true });
+        ip6Api.act({ action: 'skills', subjectId: id, course: C.cls.course, marks, evidence }, 'Assess ' + selM.first)
+          .then(r => { const lv = { ...(this.state.asLv || {}) }, ev = { ...(this.state.asEv || {}) }; rows.forEach(x => { delete lv[lvKey(x.k)]; delete ev[lvKey(x.k)]; });
+            set({ asBusy: false, asLv: lv, asEv: ev }); this.toast(r && r.queued ? 'Saved on this device. It sends when you are back online.' : selM.first + '’s skills are saved.');
+            this.load('board', () => ip6Api.board(C.cls.course, C.cls.centre)); })
+          .catch(e => { set({ asBusy: false }); this.toast(IP6_ERR[e && (e.code || e.message)] || (e && e.detail) || 'Couldn’t save. Try again.'); }); };
+      o.asKinds = [['progress', 'Progress'], ['strength', 'Strength'], ['concern', 'Concern'], ['parent-worthy', 'Tell the family']].map(([k, l]) => ({ l, on: (S.asKind || 'progress') === k ? 'true' : 'false', bg: (S.asKind || 'progress') === k ? '#0b0b0c' : '#fff', fg: (S.asKind || 'progress') === k ? '#fff' : '#0b0b0c', go: () => set({ asKind: k }) }));
+      o.asNote = S.asNote || ''; o.onAsNote = e => set({ asNote: e.target.value.slice(0, 1200) });
+      o.asNotePh = 'What you noticed about ' + (selM.first || 'them') + ' today: what they did, where they are stuck, what would help.';
+      o.asNoteOff = (S.asNote || '').trim().length < 4 || !!S.asNoteBusy; o.asNoteOp = o.asNoteOff ? 0.45 : 1;
+      o.asSendNote = () => { const body = (S.asNote || '').trim(); if (body.length < 4 || S.asNoteBusy) return; set({ asNoteBusy: true });
+        ip6Api.act({ action: 'remark', subjectId: id, kind: S.asKind || 'progress', body }, 'Note on ' + selM.first)
+          .then(r => { set({ asNoteBusy: false, asNote: '' }); this.toast(r && r.safeguarding ? 'Saved, and flagged for the safeguarding lead.' : r && r.queued ? 'Saved on this device. It sends when you are back online.' : 'Saved to ' + selM.first + '’s record. ' + (selM.mentor ? selM.mentor + ' can read it.' : ''));
+            const d = { ...this.state.d }; delete d['stu:' + id]; this.setState({ d }, () => this.loadStu(id)); })
+          .catch(e => { set({ asNoteBusy: false }); this.toast((e && e.detail) || 'Couldn’t save the note. Try again.'); }); };
+      const mine = (this._markItems || []).map((x, i) => ({ x, i })).filter(({ x, i }) => x.memberId === id && !S.mk[i + '_saved']);
+      o.asAnsN = mine.length; o.asHasAns = mine.length > 0; o.asNoAns = mine.length === 0;
+      o.asAnsL = mine.length + ' lesson answer' + (mine.length === 1 ? '' : 's') + ' from ' + (selM.first || 'them') + ' waiting for your mark';
+      o.asMark = () => { if (mine.length) this.goTo('marking', { mi: mine[0].i }); }; }
     const vs = selM.sk.map((v, k) => lvlOf(selM, k)).filter(v => v !== null && v !== undefined); const avg = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
     const upN = selM.sk.filter((v, k) => v !== null && selM.prev[k] !== null && lvlOf(selM, k) > selM.prev[k]).length;
     o.stK = [['Attendance', selM.att !== null && selM.att !== undefined ? selM.att + '%' : '—'], ['Skills up', upN + ' of ' + C.skills.length], ['Average level', avg === null ? 'Not marked' : IP6_LEVELS[Math.round(avg)]], ['Exit tickets', selM.exitGot !== null && selM.exitGot !== undefined ? selM.exitGot + '% got it' : '—']].map(([k, v]) => ({ k, v }));
@@ -643,6 +683,10 @@ class Ip6Portal extends React.Component {
 function ip6Sub() { const p = (location.pathname || '').replace(/^\/+|\/+$/g, '').split('/'); return p[0] === 'instructor' && ['ngg', 'summer'].includes(p[1]) ? p[1] : ''; }
 function InstructorHome() {
   const [sub, setSub] = React.useState(ip6Sub);
+  /* In the instructor portal, someone who also mentors is an instructor
+     (mentor_gate reads the header); the Mentor Portal clears it. */
+  React.useState(() => { try { NGGApi.setPortalAs('instructor'); } catch (_) {} return 0; });
+  React.useEffect(() => () => { try { NGGApi.setPortalAs(''); } catch (_) {} }, []);
   const [st, setSt] = React.useState({ state: 'loading', ngg: false, summer: false });
   const auth = (window.useAuth || (() => null))();
   const probe = React.useCallback(() => {

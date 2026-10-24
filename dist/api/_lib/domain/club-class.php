@@ -659,7 +659,16 @@ function instructor_student(array $p): array {
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $id = (string)$m['memberId'];
-    $course = (string)$m['track'];
+    /* The course being taught (the instructor's, when the child takes it),
+       else the child's first course. Reading only the old track showed a
+       Robotics instructor the child's Coding skills, and the marks they made
+       were refused. */
+    $theirs = function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : [(string)$m['track']];
+    $want = trim((string)($p['course'] ?? ''));
+    $course = '';
+    if ($want !== '') foreach ($theirs as $c) if (strcasecmp($c, $want) === 0) { $course = $want; break; }
+    if ($course === '' && ($g['courses'] ?? null)) foreach ($theirs as $c) foreach ((array)$g['courses'] as $gc) if (strcasecmp($c, (string)$gc) === 0) { $course = (string)$gc; break 2; }
+    if ($course === '') $course = (string)(array_values(array_filter($theirs, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0))[0] ?? $m['track']);
     $skills = course_skills($course);
     $marks = [];
     foreach (db_all('SELECT skill, level, prevLevel, evidence, markedByName, updatedAt FROM skill_marks WHERE subjectId = ? AND course = ?', [$id, $course]) as $r)
@@ -680,7 +689,7 @@ function instructor_student(array $p): array {
         array_map(static fn($r) => ['at' => (string)$r['createdAt'], 'who' => (string)$r['authorName'], 'what' => ucfirst((string)$r['kind']) . ' remark', 'type' => 'remark'], array_slice((array)($rem['remarks'] ?? []), 0, 20)),
         array_map(static fn($k, $v) => ['at' => (string)$v['at'], 'who' => (string)$v['by'], 'what' => $k . ': ' . (SKILL_LEVELS[$v['level']] ?? '') . ($v['evidence'] !== '' ? ' — ' . $v['evidence'] : ''), 'type' => 'skill'], array_keys($marks), $marks));
     usort($history, static fn($a, $b) => strcmp($b['at'], $a['at']));
-    return ['ok' => true, 'member' => ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'track' => $course, 'centre' => (string)$m['centre'],
+    return ['ok' => true, 'member' => ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'track' => $course, 'course' => $course, 'courses' => array_values($theirs), 'centre' => (string)$m['centre'],
             'mentor' => $mentor ? (string)$mentor['fullName'] : ''],
         'skills' => $skills, 'marks' => (object)$marks, 'levels' => SKILL_LEVELS, 'attendance' => $att, 'timeline' => $timeline,
         'remarks' => (array)($rem['remarks'] ?? []), 'remarkKinds' => REMARK_KINDS,

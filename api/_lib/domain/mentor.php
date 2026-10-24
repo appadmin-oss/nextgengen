@@ -177,6 +177,23 @@ function mentor_gate(array $p): array {
         }
         $mentor = $cand;
     }
+    /* ONE PERSON, TWO ROLES. Someone who teaches a class AND mentors children
+     * has a `mentors` row and an instructor volunteer record. The mentor row
+     * was always found first, so in the instructor portal they were a mentor:
+     * the instructor ops refused them (forbidden_role) and /instructor/ngg
+     * quietly showed the old Mentor Portal. Asked as an instructor (`as`), the
+     * instructor record answers; the Mentor Portal still gets the mentor. */
+    // `as` from the op, else the portal's X-NGG-As header (api-client setPortalAs). It only chooses among records the person holds.
+    if ($mentor && (string)($p['as'] ?? ($_SERVER['HTTP_X_NGG_AS'] ?? '')) === 'instructor') {
+        $vi = $m['__volunteer'] ?? null;
+        if (!$vi && trim((string)($mentor['volunteerId'] ?? '')) !== '')
+            $vi = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [(string)$mentor['volunteerId']]);
+        if (!$vi || (string)($vi['role'] ?? '') !== 'instructor')
+            $vi = db_row("SELECT * FROM volunteers WHERE memberId = ? AND status = 'active' AND role = 'instructor' ORDER BY id LIMIT 1", [(string)$m['memberId']]) ?: $vi;
+        if ((!$vi || (string)($vi['role'] ?? '') !== 'instructor') && $email !== '')
+            $vi = db_row("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active' AND role = 'instructor' ORDER BY id LIMIT 1", [$email]);
+        if ($vi && (string)($vi['role'] ?? '') === 'instructor') { $mentor = null; $m['__volunteer'] = $vi; }
+    }
     if ($mentor) {
         $centre = trim((string)($mentor['centre'] ?? ''));
         $dept   = trim((string)($mentor['department'] ?? ''));

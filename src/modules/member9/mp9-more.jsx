@@ -476,8 +476,15 @@ Object.assign(Mp9Portal.prototype, {
       meta: "Week of " + mp9Date(pp.weekStart, { day: "numeric", month: "long" }), kept: pp.adherence !== null && pp.adherence !== undefined ? "Sessions kept over the last weeks: " + pp.adherence + "%" : "Your first week on the plan",
       op: (pp.items || []).every(it => (s.acR || {})[it.itemId]) ? 1 : 0.4, submitL: s.acSent ? "Checked in · see you next Friday" : "Send my check-in",
       submit: () => { const its = pp.items || []; if (!its.every(it => (s.acR || {})[it.itemId])) return this.toast("Answer each promise first."); if (s.acSent) return;
-        const lines = its.map(it => it.subject + ": " + ({ done: "kept it", partly: "partly", missed: "missed" })[(s.acR || {})[it.itemId]] + (((s.acW || {})[it.itemId] || "").trim() ? " (" + s.acW[it.itemId].trim() + ")" : ""));
-        this.journalSave({ title: "Friday check-in · my plan", body: lines.join("\n"), visibility: "mentor", tags: "plan checkin" }).then(r => { if (!r) return; set({ acSent: true }); const missed = its.filter(it => (s.acR || {})[it.itemId] === "missed").length;
+        /* Written for the mentor reading it cold: which week, what each promise
+           was, whether it was kept, and why not, in the child's words. "FRENCH:
+           kept it" told a mentor nothing they could reply to. */
+        const R = s.acR || {}, kept = its.filter(it => R[it.itemId] === "done").length;
+        const lines = its.map(it => { const r = R[it.itemId], why = ((s.acW || {})[it.itemId] || "").trim();
+          const promise = [it.sessionsPerWeek + (it.sessionsPerWeek === 1 ? " session" : " sessions") + " a week", it.methodLabel || methodLabel(it.method), it.whenWhere].filter(Boolean).join(", ");
+          return ({ done: "✓ ", partly: "◐ ", missed: "✗ " })[r] + mp9Subject(it.subject) + ": " + ({ done: "kept it", partly: "partly kept", missed: "missed" })[r] + "\n   The promise: " + promise + (why ? "\n   " + (r === "missed" ? "What got in the way: " : "How it went: ") + why : ""); });
+        const head = "My study plan for " + mp9Date(pp.weekStart, { day: "numeric", month: "long" }) + " week. I kept " + kept + " of " + its.length + (its.length === 1 ? " promise." : " promises.");
+        this.journalSave({ title: "Study plan check-in · kept " + kept + " of " + its.length, body: head + "\n\n" + lines.join("\n\n"), visibility: "mentor", tags: "plan checkin" }).then(r => { if (!r) return; set({ acSent: true }); const missed = its.filter(it => (s.acR || {})[it.itemId] === "missed").length;
           this.toast(missed ? "Checked in. " + mf + " sees what got in the way and will help you plan next week." : "Checked in. Well kept."); }); } },
     };
   },
@@ -1069,4 +1076,11 @@ function mp9PhotoAsk(app, me, s, set) {
     isPending: pending, pendSrc: pending ? nggPhotoSrc(r.photoUrl) : "",
     withdraw: () => NGGApi.member.photoChange.withdraw().then(() => { app.load("phc"); app.toast("Withdrawn. Your photo stays as it is."); }).catch(er => app.toast(mp9Err(er))),
   };
+}
+
+/** A school subject as a person writes it: report cards print "BASIC TECHNOLOGY". */
+function mp9Subject(x) {
+  const t = String(x || "").trim();
+  if (t !== t.toUpperCase() || !/[A-Z]{3}/.test(t)) return t;
+  return t.toLowerCase().replace(/\b([a-z])([a-z]*)/g, (m, a, b) => (["and", "of", "the", "in"].includes(a + b) ? a + b : a.toUpperCase() + b)).replace(/^./, c => c.toUpperCase());
 }

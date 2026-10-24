@@ -352,10 +352,11 @@ function remark_subject(array $g, string $subjectId): ?array {
     $s = null;
     if (mentor_covers($g, 'summer')) {
         $s = db_row("SELECT studentId, fullName, centre, track FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
-        if ($s) $s['kind'] = 'student';
+        if ($s) { $s['kind'] = 'student'; $s['courses'] = ''; }
     }
     if (!$s && mentor_covers($g, 'ngg')) {
-        $s = db_row("SELECT memberId studentId, fullName, centre, track FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$subjectId]);
+        // `courses` and `memberId` too: the scope check reads every course the member takes, not the old single track.
+        $s = db_row("SELECT memberId studentId, memberId, fullName, centre, track, courses FROM members WHERE memberId = ? AND lower(COALESCE(type,'NGG')) = 'ngg' LIMIT 1", [$subjectId]);
         if ($s) $s['kind'] = 'member';
     }
     if (!$s || !mentor_scope_ok($g, $s)) return null;
@@ -467,7 +468,10 @@ function instructor_skills_mark(array $p): array {
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     // The course has to be the child's own. Marking a Piano skill on a child
     // who takes Guitar is not a permission question, it is a nonsense record.
-    if (trim((string)($s['track'] ?? '')) !== $course) return ['ok' => false, 'error' => 'not_their_course'];
+    // Any of their chosen courses, in any case: an exact match on the old single
+    // track refused a child taking the course second, or spelt "coding".
+    if (!member_takes_any(['memberId' => (string)$s['studentId'], 'track' => (string)($s['track'] ?? '')] + (array_key_exists('courses', $s) ? ['courses' => $s['courses']] : []), [$course]))
+        return ['ok' => false, 'error' => 'not_their_course'];
 
     $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
     if (!$in) return ['ok' => false, 'error' => 'no_marks'];
