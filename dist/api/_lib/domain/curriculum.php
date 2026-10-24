@@ -1880,7 +1880,7 @@ function staff_curriculum_mark(array $p): array {
     $b = curriculum_load('unitId = ?', [(string)$pr['unitId']]);
     if (!$b) return ['ok' => false, 'error' => 'not_found'];
     $b = reset($b);
-    if ($g['courses'] !== null && (string)$b['unit']['course'] !== '' && !in_array((string)$b['unit']['course'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ($g['courses'] !== null && (string)$b['unit']['course'] !== '' && !in_array(mb_strtolower((string)$b['unit']['course']), array_map('mb_strtolower', $g['courses']), true)) return ['ok' => false, 'error' => 'out_of_scope'];
     $marks = json_decode((string)$pr['marks'], true) ?: [];
     $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
     $byId = []; foreach ($b['checks'] as $c) $byId[(string)$c['checkId']] = $c;
@@ -1898,6 +1898,18 @@ function staff_curriculum_mark(array $p): array {
     if ($t['passed'] && !$completedBefore) $row['completedAt'] = now_iso();
     db_update('curriculum_progress', $row, ['id' => $pr['id']]);
     audit('curriculum.mark', (string)$g['member']['memberId'], (string)$pr['memberId'], ['unitId' => (string)$pr['unitId'], 'pct' => $t['pct']], (string)($p['ip'] ?? ''));
+    /* The child is told when the last written answer is marked: the score,
+       and the instructor's words if there are any. A mark nobody hears about
+       is feedback that never reached the learner. Once per lesson marked. */
+    if ($t['pending'] === 0 && (int)$pr['pending'] > 0 && function_exists('push_notification')) {
+        $fb = [];
+        foreach ($in as $cid => $mk) if (isset($byId[$cid]) && trim((string)($mk['feedback'] ?? '')) !== '') $fb[] = curriculum_clean_text($mk['feedback'], 300);
+        $who = trim((string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? '')) ?: 'Your instructor';
+        try {
+            push_notification((string)$pr['memberId'], ['kind' => 'curriculum', 'title' => mb_substr($who . ' marked “' . (string)$b['unit']['title'] . '”: ' . $t['pct'] . '%', 0, 160),
+                'body' => mb_substr($fb ? implode(' ', $fb) : ($t['passed'] ? 'Well done — that lesson is complete.' : 'Have a look at what to work on, and try it again.'), 0, 400), 'linkPage' => 'dashboard']);
+        } catch (\Throwable $e) { error_log('[curriculum.mark.notify] ' . $e->getMessage()); }
+    }
     return ['ok' => true, 'pct' => $t['pct'], 'pending' => $t['pending'], 'status' => $row['status']];
 }
 

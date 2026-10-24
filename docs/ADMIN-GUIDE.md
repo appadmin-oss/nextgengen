@@ -1483,6 +1483,19 @@ address per programme so NGG members and Summer School participants never share 
 | `/instructor/ngg` | NGG instructors (Instructor Portal) | Today, Roll, Plan (hinge, exit, retrieval from earlier weeks), Teach, Exit ticket, Session log, Skills board (evidence to move a child up), Marking, Curriculum, Students, Community, School results, Report a concern |
 | `/instructor/summer` | Instructors who also teach Summer School | That edition's participants only |
 
+**An instructor's class** is every active member at their centre who takes
+one of the courses on their volunteer record — by the member's chosen
+courses, so a child on Robotics *and* Coding is in both classes, and a course
+typed in a different case still counts. Their roll, Marking, Analytics,
+Students and School results all read that one class.
+
+- **Marking:** a written answer waits under **Progress → Marking** with the
+  question and what the child wrote. Pick a mark, add a line, **Save and next**.
+  The child gets a notice with the lesson, their score and your words, and the
+  counts on Today and Analytics update at once.
+- **Analytics:** each lesson shows how many of the class finished it
+  ("3/12"), and the average score of those who did.
+
 `/mentor` sends a person with one portal straight to it and shows a chooser to anyone who
 covers both programmes. A coordinator over several centres switches centre at the top of every screen.
 

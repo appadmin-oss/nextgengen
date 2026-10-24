@@ -364,7 +364,9 @@ class Ip6Portal extends React.Component {
     o.mkCant = S.mk[mi] === undefined; o.mkOp = S.mk[mi] === undefined ? 0.4 : 1;
     o.saveMk = () => { if (S.mk[mi] === undefined || !M.progressId) return; const sc = S.mk[mi];
       NGGApi.member.curriculumMark(M.progressId, { [M.checkId]: { points: sc, feedback: (S.fb[mi] || '').trim() } }).then(() => {
-        const nx = markItems.findIndex((x, i) => i !== mi && !this.state.mk[i + '_saved']); set({ mk: { ...this.state.mk, [mi + '_saved']: true }, mi: nx < 0 ? mi : nx }); this.toast(ip6First(M.who) + ' marked ' + sc + '/' + M.max);
+        const nx = markItems.findIndex((x, i) => i !== mi && !this.state.mk[i + '_saved']); set({ mk: { ...this.state.mk, [mi + '_saved']: true }, mi: nx < 0 ? mi : nx }); this.toast(ip6First(M.who) + ' marked ' + sc + '/' + M.max + ' · they’ve been told');
+        // The counts (Today, Analytics) follow the mark; the queue itself keeps this screen's place.
+        NGGApi.member.curriculumStaff().then(r => { if (r) this.setState(st => ({ d: { ...st.d, curr: r }, mk: {}, mi: 0 })); }).catch(() => {});
       }).catch(e => this.toast(ip6Err(e))); };
     o.mkPrev = () => set({ mi: (mi - 1 + markItems.length) % Math.max(1, markItems.length) }); o.mkNext = () => set({ mi: (mi + 1) % Math.max(1, markItems.length) });
     o.assignments = hw ? [{ t: hw.title, div: course.name, due: ip6Date(hw.dueAt, { weekday: 'short', day: 'numeric', month: 'short' }), sub: (hw.submitted || []).length, of: (hw.submitted || []).length + (hw.outstanding || []).length, toGrade, w: Math.round((hw.submitted || []).length / Math.max(1, (hw.submitted || []).length + (hw.outstanding || []).length) * 100) + '%' }] : [];
@@ -372,7 +374,7 @@ class Ip6Portal extends React.Component {
     const units = (((D.curr || {}).units) || []).filter(u => !u.course || String(u.course).toLowerCase() === String(C.cls.course).toLowerCase());
     // The Curriculum screen: the course's lessons by year, term and week (StaffCurriculumMap, shared with the mentor portal).
     o.currBox = <StaffCurriculumMap data={D.curr || { units: [] }} course={C.cls.course || ''} reload={() => this.load('curr', () => ip6Api.curr())}/>;
-    o.units = units.map(u => { const st = u.stats || {}; const done = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0; return { w: u.week, t: u.title, st: 'Published', done, pct: done + '%', donePct: done + '%', avg: st.started ? st.completed + '/' + st.started : '—',
+    o.units = units.map(u => { const st = u.stats || {}; const done = st.audience ? Math.round((st.completed || 0) / st.audience * 100) : 0; return { w: u.week, t: u.title, st: 'Published', done, pct: done + '%', donePct: done + '%', avg: st.avgScore !== null && st.avgScore !== undefined ? st.avgScore + '%' : '—', doneOf: (st.completed || 0) + '/' + (st.audience || 0),
       // The class's own size, never a number from the design.
       doneLine: st.audience ? (st.completed || 0) + ' of ' + st.audience + (st.audience === 1 ? ' student' : ' students') + ' finished' : 'Nobody is set this lesson yet',
       mats: (u.materials || []).map(m => m.title || m.kind || 'Material'), hasMats: (u.materials || []).length > 0, fg: '#1d6b30', bg: '#e9f6ec', canPublish: false, pub: () => {},

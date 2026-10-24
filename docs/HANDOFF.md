@@ -2774,3 +2774,15 @@ The table is editable in the Control Room, with these as the defaults.
   - A Courses multi-chip field filtered by division. `crFieldOpts` takes `optsFor(values)`.
   - A **Set courses** bulk action.
   - A **No courses chosen** filter.
+
+## Instructors reach their whole class; marking tells the child
+
+- **`results_class`** (the instructor's class, behind roll, groups, analytics and school results) matched `track IN (courses)`: exact, case-sensitive, and the first course only. It now uses `member_course_sql`.
+- **Scope checks:** `mentor_scope_ok` and `results_staff_can` use `member_takes_any`. It checks the chosen courses or the track, ignoring case, and reads `courses` if the row lacks it.
+- **`staff_curriculum_mark`:**
+  - The course check ignores case.
+  - When the last pending answer is marked, the child gets one `curriculum` notification with the lesson, the percentage and the instructor's feedback.
+- **The portal** reloads `curr` after a mark, so the Today, Marking and Analytics counts follow.
+- **Analytics lesson rows** read `{{ u.doneOf }}` (completed/audience) and the average score. The design had a hard-coded "/12" after a percentage, and "avg" showed completed/started.
+- **Tests:** `instructor-v6.test.js` checks a second-course member in the class, the analytics ratio, marking through the screen, the feedback on record and the child's notice (31 checks).
+- **assign-desk.test.js** has one intermittent hang: the member page reload fails to mount within 180s. It fails in some runs and passes in others, and was compared against the previous commit.

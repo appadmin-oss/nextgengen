@@ -199,6 +199,36 @@ async function as(memberId, admin, viewport) {
     await ip.waitForFunction(() => /Reference SG-\d{6}/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
     chk('Report a concern: one safeguarding case, with its reference on screen', q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'NGG-IN-K3'")['c']`) === 1 && /Reference SG-/.test(await ip.innerText('body')));
     chk('a child outside the class is refused by the server', q(`instructor_class_roll(['requesterId' => 'NGG-IN-INS', 'marks' => ['NGG-IN-ADM' => 'here']])['ok'] ?? false`) === true && !/NGG-IN-ADM/.test(sess().rollJson || ''));
+    // ── Assess and monitor: a member on Coding as their SECOND course is in the class; a written answer is marked and the child is told ──
+    php(`$now = now_iso();
+      db_insert('members', ['memberId' => 'NGG-IN-K5', 'fullName' => 'Bisi Okafor', 'email' => 'bisi@class.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'track' => 'Robotics', 'courses' => json_encode(['Robotics', 'Coding']), 'dob' => '2013-04-01', 'createdAt' => $now, 'updatedAt' => $now]);
+      db_insert('curriculum_checks', ['checkId' => 'CHK-IN-TXT', 'unitId' => 'CU-IN-2', 'kind' => 'text', 'prompt' => 'Explain what a loop is', 'options' => '', 'answer' => 'It repeats steps', 'points' => 2, 'position' => 2]);
+      $r = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-IN-K2', 'unitId' => 'CU-IN-2', 'answers' => ['CHK-IN0002' => '1', 'CHK-IN-TXT' => 'A loop repeats the same steps until it is told to stop']]);
+      echo json_encode($r);`);
+    await ip.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(ip);
+    await ip.waitForSelector('.i6-app', { timeout: 60000 });
+    await ip.click('nav >> text=Students');
+    await ip.waitForFunction(() => /Bisi Okafor/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('Students: a member who takes Coding as their second course is in the class', /Bisi Okafor/.test(await ip.innerText('main')) && /5 in your class/.test(await ip.innerText('main')));
+    await ip.click('nav >> text=Progress'); await ip.click('main >> text=Analytics');
+    await ip.waitForFunction(() => /Coding week 2/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('Analytics: each lesson says how many of the class finished it, not a made-up "/12"', /0\/5/.test(await ip.innerText('main')) && !/\/12\b/.test(await ip.innerText('main')));
+    await ip.click('main >> text=Marking');
+    await ip.waitForFunction(() => /Explain what a loop is/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
+    const mkTxt = await ip.innerText('main');
+    chk('Marking: the written answer waits here, with the question and what the child wrote', /Explain what a loop is/.test(mkTxt) && /repeats the same steps/.test(mkTxt));
+    await ip.click('main button[aria-pressed]:text-is("2")');
+    await ip.fill('main textarea', 'Exactly right. Next, say when it stops.');
+    await ip.click('main button:has-text("Save and next")');
+    await ip.waitForFunction(() => /told/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    const pr = q(`db_row("SELECT pending, score, marks FROM curriculum_progress WHERE memberId = 'NGG-IN-K2' AND unitId = 'CU-IN-2'")`) || {};
+    chk('Marking: the mark and the feedback are on the record, nothing left pending', Number(pr.pending) === 0 && /Exactly right/.test(pr.marks || ''));
+    const nt = q(`db_row("SELECT title, body FROM notifications WHERE memberId = 'NGG-IN-K2' AND kind = 'curriculum' ORDER BY id DESC LIMIT 1")`) || {};
+    chk('Marking: the child is told — the lesson, the score and the instructor\'s words', /Coding week 2/.test(nt.title || '') && /%/.test(nt.title || '') && /Exactly right/.test(nt.body || ''));
+    await ip.waitForFunction(() => /All clear|Every written answer is marked/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('Marking: the queue empties once it is marked', /All clear|Every written answer is marked/.test(await ip.innerText('main')));
     chk('no page errors (instructor)', ip.errs.length === 0);
     if (ip.errs.length) console.error(ip.errs.join('\n'));
 
