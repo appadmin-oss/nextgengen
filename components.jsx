@@ -3885,7 +3885,7 @@ function staffCurrState(u, weekNow) {
  * through their own route, and saves as a draft unless they hold the
  * curriculum capability. The server decides that, not this component.
  */
-function StaffLessonForm({ course, week, canPublish, courses, onDone }) {
+function StaffLessonForm({ course, week, canPublish, courses, examRefs, onDone }) {
   const [open, setOpen] = React.useState(false);
   const [msg, setMsg] = React.useState("");
   if (!course) return null;
@@ -3921,6 +3921,7 @@ function StaffLessonForm({ course, week, canPublish, courses, onDone }) {
         unit={{ course: course, week: week || 1 }}
         courses={courses && courses.length ? courses : [course]}
         divisions={[]}
+        examRefs={examRefs || {}}
         canWrite={true}
         aiEnabled={false}
         desk={desk}
@@ -3960,7 +3961,7 @@ function StaffCurriculumMap({ data, course, reload, intro }) {
   if (!units0.length) return (
     <div className="scm">
       <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {course || "your courses"} yet. A curriculum lead writes them in Control Room → Curriculum{course ? ", or write the first one here" : ""}.</p>
-      <StaffLessonForm course={course} week={weekNow} courses={(data && data.courses) || null} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
+      <StaffLessonForm course={course} week={weekNow} courses={(data && data.courses) || null} examRefs={(data && data.examRefs) || {}} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
     </div>
   );
   const row = u => {
@@ -4006,7 +4007,7 @@ function StaffCurriculumMap({ data, course, reload, intro }) {
         + (weekNow ? " · the Club is on week " + weekNow + (data.termWeeks ? " (term weeks " + data.termWeeks + ")" : "") : "") + (t ? " · " + shown.length + " match" + (shown.length === 1 ? "" : "es") : "")}</p>
       {!weekNow && data && data.termStart === "" && <p className="scm-note" role="note"><i className="ph ph-calendar-x" aria-hidden="true"/> Lessons have no due dates yet: the term’s start date is not set. An admin sets it in Control Room → Curriculum → Schedule.</p>}
       {curCourse && !ownLessons && !t && <p className="scm-note" role="note"><i className="ph ph-info" aria-hidden="true"/> No lessons have been published for {curCourse} yet. A curriculum lead writes them in Control Room → Curriculum, or write the first one below.</p>}
-      <StaffLessonForm course={course || curCourse} week={weekNow} courses={(data && data.courses) || null} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
+      <StaffLessonForm course={course || curCourse} week={weekNow} courses={(data && data.courses) || null} examRefs={(data && data.examRefs) || {}} canPublish={!!(data && data.selfApprove)} onDone={reload}/>
       {now.length > 0 && !t && (
         <section className="scm-now" aria-labelledby="scm-now-h">
           <h3 id="scm-now-h">This week</h3>

@@ -132,6 +132,13 @@
           ],
           "answer": "Who made it, and whether other trustworthy sources say the same",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Search with precise keywords, then check who made a page and when. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Search with precise keywords (2); Check who made a page and when (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -213,6 +220,13 @@
           ],
           "answer": "The first idea is rarely the best — options lead to a stronger choice",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Read a brief and list what it asks for, then sketch at least three ideas before choosing one. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Read a brief and list what it asks for (2); Sketch at least three ideas before choosing one (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -276,6 +290,13 @@
           ],
           "answer": "Arranging elements so the most important is seen first",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Set up a design in Canva, then use size and contrast to show what matters most. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Set up a design in Canva (2); Use size and contrast to show what matters most (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -357,6 +378,13 @@
           ],
           "answer": "It is hard to read — the contrast is too low",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Build a three-colour palette, then explain what different colours suggest. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Build a three-colour palette (2); Explain what different colours suggest (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -426,6 +454,13 @@
           ],
           "answer": "Space that helps the important parts stand out",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Align elements to a grid, then use white space on purpose. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Align elements to a grid (2); Use white space on purpose (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -625,6 +660,13 @@
           ],
           "answer": "Along the lines or where they cross on a 3×3 grid",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Use the rule of thirds, then try three angles of one subject. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Use the rule of thirds (2); Try three angles of one subject (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -693,6 +735,13 @@
           ],
           "answer": "Do not photograph the child, and leave them out of group shots",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Ask permission before photographing anyone, then frame a flattering portrait. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Ask permission before photographing anyone (2); Frame a flattering portrait (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -886,6 +935,13 @@
           ],
           "answer": "A sequence of sketches planning each shot",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Storyboard a one-minute video, then plan shot types (wide, medium, close-up). Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Storyboard a one-minute video (2); Plan shot types (wide, medium, close-up) (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -960,6 +1016,13 @@
           ],
           "answer": "The change from one shot to the next",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Import and trim clips, then order them to tell the story. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Import and trim clips (2); Order them to tell the story (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1177,6 +1240,13 @@
           ],
           "answer": "Follow the organisation's rules — usually hide or report it and tell the lead",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Match content to a platform and audience, then follow an organisation's posting rules. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Match content to a platform and audience (2); Follow an organisation's posting rules (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1239,6 +1309,13 @@
           ],
           "answer": "What you ask the audience to do, like 'Register by Friday'",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Write a clear call to action, then read reach and engagement. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Write a clear call to action (2); Read reach and engagement (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1440,6 +1517,13 @@
           ],
           "answer": "What is done, what you are doing next, and what is blocking you",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Break a project into tasks, then run a short team check-in. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Break a project into tasks (2); Run a short team check-in (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },

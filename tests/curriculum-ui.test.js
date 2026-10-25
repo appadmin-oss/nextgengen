@@ -210,14 +210,29 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForSelector('.led-mat', { timeout: 15000 });
     const matUrl = await ap.$eval('.led-mat input[aria-label^="Material 1 link"]', el => el.value);
     chk('a material file uploads to this server and joins the lesson', /^\/api\/member\/curriculum-file\.php\?f=[a-f0-9]+\.pdf$/.test(matUrl));
+    /* The review: one question they answer, one thing they DO. A published
+       lesson cannot be multiple choice alone — in a programme where the
+       thing being learned is played with two hands, picking the right words
+       off a list a week later is not evidence that anybody can play. */
     await ap.click('.led-exam button:has-text("Add a question")');
+    /* A new question is PRACTICAL by default. Four options is the quickest
+       thing to type, so defaulting to it was defaulting to the review the
+       programme refuses to publish. */
+    chk('a new question is a practical one by default, not four options',
+        await ap.$eval('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', el => el.value) === 'task');
+    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'mcq');
     await ap.fill('.led-q textarea[aria-label="Question 1"]', 'How many white keys are in an octave?');
     await ap.fill('.led-opt >> nth=0 >> input.admin-input', '5');
     await ap.fill('.led-opt >> nth=1 >> input.admin-input', '7');
     await ap.check('.led-opt >> nth=1 >> input[type=radio]');
+    await ap.click('.led-exam button:has-text("Add a question")');
+    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Question 2"]', 'Play a C major scale and say where your thumb went under.');
+    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Rubric for question 2"]', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    chk('the editor names the exam this course points at, so a question is held to that standard',
+        /Trinity College London/.test(await ap.$eval('.led-exam', el => el.innerText)));
     await ap.click('.led-top button:has-text("Create lesson")');
     await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
-    chk('the lesson saves, published, with its check and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId) ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":1,"mats":1,"ans":"1"}');
+    chk('the lesson saves, published, with its questions and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId AND kind = 'mcq') ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":2,"mats":1,"ans":"1"}');
     await ap.screenshot({ path: path.join(SHOTS, 'editor.png'), fullPage: true });
 
     // The stored file serves to a signed-in reader, and not to a stranger.
@@ -229,7 +244,10 @@ async function contextFor(memberId, admin, viewport) {
     const csv = path.join(TMP, 'lessons.csv');
     fs.writeFileSync(csv, 'course,week,position,title,summary,check1,check1_answer,check1_rubric\n'
       + 'Music,1,2,"Hand position, and posture",Curved fingers.,Why curve your fingers?,Control and speed,Mentions control\n'
-      + ',1,1,Welcome to the Club,Who we are.,,,\n'
+      /* Every row that is to PUBLISH needs a question for the week after to
+         review. One without lands as a draft instead of being thrown out —
+         which is what the row below is for. */
+      + ',1,1,Welcome to the Club,Who we are.,Name one Club value and a time you saw somebody live it.,A named value and a real occasion,Not a definition\n'
       + 'Musik,2,1,Misspelt course,,,,\n');
     await ap.setInputFiles('.cur-imp input[type=file]', csv);
     await ap.waitForSelector('button:has-text("Check the file")');
@@ -318,18 +336,50 @@ async function contextFor(memberId, admin, viewport) {
        contain rather than about its prose. */
     chk('the lesson shows its text as a list, never as HTML, and its material',
         (await mp.$$('.cur-text ul:not(.lb-step-list) li')).length === 2 && (await mp.$$('.cur-mat')).length === 1);
+    /* THE EXAM. It is two things now: what they can answer, and what they
+       can DO — and the practical can be done HERE, with the work attached,
+       rather than "bring it next Saturday". */
+    chk('the exam asks for the work, not only an answer, and the work can be attached in the exam itself',
+        (await mp.$$('.cur-check')).length === 2 && !!(await mp.$('.cur-attach-btn')));
+    await mp.screenshot({ path: path.join(SHOTS, 'exam.png'), fullPage: true });
     await mp.click('.cur-opt:has-text("5")');
+    await mp.fill('.cur-check >> nth=1 >> .cur-answer', 'I played it twice. My thumb went under on F.');
     await mp.click('button:has-text("Submit answers")');
     await mp.waitForSelector('.cur-result');
-    chk('a wrong answer is marked on the spot, not completed', /0 of 1/.test(await mp.$eval('.cur-result', el => el.innerText)));
+    chk('the recall half is marked on the spot; the practical holds the lesson open for a marker',
+        /with your instructor/i.test(await mp.$eval('.cur-result', el => el.innerText)));
     await mp.click('.cur-opt:has-text("7")');
     await mp.click('button:has-text("Submit again")');
-    await mp.waitForFunction(() => /Done/.test(document.querySelector('.cur-lesson-head .cur-chip')?.innerText || ''), null, { timeout: 15000 });
-    chk('the right answer completes the lesson, and the right option is shown', (await mp.$$('.cur-opt.is-right')).length === 1);
+    await mp.waitForTimeout(1200);
+    chk('…and a corrected answer still does not complete it by itself',
+        php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title = 'Finding middle C'")["status"];`) === 'submitted');
     await mp.screenshot({ path: path.join(SHOTS, 'member-lesson.png'), fullPage: true });
     await mp.click('button:has-text("← All lessons")');
     await mp.click('.cur-item:has-text("Hand position")');
+    /* THE OPENING REVIEW. This is the second lesson of the course, so it
+       opens on the PREVIOUS lesson's questions — before today's teaching is
+       on the screen at all. That is the whole point: a test at the end of
+       the hour measures the hour, with everything still on the whiteboard;
+       a week later it measures what survived, and the remembering is what
+       fixes it there. */
+    await mp.waitForSelector('.cur-review');
+    chk('a session opens with LAST week\'s questions, before today\'s teaching',
+        /Finding middle C/.test(await mp.$eval('.cur-review', el => el.innerText))
+        && !(await mp.$('.cur-text')) && !(await mp.$('.cur-checks')));
+    chk('…and skipping to the lesson is always there, in plain words, for anyone who was away',
+        /Skip to today/.test(await mp.$eval('.cur-review-acts', el => el.innerText)));
+    /* Toasts from the previous lesson's submits are still on screen and sit
+       over the first question; the shot is of the review, not of them.
+       HIDDEN, not removed: these nodes belong to React, and deleting them
+       from under it throws on the next render — which is what broke the
+       click that follows. */
+    await mp.addStyleTag({ content: '.toast-host { display: none !important; }' });
+    await mp.screenshot({ path: path.join(SHOTS, 'opening-review.png'), fullPage: true });
+    await mp.click('.cur-review button:has-text("Skip to today")');
     await mp.waitForSelector('.cur-answer');
+    /* This one was imported from a sheet with a summary and no body, so
+       what appears past the review is its own questions, not prose. */
+    chk('…and today\'s own session is there once they move past it', !!(await mp.$('.cur-checks')));
     await mp.fill('.cur-answer', 'So I can play faster and with control');
     await mp.click('button:has-text("Submit answers")');
     await mp.waitForSelector('.cur-result');
@@ -344,12 +394,19 @@ async function contextFor(memberId, admin, viewport) {
     await ip.waitForSelector('[role=tab]:has-text("Curriculum")', { timeout: 40000 });
     await ip.click('[role=tab]:has-text("Curriculum")');
     await ip.waitForSelector('.cur-staff-card', { timeout: 20000 });
-    const card = await ip.$eval('.cur-staff-card', el => el.innerText);
-    chk('the NGG instructor sees the answer beside the model answer', /play faster and with control/.test(card) && /Control and speed/.test(card));
-    await ip.fill('.cur-mark-pts', '1');
-    await ip.fill('.cur-mark-fb', 'Yes — control matters most.');
-    await ip.click('button:has-text("Save marks")');
-    await ip.waitForFunction(() => /Nothing waiting/.test(document.querySelector('.cur-staff')?.innerText || ''), null, { timeout: 15000 });
+    /* TWO answers wait, not one: this member's written answer on 'Hand
+       position' and their practical on 'Finding middle C'. That is the
+       shape of every review now a published one cannot be multiple choice
+       alone — so the card is found by what is IN it, not by being first. */
+    const cards = await ip.$$eval('.cur-staff-card', els => els.map(e => e.innerText));
+    chk('the instructor sees both answers waiting, each beside its model answer',
+        cards.length === 2 && cards.some(t => /play faster and with control/.test(t) && /Control and speed/.test(t))
+        && cards.some(t => /thumb went under on F/.test(t)));
+    const hp = ip.locator('.cur-staff-card').filter({ hasText: 'play faster and with control' });
+    await hp.locator('.cur-mark-pts').first().fill('1');
+    await hp.locator('.cur-mark-fb').first().fill('Yes — control matters most.');
+    await hp.locator('button:has-text("Save marks")').first().click();
+    await ip.waitForFunction(() => document.querySelectorAll('.cur-staff-card').length === 1, null, { timeout: 15000 });
     chk('marking it completes the member\'s lesson', php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title LIKE 'Hand position%'")['status'];`) === 'completed');
     await ip.screenshot({ path: path.join(SHOTS, 'instructor.png'), fullPage: true });
 

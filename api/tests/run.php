@@ -24351,8 +24351,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'course' => 'piano', 'week' => 1, 'position' => 1, 'title' => 'Finding middle C', 'status' => 'published', 'passMark' => 50,
         'objectives' => "Find middle C; Play a C major scale",
         'materials' => [['url' => 'https://example.org/c-major.pdf', 'title' => 'Scale sheet']],
+        /* Two multiple-choice questions and a practical one. It used to be
+           two mcqs, which is exactly the review the programme now refuses to
+           publish: in a subject where the thing being learned is played with
+           two hands, picking the right words off a list is not evidence. */
         'checks' => [['kind' => 'mcq', 'prompt' => 'How many white keys in an octave?', 'options' => ['5', '7', '8'], 'answer' => 'B'],
-                     ['kind' => 'mcq', 'prompt' => 'Middle C is…', 'options' => ['C4', 'C2'], 'answer' => 'C4']]]]);
+                     ['kind' => 'mcq', 'prompt' => 'Middle C is…', 'options' => ['C4', 'C2'], 'answer' => 'C4'],
+                     ['kind' => 'task', 'prompt' => 'Play a C major scale and say where your thumb went under.',
+                      'rubric' => 'Up to 3: played evenly (2); can say where the thumb crossed (1).', 'points' => 3]]]]);
     chk('curriculum: a lesson saves under the catalogue\'s spelling, with materials and checks',
         !empty($u1['ok']) && $u1['unit']['course'] === 'Piano' && count($u1['unit']['materials']) === 1 && $u1['unit']['materials'][0]['kind'] === 'pdf'
         && $u1['unit']['checks'][0]['answer'] === '1' && $u1['unit']['checks'][1]['answer'] === '0' && count($u1['unit']['objectives']) === 2);
@@ -24360,10 +24366,46 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('curriculum: a material must be https or a stored file', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad link', 'materials' => [['url' => 'javascript:alert(1)']]]])['error'] ?? '') === 'bad_material_url');
     chk('curriculum: a multiple-choice answer must be one of its options', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad answer', 'checks' => [['kind' => 'mcq', 'prompt' => 'Q', 'options' => ['a', 'b'], 'answer' => 'z']]]])['error'] ?? '') === 'mcq_answer_missing');
 
+    /* ── The exam is the NEXT session's opening review ──────────────────
+       A lesson's questions are written with it and sat a week later, so a
+       published lesson with none is a week of teaching nobody is ever asked
+       about again. The floor is one, not the three the editor asks for:
+       587 of the 588 bundled lessons carry one or two, and a rule the
+       shipped curriculum cannot meet stops the boot seeder instead of
+       raising anybody's standard. */
+    chk('review: a lesson cannot be PUBLISHED with nothing to ask a week later',
+        (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Silent lesson', 'status' => 'published']])['error'] ?? '') === 'review_required');
+    chk('review: …but a DRAFT may be half-written, because that is what a draft is',
+        !empty(backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Silent lesson', 'status' => 'draft']])['ok']));
+    /* Publishing in bulk is a second door onto the same act. A rule enforced
+       on one door is one anybody reaches past by using the other. */
+    $silent = (string)db_row("SELECT unitId FROM curriculum_units WHERE title = 'Silent lesson'")['unitId'];
+    $bulk = backend_dispatch('admin.curriculum.status', ['requesterId' => 'NGG-CUR-ADM', 'action' => 'publish', 'unitIds' => [$silent]]);
+    chk('review: nor can it be published by selecting it and pressing Publish',
+        ($bulk['results'][0]['error'] ?? '') === 'review_required'
+        && (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$silent])['status'] === 'draft');
+    db_exec("DELETE FROM curriculum_units WHERE unitId = ?", [$silent]);
+    /* A review made only of multiple choice measures whether a child can
+       pick the right words off a list a week later. In subjects that are
+       almost entirely practical that is close to measuring nothing. */
+    chk('review: a lesson cannot be published with multiple choice as its ONLY question',
+        (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Guess it', 'status' => 'published',
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which is middle C?', 'options' => ['a', 'b'], 'answer' => '0']]]])['error'] ?? '') === 'review_too_shallow');
+    chk('review: …and publishes once one question asks them to DO something',
+        !empty(backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Guess it', 'status' => 'published',
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which is middle C?', 'options' => ['a', 'b'], 'answer' => '0'],
+                         ['kind' => 'task', 'prompt' => 'Play a C major triad and say which notes you used.', 'rubric' => 'Up to 3.', 'points' => 3]]]])['ok']));
+    db_exec("DELETE FROM curriculum_units WHERE title = 'Guess it'");
+
     // Import: dry run, digest, apply, re-run.
     $rows = [
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Hand position', 'summary' => 'Curved fingers.', 'checks' => [['kind' => 'short', 'prompt' => 'Why curve your fingers?', 'answer' => 'Control and speed']]],
-        ['course' => '', 'week' => 1, 'position' => 1, 'title' => 'Welcome to the Club', 'objectives' => ['Know the Club values']],
+        ['course' => '', 'week' => 1, 'position' => 1, 'title' => 'Welcome to the Club', 'objectives' => ['Know the Club values'],
+         'checks' => [['kind' => 'task', 'prompt' => 'Tell us one Club value and a time you have seen somebody live it.', 'answer' => 'A named value and a real occasion.', 'rubric' => 'Up to 3: names a value (1); a real occasion, not a definition (2).', 'points' => 3]]],
         ['course' => 'Guitr', 'week' => 1, 'title' => 'Tuning'],
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Duplicate slot'],
     ];
@@ -24374,6 +24416,35 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('import: an apply without the dry run\'s digest is refused', (backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => 'x'])['error'] ?? '') === 'import_changed');
     $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => $dry['digest']]);
     chk('import: the apply writes the rows that passed', !empty($ap['ok']) && $ap['tally']['create'] === 2 && (bool)db_row("SELECT id FROM curriculum_units WHERE title = 'Hand position' AND status = 'published' AND source = 'import'"));
+    /* A row with nothing to ask still imports — as a draft, named. A sheet
+       of a hundred lessons must not import zero because some rows have no
+       questions yet; and nothing reaches a member unreviewable. */
+    /* A sheet of a hundred lessons must not import zero because some rows
+       have no question yet — the row lands as a draft and is named. Run on
+       its own rows: the sheet above is shared with the tests that follow
+       it, and adding lessons to it moves what they are counting. */
+    (function () {
+        $rows2 = [
+            ['course' => 'Piano', 'week' => 77, 'position' => 1, 'title' => 'Nothing to ask yet'],
+            ['course' => 'Piano', 'week' => 77, 'position' => 2, 'title' => 'Only multiple choice',
+             'checks' => [['kind' => 'mcq', 'prompt' => 'Which finger is the thumb?', 'options' => ['1', '2'], 'answer' => '0']]],
+            ['course' => 'Piano', 'week' => 77, 'position' => 3, 'title' => 'Asks for the work',
+             'checks' => [['kind' => 'task', 'prompt' => 'Play it and say what you changed.', 'rubric' => 'Up to 3.', 'points' => 3]]],
+        ];
+        $d2 = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows2, 'dryRun' => true, 'publish' => true]);
+        $a2 = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows2, 'publish' => true, 'digest' => $d2['digest']]);
+        $st = static fn($t) => (string)(db_row('SELECT status FROM curriculum_units WHERE title = ?', [$t])['status'] ?? '');
+        chk('import: a row with no question for next week lands as a DRAFT, not thrown out, and is named',
+            ($a2['tally']['drafted'] ?? 0) === 2 && $st('Nothing to ask yet') === 'draft'
+            && ($a2['rows'][0]['note'] ?? '') === 'review_required');
+        /* Multiple choice alone is held back for the same reason nothing at
+           all is: it would publish a week that is never really revisited. */
+        chk('import: a row whose only question is multiple choice is held back the same way',
+            $st('Only multiple choice') === 'draft');
+        chk('import: …and a row that asks for the work publishes',
+            $st('Asks for the work') === 'published');
+        db_exec("DELETE FROM curriculum_units WHERE course = 'Piano' AND week = 77");
+    })();
     $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => array_slice($rows, 0, 2), 'dryRun' => true, 'publish' => true]);
     chk('import: the same sheet again is unchanged, not duplicated', $again['tally']['unchanged'] === 2 && $again['tally']['create'] === 0);
     $rows[0]['summary'] = 'Curved fingers, relaxed wrists.';
@@ -24433,9 +24504,20 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $c = $open['unit']['checks'];
     $wrong = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 0, $c[1]['checkId'] => 1]]);
     chk('member: a failed attempt is marked on the spot and not completed', !empty($wrong['ok']) && $wrong['progress']['status'] === 'attempted' && $wrong['progress']['bestPct'] === 0);
-    $right = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0]]);
-    chk('member: passing at the pass mark completes the lesson, and the answers are then shown',
-        $right['progress']['status'] === 'completed' && $right['progress']['bestPct'] === 100 && $right['progress']['attempts'] === 2 && isset($right['review'][0]['answer']));
+    $right = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid,
+        'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0, $c[2]['checkId'] => 'I played it twice; the thumb went under on F.']]);
+    /* The recall half marks itself on the spot and the practical waits for a
+       marker — so getting both multiple-choice questions right does NOT
+       complete the lesson. That is the point of refusing to publish a review
+       made only of multiple choice: in a practical subject, picking the
+       right words off a list is not evidence that anybody can play. The
+       cost is real and deliberate — completion now needs a marker, AI or
+       human — and `curriculum.mark` is where it finishes (tested below). */
+    chk('member: the recall half marks on the spot, and the practical holds the lesson open for a marker',
+        $right['progress']['status'] === 'submitted' && $right['progress']['pending'] === true
+        && $right['progress']['attempts'] === 2 && $right['review'] === null);
+    chk('member: …and the multiple-choice points were still awarded',
+        (int)$right['progress']['score'] === 2 && (int)$right['progress']['maxScore'] === 5);
 
     // A written answer with no AI waits for a person.
     $hp = db_row("SELECT unitId FROM curriculum_units WHERE title = 'Hand position'")['unitId'];
@@ -24451,10 +24533,23 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk('NGG-CUR-VS', 'member', ['email' => 'vcs@example.com']); $mk('NGG-CUR-VN', 'member', ['email' => 'vcn@example.com']);
     chk('staff: a Summer-only instructor has no Club curriculum', (backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VS'])['error'] ?? '') === 'not_ngg_staff');
     $st = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']);
+    /* TWO answers wait now, not one: the written answer on 'Hand position'
+       and the practical on 'Finding middle C'. That is the shape of every
+       review since a published one cannot be multiple choice alone — a
+       marker, AI or human, is part of the loop by design. Found by unitId
+       rather than by position, because which one is first is not a fact
+       this test should depend on. */
     $mine = array_values(array_filter($st['pending'] ?? [], fn($x) => $x['memberId'] === 'NGG-CUR-M1'));
-    chk('staff: an NGG instructor sees their course\'s lessons and the answers waiting', !empty($st['ok']) && count($st['units']) >= 2 && count($mine) === 1 && $mine[0]['checks'][0]['answer'] === 'So I can play faster');
-    $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $mine[0]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
+    $byUnit = array_column($mine, null, 'unitId');
+    chk('staff: an NGG instructor sees their course\'s lessons and the answers waiting',
+        !empty($st['ok']) && count($st['units']) >= 2 && count($mine) === 2
+        && ($byUnit[$hp]['checks'][0]['answer'] ?? '') === 'So I can play faster');
+    $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $byUnit[$hp]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
     chk('staff: marking the answer completes the lesson', !empty($mark['ok']) && $mark['status'] === 'completed' && $mark['pending'] === 0);
+    $pm = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $byUnit[$uid]['progressId'],
+        'marks' => [$c[2]['checkId'] => ['points' => 3, 'feedback' => 'Even, and you knew where the thumb went.']]]);
+    chk('staff: marking the practical is what finishes the lesson it belongs to',
+        !empty($pm['ok']) && $pm['status'] === 'completed' && $pm['pending'] === 0 && $pm['pct'] === 100);
     chk('staff: …and a mentor can open the member\'s record', backend_dispatch('staff.curriculum.member', ['requesterId' => 'NGG-CUR-VN', 'memberId' => 'NGG-CUR-M1'])['completed'] === 2);
     // The map staff read: the week the Club is on, each lesson's due date, the average score, and who is behind.
     $schedKeep = setting_get('curriculum');
@@ -25515,7 +25610,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
     chk('seed: importing writes 72 lessons as drafts, with their checks and materials', ($ap['tally']['create'] ?? 0) === 72
         && (int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE level = 'Full Stack Web Developer 2026' AND status = 'draft'")['c'] === 72
-        && (int)db_row("SELECT COUNT(*) c FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.level = 'Full Stack Web Developer 2026'")['c'] === 116);
+        && (int)db_row("SELECT COUNT(*) c FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.level = 'Full Stack Web Developer 2026'")['c'] === 149);
     $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'dryRun' => true]);
     chk('seed: loading it a second time changes nothing', ($again['tally']['unchanged'] ?? 0) === 72);
     chk('seed: an unknown key is refused', (backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM', 'key' => '../../config'])['error'] ?? '') === 'not_found');

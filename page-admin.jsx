@@ -1958,7 +1958,7 @@ function CurriculumLessons() {
     try { const r = await NGGApi.admin.curriculum.get(u.unitId); setEdit(r.unit); }
     catch (e) { toast.error(humanizeError(e.code, e.code)); }
   };
-  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} divisions={(d && d.divisions) || []} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
+  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} divisions={(d && d.divisions) || []} examRefs={(d && d.examRefs) || {}} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
     onClose={() => setEdit(null)} onSaved={(u) => { setEdit(u); load(); }}/>;
   return (
     <div>
@@ -2001,7 +2001,15 @@ function CurriculumLessons() {
   );
 }
 
-const CUR_EMPTY_CHECK = { kind: "mcq", prompt: "", options: ["", ""], answer: "0", rubric: "", points: 1 };
+/* A new question is a PRACTICAL one, not a multiple choice.
+   The default is the answer most people give: four options is the quickest
+   thing to type, and a review made of them measures whether a child can
+   recognise the right words a week later, not whether they can do the
+   thing. The server refuses to publish a review that is multiple choice
+   alone, so defaulting to mcq was defaulting to a lesson that would be
+   refused. Multiple choice is one press away, and worth having — alongside
+   something they did. */
+const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "", rubric: "", points: 3 };
 /* The kinds of question, as CURR_CHECK_KINDS has them. Only multiple choice is
    marked by the computer; the rest are marked by a capable AI model against
    the rubric when one is configured for marking, and by the instructor if not
@@ -2192,7 +2200,7 @@ const CUR_DESK_ADMIN = {
   canPublish: true,
 };
 
-function CurriculumEditor({ unit, courses, divisions, canWrite, aiEnabled, desk, onClose, onSaved }) {
+function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnabled, desk, onClose, onSaved }) {
   const api = desk || CUR_DESK_ADMIN;
   const canPublish = api.canPublish !== false;
   const isNew = !unit.unitId;
@@ -2204,6 +2212,7 @@ function CurriculumEditor({ unit, courses, divisions, canWrite, aiEnabled, desk,
     checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? "") })),
   }));
   const [busy, setBusy] = React.useState("");
+  const examRef = (examRefs || {})[f.course] || null;
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const setCheck = (i, k, v) => setF(x => ({ ...x, checks: x.checks.map((c, j) => j === i ? { ...c, [k]: v } : c) }));
   const setMat = (i, k, v) => setF(x => ({ ...x, materials: x.materials.map((m, j) => j === i ? { ...m, [k]: v } : m) }));
@@ -2352,6 +2361,15 @@ function CurriculumEditor({ unit, courses, divisions, canWrite, aiEnabled, desk,
           <section className={"led-card led-exam" + (f.checks.length ? "" : " is-missing")} aria-label="The opening review">
             <h3 className="led-h">The opening review <span className="led-count">{f.checks.length}</span></h3>
             <p className="led-hint">Written here, with this lesson. Your class sits it at the <b>start of the next session</b>, a week later, before anything new is taught.</p>
+            {/* The standard, named. An instructor writing by hand is held to
+                what the AI drafter is held to — the same map, one source. */}
+            {!!examRef && <p className="led-ref">
+              <b>{examRef.body}</b> assesses {f.course} by {examRef.assesses}. For a question here, {examRef.ask}.
+              {" "}<a href={examRef.link} target="_blank" rel="noopener noreferrer">{examRef.award}</a>
+            </p>}
+            {!f.checks.length ? null : !f.checks.some(c => c.kind !== "mcq") && (
+              <p className="led-warn"><LedIcon name="alert"/> Every question here is multiple choice. A week later that shows whether they can recognise an answer, not whether they can do it — add one that asks them to make, play or explain something. This will not publish as it is.</p>
+            )}
             {!f.checks.length
               ? <p className="led-warn"><LedIcon name="alert"/> No questions yet — so nothing from this session is ever asked about again. A week later your class walks into the next one with this one already fading.</p>
               : <p className="led-hint">{f.checks.reduce((n, c) => n + (Number(c.points) || 1), 0)} marks · passes at {f.passMark}%</p>}
@@ -2743,9 +2761,14 @@ function CurriculumSchedule({ onSaved }) {
   return (
     <details className="cur-sched" open={!!startOpen}>
       <summary>Deadlines, reminders and fines{s.startDate ? " — term began " + s.startDate : " — not set: nothing is due yet"}</summary>
-      <p className="admin-hint">A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
+      <p className="admin-hint">With the review on, a member opening a session sits the previous session&rsquo;s questions first, from memory, before today&rsquo;s teaching — they can always skip to the lesson. A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
       <div className="admin-fields cur-sched-grid">
         <label className="admin-field admin-field-check"><input type="checkbox" checked={!!s.enabled} onChange={e => set("enabled", e.target.checked)}/><span>Deadlines on</span></label>
+        {/* The opening review, on or off for the whole Club. On is the
+            programme's position; off is for a short holiday course, or a
+            term whose rota has nobody to mark. The questions stay on the
+            lessons either way — only the sitting moves. */}
+        <label className="admin-field admin-field-check"><input type="checkbox" checked={s.reviewAtStart !== false} onChange={e => set("reviewAtStart", e.target.checked)}/><span>Open each session with last week&rsquo;s review</span></label>
         <label className="admin-field"><span>Term starts</span><input type="date" className="admin-input" value={s.startDate || ""} onChange={e => set("startDate", e.target.value)}/></label>
         <label className="admin-field"><span>Remind from (days before due)</span><input type="number" min={0} max={30} className="admin-input" value={s.remindBeforeDays} onChange={e => set("remindBeforeDays", Number(e.target.value))}/></label>
         <label className="admin-field"><span>Remind every (days)</span><input type="number" min={1} max={30} className="admin-input" value={s.remindEveryDays} onChange={e => set("remindEveryDays", Number(e.target.value))}/></label>

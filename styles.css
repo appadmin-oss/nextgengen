@@ -8649,3 +8649,33 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .lb-chord-play:hover { background: var(--surface-2, #eef1f6); }
 .lb-chord-play.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
 .lb-chord-row { display: flex; flex-wrap: wrap; gap: 18px 22px; align-items: flex-start; }
+
+/* ══ The opening review ══════════════════════════════════════════════════════
+   Last week's questions, sat before today's teaching. It is the first thing
+   on the lesson, and it is drawn as a thing in its own right rather than as
+   another card — a member has to be able to tell at a glance that this is not
+   today's lesson yet. */
+.cur-review {
+  border-left: 4px solid var(--gold-500, #d99c0a);
+  display: grid; gap: 12px;
+}
+.cur-review-eyebrow { color: var(--gold-700, #a06f00); }
+.cur-review-h { margin: 0; font-family: var(--font-display); font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; }
+.cur-review-sub { margin: 0; font-size: .95rem; line-height: 1.6; color: var(--ink-600, #4a5168); }
+.cur-review-acts, .cur-review-done { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cur-review-done { display: grid; gap: 10px; justify-items: start; }
+.cur-review .cur-result { margin: 0; font-weight: 600; }
+
+/* Attaching the work to the answer — what makes the practical half of a
+   review sittable in the exam itself rather than "bring it next Saturday". */
+.cur-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.cur-attach-btn {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; cursor: pointer;
+  border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 999px; background: transparent;
+  font: 600 .9rem/1 inherit; color: var(--ink-800, #2c3450);
+}
+.cur-attach-btn:hover { background: var(--cream-50, #fbf8f1); border-style: solid; }
+.cur-attach-btn.is-busy { opacity: .6; cursor: progress; }
+.cur-attach-btn:focus-within { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+.cur-attach-hint { font-size: .8rem; color: var(--ink-500, #5a6488); line-height: 1.4; }
+@media (pointer: coarse) { .cur-attach-btn { min-height: 44px; } }
