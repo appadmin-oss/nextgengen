@@ -782,6 +782,15 @@ function curriculum_seed_files(): array {
  */
 function curriculum_seed_bundled_once(): int {
     if (!function_exists('setting_raw')) return 0;
+    /* A deployment may decline the bundled curriculum. NGG's own courses ship
+       with the code and seed themselves, which is right for NGG and wrong for
+       anyone running this for a different programme — and for a test that is
+       about what the IMPORT does, where 540 lessons arriving unasked is the
+       difference between "2 new" and "2 unchanged".
+       Set 'seed_bundled_curriculum' => false in api/config.php. Absent, it
+       seeds: the default is the behaviour the programme wants. */
+    if (array_key_exists('seed_bundled_curriculum', (array)($GLOBALS['CONFIG'] ?? []))
+        && !$GLOBALS['CONFIG']['seed_bundled_curriculum']) return 0;
     $written = 0;
     foreach (curriculum_seed_files() as $key => $j) {
         $flag = 'seed_curriculum_' . preg_replace('/[^a-z0-9]+/', '_', strtolower($key));

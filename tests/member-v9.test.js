@@ -70,6 +70,9 @@ async function as(memberId, admin, viewport) {
     'maps' => ['offline' => true],
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]], 'cache_ttl' => ['default' => 0],
     'session_ttl' => 604800, 'kiosk_ttl' => 43200, 'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    /* The bundled curricula seed themselves on first boot. This suite
+       counts what IT writes, so it declines them (docs/SETUP.md). */
+    'seed_bundled_curriculum' => false,
     'webcron' => ['enabled' => false], 'ai' => ['enabled' => false], 'debug' => false,
   ];\n`);
   try {

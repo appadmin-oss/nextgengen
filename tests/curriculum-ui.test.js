@@ -94,6 +94,12 @@ async function contextFor(memberId, admin, viewport) {
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
     'webcron' => ['enabled' => false],
     'ai' => ['enabled' => false],
+    /* This suite is about what the IMPORT writes, counted row by row. The
+       bundled curricula seed themselves on first boot, and 540 lessons
+       arriving unasked turns "2 new" into "2 unchanged" and an empty section
+       into a full one. Declined here, as a deployment running a different
+       programme would decline them. */
+    'seed_bundled_curriculum' => false,
     'debug' => false,
   ];\n`);
 

@@ -615,6 +615,25 @@ due. If you wire the host cron you can switch the web-cron off in `config.php`:
 'webcron' => ['enabled' => false],
 ```
 
+## The bundled curriculum
+
+NGG's own courses ship with the code, in `api/_lib/seeds/curriculum-*.json`,
+and seed themselves into live, published lessons on the first request after a
+deploy. Each file is imported once, nothing already in `curriculum_units` is
+touched, and a lesson somebody else put at the same week and position stays
+theirs.
+
+That is right for NGG and wrong for anyone running this codebase for a
+different programme, or for a deployment that imports its own curriculum and
+does not want several hundred lessons arriving unasked. Decline them:
+
+```php
+'seed_bundled_curriculum' => false,
+```
+
+Absent, they seed. Already-seeded lessons are not removed by setting it — it
+stops the next file from loading, it does not undo the last one.
+
 Note the one thing neither path can do: a gate set to rotate but with **no
 notification address** is never rolled unattended — it is reported as due and
 badged in Admin → Gate links for someone to rotate by hand. Rotating a desk
