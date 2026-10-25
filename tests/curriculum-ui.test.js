@@ -134,11 +134,11 @@ async function contextFor(memberId, admin, viewport) {
     chk('the curriculum section opens, empty, saying how to start', /No lessons yet/.test(await ap.$eval('.admin-main', el => el.innerText)));
 
     await ap.click('button:has-text("New lesson")');
-    await ap.waitForSelector('.cur-ed');
-    await ap.fill('.cur-ed input[placeholder="e.g. Finding middle C"]', 'Finding middle C');
-    await ap.selectOption('.cur-ed-grid select >> nth=0', 'Music');
-    await ap.selectOption('.cur-ed-grid select >> nth=1', 'published');
-    await ap.fill('.cur-ed textarea[placeholder^="Two or three"]', 'Where every pianist starts.');
+    await ap.waitForSelector('.led');
+    await ap.fill('.led-title', 'Finding middle C');
+    await ap.selectOption('.led-card select >> nth=0', 'Music');
+    await ap.selectOption('.led-status select', 'published');
+    await ap.fill('.led textarea[placeholder^="What this session is"]', 'Where every pianist starts.');
     /* A lesson diagram, written as a fence (lesson-blocks.jsx). It has to draw
        on the member's screen, not only in NggMarkdown: a lesson body is
        rendered by CurriculumText, and the diagrams were wired into the other
@@ -158,17 +158,17 @@ async function contextFor(memberId, admin, viewport) {
     // A material file, uploaded to this server's store.
     const pdf = path.join(TMP, 'scale-sheet.pdf');
     fs.writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
-    await ap.setInputFiles('.cur-ed-upload input[type=file]', pdf);
-    await ap.waitForSelector('.cur-ed-mat', { timeout: 15000 });
-    const matUrl = await ap.$eval('.cur-ed-mat input[aria-label="Material link"]', el => el.value);
+    await ap.setInputFiles('.led-upload input[type=file]', pdf);
+    await ap.waitForSelector('.led-mat', { timeout: 15000 });
+    const matUrl = await ap.$eval('.led-mat input[aria-label^="Material 1 link"]', el => el.value);
     chk('a material file uploads to this server and joins the lesson', /^\/api\/member\/curriculum-file\.php\?f=[a-f0-9]+\.pdf$/.test(matUrl));
-    await ap.click('button:has-text("+ Add a question")');
-    await ap.fill('.cur-ed-check textarea[aria-label="Question"]', 'How many white keys are in an octave?');
-    await ap.fill('.cur-ed-opt >> nth=0 >> input.admin-input', '5');
-    await ap.fill('.cur-ed-opt >> nth=1 >> input.admin-input', '7');
-    await ap.check('.cur-ed-opt >> nth=1 >> input[type=radio]');
-    await ap.click('.cur-ed-foot button:has-text("Create lesson")');
-    await ap.waitForFunction(() => /CUR-[A-F0-9]+ · v1/.test(document.querySelector('.cur-ed-bar')?.innerText || ''), null, { timeout: 15000 });
+    await ap.click('.led-exam button:has-text("Add a question")');
+    await ap.fill('.led-q textarea[aria-label="Question 1"]', 'How many white keys are in an octave?');
+    await ap.fill('.led-opt >> nth=0 >> input.admin-input', '5');
+    await ap.fill('.led-opt >> nth=1 >> input.admin-input', '7');
+    await ap.check('.led-opt >> nth=1 >> input[type=radio]');
+    await ap.click('.led-top button:has-text("Create lesson")');
+    await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
     chk('the lesson saves, published, with its check and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId) ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":1,"mats":1,"ans":"1"}');
     await ap.screenshot({ path: path.join(SHOTS, 'editor.png'), fullPage: true });
 
@@ -176,7 +176,7 @@ async function contextFor(memberId, admin, viewport) {
     chk('the stored material does not serve without a session', (await get(BASE + matUrl)).status === 401);
 
     // Import a CSV: checked first, then imported.
-    await ap.click('button:has-text("← All lessons")');
+    await ap.click('.led-back');
     await ap.click('.admin-tab:has-text("Import")');
     const csv = path.join(TMP, 'lessons.csv');
     fs.writeFileSync(csv, 'course,week,position,title,summary,check1,check1_answer,check1_rubric\n'

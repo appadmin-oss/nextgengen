@@ -596,7 +596,11 @@ function admin_curriculum_list(array $p): array {
         'progress' => $counts['p'][$u['unitId']] ?? ['completed' => 0, 'started' => 0, 'pending' => 0, 'avgPct' => null],
         'updatedAt' => (string)$u['updatedAt'],
     ], $units);
-    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(),
+    /* Divisions as well as courses, because a lesson may be filed against a
+       whole division (course_division) — and an editor that cannot offer the
+       scope the matcher honours is an editor that cannot write half the
+       curriculum. */
+    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(), 'divisions' => curriculum_divisions(),
             'canWrite' => in_array('curriculum', member_effective_caps($g['requester']), true),
             'aiEnabled' => function_exists('ai_enabled') && ai_enabled(), 'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
