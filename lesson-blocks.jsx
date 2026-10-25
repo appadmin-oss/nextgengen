@@ -37,6 +37,97 @@
 const LB_SEMITONE = { C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4, F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9, "A#": 10, Bb: 10, B: 11 };
 const LB_WHITE = ["C", "D", "E", "F", "G", "A", "B"];
 
+/* ── Hearing it, and stepping through it ─────────────────────────────────
+ *
+ * A diagram of a chord tells a learner where the fingers go. It cannot tell
+ * them what the chord SOUNDS like, and for most of these lessons the sound is
+ * the thing being taught. So every music block can be played, with the notes
+ * lighting up one at a time as they sound.
+ *
+ * WEB AUDIO, NOT A FILE AND NOT A LIBRARY. A sampled instrument would be
+ * megabytes per lesson over a connection a child is paying for (see the
+ * hosting plan), and an audio library is a runtime dependency this repository
+ * does not take. An oscillator with a short envelope is not a piano, and it is
+ * enough to hear an interval, a chord shape or a wrong note — which is what
+ * the lesson is asking.
+ *
+ * The context is built on the FIRST PRESS and never before: browsers refuse
+ * audio that the learner did not ask for, and so should we. Everything here
+ * degrades to the silent diagram when audio is unavailable, which is the case
+ * in the test environment and on a locked-down school device.
+ */
+let LB_AUDIO = null;
+function lbAudio() {
+  if (LB_AUDIO !== null) return LB_AUDIO;
+  try {
+    const C = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+    LB_AUDIO = C ? new C() : false;
+  } catch (e) { LB_AUDIO = false; }
+  return LB_AUDIO;
+}
+
+/** MIDI note number → hertz. A4 (69) is 440. */
+function lbFreq(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
+
+/** One short note. Silent, harmlessly, wherever there is no audio. */
+function lbPlay(midi, when, dur) {
+  const ctx = lbAudio();
+  if (!ctx) return;
+  try {
+    if (ctx.state === "suspended") ctx.resume();
+    const t = ctx.currentTime + (when || 0), d = dur || 0.55;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = lbFreq(midi);
+    /* A plucked envelope: a fast attack and a long decay. A plain on/off
+       square clicks at both ends and sounds like a fault rather than a note. */
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(t); osc.stop(t + d + 0.05);
+  } catch (e) { /* a device that will not play is not a broken lesson */ }
+}
+
+/** Does this learner want motion? Respected, not assumed (CLAUDE.md §9). */
+function lbStill() {
+  try { return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+  catch (e) { return false; }
+}
+
+/**
+ * Step through a list of {midi} one at a time, lighting each as it sounds.
+ * Returns [activeIndex, play, playing] for a block to render against.
+ *
+ * With reduced motion the notes still sound, in order — the preference is
+ * about movement on screen, not about withholding the lesson.
+ */
+function lbUseSequence(items, gap) {
+  const [at, setAt] = React.useState(-1);
+  const timers = React.useRef([]);
+  React.useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const play = React.useCallback(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    const step = gap || 0.5;
+    items.forEach((it, i) => {
+      lbPlay(it.midi, i * step, step * 1.6);
+      timers.current.push(setTimeout(() => setAt(i), i * step * 1000));
+    });
+    timers.current.push(setTimeout(() => setAt(-1), items.length * step * 1000 + 400));
+  }, [items, gap]);
+  return [at, play, at >= 0];
+}
+
+/** The play control every music block carries, worded for what it does. */
+function LbPlayBtn({ onPlay, label, playing }) {
+  return (
+    <button type="button" className={"lb-play" + (playing ? " is-on" : "")} onClick={onPlay} aria-label={label}>
+      <span aria-hidden="true">▶</span> Hear it
+    </button>
+  );
+}
+
 /** "C", "F#", "Bb4" → {pc: 0-11, octave} — or null when it is not a note. */
 function lbNote(tok) {
   const m = String(tok || "").trim().match(/^([A-Ga-g])([#b]?)(\d)?$/);
@@ -56,6 +147,11 @@ function lbNote(tok) {
 function LbKeys({ args }) {
   const wanted = String(args || "").split(/[\s,]+/).map(lbNote).filter(Boolean);
   const want = new Set(wanted.map(n => n.pc));
+  /* Heard in the order they were written, which is what makes C-E-G a chord
+     the learner recognises rather than three circles on a picture. */
+  const seq = React.useMemo(() => wanted.map(n => ({ midi: (n.octave + 1) * 12 + n.pc, pc: n.pc })), [args]);
+  const [at, play, playing] = lbUseSequence(seq, 0.42);
+  const lit = at >= 0 ? seq[at].pc : null;
   const octaves = 2, whitePerOct = 7, w = 26, h = 104;
   const whites = [];
   for (let o = 0; o < octaves; o++) for (let i = 0; i < whitePerOct; i++) whites.push({ o, i, name: LB_WHITE[i], pc: LB_SEMITONE[LB_WHITE[i]] });
@@ -69,7 +165,7 @@ function LbKeys({ args }) {
         {whites.map((k, n) => (
           <g key={"w" + n}>
             <rect x={n * w} y="0" width={w} height={h} rx="3"
-                  className={"lb-key lb-key-white" + (want.has(k.pc) ? " is-on" : "")}/>
+                  className={"lb-key lb-key-white" + (want.has(k.pc) ? " is-on" : "") + (lit === k.pc ? " is-sounding" : "")}/>
             <text x={n * w + w / 2} y={h - 9} className="lb-key-label">{k.name}</text>
           </g>
         ))}
@@ -77,9 +173,21 @@ function LbKeys({ args }) {
           if (!blacksAfter.includes(k.i)) return null;
           const pc = (k.pc + 1) % 12;
           return <rect key={"b" + n} x={n * w + w * 0.68} y="0" width={w * 0.64} height={h * 0.62} rx="2"
-                       className={"lb-key lb-key-black" + (want.has(pc) ? " is-on" : "")}/>;
+                       className={"lb-key lb-key-black" + (want.has(pc) ? " is-on" : "") + (lit === pc ? " is-sounding" : "")}/>;
         })}
       </svg>
+      {!!seq.length && <div className="lb-bar">
+        <LbPlayBtn onPlay={play} playing={playing} label={`Play ${label} on the keyboard`}/>
+        {/* Every note is also its own button. Nothing here needs a drag, and a
+            learner checking ONE note should not have to sit through all of
+            them (CLAUDE.md §9). */}
+        <span className="lb-notes">
+          {wanted.map((n, i) => (
+            <button key={i} type="button" className={"lb-pitch" + (at === i ? " is-on" : "")}
+                    aria-label={`Play ${n.name}`} onClick={() => lbPlay((n.octave + 1) * 12 + n.pc, 0, 0.6)}>{n.name}</button>
+          ))}
+        </span>
+      </div>}
       <figcaption className="lb-cap">Keys: <b>{label}</b></figcaption>
     </figure>
   );
@@ -102,6 +210,44 @@ const LB_CHORDS = {
   F:   { frets: [1, 3, 3, 2, 1, 1],  fingers: [1, 3, 4, 2, 1, 1] },
 };
 
+/* Open-string pitches, low E to high E, as MIDI numbers. A fretted string
+   sounds that many semitones higher, which is the whole of guitar tuning. */
+const LB_STRINGS = [40, 45, 50, 55, 59, 64];
+
+/** One chord box. Drawn, and strummed low string to high when pressed. */
+function LbChordBox({ name, frets, fingers }) {
+  const sw = 18, fh = 24, pad = 16;
+  const sounding = React.useMemo(
+    () => frets.map((f, i) => (f < 0 ? null : { midi: LB_STRINGS[i] + f, string: i })).filter(Boolean), [name]);
+  const [at, play, playing] = lbUseSequence(sounding, 0.11);
+  const liveString = at >= 0 ? sounding[at].string : -1;
+  const said = frets.map((f, i) => `string ${i + 1} ${f < 0 ? "muted" : f === 0 ? "open" : "fret " + f}`).join(", ");
+  return (
+    <figure className="lb-chord">
+      <svg viewBox={`0 0 ${pad * 2 + sw * 5} ${pad * 2 + fh * 4 + 14}`} className="lb-svg" role="img"
+           aria-label={`${name} chord: ${said}.`}>
+        {[0, 1, 2, 3, 4, 5].map(i => <line key={"s" + i} x1={pad + i * sw} y1={pad} x2={pad + i * sw} y2={pad + fh * 4}
+                                           className={"lb-fret-line" + (liveString === i ? " is-sounding" : "")}/>)}
+        {[0, 1, 2, 3, 4].map(f => <line key={"f" + f} x1={pad} y1={pad + f * fh} x2={pad + sw * 5} y2={pad + f * fh}
+                                        className={"lb-fret-line" + (f === 0 ? " is-nut" : "")}/>)}
+        {frets.map((f, i) => {
+          const x = pad + i * sw, live = liveString === i;
+          if (f < 0) return <text key={"x" + i} x={x} y={pad - 5} className="lb-chord-mark">×</text>;
+          if (f === 0) return <circle key={"o" + i} cx={x} cy={pad - 9} r="4" className={"lb-chord-open" + (live ? " is-sounding" : "")}/>;
+          return (
+            <g key={"d" + i}>
+              <circle cx={x} cy={pad + f * fh - fh / 2} r="7.5" className={"lb-chord-dot" + (live ? " is-sounding" : "")}/>
+              {fingers[i] > 0 && <text x={x} y={pad + f * fh - fh / 2 + 4} className="lb-chord-finger">{fingers[i]}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="lb-bar"><LbPlayBtn onPlay={play} playing={playing} label={`Strum the ${name} chord`}/></div>
+      <figcaption className="lb-cap">{name}</figcaption>
+    </figure>
+  );
+}
+
 function LbChord({ args }) {
   const names = String(args || "").split(/[\s,]+/).filter(Boolean);
   return (
@@ -110,30 +256,11 @@ function LbChord({ args }) {
         {names.map((raw, idx) => {
           const key = Object.keys(LB_CHORDS).find(k => k.toLowerCase() === raw.toLowerCase());
           if (!key) return <div key={idx} className="lb-chord-missing">No diagram for <b>{raw}</b> yet — ask your instructor to show you.</div>;
-          const { frets, fingers } = LB_CHORDS[key];
-          const sw = 18, fh = 24, pad = 16;
-          const said = frets.map((f, i) => `string ${i + 1} ${f < 0 ? "muted" : f === 0 ? "open" : "fret " + f}`).join(", ");
-          return (
-            <figure key={idx} className="lb-chord">
-              <svg viewBox={`0 0 ${pad * 2 + sw * 5} ${pad * 2 + fh * 4 + 14}`} className="lb-svg" role="img"
-                   aria-label={`${key} chord: ${said}.`}>
-                {[0, 1, 2, 3, 4, 5].map(i => <line key={"s" + i} x1={pad + i * sw} y1={pad} x2={pad + i * sw} y2={pad + fh * 4} className="lb-fret-line"/>)}
-                {[0, 1, 2, 3, 4].map(f => <line key={"f" + f} x1={pad} y1={pad + f * fh} x2={pad + sw * 5} y2={pad + f * fh} className={"lb-fret-line" + (f === 0 ? " is-nut" : "")}/>)}
-                {frets.map((f, i) => {
-                  const x = pad + i * sw;
-                  if (f < 0) return <text key={"x" + i} x={x} y={pad - 5} className="lb-chord-mark">×</text>;
-                  if (f === 0) return <circle key={"o" + i} cx={x} cy={pad - 9} r="4" className="lb-chord-open"/>;
-                  return (
-                    <g key={"d" + i}>
-                      <circle cx={x} cy={pad + f * fh - fh / 2} r="7.5" className="lb-chord-dot"/>
-                      {fingers[i] > 0 && <text x={x} y={pad + f * fh - fh / 2 + 4} className="lb-chord-finger">{fingers[i]}</text>}
-                    </g>
-                  );
-                })}
-              </svg>
-              <figcaption className="lb-cap">{key}</figcaption>
-            </figure>
-          );
+          /* One box, drawn once (LbChordBox). It used to be inlined here and
+             again nowhere else, which was fine until the box needed state of
+             its own to light the string that is sounding — a component cannot
+             hold state inside a .map callback. */
+          return <LbChordBox key={idx} name={key} frets={LB_CHORDS[key].frets} fingers={LB_CHORDS[key].fingers}/>;
         })}
       </div>
       <p className="lb-note">× don't play · ○ open string · numbers are which finger presses</p>
@@ -160,6 +287,12 @@ function LbStaff({ args }) {
     return top + lh * 4 - steps * (lh / 2);
   };
   const said = notes.length ? notes.map(n => n.name).join(", ") : "none";
+  /* Read left to right, as it is played. Seeing the notehead light as the
+     pitch sounds is how a learner connects the dot on the line to the sound,
+     which is the entire point of notation and the hardest part to teach from
+     a still picture. */
+  const seq = React.useMemo(() => notes.map(n => ({ midi: (n.octave + 1) * 12 + n.pc })), [args]);
+  const [at, play, playing] = lbUseSequence(seq, 0.5);
   return (
     <figure className="lb lb-staff">
       <svg viewBox={`0 0 ${W} ${H}`} className="lb-svg" role="img" aria-label={`Treble staff. Notes: ${said}.`}>
@@ -173,13 +306,22 @@ function LbStaff({ args }) {
           return (
             <g key={i}>
               {ledger.map((ly, j) => <line key={j} x1={x - 11} y1={ly} x2={x + 11} y2={ly} className="lb-staff-line"/>)}
-              <ellipse cx={x} cy={y} rx="6.2" ry="4.6" className="lb-note-head" transform={`rotate(-18 ${x} ${y})`}/>
+              <ellipse cx={x} cy={y} rx="6.2" ry="4.6" className={"lb-note-head" + (at === i ? " is-sounding" : "")} transform={`rotate(-18 ${x} ${y})`}/>
               <line x1={x + 6} y1={y} x2={x + 6} y2={y - 30} className="lb-note-stem"/>
-              <text x={x} y={H - 8} className="lb-note-name">{n.name}</text>
+              <text x={x} y={H - 8} className={"lb-note-name" + (at === i ? " is-sounding" : "")}>{n.name}</text>
             </g>
           );
         })}
       </svg>
+      {!!seq.length && <div className="lb-bar">
+        <LbPlayBtn onPlay={play} playing={playing} label={`Play the notes: ${said}`}/>
+        <span className="lb-notes">
+          {notes.map((n, i) => (
+            <button key={i} type="button" className={"lb-pitch" + (at === i ? " is-on" : "")}
+                    aria-label={`Play ${n.name}`} onClick={() => lbPlay((n.octave + 1) * 12 + n.pc, 0, 0.6)}>{n.name}</button>
+          ))}
+        </span>
+      </div>}
     </figure>
   );
 }
@@ -231,6 +373,12 @@ function LbSwatch({ args }) {
                 <span key={v.on} className={"lb-swatch-verdict " + (v.r >= 4.5 ? "is-pass" : "is-fail")}>
                   <span className="lb-swatch-ratio">{v.r.toFixed(1) + ":1"}</span>
                   {" as text on " + v.on + " — " + (v.r >= 4.5 ? "passes" : "too faint")}
+                  {/* The ratio is a number a learner has no feel for, so the
+                      sentence is also SET in that colour on that ground.
+                      Seeing "too faint" actually be too faint to read is the
+                      lesson; the figure beside it is only the evidence. */}
+                  <span className="lb-swatch-demo" style={{ background: v.on === "white" ? "#ffffff" : "#000000", color: it.hex }}
+                        aria-hidden="true">Can you read this?</span>
                 </span>
               ))}
             </div>
@@ -251,17 +399,47 @@ function LbSteps({ args }) {
     return m ? { mins: Number(m[1]), label: m[2] } : { mins: 0, label: s };
   });
   const total = items.reduce((n, x) => n + x.mins, 0) || 1;
+
+  /* A real clock for the session, because the picture answers "how long is
+     this meant to take" and an instructor on a Saturday needs "how long has
+     it taken". It counts in real minutes, announces the stage change politely
+     for a screen reader, and can be stopped — a timer with no stop is a
+     pressure device, not a teaching one. */
+  const [run, setRun] = React.useState(false);
+  const [sec, setSec] = React.useState(0);
+  React.useEffect(() => {
+    if (!run) return;
+    const t = setInterval(() => setSec(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [run]);
+  let acc = 0, live = -1;
+  const mins = sec / 60;
+  items.forEach((it, i) => { if (mins >= acc && mins < acc + it.mins) live = i; acc += it.mins; });
+  if (run && mins >= total) live = items.length - 1;
+  const mmss = String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+
   return (
     <figure className="lb lb-steps">
       <ol className="lb-step-list">
         {items.map((it, i) => (
-          <li key={i} className="lb-step" style={{ "--lb-share": (it.mins / total * 100) + "%" }}>
+          <li key={i} className={"lb-step" + (live === i ? " is-now" : "") + (live > i ? " is-done" : "")}
+              style={{ "--lb-share": (it.mins / total * 100) + "%" }}>
             <span className="lb-step-bar" aria-hidden="true"/>
             <span className="lb-step-min">{it.mins} min</span>
             <span className="lb-step-label">{it.label}</span>
           </li>
         ))}
       </ol>
+      <div className="lb-bar">
+        <button type="button" className={"lb-play" + (run ? " is-on" : "")} aria-pressed={run}
+                aria-label={run ? "Pause the session timer" : "Start the session timer"} onClick={() => setRun(r => !r)}>
+          <span aria-hidden="true">{run ? "❚❚" : "▶"}</span> {run ? "Pause" : "Start"}
+        </button>
+        <button type="button" className="lb-play is-ghost" aria-label="Reset the session timer to zero"
+                onClick={() => { setRun(false); setSec(0); }}>Reset</button>
+        <span className="lb-clock" role="timer" aria-live="off">{mmss}</span>
+        <span className="sr-only" aria-live="polite">{live >= 0 ? "Now: " + items[live].label : ""}</span>
+      </div>
       <figcaption className="lb-cap">{total} minutes in total</figcaption>
     </figure>
   );

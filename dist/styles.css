@@ -8577,3 +8577,56 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .lb-step-bar { height: 100%; min-height: 22px; border-radius: 2px; background: var(--gold-500, #f5b026); }
 .lb-step-min { font-size: 12px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
 .lb-step-label { font-size: 14.5px; }
+
+/* ── Lesson blocks: hearing it, and stepping through it ─────────────────────
+   The sounding note is marked by COLOUR AND SIZE together, never colour
+   alone: a learner who cannot tell the gold from the white still sees which
+   key grew. Movement is a short scale, not a bounce — it has to read at a
+   glance on a cheap phone screen in daylight. */
+.lb-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.lb-play {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); background: var(--surface-0, #fff);
+  color: var(--ink-900, #0c1432); font: inherit; font-size: 13px; font-weight: 600;
+}
+.lb-play:hover { background: var(--surface-2, #eef1f6); }
+.lb-play.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+.lb-play.is-ghost { font-weight: 500; color: var(--ink-700, #3a4256); }
+.lb-clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; margin-left: 2px; }
+.lb-notes { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+/* .lb-pitch, not .lb-note: .lb-note is already the chord legend's paragraph,
+   and giving these buttons that name styled the legend as a button. */
+.lb-pitch {
+  min-width: 34px; min-height: 32px; padding: 0 8px; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); border-radius: 7px;
+  background: var(--surface-0, #fff); color: var(--ink-900, #0c1432);
+  font: inherit; font-size: 12.5px; font-weight: 700;
+}
+.lb-pitch:hover { background: var(--surface-2, #eef1f6); }
+.lb-pitch.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+
+/* The note that is sounding, in each of the three music blocks. */
+.lb-key-white.is-sounding { fill: #f0a500; }
+.lb-key-black.is-sounding { fill: #8a5a00; }
+.lb-key.is-sounding { transform: scaleY(1.03); transform-origin: top; transition: transform .12s ease-out, fill .12s ease-out; }
+.lb-chord-dot.is-sounding, .lb-chord-open.is-sounding { fill: #f0a500; stroke: #8a5a00; stroke-width: 1.5; }
+.lb-fret-line.is-sounding { stroke: #f0a500; stroke-width: 2.4; }
+.lb-note-head.is-sounding { fill: #b4761a; transform: scale(1.3); transform-box: fill-box; transform-origin: center; transition: transform .12s ease-out, fill .12s ease-out; }
+.lb-note-name.is-sounding { font-weight: 800; fill: #b4761a; }
+
+/* The session clock. The stage running now is marked by weight and a rule as
+   well as by fill, for the same reason. */
+.lb-step.is-now .lb-step-bar { background: var(--gold-400, #ffd166); outline: 2px solid #b4761a; outline-offset: 1px; }
+.lb-step.is-now .lb-step-label { font-weight: 800; }
+.lb-step.is-done .lb-step-bar { opacity: .45; }
+.lb-step.is-done .lb-step-label { text-decoration: line-through; opacity: .7; }
+
+/* The colour lesson, set in the colour it is talking about. */
+.lb-swatch-demo { display: block; margin-top: 3px; padding: 4px 7px; border-radius: 5px; font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The notes still sound and still light up — the preference is about
+     movement, not about withholding the lesson. Only the scaling stops. */
+  .lb-key.is-sounding, .lb-note-head.is-sounding { transform: none; transition: none; }
+}

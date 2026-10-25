@@ -30,17 +30,33 @@ const js = esbuild.transformSync(src, { loader: 'jsx', jsx: 'transform', jsxFact
 const React = {
   createElement: (type, props, ...kids) => ({ type, props: props || {}, kids: kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false) }),
   Fragment: 'Fragment',
+  /* Hooks, at their resting state. These components are called as plain
+     functions to inspect what they DRAW, so a hook only has to return the
+     first render's value: no state has changed yet, and nothing has been
+     clicked. That is precisely the frame worth pinning — a diagram has to be
+     correct before anybody presses anything. The interactive behaviour is
+     asserted in the browser, in tests/curriculum-ui.test.js. */
+  useState: (init) => [typeof init === 'function' ? init() : init, () => {}],
+  useMemo: (fn) => fn(),
+  useCallback: (fn) => fn,
+  useEffect: () => {},
+  useRef: (init) => ({ current: init === undefined ? null : init }),
 };
 const T = { React, console };
 vm.createContext(T);
-vm.runInContext(js + '\n;Object.assign(this, { lbNote, lbContrast, lbLuminance, LB_CHORDS, LbKeys, LbChord, LbStaff, LbSwatch, LbSteps, lessonBlockFor });', T);
+vm.runInContext(js + '\n;Object.assign(this, { lbNote, lbContrast, lbLuminance, lbFreq, lbPlay, LB_CHORDS, LbKeys, LbChord, LbStaff, LbSwatch, LbSteps, lessonBlockFor });', T);
 
 let passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
 
-/** Every node in a rendered tree, depth first. */
+/** Every node in a rendered tree, depth first.
+ *  A node whose type is a FUNCTION is a component: it is called and its own
+ *  output walked in its place, so a block built out of smaller blocks is
+ *  inspected as the learner's browser would assemble it rather than as an
+ *  unexpanded placeholder. */
 function* walk(n) {
   if (!n || typeof n !== 'object') return;
+  if (typeof n.type === 'function') { yield* walk(n.type(n.props || {})); return; }
   yield n;
   for (const k of n.kids || []) yield* walk(k);
 }
@@ -118,6 +134,51 @@ chk('one bar per step', classed(st, 'lb-step').length === 4);
 chk('the bars are to scale — 90 minutes across, so Play is four times Warm up', (() => {
   const w = classed(st, 'lb-step').map(x => parseFloat(x.props.style['--lb-share']));
   return w.length === 4 && Math.abs(w[2] / w[0] - 4) < 1e-6;
+})());
+
+console.log('hearing it, and stepping through it');
+chk('A4 is 440Hz, and an octave up is double', Math.abs(T.lbFreq(69) - 440) < 1e-9 && Math.abs(T.lbFreq(81) - 880) < 1e-9);
+chk('middle C (MIDI 60) is ~261.6Hz', Math.abs(T.lbFreq(60) - 261.6256) < 0.001);
+/* Audio is built on the first press and never before — a browser refuses
+   sound the learner did not ask for, and so should a lesson. There is no
+   AudioContext here at all, which is also a locked-down school device: every
+   block must still draw. */
+chk('with no audio available the blocks still draw', (() => {
+  const k = T.LbKeys({ args: 'C E G' });
+  return classed(k, 'lb-key-white').length === 14 && classed(k, 'is-on').length === 6;
+})());
+chk('…and sounding a note where there is no audio is harmless', (() => { try { T.lbPlay(60, 0, 0.3); return true; } catch (e) { return false; } })());
+chk('nothing is marked as sounding before anything is pressed',
+  classed(T.LbKeys({ args: 'C E G' }), 'is-sounding').length === 0
+  && classed(T.LbStaff({ args: 'C D E' }), 'is-sounding').length === 0);
+/* Every control is reachable and says what it does — nothing here needs a
+   drag, and an icon alone is not a label (CLAUDE.md §9). */
+chk('the keyboard offers a play control and one button per note, each labelled', (() => {
+  const b = [...walk(T.LbKeys({ args: 'C E G' }))].filter(n => n.type === 'button');
+  return b.length === 4 && b.every(x => (x.props['aria-label'] || '').length > 3);
+})());
+chk('the staff offers the same', (() => {
+  const b = [...walk(T.LbStaff({ args: 'C D E' }))].filter(n => n.type === 'button');
+  return b.length === 4 && b.every(x => (x.props['aria-label'] || '').length > 3);
+})());
+chk('a chord box can be strummed, and says which chord', (() => {
+  const b = [...walk(T.LbChord({ args: 'Am' }))].filter(n => n.type === 'button');
+  return b.length === 1 && /Am/.test(b[0].props['aria-label']);
+})());
+/* The session timer is a teaching aid, so it can be stopped. A timer with no
+   stop is a pressure device. */
+chk('the session has a start, a pause state and a reset', (() => {
+  const b = [...walk(T.LbSteps({ args: '10 Warm up | 30 Learn' }))].filter(n => n.type === 'button');
+  return b.length === 2 && b[0].props['aria-pressed'] === false && /Reset/i.test(b[1].props['aria-label']);
+})());
+chk('…and it reads 00:00 until it is started',
+  [...walk(T.LbSteps({ args: '10 Warm up | 30 Learn' }))].some(n => String(n.props.className || '') === 'lb-clock' && n.kids.join('') === '00:00'));
+/* A colour lesson that only prints a ratio teaches the ratio. The sentence is
+   also SET in that colour, so "too faint" is visibly too faint. */
+chk('each contrast verdict is demonstrated in the colour it describes', (() => {
+  const d = classed(T.LbSwatch({ args: '#ffd400 Gold' }), 'lb-swatch-demo');
+  return d.length === 2 && d.some(x => x.props.style.background === '#ffffff') && d.some(x => x.props.style.background === '#000000')
+    && d.every(x => x.props.style.color === '#ffd400');
 })());
 
 console.log('routing, and what happens where this file is not loaded');

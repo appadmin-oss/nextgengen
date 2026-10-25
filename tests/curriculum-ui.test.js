@@ -219,6 +219,17 @@ async function contextFor(memberId, admin, viewport) {
         await mp.$eval('.cur-text', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6));
     chk('…and it is announced, so the diagram reads aloud',
         /C, E, G/.test(await mp.$eval('.cur-text .lb-keys svg', el => el.getAttribute('aria-label') || '')));
+    /* And it can be HEARD. A picture of a chord cannot teach what the chord
+       sounds like, which for most of these lessons is the thing being taught.
+       Nothing is marked as sounding until the learner asks. */
+    chk('the diagram is silent and still until the learner presses play',
+        (await mp.$$('.cur-text .lb-keys .is-sounding')).length === 0 && (await mp.$$('.cur-text .lb-keys .lb-play')).length === 1);
+    await mp.click('.cur-text .lb-keys .lb-play');
+    await mp.waitForTimeout(250);
+    chk('…and pressing it walks the notes, lighting each as it sounds',
+        (await mp.$$('.cur-text .lb-keys .is-sounding')).length >= 1);
+    chk('…with every control labelled, and a button per note so one can be checked alone',
+        (await mp.$$eval('.cur-text .lb-keys button', els => els.length === 4 && els.every(e => (e.getAttribute('aria-label') || '').length > 3))));
     await mp.click('.cur-mats button.cur-mat');
     chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
     await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
