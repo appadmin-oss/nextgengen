@@ -2846,6 +2846,7 @@ CREATE TABLE IF NOT EXISTS curriculum_checks (
   points INT DEFAULT 1,
   position INT DEFAULT 1,
   source VARCHAR(16) DEFAULT 'manual',
+  videoUrl TEXT,
   KEY idx_ccheck_unit (unitId, position)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS curriculum_progress (
@@ -4165,4 +4166,8 @@ CREATE INDEX idx_v3_scores_centreid ON v3_scores(centreId);
 ALTER TABLE volunteers MODIFY COLUMN memberId VARCHAR(64) DEFAULT '';
 ALTER TABLE members MODIFY COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
 
-INSERT INTO schema_version (version) VALUES (178) ON DUPLICATE KEY UPDATE version = version;
+-- 179: a 'watch' question carries the video it is about, so the learner
+-- watches it inside the exam instead of being sent off to find it.
+ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT;
+
+INSERT INTO schema_version (version) VALUES (179) ON DUPLICATE KEY UPDATE version = version;

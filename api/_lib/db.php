@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 178;
+const NGG_SCHEMA_TARGET = 179;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -3898,7 +3898,8 @@ function db_migrate(PDO $db): void {
               rubric TEXT DEFAULT '',
               points INTEGER DEFAULT 1,
               position INTEGER DEFAULT 1,
-              source TEXT DEFAULT 'manual'
+              source TEXT DEFAULT 'manual',
+              videoUrl TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_ccheck_unit ON curriculum_checks(unitId, position);
             CREATE TABLE IF NOT EXISTS curriculum_progress (
@@ -5237,6 +5238,14 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mentors_centreid ON mentors(centreId);
             CREATE INDEX IF NOT EXISTS idx_summer_students_centreid ON summer_students(centreId);
             CREATE INDEX IF NOT EXISTS idx_v3_scores_centreid ON v3_scores(centreId);
+        ",
+        /* A question of kind 'watch' carries the video it is about, so the
+           learner watches it inside the exam rather than being sent off to
+           find it. It is the check's own column and not a material: a lesson
+           may carry several videos, and "the one this question is about" is
+           not a thing a list of materials can say. */
+        179 => "
+            ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT NOT NULL DEFAULT '';
         ",
     ];
 

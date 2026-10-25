@@ -2009,13 +2009,14 @@ function CurriculumLessons() {
    alone, so defaulting to mcq was defaulting to a lesson that would be
    refused. Multiple choice is one press away, and worth having — alongside
    something they did. */
-const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "", rubric: "", points: 3 };
+const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "", rubric: "", points: 3, videoUrl: "" };
 /* The kinds of question, as CURR_CHECK_KINDS has them. Only multiple choice is
    marked by the computer; the rest are marked by a capable AI model against
    the rubric when one is configured for marking, and by the instructor if not
    — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
 const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
-  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"]];
+  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"],
+  ["watch", "Watch a video and tell me"]];
 const CUR_MARK_HINT = {
   short: "Marked against the model answer — any wording that has the ideas earns the points.",
   essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
@@ -2023,6 +2024,7 @@ const CUR_MARK_HINT = {
   project: "Marked from the learner's description against the rubric; a bare link waits for the instructor.",
   code: "Marked on whether it does what was asked and the logic is sound.",
   task: "Marked from the learner's account of what they did, against the rubric.",
+  watch: "Marked on what only watching could produce — a detail, an example, a moment from the video — in their own words. Nothing can check that play was pressed, and a keyword gate would only check that they guessed the words.",
 };
 
 /* The markdown toolbar that used to live here — eighteen buttons over a
@@ -2209,7 +2211,7 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
     title: unit.title || "", summary: unit.summary || "", objectives: (unit.objectives || []).join("\n"), body: unit.body || "",
     durationMins: unit.durationMins || "", passMark: unit.passMark ?? 60, status: unit.status || "draft",
     materials: (unit.materials || []).map(m => ({ ...m })),
-    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? "") })),
+    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? ""), videoUrl: c.videoUrl || "" })),
   }));
   const [busy, setBusy] = React.useState("");
   const examRef = (examRefs || {})[f.course] || null;
@@ -2219,7 +2221,7 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
   const save = async () => {
     setBusy("save");
     try {
-      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [] })) };
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "" })) };
       const saved = await api.save(data);
       toast.success(
         canPublish ? (isNew ? "Lesson created." : "Lesson saved.")
@@ -2404,8 +2406,21 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
                   </div>
                 ) : (
                   <div className="led-q-marking">
+                    {/* Only a 'watch' question carries a video, and it must:
+                        a question about a film nobody was shown is a question
+                        nobody can answer, so it is refused on save. */}
+                    {c.kind === "watch" && <label className="led-f led-q-video"><span>The video they watch</span>
+                      <input className="admin-input" value={c.videoUrl || ""} inputMode="url"
+                             placeholder="https://www.youtube.com/watch?v=…"
+                             aria-label={"Video for question " + (i + 1)} disabled={ro}
+                             aria-invalid={c.videoUrl && !curVideoEmbed(c.videoUrl) ? "true" : undefined}
+                             onChange={e => setCheck(i, "videoUrl", e.target.value.trim())}/>
+                      {c.videoUrl && !curVideoEmbed(c.videoUrl)
+                        ? <span className="led-bad" role="alert">That is not a YouTube or Vimeo link — the exam can only play those.</span>
+                        : <span className="led-hint">They watch it inside the exam, then write what they took from it.</span>}
+                    </label>}
                     <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)}
-                      placeholder={c.kind === "short" ? "A model answer — what full marks looks like" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (there is no right answer)" : "What a strong answer includes"}
+                      placeholder={c.kind === "short" ? "A model answer — what full marks looks like" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (there is no right answer)" : c.kind === "watch" ? "What somebody who actually watched it would be able to say" : "What a strong answer includes"}
                       aria-label={"Model answer for question " + (i + 1)} disabled={ro}/>
                     <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)}
                       placeholder="Rubric — what a marker looks for, and how the marks are earned" aria-label={"Rubric for question " + (i + 1)} disabled={ro}/>

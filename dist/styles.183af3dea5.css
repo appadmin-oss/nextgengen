@@ -8679,3 +8679,7 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .cur-attach-btn:focus-within { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
 .cur-attach-hint { font-size: .8rem; color: var(--ink-500, #5a6488); line-height: 1.4; }
 @media (pointer: coarse) { .cur-attach-btn { min-height: 44px; } }
+
+/* A "watch and tell me" question plays its video inside the exam. */
+.cur-watch { display: grid; gap: 8px; margin: 0 0 10px; }
+.cur-watch-note { margin: 0; font-size: .85rem; line-height: 1.5; color: var(--ink-600, #4a5168); }
