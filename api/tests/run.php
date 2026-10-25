@@ -5288,19 +5288,28 @@ chk('centres: upsert validates, code unique, list works', (function () {
     $l = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
     return count($l['centres']) === 1 && $l['centres'][0]['code'] === 'IJ';
 })());
-chk('cards: verified student gets CODE-YY-serial + QR token + centre colour', (function () {
+/* One assertion per promise. This was a single conjunction of six, and when
+   it failed on MySQL roughly one run in four it said only that something
+   among the six was wrong. A conjunction is a cheap way to write a test and
+   an expensive way to read one. */
+(function () {
     db_update('summer_students', ['centre' => 'Ijaiye'], ['regStatus' => 'verified']);
     $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
-    if (empty($d['ok']) || count($d['cards']) < 1) return false;
-    $c = $d['cards'][0];
+    chk('cards: the card data loads with at least one verified student (' . count($d['cards'] ?? []) . ')', !empty($d['ok']) && count($d['cards'] ?? []) >= 1);
+    $c = ($d['cards'] ?? [[]])[0];
     $yy = gmdate('y');
-    if (!preg_match('/^IJ-' . $yy . '-\d{3}$/', $c['displayId'])) return false;
-    if (strpos($c['token'], 'SUMQR-') !== 0 || $c['centre']['color'] !== '#76B043') return false;
-    if ($c['firstName'] === '' || $d['program']['program'] !== 'LCASP') return false;
+    chk('cards: a verified student gets a centre-prefixed serial, IJ-' . $yy . '-NNN (got "' . (string)($c['displayId'] ?? '') . '")',
+        (bool)preg_match('/^IJ-' . $yy . '-\d{3}$/', (string)($c['displayId'] ?? '')));
+    chk('cards: …and a Summer QR token (got "' . mb_substr((string)($c['token'] ?? ''), 0, 12) . '")', str_starts_with((string)($c['token'] ?? ''), 'SUMQR-'));
+    chk('cards: …and their centre\'s own colour (got "' . (string)($c['centre']['color'] ?? '') . '" for centre "' . (string)($c['centre']['name'] ?? '') . '")',
+        (string)($c['centre']['color'] ?? '') === '#76B043');
+    chk('cards: …and a name, on the programme (' . (string)($d['program']['program'] ?? '') . ')',
+        (string)($c['firstName'] ?? '') !== '' && (string)($d['program']['program'] ?? '') === 'LCASP');
     // Allocation is sticky — a second read must not re-serial.
     $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
-    return $d2['cards'][0]['displayId'] === $c['displayId'];
-})());
+    chk('cards: the serial is sticky — a second read does not re-allocate',
+        (string)($d2['cards'][0]['displayId'] ?? 'x') === (string)($c['displayId'] ?? 'y'));
+})();
 chk('cards: gate context serves centre options for the centre field', (function () {
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Card desk']);
     $ctx = backend_dispatch('gate.context', ['gate' => $g['gateId']]);
