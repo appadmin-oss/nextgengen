@@ -1221,6 +1221,45 @@ chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search fi
     chk('join date: a new member is given today when none is set', !empty($newM['ok']) && db_row('SELECT joinDate FROM members WHERE memberId = ?', [$newM['memberId']])['joinDate'] === gmdate('Y-m-d'));
     setting_set('profile_drive', ['phase' => 'off'], 't');
 })();
+/* A TYPE change can never be made with ADD COLUMN.
+   The mirror repeats ADD COLUMN on purpose so it can be replayed, and
+   db_apply_mysql_schema swallows the duplicate-column errors (docs/SETUP.md).
+   That is right for adding a column and silently wrong for changing one: the
+   ADD errors, the error is swallowed, and the column keeps the type its
+   CREATE TABLE gave it. `ALTER TABLE volunteers ADD COLUMN memberId
+   VARCHAR(64)` had never once taken effect — volunteers.memberId was
+   VARCHAR(40) on every MySQL deployment there has ever been, which is also
+   why no foreign key could be declared against members.memberId. MODIFY is
+   the statement for a type change, and it is idempotent. */
+chk('mysql mirror: a column whose type differs from its CREATE is changed with MODIFY, never ADD COLUMN', (function () {
+    /* Comments are stripped first: the mirror explains this very rule in a
+       comment that quotes an ADD COLUMN, and a scanner that reads its own
+       documentation as schema reports it as a fault. */
+    $sql = preg_replace('/^\s*--.*$/m', '', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'));
+    $create = [];
+    if (preg_match_all('/CREATE TABLE IF NOT EXISTS (\w+)\s*\((.*?)\n\)[^\n]*;/s', $sql, $t, PREG_SET_ORDER)) {
+        foreach ($t as $m) {
+            foreach (preg_split('/,(?![^(]*\))/', $m[2]) as $part) {
+                if (preg_match('/^\s*(?:--.*\n\s*)?(\w+)\s+((?:VARCHAR|TEXT|INT|BIGINT|TINYINT|DECIMAL|CHAR|DATE|DATETIME)[^,]*)/i', $part, $c)
+                    && !in_array(strtoupper($c[1]), ['KEY', 'UNIQUE', 'PRIMARY', 'INDEX'], true)) {
+                    $create[$m[1] . '.' . $c[1]] = preg_replace('/\s+/', ' ', trim($c[2]));
+                }
+            }
+        }
+    }
+    $bad = [];
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)\s+([^;]+);/i', $sql, $a, PREG_SET_ORDER);
+    foreach ($a as $m) {
+        $k = $m[1] . '.' . $m[2];
+        if (!isset($create[$k])) continue;                       // genuinely a new column: fine
+        $want = strtoupper(preg_replace('/\s+/', ' ', trim($m[3])));
+        $have = strtoupper($create[$k]);
+        if ($want !== $have) $bad[] = $k . ' (CREATE says ' . $create[$k] . ', the ALTER wants ' . trim($m[3]) . ')';
+    }
+    if ($bad) echo '    mirror: ' . implode('; ', $bad) . "\n";
+    return !$bad;
+})());
+
 chk('mysql mirror: every column a SQLite migration adds with ALTER is added by an ALTER in db/schema-mysql.sql (a CREATE TABLE alone never reaches an existing table)', (function () {
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/', (string)file_get_contents(__DIR__ . '/../_lib/db.php'), $a, PREG_SET_ORDER);
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
