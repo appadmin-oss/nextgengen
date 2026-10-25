@@ -131,9 +131,14 @@ chk('a chip never prints unreadable ink on itself', classed(sw, 'lb-swatch-chip'
 console.log('session shape (```steps)');
 let st = T.LbSteps({ args: '10 Warm up | 30 Learn | 40 Play | 10 Pack down' });
 chk('one bar per step', classed(st, 'lb-step').length === 4);
-chk('the bars are to scale — 90 minutes across, so Play is four times Warm up', (() => {
+/* The SHARE is computed here; whether the bar is drawn that long is a layout
+   question this harness cannot answer, and for a while it was not: the share
+   sat in a fixed 4px grid column, so ten minutes and forty minutes drew
+   identically while this check passed. The rendered widths are measured in
+   tests/curriculum-ui.test.js, in a browser, where the answer actually lives. */
+chk('each step carries its share of the session, to the minute', (() => {
   const w = classed(st, 'lb-step').map(x => parseFloat(x.props.style['--lb-share']));
-  return w.length === 4 && Math.abs(w[2] / w[0] - 4) < 1e-6;
+  return w.length === 4 && Math.abs(w[2] / w[0] - 4) < 1e-6 && Math.abs(w.reduce((a, b) => a + b, 0) - 100) < 1e-6;
 })());
 
 console.log('hearing it, and stepping through it');

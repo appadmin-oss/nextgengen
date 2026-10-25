@@ -8573,10 +8573,14 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 
 /* The shape of the session */
 .lb-step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.lb-step { display: grid; grid-template-columns: 4px 62px 1fr; align-items: center; gap: 10px; }
-.lb-step-bar { height: 100%; min-height: 22px; border-radius: 2px; background: var(--gold-500, #f5b026); }
-.lb-step-min { font-size: 12px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
-.lb-step-label { font-size: 14.5px; }
+/* The bar's LENGTH is the stage's share of the session, which is the only
+   reason this block exists. It used to sit in a fixed 4px column, so
+   --lb-share — carefully computed in lesson-blocks.jsx — was never read and
+   ten minutes looked exactly like forty. */
+.lb-step { display: grid; grid-template-columns: 56px 1fr; column-gap: 10px; row-gap: 3px; align-items: center; }
+.lb-step-bar { grid-area: 2 / 2; height: 8px; border-radius: 999px; background: var(--gold-500, #f5b026); width: var(--lb-share); min-width: 4px; }
+.lb-step-min { grid-area: 1 / 1; text-align: right; font-size: 12px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
+.lb-step-label { grid-area: 1 / 2; font-size: 14.5px; }
 
 /* ── Lesson blocks: hearing it, and stepping through it ─────────────────────
    The sounding note is marked by COLOUR AND SIZE together, never colour
@@ -8617,7 +8621,7 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 
 /* The session clock. The stage running now is marked by weight and a rule as
    well as by fill, for the same reason. */
-.lb-step.is-now .lb-step-bar { background: var(--gold-400, #ffd166); outline: 2px solid #b4761a; outline-offset: 1px; }
+.lb-step.is-now .lb-step-bar { background: #b4761a; box-shadow: 0 0 0 2px rgba(180,118,26,.28); }
 .lb-step.is-now .lb-step-label { font-weight: 800; }
 .lb-step.is-done .lb-step-bar { opacity: .45; }
 .lb-step.is-done .lb-step-label { text-decoration: line-through; opacity: .7; }
@@ -8630,3 +8634,18 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
      movement, not about withholding the lesson. Only the scaling stops. */
   .lb-key.is-sounding, .lb-note-head.is-sounding { transform: none; transition: none; }
 }
+
+/* A chord is one small card: the box, its name and its play, together and the
+   same size as its neighbours. Previously the name sat in a caption and the
+   play in a full-width bar, so three chords made three different heights. */
+.lb-chord { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0; }
+.lb-chord-foot { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; }
+.lb-chord-name { font-size: 14px; font-weight: 800; letter-spacing: .01em; }
+.lb-chord-play {
+  width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); border-radius: 50%;
+  background: var(--surface-0, #fff); color: var(--ink-900, #0c1432); font-size: 11px; line-height: 1;
+}
+.lb-chord-play:hover { background: var(--surface-2, #eef1f6); }
+.lb-chord-play.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+.lb-chord-row { display: flex; flex-wrap: wrap; gap: 18px 22px; align-items: flex-start; }

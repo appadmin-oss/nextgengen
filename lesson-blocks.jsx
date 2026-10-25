@@ -242,8 +242,17 @@ function LbChordBox({ name, frets, fingers }) {
           );
         })}
       </svg>
-      <div className="lb-bar"><LbPlayBtn onPlay={play} playing={playing} label={`Strum the ${name} chord`}/></div>
-      <figcaption className="lb-cap">{name}</figcaption>
+      {/* Name and play together, under the box they belong to. Three chords
+          used to produce three full-width "Hear it" buttons and three
+          captions at three different heights, which read as a broken layout
+          rather than as three chords. */}
+      <figcaption className="lb-chord-foot">
+        <b className="lb-chord-name">{name}</b>
+        <button type="button" className={"lb-chord-play" + (playing ? " is-on" : "")}
+                onClick={play} aria-label={`Strum the ${name} chord`}>
+          <span aria-hidden="true">▶</span>
+        </button>
+      </figcaption>
     </figure>
   );
 }
@@ -278,7 +287,7 @@ function LbChord({ args }) {
 function LbStaff({ args }) {
   const notes = String(args || "").split(/[\s,]+/).map(lbNote).filter(Boolean);
   const step = 34, pad = 30, lh = 9;         // line height: a step is half of it
-  const W = pad * 2 + Math.max(1, notes.length) * step, H = 108;
+  const W = pad * 2 + Math.max(1, notes.length) * step;
   const top = 28;                            // y of the top staff line
   // Treble: E4 sits on the bottom line. Position counted in staff steps up.
   const diat = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
@@ -286,6 +295,19 @@ function LbStaff({ args }) {
     const steps = (n.octave - 4) * 7 + diat[n.name[0]] - diat.E;
     return top + lh * 4 - steps * (lh / 2);
   };
+  /* The box is sized to the notes, not to a guess.
+     A fixed height left a dead band above the staff on every lesson that
+     stays in the middle of the range — which is every Foundation lesson —
+     and pushed the note names a long way under the noteheads they name.
+     Keeping a label beside the thing it labels is the one piece of
+     instructional-design research worth hard-coding: a learner should not
+     have to hold "the fourth one along" in their head to read a diagram. */
+  const ys = notes.map(yOf);
+  const hiY = ys.length ? Math.min(...ys) : top;
+  const loY = ys.length ? Math.max(...ys) : top + lh * 4;
+  const yTop = Math.min(top, hiY) - lh * 1.6;                 // room for ledger lines above
+  const nameY = Math.max(top + lh * 4, loY) + lh * 2.1;       // names just under the lowest note
+  const H = nameY - yTop + lh * 1.2;
   const said = notes.length ? notes.map(n => n.name).join(", ") : "none";
   /* Read left to right, as it is played. Seeing the notehead light as the
      pitch sounds is how a learner connects the dot on the line to the sound,
@@ -295,7 +317,7 @@ function LbStaff({ args }) {
   const [at, play, playing] = lbUseSequence(seq, 0.5);
   return (
     <figure className="lb lb-staff">
-      <svg viewBox={`0 0 ${W} ${H}`} className="lb-svg" role="img" aria-label={`Treble staff. Notes: ${said}.`}>
+      <svg viewBox={`0 ${yTop} ${W} ${H}`} className="lb-svg" role="img" aria-label={`Treble staff. Notes: ${said}.`}>
         {[0, 1, 2, 3, 4].map(i => <line key={i} x1="10" y1={top + i * lh} x2={W - 10} y2={top + i * lh} className="lb-staff-line"/>)}
         <text x="14" y={top + lh * 3.4} className="lb-clef">𝄞</text>
         {notes.map((n, i) => {
@@ -308,7 +330,7 @@ function LbStaff({ args }) {
               {ledger.map((ly, j) => <line key={j} x1={x - 11} y1={ly} x2={x + 11} y2={ly} className="lb-staff-line"/>)}
               <ellipse cx={x} cy={y} rx="6.2" ry="4.6" className={"lb-note-head" + (at === i ? " is-sounding" : "")} transform={`rotate(-18 ${x} ${y})`}/>
               <line x1={x + 6} y1={y} x2={x + 6} y2={y - 30} className="lb-note-stem"/>
-              <text x={x} y={H - 8} className={"lb-note-name" + (at === i ? " is-sounding" : "")}>{n.name}</text>
+              <text x={x} y={nameY} className={"lb-note-name" + (at === i ? " is-sounding" : "")}>{n.name}</text>
             </g>
           );
         })}

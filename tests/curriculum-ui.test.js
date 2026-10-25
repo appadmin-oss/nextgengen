@@ -144,7 +144,7 @@ async function contextFor(memberId, admin, viewport) {
        rendered by CurriculumText, and the diagrams were wired into the other
        renderer, so every one an instructor wrote came out as a code block —
        and the editor's preview agreed, which is the worst way to be wrong. */
-    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left\n\n```keys C E G\n```');
+    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left\n\n```keys C E G\n```\n\n```steps 10 Warm up | 30 Learn | 40 Play\n```');
     // The editor's toolbar wraps the selection, and the preview renders it.
     await ap.$eval('.cur-ed-body', el => { el.focus(); el.setSelectionRange(0, 8); });
     await ap.click('.cur-rte-btn.is-b');
@@ -236,6 +236,13 @@ async function contextFor(memberId, admin, viewport) {
         (await mp.$$('.cur-text .lb-keys .is-sounding')).length >= 1);
     chk('…with every control labelled, and a button per note so one can be checked alone',
         (await mp.$$eval('.cur-text .lb-keys button', els => els.length === 4 && els.every(e => (e.getAttribute('aria-label') || '').length > 3))));
+    /* The session bars are measured as DRAWN, not as declared. The share was
+       computed correctly for weeks while the stylesheet put it in a fixed 4px
+       column, so ten minutes and forty minutes were the same length on screen
+       and the unit test — which read the style property — passed throughout. */
+    const bars = await mp.$$eval('.cur-text .lb-step-bar', els => els.map(e => e.getBoundingClientRect().width));
+    chk('the session bars are drawn to scale: 10 | 30 | 40 minutes reads 1 : 3 : 4 (' + bars.map(w => Math.round(w)).join(' | ') + ')',
+        bars.length === 3 && bars[0] > 4 && Math.abs(bars[1] / bars[0] - 3) < 0.12 && Math.abs(bars[2] / bars[0] - 4) < 0.12);
     await mp.click('.cur-mats button.cur-mat');
     chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
     await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
@@ -257,7 +264,12 @@ async function contextFor(memberId, admin, viewport) {
     await dp.close();
     await mp.click('.cur-item:has-text("Finding middle C")');
     await mp.waitForSelector('.cur-lesson');
-    chk('the lesson shows its text as a list, never as HTML, and its material', (await mp.$$('.cur-text li')).length === 2 && (await mp.$$('.cur-mat')).length === 1);
+    /* The lesson's OWN bullets — not every <li> on the screen. A diagram is
+       allowed to be a list too (the session steps are an <ol>), so counting
+       all of them made this check about which blocks the lesson happens to
+       contain rather than about its prose. */
+    chk('the lesson shows its text as a list, never as HTML, and its material',
+        (await mp.$$('.cur-text ul:not(.lb-step-list) li')).length === 2 && (await mp.$$('.cur-mat')).length === 1);
     await mp.click('.cur-opt:has-text("5")');
     await mp.click('button:has-text("Submit answers")');
     await mp.waitForSelector('.cur-result');
