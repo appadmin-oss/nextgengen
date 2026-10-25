@@ -1272,10 +1272,371 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
   quality: crPanel(() => <AdminMembers/>, { tab: "quality" }),   // v1's Data quality and Duplicates, and the rest of its member desk
-  families: crPanel(() => <AdminFamilies/>),
-  /* "Add a centre" in the header, as a labelled form: the directory's own
-     inline row reads as a filter bar, and people looked for it in Settings. */
-  centres: crPanel(() => <AdminCentres/>, { actions: (d, ctx) => { crMbCentreCtx.current = ctx; return ctx.can("people") ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; } }),
   idcards: crPanel(() => <AdminIdCards/>),
-  accounts: crPanel(() => <AdminAccounts/>),
+});
+/* ── Centres, native ──────────────────────────────────────────────────────────
+   Was AdminCentres (page-admin.jsx) mounted whole: a seven-column table whose
+   Edit, Map and Summer venue each opened a wide editor INSIDE a table row —
+   unusable on a phone, and the old UI beside the new one. Now the Control Room's
+   own pieces, so the phone version is the table block's list, the drawer is a
+   sheet, and Edit is a form sheet:
+
+     list   → one row per centre (search, filter by programme / map / page)
+     open   → the centre's record, with Edit · Map · Summer venue · Remove
+     Edit   → every field the old editor had, grouped the same way
+     Map    → /control/members/centres/<id>/map — the GPS and geo-fence widget,
+              which is a real map editor no block can express (CONTRACT: custom)
+
+   Behaviour kept exactly: the same API calls, the same refusals and their words,
+   and the remove flow — the server refuses a centre in use and says what points
+   at it, and RETIRE is offered first because it keeps every record resolving.
+   Gated on `people` (CLAUDE.md §4: a centre's code is a printed ID prefix). */
+
+function crCeProgs(c) { return typeof centreProgrammes === "function" ? centreProgrammes(c) : String(c.programmes || "ngg").split(","); }
+function crCeProgLabel(c) { const p = crCeProgs(c); return p.length === 2 ? "NGG + Summer" : p[0] === "ngg" ? "NGG Club" : "Summer School"; }
+function crCeMapLabel(c) { return c.lat == null ? "Not mapped" : c.geofence ? "Fence on · " + (c.radiusM || 150) + " m" : "Mapped · fence off"; }
+function crCeSummer(c) {
+  const n = c.summerEnrolled || 0;
+  return (c.capacity || 0) > 0 ? n + " / " + c.capacity + (c.full ? " · full" : "") : n + " / no limit";
+}
+function crCeDone() {
+  if (typeof invalidateCentreOptCache === "function") invalidateCentreOptCache();
+  window.dispatchEvent(new Event("ngg:centres-changed"));
+}
+
+function crCeOpen(ctx, c) {
+  const d = ctx.data || {}, can = d.canWrite;
+  const progs = crCeProgs(c);
+  ctx.drawer({
+    title: c.name, sub: [c.code, c.area, crCeProgLabel(c)].filter(Boolean).join(" · "),
+    stats: [["NGG members", crNum(c.members || 0)], ["Summer School", crCeSummer(c)], ["Groups", crNum(c.groups || 0)]],
+    fields: [
+      ["Status", c.status === "retired" ? "Retired — kept so records resolve, not offered" : c.status === "archived" ? "Archived" : "Active"],
+      ["Code", c.code], ["Card colour", c.color],
+      ["Area", c.area], ["Address", c.address],
+      progs.indexOf("ngg") !== -1 ? ["NGG lead", c.leadName || "None"] : null,
+      progs.indexOf("summer") !== -1 ? ["Summer School lead", c.summerLeadName || "None"] : null,
+      ["Phone", c.phone], ["Email", c.email],
+      ["Meets", [c.meetDays, c.meetTime].filter(Boolean).join(", ")],
+      ["Map", crCeMapLabel(c)],
+      ["Public page", c.pageStatus === "published" ? "Live at /centres/" + (c.slug || "") : "Draft — hidden"],
+    ].filter(Boolean),
+    sections: [
+      c.summerWaitlisted ? { h: "Summer School", text: c.summerWaitlisted + " waitlisted." } : null,
+      c.notes ? { h: "Notes", text: c.notes } : null,
+    ].filter(Boolean),
+    actions: can ? [
+      { l: "Edit", primary: true, run: () => crCeEdit(ctx, c) },
+      { l: "Map and geo-fence", run: () => { ctx.closeDrawer(); ctx.setSub(c.centreId + "/map"); } },
+      progs.indexOf("summer") !== -1 ? { l: c.summerLat != null || c.summerAddress ? "Summer venue (set)" : "Summer venue", run: () => { ctx.closeDrawer(); ctx.setSub(c.centreId + "/summer"); } } : null,
+      c.pageStatus === "published" ? { l: "Open the public page", run: () => window.open("/centres/" + (c.slug || ""), "_blank", "noopener") } : null,
+      { l: "Remove", run: () => crCeRemove(ctx, c) },
+    ].filter(Boolean) : [],
+  });
+}
+
+function crCeEdit(ctx, c) {
+  const d = ctx.data || {};
+  const here = (d.leadOptions || []).filter(o => o.centre === c.name), rest = (d.leadOptions || []).filter(o => o.centre !== c.name);
+  const leads = here.concat(rest).map(o => [o.volunteerId, o.name + (o.role ? " · " + o.role : "") + (o.centre && o.centre !== c.name ? " (" + o.centre + ")" : "")]);
+  const has = (v, k) => (v.programmes || []).indexOf(k) !== -1;
+  ctx.closeDrawer();
+  ctx.form({
+    title: "Edit " + c.name, submit: "Save centre", busyLabel: "Saving…",
+    intro: "The code is the printed ID prefix and the colour is the card’s accent band, so change them only before cards are printed.",
+    values: {
+      name: c.name || "", code: c.code || "", color: c.color || "#76B043", status: c.status === "archived" ? "archived" : "active",
+      programmes: crCeProgs(c), capacity: c.capacity ? String(c.capacity) : "",
+      area: c.area || "", address: c.address || "", leadVolunteerId: c.leadVolunteerId || "", summerLeadVolunteerId: c.summerLeadVolunteerId || "",
+      phone: c.phone || "", email: c.email || "", meetDays: c.meetDays || "", meetTime: c.meetTime || "", whatsappUrl: c.whatsappUrl || "", notes: c.notes || "",
+      pageStatus: c.pageStatus || "draft", slug: c.slug || "", tagline: c.tagline || "", headline: c.headline || "",
+      heroImageUrl: c.heroImageUrl || "", heroImageMobileUrl: c.heroImageMobileUrl || "", heroPosition: c.heroPosition || "center bottom",
+      story: c.story || "", gallery: (Array.isArray(c.gallery) ? c.gallery : []).join("\n"),
+    },
+    fields: [
+      { id: "name", l: "Centre name", req: true, max: 80, check: v => String(v).trim().length >= 2 ? "" : "At least 2 characters." },
+      { id: "code", l: "Code (1–4 letters)", req: true, max: 4, check: v => /^[A-Za-z]{1,4}$/.test(String(v).trim()) ? "" : "One to four letters." },
+      { id: "color", l: "Card colour", type: "color" },
+      { id: "status", l: "Status", type: "chips", req: true, opts: [["active", "Active"], ["archived", "Archived"]] },
+      { id: "programmes", l: "Programmes at this centre", type: "multi", req: true, opts: [["ngg", "The NGG Club"], ["summer", "Summer School"]],
+        check: v => (v || []).length ? "" : "Tick the NGG Club, Summer School, or both." },
+      { id: "capacity", l: "Summer School capacity", im: "numeric", ph: "0 for no limit", when: v => has(v, "summer"), check: v => v === "" || /^\d+$/.test(String(v)) ? "" : "A whole number." },
+      { id: "area", l: "Area or city", max: 120, ph: "e.g. Alimosho · Lagos" },
+      { id: "address", l: "Street address", max: 240, ph: "Building, street, landmark" },
+      { id: "leadVolunteerId", l: "NGG centre lead", type: "select", opts: leads, ph: "None", when: v => has(v, "ngg") },
+      { id: "summerLeadVolunteerId", l: "Summer School lead", type: "select", opts: leads, ph: "None", when: v => has(v, "summer") },
+      { id: "phone", l: "Phone", type: "tel", max: 40, ph: "+234 …" },
+      { id: "email", l: "Email", type: "email", email: true, max: 160 },
+      { id: "meetDays", l: "Meeting days", max: 120, ph: "e.g. Saturdays" },
+      { id: "meetTime", l: "Meeting time", max: 60, ph: "e.g. 09:00 – 13:00" },
+      { id: "whatsappUrl", l: "Group or join link", max: 240, ph: "chat.whatsapp.com/… · wa.me/… · forms.gle/…",
+        help: "Shown to an applicant right after they apply, matched to the centre they picked." },
+      { id: "notes", l: "Staff notes", type: "textarea", rows: 3 },
+      { id: "pageStatus", l: "Public page", type: "chips", req: true, opts: [["draft", "Draft — hidden"], ["published", "Published — live"]],
+        help: "The centre’s page at /centres/<slug>: a hero image, a tagline and a story." },
+      { id: "slug", l: "Page address (slug)", max: 64, ph: "made from the name if left empty", when: v => v.pageStatus === "published" || !!v.slug },
+      { id: "tagline", l: "Tagline", max: 200, when: v => v.pageStatus === "published" },
+      { id: "headline", l: "Headline", max: 200, when: v => v.pageStatus === "published" },
+      { id: "heroImageUrl", l: "Hero image link", max: 400, ph: "https://", when: v => v.pageStatus === "published" },
+      { id: "heroFile", l: "…or upload the hero image", type: "file", accept: "image/*", when: v => v.pageStatus === "published" },
+      { id: "heroImageMobileUrl", l: "Hero image for phones (optional)", max: 400, ph: "https://", when: v => v.pageStatus === "published" },
+      { id: "heroPosition", l: "Hero focal point", type: "select", req: true, when: v => v.pageStatus === "published",
+        opts: [["center bottom", "Bottom · centre"], ["center center", "Centre"], ["center top", "Top · centre"], ["left bottom", "Bottom · left"], ["right bottom", "Bottom · right"]] },
+      { id: "story", l: "Story", type: "textarea", rows: 6, when: v => v.pageStatus === "published" },
+      { id: "gallery", l: "Gallery image links (one per line)", type: "textarea", rows: 3, when: v => v.pageStatus === "published" },
+    ],
+    onSubmit: async v => {
+      let hero = String(v.heroImageUrl || "").trim();
+      if (v.heroFile && typeof v.heroFile !== "string") { const r = await NGGApi.uploadOrInline(v.heroFile, "cover"); if (r && r.url) hero = r.url; }
+      try {
+        await NGGApi.admin.registration.centreUpsert({
+          centreId: c.centreId, name: v.name.trim(), code: v.code.trim().toUpperCase(), color: v.color, status: v.status,
+          capacity: v.capacity === "" ? 0 : parseInt(v.capacity, 10) || 0,
+          address: v.address, area: v.area, leadVolunteerId: v.leadVolunteerId || "", summerLeadVolunteerId: v.summerLeadVolunteerId || "",
+          phone: v.phone, email: v.email, meetDays: v.meetDays, meetTime: v.meetTime, notes: v.notes, whatsappUrl: String(v.whatsappUrl || "").trim(),
+          slug: String(v.slug || "").trim(), pageStatus: v.pageStatus, tagline: v.tagline, headline: v.headline,
+          heroImageUrl: hero, heroImageMobileUrl: String(v.heroImageMobileUrl || "").trim(), heroPosition: v.heroPosition,
+          story: v.story, gallery: String(v.gallery || "").split("\n").map(s => s.trim()).filter(Boolean), programmes: v.programmes,
+        });
+      } catch (e) {
+        const F = { code_taken: ["code", "That code is already used."], code_reserved: ["code", e.detail || "That code is reserved."],
+          programme_required: ["programmes", "Tick the NGG Club, Summer School, or both."], bad_email: ["email", "That email address isn’t valid."],
+          bad_whatsapp: ["whatsappUrl", "The link must start with https://"], bad_lead: ["leadVolunteerId", "Pick a current volunteer as lead."],
+          bad_color: ["color", "Pick a valid colour."], bad_image: ["heroImageUrl", "Image links must start with https://"] }[e.code];
+        if (F) return { fieldErrors: { [F[0]]: F[1] } };
+        throw e;
+      }
+      crCeDone(); ctx.reload();
+    },
+    done: v => v.name.trim() + " saved.",
+  });
+}
+
+async function crCeRemove(ctx, c) {
+  ctx.closeDrawer();
+  if (!(await ctx.confirm({ title: "Remove " + c.name + "?", body: "Members already posted here keep the centre on their record, and cards already printed keep this code and colour.", cta: "Remove", danger: true }))) return;
+  try {
+    await NGGApi.admin.registration.centreDelete(c.centreId);
+    crCeDone(); ctx.toast(c.name + " removed."); ctx.reload();
+  } catch (e) {
+    if ((e.code || e.message) !== "centre_in_use") { ctx.toast(crErr(e, "Couldn’t remove the centre."), null, true); return; }
+    const u = (e.data && e.data.uses) || {}, parts = [];
+    if (u.members) parts.push(crPlural(u.members, "NGG member"));
+    if (u.participants) parts.push(crPlural(u.participants, "Summer School participant"));
+    if (u.summerGroups) parts.push(crPlural(u.summerGroups, "group"));
+    if (u.volunteers) parts.push(crPlural(u.volunteers, "volunteer"));
+    const retire = await ctx.confirm({
+      title: "Still in use by " + (parts.join(", ") || "other records"),
+      body: "Retiring is almost certainly what you want: the centre stops being offered anywhere, and every record that names it still resolves. Deleting it outright leaves those records pointing at a centre that doesn’t exist.",
+      cta: "Retire it", cancel: "Delete anyway", danger: false,
+    });
+    try {
+      await NGGApi.admin.registration.centreDelete(c.centreId, retire ? { retire: true } : { force: true });
+      crCeDone(); ctx.toast(retire ? c.name + " retired — no longer offered, records intact." : c.name + " deleted."); ctx.reload();
+    } catch (e2) { ctx.toast(crErr(e2, "Couldn’t remove the centre."), null, true); }
+  }
+}
+
+/* The map and the Summer venue are real editors (GPS capture, a radius, an address
+   search), kept as they are and given the page to themselves — not squeezed into a
+   table row. `.cr-panel` draws them in the Control Room's design system. */
+function CrCeSubEditor({ ctx, c, which }) {
+  const back = () => ctx.setSub("");
+  const saved = () => { crCeDone(); ctx.setSub(""); ctx.reload(); };
+  return (
+    <div className="cr-ce-sub">
+      <button type="button" className="cr-btn is-sm" onClick={back}><CrIcon n="arrow-left"/>All centres</button>
+      <h2 className="cr-ce-h">{c.name} · {which === "map" ? "Map and geo-fence" : "Summer School venue"}</h2>
+      <div className="cr-panel admin-main">
+        {which === "map" ? <CentreGeoEditor c={c} onSaved={saved}/> : <SummerVenueEditor c={c} onSaved={saved}/>}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(CR_TAB_DEFS, {
+  centres: {
+    skeleton: ["table"],
+    load: async () => {
+      const r = await NGGApi.admin.registration.centres();
+      return { centres: r.centres || [], leadOptions: r.leadOptions || [], canWrite: r.canWrite !== false };
+    },
+    actions: (d, ctx) => { crMbCentreCtx.current = ctx; return d && d.canWrite && ctx.can("people") ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; },
+    blocks: (d, ctx) => {
+      const [id, sub] = String(ctx.sub || "").split("/");
+      const c = id && d.centres.find(x => x.centreId === id);
+      if (c && (sub === "map" || sub === "summer") && d.canWrite) return [{ type: "custom", span: 6, render: c2 => <CrCeSubEditor ctx={c2 || ctx} c={c} which={sub}/> }];
+      const out = [];
+      if (!d.canWrite) out.push({ type: "note", span: 6, icon: "lock-simple", text: "You can see the directory but not change it.", sub: "A centre’s code and colour are printed on member ID cards, so changing one needs the member-desk (people) permission." });
+      const unmapped = d.centres.filter(x => x.lat == null && x.status !== "retired").length;
+      if (unmapped && d.canWrite) out.push({ type: "note", span: 6, icon: "map-pin", tone: "warn", text: crPlural(unmapped, "centre") + " not mapped yet.", sub: "Without a map the check-in desk cannot confirm someone is at the centre. Open one and choose Map and geo-fence." });
+      out.push({
+        type: "table", span: 6, nosel: true, title: "Centres", sub: crPlural(d.centres.length, "centre"),
+        search: "Name, code, area or address",
+        cols: ["Centre", "Area", "Runs", "Lead", "#NGG members", "Summer School", "Map", "Page", "Status"],
+        filters: ["Runs", "Map", "Page", "Status"],
+        sortInit: null,
+        emptyText: "No centres yet. A centre is a place NGG meets; its code becomes the prefix on every member card printed there, so pick it carefully.",
+        rows: d.centres.map(c2 => ({
+          key: c2.centreId,
+          cells: [
+            { k: "strong", t: c2.name, s: c2.code },
+            { k: "text", t: c2.area || "—", s: c2.address || "" },
+            { k: "text", t: crCeProgLabel(c2) },
+            { k: "text", t: [crCeProgs(c2).indexOf("ngg") !== -1 ? (c2.leadName || "No NGG lead") : null, crCeProgs(c2).indexOf("summer") !== -1 ? (c2.summerLeadName ? "Summer · " + c2.summerLeadName : "No Summer lead") : null].filter(Boolean).join(" · ") },
+            { k: "num", t: crNum(c2.members || 0), v: c2.members || 0 },
+            { k: "text", t: crCeSummer(c2), s: c2.summerWaitlisted ? c2.summerWaitlisted + " waitlisted" : "" },
+            { k: "text", t: crCeMapLabel(c2) },
+            { k: "text", t: c2.pageStatus === "published" ? "Live" : "Draft" },
+            { k: "status", t: c2.status === "retired" ? "Retired" : c2.status === "archived" ? "Archived" : "Active", tone: c2.status === "retired" || c2.status === "archived" ? "neutral" : "ok" },
+          ],
+          open: () => crCeOpen(ctx, c2),
+        })),
+      });
+      return out;
+    },
+  },
+});
+
+/* ── Family accounts, native ─────────────────────────────────────────────────
+   Was AdminFamilies mounted whole. Same op (admin.families list / decide), same
+   rules: approving connects a parent to a child's attendance, conduct, fees and
+   lessons, so it is confirmed with the count read first; refusing and
+   disconnecting need a reason, because the parent is emailed it. Per-row verdicts
+   are reported (FAMILY_REFUSALS), never a bare "done". The status is a filter on
+   the server's own list, so the counts come from the server. */
+const CR_FAM_STATUS = [["pending", "Waiting"], ["active", "Connected"], ["refused", "Refused"], ["revoked", "Disconnected"], ["removed", "Left by the parent"]];
+
+async function crFamDecide(ctx, action, ids, note) {
+  const r = await NGGApi.admin.families.decide(action, ids, note || "");
+  const refused = (r.results || []).filter(x => !x.ok);
+  const why = refused.map(x => (typeof FAMILY_REFUSALS !== "undefined" && FAMILY_REFUSALS[x.error]) || x.error).join(", ");
+  if (refused.length && r.done) ctx.toast(r.done + " of " + ids.length + " done · " + refused.length + " refused (" + why + ").", null, true);
+  else if (refused.length) ctx.toast("Nothing changed — " + why + ".", null, true);
+  else ctx.toast(crPlural(r.done || 0, "connection") + " " + (action === "approve" ? "approved" : action === "refuse" ? "refused" : "disconnected") + "." + (action === "approve" ? "" : " The parent" + (r.done === 1 ? " has" : "s have") + " been emailed."));
+  ctx.reload();   // the counts and the list both move: load() stamps a new rev, which refetches the table
+  return r;
+}
+function crFamReason(ctx, action, ids) {
+  return new Promise(res => ctx.form({
+    title: (action === "refuse" ? "Refuse " : "Disconnect ") + crPlural(ids.length, "connection"),
+    intro: action === "refuse" ? "The parent is emailed this reason, and can try again with the child’s own code." : "This takes effect at once: the parent stops seeing the child. They are emailed this reason.",
+    submit: action === "refuse" ? "Refuse" : "Disconnect", busyLabel: "Sending…",
+    values: { note: "" },
+    fields: [{ id: "note", l: "Your reason — the parent reads this", type: "textarea", rows: 4, req: true, max: 500 }],
+    onSubmit: async v => { const r = await crFamDecide(ctx, action, ids, v.note.trim()); res(r); return r; },
+    done: () => null,
+  }));
+}
+
+function crFamServer(status) {
+  return { fetch: async ({ q, page, pageSize }) => {
+    const r = await NGGApi.admin.families.list({ status: status, q });
+    const all = r.rows || [];
+    return { total: all.length, rows: all.slice(page * pageSize, page * pageSize + pageSize).map(x => ({
+      key: x.linkId,
+      cells: [
+        { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · ") },
+        { k: "text", t: (x.guardianName || "—") + (x.relationshipLabel ? " (" + x.relationshipLabel + ")" : ""), s: [x.guardianEmail, x.guardianPhone].filter(Boolean).join(" · ") },
+        { k: "text", t: x.recordParentName || "—", s: x.recordParentEmail || "" },
+        { k: "text", t: x.via === "code" ? "Child’s code" : "Record email", s: x.note || "" },
+        { k: "text", t: crDate(x.decidedAt || x.createdAt) },
+      ],
+    })) };
+  } };
+}
+Object.assign(CR_TAB_DEFS, {
+  families: {
+    skeleton: ["table"],
+    load: async () => {
+      const r = await NGGApi.admin.families.list({ status: "pending", q: "" });
+      /* One server object per status, made once here: a table re-fetches whenever its
+         `server` changes identity, so one built inside blocks() — which runs on every
+         render — fetched for ever and never left its skeleton. */
+      const servers = {};
+      CR_FAM_STATUS.forEach(([st]) => { servers[st] = crFamServer(st); });
+      return { counts: r.counts || {}, scoped: !!r.scoped, rev: Date.now(), servers };
+    },
+    blocks: (d, ctx) => {
+      const status = (ctx.sub || "pending");
+      const known = CR_FAM_STATUS.some(s => s[0] === status) ? status : "pending";
+      const bulk = known === "pending" ? [
+        { l: "Approve", max: 200, run: async keys => {
+            if (!(await ctx.confirm({ title: "Connect " + crPlural(keys.length, "family", "families") + "?", body: "Each parent will see their child’s attendance, conduct, fees and lessons, and the child is told. Only approve when you know this is the parent or guardian.", cta: "Approve" }))) return false;
+            return crFamDecide(ctx, "approve", keys);
+          } },
+        { l: "Refuse", max: 200, run: keys => crFamReason(ctx, "refuse", keys) },
+      ] : known === "active" ? [
+        { l: "Disconnect", max: 200, run: keys => crFamReason(ctx, "revoke", keys) },
+      ] : [];
+      return [
+        { type: "note", span: 6, icon: "users-three", text: "Parents follow their children from their own family account at /family.",
+          sub: "A child’s code connects at once. A match on the parent email in the record waits here until someone confirms it." + (d.scoped ? " You see your centres only." : "") },
+        { type: "custom", span: 6, render: (c, phone) => (
+          <div className={phone ? "cr-pchips" : "cr-wrap"} role="group" aria-label="Show connections that are">
+            {CR_FAM_STATUS.map(([k, l]) => (
+              <button key={k} type="button" className="cr-chip" aria-pressed={known === k} onClick={() => ctx.setSub(k === "pending" ? "" : k)}>
+                {l}{d.counts[k] ? " · " + crNum(d.counts[k]) : ""}
+              </button>
+            ))}
+          </div>
+        ) },
+        { type: "table", span: 6, key: "fam-" + known, nosel: !bulk.length, bulk, reloadKey: d.rev,
+          search: "Member, parent name or email",
+          cols: ["Member", { l: "Parent or guardian", wrap: true }, { l: "On the record", wrap: true }, "How", "When"],
+          server: d.servers[known],
+          emptyText: known === "pending" ? "Nobody is waiting to connect." : "No connections here." },
+      ];
+    },
+  },
+});
+
+/* ── Member accounts, native ─────────────────────────────────────────────────
+   Was AdminAccounts mounted whole. Same op (admin.accounts overview / unlock) and
+   the same position, stated where the operator reads it: ending a membership is
+   not done here. Each signal the server raises is one attention row; opening it
+   lists the people in a drawer, where a lock can be lifted one person at a time
+   (deliberately not in bulk: lifting a lock is a judgement about one account). */
+function crAcctOpen(ctx, sig) {
+  ctx.drawer({
+    title: sig.label, sub: crPlural(sig.count, "account"),
+    fields: [], stats: [],
+    sections: [
+      { h: "Why it matters", text: sig.why },
+      { h: "Who", list: sig.members.map(m => ({
+          t: m.fullName || "—",
+          s: [m.displayId, m.centre].filter(Boolean).join(" · ") || m.memberId,
+          m: sig.id === "locked" ? "" : (m.email || "no email"),
+          act: sig.id === "locked" ? { l: "Lift the lock", run: async () => {
+            try { await NGGApi.admin.accounts.unlock(m.memberId); ctx.toast((m.fullName || "They") + " can sign in again."); ctx.closeDrawer(); ctx.reload(); }
+            catch (e) { ctx.toast(crErr(e, "The lock was not lifted."), null, true); }
+          } } : null,
+        })), empty: "Nobody." },
+      sig.count > sig.members.length ? { h: "", text: "…and " + crNum(sig.count - sig.members.length) + " more. The roster holds them all." } : null,
+    ].filter(Boolean),
+    actions: [],
+  });
+}
+
+Object.assign(CR_TAB_DEFS, {
+  accounts: {
+    skeleton: ["kpis", "queue"],
+    load: async () => NGGApi.admin.accounts.overview(),
+    actions: (d, ctx) => [{ l: "Refresh", icon: "arrow-clockwise", run: () => ctx.reload() }],
+    blocks: (d, ctx) => {
+      const sig = (d.signals || []).filter(s => s.count > 0);
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Active accounts", v: crNum(d.totals && d.totals.active) },
+          { l: "Erased", v: crNum(d.totals && d.totals.closed) },
+          { l: "Need a look", v: crNum(sig.reduce((n, s) => n + s.count, 0)) },
+        ] },
+        { type: "note", span: 6, icon: "info", text: "Whether somebody can get in, which the roster assumes and never checks.",
+          sub: "Ending a membership is not done here: it is settled by the agreement between NGG and the family, and no button on this screen or a member’s own dashboard closes an account." },
+        { type: "attention", span: 6, title: "What needs a look",
+          empty: "Nobody is locked out, everybody has an email to sign in with, and every staff account has a second factor. Nothing to do.",
+          rows: sig.map(s => ({ n: s.count, l: s.label, s: s.why, tone: s.id === "locked" ? "bad" : "warn", onClick: () => crAcctOpen(ctx, s) })) },
+      ];
+    },
+  },
 });

@@ -2472,7 +2472,8 @@ function CurriculumEditor({ unit, courses, divisions, canWrite, aiEnabled, onClo
             fences exist — could only be seen by leaving the text. */}
         <aside className="led-see" aria-label="What the member sees">
           <div className="led-see-head"><LedIcon name="eye"/> What the member sees</div>
-          <div className="led-see-body">
+          {/* Focusable, so a keyboard can scroll it where it is its own scroll box (wide). */}
+          <div className="led-see-body" tabIndex={0} role="region" aria-label="Preview of the lesson">
             {f.title.trim() ? <h2 className="led-see-title">{f.title}</h2> : null}
             {f.summary.trim() ? <p className="led-see-sum">{f.summary}</p> : null}
             {f.body.trim()

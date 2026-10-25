@@ -347,6 +347,24 @@ chk('broadcast history lists past announcements', (function () {
     $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
     return !empty($h['ok']) && (bool)array_filter($h['announcements'], fn($a) => $a['title'] === 'Egbeda only' && $a['audience'] === 'Egbeda');
 })());
+// An audience nobody can name is refused — it used to be stamped '' (everyone) and emailed to every active member.
+chk('broadcast refuses an unknown audience instead of sending it to everyone', (function () {
+    $before = (int)db_row("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'announcement'")['n'];
+    $r = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Typo', 'body' => 'x', 'audience' => 'Egbedaa', 'email' => true]);
+    return ($r['error'] ?? '') === 'bad_audience' && (int)db_row("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'announcement'")['n'] === $before;
+})());
+// A centre other than the two that used to be typed into the code can be addressed, and only its members see it.
+chk('broadcast reaches a centre beyond the two that used to be hard-coded, and nobody else', (function () use ($feedHas) {
+    db_insert('centres', ['centreId' => 'CEN-BC-NEW', 'name' => 'Ikorodu', 'code' => 'IKD', 'color' => '#336699', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-BC-IKD', 'fullName' => 'Ike Odu', 'email' => 'ike@bc.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ikorodu', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Ikorodu only', 'body' => 'x', 'audience' => 'Ikorodu']);
+    $ok = !empty($r['ok']) && $feedHas('NGG-BC-IKD', 'Ikorodu only') && !$feedHas('NGG-2025-0001', 'Ikorodu only');
+    $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
+    $ik = array_values(array_filter($h['audiences'] ?? [], fn($a) => $a['id'] === 'Ikorodu'));
+    $ok = $ok && $ik && $ik[0]['n'] === 1 && ($h['audiences'][0]['id'] ?? '') === 'all';
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-BC-IKD'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-BC-NEW'");
+    return $ok;
+})());
 
 /* ── Brute-force floors ───────────────────────────────────────────────────
  *

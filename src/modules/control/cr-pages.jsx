@@ -89,7 +89,7 @@ const CR_PAGES = {
   ] },
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
     { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },
-    { id: "curriculum", label: "Curriculum", desc: "The four divisions. Chess is compulsory in all of them.", cap: "curriculum" },
+    { id: "curriculum", label: "Curriculum", desc: "What the Club teaches, lesson by lesson, and the exam that ends each one.", cap: "curriculum" },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },

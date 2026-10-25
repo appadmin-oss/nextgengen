@@ -56,7 +56,7 @@ const stepTexts = async pg => { const out = []; for (let k = 0; k < 14; k++) { c
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await require(ROOT + '/node_modules/playwright-core').chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await require(ROOT + '/node_modules/playwright-core').chromium.launch(d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
 
     console.log('on a phone, first visit');
     const P = await open(PHONE, null);

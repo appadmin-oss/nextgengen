@@ -3007,3 +3007,31 @@ Root cause of the course faults (Tech child with a media course, "tech · Tech",
 Open decisions for the owner:
 - Do Media Lab and Practical Coding join the catalogue (Media, Technology), or do their lessons move under existing courses?
 - Until confirmed, do children see their proposed courses marked unconfirmed (recommended), or nothing?
+
+## The Control Room on a phone: old panels rebuilt, not reskinned (2026-10-25)
+
+The owner's reading: "the control room is not phone first — just build a mobile version." The new
+Control Room (`src/modules/control/`) already had a phone tree (app bar, page pills, tab bar, blocks
+that draw as lists). What was not mobile was everything mounted through `CrPanelMount`: twenty-five
+`page-admin.jsx` panels drawing their desktop layout inside the phone shell, in the old UI's look.
+
+- **Rebuilt as blocks (mobile by construction):** Centres, Families, Accounts (People); Companion
+  check-ins (Mentors & volunteers); Announcements and Newsletter (Announcements). Same ops, same
+  guards and refusals, same words. Centres' map and Summer-venue editors are real widgets and stay as a
+  `custom` block on their own sub-page (`/control/members/centres/<id>/map`).
+- **Still mounted (next):** Data quality, ID cards, Sign-in security, Sessions, Missions, Anchor,
+  Timetable, Curriculum, Mentors, Pairings, Volunteers, Threads, Posts, Site, Status pages, Forms,
+  Promotions, Quote of the week, Summer. Until each is rebuilt, `.cr-app .cr-panel` in styles-app.css
+  draws the old classes with the new components' exact values, and on a phone long panel intros fold
+  to three lines (`crFoldHints`, cr-ui.jsx).
+- **Shell and blocks fixed on the way:** the drawer dropped `list` sections on a phone (now one
+  renderer, `crDrawerSec`, with optional per-row actions); KPI columns follow the count (no holes); the
+  phone KPI panel is one joined box at half the height; the secondary-actions row could be crushed by a
+  tall page (`flex-shrink: 0`); `.cr-app :where(button…)` stops the colour reset beating
+  `.cr-btn.is-primary` and the selected page tab (ink on ink, 1.00:1).
+- **A server fault found on the way:** `admin_broadcast` knew two centres by name, and stamped any other
+  audience '' — which the feed reads as everyone, while email went to every active member. One resolver
+  now (`admin_broadcast_audience`): everyone, a programme, or a real centre; anything else is refused.
+- **Server tables in a native tab:** build the `server` object in `load`, never in `blocks()` — a table
+  refetches when `server` changes identity, so one made per render never leaves its skeleton.
+

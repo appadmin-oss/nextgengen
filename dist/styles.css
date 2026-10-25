@@ -8609,6 +8609,12 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 }
 .lb-pitch:hover { background: var(--surface-2, #eef1f6); }
 .lb-pitch.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+/* A member hears these on a phone, by thumb: Play was 36px and each note 32. On a touch
+   screen both take the 44px floor (CLAUDE.md §9); a mouse keeps the compact row. */
+@media (pointer: coarse) {
+  .lb-play { min-height: 44px; padding: 0 14px; }
+  .lb-pitch { min-width: 44px; min-height: 44px; }
+}
 
 /* The note that is sounding, in each of the three music blocks. */
 .lb-key-white.is-sounding { fill: #f0a500; }

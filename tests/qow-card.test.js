@@ -84,7 +84,7 @@ const SIZES = { feed: [1080, 1350], story: [1080, 1920], wide: [1200, 630] };
     if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
     else {
       const d = fs.existsSync('/opt/pw-browsers') ? fs.readdirSync('/opt/pw-browsers').find(x => x.startsWith('chromium-')) : null;
-      if (d) launch.executablePath = `/opt/pw-browsers/${d}/chrome-linux/chrome`;
+      if (d) launch.executablePath = require('./_responsive-probe').chromiumPath(require('fs'));
     }
     browser = await chromium.launch(launch);
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });

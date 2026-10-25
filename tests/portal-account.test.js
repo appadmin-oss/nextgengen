@@ -97,7 +97,7 @@ async function as(memberId, admin, viewport) {
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
     // A fake microphone, so a voice note can be recorded headless.
     const media = { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] };
-    browser = await chromium.launch(Object.assign(media, process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {}));
+    browser = await chromium.launch(Object.assign(media, process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {}));
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const shot = (pg, n) => pg.screenshot({ path: (process.env.PA_SHOTS || TMP) + '/' + n + '.png' });
     const pwIs = pw => q(`password_verify(${JSON.stringify(pw)}, (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-PA-K1'")['passwordHash'])`);

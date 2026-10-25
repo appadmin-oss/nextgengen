@@ -172,6 +172,64 @@ async function contextFor(memberId, admin, viewport) {
     chk('the lesson saves, published, with its check and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId) ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":1,"mats":1,"ans":"1"}');
     await ap.screenshot({ path: path.join(SHOTS, 'editor.png'), fullPage: true });
 
+    /* The editor on a phone, which its own stylesheet calls "the normal case, not the
+       degraded one". Three measurements, each a defect it shipped with:
+         · every control a thumb presses clears the 44px floor (CLAUDE.md §9) — the part
+           buttons were 30px, the remove crosses 32, back 36;
+         · the member's-view pane is not a scroll box inside the page's own scroll. At
+           60vh with its own overflow, on a phone it was a second scroller a thumb could
+           not leave by swiping, and its scroll was unreachable from a keyboard;
+         · the sticky bar leaves room to write: with the title wrapped onto its own row it
+           kept a third of a 740px screen pinned over the lesson. */
+    {
+      const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-CU-ADM'"), true);`, ['session']);
+      const phone = await browser.newContext({ viewport: { width: 390, height: 740 }, hasTouch: true, isMobile: true });
+      await phone.addCookies([
+        { name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true },
+        { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' },
+      ]);
+      const pp = await phone.newPage();
+      await pp.goto(BASE + '/control/learning/curriculum/desk', { waitUntil: 'domcontentloaded' });
+      await waitForBoot(pp);
+      await pp.waitForSelector('.admin-empty, .admin-table', { timeout: 60000 });
+      await pp.click('button:has-text("New lesson")');
+      await pp.waitForSelector('.led');
+      const m = await pp.evaluate(() => {
+        const small = [];
+        for (const el of document.querySelectorAll('.led button, .led summary, .led select, .led label.cur-rte-btn')) {
+          const r = el.getBoundingClientRect();
+          if (!r.width || getComputedStyle(el).visibility === 'hidden') continue;
+          if (r.height < 44 || r.width < 44) small.push(Math.round(r.width) + '×' + Math.round(r.height) + ' ' + (el.className || el.tagName) + ' "' + (el.getAttribute('aria-label') || el.textContent).trim().slice(0, 24) + '"');
+        }
+        // The page tabs above the editor: the selected one is a filled pill, and its label
+        // must still be readable on it.
+        const rgb = c => (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const lum = ([r, g, b]) => { const f = x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+        // Every filled control on screen, not one: a reset that out-ranked the selected
+        // tab's colour out-ranked the primary buttons' too.
+        const unreadable = [];
+        for (const b of document.querySelectorAll('.cr-app button, .cr-app [role="tab"]')) {
+          const tc = getComputedStyle(b), bg = rgb(tc.backgroundColor);
+          if (!b.getClientRects().length || !b.innerText.trim() || b.disabled) continue;
+          if (/rgba\(.*,\s*0\)$/.test(tc.backgroundColor) || tc.backgroundColor === 'transparent') continue;
+          const a = lum(rgb(tc.color)), c = lum(bg), ratio = (Math.max(a, c) + .05) / (Math.min(a, c) + .05);
+          if (ratio < 4.5) unreadable.push('"' + b.innerText.trim().slice(0, 20) + '" ' + ratio.toFixed(2) + ':1');
+        }
+        const see = document.querySelector('.led-see-body'), cs = getComputedStyle(see);
+        // What is actually pinned: the whole bar, or (narrow) only its actions row.
+        const bar = document.querySelector('.led-top');
+        const pinned = [bar, document.querySelector('.led-act')].filter(e => e && getComputedStyle(e).position === 'sticky');
+        const top = pinned.length ? Math.max(...pinned.map(e => e.getBoundingClientRect().height)) : 0;
+        return { small, nested: /(auto|scroll)/.test(cs.overflowY) && cs.maxHeight !== 'none', top, unreadable };
+      });
+      await pp.screenshot({ path: path.join(SHOTS, 'editor-phone.png'), fullPage: false });
+      chk('editor on a phone: every control clears 44px' + (m.small.length ? ' — ' + m.small.slice(0, 6).join(' · ') : ''), m.small.length === 0);
+      chk("editor on a phone: the member's view is not a scroll box inside the page", !m.nested);
+      chk('editor on a phone: something stays pinned, and it keeps under a fifth of the screen (' + Math.round(m.top) + 'px)', m.top > 0 && m.top <= 740 / 5);
+      chk('every filled button and tab on the screen can be read' + (m.unreadable.length ? ' — ' + m.unreadable.join(' · ') : ''), m.unreadable.length === 0);
+      await phone.close();
+    }
+
     // The stored file serves to a signed-in reader, and not to a stranger.
     chk('the stored material does not serve without a session', (await get(BASE + matUrl)).status === 401);
 
