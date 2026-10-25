@@ -31020,6 +31020,70 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('curriculum: the matching is not only music ("Drama" lessons are Acting\'s, "Programming" Coding\'s)', curriculum_course_parent('Drama') === 'Acting' && curriculum_course_parent('programming') === 'Coding');
     db_exec("DELETE FROM curriculum_units WHERE unitId IN ('U-PIANO-1', 'U-MI-1')");
     chk('instructor lesson: an unknown course, or a requester who is no staff, is refused', !empty(staff_curriculum_lesson(['requesterId' => 'NGG-NOBODY', 'course' => 'Coding', 'title' => 'x'])['error']));
+
+    /* ── An instructor writes a lesson, in the Control Room's own editor ──
+       The editor is now one screen for both portals, so the ONLY thing that
+       makes an instructor's reach narrower is these guards. If they go, the
+       instructor's screen silently becomes a curriculum lead's. */
+    (function () {
+        db_insert('members', ['memberId' => 'NGG-CURW-1', 'fullName' => 'Ife Writer', 'email' => 'ife.curw@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('volunteers', ['volunteerId' => 'VOL-CURW-1', 'memberId' => 'NGG-CURW-1', 'fullName' => 'Ife Writer',
+            'email' => 'ife.curw@example.com', 'role' => 'instructor', 'status' => 'active', 'safeguarding' => 'cleared',
+            'programme' => 'ngg', 'centre' => 'Egbeda', 'courses' => json_encode(['Piano']), 'createdAt' => now_iso()]);
+
+        $mk = fn(array $o) => staff_curriculum_lesson($o + ['requesterId' => 'NGG-CURW-1', 'course' => 'Piano', 'week' => 40,
+            'title' => 'Both hands at once', 'summary' => 'Putting the two hands together.',
+            'body' => "## Warm-up\n\nStretch.\n\n## Make it fit you\n\n- **If this is new to you:** one hand at a time.\n- **If you already can:** add the pedal.",
+            'objectives' => ['You will play the scale with both hands'],
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which hand leads?', 'options' => ['Left', 'Right'], 'answer' => 'Right', 'points' => 1]],
+            'materials' => [['title' => 'Scale sheet', 'url' => 'https://example.org/scales.pdf']]]);
+
+        $w = $mk([]);
+        chk('instructor lesson: the whole lesson saves — objectives, a review question and a material, not four fields',
+            !empty($w['ok']) && (int)db_row('SELECT COUNT(*) c FROM curriculum_checks WHERE unitId = ?', [$w['unitId']])['c'] === 1
+            && (int)db_row('SELECT COUNT(*) c FROM curriculum_materials WHERE unitId = ?', [$w['unitId']])['c'] === 1
+            && json_decode((string)db_row('SELECT objectives FROM curriculum_units WHERE unitId = ?', [$w['unitId']])['objectives'], true) === ['You will play the scale with both hands']);
+        chk('instructor lesson: without the curriculum capability it is a DRAFT, whatever the request asked for',
+            ($w['status'] ?? '') === 'draft'
+            && (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'course' => 'Piano', 'week' => 41, 'title' => 'Sneak', 'status' => 'published'])['status'] ?? '') === 'draft');
+        chk('instructor lesson: a course they do not teach is refused',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'course' => 'Acting', 'week' => 40, 'title' => 'Not mine'])['error'] ?? '') === 'not_your_course');
+
+        /* Where in the week a lesson sits is the server's. An editor opens a
+           new lesson at position 1 because that is a sensible default for a
+           field, not because anybody chose it — honouring it had every first
+           lesson an instructor wrote refused for a slot they never picked. */
+        $second = $mk(['title' => 'Both hands, faster']);
+        chk('instructor lesson: a second lesson in the same week is placed after the first, not refused',
+            !empty($second['ok']) && (int)$second['position'] === (int)$w['position'] + 1);
+
+        $e = staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40,
+                                      'title' => 'Both hands at once, slowly', 'body' => 'Rewritten.']);
+        chk('instructor lesson: they can edit their own draft, and it stays one lesson',
+            !empty($e['ok']) && $e['unitId'] === $w['unitId']
+            && (string)db_row('SELECT title FROM curriculum_units WHERE unitId = ?', [$w['unitId']])['title'] === 'Both hands at once, slowly');
+
+        db_exec("UPDATE curriculum_units SET status = 'published' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: a PUBLISHED lesson is refused — children are working from it',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Edit anyway'])['error'] ?? '') === 'already_published');
+        db_exec("UPDATE curriculum_units SET status = 'draft' WHERE unitId = ?", [$w['unitId']]);
+
+        db_exec("UPDATE curriculum_units SET createdBy = 'NGG-SOMEONE' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: another person\'s draft is refused',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Not mine either'])['error'] ?? '') === 'not_your_lesson');
+
+        /* The course on the stored row decides, never the one the request
+           claims — otherwise an instructor edits any lesson in the programme
+           by naming a course they happen to teach. */
+        db_exec("UPDATE curriculum_units SET course = 'Acting', createdBy = 'NGG-CURW-1' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: the course is read off the stored lesson, not off the request',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Course swap'])['error'] ?? '') === 'not_your_course');
+
+        db_exec("DELETE FROM curriculum_units WHERE course IN ('Piano','Acting') AND week IN (40, 41)");
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-CURW-1'");
+        db_exec("DELETE FROM members WHERE memberId = 'NGG-CURW-1'");
+    })();
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 

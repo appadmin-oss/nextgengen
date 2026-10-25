@@ -2264,6 +2264,10 @@ function staff_curriculum(array $p): array {
             'weekNow' => $weekNow, 'termStart' => (string)$cfg['startDate'], 'termWeeks' => CURR_TERM_WEEKS,
             'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
+            /* The courses this person may file a lesson under, so their own
+               editor offers those and nothing else. null means every course,
+               which the screen reads as "use the catalogue". */
+            'courses' => $g['courses'] === null ? null : array_values(array_map('strval', $g['courses'])),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
 }
 
@@ -2306,22 +2310,99 @@ function curriculum_course_family(string $course): array {
  * unless the instructor holds `curriculum` themselves. Week and position:
  * the week asked for, at the next free position in it.
  */
+/**
+ * An instructor writes — or edits — a lesson for a course they teach.
+ *
+ * This used to take four fields: course, week, title, body. The Control Room
+ * had objectives, an opening review, materials, placement and the whole
+ * lesson editor; an instructor had a box. So the people who actually teach
+ * the thing could file a draft and nothing more, and every lesson that
+ * needed a review question or a worksheet had to be finished by somebody
+ * else in a different portal.
+ *
+ * It now takes the same lesson the Control Room does, through the same
+ * editor, and the difference between the two is where it SHOULD be — in what
+ * each person is allowed to do, not in what each person is shown:
+ *
+ *   · only their own courses, on the way in and on the way out;
+ *   · without the `curriculum` capability it saves as a draft, every time,
+ *     and a curriculum lead publishes it;
+ *   · and an instructor without that capability may only edit a draft THEY
+ *     wrote. A published lesson is in children's hands this Saturday, and
+ *     editing it is a curriculum lead's act, not a correction.
+ */
 function staff_curriculum_lesson(array $p): array {
     $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
-    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
-    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
-    if ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return ['ok' => false, 'error' => 'not_your_course'];
     $me = (string)$g['member']['memberId'];
     $own = in_array('curriculum', member_effective_caps($g['member']), true);
+    $mine = static function (string $course) use ($g): bool {
+        return $g['courses'] === null
+            || in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true);
+    };
+
+    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
+    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
+    if (!$mine($course)) return ['ok' => false, 'error' => 'not_your_course'];
+
+    $id = trim((string)($p['unitId'] ?? ''));
+    $existing = $id !== '' ? db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$id]) : null;
+    if ($id !== '' && !$existing) return ['ok' => false, 'error' => 'not_found'];
+    if ($existing) {
+        // Reached on the way IN, against the lesson as it is stored — never
+        // against the course the request claims it is in.
+        if (!$mine((string)$existing['course']) && (string)$existing['course'] !== '') return ['ok' => false, 'error' => 'not_your_course'];
+        if (!$own) {
+            if ((string)$existing['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published',
+                'message' => 'That lesson is published and children are working from it. A curriculum lead can change it.'];
+            if ((string)$existing['createdBy'] !== $me) return ['ok' => false, 'error' => 'not_your_lesson',
+                'message' => 'That draft is somebody else\'s. You can write your own lesson for this week.'];
+        }
+    }
+
     $week = max(1, min(104, (int)($p['week'] ?? 1)));
-    $pos = 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, '', $week])['m'] ?? 0);
-    $v = curriculum_validate(['course' => $course, 'level' => '', 'week' => $week, 'position' => $pos,
+    $level = $existing ? (string)$existing['level'] : curriculum_clean_text($p['level'] ?? '', 60);
+    /* WHERE IN THE WEEK IS THE SERVER'S, NOT THE REQUEST'S.
+       Honouring a position from here looked harmless and was not: an
+       instructor's editor opens a brand new lesson with position 1 because
+       that is the sensible default for a field, not because anybody chose
+       it — so every first lesson an instructor wrote collided with whatever
+       already sat at position 1 and came back "slot taken" for a slot they
+       had never picked. Placing a lesson inside a week is a curriculum
+       lead's act, through the Control Room's own op. */
+    $pos = $existing ? (int)$existing['position']
+         : 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, $level, $week])['m'] ?? 0);
+
+    /* Publishing is the capability, not the screen. Without it the status is
+       'draft' whatever the request says — including on an edit, so a draft
+       cannot be walked into publication from here. */
+    $status = $own ? (string)($p['status'] ?? 'published') : 'draft';
+    if (!in_array($status, CURR_STATUSES, true)) $status = $own ? 'published' : 'draft';
+
+    $v = curriculum_validate([
+        'course' => $course, 'level' => $level, 'week' => $week, 'position' => $pos,
         'title' => (string)($p['title'] ?? ''), 'summary' => (string)($p['summary'] ?? ''), 'body' => (string)($p['body'] ?? ''),
-        'objectives' => is_array($p['objectives'] ?? null) ? $p['objectives'] : [], 'status' => $own ? 'published' : 'draft']);
+        'objectives' => $p['objectives'] ?? [], 'materials' => $p['materials'] ?? [], 'checks' => $p['checks'] ?? [],
+        'durationMins' => $p['durationMins'] ?? 0, 'passMark' => $p['passMark'] ?? 60, 'status' => $status,
+    ]);
     if (!$v['ok']) return $v;
-    $unitId = curriculum_write($v, null, $me, 'instructor');
-    audit('curriculum.create', $me, $unitId, ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $own ? 'published' : 'draft'], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'unitId' => $unitId, 'status' => $own ? 'published' : 'draft', 'week' => $week, 'position' => $pos];
+
+    $u = $v['unit'];
+    $clash = db_row('SELECT unitId FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                    [$u['course'], $u['level'], $u['week'], $u['position']]);
+    if ($clash && (!$existing || (string)$clash['unitId'] !== $id)) {
+        return ['ok' => false, 'error' => 'slot_taken',
+                'detail' => 'another lesson is already week ' . $u['week'] . ', position ' . $u['position'] . ' of this course',
+                'unitId' => (string)$clash['unitId']];
+    }
+
+    $unitId = curriculum_write($v, $existing, $me, 'instructor');
+    audit('curriculum.' . ($existing ? 'update' : 'create'), $me, $unitId,
+          ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $u['status']], (string)($p['ip'] ?? ''));
+
+    $full = curriculum_load('unitId = ?', [$unitId]);
+    $row = $full ? reset($full) : null;
+    return ['ok' => true, 'unitId' => $unitId, 'status' => $u['status'], 'week' => $week, 'position' => $u['position'],
+            'unit' => $row ? ($row['unit'] + ['checks' => $row['checks'], 'materials' => $row['materials']]) : null];
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */

@@ -45,8 +45,19 @@ if ($method === 'GET') {
     } elseif ($action === 'confirm') {
         $res = gs_call('staff.curriculum.confirm', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'unitIds' => is_array($b['unitIds'] ?? null) ? $b['unitIds'] : [], 'done' => !isset($b['done']) || !empty($b['done']), 'ip' => client_ip()]);
     } elseif ($action === 'lesson') {
-        $res = gs_call('staff.curriculum.lesson', ['requesterId' => $mid, 'course' => (string)($b['course'] ?? ''), 'week' => $b['week'] ?? 1,
-            'title' => (string)($b['title'] ?? ''), 'summary' => (string)($b['summary'] ?? ''), 'body' => (string)($b['body'] ?? ''), 'ip' => client_ip()]);
+        /* The instructor's editor is the Control Room's editor, so the route
+           forwards the whole lesson. What an instructor may DO with it is
+           decided in the domain (own courses, draft unless they hold the
+           curriculum capability), never by which fields a route happens to
+           pass on — a guard made of omission is one nobody can read. */
+        $res = gs_call('staff.curriculum.lesson', ['requesterId' => $mid,
+            'unitId' => (string)($b['unitId'] ?? ''), 'course' => (string)($b['course'] ?? ''),
+            'week' => $b['week'] ?? 1, 'position' => $b['position'] ?? 0, 'level' => (string)($b['level'] ?? ''),
+            'title' => (string)($b['title'] ?? ''), 'summary' => (string)($b['summary'] ?? ''), 'body' => (string)($b['body'] ?? ''),
+            'objectives' => $b['objectives'] ?? [], 'materials' => is_array($b['materials'] ?? null) ? $b['materials'] : [],
+            'checks' => is_array($b['checks'] ?? null) ? $b['checks'] : [],
+            'durationMins' => $b['durationMins'] ?? 0, 'passMark' => $b['passMark'] ?? 60,
+            'status' => (string)($b['status'] ?? ''), 'ip' => client_ip()]);
     } elseif ($action === 'place') {
         $res = gs_call('staff.curriculum.place', ['requesterId' => $mid, 'placements' => is_array($b['placements'] ?? null) ? $b['placements'] : [], 'ip' => client_ip()]);
     } elseif ($action === 'material') {

@@ -139,22 +139,70 @@ async function contextFor(memberId, admin, viewport) {
     await ap.selectOption('.led-card select >> nth=0', 'Music');
     await ap.selectOption('.led-status select', 'published');
     await ap.fill('.led textarea[placeholder^="What this session is"]', 'Where every pianist starts.');
-    /* A lesson diagram, written as a fence (lesson-blocks.jsx). It has to draw
-       on the member's screen, not only in NggMarkdown: a lesson body is
-       rendered by CurriculumText, and the diagrams were wired into the other
-       renderer, so every one an instructor wrote came out as a code block —
-       and the editor's preview agreed, which is the worst way to be wrong. */
-    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left\n\n```keys C E G\n```\n\n```steps 10 Warm up | 30 Learn | 40 Play\n```');
-    // The editor's toolbar wraps the selection, and the preview renders it.
-    await ap.$eval('.cur-ed-body', el => { el.focus(); el.setSelectionRange(0, 8); });
-    await ap.click('.cur-rte-btn.is-b');
-    chk('the toolbar bolds the selected words', (await ap.$eval('.cur-ed-body', el => el.value)).startsWith('**Middle C** sits'));
-    await ap.click('.cur-rte-btn.is-preview');
-    chk('…and the preview shows the lesson as a learner will see it', await ap.$eval('.cur-rte-preview', el => !!el.querySelector('strong') && !!el.querySelector('ul')));
-    chk('…including the keyboard diagram, drawn and not left as a code block',
-        await ap.$eval('.cur-rte-preview', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6 && !el.querySelector('pre')));
-    await ap.click('.cur-rte-btn.is-preview');
-    await ap.waitForSelector('.cur-ed-body');
+    /* THE EDITOR IS NOT A TEXTAREA. An instructor writes into blocks that
+       draw themselves, and markdown is only the file format underneath — so
+       what is driven here is typing, not filling a field. Everything asserted
+       is what a person would see on the screen. */
+    const type = async (text) => { await ap.keyboard.type(text); await ap.keyboard.press('Enter'); };
+    /* A blank lesson opens on the way IN, not on an empty page: the
+       programme knows the shape of a Saturday, so it offers to lay one out.
+       Here we take the other door and write from nothing. */
+    await ap.waitForSelector('.le-start');
+    chk('a blank lesson offers to lay out a whole NGG session rather than showing an empty page',
+        /Lay out a whole session/.test(await ap.$eval('.le-start', el => el.innerText)));
+    await ap.click('.le-start-alt:has-text("Start from nothing")');
+    await ap.waitForSelector('.le-row:last-child .le-ed');
+    await ap.click('.le-row:last-child .le-ed');
+    await type('Middle C sits in the centre.');
+    // "## " at the start of a line becomes a heading — and the characters go.
+    await type('## Find it');
+    chk('typing "## " makes a heading, and leaves no "##" on the screen',
+        await ap.$eval('.le-doc', el => !!el.querySelector('.le-ed-h2') && !el.innerText.includes('##')));
+    // "- " does the same for a list, and Enter continues it.
+    await type('- Find the two black keys');
+    await type('C is just to their left');
+    chk('a list carries on by itself, one block per point',
+        await ap.$$eval('.le-row-ul', els => els.length >= 2 && els[1].innerText.trim() === 'C is just to their left'));
+    // "/" opens the add menu, where the diagrams are — nobody can guess a fence.
+    await ap.keyboard.type('/');
+    await ap.waitForSelector('.le-menu');
+    await ap.fill('.le-menu-q', 'piano');
+    await ap.click('.le-menu-list button:has-text("Piano keyboard")');
+    await ap.waitForSelector('.le-row-keys');
+    chk('the add menu puts a REAL keyboard in the lesson, drawn and already playing C E G',
+        await ap.$eval('.le-row-keys', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6));
+    chk('…and it is edited as notes, with no fence anywhere on the screen',
+        await ap.$eval('.le-row-keys', el => {
+          const chips = [...el.querySelectorAll('.le-chip > span')].map(c => c.textContent);
+          return chips.join(' ') === 'C E G' && !el.innerText.includes('```');
+        }));
+    // A note is added as a note. The drawing follows.
+    await ap.fill('.le-row-keys .le-chip-new input', 'B');
+    await ap.keyboard.press('Enter');
+    chk('adding a note redraws the keyboard', await ap.$eval('.le-row-keys', el => el.querySelectorAll('.lb-keys .is-on').length === 8));
+    // …and taking it off again redraws it back, so the lesson that is saved
+    // below is the C E G the member's own screen is checked against.
+    await ap.click('.le-row-keys button[aria-label="Remove B"]');
+    chk('removing a note redraws it back', await ap.$eval('.le-row-keys', el => el.querySelectorAll('.lb-keys .is-on').length === 6));
+
+    // The session plan, built as minutes and names rather than "10 Warm up |".
+    await ap.click('.le-bar .le-bbtn.is-add');
+    await ap.click('.le-menu-list button:has-text("Session plan")');
+    await ap.waitForSelector('.le-row-steps');
+    chk('a session plan is minutes and names, drawn to scale as they are typed',
+        await ap.$eval('.le-row-steps', el => el.querySelectorAll('.le-pairs > li').length === 3 && !!el.querySelector('.lb-steps')));
+
+    chk('nothing anywhere in the editor shows raw markup',
+        await ap.$eval('.le', el => !/```|\*\*|^#{1,3} /m.test(el.innerText)));
+
+    // Bold, from the toolbar, on a real selection.
+    await ap.$eval('.le-row:first-child .le-ed', el => {
+      const r = document.createRange(); r.setStart(el.firstChild, 0); r.setEnd(el.firstChild, 8);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+    await ap.click('.le-bar .le-bbtn[aria-label^="Bold"]');
+    chk('the toolbar bolds what is selected, on the screen and not as asterisks',
+        await ap.$eval('.le-row:first-child .le-ed', el => (el.querySelector('strong') || el.querySelector('b'))?.textContent === 'Middle C' && !el.innerText.includes('**')));
     // A material file, uploaded to this server's store.
     const pdf = path.join(TMP, 'scale-sheet.pdf');
     fs.writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
