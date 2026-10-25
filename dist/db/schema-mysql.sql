@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS members (
   anchorCode VARCHAR(12),
   mouAt VARCHAR(40) DEFAULT '', mouBy VARCHAR(64) DEFAULT '',
   duesRemindOff TINYINT DEFAULT 0, duesRemindedAt VARCHAR(40) DEFAULT '',
-  ngvVolunteerId VARCHAR(40) DEFAULT '', ngvAt VARCHAR(40) DEFAULT '',
+  ngvVolunteerId VARCHAR(64) DEFAULT '', ngvAt VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
   UNIQUE KEY idx_members_anchorcode (anchorCode)
@@ -428,7 +428,7 @@ CREATE TABLE IF NOT EXISTS volunteers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   volunteerId VARCHAR(32) NOT NULL UNIQUE,
   applicationId INT,
-  memberId VARCHAR(40) DEFAULT '',
+  memberId VARCHAR(64) DEFAULT '',
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
   firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
   otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
@@ -4147,4 +4147,22 @@ ALTER TABLE summer_students ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
 CREATE INDEX idx_summer_students_centreid ON summer_students(centreId);
 ALTER TABLE v3_scores ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
 CREATE INDEX idx_v3_scores_centreid ON v3_scores(centreId);
+-- Two width changes that ADD COLUMN can never make.
+--
+-- The mirror repeats `ALTER TABLE … ADD COLUMN` on purpose so it can be
+-- replayed over an existing schema, and db_apply_mysql_schema() swallows the
+-- resulting "Duplicate column name" errors (docs/SETUP.md). That works for
+-- ADDING a column. It does NOT work for changing one: the ADD errors, the
+-- error is swallowed, and the column keeps the type its CREATE TABLE gave it.
+--
+-- So `ALTER TABLE volunteers ADD COLUMN memberId VARCHAR(64)` has never once
+-- taken effect — volunteers.memberId is VARCHAR(40) on every MySQL deployment
+-- there has ever been, while members.memberId is VARCHAR(64). Two widths for
+-- one key, which is also why no foreign key can be declared between them.
+--
+-- MODIFY is the statement for a type change, and it is idempotent: re-running
+-- it against a column that is already VARCHAR(64) is a no-op, not an error.
+ALTER TABLE volunteers MODIFY COLUMN memberId VARCHAR(64) DEFAULT '';
+ALTER TABLE members MODIFY COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
+
 INSERT INTO schema_version (version) VALUES (178) ON DUPLICATE KEY UPDATE version = version;

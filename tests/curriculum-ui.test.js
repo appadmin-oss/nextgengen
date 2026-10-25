@@ -133,13 +133,20 @@ async function contextFor(memberId, admin, viewport) {
     await ap.selectOption('.cur-ed-grid select >> nth=0', 'Music');
     await ap.selectOption('.cur-ed-grid select >> nth=1', 'published');
     await ap.fill('.cur-ed textarea[placeholder^="Two or three"]', 'Where every pianist starts.');
-    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left');
+    /* A lesson diagram, written as a fence (lesson-blocks.jsx). It has to draw
+       on the member's screen, not only in NggMarkdown: a lesson body is
+       rendered by CurriculumText, and the diagrams were wired into the other
+       renderer, so every one an instructor wrote came out as a code block —
+       and the editor's preview agreed, which is the worst way to be wrong. */
+    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left\n\n```keys C E G\n```');
     // The editor's toolbar wraps the selection, and the preview renders it.
     await ap.$eval('.cur-ed-body', el => { el.focus(); el.setSelectionRange(0, 8); });
     await ap.click('.cur-rte-btn.is-b');
     chk('the toolbar bolds the selected words', (await ap.$eval('.cur-ed-body', el => el.value)).startsWith('**Middle C** sits'));
     await ap.click('.cur-rte-btn.is-preview');
     chk('…and the preview shows the lesson as a learner will see it', await ap.$eval('.cur-rte-preview', el => !!el.querySelector('strong') && !!el.querySelector('ul')));
+    chk('…including the keyboard diagram, drawn and not left as a code block',
+        await ap.$eval('.cur-rte-preview', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6 && !el.querySelector('pre')));
     await ap.click('.cur-rte-btn.is-preview');
     await ap.waitForSelector('.cur-ed-body');
     // A material file, uploaded to this server's store.
@@ -207,6 +214,11 @@ async function contextFor(memberId, admin, viewport) {
     await mp.click('.cur-item:has-text("Finding middle C")');
     await mp.waitForSelector('.cur-mats button.cur-mat', { timeout: 15000 });
     chk('the lesson renders its formatting', await mp.$eval('.cur-text strong, .cur strong', el => el.textContent === 'Middle C'));
+    /* The member's own screen, which is the only one that counts. */
+    chk('the lesson draws its keyboard diagram for the member, with C, E and G held down',
+        await mp.$eval('.cur-text', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6));
+    chk('…and it is announced, so the diagram reads aloud',
+        /C, E, G/.test(await mp.$eval('.cur-text .lb-keys svg', el => el.getAttribute('aria-label') || '')));
     await mp.click('.cur-mats button.cur-mat');
     chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
     await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });

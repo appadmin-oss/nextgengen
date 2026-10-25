@@ -2957,6 +2957,29 @@ function nggMdInline(line, kp) {
  * sits under the page's own headings, and a member typing "# Hi" should not be
  * able to insert a document-level heading into somebody else's page outline.
  */
+/**
+ * What a fenced block becomes. ONE decision, used by BOTH lesson renderers.
+ *
+ * There are two markdown renderers here: NggMarkdown, and CurriculumText for
+ * a lesson body. The lesson diagrams (lesson-blocks.jsx) were wired into
+ * NggMarkdown alone, and a lesson is rendered by CurriculumText — so every
+ * ```keys, ```chord and ```staff an instructor wrote came out as a code
+ * block on the member's screen, and the editor's own preview agreed with it,
+ * which is the worst way for a renderer to be wrong. Verifying NggMarkdown in
+ * a browser proved the plumbing and not the path.
+ *
+ * Two renderers is already one more than this codebase should have. Until
+ * they are one, the part that decides what a fence MEANS is shared, so they
+ * cannot disagree about it again. tests/curriculum-ui.test.js asserts a
+ * diagram reaches the member's screen, not just this function.
+ */
+function nggFenceBlock(lang, args, code, key, preClass) {
+  const d = typeof lessonBlockFor === "function" ? lessonBlockFor(lang, (args || "").trim() || code.trim()) : null;
+  if (d) { const D = d.Component; return <D key={key} args={d.args}/>; }
+  const full = (args || "").trim() ? [(args || "").trim(), code].filter(x => x !== "").join("\n") : code;
+  return <pre key={key} className={preClass}><code>{full}</code></pre>;
+}
+
 function NggMarkdown({ text, className }) {
   const src = String(text || "");
   const lines = src.split("\n");
@@ -2978,16 +3001,7 @@ function NggMarkdown({ text, className }) {
       i++;
       while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
       i++; // closing fence (or end of input — an unclosed fence still renders)
-      const inlineArgs = (fence[2] || "").trim();
-      const diagram = typeof lessonBlockFor === "function"
-        ? lessonBlockFor(fence[1], inlineArgs || body.join(" ").trim()) : null;
-      if (diagram) {
-        const D = diagram.Component;
-        blocks.push(<D key={key++} args={diagram.args}/>);
-      } else {
-        const full = inlineArgs ? [inlineArgs].concat(body) : body;
-        blocks.push(<pre key={key++} className="md-pre"><code>{full.join("\n")}</code></pre>);
-      }
+      blocks.push(nggFenceBlock(fence[1], fence[2], body.join("\n"), key++, "md-pre"));
       continue;
     }
     if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { blocks.push(<hr key={key++} className="md-hr"/>); i++; continue; }
@@ -3672,17 +3686,32 @@ function curInline(text, keyBase) {
 function CurriculumText({ text }) {
   const src = String(text || "").replace(/\r\n?/g, "\n");
   if (!src.trim()) return null;
-  // Code fences first, so nothing inside one is read as formatting.
-  const parts = src.split(/^```[^\n]*\n?/m);
+  /* Code fences first, so nothing inside one is read as formatting.
+     Scanned line by line rather than split on the fence, because a split
+     throws the fence's INFO STRING away — and the language and arguments are
+     exactly what decides whether ```keys C E G is a keyboard or a code
+     block. See nggFenceBlock. */
+  const srcLines = src.split("\n");
   const blocks = [];
-  parts.forEach((part, pi) => {
-    if (pi % 2 === 1) { blocks.push({ code: part.replace(/\n$/, "") }); return; }
-    part.split(/\n{2,}/).map(b => b.replace(/^\n+|\n+$/g, "")).filter(b => b.trim()).forEach(b => blocks.push({ text: b }));
-  });
+  let buf = [];
+  const flush = () => {
+    buf.join("\n").split(/\n{2,}/).map(b => b.replace(/^\n+|\n+$/g, "")).filter(b => b.trim()).forEach(b => blocks.push({ text: b }));
+    buf = [];
+  };
+  for (let li = 0; li < srcLines.length; li++) {
+    const fm = srcLines[li].match(/^```\s*([a-z0-9+#-]*)\s*(.*)$/i);
+    if (!fm) { buf.push(srcLines[li]); continue; }
+    flush();
+    const code = [];
+    li++;
+    while (li < srcLines.length && !/^```\s*$/.test(srcLines[li])) code.push(srcLines[li++]);
+    blocks.push({ code: code.join("\n"), lang: fm[1], args: fm[2] });
+  }
+  flush();
   return (
     <div className="cur-text">
       {blocks.map((blk, i) => {
-        if (blk.code !== undefined) return <pre key={i} className="cur-code"><code>{blk.code}</code></pre>;
+        if (blk.code !== undefined) return nggFenceBlock(blk.lang, blk.args, blk.code, i, "cur-code");
         const b = blk.text, lines = b.split("\n");
         if (lines.every(l => /^\s*[-*•]\s+/.test(l))) return <ul key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*[-*•]\s+/, ""), i + "." + j)}</li>)}</ul>;
         if (lines.every(l => /^\s*\d+[.)]\s+/.test(l))) return <ol key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*\d+[.)]\s+/, ""), i + "." + j)}</li>)}</ol>;

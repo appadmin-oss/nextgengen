@@ -5294,8 +5294,23 @@ chk('centres: upsert validates, code unique, list works', (function () {
    an expensive way to read one. */
 (function () {
     db_update('summer_students', ['centre' => 'Ijaiye'], ['regStatus' => 'verified']);
-    $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
-    chk('cards: the card data loads with at least one verified student (' . count($d['cards'] ?? []) . ')', !empty($d['ok']) && count($d['cards'] ?? []) >= 1);
+    $all = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
+    chk('cards: the card data loads with at least one verified student (' . count($all['cards'] ?? []) . ')', !empty($all['ok']) && count($all['cards'] ?? []) >= 1);
+
+    /* A student THIS check owns, read back by id.
+       It used to assert on cards[0] of the whole list, which is whichever
+       verified student sorts first — and if that one's display ID had already
+       been minted while they were unplaced, it is "ST-26-007" and stays that
+       way, because a printed ID is never reissued. Correct behaviour, failing
+       assertion, about one run in seven on MySQL, and the message said only
+       that something among six conditions was wrong. The check is about what
+       a NEW verified student at a centre gets, so it makes one. */
+    $ckc = summer_ensure_cohort();
+    db_insert('summer_students', ['studentId' => 'STU-CARD-IJ', 'cohortId' => (string)$ckc['cohortId'], 'token' => 'SUMQR-CARDIJ',
+        'handle' => 'cardij', 'fullName' => 'Ije Card', 'age' => 12, 'centre' => 'Ijaiye', 'track' => 'Tech',
+        'regStatus' => 'verified', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'STU-CARD-IJ']);
+    chk('cards: that student\'s card is the one returned', !empty($d['ok']) && count($d['cards'] ?? []) === 1);
     $c = ($d['cards'] ?? [[]])[0];
     $yy = gmdate('y');
     chk('cards: a verified student gets a centre-prefixed serial, IJ-' . $yy . '-NNN (got "' . (string)($c['displayId'] ?? '') . '")',
@@ -5306,9 +5321,13 @@ chk('centres: upsert validates, code unique, list works', (function () {
     chk('cards: …and a name, on the programme (' . (string)($d['program']['program'] ?? '') . ')',
         (string)($c['firstName'] ?? '') !== '' && (string)($d['program']['program'] ?? '') === 'LCASP');
     // Allocation is sticky — a second read must not re-serial.
-    $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
+    $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'STU-CARD-IJ']);
     chk('cards: the serial is sticky — a second read does not re-allocate',
         (string)($d2['cards'][0]['displayId'] ?? 'x') === (string)($c['displayId'] ?? 'y'));
+    /* Taken away again: a fixture that outlives its check becomes somebody
+       else's surprise, which is how this check came to be about whichever
+       student happened to sort first. */
+    db_exec("DELETE FROM summer_students WHERE studentId = 'STU-CARD-IJ'");
 })();
 chk('cards: gate context serves centre options for the centre field', (function () {
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Card desk']);
