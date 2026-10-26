@@ -218,6 +218,127 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
  * overwritten, because the seed runs once.
  */
 const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10b-instruments';
+/**
+ * WHAT A GOOD QUESTION LOOKS LIKE IN THIS SUBJECT — the recognised exam a
+ * course points at, and how that body actually assesses.
+ *
+ * Questions were being written out of nothing. An instructor and an AI both
+ * reach for four options and a right answer, because that is the easiest
+ * thing to produce — and a review made of those measures whether a child can
+ * recognise the right words a week later, which in subjects that are almost
+ * entirely practical is close to measuring nothing.
+ *
+ * Every one of these is a real award a Nigerian 10–17 year old can actually
+ * sit or earn, and what is recorded is the SHAPE of its assessment, not its
+ * syllabus: how the body decides somebody can do the thing. A question
+ * modelled on that is a question somebody already thought hard about.
+ *
+ * Two rules about using it:
+ *   · It is a MODEL, never a claim. Nothing here says a lesson is part of
+ *     that qualification or prepares anyone for it — only that this is the
+ *     standard the question should hold itself to.
+ *   · The `assesses` line is what goes to the AI. It is written as the body
+ *     ITSELF describes its assessment, at a level that does not invent
+ *     syllabus detail — a drafted question that cites a unit number nobody
+ *     checked is worse than no reference at all.
+ */
+const COURSE_EXAM_REFERENCE = [
+    // ── Technology & Applied Engineering ──────────────────────────────────
+    'Coding' => [
+        'body' => 'freeCodeCamp', 'award' => 'Responsive Web Design / JavaScript Algorithms certifications',
+        'assesses' => 'a set of projects you build and submit before a final exam — the certificate follows working code you wrote, not answers you picked',
+        'ask' => 'ask for code that runs and a sentence on why it is written that way',
+        'link' => 'https://www.freecodecamp.org/learn',
+    ],
+    'Software Development' => ['same' => 'Coding'],
+    'Artificial Intelligence' => ['same' => 'Coding'],
+    'Cybersecurity' => [
+        'body' => 'Cisco Networking Academy', 'award' => 'Introduction to Cybersecurity (free, with a Credly badge)',
+        'assesses' => 'scenario questions — you are given a situation and asked what you would do and why',
+        'ask' => 'put them in a situation and ask for the action and the reason',
+        'link' => 'https://www.netacad.com/',
+    ],
+    'Robotics' => ['same' => 'Coding'],
+    'Automation' => ['same' => 'Coding'],
+    'Tech Product Design' => ['same' => 'Coding'],
+
+    // ── Creative & Performing Arts ────────────────────────────────────────
+    'Music' => [
+        'body' => 'Trinity College London', 'award' => 'Graded Music Exams, which run in Nigeria',
+        'assesses' => 'you play pieces to an examiner, plus technical work and musical knowledge asked about what you just played',
+        'ask' => 'ask them to play or record something and say what they did with it — nothing can hear a child play except a person',
+        'link' => 'https://www.trinitycollege.com/qualifications/music',
+    ],
+    'Piano' => ['same' => 'Music'], 'Guitar' => ['same' => 'Music'], 'Drums' => ['same' => 'Music'],
+    'Violin' => ['same' => 'Music'], 'Saxophone' => ['same' => 'Music'], 'Vocal Training' => ['same' => 'Music'],
+    'Acting' => [
+        'body' => 'Trinity College London', 'award' => 'Graded Drama & Speech exams, which run in Nigeria',
+        'assesses' => 'you perform to an examiner and then answer questions about the choices you made',
+        'ask' => 'ask them to perform or record a piece and account for one choice in it',
+        'link' => 'https://www.trinitycollege.com/qualifications/drama-speech',
+    ],
+    'Stagecraft' => ['same' => 'Acting'],
+    'Catering' => [
+        'body' => 'NBTE', 'award' => 'National Skills Qualification — no academic entry requirement',
+        'assesses' => 'an assessor watches you do the job to an industry standard and signs off what you can do',
+        'ask' => 'ask for the finished work, photographed or brought in, and how they judged it was right',
+        'link' => 'https://net.nbte.gov.ng/',
+    ],
+    'Adire' => ['same' => 'Catering'], 'Crafts' => ['same' => 'Catering'],
+    'Music Production' => ['same' => 'Music'],
+
+    // ── Media & Content Strategy ──────────────────────────────────────────
+    'Graphic Design' => [
+        'body' => 'Google / Coursera', 'award' => 'Google Career Certificates',
+        'assesses' => 'graded work you produce for a brief, reviewed against a rubric, alongside short knowledge checks',
+        'ask' => 'give them a brief and ask for the piece plus the reasoning behind one decision',
+        'link' => 'https://grow.google/certificates/',
+    ],
+    'Branding' => ['same' => 'Graphic Design'], 'Video Production' => ['same' => 'Graphic Design'],
+    'Cinematography' => ['same' => 'Graphic Design'], 'Digital Content Creation' => ['same' => 'Graphic Design'],
+    'Social Media' => ['same' => 'Graphic Design'], 'Visual Storytelling' => ['same' => 'Graphic Design'],
+
+    // ── Business Strategy, Operations & Administration ────────────────────
+    'Project Management' => [
+        'body' => 'Google / Coursera', 'award' => 'Google Project Management Certificate',
+        'assesses' => 'you produce the real artefacts of the job — a plan, a register, a report — and they are marked against a rubric',
+        'ask' => 'ask for the artefact itself and one decision they had to make while producing it',
+        'link' => 'https://grow.google/certificates/project-management/',
+    ],
+    'Product Management' => ['same' => 'Project Management'],
+    'Data Analysis' => ['same' => 'Project Management'],
+    'Business Development' => ['same' => 'Project Management'],
+    'Finance' => ['same' => 'Project Management'],
+    'Human Resources' => ['same' => 'Project Management'],
+    'Operations' => ['same' => 'Project Management'],
+    'Administration' => ['same' => 'Project Management'],
+    'Strategic Thinking' => ['same' => 'Project Management'],
+];
+
+/**
+ * The exam reference for a course — following the strand to its parent, so
+ * "Piano" answers with Music's and a lesson filed under a course that is a
+ * part of a broader one is not left with nothing.
+ */
+function curriculum_exam_reference(string $course): ?array {
+    $try = [$course];
+    if (function_exists('course_scope')) foreach (course_scope($course) as $c) $try[] = $c;
+    if (function_exists('curriculum_course_parent')) $try[] = curriculum_course_parent($course);
+    $seen = [];
+    foreach ($try as $name) {
+        $name = trim((string)$name);
+        if ($name === '' || isset($seen[$name])) continue;
+        $seen[$name] = true;
+        foreach (COURSE_EXAM_REFERENCE as $k => $v) {
+            if (strcasecmp($k, $name) !== 0) continue;
+            $hops = 0;
+            while (isset($v['same']) && $hops++ < 4) $v = COURSE_EXAM_REFERENCE[$v['same']] ?? [];
+            return $v ? $v + ['course' => $k] : null;
+        }
+    }
+    return null;
+}
+
 const CLUB_DIVISIONS_DEFAULT = [
     ['name' => 'Creative & Performing Arts', 'icon' => '🎭', 'short' => 'CREATIVE ARTS',
      'blurb' => 'For children interested in music, catering, musical instruments, acting, stagecraft, vocal training, adire, crafts, music production and other creative expressions.',
@@ -450,6 +571,17 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
         if (count($materials) > CURR_MAX_MATERIALS) return ['ok' => false, 'error' => 'too_many_materials', 'max' => CURR_MAX_MATERIALS];
     }
 
+    /* THE REVIEW IS NOT OPTIONAL ON A PUBLISHED LESSON.
+       A lesson's questions are sat at the start of the NEXT session, so a
+       published lesson with none is a week of teaching that is never asked
+       about again — and nothing on any screen would ever say so. The floor
+       here is one, deliberately, not the three the editor asks for: 587 of
+       the 588 bundled lessons carry one or two, and a rule the shipped
+       curriculum cannot meet is a rule that stops the boot seeder rather
+       than one that raises anybody's standard. Three stays the standard an
+       author is held to while writing; one is what the system refuses to
+       publish below. */
+
     // Checks: [{kind,prompt,options,answer,rubric,points}].
     $checks = [];
     foreach (is_array($d['checks'] ?? null) ? $d['checks'] : [] as $i => $c) {
@@ -485,6 +617,23 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
             'rubric' => curriculum_clean_text($c['rubric'] ?? '', 2000), 'points' => max(1, min(20, (int)($c['points'] ?? 1))),
             'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
         if (count($checks) > CURR_MAX_CHECKS) return ['ok' => false, 'error' => 'too_many_checks', 'max' => CURR_MAX_CHECKS];
+    }
+    if ($status === 'published' && !$checks) {
+        return ['ok' => false, 'error' => 'review_required',
+                'detail' => 'a published lesson needs at least one question — your class sits them at the start of the next session'];
+    }
+    /* MORE THAN RECOGNITION.
+       A review made only of multiple choice measures whether a child can
+       pick the right words off a list a week later, which is not the same
+       as being able to do the thing — and in a programme of practical
+       subjects it is not close. Every published lesson must ask for at
+       least one piece of work, explanation or reflection that cannot be
+       guessed from four options.
+       All 588 bundled lessons meet this; 45 of them did not until the
+       practical question each one was missing was written. */
+    if ($status === 'published' && !array_filter($checks, static fn($c) => $c['kind'] !== 'mcq')) {
+        return ['ok' => false, 'error' => 'review_too_shallow',
+                'detail' => 'a review cannot be multiple choice alone — add one question that asks them to do, explain or show something'];
     }
     return ['ok' => true, 'unit' => $unit, 'materials' => $materials, 'checks' => $checks];
 }
@@ -600,7 +749,16 @@ function admin_curriculum_list(array $p): array {
        whole division (course_division) — and an editor that cannot offer the
        scope the matcher honours is an editor that cannot write half the
        curriculum. */
-    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(), 'divisions' => curriculum_divisions(),
+    /* The same reference the AI drafter is given, per course, so the person
+       writing by hand is held to the standard the machine is held to. One
+       map, two consumers — a second copy for the screen is how the two
+       start recommending different things. */
+    $refs = [];
+    foreach (curriculum_courses() as $c) {
+        $r = curriculum_exam_reference((string)$c);
+        if ($r) $refs[(string)$c] = ['body' => $r['body'], 'award' => $r['award'], 'assesses' => $r['assesses'], 'ask' => $r['ask'], 'link' => $r['link']];
+    }
+    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(), 'examRefs' => $refs, 'divisions' => curriculum_divisions(),
             'canWrite' => in_array('curriculum', member_effective_caps($g['requester']), true),
             'aiEnabled' => function_exists('ai_enabled') && ai_enabled(), 'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
@@ -664,6 +822,17 @@ function admin_curriculum_status(array $p): array {
         if ($to === 'published' && !db_row('SELECT id FROM curriculum_units WHERE unitId = ? AND title <> ?', [$id, ''])) {
             $results[] = ['id' => $id, 'ok' => false, 'error' => 'title_required']; $refused++; continue;
         }
+        /* The same floor the editor's own save is held to. Publishing is a
+           second door onto the same act, and a rule enforced on one door
+           only is a rule anybody reaches past by using the other — here, by
+           selecting forty drafts and pressing Publish. Refused per row and
+           named, as every bulk op in this codebase is. */
+        if ($to === 'published' && !db_row('SELECT id FROM curriculum_checks WHERE unitId = ? LIMIT 1', [$id])) {
+            $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => false, 'error' => 'review_required']; $refused++; continue;
+        }
+        if ($to === 'published' && !db_row("SELECT id FROM curriculum_checks WHERE unitId = ? AND kind <> 'mcq' LIMIT 1", [$id])) {
+            $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => false, 'error' => 'review_too_shallow']; $refused++; continue;
+        }
         $row = ['status' => $to, 'updatedAt' => $now, 'updatedBy' => (string)$g['requester']['memberId']];
         if ($to === 'published') $row['publishedAt'] = $now;
         db_update('curriculum_units', $row, ['unitId' => $id]);
@@ -700,7 +869,27 @@ function admin_curriculum_import(array $p): array {
     $plan = []; $seen = [];
     foreach ($rows as $i => $r) {
         if (!is_array($r)) { $plan[] = ['row' => $i + 1, 'verdict' => 'failed', 'error' => 'not_a_row']; continue; }
-        if ($publish && !isset($r['status'])) $r['status'] = 'published';
+        /* A row with nothing to ask comes in as a DRAFT rather than being
+           thrown out. The invariant stands — nothing publishes without a
+           question for the next session's review — but a spreadsheet of a
+           hundred lessons must not import zero of them because some rows
+           have no questions yet. The row lands, it is named, and somebody
+           writes the question and publishes it.
+           Only a row that did not ASK to be published is moved; a sheet
+           that says `status: published` outright is still refused by
+           curriculum_validate, because that one is a stated intention. */
+        $rChecks = is_array($r['checks'] ?? null) ? $r['checks'] : [];
+        $noAsk = !$rChecks && !($r['check1'] ?? '') && !($r['check1_prompt'] ?? '');
+        // Multiple choice alone is held back for the same reason nothing at
+        // all is: it would publish a week that is never really revisited.
+        if (!$noAsk && $rChecks) {
+            $noAsk = !array_filter($rChecks, static fn($c) => is_array($c) && strtolower((string)($c['kind'] ?? 'short')) !== 'mcq');
+        }
+        $heldBack = false;
+        if ($publish && !isset($r['status'])) {
+            if ($noAsk) { $r['status'] = 'draft'; $heldBack = true; }
+            else $r['status'] = 'published';
+        }
         $v = curriculum_validate($r, $allowNew);
         // A refused row still says which course and week it was, so the operator can see what to fix.
         if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'course' => mb_substr(trim((string)($r['course'] ?? '')), 0, 120), 'week' => (int)($r['week'] ?? 0),
@@ -719,10 +908,11 @@ function admin_curriculum_import(array $p): array {
         }
         $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'course' => $u['course'], 'week' => $u['week'], 'position' => $u['position'],
                    'verdict' => $verdict, 'unitId' => $existing ? (string)$existing['unitId'] : '', '_v' => $v, '_e' => $existing,
-                   'materials' => count($v['materials']), 'checks' => count($v['checks'])];
+                   'materials' => count($v['materials']), 'checks' => count($v['checks'])]
+                   + ($heldBack ? ['note' => 'review_required', 'detail' => 'imported as a draft: no question for the next session to review'] : []);
     }
-    $tally = ['create' => 0, 'update' => 0, 'unchanged' => 0, 'failed' => 0];
-    foreach ($plan as $x) $tally[$x['verdict']]++;
+    $tally = ['create' => 0, 'update' => 0, 'unchanged' => 0, 'failed' => 0, 'drafted' => 0];
+    foreach ($plan as $x) { $tally[$x['verdict']]++; if (($x['note'] ?? '') === 'review_required') $tally['drafted']++; }
     $public = static fn($pl) => array_map(static function ($x) { unset($x['_v'], $x['_e']); return $x; }, $pl);
     if ($dry) return ['ok' => true, 'dryRun' => true, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
 
@@ -994,14 +1184,40 @@ function admin_curriculum_ai(array $p): array {
         . "'Success criteria' (3 bullet points a learner can check themselves), "
         . "'Make it fit you' (a bullet starting '**If this is new to you:**' and one starting '**If you already can:**'), "
         . "and 'This week's assignment' (one sentence naming the deliverable). Use bullets, short sentences, Nigerian examples where natural), " : "";
+    /* THE EXAM THE QUESTIONS ARE MODELLED ON.
+       The drafter was writing questions out of nothing but the lesson text,
+       and what comes out of nothing is four options and a right answer.
+       Given the body that actually certifies this subject and the way that
+       body decides somebody can do the thing, it writes to a standard
+       somebody else already thought hard about.
+       It is a MODEL, not a claim: the prompt says so, because a drafted
+       question that implies the lesson is part of a qualification is worse
+       than a weak question. */
+    $ref = curriculum_exam_reference($course);
+    $refSpec = $ref ? "This course points at " . $ref['award'] . " from " . $ref['body'] . ". "
+        . "That body assesses by " . $ref['assesses'] . ". Model the STANDARD and the SHAPE of your questions on that — "
+        . $ref['ask'] . ". Do NOT say or imply the lesson is part of that qualification, do not cite its syllabus, "
+        . "unit numbers or grade boundaries, and do not name it in a question. " : "";
     $instructions = "You help instructors at Next Generation Genius, a youth programme for 10–17 year olds in Nigeria, "
         . ($write ? "write a complete 120-minute Saturday lesson from its title. " : "turn lesson notes into a clear lesson. ")
         . "Write for the learner, in plain British English, without inventing facts "
         . ($write ? "you are not sure of. " : "the notes do not support. ")
         . "Return JSON with keys: " . $bodySpec . "summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
-        . "checks (exactly $n items; each {kind:'mcq'|'short', prompt, options (4 strings, mcq only), answer (mcq: the "
-        . "0-based index of the correct option; short: a model answer), rubric (short only: what a full-mark answer includes)}). "
-        . "Mix recall with understanding; no trick questions. "
+        . "checks (exactly $n items; each {kind:'mcq'|'short'|'task', prompt, options (4 strings, mcq only), answer (mcq: the "
+        . "0-based index of the correct option; short/task: a model answer), rubric (short/task only: what a full-mark answer includes)}). "
+        /* These are sat a week later, at the start of the next session, and
+           they decide whether the programme can tell a child is learning.
+           Multiple choice alone measures whether they can pick the right
+           words off a list; in subjects that are almost entirely practical
+           it is close to measuring nothing. The server refuses to publish a
+           review that is mcq-only, so a draft made of four mcqs is a draft
+           somebody then has to rewrite — better that the model never
+           produces one. */
+        . $refSpec
+        . "AT MOST HALF may be 'mcq', and at least one must be a 'task': something the learner DOES and then "
+        . "describes — made, played, built, recorded, measured — with a rubric worth up to 6 points in three "
+        . "parts. These are practical subjects; a review that only asks them to recognise an answer does not "
+        . "show whether they can do it. Mix recall with understanding; no trick questions. "
         /* AI belongs where the lesson's own work has a step an assistant
            genuinely changes — not as a section in every lesson. Taught as a
            ritual it stops being read; taught where it is true it is a skill.
@@ -1839,7 +2055,55 @@ function member_curriculum_unit(array $p): array {
         $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     }
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
-            'progress' => curriculum_progress_public($pr, $b)];
+            'progress' => curriculum_progress_public($pr, $b),
+            'review' => curriculum_opening_review($units, $id, (string)$m['memberId'])];
+}
+
+/**
+ * THE OPENING REVIEW: the previous session's questions, sat at the start of
+ * this one.
+ *
+ * A lesson's questions are written with it, by the person who knows what it
+ * taught, and asked a week later — because a test at the end of the hour
+ * measures the hour, with everything still on the whiteboard, and a test a
+ * week later measures what survived. Having to pull a cold memory back out
+ * is itself what fixes it there.
+ *
+ * Deliberately NOT a new table, a new op or a new progress row. The member
+ * answers through `member.curriculum.submit` against the PREVIOUS unitId, so
+ * the attempt is recorded against the lesson the questions belong to, which
+ * is where every report, deadline and completion already looks for it. The
+ * only new thing is WHEN they are put in front of somebody.
+ *
+ * It is offered, never forced. A child who joined this term late, or who was
+ * away, must still be able to read today's lesson — a review they cannot
+ * pass is not a reason to lock them out of the teaching.
+ */
+function curriculum_opening_review(array $units, string $unitId, string $memberId): ?array {
+    if (!curriculum_schedule()['reviewAtStart']) return null;   // Control Room → Curriculum → Schedule
+    $ids = array_keys($units);
+    $at = array_search($unitId, $ids, true);
+    if ($at === false || $at === 0) return null;          // the first lesson reviews nothing
+
+    $prevId = (string)$ids[$at - 1];
+    $prev = $units[$prevId];
+    if (!$prev['checks']) return null;                     // nothing was ever asked of it
+    // A different course's lesson is not last week's lesson.
+    if (mb_strtolower((string)$prev['unit']['course']) !== mb_strtolower((string)$units[$unitId]['unit']['course'])) return null;
+
+    $pr = db_row('SELECT status, bestPct, pending FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$prevId, $memberId]);
+    if ($pr && (string)$pr['status'] === 'completed') return null;   // already done, don't ask twice
+
+    $pub = curriculum_unit_public($prev['unit'], [], $prev['checks'], false);
+    return [
+        'unitId' => $prevId,
+        'title' => (string)$prev['unit']['title'],
+        'week' => (int)$prev['unit']['week'],
+        'passMark' => (int)$prev['unit']['passMark'],
+        'checks' => $pub['checks'],
+        'attempted' => $pr ? in_array((string)$pr['status'], ['attempted', 'submitted'], true) : false,
+        'pending' => $pr ? (int)$pr['pending'] > 0 : false,
+    ];
 }
 
 /**
@@ -2264,6 +2528,20 @@ function staff_curriculum(array $p): array {
             'weekNow' => $weekNow, 'termStart' => (string)$cfg['startDate'], 'termWeeks' => CURR_TERM_WEEKS,
             'clearance' => (string)($g['clearance'] ?? 'cleared'),
             'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
+            /* The courses this person may file a lesson under, so their own
+               editor offers those and nothing else. null means every course,
+               which the screen reads as "use the catalogue". */
+            'courses' => $g['courses'] === null ? null : array_values(array_map('strval', $g['courses'])),
+            /* The standard an instructor's own questions are held to, same
+               map the AI drafter reads. */
+            'examRefs' => (static function () {
+                $out = [];
+                foreach (curriculum_courses() as $c) {
+                    $r = curriculum_exam_reference((string)$c);
+                    if ($r) $out[(string)$c] = ['body' => $r['body'], 'award' => $r['award'], 'assesses' => $r['assesses'], 'ask' => $r['ask'], 'link' => $r['link']];
+                }
+                return $out;
+            })(),
             'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
 }
 
@@ -2306,22 +2584,99 @@ function curriculum_course_family(string $course): array {
  * unless the instructor holds `curriculum` themselves. Week and position:
  * the week asked for, at the next free position in it.
  */
+/**
+ * An instructor writes — or edits — a lesson for a course they teach.
+ *
+ * This used to take four fields: course, week, title, body. The Control Room
+ * had objectives, an opening review, materials, placement and the whole
+ * lesson editor; an instructor had a box. So the people who actually teach
+ * the thing could file a draft and nothing more, and every lesson that
+ * needed a review question or a worksheet had to be finished by somebody
+ * else in a different portal.
+ *
+ * It now takes the same lesson the Control Room does, through the same
+ * editor, and the difference between the two is where it SHOULD be — in what
+ * each person is allowed to do, not in what each person is shown:
+ *
+ *   · only their own courses, on the way in and on the way out;
+ *   · without the `curriculum` capability it saves as a draft, every time,
+ *     and a curriculum lead publishes it;
+ *   · and an instructor without that capability may only edit a draft THEY
+ *     wrote. A published lesson is in children's hands this Saturday, and
+ *     editing it is a curriculum lead's act, not a correction.
+ */
 function staff_curriculum_lesson(array $p): array {
     $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
-    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
-    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
-    if ($g['courses'] !== null && !in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true)) return ['ok' => false, 'error' => 'not_your_course'];
     $me = (string)$g['member']['memberId'];
     $own = in_array('curriculum', member_effective_caps($g['member']), true);
+    $mine = static function (string $course) use ($g): bool {
+        return $g['courses'] === null
+            || in_array(mb_strtolower($course), array_map('mb_strtolower', $g['courses']), true);
+    };
+
+    $course = curriculum_course_canonical((string)($p['course'] ?? ''));
+    if (!$course) return ['ok' => false, 'error' => 'unknown_course'];
+    if (!$mine($course)) return ['ok' => false, 'error' => 'not_your_course'];
+
+    $id = trim((string)($p['unitId'] ?? ''));
+    $existing = $id !== '' ? db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$id]) : null;
+    if ($id !== '' && !$existing) return ['ok' => false, 'error' => 'not_found'];
+    if ($existing) {
+        // Reached on the way IN, against the lesson as it is stored — never
+        // against the course the request claims it is in.
+        if (!$mine((string)$existing['course']) && (string)$existing['course'] !== '') return ['ok' => false, 'error' => 'not_your_course'];
+        if (!$own) {
+            if ((string)$existing['status'] !== 'draft') return ['ok' => false, 'error' => 'already_published',
+                'message' => 'That lesson is published and children are working from it. A curriculum lead can change it.'];
+            if ((string)$existing['createdBy'] !== $me) return ['ok' => false, 'error' => 'not_your_lesson',
+                'message' => 'That draft is somebody else\'s. You can write your own lesson for this week.'];
+        }
+    }
+
     $week = max(1, min(104, (int)($p['week'] ?? 1)));
-    $pos = 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, '', $week])['m'] ?? 0);
-    $v = curriculum_validate(['course' => $course, 'level' => '', 'week' => $week, 'position' => $pos,
+    $level = $existing ? (string)$existing['level'] : curriculum_clean_text($p['level'] ?? '', 60);
+    /* WHERE IN THE WEEK IS THE SERVER'S, NOT THE REQUEST'S.
+       Honouring a position from here looked harmless and was not: an
+       instructor's editor opens a brand new lesson with position 1 because
+       that is the sensible default for a field, not because anybody chose
+       it — so every first lesson an instructor wrote collided with whatever
+       already sat at position 1 and came back "slot taken" for a slot they
+       had never picked. Placing a lesson inside a week is a curriculum
+       lead's act, through the Control Room's own op. */
+    $pos = $existing ? (int)$existing['position']
+         : 1 + (int)(db_row('SELECT MAX(position) m FROM curriculum_units WHERE course = ? AND level = ? AND week = ?', [$course, $level, $week])['m'] ?? 0);
+
+    /* Publishing is the capability, not the screen. Without it the status is
+       'draft' whatever the request says — including on an edit, so a draft
+       cannot be walked into publication from here. */
+    $status = $own ? (string)($p['status'] ?? 'published') : 'draft';
+    if (!in_array($status, CURR_STATUSES, true)) $status = $own ? 'published' : 'draft';
+
+    $v = curriculum_validate([
+        'course' => $course, 'level' => $level, 'week' => $week, 'position' => $pos,
         'title' => (string)($p['title'] ?? ''), 'summary' => (string)($p['summary'] ?? ''), 'body' => (string)($p['body'] ?? ''),
-        'objectives' => is_array($p['objectives'] ?? null) ? $p['objectives'] : [], 'status' => $own ? 'published' : 'draft']);
+        'objectives' => $p['objectives'] ?? [], 'materials' => $p['materials'] ?? [], 'checks' => $p['checks'] ?? [],
+        'durationMins' => $p['durationMins'] ?? 0, 'passMark' => $p['passMark'] ?? 60, 'status' => $status,
+    ]);
     if (!$v['ok']) return $v;
-    $unitId = curriculum_write($v, null, $me, 'instructor');
-    audit('curriculum.create', $me, $unitId, ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $own ? 'published' : 'draft'], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'unitId' => $unitId, 'status' => $own ? 'published' : 'draft', 'week' => $week, 'position' => $pos];
+
+    $u = $v['unit'];
+    $clash = db_row('SELECT unitId FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                    [$u['course'], $u['level'], $u['week'], $u['position']]);
+    if ($clash && (!$existing || (string)$clash['unitId'] !== $id)) {
+        return ['ok' => false, 'error' => 'slot_taken',
+                'detail' => 'another lesson is already week ' . $u['week'] . ', position ' . $u['position'] . ' of this course',
+                'unitId' => (string)$clash['unitId']];
+    }
+
+    $unitId = curriculum_write($v, $existing, $me, 'instructor');
+    audit('curriculum.' . ($existing ? 'update' : 'create'), $me, $unitId,
+          ['course' => $course, 'week' => $week, 'by' => 'instructor', 'status' => $u['status']], (string)($p['ip'] ?? ''));
+
+    $full = curriculum_load('unitId = ?', [$unitId]);
+    $row = $full ? reset($full) : null;
+    return ['ok' => true, 'unitId' => $unitId, 'status' => $u['status'], 'week' => $week, 'position' => $u['position'],
+            'unit' => $row ? ($row['unit'] + ['checks' => $row['checks'], 'materials' => $row['materials']]) : null];
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */
@@ -2499,7 +2854,16 @@ function curriculum_file_path(string $f): string {
  * editor's decision alone.
  */
 const CURR_SCHEDULE_DEFAULTS = ['enabled' => true, 'startDate' => '', 'remindBeforeDays' => 2, 'remindEveryDays' => 2,
-                                'fineAfterDays' => 7, 'fineAmount' => 1000];
+                                'fineAfterDays' => 7, 'fineAmount' => 1000,
+                                /* Whether a session opens with the previous
+                                   session's questions. On by default — it is
+                                   the programme's position — but a centre
+                                   running a short holiday course, or a term
+                                   where the rota has nobody to mark, can turn
+                                   it off rather than leave children staring
+                                   at a review nobody will ever mark. The
+                                   questions stay on the lesson either way. */
+                                'reviewAtStart' => true];
 const CURR_DUE_BATCH = 60;
 
 function curriculum_schedule(): array {
@@ -2639,6 +3003,7 @@ function admin_curriculum_schedule(array $p): array {
     if ($start !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) return ['ok' => false, 'error' => 'bad_date'];
     $next = [
         'enabled' => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
+        'reviewAtStart' => array_key_exists('reviewAtStart', $in) ? !empty($in['reviewAtStart']) : !empty($cur['reviewAtStart']),
         'startDate' => $start,
         'remindBeforeDays' => max(0, min(30, (int)($in['remindBeforeDays'] ?? $cur['remindBeforeDays']))),
         'remindEveryDays' => max(1, min(30, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']))),

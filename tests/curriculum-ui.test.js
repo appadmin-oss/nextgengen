@@ -139,22 +139,70 @@ async function contextFor(memberId, admin, viewport) {
     await ap.selectOption('.led-card select >> nth=0', 'Music');
     await ap.selectOption('.led-status select', 'published');
     await ap.fill('.led textarea[placeholder^="What this session is"]', 'Where every pianist starts.');
-    /* A lesson diagram, written as a fence (lesson-blocks.jsx). It has to draw
-       on the member's screen, not only in NggMarkdown: a lesson body is
-       rendered by CurriculumText, and the diagrams were wired into the other
-       renderer, so every one an instructor wrote came out as a code block —
-       and the editor's preview agreed, which is the worst way to be wrong. */
-    await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left\n\n```keys C E G\n```\n\n```steps 10 Warm up | 30 Learn | 40 Play\n```');
-    // The editor's toolbar wraps the selection, and the preview renders it.
-    await ap.$eval('.cur-ed-body', el => { el.focus(); el.setSelectionRange(0, 8); });
-    await ap.click('.cur-rte-btn.is-b');
-    chk('the toolbar bolds the selected words', (await ap.$eval('.cur-ed-body', el => el.value)).startsWith('**Middle C** sits'));
-    await ap.click('.cur-rte-btn.is-preview');
-    chk('…and the preview shows the lesson as a learner will see it', await ap.$eval('.cur-rte-preview', el => !!el.querySelector('strong') && !!el.querySelector('ul')));
-    chk('…including the keyboard diagram, drawn and not left as a code block',
-        await ap.$eval('.cur-rte-preview', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6 && !el.querySelector('pre')));
-    await ap.click('.cur-rte-btn.is-preview');
-    await ap.waitForSelector('.cur-ed-body');
+    /* THE EDITOR IS NOT A TEXTAREA. An instructor writes into blocks that
+       draw themselves, and markdown is only the file format underneath — so
+       what is driven here is typing, not filling a field. Everything asserted
+       is what a person would see on the screen. */
+    const type = async (text) => { await ap.keyboard.type(text); await ap.keyboard.press('Enter'); };
+    /* A blank lesson opens on the way IN, not on an empty page: the
+       programme knows the shape of a Saturday, so it offers to lay one out.
+       Here we take the other door and write from nothing. */
+    await ap.waitForSelector('.le-start');
+    chk('a blank lesson offers to lay out a whole NGG session rather than showing an empty page',
+        /Lay out a whole session/.test(await ap.$eval('.le-start', el => el.innerText)));
+    await ap.click('.le-start-alt:has-text("Start from nothing")');
+    await ap.waitForSelector('.le-row:last-child .le-ed');
+    await ap.click('.le-row:last-child .le-ed');
+    await type('Middle C sits in the centre.');
+    // "## " at the start of a line becomes a heading — and the characters go.
+    await type('## Find it');
+    chk('typing "## " makes a heading, and leaves no "##" on the screen',
+        await ap.$eval('.le-doc', el => !!el.querySelector('.le-ed-h2') && !el.innerText.includes('##')));
+    // "- " does the same for a list, and Enter continues it.
+    await type('- Find the two black keys');
+    await type('C is just to their left');
+    chk('a list carries on by itself, one block per point',
+        await ap.$$eval('.le-row-ul', els => els.length >= 2 && els[1].innerText.trim() === 'C is just to their left'));
+    // "/" opens the add menu, where the diagrams are — nobody can guess a fence.
+    await ap.keyboard.type('/');
+    await ap.waitForSelector('.le-menu');
+    await ap.fill('.le-menu-q', 'piano');
+    await ap.click('.le-menu-list button:has-text("Piano keyboard")');
+    await ap.waitForSelector('.le-row-keys');
+    chk('the add menu puts a REAL keyboard in the lesson, drawn and already playing C E G',
+        await ap.$eval('.le-row-keys', el => !!el.querySelector('.lb-keys svg') && el.querySelectorAll('.lb-keys .is-on').length === 6));
+    chk('…and it is edited as notes, with no fence anywhere on the screen',
+        await ap.$eval('.le-row-keys', el => {
+          const chips = [...el.querySelectorAll('.le-chip > span')].map(c => c.textContent);
+          return chips.join(' ') === 'C E G' && !el.innerText.includes('```');
+        }));
+    // A note is added as a note. The drawing follows.
+    await ap.fill('.le-row-keys .le-chip-new input', 'B');
+    await ap.keyboard.press('Enter');
+    chk('adding a note redraws the keyboard', await ap.$eval('.le-row-keys', el => el.querySelectorAll('.lb-keys .is-on').length === 8));
+    // …and taking it off again redraws it back, so the lesson that is saved
+    // below is the C E G the member's own screen is checked against.
+    await ap.click('.le-row-keys button[aria-label="Remove B"]');
+    chk('removing a note redraws it back', await ap.$eval('.le-row-keys', el => el.querySelectorAll('.lb-keys .is-on').length === 6));
+
+    // The session plan, built as minutes and names rather than "10 Warm up |".
+    await ap.click('.le-bar .le-bbtn.is-add');
+    await ap.click('.le-menu-list button:has-text("Session plan")');
+    await ap.waitForSelector('.le-row-steps');
+    chk('a session plan is minutes and names, drawn to scale as they are typed',
+        await ap.$eval('.le-row-steps', el => el.querySelectorAll('.le-pairs > li').length === 3 && !!el.querySelector('.lb-steps')));
+
+    chk('nothing anywhere in the editor shows raw markup',
+        await ap.$eval('.le', el => !/```|\*\*|^#{1,3} /m.test(el.innerText)));
+
+    // Bold, from the toolbar, on a real selection.
+    await ap.$eval('.le-row:first-child .le-ed', el => {
+      const r = document.createRange(); r.setStart(el.firstChild, 0); r.setEnd(el.firstChild, 8);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    });
+    await ap.click('.le-bar .le-bbtn[aria-label^="Bold"]');
+    chk('the toolbar bolds what is selected, on the screen and not as asterisks',
+        await ap.$eval('.le-row:first-child .le-ed', el => (el.querySelector('strong') || el.querySelector('b'))?.textContent === 'Middle C' && !el.innerText.includes('**')));
     // A material file, uploaded to this server's store.
     const pdf = path.join(TMP, 'scale-sheet.pdf');
     fs.writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
@@ -162,14 +210,29 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForSelector('.led-mat', { timeout: 15000 });
     const matUrl = await ap.$eval('.led-mat input[aria-label^="Material 1 link"]', el => el.value);
     chk('a material file uploads to this server and joins the lesson', /^\/api\/member\/curriculum-file\.php\?f=[a-f0-9]+\.pdf$/.test(matUrl));
+    /* The review: one question they answer, one thing they DO. A published
+       lesson cannot be multiple choice alone — in a programme where the
+       thing being learned is played with two hands, picking the right words
+       off a list a week later is not evidence that anybody can play. */
     await ap.click('.led-exam button:has-text("Add a question")');
+    /* A new question is PRACTICAL by default. Four options is the quickest
+       thing to type, so defaulting to it was defaulting to the review the
+       programme refuses to publish. */
+    chk('a new question is a practical one by default, not four options',
+        await ap.$eval('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', el => el.value) === 'task');
+    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'mcq');
     await ap.fill('.led-q textarea[aria-label="Question 1"]', 'How many white keys are in an octave?');
     await ap.fill('.led-opt >> nth=0 >> input.admin-input', '5');
     await ap.fill('.led-opt >> nth=1 >> input.admin-input', '7');
     await ap.check('.led-opt >> nth=1 >> input[type=radio]');
+    await ap.click('.led-exam button:has-text("Add a question")');
+    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Question 2"]', 'Play a C major scale and say where your thumb went under.');
+    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Rubric for question 2"]', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    chk('the editor names the exam this course points at, so a question is held to that standard',
+        /Trinity College London/.test(await ap.$eval('.led-exam', el => el.innerText)));
     await ap.click('.led-top button:has-text("Create lesson")');
     await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
-    chk('the lesson saves, published, with its check and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId) ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":1,"mats":1,"ans":"1"}');
+    chk('the lesson saves, published, with its questions and material', php(`echo json_encode(db_row("SELECT u.status, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks, (SELECT COUNT(*) FROM curriculum_materials m WHERE m.unitId = u.unitId) mats, (SELECT answer FROM curriculum_checks c WHERE c.unitId = u.unitId AND kind = 'mcq') ans FROM curriculum_units u WHERE title = 'Finding middle C'"));`) === '{"status":"published","checks":2,"mats":1,"ans":"1"}');
     await ap.screenshot({ path: path.join(SHOTS, 'editor.png'), fullPage: true });
 
     /* The editor on a phone, which its own stylesheet calls "the normal case, not the
@@ -215,12 +278,14 @@ async function contextFor(memberId, admin, viewport) {
           const a = lum(rgb(tc.color)), c = lum(bg), ratio = (Math.max(a, c) + .05) / (Math.min(a, c) + .05);
           if (ratio < 4.5) unreadable.push('"' + b.innerText.trim().slice(0, 20) + '" ' + ratio.toFixed(2) + ':1');
         }
-        const see = document.querySelector('.led-see-body'), cs = getComputedStyle(see);
+        // The member's-view pane (gone since the editor draws the lesson itself — 783749b8);
+        // measured only where an editor still has one.
+        const see = document.querySelector('.led-see-body'), cs = see ? getComputedStyle(see) : null;
         // What is actually pinned: the whole bar, or (narrow) only its actions row.
         const bar = document.querySelector('.led-top');
         const pinned = [bar, document.querySelector('.led-act')].filter(e => e && getComputedStyle(e).position === 'sticky');
         const top = pinned.length ? Math.max(...pinned.map(e => e.getBoundingClientRect().height)) : 0;
-        return { small, nested: /(auto|scroll)/.test(cs.overflowY) && cs.maxHeight !== 'none', top, unreadable };
+        return { small, nested: !!cs && /(auto|scroll)/.test(cs.overflowY) && cs.maxHeight !== 'none', top, unreadable };
       });
       await pp.screenshot({ path: path.join(SHOTS, 'editor-phone.png'), fullPage: false });
       chk('editor on a phone: every control clears 44px' + (m.small.length ? ' — ' + m.small.slice(0, 6).join(' · ') : ''), m.small.length === 0);
@@ -239,7 +304,10 @@ async function contextFor(memberId, admin, viewport) {
     const csv = path.join(TMP, 'lessons.csv');
     fs.writeFileSync(csv, 'course,week,position,title,summary,check1,check1_answer,check1_rubric\n'
       + 'Music,1,2,"Hand position, and posture",Curved fingers.,Why curve your fingers?,Control and speed,Mentions control\n'
-      + ',1,1,Welcome to the Club,Who we are.,,,\n'
+      /* Every row that is to PUBLISH needs a question for the week after to
+         review. One without lands as a draft instead of being thrown out —
+         which is what the row below is for. */
+      + ',1,1,Welcome to the Club,Who we are.,Name one Club value and a time you saw somebody live it.,A named value and a real occasion,Not a definition\n'
       + 'Musik,2,1,Misspelt course,,,,\n');
     await ap.setInputFiles('.cur-imp input[type=file]', csv);
     await ap.waitForSelector('button:has-text("Check the file")');
@@ -328,18 +396,51 @@ async function contextFor(memberId, admin, viewport) {
        contain rather than about its prose. */
     chk('the lesson shows its text as a list, never as HTML, and its material',
         (await mp.$$('.cur-text ul:not(.lb-step-list) li')).length === 2 && (await mp.$$('.cur-mat')).length === 1);
+    /* THE EXAM. It is two things now: what they can answer, and what they
+       can DO — and the practical can be done HERE, with the work attached,
+       rather than "bring it next Saturday". */
+    chk('the exam asks for the work, not only an answer, and the work can be attached in the exam itself',
+        (await mp.$$('.cur-check')).length === 2 && !!(await mp.$('.cur-attach-btn')));
+    await mp.screenshot({ path: path.join(SHOTS, 'exam.png'), fullPage: true });
     await mp.click('.cur-opt:has-text("5")');
+    await mp.fill('.cur-check >> nth=1 >> .cur-answer', 'I played it twice. My thumb went under on F.');
     await mp.click('button:has-text("Submit answers")');
     await mp.waitForSelector('.cur-result');
-    chk('a wrong answer is marked on the spot, not completed', /0 of 1/.test(await mp.$eval('.cur-result', el => el.innerText)));
+    chk('the recall half is marked on the spot; the practical holds the lesson open for a marker',
+        /with your instructor/i.test(await mp.$eval('.cur-result', el => el.innerText)));
     await mp.click('.cur-opt:has-text("7")');
     await mp.click('button:has-text("Submit again")');
-    await mp.waitForFunction(() => /Done/.test(document.querySelector('.cur-lesson-head .cur-chip')?.innerText || ''), null, { timeout: 15000 });
-    chk('the right answer completes the lesson, and the right option is shown', (await mp.$$('.cur-opt.is-right')).length === 1);
+    await mp.waitForTimeout(1200);
+    chk('…and a corrected answer still does not complete it by itself',
+        php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title = 'Finding middle C'")["status"];`) === 'submitted');
     await mp.screenshot({ path: path.join(SHOTS, 'member-lesson.png'), fullPage: true });
     await mp.click('button:has-text("← All lessons")');
     await mp.click('.cur-item:has-text("Hand position")');
+    /* THE OPENING REVIEW. This is the second lesson of the course, so it
+       opens on the PREVIOUS lesson's questions — before today's teaching is
+       on the screen at all. That is the whole point: a test at the end of
+       the hour measures the hour, with everything still on the whiteboard;
+       a week later it measures what survived, and the remembering is what
+       fixes it there. */
+    await mp.waitForSelector('.cur-review');
+    chk('a session opens with LAST week\'s questions, before today\'s teaching',
+        /Finding middle C/.test(await mp.$eval('.cur-review', el => el.innerText))
+        && !(await mp.$('.cur-text')) && !(await mp.$('.cur-checks')));
+    chk('…and skipping to the lesson is always there, in plain words, for anyone who was away',
+        /Skip to today/.test(await mp.$eval('.cur-review-acts', el => el.innerText)));
+    /* Toasts from the previous lesson's submits are still on screen and sit
+       over the first question; the shot is of the review, not of them.
+       HIDDEN, not removed: these nodes belong to React, and deleting them
+       from under it throws on the next render — which is what broke the
+       click that follows. */
+    // Won by specificity: no-important.test.js bans the override keyword across the whole tree.
+    await mp.addStyleTag({ content: 'body .toast-host:not(#_):not(#_) { display: none; }' });
+    await mp.screenshot({ path: path.join(SHOTS, 'opening-review.png'), fullPage: true });
+    await mp.click('.cur-review button:has-text("Skip to today")');
     await mp.waitForSelector('.cur-answer');
+    /* This one was imported from a sheet with a summary and no body, so
+       what appears past the review is its own questions, not prose. */
+    chk('…and today\'s own session is there once they move past it', !!(await mp.$('.cur-checks')));
     await mp.fill('.cur-answer', 'So I can play faster and with control');
     await mp.click('button:has-text("Submit answers")');
     await mp.waitForSelector('.cur-result');
@@ -354,12 +455,19 @@ async function contextFor(memberId, admin, viewport) {
     await ip.waitForSelector('[role=tab]:has-text("Curriculum")', { timeout: 40000 });
     await ip.click('[role=tab]:has-text("Curriculum")');
     await ip.waitForSelector('.cur-staff-card', { timeout: 20000 });
-    const card = await ip.$eval('.cur-staff-card', el => el.innerText);
-    chk('the NGG instructor sees the answer beside the model answer', /play faster and with control/.test(card) && /Control and speed/.test(card));
-    await ip.fill('.cur-mark-pts', '1');
-    await ip.fill('.cur-mark-fb', 'Yes — control matters most.');
-    await ip.click('button:has-text("Save marks")');
-    await ip.waitForFunction(() => /Nothing waiting/.test(document.querySelector('.cur-staff')?.innerText || ''), null, { timeout: 15000 });
+    /* TWO answers wait, not one: this member's written answer on 'Hand
+       position' and their practical on 'Finding middle C'. That is the
+       shape of every review now a published one cannot be multiple choice
+       alone — so the card is found by what is IN it, not by being first. */
+    const cards = await ip.$$eval('.cur-staff-card', els => els.map(e => e.innerText));
+    chk('the instructor sees both answers waiting, each beside its model answer',
+        cards.length === 2 && cards.some(t => /play faster and with control/.test(t) && /Control and speed/.test(t))
+        && cards.some(t => /thumb went under on F/.test(t)));
+    const hp = ip.locator('.cur-staff-card').filter({ hasText: 'play faster and with control' });
+    await hp.locator('.cur-mark-pts').first().fill('1');
+    await hp.locator('.cur-mark-fb').first().fill('Yes — control matters most.');
+    await hp.locator('button:has-text("Save marks")').first().click();
+    await ip.waitForFunction(() => document.querySelectorAll('.cur-staff-card').length === 1, null, { timeout: 15000 });
     chk('marking it completes the member\'s lesson', php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title LIKE 'Hand position%'")['status'];`) === 'completed');
     await ip.screenshot({ path: path.join(SHOTS, 'instructor.png'), fullPage: true });
 
@@ -401,8 +509,9 @@ async function contextFor(memberId, admin, viewport) {
     chk('the member sees their companion check-in, with next steps', (await mp.$$('.comp-list.is-focus li')).length >= 1 && (await mp.$$('.comp-tile')).length === 6);
     await mp.screenshot({ path: path.join(SHOTS, 'companion.png'), fullPage: true });
     await ap.evaluate(() => window.__adminSection('companion'));
-    await ap.waitForSelector('.admin-main .admin-table', { timeout: 30000 });
-    chk('the staff board lists the member with their rating and reasons', /Ada Learner/.test(await ap.$eval('.admin-main', el => el.innerText)));
+    // The Control Room's own table now (cr-tab-mentors.jsx), not the old panel's.
+    await ap.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
+    chk('the staff board lists the member with their rating and reasons', /Ada Learner/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
 
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

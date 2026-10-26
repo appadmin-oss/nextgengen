@@ -185,10 +185,22 @@ async function as(memberId, admin, viewport) {
     const curTxt = await ip.innerText('main');
     chk('Curriculum: lessons grouped by term with the week the Club is on and this week’s lesson first, never a made-up class size',
       /Term 1/.test(curTxt) && /the Club is on week 3/.test(curTxt) && /This week[\s\S]*Coding week 3/.test(curTxt) && !/of 12 students/.test(curTxt));
-    // Write a lesson for their own course, from the portal: a draft for the curriculum lead.
+    /* Write a lesson for their own course, from the portal — in the SAME
+       editor the Control Room uses. What was here was a four-field form; an
+       instructor now gets objectives, materials, diagrams and the opening
+       review, and the difference between the two portals is what they are
+       allowed to do with it, not what they are shown. */
     await ip.click('main >> text=Write a lesson for Coding');
-    await ip.fill('form[aria-label="Write a lesson for Coding"] input[placeholder="e.g. Finding middle C"]', 'Loops with a robot');
-    await ip.click('form[aria-label="Write a lesson for Coding"] button[type=submit]');
+    await ip.waitForSelector('.led .le-start', { timeout: 20000 });
+    chk('Curriculum: the instructor gets the real lesson editor, not a four-field box',
+      await ip.$eval('.led', el => !!el.querySelector('.le') && !!el.querySelector('.led-exam') && !!el.querySelector('.cur-spine')));
+    chk('Curriculum: …and it says plainly that they cannot publish, instead of offering a status they cannot set',
+      /Saves as a draft/.test(await ip.$eval('.led-top', el => el.innerText)) && !(await ip.$('.led-status')));
+    await ip.fill('.led-title', 'Loops with a robot');
+    await ip.click('.le-start-alt:has-text("Start from nothing")');
+    await ip.click('.le-row:last-child .le-ed');
+    await ip.keyboard.type('Make the robot go round the square four times.');
+    await ip.click('.led-top button:has-text("Save for review")');
     await ip.waitForFunction(() => /Saved as a draft for Coding/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
     const drafted = q(`db_row("SELECT course, status, createdBy FROM curriculum_units WHERE title = 'Loops with a robot'")`) || {};
     chk('Curriculum: an instructor writes a lesson for their course from the portal; it is a draft for the curriculum lead',

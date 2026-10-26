@@ -50,6 +50,13 @@
           ],
           "answer": "Changes only your copy until you reload",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Explain what a browser, a server and a URL are, then open the developer tools and inspect a page. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Explain what a browser, a server and a URL are (2); Open the developer tools and inspect a page (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -155,6 +162,13 @@
           ],
           "answer": "Screen readers read it, and it shows if the image fails to load",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Build ordered and unordered lists, then add an image with alt text. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Build ordered and unordered lists (2); Add an image with alt text (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -248,6 +262,13 @@
           ],
           "answer": "<article>",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Choose between section, article and div, then lay out a page with header, nav, main and footer. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Choose between section, article and div (2); Lay out a page with header, nav, main and footer (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -341,6 +362,13 @@
           ],
           "answer": "radio",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Build text, email and number inputs, then connect every input to a label. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Build text, email and number inputs (2); Connect every input to a label (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -390,6 +418,13 @@
           ],
           "answer": "No — tables are for tabular data; use CSS for layout",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Group fields with fieldset and legend, then build a table with a header row. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Group fields with fieldset and legend (2); Build a table with a header row (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -439,6 +474,13 @@
           ],
           "answer": "The Tab key",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Check a page using only the keyboard, then use headings in order and give images alt text. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Check a page using only the keyboard (2); Use headings in order and give images alt text (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -520,6 +562,13 @@
           ],
           "answer": "In <head>",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Link an external stylesheet, then style elements by type, class and id. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Link an external stylesheet (2); Style elements by type, class and id (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -613,6 +662,13 @@
           ],
           "answer": "block",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Style text with font-family, size and weight, then switch elements between block and inline. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Style text with font-family, size and weight (2); Switch elements between block and inline (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -662,6 +718,13 @@
           ],
           "answer": "200px",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Draw the four layers of the box model, then use box-sizing: border-box. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Draw the four layers of the box model (2); Use box-sizing: border-box (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -711,6 +774,13 @@
           ],
           "answer": "Hue",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Write colours as hex, rgb and hsl, then build a small palette. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Write colours as hex, rgb and hsl (2); Build a small palette (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -804,6 +874,13 @@
           ],
           "answer": "Lets items move onto a new line when there is no room",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Use display: flex, then align with justify-content and align-items. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Use display: flex (2); Align with justify-content and align-items (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -853,6 +930,13 @@
           ],
           "answer": "rem respects the reader's own text-size setting",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Set a type scale, then choose a comfortable line height and line length. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Set a type scale (2); Choose a comfortable line height and line length (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -902,6 +986,13 @@
           ],
           "answer": "44px",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Style inputs and buttons consistently, then make focus clearly visible. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Style inputs and buttons consistently (2); Make focus clearly visible (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -951,6 +1042,13 @@
           ],
           "answer": "sticky",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Explain the four position values, then place an element relative to its parent. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Explain the four position values (2); Place an element relative to its parent (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1000,6 +1098,13 @@
           ],
           "answer": "Inputs whose type attribute is email",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Style :hover and :focus-visible, then add content with ::before. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Style :hover and :focus-visible (2); Add content with ::before (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1093,6 +1198,13 @@
           ],
           "answer": "gap",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Create a grid with grid-template-columns, then use fr units and gap. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Create a grid with grid-template-columns (2); Use fr units and gap (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1230,6 +1342,13 @@
           ],
           "answer": "transform and opacity",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Add a transition to a button, then write a @keyframes animation. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Add a transition to a button (2); Write a @keyframes animation (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1450,6 +1569,13 @@
           ],
           "answer": "It compares without converting types, so '5' === 5 is false",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Do arithmetic and use the % operator, then compare with === and !==. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Do arithmetic and use the % operator (2); Compare with === and !== (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1543,6 +1669,13 @@
           ],
           "answer": "push",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Create and index arrays, then use push, pop and includes. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Create and index arrays (2); Use push, pop and includes (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1712,6 +1845,13 @@
           ],
           "answer": "innerHTML can run code hidden in the text; textContent cannot",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Select elements with querySelector, then change textContent. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Select elements with querySelector (2); Change textContent (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1849,6 +1989,13 @@
           ],
           "answer": "Ignores upper and lower case",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Write simple patterns with character classes, then test a string with .test(). Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Write simple patterns with character classes (2); Test a string with .test() (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1930,6 +2077,13 @@
           ],
           "answer": "Anyone can bypass browser checks and send data directly",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Validate as the person types, then show errors next to the field. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Validate as the person types (2); Show errors next to the field (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -1967,6 +2121,13 @@
           ],
           "answer": "0",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Create Date objects, then format a date for display. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Create Date objects (2); Format a date for display (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2004,6 +2165,13 @@
           ],
           "answer": "<track>",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Control media with play() and pause(), then listen for media events. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Control media with play() and pause() (2); Listen for media events (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2097,6 +2265,13 @@
           ],
           "answer": "Create, Read, Update, Delete",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Save and load with localStorage, then convert data with JSON.stringify and JSON.parse. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Save and load with localStorage (2); Convert data with JSON.stringify and JSON.parse (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2166,6 +2341,13 @@
           ],
           "answer": "Returns the same output for the same input and changes nothing outside itself",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Explain what a pure function is, then avoid changing data you were given. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Explain what a pure function is (2); Avoid changing data you were given (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2398,6 +2580,13 @@
           ],
           "answer": "POST",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Name the parts of an HTTP request and response, then explain common status codes. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Name the parts of an HTTP request and response (2); Explain common status codes (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2435,6 +2624,13 @@
           ],
           "answer": "package.json",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Run a script with Node, then start a project with npm init. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Run a script with Node (2); Start a project with npm init (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2504,6 +2700,13 @@
           ],
           "answer": "Reads JSON request bodies into req.body",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Explain middleware, then read JSON request bodies with express.json(). Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Explain middleware (2); Read JSON request bodies with express.json() (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2553,6 +2756,13 @@
           ],
           "answer": "201",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Design REST routes for a resource, then use GET, POST, PUT and DELETE. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Design REST routes for a resource (2); Use GET, POST, PUT and DELETE (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2622,6 +2832,13 @@
           ],
           "answer": "Document",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Explain why apps need a database, then create a free MongoDB Atlas database. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Explain why apps need a database (2); Create a free MongoDB Atlas database (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2691,6 +2908,13 @@
           ],
           "answer": "Anyone who sees the code (for example on GitHub) could use it",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Connect Express to MongoDB, then use your model in each route. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Connect Express to MongoDB (2); Use your model in each route (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },
@@ -2740,6 +2964,13 @@
           ],
           "answer": ".gitignore",
           "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Keep secrets in environment variables, then validate input on the server. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Keep secrets in environment variables (2); Validate input on the server (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
         }
       ]
     },

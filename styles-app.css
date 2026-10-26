@@ -14694,3 +14694,414 @@ button.m9x-ev-sum { cursor: pointer; }
 .cr-ce-sub > .cr-panel { align-self: stretch; }
 .cr-ce-h { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .cr-list-row > .cr-btn { flex: none; margin-left: auto; }
+
+/* ══ The lesson block editor (lesson-editor.jsx) ═════════════════════════════
+   BUILT FOR THE PHONE FIRST. Everything below the first container query is
+   the phone, and it is the whole editor — not a desk layout with things
+   taken away. An instructor at a centre on a Saturday is holding a phone.
+
+   What that decides, rather than what it merely resizes:
+   - The toolbar is at the BOTTOM, where a thumb is. It rises to the top only
+     when there is a desk-sized width to put it on.
+   - Nothing is revealed by hover. A block's handles appear when the block is
+     ACTIVE — which a tap makes it — so every affordance has a touch route.
+   - The add menu opens as a sheet from the toolbar, 60vh and scrollable,
+     not a popover that would land off the edge of a 360px screen.
+   - 16px is the floor for anything typed into. Below it iOS zooms the page
+     on focus and the instructor loses their place.
+   - Targets are 44px on a coarse pointer, 32px on a mouse.
+
+   The register is a writing surface, not a form: paper, one hairline, no box
+   around each block. The block IS what the member will see — a heading is
+   drawn as a heading. There is no second preview, because there is nothing
+   left for it to show. */
+
+.le {
+  display: grid; gap: 0;
+  background: #fff; border: 1px solid var(--line-cool-soft, #d9dde5); border-radius: 12px;
+  overflow: visible;
+}
+
+/* ── the document ───────────────────────────────────────────────────────── */
+
+.le-doc { list-style: none; margin: 0; padding: 14px 12px 4px; display: grid; gap: 2px; }
+
+.le-row { position: relative; display: grid; gap: 6px; border-radius: 8px; padding: 2px 4px; min-width: 0; }
+.le-row.is-active::after {
+  content: ""; position: absolute; left: -4px; top: 3px; bottom: 3px; width: 2px;
+  border-radius: 2px; background: var(--gold-500, #d99c0a);
+}
+.le-body { min-width: 0; }
+
+/* The writing itself. These sizes are the member's lesson, near enough that
+   what is typed is what is read — the whole claim the editor makes. */
+.le-ed {
+  font-size: 16px; line-height: 1.65; color: var(--ink-900, #1a2233);
+  outline: none; padding: 4px 2px; min-height: 1.65em; word-break: break-word;
+}
+.le-ed:focus-visible { outline: none; }
+.le-ed:empty::before,
+.le-ed[data-le-placeholder]:empty::before {
+  content: attr(data-le-placeholder); color: var(--ink-400, #99a0b2); pointer-events: none;
+}
+/* Chrome's own bold writes <b> and Firefox's <strong>; both mean the same
+   thing to the serialiser, so both have to look the same on the screen. */
+.le-ed strong, .le-ed b { font-weight: 700; }
+.le-ed em, .le-ed i { font-style: italic; }
+.le-ed a { color: var(--navy-900, #16233f); text-decoration: underline; text-underline-offset: 2px; }
+.le-ed code {
+  font: 500 .88em/1 var(--font-mono); padding: 2px 5px; border-radius: 5px;
+  background: var(--cream-100, #f3ece0); color: var(--ink-800, #2c3450);
+}
+
+.le-ed-h2 { font-family: var(--font-display); font-size: 20px; font-weight: 800; letter-spacing: -.015em; line-height: 1.3; margin: 14px 0 0; }
+.le-ed-h3 { font-family: var(--font-display); font-size: 16.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.35; margin: 10px 0 0; }
+.le-row:first-child .le-ed-h2, .le-row:first-child .le-ed-h3 { margin-top: 0; }
+
+/* Lists and callouts are drawn by the row, so the editable area stays one
+   plain line — a <li> that is itself contentEditable lets a browser put a
+   second bullet inside the first one. */
+.le-row-ul .le-body, .le-row-ol .le-body { padding-left: 26px; position: relative; }
+.le-row-ul .le-body::before {
+  content: ""; position: absolute; left: 9px; top: .78em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--ink-500, #5a6488);
+}
+.le-row-ol { counter-increment: le-ol; }
+.le-row-ol .le-body::before {
+  content: counter(le-ol) "."; position: absolute; left: 0; top: 4px; width: 22px;
+  text-align: right; font: 600 14px/1.65 var(--font-mono); color: var(--ink-500, #5a6488);
+}
+/* A numbered list counts from the last row that was NOT one of its items.
+   Resetting on the first item instead left Chrome drawing 1, 1, 2 — the
+   reset and the increment landing on the same element. */
+.le-doc { counter-reset: le-ol 0; }
+.le-row:not(.le-row-ol) { counter-reset: le-ol 0; }
+.le-row-quote .le-body { padding-left: 14px; border-left: 3px solid var(--gold-500, #d99c0a); }
+.le-row-quote .le-ed { color: var(--ink-800, #2c3450); }
+.le-rule { border: 0; border-top: 1px solid var(--line-cool, #c3c9d4); margin: 14px 0; }
+.le-code {
+  margin: 0; padding: 12px; border-radius: 10px; overflow: auto;
+  background: var(--navy-900, #16233f); color: #e7edfb; font: 500 13px/1.6 var(--font-mono);
+}
+
+/* ── block handles: a tap away, never a hover away ──────────────────────── */
+
+.le-handle { position: relative; display: none; gap: 4px; align-items: center; }
+.le-row.is-active > .le-handle, .le-handle:focus-within { display: flex; }
+.le-hbtn {
+  width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff;
+  color: var(--ink-600, #4a5168);
+}
+.le-hbtn:hover { background: var(--cream-100, #f3ece0); color: var(--ink-900, #1a2233); }
+.le-hbtn:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+.le-dots { font: 700 15px/1 inherit; }
+
+.le-acts {
+  position: absolute; z-index: 30; top: 38px; left: 0; min-width: 12rem;
+  display: grid; gap: 1px; padding: 5px; border-radius: 10px; background: #fff;
+  border: 1px solid var(--line-cool, #c3c9d4); box-shadow: 0 12px 28px rgba(12, 20, 50, .16);
+}
+.le-acts > button {
+  display: flex; align-items: center; gap: 9px; width: 100%; cursor: pointer;
+  min-height: 38px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent;
+  font: 500 14px/1 inherit; color: var(--ink-900, #1a2233); text-align: left;
+}
+.le-acts > button:hover:not(:disabled) { background: var(--cream-100, #f3ece0); }
+.le-acts > button:disabled { opacity: .4; cursor: not-allowed; }
+.le-acts > button.is-danger { color: #a3221f; }
+.le-acts > button.is-danger:hover { background: #fdeceb; }
+
+/* ── the toolbar: bottom on a phone, top on a desk ──────────────────────── */
+
+.le-bar {
+  order: 2; position: sticky; bottom: 0; z-index: 20;
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: visible;
+  padding: 7px 10px; border-top: 1px solid var(--line-cool-soft, #d9dde5);
+  border-radius: 0 0 12px 12px;
+  background: #fff; box-shadow: 0 -6px 18px rgba(12, 20, 50, .05);
+}
+.le-bar-sep { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--line-cool-soft, #d9dde5); }
+.le-bar-grow { flex: 1 1 auto; }
+.le-bbtn {
+  min-width: 36px; height: 36px; padding: 0 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  font: 600 14px/1 inherit; color: var(--ink-700, #3b4360);
+}
+.le-bbtn:hover { background: var(--cream-100, #f3ece0); color: var(--ink-900, #1a2233); }
+.le-bbtn:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+.le-bbtn.is-add { border-color: var(--line-cool, #c3c9d4); background: #fff; padding: 0 12px; }
+.le-bbtn.is-add[aria-expanded="true"] { background: var(--navy-900, #16233f); border-color: var(--navy-900, #16233f); color: #fff; }
+.le-bar-add { position: relative; }
+.le-turn > select {
+  height: 36px; max-width: 9.5rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); background: #fff;
+  font: 600 14px/1 inherit; color: var(--ink-900, #1a2233); padding: 0 26px 0 10px;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235a6488' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; background-size: 10px 6px;
+}
+.le-turn > select:disabled { opacity: .5; cursor: not-allowed; }
+/* The word count is the first thing to go when the bar is narrow: it is
+   information, and the buttons are the work. */
+.le-wc { display: none; font: 500 12px/1 var(--font-mono); color: var(--ink-500, #5a6488); white-space: nowrap; }
+
+/* ── the add menu: a sheet off the toolbar ──────────────────────────────── */
+
+.le-scrim { position: fixed; inset: 0; z-index: 25; background: rgba(12, 20, 50, .18); }
+.le-menu {
+  position: absolute; z-index: 40; bottom: calc(100% + 8px); left: 0; right: auto;
+  width: min(20rem, calc(100vw - 32px));
+  display: grid; gap: 0; border-radius: 14px; background: #fff;
+  border: 1px solid var(--line-cool, #c3c9d4); box-shadow: 0 18px 44px rgba(12, 20, 50, .22);
+  overflow: hidden;
+}
+/* Attached to a block's "+" rather than the toolbar, it opens downward —
+   there is room below a block and rarely any above the first one. */
+.le-handle .le-menu { bottom: auto; top: 38px; }
+.le-menu-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px 6px;
+}
+.le-menu-title { font: 700 13px/1 var(--font-display); color: var(--ink-900, #1a2233); }
+.le-menu-close {
+  width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: 8px; background: transparent; color: var(--ink-500, #5a6488); font-size: 20px; line-height: 1;
+}
+.le-menu-close:hover { background: var(--cream-100, #f3ece0); color: var(--ink-900, #1a2233); }
+.le-menu-q {
+  margin: 0 12px 8px; height: 40px; padding: 0 12px; font-size: 16px;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 9px; background: var(--cream-50, #fbf8f1);
+  color: var(--ink-900, #1a2233);
+}
+.le-menu-q:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 1px; }
+.le-menu-list { list-style: none; margin: 0; padding: 0 5px 6px; max-height: 50vh; overflow: auto; overscroll-behavior: contain; }
+.le-menu-list li > button {
+  display: grid; grid-template-columns: 20px 1fr; gap: 2px 10px; width: 100%; cursor: pointer;
+  padding: 8px 9px; border: 0; border-radius: 9px; background: transparent; text-align: left;
+}
+.le-menu-list li > button:hover { background: var(--cream-100, #f3ece0); }
+.le-menu-list li > button:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: -2px; }
+.le-menu-list li .le-i { grid-row: 1 / 3; grid-column: 1; margin-top: 3px; color: var(--ink-600, #4a5168); }
+.le-menu-l, .le-menu-h { grid-column: 2; }
+.le-menu-l { font: 600 14.5px/1.3 inherit; color: var(--ink-900, #1a2233); }
+.le-menu-h { font-size: 12.5px; color: var(--ink-500, #5a6488); line-height: 1.4; }
+.le-menu-none { padding: 10px 12px; font-size: 13px; color: var(--ink-500, #5a6488); }
+
+/* ── diagrams, edited as what they are ──────────────────────────────────── */
+
+/* The drawing leads; the fields that make it read as the caption they are. */
+.le-diagram { display: grid; gap: 9px; padding: 10px; border-radius: 12px; border: 1px solid var(--line-cool-soft, #d9dde5); background: #fff; }
+.le-diagram-top {
+  display: flex; align-items: center; gap: 7px;
+  font: 700 10.5px/1 var(--font-mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-500, #5a6488);
+}
+.le-diagram-top .le-i { width: 14px; height: 14px; }
+.le-diagram .le-fields { padding-top: 8px; border-top: 1px solid var(--line-cool-soft, #d9dde5); }
+.le-diagram-draw { min-width: 0; overflow-x: auto; }
+.le-fields { display: grid; gap: 7px; }
+.le-flabel { font-size: 12.5px; font-weight: 600; color: var(--ink-600, #4a5168); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.le-ftotal { font: 500 12px/1 var(--font-mono); color: var(--ink-500, #5a6488); }
+.le-empty { margin: 0; font-size: 13px; color: var(--ink-500, #5a6488); line-height: 1.5; }
+
+.le-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.le-chip {
+  display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 4px 0 11px;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 999px; background: #fff;
+  font: 600 14px/1 var(--font-mono); color: var(--ink-900, #1a2233);
+}
+.le-chip > button {
+  width: 24px; height: 24px; display: grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: 50%; background: transparent; color: var(--ink-500, #5a6488); font-size: 15px; line-height: 1;
+}
+.le-chip > button:hover { background: var(--cream-100, #f3ece0); color: #a3221f; }
+.le-chip-new > input {
+  width: 6.5rem; height: 32px; padding: 0 10px; font: 500 16px/1 inherit;
+  border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 999px; background: transparent; color: var(--ink-900, #1a2233);
+}
+.le-chip-new > input:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 1px; border-style: solid; }
+
+.le-pairs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.le-pairs > li { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; }
+.le-mins, .le-pname {
+  height: 38px; padding: 0 10px; font-size: 16px; color: var(--ink-900, #1a2233);
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff; min-width: 0;
+}
+.le-mins { width: 4.6rem; font-family: var(--font-mono); font-weight: 600; }
+.le-colour { width: 46px; height: 38px; padding: 2px; border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff; cursor: pointer; }
+.le-x {
+  width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: 8px; background: transparent; color: var(--ink-500, #5a6488); font-size: 18px; line-height: 1;
+}
+.le-x:hover { background: #fdeceb; color: #a3221f; }
+.le-addrow {
+  justify-self: start; height: 32px; padding: 0 12px; cursor: pointer;
+  border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 999px; background: transparent;
+  font: 600 13px/1 inherit; color: var(--ink-600, #4a5168);
+}
+.le-addrow:hover { background: #fff; color: var(--ink-900, #1a2233); }
+
+/* ── pictures and videos ────────────────────────────────────────────────── */
+
+.le-media { display: grid; gap: 9px; }
+.le-media-img { display: block; width: 100%; height: auto; border-radius: 10px; background: var(--cream-100, #f3ece0); }
+.le-media-frame { position: relative; padding-top: 56.25%; border-radius: 10px; overflow: hidden; background: #000; }
+.le-media-frame > iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.le-media-drop {
+  display: grid; gap: 8px; justify-items: center; text-align: center;
+  padding: 22px 14px; border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 10px; background: var(--cream-50, #fbf8f1);
+}
+.le-btn {
+  display: inline-flex; align-items: center; height: 38px; padding: 0 14px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 9px; background: #fff;
+  font: 600 14px/1 inherit; color: var(--ink-900, #1a2233);
+}
+.le-btn:hover { background: var(--cream-100, #f3ece0); }
+.le-cap { display: grid; gap: 5px; }
+.le-cap input {
+  height: 38px; padding: 0 10px; font-size: 16px; color: var(--ink-900, #1a2233);
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff; min-width: 0;
+}
+.le-bad { font-size: 12.5px; color: #a3221f; line-height: 1.4; }
+
+.le-tail {
+  order: 1; margin: 0 12px 12px; min-height: 44px; padding: 0 10px; cursor: text; text-align: left;
+  border: 0; border-radius: 8px; background: transparent;
+  font: 400 15px/1.5 inherit; color: var(--ink-400, #99a0b2);
+}
+.le-tail:hover { background: var(--cream-50, #fbf8f1); }
+.le-tail:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: -2px; }
+
+/* A coarse pointer gets 44px targets. This is the whole of the "mobile"
+   special-casing in the file: everything above is already the phone. */
+@media (pointer: coarse) {
+  .le-hbtn, .le-bbtn, .le-x, .le-chip, .le-menu-close { min-height: 44px; }
+  .le-hbtn, .le-bbtn, .le-x, .le-menu-close { min-width: 44px; }
+  .le-chip { padding-right: 6px; }
+  .le-chip > button { width: 34px; height: 34px; }
+  .le-turn > select, .le-mins, .le-pname, .le-cap input, .le-chip-new > input, .le-btn { min-height: 44px; }
+  .le-acts > button, .le-menu-list li > button { min-height: 46px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .le-menu { animation: le-rise .14s ease-out; }
+  @keyframes le-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+}
+
+/* ── and only now, the desk ─────────────────────────────────────────────── */
+
+@container (min-width: 44rem) {
+  /* The bar goes to the top, because on a desk the eye starts there and
+     there is no thumb to reach with. */
+  .le-bar {
+    order: 0; position: sticky; top: 0; bottom: auto;
+    border-top: 0; border-bottom: 1px solid var(--line-cool-soft, #d9dde5);
+    border-radius: 12px 12px 0 0; box-shadow: 0 6px 18px rgba(12, 20, 50, .04);
+    flex-wrap: wrap;
+  }
+  .le-bar .le-menu { bottom: auto; top: calc(100% + 8px); }
+  .le-wc { display: inline; }
+  .le-doc { padding: 20px 18px 4px; gap: 3px; }
+  /* A measure, so a line of a lesson is not 90 characters wide on a laptop. */
+  .le-row { padding: 2px 6px; }
+  .le-body { max-width: 42rem; }
+  .le-ed { font-size: 16.5px; }
+  .le-ed-h2 { font-size: 22px; }
+  .le-ed-h3 { font-size: 17.5px; }
+  /* Handles move into the gutter and also answer to hover, which a mouse
+     expects — the tap route stays exactly as it is. */
+  .le-row { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .le-handle { display: flex; grid-column: 1; grid-row: 1; visibility: hidden; margin-top: 2px; }
+  .le-row:hover > .le-handle, .le-row.is-active > .le-handle, .le-row:focus-within > .le-handle { visibility: visible; }
+  .le-body { grid-column: 2; grid-row: 1; }
+  .le-row-ul .le-body, .le-row-ol .le-body { padding-left: 26px; }
+  .le-tail { margin: 0 18px 14px; }
+  .le-diagram { padding: 12px 14px; }
+}
+
+/* The two routes. Two boxes with the wording printed on them, because the
+   programme's rule is the wording — "if you're new to this" is a lesson that
+   quietly fails a check nobody showed the instructor. */
+.le-routes { display: grid; gap: 8px; }
+.le-route {
+  display: grid; gap: 3px; padding: 9px 11px;
+  border: 1px solid var(--line-cool-soft, #d9dde5); border-left: 3px solid var(--gold-500, #d99c0a);
+  border-radius: 8px; background: var(--cream-50, #fbf8f1);
+}
+.le-route-who { font: 700 11px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-600, #4a5168); }
+.le-route .le-ed { font-size: 15px; padding: 2px 0; }
+@container (min-width: 44rem) { .le-routes { grid-template-columns: 1fr 1fr; } }
+
+/* The add menu's first group is the session itself. */
+.le-menu-grp > ul { list-style: none; margin: 0; padding: 0; }
+.le-menu-grph {
+  margin: 8px 9px 3px; font: 700 10.5px/1 var(--font-mono);
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ink-500, #5a6488);
+}
+.le-menu-grp.is-parts li > button { background: var(--cream-50, #fbf8f1); margin-bottom: 2px; }
+.le-menu-grp.is-parts li > button:hover { background: var(--cream-100, #f3ece0); }
+.le-menu-grp + .le-menu-grp { border-top: 1px solid var(--line-cool-soft, #d9dde5); margin-top: 4px; }
+
+/* The rail: where this session stands, which is the thing the writing
+   surface genuinely cannot show you. */
+.cur-check { display: grid; gap: 16px; }
+.cur-spine { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 0; }
+.cur-spine-p {
+  position: relative; display: grid; grid-template-columns: 20px 1fr; gap: 2px 8px;
+  padding: 7px 0 7px 0; align-items: start;
+}
+.cur-spine-p + .cur-spine-p::before {
+  content: ""; position: absolute; left: 7px; top: -7px; height: 14px; width: 2px;
+  background: var(--line-cool, #c3c9d4);
+}
+.cur-spine-dot {
+  grid-row: 1 / 3; width: 16px; height: 16px; border-radius: 50%; margin-top: 2px;
+  border: 2px solid var(--line-cool, #c3c9d4); background: #fff;
+}
+.cur-spine-p.is-here .cur-spine-dot { border-color: var(--navy-900, #16233f); background: var(--navy-900, #16233f); }
+.cur-spine-l { font-size: 14px; font-weight: 600; color: var(--ink-900, #1a2233); }
+.cur-spine-p.is-gone .cur-spine-l { color: var(--ink-500, #5a6488); font-weight: 500; }
+.cur-spine-s { font-size: 12.5px; color: var(--ink-500, #5a6488); line-height: 1.45; }
+
+.cur-words { padding: 11px 13px; border-radius: 10px; background: #fffaf0; border: 1px solid #d8a33a; }
+.cur-word-row { margin: 6px 0 0; font-size: 13px; color: #6b4700; line-height: 1.5; }
+.led-draftnote { font-size: 12.5px; color: var(--ink-600, #4a5168); max-width: 14rem; line-height: 1.4; }
+
+/* A session part says how long it is; that number belongs in the margin
+   where a Saturday can be read off at a glance, not buried in the heading. */
+.le-mins-badge {
+  position: absolute; right: 2px; top: 16px;
+  font: 600 10.5px/1 var(--font-mono); letter-spacing: .06em;
+  color: var(--ink-600, #4a5168); background: var(--cream-100, #f3ece0);
+  padding: 4px 7px; border-radius: 999px; white-space: nowrap;
+}
+
+/* The blank page, which is the hardest screen in any editor — and the one
+   where this programme has an answer nobody could guess. */
+.le-start { display: grid; gap: 10px; padding: 22px 16px 18px; }
+.le-start-h { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 800; letter-spacing: -.01em; color: var(--ink-900, #1a2233); }
+.le-start-p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-600, #4a5168); max-width: 34rem; }
+.le-start-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.le-start-go {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  min-height: 44px; padding: 0 16px; border: 0; border-radius: 10px;
+  background: var(--navy-900, #16233f); color: #fff; font: 700 14.5px/1 inherit;
+}
+.le-start-go:hover { background: #0f1930; }
+.le-start-alt {
+  min-height: 44px; padding: 0 14px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 10px; background: #fff;
+  font: 600 14px/1 inherit; color: var(--ink-800, #2c3450);
+}
+.le-start-alt:hover { background: var(--cream-50, #fbf8f1); }
+.le-start-tip { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-500, #5a6488); }
+@container (min-width: 34rem) { .led-row3.is-two { grid-template-columns: 2fr 1fr; } }
+/* The recognised exam this course points at — the standard a question here
+   is held to, shown to the person writing it. */
+.led-ref {
+  margin: 0; padding: 9px 11px; border-radius: 8px;
+  background: var(--cream-50, #fbf8f1); border: 1px solid var(--line-cool-soft, #d9dde5);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-600, #4a5168);
+}
+.led-ref a { color: var(--ink-900, #1a2233); }

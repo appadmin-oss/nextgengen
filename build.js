@@ -44,6 +44,7 @@ const ORDER = [
   'tweaks-panel.jsx',
   'lesson-blocks.jsx',
   'components.jsx',
+  'lesson-editor.jsx',
   'table.jsx',
   'card-photo.jsx',
   'card-template.jsx',
