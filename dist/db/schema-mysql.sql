@@ -4193,3 +4193,30 @@ CREATE TABLE IF NOT EXISTS testimonials (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (180) ON DUPLICATE KEY UPDATE version = version;
+
+-- 181: two questions, two rhythms. "How did today go?" after every LESSON —
+-- a tap, for the person teaching, never published. "What did this term give
+-- you?" after every SESSION, the twelve-week block — and that is the
+-- testimonial. testimonials.unitId stays, unread, so a deployment that
+-- already ran 180 keeps resolving.
+ALTER TABLE testimonials ADD COLUMN sessionId VARCHAR(40) NOT NULL DEFAULT '';
+CREATE INDEX idx_testi_session ON testimonials(memberId, sessionId);
+
+CREATE TABLE IF NOT EXISTS lesson_feedback (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fid VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  signal VARCHAR(16) NOT NULL DEFAULT '',
+  body TEXT,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_lfb_one (memberId, unitId),
+  KEY idx_lfb_unit (unitId, signal),
+  KEY idx_lfb_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (181) ON DUPLICATE KEY UPDATE version = version;

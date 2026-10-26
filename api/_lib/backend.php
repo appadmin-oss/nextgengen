@@ -256,6 +256,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.curriculum.plan'    => 'admin_curriculum_plan',
             'admin.curriculum.report'  => 'admin_curriculum_report',
             'admin.curriculum.schedule' => 'admin_curriculum_schedule',
+            'admin.curriculum.feedback' => 'admin_lesson_feedback',
             'admin.testimonials.list'   => 'admin_testimonials_list',
             'admin.testimonials.decide' => 'admin_testimonials_decide',
             'admin.curriculum.submissions' => 'admin_curriculum_submissions',
@@ -267,6 +268,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.curriculum.ask'    => 'member_curriculum_ask',
             'member.testimonial.give'  => 'member_testimonial_give',
             'member.testimonial.mine'  => 'member_testimonial_mine',
+            /* How today went — a tap, after every lesson, never published
+               (domain/lesson-feedback.php). The testimonial above is the
+               other question, asked once a session. */
+            'member.lesson.feedback'   => 'member_lesson_feedback_give',
+            'member.lesson.feedback.mine' => 'member_lesson_feedback_mine',
+            'staff.curriculum.feedback' => 'staff_lesson_feedback',
             'member.curriculum.document' => 'member_curriculum_document',
             'staff.curriculum'         => 'staff_curriculum',
             'staff.curriculum.member'  => 'staff_curriculum_member',

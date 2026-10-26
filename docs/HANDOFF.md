@@ -3087,3 +3087,63 @@ and a new table carrying a centre name that was not in `CENTRE_NAME_TABLES`.
 A fourth was found by the suite rather than a guard: the first cut invented a
 `members.visibilityConsent` column, which exists on `applications` and
 `volunteers` and has never existed on `members`.
+
+## Two questions, two rhythms — and a font that was two fonts (2026-10-26)
+
+**The testimonial was being asked after every lesson.** That was wrong, and the
+owner said so: a session here is the twelve-week block (TONI, MEDI, SUMMER,
+DOMI), not a Saturday. A child asked for something quotable twenty-four times
+a term answers twice, and what comes back is a diary.
+
+It is two features now.
+
+- **How did today go** (`domain/lesson-feedback.php`, migration 181) — after
+  every LESSON. Three taps: *I could do it · I could follow but I'd need help ·
+  I could not follow*. Words optional, asked second, and only of the child who
+  struggled. **Never published, by anybody** — there is no op in that file that
+  could, and a test asserts there never is one. Seen by the instructor for
+  their own courses and centre, and by admins holding `curriculum` or `club`.
+- **What did this term give you** (`domain/testimonials.php`) — after every
+  SESSION, in its last three weeks and for two months after it ends
+  (`testi_session_ask`). Consent, byline and withdrawal are unchanged.
+
+The feedback has to pay for itself or it is worse than nothing: it costs the
+child a tap and buys them nothing. So `lfb_board()` does not hand back rows to
+read — it answers the question an instructor actually has, **which lessons are
+not landing**, worst first, with the words from the children who were lost
+attached to the lesson they were lost in. A "needed help" counts as half a
+miss, because a class that could only follow with help was not taught either.
+Control Room → Learning → **How lessons land**.
+
+### The font was two fonts
+
+`styles-app.css` declared Geist as seven static faces (400/500/600) while
+`assets/fonts/fonts.css` declared it as one variable file covering 100–900.
+The member portal sets every heading at **700** — a weight the statics did not
+have — so headings resolved to the variable file and the body text beside them
+to the static cut. **One screen, two physical fonts.** Before the variable file
+was added, 700 was a faux-bold of the static 600: fake, but consistent, which
+is why this appeared as a regression.
+
+One source now. Measured after: every weight 400–800 comes from
+`geist-variable.woff2`, one request instead of five, and Latin Extended
+actually renders where it previously fell back to the system face.
+
+### Read aloud, and the study helper
+
+Both were reported as bad, and both were bad for findable reasons.
+
+- **Read aloud** called `getVoices()` synchronously — empty on the first call
+  in Chrome and on Android, so the first press got no voice at all. It read
+  the raw Markdown ("hash hash warm dash up"). It stopped after ~15 seconds
+  (Chrome kills a long utterance) and truncated at 3,000 characters. It now
+  waits for `voiceschanged`, speaks `mp9Speakable()` output — headings as
+  sentences, links as their words, code announced rather than recited — in
+  sentence-sized chunks with a `resume()` heartbeat.
+- **The study helper** sent only the latest question. There was no thread, and
+  the previous answer was wiped on each press, so "I still don't get it" was a
+  cold start — which is the one thing being stuck is never like. It carries
+  the conversation now (`CURR_TUTOR_TURNS`), and is given the member's
+  programme year and **what they actually got wrong on that lesson's review**
+  (`curriculum_ask_gaps`, never the model answer), so it can teach the gap
+  instead of re-explaining the part they already had.

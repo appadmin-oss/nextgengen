@@ -91,6 +91,7 @@ const CR_PAGES = {
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
     { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },
     { id: "curriculum", label: "Curriculum", desc: "What the Club teaches, lesson by lesson, and the exam that ends each one.", cap: "curriculum" },
+    { id: "feedback", label: "How lessons land", desc: "What members tapped after each lesson — the ones most of a class could not follow, worst first.", cap: ["curriculum", "club"] },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },

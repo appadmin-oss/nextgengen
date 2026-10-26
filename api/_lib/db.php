@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 180;
+const NGG_SCHEMA_TARGET = 181;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5270,6 +5270,37 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_testi_status ON testimonials(status, createdAt);
             CREATE INDEX IF NOT EXISTS idx_testi_member ON testimonials(memberId, unitId);
             CREATE INDEX IF NOT EXISTS idx_testi_centreid ON testimonials(centreId);
+        ",
+        /* Two different questions, asked at two different rhythms — they were
+           one, and one was wrong (domain/lesson-feedback.php).
+
+           HOW DID TODAY GO is asked after every LESSON: a tap, for the person
+           teaching. It is never published and never leaves the staff.
+
+           WHAT DID THIS TERM GIVE YOU is asked after every SESSION — the
+           twelve-week block, four a year — and that is the testimonial.
+           `testimonials.unitId` is left in place and unread rather than
+           dropped: SQLite cannot drop a column on older builds, and a
+           deployment that already ran 180 keeps resolving. */
+        181 => "
+            ALTER TABLE testimonials ADD COLUMN sessionId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_testi_session ON testimonials(memberId, sessionId);
+            CREATE TABLE IF NOT EXISTS lesson_feedback (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              fid TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              signal TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_lfb_one ON lesson_feedback(memberId, unitId);
+            CREATE INDEX IF NOT EXISTS idx_lfb_unit ON lesson_feedback(unitId, signal);
+            CREATE INDEX IF NOT EXISTS idx_lfb_centreid ON lesson_feedback(centreId);
         ",
     ];
 

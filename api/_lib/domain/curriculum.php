@@ -2103,14 +2103,15 @@ function member_curriculum_unit(array $p): array {
             'unitVersion' => (int)$b['unit']['version'], 'startedAt' => now_iso(), 'updatedAt' => now_iso()]); } catch (\Throwable $e) {}
         $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     }
-    /* What they already said about this session, so the box is not blank a
-       second time and a change reads as a change (domain/testimonials.php). */
-    $say = function_exists('member_testimonial_mine')
-        ? (member_testimonial_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
+    /* How they said today went, so the taps show their own answer back
+       (domain/lesson-feedback.php). This is NOT the testimonial — that is
+       asked once a session, not once a Saturday. */
+    $say = function_exists('member_lesson_feedback_mine')
+        ? (member_lesson_feedback_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
             'progress' => curriculum_progress_public($pr, $b),
             'review' => curriculum_opening_review($units, $id, (string)$m['memberId']),
-            'say' => $say];
+            'feedback' => $say];
 }
 
 /**
@@ -2262,13 +2263,36 @@ function admin_curriculum_document(array $p): array {
  */
 const CURR_TUTOR_PER_DAY = 20;
 const CURR_TUTOR_Q_MAX   = 600;
+/* How much of the conversation travels back. Enough for a follow-up and a
+   follow-up to that; not so much that a long thread crowds out the lesson. */
+const CURR_TUTOR_TURNS   = 8;
 
+/**
+ * THE STUDY HELPER — a tutor, not a search box.
+ *
+ * It was a one-shot form: one question in, one paragraph out, no memory. A
+ * child who read the answer and said "I still don't get it" was starting
+ * again from nothing, because only the latest question was ever sent. That is
+ * not what being stuck is like, and it is the whole reason the thing felt
+ * useless. It carries the conversation now.
+ *
+ * Three things it is given that it never had:
+ *   - the THREAD, so a follow-up is a follow-up;
+ *   - the member's programme YEAR, so a Year 1 child and a Year 3 child
+ *     asking the same question are not answered the same way;
+ *   - WHAT THEY GOT WRONG on this lesson's review, when they have sat it. A
+ *     tutor who can see the actual mistake teaches the actual gap instead of
+ *     re-explaining the part they already understood.
+ *
+ * What it still must not do: give away an answer to a graded question, do an
+ * assignment, or carry on as if distress were a study question.
+ */
 function member_curriculum_ask(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
     $q = trim(mb_substr((string)($p['question'] ?? ''), 0, CURR_TUTOR_Q_MAX));
     if (mb_strlen($q) < 4) return ['ok' => false, 'error' => 'question_too_short'];
-    $units = curriculum_member_units($m);
+    $units = curriculum_member_units($m, $placement);
     $id = (string)($p['unitId'] ?? '');
     if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
     $key = 'ai.tutor.' . gmdate('Y-m-d');
@@ -2281,20 +2305,82 @@ function member_curriculum_ask(array $p): array {
     // Spend the allowance BEFORE the model is called, so parallel requests cannot all slip under it.
     db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
               ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
-    $u = $units[$id]['unit'];
+
+    $b = $units[$id];
+    $u = $b['unit'];
     $obj = implode('; ', json_decode((string)$u['objectives'], true) ?: []);
-    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n" . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
-    $system = 'You are the NGG study helper: a patient, encouraging tutor for a 10–17 year old member of Next Generation Genius in Nigeria. '
-        . 'Answer ONLY about the lesson below. Explain simply, give one short worked example, and end with one quick question that checks understanding. '
-        . 'Keep it under 160 words, in plain British English. Never do their assignment or give answers to graded checks — help them think it through instead. '
-        . 'If the question is not about the lesson, say kindly that you can only help with this lesson. Never ask for personal details.' . "\n\nTHE LESSON:\n" . $lesson;
-    $r = ai_chat($system, [['role' => 'me', 'text' => $q]], 420, 'coach');
+    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n"
+            . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
+
+    /* WHAT THEY ALREADY GOT WRONG. The prompt, their answer and the mark —
+       never the model answer, which is the thing they must not be handed. */
+    $wrong = curriculum_ask_gaps($b, (string)$m['memberId']);
+
+    $year = (int)($placement['year'] ?? 1);
+    $system = 'You are the NGG study helper: a patient, encouraging tutor for a ' . (($year >= 3) ? '15-17' : ($year === 2 ? '12-15' : '10-13'))
+        . ' year old member of Next Generation Genius in Nigeria, in year ' . $year . ' of three. '
+        . 'Teach, do not lecture. Explain the ONE thing they are stuck on, in short sentences, with a concrete example they could '
+        . 'actually try — use Nigerian everyday things for examples, not American ones. Build on what has already been said in this '
+        . 'conversation rather than starting again. End with one short question that checks they followed. '
+        . 'At most 200 words, plain British English, no markdown headings. '
+        . 'NEVER give the answer to a graded question and never do their assignment — help them work it out. '
+        . 'If they ask about something close to the lesson, help anyway; only decline if it is nothing to do with their studies. '
+        . 'Never ask for personal details.'
+        . ($wrong !== '' ? "\n\nTHEY RECENTLY GOT THESE WRONG in this lesson's review. Teach to this gap; do not read them the answer:\n" . $wrong : '')
+        . "\n\nTHE LESSON:\n" . $lesson;
+
+    /* The thread. The client sends it back; it is capped here rather than
+       trusted, and only the text is taken — a role the client invents must
+       not be able to put words in the system's mouth. */
+    $turns = [];
+    foreach (is_array($p['history'] ?? null) ? $p['history'] : [] as $t) {
+        if (!is_array($t)) continue;
+        $text = trim(mb_substr((string)($t['text'] ?? ''), 0, 1200));
+        if ($text === '') continue;
+        $turns[] = ['role' => (string)($t['role'] ?? '') === 'ai' ? 'ai' : 'me', 'text' => $text];
+    }
+    $turns = array_slice($turns, -CURR_TUTOR_TURNS);
+    $turns[] = ['role' => 'me', 'text' => $q];
+
+    $r = ai_chat($system, $turns, 560, 'coach');
     if (empty($r['ok'])) {
         // A failed answer is given back.
         db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$used, (string)$m['memberId'], $key]);
         return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
     }
     return ['ok' => true, 'answer' => mb_substr(trim((string)$r['text']), 0, 2400), 'left' => CURR_TUTOR_PER_DAY - $used - 1, 'limit' => CURR_TUTOR_PER_DAY];
+}
+
+/**
+ * The questions this member got wrong on a lesson, as a line each: the
+ * question, what they wrote, and what it scored. Never the model answer —
+ * that is precisely what the tutor must not hand over.
+ */
+function curriculum_ask_gaps(array $b, string $memberId): string {
+    $pr = db_row('SELECT answers, marks FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [(string)$b['unit']['unitId'], $memberId]);
+    if (!$pr) return '';
+    $answers = json_decode((string)$pr['answers'], true) ?: [];
+    $marks = json_decode((string)$pr['marks'], true) ?: [];
+    if (!$marks) return '';
+    $out = [];
+    foreach ($b['checks'] as $c) {
+        $cid = (string)$c['checkId'];
+        $mk = $marks[$cid] ?? null;
+        if (!is_array($mk) || !isset($mk['points'])) continue;
+        $pts = (int)$c['points'];
+        if ($pts <= 0 || (float)$mk['points'] >= $pts) continue;      // they got it
+        $mine = $answers[$cid] ?? '';
+        if ((string)$c['kind'] === 'mcq') {
+            $opts = json_decode((string)$c['options'], true) ?: [];
+            $mine = is_numeric($mine) && isset($opts[(int)$mine]) ? (string)$opts[(int)$mine] : '(no answer)';
+        }
+        $mine = trim(mb_substr((string)$mine, 0, 300));
+        $out[] = '- Question: ' . mb_substr((string)$c['prompt'], 0, 240)
+               . "\n  They answered: " . ($mine === '' ? '(nothing)' : $mine)
+               . "\n  Scored " . (int)$mk['points'] . ' of ' . $pts;
+        if (count($out) >= 4) break;
+    }
+    return implode("\n", $out);
 }
 
 /** Render the curriculum document through its template (api/_lib/templates). */

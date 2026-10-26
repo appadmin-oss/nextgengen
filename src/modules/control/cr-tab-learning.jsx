@@ -247,6 +247,47 @@ function crCurBulk(ctx, status, verb) {
 }
 
 Object.assign(CR_TAB_DEFS, {
+  /* HOW LESSONS LAND (domain/lesson-feedback.php).
+     A child taps one of three words after every lesson. This is the only
+     reason that tap is worth asking for: the lesson most of a class could
+     not follow, at the top, with their own words on it. A board that just
+     listed the taps back would cost the child the tap and buy them nothing. */
+  feedback: {
+    skeleton: ["kpis", "cards"],
+    load: async () => NGGApi.admin.curriculum.feedback(),
+    facts: d => {
+      const bad = (d.lessons || []).filter(l => l.enough && l.missPct >= 50);
+      return "Lesson feedback: " + crNum(d.voices || 0) + " answers; " + bad.length + " lessons most of the class could not follow"
+        + (bad[0] ? ", worst: " + bad[0].title + " (" + bad[0].missPct + "% miss)" : "");
+    },
+    blocks: (d) => {
+      const rows = d.lessons || [];
+      const enough = rows.filter(l => l.enough);
+      const bad = enough.filter(l => l.missPct >= 50);
+      const out = [{ type: "kpis", span: 6, items: [
+        { l: "Answers", v: crNum(d.voices || 0), dn: "taps from members" },
+        { l: "Lessons with enough to judge", v: crNum(enough.length), dn: d.minVoices + "+ answers each" },
+        { l: "Not landing", v: crNum(bad.length), dn: "half the class or more", tone: bad.length ? "down" : "flat" },
+      ] }];
+      if (!rows.length) {
+        out.push({ type: "note", icon: "chat-circle", text: "Nothing yet.",
+          sub: "Members are asked how a lesson went at the end of it. Answers appear here as they come in \u2014 nobody is made to answer, so a quiet week is not a fault." });
+        return out;
+      }
+      out.push({ type: "cards", span: 6, title: "Worst first", sub: "A lesson under " + d.minVoices + " answers is shown last \u2014 too few to judge",
+        empty: "Nothing yet.",
+        cards: rows.map(l => ({
+          icon: l.missPct >= 50 ? "warning" : l.missPct >= 25 ? "eye" : "check",
+          title: l.title,
+          sub: (l.course || "Whole Club") + " \u00b7 week " + l.week,
+          tag: l.enough ? l.missPct + "% missed" : l.voices + " answer" + (l.voices === 1 ? "" : "s"),
+          tone: !l.enough ? "flat" : l.missPct >= 50 ? "down" : l.missPct >= 25 ? "warn" : "up",
+          meta: [["Could do it", String(l.got)], ["Needed help", String(l.mostly)], ["Could not follow", String(l.lost)]]
+            .concat(l.said.length ? [["They said", l.said.map(x => "\u201c" + x.body + "\u201d").join("  \u00b7  ")]] : []),
+        })) });
+      return out;
+    },
+  },
   curriculum: {
     skeleton: ["table"],
     load: async ctx => {

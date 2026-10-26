@@ -16,6 +16,10 @@ if ($method === 'GET') {
         $res = isset($_GET['memberId'])
             ? gs_call('staff.curriculum.member', ['requesterId' => $mid, 'memberId' => (string)$_GET['memberId']])
             : gs_call('staff.curriculum', ['requesterId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'testimonial') {
+        /* Whether the term question is open at all, which session it is
+           about, and what they already said (domain/testimonials.php). */
+        $res = gs_call('member.testimonial.mine', ['memberId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'placement') {
         $res = gs_call('staff.curriculum.placement', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? '')]);
     } elseif (isset($_GET['unit'])) {
@@ -41,11 +45,17 @@ if ($method === 'GET') {
         /* What they thought of the session, in their own words. Private
            until somebody with `content` decides otherwise — the rules are
            in domain/testimonials.php, not here. */
-        $res = gs_call('member.testimonial.give', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
+        $res = gs_call('member.testimonial.give', ['memberId' => $mid, 'sessionId' => (string)($b['sessionId'] ?? ''),
             'course' => (string)($b['course'] ?? ''), 'body' => (string)($b['body'] ?? ''), 'showAs' => (string)($b['showAs'] ?? 'initials')]);
+    } elseif ($action === 'feedback') {
+        /* How today's lesson went: one tap, optionally a line. Never leaves
+           the staff who teach them (domain/lesson-feedback.php). */
+        $res = gs_call('member.lesson.feedback', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
+            'signal' => (string)($b['signal'] ?? ''), 'body' => (string)($b['body'] ?? '')]);
     } elseif ($action === 'ask') {
         rate_limit_check_actor('member.curriculum.ask', (string)$mid);
-        $res = gs_call('member.curriculum.ask', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'question' => (string)($b['question'] ?? '')]);
+        $res = gs_call('member.curriculum.ask', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
+            'question' => (string)($b['question'] ?? ''), 'history' => is_array($b['history'] ?? null) ? $b['history'] : []]);
     } elseif ($action === 'year') {
         $res = gs_call('staff.curriculum.year', ['requesterId' => $mid, 'memberId' => (string)($b['memberId'] ?? ''), 'year' => $b['year'] ?? null, 'ip' => client_ip()]);
     } elseif ($action === 'confirm') {

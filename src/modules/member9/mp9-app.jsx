@@ -42,6 +42,60 @@ const MP9_LOADERS = {
   evals: () => NGGApi.member.pod.read("evals"),
 };
 const MP9_SIMPLE_UNDER = 13;
+
+/* ── Markdown a person could say out loud ────────────────────────────────────
+ *
+ * Lesson and journal text is Markdown. Handed to the speech engine as it is,
+ * it says "hash hash warm dash up" and "star star important star star", runs
+ * a heading straight into the paragraph under it, reads the URL of every
+ * link, and recites code character by character. That, more than the voice,
+ * is why it sounded wrong.
+ *
+ * Out comes a list of sentence-sized chunks. Sentence-sized because the
+ * engine is queued chunk by chunk: Chrome silently stops a long utterance
+ * after about fifteen seconds, and a chunked queue sidesteps that as well as
+ * the old 3,000-character cut-off.
+ */
+function mp9Speakable(text) {
+  let t = String(text || "");
+  if (!t.trim()) return [];
+  t = t
+    .replace(/```[\s\S]*?```/g, " . There is a code example here, which is easier to read than to hear. ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")                      // images say nothing
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")                    // a link reads as its words
+    .replace(/https?:\/\/\S+/g, " a link ")
+    .replace(/^\s{0,3}>\s?/gm, "")                                // quotes
+    .replace(/^\s{0,3}(#{1,6})\s*(.+?)\s*#*\s*$/gm, "$2. ")      // a heading is a sentence, with a stop
+    .replace(/^\s{0,3}([-*+])\s+/gm, "")                          // bullets
+    .replace(/^\s{0,3}(\d+)[.)]\s+/gm, "$1. ")                    // numbered steps keep their number
+    .replace(/^\s{0,3}([-*_]\s*){3,}\s*$/gm, " ")                 // rules
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    .replace(/~~(.*?)~~/g, "$1")
+    .replace(/\|/g, ", ")                                          // table cells
+    .replace(/&nbsp;/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{2,}/g, "\n\n");
+
+  const out = [];
+  for (const para of t.split(/\n{2,}/)) {
+    const p = para.replace(/\n/g, " ").trim();
+    if (!p) continue;
+    /* Split on sentence ends, but not on the full stop in "e.g." or a
+       decimal, and never leave a chunk so long the engine chokes on it. */
+    const parts = p.match(/[^.!?]+(?:[.!?]+["')\]]*|$)/g) || [p];
+    let buf = "";
+    for (const raw of parts) {
+      const bit = raw.trim();
+      if (!bit) continue;
+      if ((buf + " " + bit).trim().length > 220) { if (buf) out.push(buf.trim()); buf = bit; }
+      else buf = (buf + " " + bit).trim();
+    }
+    if (buf) out.push(buf.trim());
+  }
+  return out.filter(x => /[A-Za-z0-9]/.test(x)).slice(0, 400);
+}
 /* Which area a screen belongs to, and that area's colour: one colour per place, so a child knows
    where they are by colour as well as by name. Each passes 4.5:1 with white text and on white. */
 const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", community: "mentor", growth: "grow", results: "grow", passport: "grow", journal: "grow",
@@ -240,21 +294,84 @@ class Mp9Portal extends React.Component {
   goBack() { const h = this.state.hist; if (!h.length) return this.go("today"); const to = h[h.length - 1]; this.go(to); this.setState({ hist: h.slice(0, -1) }); }
   openSheet(sheet, extra) { this._sheetFrom = document.activeElement; this.setState({ sheet, sText: "", sPick: null, sAnon: false, sFile: null, sBusy: false, lq: {}, lqText: {}, lqRes: null, pf: {}, pfErr: "", delStep: 0, phDraft: null, phReason: "", ...(extra || {}) , pwCode: null }); if (sheet && (sheet.k === "profile" || sheet.k === "password") && !this.dd("sec")) this.load("sec"); if (sheet && sheet.k === "profile") this.load("phc"); }
   closeSheet() { this.setState({ sheet: null }); }
-  /* Read aloud, with the voices the phone already has (works offline on
-     Android). Pressing it again stops. A Nigerian English voice when the
-     phone has one, else any English voice. */
+  /* ── Read aloud ───────────────────────────────────────────────────────────
+   *
+   * Four things were wrong with this, and all four are why it sounded bad.
+   *
+   * 1. VOICES ARE ASYNC. getVoices() is empty on the first call in Chrome and
+   *    on Android, so the first press of the day got no voice at all and the
+   *    engine fell back to whatever it liked — usually a flat American one.
+   *    It waits for `voiceschanged` now.
+   * 2. IT READ THE MARKDOWN. Lesson and journal text is Markdown, so it was
+   *    literally saying "hash hash warm dash up, star star important star
+   *    star". mp9Speakable() turns it into sentences a person would say.
+   * 3. IT STOPPED AFTER ~15 SECONDS. Chrome silently kills a long utterance.
+   *    The text is split into sentence-sized chunks and queued, which fixes
+   *    that and the old 3,000-character truncation at the same time — a
+   *    lesson is longer than that and it just stopped mid-word.
+   * 4. NO WAY TO SLOW IT DOWN. A child reading along needs that more than an
+   *    adult does. The rate is remembered per device.
+   */
+  mp9Voice() {
+    const ss = window.speechSynthesis;
+    const vs = (ss.getVoices && ss.getVoices()) || [];
+    if (!vs.length) return null;
+    /* A Nigerian voice if the phone has one; then any African or British
+       English, which are far closer to how these children are taught to read
+       than the US default most devices ship. */
+    return vs.find(v => /en[-_]NG/i.test(v.lang))
+        || vs.find(v => /en[-_](GH|KE|ZA)/i.test(v.lang))
+        || vs.find(v => /en[-_]GB/i.test(v.lang))
+        || vs.find(v => /^en/i.test(v.lang)) || null;
+  }
+  speakRate(next) {
+    if (next !== undefined) { try { localStorage.setItem("ngg.m9.rate", String(next)); } catch (_) {} this.setState({ rate: next }); return next; }
+    if (this.state.rate) return this.state.rate;
+    let r = 0.95; try { r = parseFloat(localStorage.getItem("ngg.m9.rate")) || 0.95; } catch (_) {}
+    return r;
+  }
+  stopSpeaking() {
+    this._sq = null;
+    clearInterval(this._sTick); this._sTick = 0;
+    try { window.speechSynthesis.cancel(); } catch (_) {}
+    if (this.state.speaking) this.setState({ speaking: null });
+  }
   speak(text, key) {
     const ss = typeof window !== "undefined" && window.speechSynthesis;
-    if (!ss) return this.toast("This phone can’t read aloud.");
-    if (this.state.speaking === key) { ss.cancel(); return this.setState({ speaking: null }); }
-    ss.cancel();
-    const u = new SpeechSynthesisUtterance(String(text || "").slice(0, 3000));
-    const vs = ss.getVoices ? ss.getVoices() : [];
-    const v = vs.find(x => /en-NG/i.test(x.lang)) || vs.find(x => /^en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang));
-    if (v) u.voice = v;
-    u.lang = v ? v.lang : "en-NG"; u.rate = 0.92;
-    u.onend = u.onerror = () => { if (this.state.speaking === key) this.setState({ speaking: null }); };
-    this.setState({ speaking: key }); ss.speak(u);
+    if (!ss) return this.toast("This phone can\u2019t read aloud.");
+    if (this.state.speaking === key) return this.stopSpeaking();
+    this.stopSpeaking();
+
+    const chunks = mp9Speakable(text);
+    if (!chunks.length) return;
+    const go = () => {
+      const v = this.mp9Voice();
+      const rate = this.speakRate();
+      let i = 0;
+      this._sq = { key };
+      const say = () => {
+        if (!this._sq || this._sq.key !== key) return;
+        if (i >= chunks.length) return this.stopSpeaking();
+        const u = new SpeechSynthesisUtterance(chunks[i++]);
+        if (v) { u.voice = v; u.lang = v.lang; }
+        u.rate = rate;
+        u.onend = say;
+        /* An error must not strand the button in "Stop reading" forever. */
+        u.onerror = () => this.stopSpeaking();
+        ss.speak(u);
+      };
+      /* Chrome stops speaking after about fifteen seconds unless something
+         pokes it. Harmless everywhere else. */
+      clearInterval(this._sTick);
+      this._sTick = setInterval(() => { if (this._sq) { try { ss.resume(); } catch (_) {} } else clearInterval(this._sTick); }, 9000);
+      this.setState({ speaking: key });
+      say();
+    };
+    // Voices may not be loaded yet — this is the first-press bug.
+    if ((ss.getVoices && ss.getVoices().length) || !("onvoiceschanged" in ss)) return go();
+    const once = () => { ss.removeEventListener("voiceschanged", once); go(); };
+    ss.addEventListener("voiceschanged", once);
+    setTimeout(() => { if (!this._sq) { ss.removeEventListener("voiceschanged", once); go(); } }, 1200);
   }
   canSpeak() { return typeof window !== "undefined" && !!window.speechSynthesis; }
   /* One way to write to the mentor, from every screen. The server decides

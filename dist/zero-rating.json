@@ -1,13 +1,13 @@
 {
   "measuredAt": "2026-10-26",
   "hostsReached": [],
-  "firstVisitBytes": 2331217,
+  "firstVisitBytes": 2334827,
   "repeatVisitBytes": 6207,
   "requests": 32,
   "byKind": {
     "document": 3881,
-    "script": 1556656,
-    "style": 354410,
+    "script": 1559586,
+    "style": 355090,
     "image": 97215,
     "font": 312848,
     "other": 6207

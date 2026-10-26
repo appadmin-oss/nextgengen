@@ -8086,17 +8086,20 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
    no hex of its own. Prefix .cr- only. Layout follows the root's own width
    (the React tree branches on it); nothing here keys off the window.
    ========================================================================== */
-/* Geist, self-hosted (assets/fonts/qcard, OFL): the type of the Control Room
-   v2 system, the sign-in pop-up and the studios. Latin and Latin Extended,
-   400 / 500 / 600, and Geist Mono 500. Without these the system's
-   `--cr-font` fell back to the device's own sans-serif. */
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-ext-400-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist Mono"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-mono-latin-500-normal.woff2) format("woff2"); }
+/* Geist is declared ONCE, in assets/fonts/fonts.css, as the variable file
+   that covers 100-900 — and this is where seven static @font-face rules for
+   the same family used to sit beside it.
+
+   Two sources for one family is not a duplicate, it is a BUG you can see.
+   These statics covered 400/500/600 only, so weight 700 — which the member
+   portal sets every heading in — resolved to the variable file instead,
+   while the body text beside it came from the static cut. One screen, two
+   physical fonts, headings subtly the wrong shape against their own page.
+   Before the variable file existed, 700 was a faux-bold of the static 600:
+   fake, but at least consistent.
+
+   One file now serves every weight, 700 is real rather than synthesised, and
+   a first visit fetches one font instead of up to seven. */
 
 /* The Control Room v2 tokens. Declared once, for the Control Room and for the
    surfaces that share its design system outside it: the sign-in pop-up and the
@@ -12039,6 +12042,24 @@ button.m9x-ev-sum { cursor: pointer; }
 .sth-btn { min-height: 44px; min-width: 110px; padding: 0 18px; border-radius: 999px; border: 0; background: var(--sth-ink); color: #fff; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
 .sth-btn:disabled { opacity: .5; cursor: not-allowed; }
 .sth-ans { white-space: pre-wrap; padding: 12px 14px; border-radius: 12px; background: var(--sth-s1); font-size: 14.5px; line-height: 1.55; }
+/* The thread. The helper used to be a form that replaced its own answer, so
+   there was nothing to lay out; a conversation needs turns you can tell
+   apart at a glance and a question box that stays put under them. */
+.sth-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 52vh; overflow-y: auto; }
+.sth-turn { display: grid; gap: 3px; }
+.sth-who { font-size: 11.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--sth-ink-3); }
+.sth-bubble { margin: 0; white-space: pre-wrap; padding: 11px 13px; border-radius: 12px; font-size: 14.5px; line-height: 1.6; }
+.sth-turn.is-me .sth-bubble { background: #eef1f8; color: var(--sth-ink); }
+.sth-turn.is-ai .sth-bubble { background: var(--sth-s1); color: var(--sth-ink); border: 1px solid var(--sth-line); }
+.sth-turn.is-care .sth-bubble { background: #fdf6e3; border-color: #e8c97a; }
+.sth-bubble.is-wait { color: var(--sth-ink-3); font-style: italic; }
+/* "Ask a question" is hard when you do not know what you do not understand. */
+.sth-openers { display: grid; gap: 8px; }
+.sth-opener { min-height: 44px; padding: 10px 14px; text-align: left; cursor: pointer; font: inherit; font-size: 14px;
+  border: 1px dashed var(--sth-line); border-radius: 12px; background: transparent; color: var(--sth-ink); }
+.sth-opener:hover { border-style: solid; background: var(--sth-s1); }
+.sth-restart { min-height: 36px; padding: 0 12px; cursor: pointer; font: inherit; font-size: 13px;
+  border: 0; background: none; color: var(--sth-ink-3); text-decoration: underline; }
 .sth-ans.is-err { background: #fbe9e7; color: #a8231b; }
 .sth-ans.is-care { background: #fbf1d9; color: #4a3500; }
 

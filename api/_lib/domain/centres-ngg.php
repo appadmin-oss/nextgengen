@@ -113,6 +113,7 @@ const CENTRE_NAME_TABLES = [
     'mentors',
     'summer_students',
     'testimonials',
+    'lesson_feedback',
     'v3_scores',
 ];
 
