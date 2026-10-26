@@ -1055,6 +1055,30 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Where a member's courses come from
+
+**Control Room → Learning → Curriculum → Schedule.** Needs `curriculum`.
+
+Two modes, and the setting decides which is live:
+
+| Mode | A member's lessons are… |
+|---|---|
+| **By member** (default) | The courses chosen for them. If none are chosen, their track and the interests on their card are matched to course names; failing that, every course in their division. |
+| **By division** | Their **division's own shared curriculum** — the spine every course in that division has in common — and nothing from the individual strands. Club-wide lessons and Chess still reach everyone. |
+
+**Why the division mode exists.** The fallback in the first mode was doing a
+bad impression of it: a member with no courses on record was handed *all seven*
+of Technology's strands at once, so their week showed Automation, Coding,
+Cybersecurity and more, side by side. That is a wall, not a curriculum. A
+division has one spine; the division mode delivers that.
+
+**Before you turn it on, read the coverage board** (same screen). The spine
+that ships covers **Year 1 only**, so a member placed in Year 2 or 3 would open
+their portal and find nothing. The board shows every division against every
+year, and counts exactly how many members a gap would strand — if that number
+is not zero, write the missing year's curriculum first, or leave the setting
+on *By member*.
+
 ### What members say about a session (testimonials)
 
 At the end of every lesson a member is asked one question — *what did today
@@ -1086,6 +1110,31 @@ Three things follow from that, and they are the point of the feature:
 Published ones appear on the public home page. If none are published, that
 section of the home page is not shown at all — it is never filled with
 examples.
+
+### Where members actually do the lessons: the Learn app (/learn)
+
+Members open **Learn** from their portal, or go straight to `/learn`. It is its
+own app, the way the Anchor Journal and the Study tools are — not a panel
+inside the dashboard.
+
+| Address | What it is |
+|---|---|
+| `/learn` | **This week** — what to do now: anything late first, then the next lesson, then anything half-done |
+| `/learn/courses` | **My courses** — the shelf, with how far through each one they are |
+| `/learn/course/<course>` | One course, week by week |
+| `/learn/lesson/<lesson>` | **A lesson, full screen** |
+| `/learn/review` | How the review works, and what they will be asked about |
+| `/learn/helper` | The study helper |
+
+**Every one of those is a real address.** A lesson can be bookmarked, sent to a
+mentor, or opened from a message, and the browser's Back button goes back. It
+could not be any of those things before, because a lesson was an overlay on
+the dashboard with no address of its own.
+
+A lesson page carries, in this order: last session's review (which can always
+be skipped — being away is not a reason to be shut out of this week), what
+they'll learn, the lesson itself with **Read it to me** and a speed control,
+next session's questions, and *How did that go?* at the end.
 
 ### Study tools (/study)
 

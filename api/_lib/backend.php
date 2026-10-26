@@ -257,6 +257,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.curriculum.report'  => 'admin_curriculum_report',
             'admin.curriculum.schedule' => 'admin_curriculum_schedule',
             'admin.curriculum.feedback' => 'admin_lesson_feedback',
+            'admin.curriculum.divisions' => 'admin_curriculum_divisions',
             'admin.testimonials.list'   => 'admin_testimonials_list',
             'admin.testimonials.decide' => 'admin_testimonials_decide',
             'admin.curriculum.submissions' => 'admin_curriculum_submissions',

@@ -1112,6 +1112,81 @@ const CURR_PLAN_ARC = [
     ['Showcase and reflection', 'Present the capstone, celebrate the term, and set one goal for next term.'],
 ];
 
+/**
+ * THE DIVISION COVERAGE BOARD — which division has a curriculum, for which year.
+ *
+ * `courseSource = division` makes the division the enrolment, so a division
+ * with no lessons for a year is not a gap in a report: it is that year's
+ * members opening their portal and finding nothing. The spine that ships
+ * (curriculum-divisions-2026.json) covers Year 1 only, so this board exists
+ * to make the other two years visible while they are written, rather than
+ * discovered by a child.
+ *
+ * Counts the division's OWN course — the one named after it — because that is
+ * exactly what the mode delivers. Strand courses are reported separately by
+ * admin_curriculum_coverage().
+ */
+function admin_curriculum_divisions(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $cfg = curriculum_schedule();
+    $divisions = function_exists('nggc_divisions') ? nggc_divisions() : [];
+
+    $byCourse = [];
+    foreach (db_all("SELECT course, level, status, COUNT(*) n FROM curriculum_units
+                     WHERE status IN ('published','draft') AND course <> '' GROUP BY course, level, status") as $r) {
+        $y = curriculum_level_year((string)$r['level']);
+        $byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']]
+            = ($byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']] ?? 0) + (int)$r['n'];
+    }
+
+    /* Who it would reach. Counted through the SAME resolver a member's own
+       page uses, so this cannot drift from what they actually see. */
+    $heads = []; $unplaced = 0;
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
+    if ($scope !== null) {
+        if (!$scope) $where .= ' AND 1 = 0';
+        else { $where .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = $scope; }
+    }
+    foreach (db_all("SELECT memberId, track, courses, division, centre FROM members WHERE $where", $args) as $m) {
+        $dv = curriculum_member_division($m);
+        if ($dv === '') { $unplaced++; continue; }
+        $y = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $k2 = mb_strtolower($dv);
+        $heads[$k2]['n'] = ($heads[$k2]['n'] ?? 0) + 1;
+        $heads[$k2][$y] = ($heads[$k2][$y] ?? 0) + 1;
+    }
+
+    $rows = [];
+    foreach ($divisions as $d) {
+        $k = mb_strtolower((string)$d['name']);
+        $years = [];
+        for ($y = 1; $y <= CURR_PROGRAMME_YEARS; $y++) {
+            $pub = (int)($byCourse[$k][$y]['published'] ?? 0);
+            $drf = (int)($byCourse[$k][$y]['draft'] ?? 0);
+            $years[] = ['year' => $y, 'published' => $pub, 'draft' => $drf, 'has' => $pub > 0,
+                        /* The number that matters: members placed in this
+                           year who, in division mode, would open their portal
+                           and find nothing. */
+                        'members' => (int)($heads[$k][$y] ?? 0)];
+        }
+        $rows[] = ['id' => (string)$d['id'], 'name' => (string)$d['name'],
+                   'members' => (int)($heads[$k]['n'] ?? 0),
+                   'noYear' => (int)($byCourse[$k][0]['published'] ?? 0),   // lessons whose level names no year
+                   'years' => $years,
+                   'gaps' => array_values(array_map(static fn($y) => $y['year'], array_filter($years, static fn($y) => !$y['has'])))];
+    }
+    /* Members who, in division mode, are placed in a year their division has
+       no published spine for. Counted, not estimated — it is the cost of
+       turning the mode on today, and nobody should have to infer it. */
+    $stranded = 0;
+    foreach ($rows as $r) foreach ($r['years'] as $y) if (!$y['has']) $stranded += (int)$y['members'];
+    return ['ok' => true, 'rows' => $rows, 'courseSource' => (string)$cfg['courseSource'],
+            'years' => CURR_PROGRAMME_YEARS, 'unplaced' => $unplaced, 'stranded' => $stranded];
+}
+
 function admin_curriculum_coverage(array $p): array {
     $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
     $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
@@ -1385,7 +1460,11 @@ function curriculum_course_ctx(): array {
     $byLower = [];
     foreach ($catalogue as $courses) foreach ($courses as $c) $byLower[mb_strtolower(trim((string)$c))] = (string)$c;
     $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
-    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => []];
+    /* Read ONCE here rather than per member: curriculum_due_run() resolves
+       courses for every active member on the programme, and a setting_get()
+       inside that loop is a per-row query by another name. */
+    $src = function_exists('curriculum_schedule') ? (string)curriculum_schedule()['courseSource'] : 'member';
+    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => [], 'courseSource' => $src];
 }
 
 /* ── A member's courses, chosen, not guessed ─────────────────────────────────
@@ -1699,14 +1778,54 @@ function curriculum_division_courses(string $divId, array &$ctx): array {
 }
 
 /**
- * A member's courses: the ones chosen for them (members.courses), or — for a
- * record nobody has assigned yet — what their track and the disciplines on
- * their card name (member_courses_from_text), or, when those name nothing,
- * the division they are placed in. Chess is every division's (§6), so a
- * member who takes anything takes Chess too.
+ * The division a member belongs to, by the NAME the catalogue spells it with,
+ * or ''. Resolved the way the rest of the programme resolves it: what is on
+ * the record, else what their track plainly means, else the division of a
+ * course they already carry.
+ */
+function curriculum_member_division(array $m): string {
+    $d = trim((string)($m['division'] ?? ''));
+    if ($d !== '' && function_exists('nggc_division') && ($x = nggc_division($d))) return (string)$x['name'];
+    if (function_exists('nggc_division_for_track')) {
+        $id = nggc_division_for_track((string)($m['track'] ?? ''));
+        if ($id !== '' && ($x = nggc_division($id))) return (string)$x['name'];
+    }
+    foreach (member_courses_of($m) as $c) { $dv = course_division((string)$c); if ($dv !== '') return $dv; }
+    return '';
+}
+
+/**
+ * A member's courses.
+ *
+ * TWO MODES, and which one is live is a setting — `courseSource` on the
+ * curriculum schedule (Control Room → Learning → Curriculum → Schedule).
+ *
+ *   'member'   (default) the courses chosen for them (members.courses), or —
+ *              for a record nobody has assigned yet — what their track and
+ *              the disciplines on their card name, or, failing those, every
+ *              course in their division.
+ *
+ *   'division' THE DIVISION IS THE ENROLMENT. A member takes their division's
+ *              OWN shared curriculum — the spine every course inside it
+ *              shares (curriculum-divisions-2026.json) — and nothing from the
+ *              individual strands. This exists because the fallback above was
+ *              doing a bad impression of it: a member with no courses on
+ *              record was handed all seven of Technology's strands at once,
+ *              which is a wall of lessons, not a curriculum. A division has
+ *              one spine; that is what the mode delivers.
+ *
+ * Club-wide lessons (course = '') reach everybody in both modes, and Chess is
+ * every division's (§6), so it is added in both.
  */
 function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     if ($ctx === null) $ctx = curriculum_course_ctx();
+    if (($ctx['courseSource'] ?? 'member') === 'division') {
+        $dv = curriculum_member_division($m);
+        /* No division on the record is not a reason to hand them somebody
+           else's curriculum: they get the Club-wide lessons and Chess, and
+           the coverage board names them as unplaced. */
+        return $dv === '' ? ['Chess'] : [$dv, 'Chess'];
+    }
     $out = member_courses_of($m);
     if (!$out) {
         $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? '');
@@ -3003,13 +3122,25 @@ const CURR_SCHEDULE_DEFAULTS = ['enabled' => true, 'startDate' => '', 'remindBef
                                    it off rather than leave children staring
                                    at a review nobody will ever mark. The
                                    questions stay on the lesson either way. */
-                                'reviewAtStart' => true];
+                                'reviewAtStart' => true,
+                                /* WHERE A MEMBER'S COURSES COME FROM.
+                                   'member'   — the courses chosen for each
+                                                member (the default).
+                                   'division' — the division is the enrolment:
+                                                everyone takes their division's
+                                                own shared curriculum and
+                                                nothing from the strands.
+                                   curriculum_member_courses() is the whole
+                                   behaviour; this names which half runs. */
+                                'courseSource' => 'member'];
+const CURR_COURSE_SOURCES = ['member', 'division'];
 const CURR_DUE_BATCH = 60;
 
 function curriculum_schedule(): array {
     $c = setting_get('curriculum');
     $c = (is_array($c) ? $c : []) + CURR_SCHEDULE_DEFAULTS;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$c['startDate'])) $c['startDate'] = '';
+    if (!in_array((string)$c['courseSource'], CURR_COURSE_SOURCES, true)) $c['courseSource'] = 'member';
     return $c;
 }
 
@@ -3144,6 +3275,8 @@ function admin_curriculum_schedule(array $p): array {
     $next = [
         'enabled' => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
         'reviewAtStart' => array_key_exists('reviewAtStart', $in) ? !empty($in['reviewAtStart']) : !empty($cur['reviewAtStart']),
+        'courseSource' => in_array((string)($in['courseSource'] ?? ''), CURR_COURSE_SOURCES, true)
+            ? (string)$in['courseSource'] : (string)$cur['courseSource'],
         'startDate' => $start,
         'remindBeforeDays' => max(0, min(30, (int)($in['remindBeforeDays'] ?? $cur['remindBeforeDays']))),
         'remindEveryDays' => max(1, min(30, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']))),

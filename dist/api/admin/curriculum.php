@@ -14,6 +14,7 @@ if ($method === 'GET') {
     elseif ($view === 'seed') $res = gs_call('admin.curriculum.seed', ['requesterId' => $mid, 'key' => (string)($_GET['key'] ?? '')]);
     elseif ($view === 'courses') $res = gs_call('admin.club.catalogue.get', ['requesterId' => $mid]);
     elseif ($view === 'coverage') $res = gs_call('admin.curriculum.coverage', ['requesterId' => $mid]);
+    elseif ($view === 'divisions') $res = gs_call('admin.curriculum.divisions', ['requesterId' => $mid]);
     elseif ($view === 'schedule') $res = gs_call('admin.curriculum.schedule', ['requesterId' => $mid]);
     elseif ($view === 'submissions') $res = gs_call('admin.curriculum.submissions', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'pending')]);
     /* What members said about their sessions, waiting to be read. Lives on

@@ -24591,6 +24591,73 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && !db_row("SELECT id FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit]));
         db_exec("DELETE FROM lesson_feedback");
         db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-P1','NGG-CUR-P2')");
+
+        /* ── The division IS the enrolment ───────────────────────────────
+           `courseSource = division`: a member takes their division's own
+           shared curriculum and nothing from the strands. It exists because
+           the old fallback was doing a bad impression of it — a member with
+           no courses on record was handed all seven of Technology's strands
+           at once, which is a wall, not a curriculum. */
+        $tech = 'Technology & Applied Engineering';
+        /* The division spine is SEEDED (curriculum-divisions-2026.json) — the
+           real thing the mode delivers, not a fixture standing in for it. */
+        $spine = db_row("SELECT unitId FROM curriculum_units WHERE course = ? AND status = 'published' ORDER BY week LIMIT 1", [$tech]);
+        chk('division mode: the division spine ships with the code and is published', (bool)$spine);
+        $spineId = (string)($spine['unitId'] ?? '');
+        db_insert('members', ['memberId' => 'NGG-CUR-D1', 'fullName' => 'Div Member', 'email' => 'div1@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => 'Coding', 'courses' => json_encode(['Coding']),
+            'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $mD = fn() => curriculum_member_row('NGG-CUR-D1');
+
+        $ctx = null;
+        $inMember = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: by default the member keeps the courses chosen for them',
+            in_array('Coding', $inMember, true) && !in_array($tech, $inMember, true));
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'division']]);
+        chk('division mode: the setting is stored, and only the two modes are modes',
+            curriculum_schedule()['courseSource'] === 'division'
+            && (function () { backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'whatever']]);
+                              return curriculum_schedule()['courseSource']; })() === 'division');
+
+        $ctx = null;
+        $inDiv = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: the member now takes their DIVISION\'s curriculum, not their strand',
+            in_array($tech, $inDiv, true) && !in_array('Coding', $inDiv, true));
+        chk('division mode: …and Chess, because Chess is every division\'s',
+            in_array('Chess', $inDiv, true));
+        chk('division mode: the division\'s own lesson actually reaches them',
+            $spineId !== '' && isset(curriculum_member_units($mD())[$spineId]));
+
+        /* A member with no division is not handed somebody else's curriculum. */
+        db_insert('members', ['memberId' => 'NGG-CUR-D2', 'fullName' => 'No Div', 'email' => 'div2@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => '', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $ctx = null;
+        chk('division mode: a member with no division gets Chess and the Club-wide lessons, never a division that is not theirs',
+            curriculum_member_courses(curriculum_member_row('NGG-CUR-D2'), $ctx) === ['Chess']);
+
+        /* THE COVERAGE BOARD. The spine that ships is Year 1 only, so turning
+           the mode on strands every Year 2 and 3 member. That has to be a
+           number on a screen, not something a child discovers. */
+        $cov = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        $techRow = null;
+        foreach ($cov['rows'] ?? [] as $r) if ($r['name'] === $tech) $techRow = $r;
+        chk('division coverage: every division is listed with a year-by-year verdict',
+            !empty($cov['ok']) && count($cov['rows']) === 4 && $techRow && count($techRow['years']) === CURR_PROGRAMME_YEARS);
+        chk('division coverage: Year 1 has a spine; Years 2 and 3 are named as gaps',
+            $techRow['years'][0]['has'] === true && $techRow['years'][1]['has'] === false && $techRow['gaps'] === [2, 3]);
+        chk('division coverage: it counts the members a gap would actually strand, rather than leaving it to be inferred',
+            $cov['stranded'] === 0 && $techRow['years'][0]['members'] >= 1);
+        staff_curriculum_year(['requesterId' => 'NGG-CUR-ADM', 'viaAdmin' => true, 'memberId' => 'NGG-CUR-D1', 'year' => 2]);
+        $cov2 = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        chk('division coverage: …so placing that member in a year with no spine makes the count go up',
+            $cov2['stranded'] === 1);
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'member']]);
+        chk('division mode: turning it off puts the member back on their own courses',
+            (function () { $c = null; return in_array('Coding', curriculum_member_courses(curriculum_member_row('NGG-CUR-D1'), $c), true); })());
+        db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-D1','NGG-CUR-D2')");
+        db_exec("DELETE FROM member_state WHERE memberId = 'NGG-CUR-D1'");
     })();
 
     // Import: dry run, digest, apply, re-run.

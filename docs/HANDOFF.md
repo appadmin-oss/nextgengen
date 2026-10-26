@@ -3147,3 +3147,68 @@ Both were reported as bad, and both were bad for findable reasons.
   programme year and **what they actually got wrong on that lesson's review**
   (`curriculum_ask_gaps`, never the model answer), so it can teach the gap
   instead of re-explaining the part they already had.
+
+## The curriculum stops being a modal; the division becomes the enrolment (2026-10-26)
+
+The owner, on the member portal: *"The LMS is not really what I want it to be.
+It is currently just a modal. The structure of the member portal is also not
+good."* And: *"The use of the course in division feature is not available yet?"*
+
+Both were fair, and both had findable causes.
+
+### It really was a modal
+
+`openLesson()` called `openSheet({ k: "lesson" })` — the SAME overlay the
+portal uses for *Edit profile* and *Gate pass*. The whole of a Saturday's
+teaching was paginated inside a sheet (`lPart`: read → materials → check) on
+top of a dashboard tab. No address, nothing to bookmark or send to a mentor,
+and the browser's Back closed it instead of going back.
+
+**`/learn` is its own app now** (`page-learn.jsx`), the way the Anchor Journal
+and the Study tools are:
+
+    /learn                  This week — what to do now
+    /learn/courses          My courses
+    /learn/course/<slug>    One course, week by week
+    /learn/lesson/<unitId>  A lesson, FULL SCREEN
+    /learn/review           How the review works
+    /learn/helper           The study helper
+
+Every one is real: `app.jsx` gained `inLearnSubtree` so a deep lesson address
+is not rewritten back to `/learn` on mount, which is precisely what made a
+lesson unbookmarkable. `tests/learn-app.test.js` pins the thing that changed —
+that it is a PLACE: cold-loading `/learn/lesson/<id>` opens that lesson, Back
+goes back, and signed out the address is kept so signing in lands on it.
+
+**There is still only one lesson renderer.** The portal's `openLesson()` now
+hands over to `/learn/lesson/<id>` rather than drawing its own; the app reuses
+`CurriculumText`, `CurriculumMaterials`, `CurCheckField`, `DashOpeningReview`
+and `DashLessonFeedback` rather than forking them (CLAUDE.md §11). What is new
+is the place, not the parts.
+
+**A container cannot be styled by its own container query.** `.lrn-app` carried
+both `container-type: inline-size` and the responsive grid, so at desktop width
+the grid stayed in its phone shape while the rail took its desktop one — and
+the two overlapped, swallowing every click. The container is `.lrn-app`; the
+grid is `.lrn-shell` inside it.
+
+### The division as the enrolment
+
+There was no such feature — only a last-resort FALLBACK, and a bad one: a
+member with no courses on record was handed *every* course in their division,
+which is why one screen showed Automation, Coding, Cybersecurity and Practical
+Coding side by side at week 8. That is a wall, not a curriculum.
+
+`courseSource` on the curriculum schedule now names which half runs:
+
+- **`member`** (default) — unchanged.
+- **`division`** — the member takes their division's OWN shared curriculum,
+  the spine every course inside it shares
+  (`curriculum-divisions-2026.json`, already in the box), and nothing from the
+  strands. Club-wide lessons and Chess still reach everyone; a member with no
+  division gets those and never somebody else's curriculum.
+
+**The spine ships for Year 1 only**, so turning the mode on would strand every
+Year 2 and 3 member. That is a number on a screen now, not something a child
+discovers: `admin_curriculum_divisions()` reports every division against every
+year and counts exactly how many members each gap would strand.

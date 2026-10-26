@@ -1470,6 +1470,7 @@
         /* What members said about their own sessions, and the one act that
            puts any of it on the public site. */
         feedback: (course) => request('/admin/curriculum.php' + qs({ view: 'feedback', course: course || '' })),
+        divisions: () => request('/admin/curriculum.php' + qs({ view: 'divisions' })),
         testimonials: (status) => request('/admin/curriculum.php' + qs({ view: 'testimonials', status: status || 'new' })),
         testimonialDecide: (tid, status, note) => request('/admin/curriculum.php', { body: { action: 'testimonial', tid, status, note: note || '' } }),
         plan:    (o) => request('/admin/curriculum.php', { body: Object.assign({ action: 'plan' }, o || {}), timeout: 120000 }),
