@@ -32,8 +32,14 @@ function crSupDue(r) {
   return ms < 0 ? { t: "Overdue by " + span, s: crDate(r.respondBy, true), bad: true } : { t: "Reply in " + span, s: crDate(r.respondBy, true) };
 }
 
+/* The live tab context. load() is handed a narrower one (no reload, no
+   setData), and the server object outlives a render, so the rows and the
+   drawer read the current one from here — set on every render by blocks(). */
+const crSupCtx = { current: null };
+
 /* The table refetches when its server object changes: one per load. */
-function crSupServer(d, ctx) {
+function crSupServer(d, ctx0) {
+  const ctx = new Proxy({}, { get: (_, k) => (crSupCtx.current || ctx0)[k] });
   return {
     sortKeys: CR_SUP_SORT,
     fetch: async ({ q, filters, sort, page }) => {
@@ -132,7 +138,7 @@ Object.assign(CR_TAB_DEFS, {
       const d = { kpis: r.kpis, counts: r.counts, meta: r.meta };
       d.server = crSupServer(d, ctx);
       // A link to /control/support/cases/<n> (a notification, an email) opens that case.
-      if (ctx.sub && /^\d+$/.test(ctx.sub)) setTimeout(() => crSupOpen(ctx, Number(ctx.sub)), 0);
+      if (ctx.sub && /^\d+$/.test(ctx.sub)) setTimeout(() => crSupOpen(crSupCtx.current || ctx, Number(ctx.sub)), 0);
       return d;
     },
     count: async () => { const r = await NGGApi.admin.support.list({ status: "active" }); return (r.counts.new || 0) + (r.counts.open || 0); },
@@ -152,6 +158,7 @@ Object.assign(CR_TAB_DEFS, {
       }) },
     ],
     blocks: (d, ctx) => {
+      crSupCtx.current = ctx;
       const k = d.kpis || {};
       const out = [{ type: "kpis", span: 6, items: [
         { l: "Need attention", v: crNum(k.active || 0), tone: "flat" },

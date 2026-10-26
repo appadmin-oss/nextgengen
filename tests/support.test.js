@@ -163,7 +163,10 @@ async function as(memberId, admin, viewport) {
     const ph = await as('NGG-SP-K1', false, { width: 390, height: 844 });
     await ph.goto(BASE + '/dashboard/support', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ph);
-    await ph.waitForSelector('.sup .sup-row', { timeout: 60000 });
+    await ph.waitForSelector('.sup .sup-card', { timeout: 60000 });
+    chk('a solved case is not under Open, and Open says where to find it', /earlier ones are under All/.test(await ph.innerText('.sup')));
+    await ph.click('.sup-seg-b:has-text("All")');
+    await ph.waitForSelector('.sup .sup-row', { timeout: 10000 });
     chk('on a phone the desk lists the case with no sideways scroll', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await ph.click('.sup button:has-text("Open a case")');
     chk('…and the new-case form fits too', await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
