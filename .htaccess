@@ -87,6 +87,14 @@ AddDefaultCharset UTF-8
 
   # Content-Security-Policy.
   #
+  # NO FONT HOST. Google Fonts is gone from style-src, font-src and
+  # connect-src because nothing fetches it any more — every face the app,
+  # the ID cards and the posters draw in is in /assets/fonts. That is not
+  # only speed: a mobile operator zero-rating this service whitelists
+  # HOSTNAMES, and a learner on free data whose fonts come from a host the
+  # operator did not whitelist either pays for them or waits for a timeout.
+  # The policy is the inventory; see docs/ZERO-RATING.md.
+  #
   # frame-src is REQUIRED, not optional. There is no default for it: without the
   # directive it inherits default-src 'self', which silently blocks every
   # cross-origin iframe — the in-page PDF viewer (documents are served from
@@ -124,10 +132,10 @@ AddDefaultCharset UTF-8
   # hand, or uploads and printed photos fail with a CSP error in the console.
   Header always set Content-Security-Policy "default-src 'self'; \
 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
-style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+style-src 'self' 'unsafe-inline'; \
 img-src 'self' data: https: blob:; \
-font-src 'self' https://fonts.gstatic.com data:; \
-connect-src 'self' https://api.cloudinary.com https://res.cloudinary.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://*.backblazeb2.com https://*.amazonaws.com https://*.wasabisys.com https://*.digitaloceanspaces.com https://*.supabase.co https://api.dictionaryapi.dev https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; \
+font-src 'self' data:; \
+connect-src 'self' https://api.cloudinary.com https://res.cloudinary.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://*.backblazeb2.com https://*.amazonaws.com https://*.wasabisys.com https://*.digitaloceanspaces.com https://*.supabase.co https://api.dictionaryapi.dev data: blob:; \
 worker-src 'self' blob:; \
 frame-src 'self' https://res.cloudinary.com https://*.r2.dev https://*.backblazeb2.com https://*.amazonaws.com https://*.wasabisys.com https://*.digitaloceanspaces.com https://*.supabase.co https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; \
 media-src 'self' https: blob:; \

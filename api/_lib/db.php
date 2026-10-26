@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 180;
+const NGG_SCHEMA_TARGET = 181;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5247,13 +5247,37 @@ function db_migrate(PDO $db): void {
         179 => "
             ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT NOT NULL DEFAULT '';
         ",
+        /* What a member says about a session, in their own words, asked at
+           the end of every one. PRIVATE until a person decides otherwise —
+           see domain/testimonials.php for why every column here exists. */
+        180 => "
+            CREATE TABLE IF NOT EXISTS testimonials (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tid TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              unitId TEXT NOT NULL DEFAULT '',
+              course TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              body TEXT NOT NULL DEFAULT '',
+              showAs TEXT NOT NULL DEFAULT 'initials',
+              status TEXT NOT NULL DEFAULT 'new',
+              decidedBy TEXT NOT NULL DEFAULT '',
+              decidedAt TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_testi_status ON testimonials(status, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_testi_member ON testimonials(memberId, unitId);
+            CREATE INDEX IF NOT EXISTS idx_testi_centreid ON testimonials(centreId);
+        ",
         /* Family Portal v3 (domain/family.php). The inbox learns what a notice
          * is (a report, an alert, a word from the centre), which child it is
          * about and whether it asks for a signature; a family answers an event
          * on its own row, not as a member's RSVP; a mentor publishes times a
          * family may book; and the centre keeps the list of who may collect a
          * child, which a family reads but cannot write. */
-        180 => "
+        181 => "
             ALTER TABLE guardian_notices ADD COLUMN cat TEXT NOT NULL DEFAULT 'centre';
             ALTER TABLE guardian_notices ADD COLUMN memberId TEXT NOT NULL DEFAULT '';
             ALTER TABLE guardian_notices ADD COLUMN sign INTEGER NOT NULL DEFAULT 0;

@@ -4170,9 +4170,31 @@ ALTER TABLE members MODIFY COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
 -- watches it inside the exam instead of being sent off to find it.
 ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT;
 
-INSERT INTO schema_version (version) VALUES (179) ON DUPLICATE KEY UPDATE version = version;
+-- 180: what a member says about a session, asked at the end of every one.
+-- Private until a person decides otherwise (domain/testimonials.php).
+CREATE TABLE IF NOT EXISTS testimonials (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tid VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  body TEXT,
+  showAs VARCHAR(16) NOT NULL DEFAULT 'initials',
+  status VARCHAR(16) NOT NULL DEFAULT 'new',
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note TEXT,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_testi_status (status, createdAt),
+  KEY idx_testi_member (memberId, unitId),
+  KEY idx_testi_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 180: Family Portal v3 — inbox categories and signatures, family RSVPs,
+INSERT INTO schema_version (version) VALUES (180) ON DUPLICATE KEY UPDATE version = version;
+
+-- 181: Family Portal v3 — inbox categories and signatures, family RSVPs,
 -- mentor meeting slots, and the centre's list of who may collect a child.
 ALTER TABLE guardian_notices ADD COLUMN cat VARCHAR(16) NOT NULL DEFAULT 'centre';
 ALTER TABLE guardian_notices ADD COLUMN memberId VARCHAR(64) NOT NULL DEFAULT '';
@@ -4199,4 +4221,4 @@ CREATE TABLE IF NOT EXISTS member_collectors (
   KEY idx_mcoll_member (memberId)
 );
 
-INSERT INTO schema_version (version) VALUES (180) ON DUPLICATE KEY UPDATE version = version;
+INSERT INTO schema_version (version) VALUES (181) ON DUPLICATE KEY UPDATE version = version;

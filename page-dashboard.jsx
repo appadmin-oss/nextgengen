@@ -2728,6 +2728,82 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
 }
 
 /**
+ * ONE LINE ABOUT TODAY, asked at the end of every session.
+ *
+ * The home page used to carry four testimonials attributed to named people.
+ * Nobody said any of them. This is where the real ones come from — written
+ * the day it happened, by the person it happened to, rather than
+ * reconstructed for a funder's report eighteen months later.
+ *
+ * Four things this screen will not do:
+ *   · It will not publish anything. What is written here is private, goes to
+ *     staff, and reaches the public site only if somebody with `content`
+ *     decides so AND the record carries the guardian's visibility consent.
+ *     That is said here, in a sentence, before they type.
+ *   · It will not ask for a name. They choose initials, their first name, or
+ *     nothing — and the quietest option is the default.
+ *   · It will not block anything. No lesson, no review, no progress depends
+ *     on it. A testimonial given to unlock something is not a testimonial.
+ *   · It will not hold on to it. Clearing the box takes it back, published
+ *     or not, without asking anybody.
+ */
+function DashSessionSay({ unitId, course, mine, onSaved }) {
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [showAs, setShowAs] = React.useState((mine && mine.showAs) || "initials");
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const had = !!(mine && mine.body);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.testimonialGive({ unitId, course, body: body.trim(), showAs });
+      setDone(true);
+      toast.success(r.status === "withdrawn" ? "Taken back. Nobody will see it."
+        : had ? "Changed. It goes back to your instructor to read."
+        : "Thank you — your instructor will read it.");
+      if (onSaved) onSaved();
+    } catch (e2) {
+      toast.error(e2.code === "too_short" ? "A few more words than that." : humanizeError(e2.code, e2.code));
+    } finally { setBusy(false); }
+  };
+  const SHOW = [["initials", "My initials"], ["first", "My first name"], ["anon", "Don\u2019t say who"]];
+  return (
+    <form className="dash-card cur-say" onSubmit={save} aria-label="What you thought of this session">
+      <h3 className="cur-sec-h">Before you go</h3>
+      <p className="cur-say-q">What did today give you? One or two lines, in your own words.</p>
+      <label className="cur-say-f">
+        <span className="sr-only">What today gave you</span>
+        <textarea rows={3} value={body} maxLength={600} disabled={busy}
+                  onChange={e => { setBody(e.target.value); setDone(false); }}
+                  placeholder="Something you can do now that you could not do this morning."/>
+      </label>
+      <fieldset className="cur-say-as">
+        <legend>If this ever goes on the website, show me as</legend>
+        {SHOW.map(([v, l]) => (
+          <label key={v} className={"cur-say-opt" + (showAs === v ? " is-on" : "")}>
+            <input type="radio" name="showas" checked={showAs === v} disabled={busy}
+                   onChange={() => { setShowAs(v); setDone(false); }}/>
+            <span>{l}</span>
+          </label>
+        ))}
+      </fieldset>
+      <p className="cur-say-note">
+        Nobody sees this but your instructor unless you and your parent or guardian have
+        agreed it can go on the website — and even then, somebody at NGG decides, not a computer.
+        {had ? " Clearing the box takes it back." : ""}
+      </p>
+      <div className="cur-say-acts">
+        <button type="submit" className="btn btn-primary" disabled={busy || (!body.trim() && !had)}>
+          {busy ? "Saving…" : had ? (body.trim() ? "Change it" : "Take it back") : "Send it"}
+        </button>
+        {done && <span className="cur-say-done" role="status">Saved.</span>}
+      </div>
+    </form>
+  );
+}
+
+/**
  * THE OPENING REVIEW — last week's questions, before today's lesson.
  *
  * The questions belong to the PREVIOUS lesson and are submitted against it,
@@ -2879,6 +2955,9 @@ function DashCurriculumLesson({ unitId, onBack }) {
           {!answered && <span className="cur-note"> Answer every question to submit.</span>}
         </form>
       )}
+      {/* Last on the page, after the work, because that is when somebody
+          knows what the session gave them. Never a gate on any of it. */}
+      {opened && <DashSessionSay unitId={unitId} course={u.course} mine={d.say} onSaved={load}/>}
     </article>
   );
 }

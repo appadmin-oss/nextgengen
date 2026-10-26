@@ -296,6 +296,12 @@ function member_merge_policy(): array {
         'community_video_progress' => 'MOVE_UNIQUE',  // one place in a video per person; the survivor's stands
         'event_rsvps'            => 'MOVE_UNIQUE',
         'engagement_snapshots'   => 'MOVE_UNIQUE',
+        /* One line per person per session, so a merge keeps the survivor's
+           where both records wrote about the same Saturday. Their own words
+           are not merged, averaged or concatenated — and a published one
+           keeps pointing at the surviving member, whose consent is what the
+           public page reads (domain/testimonials.php). */
+        'testimonials'           => 'MOVE_UNIQUE',
         'auth_sessions'          => 'DROP',           // sign-in state, not history
         'device_sessions'        => 'DROP',
         'notifications'          => 'MOVE',

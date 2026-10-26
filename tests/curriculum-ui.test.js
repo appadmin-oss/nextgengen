@@ -219,15 +219,23 @@ async function contextFor(memberId, admin, viewport) {
        thing to type, so defaulting to it was defaulting to the review the
        programme refuses to publish. */
     chk('a new question is a practical one by default, not four options',
-        await ap.$eval('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', el => el.value) === 'task');
-    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'mcq');
-    await ap.fill('.led-q textarea[aria-label="Question 1"]', 'How many white keys are in an octave?');
-    await ap.fill('.led-opt >> nth=0 >> input.admin-input', '5');
-    await ap.fill('.led-opt >> nth=1 >> input.admin-input', '7');
-    await ap.check('.led-opt >> nth=1 >> input[type=radio]');
+        await ap.$eval('.lq >> nth=0 >> .lq-kind select', el => el.value) === 'task');
+    await ap.selectOption('.lq >> nth=0 >> .lq-kind select', 'mcq');
+    await ap.fill('.lq >> nth=0 >> .lq-ask textarea', 'How many white keys are in an octave?');
+    await ap.fill('.lq-opt >> nth=0 >> .lq-opt-text', '5');
+    await ap.fill('.lq-opt >> nth=1 >> .lq-opt-text', '7');
+    await ap.check('.lq-opt >> nth=1 >> input[type=radio]');
+    chk('the right answer is a state of the whole option row, not a dot beside it',
+        await ap.$$eval('.lq-opt', els => els.filter(e => e.classList.contains('is-right')).length === 1));
     await ap.click('.led-exam button:has-text("Add a question")');
-    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Question 2"]', 'Play a C major scale and say where your thumb went under.');
-    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Rubric for question 2"]', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    await ap.fill('.lq >> nth=1 >> .lq-ask textarea', 'Play a C major scale and say where your thumb went under.');
+    await ap.fill('.lq >> nth=1 >> .lq-rubric textarea', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    /* Every field in a question carries a visible label. Placeholders used
+       to do that job, which means the label disappears the moment somebody
+       types and a screen reader never had one at all. */
+    chk('every field in a question has a label of its own, not a placeholder standing in for one',
+        await ap.$$eval('.lq textarea, .lq input:not([type=radio])', els => els.every(e =>
+          (e.labels && e.labels.length > 0) || !!e.getAttribute('aria-label'))));
     chk('the editor names the exam this course points at, so a question is held to that standard',
         /Trinity College London/.test(await ap.$eval('.led-exam', el => el.innerText)));
     await ap.click('.led-top button:has-text("Create lesson")');
@@ -512,6 +520,60 @@ async function contextFor(memberId, admin, viewport) {
     // The Control Room's own table now (cr-tab-mentors.jsx), not the old panel's.
     await ap.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
     chk('the staff board lists the member with their rating and reasons', /Ada Learner/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
+
+    /* ── Watch a video and tell me ──────────────────────────────────────
+       Last, on its own lesson, so nothing above has to be counted around
+       it. The video belongs to the QUESTION and plays inside the exam: a
+       learner sent away to find it loses the exam, the question and — on a
+       phone — the tab. */
+    await ap.goto(BASE + '/control/learning/curriculum/desk', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ap);
+    await ap.waitForSelector('button:has-text("New lesson")', { timeout: 60000 });
+    await ap.click('button:has-text("New lesson")');
+    await ap.waitForSelector('.led');
+    await ap.fill('.led-title', 'Watch: how a hand crosses under');
+    await ap.selectOption('.led-card select >> nth=0', 'Music');
+    await ap.fill('.led-card input[type=number] >> nth=0', '4');
+    await ap.selectOption('.led-status select', 'published');
+    await ap.fill('.led textarea[placeholder^="What this session is"]', 'Someone else\'s hands, slowed right down.');
+    await ap.click('.le-start-alt:has-text("Start from nothing")');
+    await ap.click('.le-row:last-child .le-ed');
+    await ap.keyboard.type('Watch it twice: once for the sound, once for the hand.');
+    await ap.click('.led-exam button:has-text("Add a question")');
+    await ap.selectOption('.lq >> nth=0 >> .lq-kind select', 'watch');
+    await ap.waitForSelector('.lq-video');
+    chk('a watch question asks for the video it is about',
+        /The video they watch/.test(await ap.$eval('.lq-video', el => el.innerText)));
+    await ap.fill('.lq-video input', 'https://example.org/not-a-video.mp4');
+    chk('…and says so when the exam could not play it, where it is written',
+        /not a YouTube or Vimeo link/.test(await ap.$eval('.lq-video', el => el.innerText)));
+    await ap.fill('.lq-video input', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    await ap.fill('.lq >> nth=0 >> .lq-ask textarea', 'What did her thumb do before the hand moved?');
+    await ap.fill('.lq >> nth=0 >> .lq-rubric textarea', 'Up to 3 for a detail from the video itself, in their own words.');
+    await ap.click('.led-top button:has-text("Create lesson")');
+    await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
+    await ap.screenshot({ path: path.join(SHOTS, 'video-question-editor.png'), fullPage: true });
+    chk('a watch lesson saves with the video on the question itself',
+        php(`echo db_row("SELECT k.videoUrl FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.title LIKE 'Watch:%'")['videoUrl'];`)
+          === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mp);
+    await mp.waitForSelector('.cur-item', { timeout: 40000 });
+    await mp.click('.cur-item:has-text("Watch: how a hand crosses under")');
+    await mp.waitForSelector('.cur-review, .cur-checks', { timeout: 20000 });
+    if (await mp.$('.cur-review button:has-text("Skip to today")')) await mp.click('.cur-review button:has-text("Skip to today")');
+    await mp.waitForSelector('.cur-watch', { timeout: 20000 });
+    chk('the member watches it INSIDE the exam, and is told what a good answer has in it',
+        !!(await mp.$('.cur-watch iframe')) && /in your own words/.test(await mp.$eval('.cur-watch-note', el => el.innerText)));
+    chk('…and the player is the privacy-preserving embed, not a bare YouTube page',
+        /youtube-nocookie\.com\/embed\//.test(await mp.$eval('.cur-watch iframe', el => el.getAttribute('src'))));
+    await mp.addStyleTag({ content: 'body .toast-host:not(#_):not(#_) { display: none; }' });
+    await mp.screenshot({ path: path.join(SHOTS, 'video-question.png'), fullPage: true });
+    // The question on its own, so the shot is of the thing and not the page
+    // it sits on. (The player is blank in CI: this sandbox cannot reach
+    // YouTube, and every off-origin request is aborted on purpose.)
+    await mp.locator('.cur-checks').screenshot({ path: path.join(SHOTS, 'video-question-close.png') });
 
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

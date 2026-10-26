@@ -137,21 +137,38 @@ const MISSIONS_THIS_WEEK = [
   { id: 5, name: "Mentor check-in: write a 5-line reflection.",        xp: 60,  due: "Fri",       done: false, type: "Reflect" },
 ];
 
-const TESTIMONIALS = [
-  { from: "Adaeze, 15", role: "Music · Egbeda",  q: "I came in shy with one beat. I left with a name, a team and a graduation showcase. NGG turned my hobby into my handle." },
-  { from: "Mr. Okoye",  role: "Parent",          q: "I was sceptical. Three months in, my son leads his school's debate club. The discipline of Anchor 12 is real." },
-  { from: "Tunde, 16",  role: "Tech · Ayobo",    q: "I built my first app the week we did Digital Influence. The mentors do not let you hide behind 'someday'." },
-  { from: "Dr. Ade",    role: "Mentor — 4 yrs",  q: "These teenagers do not need rescuing. They need a room with high ceilings. NGG is that room." },
-];
+/* TESTIMONIALS — EMPTY, AND THAT IS THE POINT.
+ *
+ * Four quotes used to live here, attributed to named people: a 15-year-old
+ * from Egbeda, a parent, a 16-year-old from Ayobo, a mentor of four years.
+ * Nobody said any of them. They were written to show what the section would
+ * look like, and they shipped to a live site about real children, under real
+ * faces, with real centre names on them.
+ *
+ * A strapline saying "illustrative" does not fix that: the cards read as
+ * quotations because they are shaped like quotations, and a parent deciding
+ * whether to send their child somewhere is exactly the reader who should not
+ * have to notice a disclaimer.
+ *
+ * So there are none. The section renders nothing until real, consented,
+ * attributable words are put here — which is a thing the programme can do,
+ * and the only thing that belongs on that part of the page.
+ */
+const TESTIMONIALS = [];
 
-const MEDIA_ITEMS = [
-  { kind: "Reel",         label: "Anchor 12 — Week 1 trailer",   meta: "0:47 · 12.4k views" },
-  { kind: "Documentary",  label: "From Onitsha, with code.",     meta: "12:04 · Mini-doc" },
-  { kind: "Performance",  label: "Lagos NGGC live showcase",     meta: "23:18 · Live cut" },
-  { kind: "Podcast",      label: "Genius FM ep. 12 — Discipline",meta: "38:12 · Audio" },
-  { kind: "Before/After", label: "Zara: From back row to mic",   meta: "1:32 · Story" },
-  { kind: "Day in life",  label: "A Tuesday at CACENTRE Ayobo",  meta: "3:54 · Vlog" },
-];
+/* MEDIA — EMPTY, for the same reason, and one worse.
+ *
+ * Six entries used to be here: a trailer, a mini-doc, a live cut, a podcast
+ * episode, a before/after, a vlog. None of them exist. One of them carried
+ * "12.4k views".
+ *
+ * Invented titles are a placeholder; an invented audience figure is a claim
+ * about how many people watched something that was never made. That belongs
+ * on no page, and least of all on one a funder or a parent might read.
+ *
+ * The media room renders its empty state until real files are added.
+ */
+const MEDIA_ITEMS = [];
 
 const FAQ = [
   { q: "How do you keep my child safe?", a: "Every mentor is background-checked, two-mentor rule for any session with minors, and parents get a weekly digest of activities and reflections." },

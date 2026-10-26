@@ -84,11 +84,20 @@ function MediaPage({ setPage }) {
       <section className="section">
         <div className="container">
           {items.length === 0 ? (
+            /* Two different empty states, because they mean different things.
+               Nothing at all is "we have not published any yet", and the
+               filter button would be a dead control. The six items that used
+               to fill this page were invented — one of them claimed 12.4k
+               views for a film nobody made (data.js). */
             <div style={{textAlign:"center", padding:"var(--rs-p-44, 48px 0px)", color:"var(--ink-700)"}}>
-              No media in this category yet.
-              <div style={{marginTop:14}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
-              </div>
+              {MEDIA_ITEMS.length === 0
+                ? "Nothing published yet. The first cohort's reels, documentaries and showcase cuts land here."
+                : "No media in this category yet."}
+              {MEDIA_ITEMS.length > 0 && (
+                <div style={{marginTop:14}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
+                </div>
+              )}
             </div>
           ) : (
             <React.Fragment>

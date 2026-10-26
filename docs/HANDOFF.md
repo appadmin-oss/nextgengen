@@ -3042,6 +3042,52 @@ that draw as lists). What was not mobile was everything mounted through `CrPanel
   it is a form now. Posts opens each post from the server (`admin.posts.get`) before editing, so the
   editor holds the stored body rather than a list row's excerpt.
 
+## Nothing on the site is invented: members say it themselves (2026-10-26)
+
+The home page carried four testimonials attributed to named people — a
+fifteen-year-old from Egbeda, a parent, a mentor of four years. Nobody said
+any of them. They were written to show what the section would look like and
+they shipped to a live site about real children. Six "media items" were the
+same, one of them claiming 12.4k views.
+
+Both are gone (`data.js` keeps the empty constants and the reason). What
+replaces the first is the real thing: **at the end of every session a member
+is asked, in one line, what today gave them** (`domain/testimonials.php`,
+migration 180, `DashSessionSay` on the lesson page). Over a term that is a
+record of what the programme did for somebody, in their own words, written the
+day it happened rather than reconstructed for a funder eighteen months later.
+
+The rules ARE the feature, and each one is a test in `api/tests/run.php`:
+
+1. **Private until a person decides otherwise.** Nothing a child writes
+   reaches the public site because they wrote it.
+2. **The child chooses how they are signed**, and the quietest option is the
+   default: initials and age, first name and age, or not named. A full name is
+   not on the list. The byline is **derived on every read**, never stored, so
+   a change of mind actually changes it.
+3. **Publishing asks the consent ledger** — `consent_may_publish()`, the same
+   gate that decides whether a child may be named anywhere else on the public
+   site. Not a second consent flag of this feature's own, which is how the
+   community showcase once ended up with no gate at all. Read live, so
+   withdrawing the consent takes the words down on the next request.
+4. **It is never required.** Skipping is a press; nothing depends on it.
+5. **The member can take it back**, published or not, by clearing the box.
+   Consent that cannot be withdrawn was not consent.
+
+Publishing is a **`content`** act, not a curriculum one: the Club coordinator
+who runs the lessons can read the queue and cannot put anything on the site.
+The queue is **Inbox → Testimonials**, a source in `cr-tab-inbox.jsx` — and
+where there is no consent it draws **no Publish button at all** rather than one
+that refuses (CLAUDE.md §11).
+
+Three repo guards caught this work on the way in, which is what they are for:
+a cache topic that named an op the shipped `config.example.php` did not cache;
+a new table with a `memberId` that had not said what a member-merge does to it;
+and a new table carrying a centre name that was not in `CENTRE_NAME_TABLES`.
+A fourth was found by the suite rather than a guard: the first cut invented a
+`members.visibilityConsent` column, which exists on `applications` and
+`volunteers` and has never existed on `members`.
+
 ## Family Portal v3 (2026-10-26)
 
 The handoff `design_handoff_family_portal_v3` (README, SCREENS, UX_SPEC,

@@ -652,6 +652,7 @@ function admin_overview_waiting(): array {
         'approvals'    => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM admin_approvals WHERE status = 'pending'"),
         'requests'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM member_requests WHERE status = 'open'"),
         'comments'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM post_comments WHERE status = 'pending'"),
+        'testimonials' => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM testimonials WHERE status = 'new'"),
         'missions'     => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM member_progress WHERE status = 'submitted'"),
     ];
 }

@@ -2,34 +2,110 @@
    NGG — Photo / portrait library
    
    STRATEGY:
-   - Portraits: DiceBear "personas" — illustrated portraits, consistent
-     and diverse-by-default. These are placeholder avatars chosen to
-     read as a diverse cohort; the user can swap to real cohort photos
-     by editing `portrait()` to point at /assets/portraits/N.jpg etc.
+   - Portraits: initials on a seeded colour, drawn here as a data URI. No
+     network, no third party, and no child's name leaving this origin to
+     fetch a picture. A real photo on the member's record is shown wherever
+     there is one; this is the honest fallback when there is not.
    - Scenes: Unsplash CDN — full-bleed photographs used for hero,
      community collage, blog covers, testimonial context.
    ================================================================ */
 
+/**
+ * LOCAL MEDIA ONLY — the one switch a zero-rated deployment turns on.
+ *
+ * The scene photographs below are stock images on Unsplash's CDN, and they
+ * are the last third-party host this app reaches (docs/ZERO-RATING.md). A
+ * mobile operator zero-rating the service whitelists hostnames; a learner
+ * arriving on free data would pay for these, or wait for them to time out,
+ * on the very first page.
+ *
+ * It is ON by default, and that is a deliberate change. The scenes are
+ * photographs of other people's children standing in for NGG's own cohort —
+ * one of them was captioned "Current cohort" — on a live site about real
+ * Nigerian teenagers. There is no version of that which is fine, and the
+ * host it cost was the smaller half of the problem.
+ *
+ * Scenes are composed locally instead: a gradient on the programme's own
+ * palette, deterministic per scene, so the pages keep their rhythm and
+ * nothing pretends to be a photograph of anybody.
+ *
+ * The real fix is the programme's own photographs from its own centres, in
+ * /assets, with the consent that comes with them. A deployment that has put
+ * licensed imagery back can opt out with
+ * `<meta name="ngg-local-media" content="false"/>`.
+ */
+function photosLocalOnly() {
+  try {
+    if (typeof window !== "undefined" && window.NGG_LOCAL_MEDIA !== undefined) return !!window.NGG_LOCAL_MEDIA;
+    if (typeof document !== "undefined") {
+      const m = document.querySelector('meta[name="ngg-local-media"]');
+      if (m) return m.content !== "false";
+    }
+  } catch (e) {}
+  return true;
+}
+
+/* A stand-in that costs nothing and still composes: two seeded tones on the
+   programme's own palette, so a page keeps its weight and its rhythm. */
+function uxLocal(id, w, h) {
+  const t = seedHash(String(id));
+  const a = ["#1c2a5e", "#0c1432", "#2a1d00", "#123", "#241a3a"][t % 5];
+  const b = ["#f5b026", "#d0ff3a", "#ff5a3c", "#b07cff", "#ffd680"][(t >> 3) % 5];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h || Math.round(w * 0.66)}" width="${w}" height="${h || Math.round(w * 0.66)}" role="img">`
+    + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}" stop-opacity="0.55"/></linearGradient></defs>`
+    + `<rect width="100%" height="100%" fill="url(#g)"/></svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+}
+
 // Helper that builds a properly-formatted Unsplash URL
 function ux(id, w = 800, h = null, opts = {}) {
+  if (photosLocalOnly()) return uxLocal(id, w, h);
   const params = new URLSearchParams({ auto: "format", fit: "crop", w: String(w), q: "80", ...opts });
   if (h) params.set("h", String(h));
   return `https://images.unsplash.com/photo-${id}?${params.toString()}`;
 }
 
-/* DiceBear personas — illustrated portrait avatars.
-   Seeded by member id/name string so each member gets a stable face. */
+/* Avatar colours, seeded per member so a face does not move between
+   screens. The skin and hair tables that used to sit here existed only to
+   make a GENERATED FACE look plausible; nothing draws a face now. */
 const PERSONA_BG = ["1c2a5e", "f5b026", "d0ff3a", "ff5a3c", "b07cff", "ffd680", "0c1432"];
-const PERSONA_SKIN = ["b16a5b", "8c5a3c", "a16e4b", "6a3f2a", "623d2e", "8a5a3c", "9b6a4d"];
-const PERSONA_HAIR = ["362c47", "1a1a1a", "2c1810", "4a3520", "362c47"];
 
+/**
+ * A member's placeholder avatar, drawn HERE — initials, not a face.
+ *
+ * Two things were wrong with what this was. It fetched an illustrated
+ * portrait from `https://api.dicebear.com/…?seed=<the member's name>`, which
+ * means every time the portal drew an avatar it sent that child's name to a
+ * third party, as a URL, in the clear, for a picture. A youth organisation
+ * handling children's records should not be doing that by accident, for
+ * decoration.
+ *
+ * And it drew a FACE. A generated face for a real child is a stranger's
+ * face wearing their name — it is not them, it does not become them, and
+ * where there is a real photo on the record that is what is shown anyway.
+ * Initials on their own colour say "we do not have your photo yet" honestly,
+ * which is the true thing.
+ *
+ * Deterministic, as the old one was: the same seed gives the same colour and
+ * the same letters every time, so somebody does not change between screens.
+ * It is also one fewer host on the whitelist an operator is asked for
+ * (docs/ZERO-RATING.md), though that is the smallest of the reasons.
+ */
 function persona(seed, size = 200) {
   const s = String(seed);
-  // We pre-seed with deterministic options that bias toward an African cohort look.
   const bg = PERSONA_BG[seedHash(s) % PERSONA_BG.length];
-  const skin = PERSONA_SKIN[seedHash(s + "skin") % PERSONA_SKIN.length];
-  const hair = PERSONA_HAIR[seedHash(s + "hair") % PERSONA_HAIR.length];
-  return `https://api.dicebear.com/9.x/personas/svg?seed=${encodeURIComponent(s)}&size=${size}&backgroundColor=${bg}&backgroundType=solid&skinColor=${skin}&hairColor=${hair}`;
+  const ink = ["#ffffff", "#0c1432"][bg === "f5b026" || bg === "d0ff3a" || bg === "ffd680" ? 1 : 0];
+  const words = s.trim().split(/\s+/).filter(w => /^[\p{L}]/u.test(w));
+  const initials = words.length
+    ? (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase()
+    : "·";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}" role="img">`
+    + `<rect width="100" height="100" fill="#${bg}"/>`
+    + `<text x="50" y="50" text-anchor="middle" dominant-baseline="central" `
+    + `font-family="Inter,system-ui,sans-serif" font-size="${initials.length > 1 ? 40 : 48}" `
+    + `font-weight="700" letter-spacing="1" fill="${ink}">${initials}</text></svg>`;
+  return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
 }
 function seedHash(s) {
   let h = 0;
@@ -37,7 +113,7 @@ function seedHash(s) {
   return Math.abs(h);
 }
 
-/* portrait() — primary entry. Returns a DiceBear persona SVG URL. */
+/* portrait() — primary entry. Returns a locally drawn SVG, as a data URI. */
 function portrait(seed, w = 200) {
   return persona(seed, w);
 }

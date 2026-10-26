@@ -124,13 +124,15 @@ function idsWsSave(ws) {
 
 /* The studio's type (§2): Geist, and Geist Mono for IDs and run numbers. Loaded
    once, when the studio first opens — no other page uses them. */
-const IDS_FONT_HREF = "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap";
-function idsEnsureFonts() {
-  if (document.getElementById("ids-fonts")) return;
-  const l = document.createElement("link");
-  l.id = "ids-fonts"; l.rel = "stylesheet"; l.href = IDS_FONT_HREF;
-  document.head.appendChild(l);
-}
+/* Geist and Geist Mono are in /assets/fonts and loaded by every page already
+   (assets/fonts/fonts.css) — this studio was fetching them a second time from
+   Google Fonts, which did nothing for the typeface and added a third-party
+   host to a screen that rasterises cards for print.
+   That host mattered twice over: a print run on a connection where it is slow
+   or blocked falls back to a system face, so two batches printed on different
+   days would not match — which is the reason the files were vendored in the
+   first place. */
+function idsEnsureFonts() {}
 
 function IdCardStudioPage({ setPage }) {
   React.useEffect(idsEnsureFonts, []);

@@ -1055,6 +1055,38 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### What members say about a session (testimonials)
+
+At the end of every lesson a member is asked one question — *what did today
+give you?* — in one or two lines, in their own words. It is never required:
+skipping it is not recorded, and nothing in the lesson, the review or their
+progress depends on having written one.
+
+**Control Room → Inbox → Testimonials.** Needs `content`. Each one shows the
+words, which member wrote them, and **how they would be signed** if published:
+their initials and age, their first name and age, or not named at all. The
+member chooses that themselves, in the box; a full name is not on the list.
+
+**Publishing needs the guardian's consent**, read from the same consent ledger
+that decides whether a child may be named anywhere else on the public site
+("Feature on our website"). Without it there is **no Publish button** — not a
+button that refuses — and the queue says why. Record the consent on the member
+first, then come back. You can always read the words; they are useful whether
+or not they ever go anywhere.
+
+Three things follow from that, and they are the point of the feature:
+
+- **Withdrawing the consent takes the words off the site**, on the next page
+  load, with nobody having to remember to unpublish anything.
+- **The member can take it back at any time** by clearing the box on the
+  lesson — published or not.
+- **Editing it un-publishes it.** The site shows words somebody approved, and
+  an edited line is not those words any more, so it comes back to this queue.
+
+Published ones appear on the public home page. If none are published, that
+section of the home page is not shown at all — it is never filled with
+examples.
+
 ### Study tools (/study)
 
 Members open **Learn → Study tools** in their portal (or go to `/study`). It is
@@ -1829,7 +1861,7 @@ be in the future, and the old date and your reason are kept.
 
 ## Applications, sign-ups and verification
 
-Three different queues, for three different things:
+Four different queues, for four different things:
 
 - **People → Applications** — year-round NGG applications. Accepting an NGG
   applicant sends the joining invoice (see *Joining fees* under The NGG Club).
@@ -1837,6 +1869,8 @@ Three different queues, for three different things:
 - **Content → Photo review** — photographs submitted by members,
   volunteers and Summer School participants, waiting on approval before
   they appear anywhere or print on a card.
+- **Inbox → Testimonials** — what members said about their own sessions. See
+  [What members say about a session](#what-members-say-about-a-session-testimonials).
 
 **The Club application** (`/join`, policy version 2026.10) replaced the
 Google Form. Seven steps: who is filling it in and the centre; the child;

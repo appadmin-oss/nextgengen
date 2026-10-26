@@ -948,6 +948,8 @@
       curriculumPlace: (placements) => request('/member/curriculum.php', { body: { action: 'place', placements } }),
       curriculumConfirm: (memberId, unitIds, done) => request('/member/curriculum.php', { body: { action: 'confirm', memberId, unitIds, done: done !== false } }),
       curriculumAsk:     (unitId, question) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question }, timeout: 60000 }),
+      /* What they thought of the session. An empty body withdraws one. */
+      testimonialGive:   (o) => request('/member/curriculum.php', { body: Object.assign({ action: 'testimonial' }, o) }),
       curriculumYear:    (memberId, year) => request('/member/curriculum.php', { body: { action: 'year', memberId, year } }),
       curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
       // An instructor's material for a lesson — a link, or a file uploaded first.
@@ -1253,6 +1255,7 @@
       timetableTerm: () => request('/public/timetable-term.php'),
       // One programme's own courses and centres, for the join form.
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
+      testimonials: () => request('/public/testimonials.php'),
       // A family's joining invoice, by its private token (/pay/<token>).
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
@@ -1493,6 +1496,10 @@
         get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
         report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),
         coverage: () => request('/admin/curriculum.php' + qs({ view: 'coverage' })),
+        /* What members said about their own sessions, and the one act that
+           puts any of it on the public site. */
+        testimonials: (status) => request('/admin/curriculum.php' + qs({ view: 'testimonials', status: status || 'new' })),
+        testimonialDecide: (tid, status, note) => request('/admin/curriculum.php', { body: { action: 'testimonial', tid, status, note: note || '' } }),
         plan:    (o) => request('/admin/curriculum.php', { body: Object.assign({ action: 'plan' }, o || {}), timeout: 120000 }),
         year:    (memberId, year) => request('/admin/curriculum.php', { body: { action: 'year', memberId, year } }),
         submissions: (status) => request('/admin/curriculum.php' + qs({ view: 'submissions', status: status || 'pending' })),

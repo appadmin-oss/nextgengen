@@ -27,6 +27,7 @@ const CR_ATTENTION = [
   ["messages", "Unread messages", "", "neutral", "inbox", ["inbox", "messages"]],
   ["photos", "Headshots waiting", "Blocking ID cards from printing", "neutral", "content", ["inbox", "photos"]],
   ["comments", "Comments to moderate", "", "neutral", "content", ["inbox", "comments"]],
+  ["testimonials", "Testimonials to read", "What members said about their sessions", "neutral", "content", ["inbox", "testimonials"]],
 ];
 
 function crAuditIcon(ev) {
