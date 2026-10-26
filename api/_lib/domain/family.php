@@ -42,7 +42,7 @@ const FAMILY_NOTIFY_KEYS = ['checkin', 'weekly', 'alerts'];
 const FAMILY_NOTIFY_DEFAULT = ['checkin' => true, 'weekly' => true, 'alerts' => true];
 /* The requests a guardian may raise for a ward. Not `payment`: an offline
    payment claim needs a verified receipt, and that path is the member's. */
-const FAMILY_REQUEST_KINDS = ['leave', 'appeal', 'idcard', 'askmentor', 'familydetails', 'collect'];
+const FAMILY_REQUEST_KINDS = ['leave', 'academic', 'appeal', 'idcard', 'askmentor', 'familydetails', 'collect'];
 const FAMILY_WEEKLY_BATCH = 40;
 
 function family_email_norm(string $e): string {
@@ -375,6 +375,8 @@ function family_ward(array $p): array {
         // Growth over the term, written to a parent (no staff-only records): mp_growth in mentor-portal.php.
         'growth' => function_exists('mp_growth') ? mp_growth($mid, 'family') : null,
         'requests' => array_map('member_request_public', $reqs),
+        // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
+        'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
         'charges' => array_map(static fn($e) => ['entryId' => (string)$e['entryId'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'createdAt' => (string)$e['createdAt']],
             /* 'charge', which is what the ledger writes. This read said 'debit' and so
@@ -396,14 +398,11 @@ function family_request_create(array $p): array {
     $kind = (string)($p['kind'] ?? '');
     if (!in_array($kind, FAMILY_REQUEST_KINDS, true)) return ['ok' => false, 'error' => 'unknown_kind'];
     $g = db_row('SELECT fullName, email FROM guardians WHERE guardianId = ? LIMIT 1', [$gid]);
-    /* A parent telling the centre about an absence need not say why (the
-       handoff's sheet marks it optional); the desk's queue still shows a line. */
-    if ($kind === 'leave' && trim((string)($p['body'] ?? '')) === '') $p['body'] = 'No reason given.';
     $res = member_request_create([
         'memberId' => (string)$l['memberId'], 'kind' => $kind,
         'subject' => (string)($p['subject'] ?? ''), 'body' => (string)($p['body'] ?? ''),
         'fromDate' => (string)($p['fromDate'] ?? ''), 'toDate' => (string)($p['toDate'] ?? ''),
-        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
+        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'proofUrl' => (string)($p['proofUrl'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
         'raisedBy' => 'guardian:' . $gid,
         'raisedByName' => trim((string)($g['fullName'] ?? '')) !== '' ? (string)$g['fullName'] : 'A parent (' . mask_email((string)($g['email'] ?? '')) . ')',
     ]);

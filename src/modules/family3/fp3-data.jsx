@@ -151,6 +151,7 @@ function fp3Ward(link, d, today) {
       next: (L.next || []).slice(0, 4).map(u => ({ title: u.title, course: u.course || (m.track || "Lessons"), week: u.week, due: u.dueDate ? "due " + fp3Date(u.dueDate) : "no due date", overdue: u.overdueDays > 0, status: u.status })) },
     companion: comp ? { rating: comp.rating || "none", summary: comp.summary || "", by: "NGG companion", period: comp.period || "" } : { rating: "none", summary: "", by: "", period: "" },
     requests: rq,
+    excuses: d.excuses || null,   // {used, max, left, label}: two a session (POLICY §1.1)
     score: d.score ? { session: d.score.session, taken: fp3Date(d.score.taken), by: d.score.by, now: d.score.now, prev: d.score.prev || d.score.now, hasPrev: !!d.score.prev, note: d.score.note, skills: d.score.skills } : null,
     results,
     mentorSlots: slots,

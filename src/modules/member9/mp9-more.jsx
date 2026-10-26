@@ -206,11 +206,14 @@ Object.assign(Mp9Portal.prototype, {
     const s = this.state, r = this.dd("rec") || {}, att = r.attendance || {}, q = this.dd("reqs") || {};
     const days = (att.days || []).map(x => ({ d: mp9Date(x.date, { weekday: "short", day: "numeric", month: "short" }), st: x.status ? x.status[0].toUpperCase() + x.status.slice(1) : x.in ? "Present" : "Absent", i: x.in || "—", o: x.out || "—" }))
       .map(x => ({ ...x, fg: x.st === "Present" ? "#1d6b30" : x.st === "Late" ? "#7a5600" : "#b0361c" }));
-    const KINDS = [["I've made a payment", "payment", ["How much", "Transfer reference, if you have one", "When you paid (YYYY-MM-DD)"]], ["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"]],
+    const ex = q.excuses;   // two excused absences a session (POLICY §1.1); the server refuses a third
+    const away = "I'll be away" + (ex ? " · " + ex.left + " of " + ex.max + " absences left" : "");
+    const KINDS = [["I've made a payment", "payment", ["How much", "Transfer reference, if you have one", "When you paid (YYYY-MM-DD)"]], ["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
+      ["Academic leave (exams or a school programme)", "academic", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD)", "What it’s for, and the school"]],
       ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]], ["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]];
     const K = KINDS.find(k => k[0] === s.rKind);
     const f = s.rF || {};
-    const rOk = !!K && (K[1] === "payment" ? Number(f[K[2][0]]) > 0 : K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") : !!(f[K[2][0]] || "").trim());
+    const rOk = !!K && (K[1] === "payment" ? Number(f[K[2][0]]) > 0 : K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
     const ST = { open: ["Waiting for a reply", "#7a5600"], approved: ["Approved", "#1d6b30"], declined: ["Declined", "#b0361c"], withdrawn: ["Withdrawn", "#6b6b72"] };
     const list = (q.requests || []).map(x => { const st = x.kind === "feedback" && x.status === "approved" ? ["Thanked", "#1d6b30"] : ST[x.status] || [x.status, "#4a4a50"];
       return { t: x.subject || x.kindLabel, key: x.requestId, gone: x.status === "withdrawn", hasReply: !!x.decision, reply: x.decision || "", canWithdraw: x.status === "open", sFg: st[1], sText: st[0], when: mp9Date(x.createdAt),
@@ -219,11 +222,11 @@ Object.assign(Mp9Portal.prototype, {
       rec: { attended: att.present || 0, ran: att.daysRan || 0, pct: att.rateKnown ? att.rate + "%" : "no term calendar set" },
       certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId })),
       days: days.length ? (s.daysAll ? days : days.slice(0, 6)) : [{ d: "No days recorded yet", st: "", i: "—", o: "—", fg: "#6b6b72" }], daysMore: !s.daysAll && days.length > 6, showDays: () => this.setState({ daysAll: true }),
-      reqKinds: KINDS.map(k => ({ k: k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
+      reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
-        const body = K[1] === "payment" ? { kind: "payment", amount: Number(v(0)), reference: v(1), paidAt: v(2), body: "" } : K[1] === "leave" ? { kind: "leave", fromDate: v(0), toDate: v(1), body: v(2) }
+        const body = K[1] === "payment" ? { kind: "payment", amount: Number(v(0)), reference: v(1), paidAt: v(2), body: "" } : (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
           : { kind: K[1], subject: f.subject || "", body: v(0) };
         NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],

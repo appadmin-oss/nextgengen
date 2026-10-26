@@ -25330,7 +25330,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // A member's request reaches the desk; the decision reaches the member by email too.
     $GLOBALS['__mail_sink'] = [];
-    $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for exams', 'body' => 'Two Saturdays', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-14']);
+    $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for an exam', 'body' => 'One Saturday', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07']);
     chk('notify: a member request reaches the people who decide it', !empty($rq['ok']) && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
     $GLOBALS['__mail_sink'] = [];
     backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-NT-ADM', 'requestId' => $rq['request']['requestId'], 'approve' => true, 'decision' => 'Good luck with the exams']);
@@ -25542,7 +25542,59 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // The new request kinds.
     chk('family v3: a question for the mentor is a request, with a minimum', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'hm'])['error'] ?? '') === 'need_reason'
         && !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'How can I help with reading?'])['ok']));
-    chk('family v3: an absence needs no reason from a parent', !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05'])['ok']));
+    // Absences: the policy's own allowance (member absenceLimit) and count, plus leave still ahead (POLICY §1.1).
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID' AND kind = 'leave'");
+    $lim = (int)policy_for('member')['absenceLimit'];
+    $sat = fn($w) => gmdate('Y-m-d', strtotime('next saturday') + $w * 7 * 86400);
+    $leave = fn($from, $to = '') => backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => $from, 'toDate' => $to, 'body' => 'Family emergency']);
+    $ok = []; for ($i = 0; $i < $lim; $i++) $ok[] = $leave($sat(2 * $i));
+    chk('absences: up to the policy\'s limit, a parent can tell the centre', count(array_filter($ok, fn($r) => !empty($r['ok']))) === $lim);
+    $over = $leave($sat(2 * $lim));
+    chk('absences: one past the limit is refused, saying none are left', ($over['error'] ?? '') === 'excuse_limit' && strpos($over['detail'] ?? '', 'none left') !== false);
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('absences: the family sees the count against the policy\'s own limit', ($w3['excuses']['max'] ?? 0) === $lim && ($w3['excuses']['used'] ?? 0) === $lim && ($w3['excuses']['left'] ?? 1) === 0);
+    db_exec("UPDATE member_requests SET status = 'withdrawn' WHERE memberId = 'NGG-FA-KID' AND kind = 'leave' AND fromDate = ?", [$sat(0)]);
+    $span = $leave($sat(6), $sat(7));
+    chk('absences: a notice covering two meeting days counts as two', ($span['error'] ?? '') === 'excuse_limit');
+    policy_log('NGG-FA-KID', 'member', 'absence', gmdate('Y-m-d', strtotime('last saturday')), 'test');
+    chk('absences: an absence the engine logged counts too', (member_excuses(db_row("SELECT * FROM members WHERE memberId = 'NGG-FA-KID'"))['recorded'] ?? 0) === 1);
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'");
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID' AND kind = 'leave'");
+    // Absence fines: nobody asked → fined; asked and undecided → held; decided → fined or not. Academic leave is not an absence.
+    $keepPol = setting_raw('policy');
+    $finesFor = fn($d) => (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = 'NGG-FA-KID' AND kind = 'fine' AND tier = ? AND status IN ('active','pending')", [500000 + intdiv((int)strtotime($d . ' 00:00:00 UTC'), 86400)])['c'];
+    $past = fn($w) => gmdate('Y-m-d', strtotime('last saturday') - $w * 7 * 86400);
+    $absFine = (int)policy_for('member')['absenceFine'];
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(1), 'test'); policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: an absence nobody asked about is fined, at the member policy\'s amount', $absFine > 0 && $finesFor($past(1)) === 1
+        && (int)db_row("SELECT amount FROM sanctions WHERE personId = 'NGG-FA-KID' AND tier = ?", [500000 + intdiv((int)strtotime($past(1) . ' 00:00:00 UTC'), 86400)])['amount'] === $absFine);
+    policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: …once, however often the engine runs', $finesFor($past(1)) === 1);
+    $held = backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'leave', 'fromDate' => $past(2), 'toDate' => $past(2), 'body' => 'Hospital appointment']);
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(2), 'test'); policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: an absence with a request still open is held, not fined', !empty($held['ok']) && $finesFor($past(2)) === 0);
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $held['request']['requestId'], 'approve' => false, 'decision' => 'No evidence of the appointment.']);
+    chk('absence fines: declined, the held absence is fined then', $finesFor($past(2)) === 1);
+    $ok = backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'leave', 'fromDate' => $past(3), 'toDate' => $past(3), 'body' => 'Family funeral']);
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(3), 'test');
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $ok['request']['requestId'], 'approve' => true, 'decision' => '']);
+    chk('absence fines: approved, it is excused — no fine', $finesFor($past(3)) === 0);
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID'"); db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM sanctions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FA-KID'");
+    chk('academic leave: needs both dates and a real reason, and is at most ten weeks', (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => $past(4), 'body' => 'WAEC exams at Grace High'])['error'] ?? '') === 'bad_dates'
+        && (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => $past(4), 'toDate' => $past(3), 'body' => 'exams'])['error'] ?? '') === 'need_reason'
+        && (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => '2027-01-01', 'toDate' => '2027-06-30', 'body' => 'WAEC exams at Grace High'])['error'] ?? '') === 'too_long');
+    $ac = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'academic', 'fromDate' => $past(4), 'toDate' => $past(3), 'body' => 'WAEC mock exams at Grace High School']);
+    foreach ([4, 3] as $w) policy_log('NGG-FA-KID', 'member', 'absence', $past($w), 'test');
+    policy_apply('NGG-FA-KID', 'member');
+    chk('academic leave: a parent can ask for it, and while it is open the absences it covers are held', !empty($ac['ok']) && $finesFor($past(4)) === 0 && $finesFor($past(3)) === 0);
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $ac['request']['requestId'], 'approve' => true, 'decision' => 'Good luck in the exams.']);
+    chk('academic leave: approved, its days are not absences — voided, unfined, and not counted against the limit',
+        (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-FA-KID' AND kind = 'absence' AND (voidedAt IS NULL OR voidedAt = '')")['c'] === 0
+        && $finesFor($past(4)) === 0 && member_excuses(db_row("SELECT * FROM members WHERE memberId = 'NGG-FA-KID'"))['used'] === 0);
+    chk('academic leave: the sweep skips an approved academic day', member_absence_cover('NGG-FA-KID', $past(4)) === 'academic');
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID'"); db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM sanctions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FA-KID'");
+    chk('family v3: an absence needs a reason, from a parent as from a member', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05'])['error'] ?? '') === 'need_reason'
+        && !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05', 'body' => 'Hospital appointment'])['ok']));
     chk('family v3: collectors are changed by the desk, and a scoped admin elsewhere cannot', !empty(backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-ADM', 'memberId' => 'NGG-FA-KID', 'collectors' => [['name' => 'Ada Obi', 'relation' => 'Grandmother', 'phone' => '0803 111 2222']]])['ok'])
         && (backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-SCOPED', 'memberId' => 'NGG-FA-KID'])['error'] ?? '') === 'out_of_scope'
         && ($w = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])) && count($w['collectors']) === 1 && $w['collectors'][0]['name'] === 'Ada Obi');

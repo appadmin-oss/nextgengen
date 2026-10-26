@@ -3132,3 +3132,27 @@ to the design's markup.
   Until mentors publish times, a family's *Book a meeting* says there are none
   and offers *Ask a question*.
 
+- **Correction, same day (owner):** an absence needs a reason, from a parent as
+  from a member. The family sheet asks *Why {child} will be away* and refuses an
+  empty one; the server no longer fills in "No reason given". The handoff's
+  "reason (optional)" is overruled.
+
+## Absences: a count, a fine, a review, and academic leave (2026-10-26)
+
+The owner's rules, built on the policy engine rather than beside it:
+
+- **The count is the engine's.** The allowance is the member band's
+  `absenceLimit` (two) and "used" is `policy_state`'s absences plus programme
+  days still ahead on open or approved leave (`member_excuses`, member-self.php).
+  A leave request past the limit is refused (`excuse_limit`) with what is left;
+  the family app and the member portal show "N of 2".
+- **An unasked absence is fined**, once per day, at the new member-band setting
+  `absenceFine` (₦1,000 default, Settings → Policy). `member_absence_cover()`
+  decides: an OPEN request holds the fine until the desk decides; approved
+  excuses it; declined or withdrawn fines it. `admin_request_decide` re-runs
+  `policy_apply` so a decision takes effect at once.
+- **Academic leave** (`academic` request kind, ≤ 70 days, reason required,
+  optional school letter): approved, the sweep skips its days, absences already
+  logged on them are voided, and they never count towards the limit.
+- An absence always needs a reason (the handoff's "optional" is overruled).
+

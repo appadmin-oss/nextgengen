@@ -1517,6 +1517,13 @@ their record: **People → Members**, open the member, *Who can collect…* (one
 person per line: name, relation, phone). A session plan is shown to the
 family only after the mentor has approved it.
 
+**Absences and fines (members).** An absence nobody asked about is fined (the
+*absence fine* in Settings → Policy, NGG member enforcement). If a request covers
+the day and you haven't answered it, nothing is charged until you do: **declining
+it issues the fine, approving excuses it.** Approving **academic leave** goes
+further — its days stop being absences altogether (logged ones are voided) and
+don't count towards the two.
+
 **The monthly report** is written for every connected child on the first days
 of the month and lands in the family inbox asking for a signature. Families
 expected at an event who haven't answered are reminded three days and one day
@@ -1537,8 +1544,9 @@ listed on their own Circle screen. A child cannot remove it themselves —
 **Disconnect…** here does, at once, and the parent is emailed your reason.
 Refusing a request also needs a reason.
 
-From the family account a parent can tell the centre a child will be away (no
-reason needed), appeal a charge, ask for a replacement card, ask the mentor a
+From the family account a parent can tell the centre a child will be away (with
+the reason; a child has two absences in the programme, and a request past that is
+refused), ask for **academic leave** (exams or a school programme, up to ten weeks), appeal a charge, ask for a replacement card, ask the mentor a
 question, or ask for their details or the collectors to change. These arrive
 in **Member requests** marked *From their family account* (a question for the
 mentor also goes straight to the mentor), and your reply is emailed to the

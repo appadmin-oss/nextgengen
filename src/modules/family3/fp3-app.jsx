@@ -377,7 +377,8 @@ class Fp3Portal extends React.Component {
         s: w.today.status === "starting" ? "First Saturday: " + w.starting + "." : w.today.status === "present" ? "Today: in at " + w.today.in + ", on time." : w.today.status === "late" ? "Today: in at " + w.today.in + ", " + w.today.lateMinutes + " minutes late." : w.today.status === "off" ? "No class today." : "Today: not in yet.",
         strip: a.recent.map((d, i) => { const M = { p: ["#22a05a", "#fff", "ph ph-check", "In"], l: ["#e0a100", "#2a1d00", "ph ph-clock", "Late"], a: ["#d94141", "#fff", "ph ph-x", "Missed"], x: ["#e8e5dd", "#6b6b72", "ph ph-minus", "No record"] }[d]; return { c: M[0], fg: M[1], icon: M[2], t: (i === a.recent.length - 1 ? "Last Saturday" : (a.recent.length - 1 - i) + " weeks before") + ": " + M[3] }; }),
         hasLate: a.late.length > 0, late: a.late.map(l => ({ date: l.date, min: l.minutes + " min late" })) };
-      out.dayRules = [["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."], ["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]].map(r => ({ icon: r[0], t: r[1] }));
+      const ex = w.excuses;
+      out.dayRules = (ex ? [["ph ph-calendar-x", "Absences: " + ex.used + " of " + ex.max + " allowed in the programme" + (ex.ahead ? ", " + ex.ahead + " of them still ahead" : "") + (ex.left ? ". " + ex.left + " left." : ". None left — a further absence starts a review, so speak to the centre in an emergency.")]].concat(ex.fine ? [["ph ph-receipt", "An absence nobody told the centre about is fined " + N(ex.fine) + ". If you’ve asked, nothing is charged until the centre answers."]] : []) : []).concat([["ph ph-door-open", "Doors open at 09:00. After 09:10 it counts as late."], ["ph ph-sign-in", "You get a text and email when " + first + " checks in, and again at sign-out."], ["ph ph-sign-out", "Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk."], ["ph ph-warning", "Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day."]]).map(r => ({ icon: r[0], t: r[1] }));
       out.leaveL = "Tell the centre " + first + " will be away"; out.newLeave = () => openSheet("leave");
     }
 
@@ -444,7 +445,7 @@ class Fp3Portal extends React.Component {
     }
 
     if (active && loaded && sec === "requests") {
-      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal a charge", "A fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
+      out.reqKinds = [["leave", "ph ph-calendar-blank", "Tell the centre about an absence", "Before or after. They’re marked excused."], ["appeal", "ph ph-scales", "Appeal a charge", "A fine or fee you think is wrong"], ["idcard", "ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name"], ["academic", "ph ph-graduation-cap", "Academic leave", "Weeks away for exams or a school programme"], ["mentor", "ph ph-chat-teardrop-text", "Ask the mentor", "About growth, results or the plan"]]
         .filter(k => k[0] !== "mentor" || w.member.hasMentor)
         .map(k => ({ icon: k[1], l: k[2], s: k[3], onClick: () => openSheet(k[0], { fRef: (w.charges[0] || {}).id || "" }) }));
       const SM = { open: ["With the desk", T.warn], approved: ["Approved", T.ok], declined: ["Not approved", T.bad], withdrawn: ["Withdrawn", T.neutral] };
@@ -576,7 +577,7 @@ class Fp3Portal extends React.Component {
     out.shHasErr = !!S.shErr; out.shErr = S.shErr; out.shGoBg = "#0b0b0c"; out.shGoFg = "#fff";
     out.fFrom = S.fFrom; out.fTo = S.fTo; out.fBody = S.fBody; out.fRef = S.fRef;
     out.onFFrom = e => this.setState({ fFrom: e.target.value, shErr: "" }); out.onFTo = e => this.setState({ fTo: e.target.value, shErr: "" }); out.onFBody = e => this.setState({ fBody: e.target.value, shErr: "" }); out.onFRef = e => this.setState({ fRef: e.target.value });
-    out.shIsPay = sh === "pay"; out.shIsLeave = sh === "leave"; out.shIsAppeal = sh === "appeal"; out.shIsCard = sh === "idcard"; out.shHasBody = !["pay", "upload", "meet", "msg"].includes(sh); out.shIsUpload = sh === "upload"; out.shIsMeet = sh === "meet"; out.shIsMsg = sh === "msg";
+    out.shIsPay = sh === "pay"; out.shIsLeave = sh === "leave" || sh === "academic"; out.shIsAppeal = sh === "appeal"; out.shIsCard = sh === "idcard"; out.shHasBody = !["pay", "upload", "meet", "msg"].includes(sh); out.shIsUpload = sh === "upload"; out.shIsMeet = sh === "meet"; out.shIsMsg = sh === "msg";
     if (out.hasSheet) {
       const first = w.member.first;
       const busyL = l => S.busy ? "Sending…" : l;
@@ -629,8 +630,15 @@ class Fp3Portal extends React.Component {
         out.shGo = () => this.write(() => NGGApi.family.pay(w.linkId), rr => { if (rr && rr.payUrl) window.location.assign(rr.payUrl); else this.setState({ shErr: "The payment page couldn’t be opened. Try again." }); });
       }
       if (sh === "leave") {
-        Object.assign(out, { shTitle: first + " will be away", shLead: "The centre marks those days as excused, so they don’t count against " + first + "’s attendance.", shBodyL: "Why (optional)", shBodyPh: "e.g. family wedding, hospital appointment", shGoL: busyL("Tell the centre") });
-        out.shGo = () => { if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
+        const ex = w.excuses;
+        Object.assign(out, { shTitle: first + " will be away", shLead: "The centre marks those days as excused, so they don’t count against " + first + "’s attendance." + (ex ? (ex.left ? " " + first + " has " + ex.left + " of " + ex.max + " absences left in the programme. Nothing is fined while the centre considers it." : " " + first + " has used all " + ex.max + " absences the programme allows, so the centre can’t take another. Speak to them if it’s an emergency.") : ""), shBodyL: "Why " + first + " will be away", shBodyPh: "e.g. family wedding, hospital appointment", shGoL: ex && !ex.left ? "Close" : busyL("Tell the centre") });
+        // None left: no form to fill in and be refused — the sheet says why and closes.
+        if (ex && !ex.left) { out.shIsLeave = false; out.shHasBody = false; }
+        out.shGo = () => { if (ex && !ex.left) return this.closeSheet(); if (!S.fFrom) return this.setState({ shErr: "Pick the first day " + first + " will be away." }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 5) return this.setState({ shErr: "Say why " + first + " will be away, so the desk can answer without asking." }); req("leave", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo || S.fFrom }, ["The centre has been told", "The " + w.member.centre + " desk will reply in Messages → Requests. " + first + " won’t be marked absent for those days."]); };
+      }
+      if (sh === "academic") {
+        Object.assign(out, { shTitle: "Academic leave for " + first, shLead: "For school exams or a school programme that clashes with Saturdays, up to ten weeks at a time. Once the centre approves it, those Saturdays aren’t absences: nothing is fined and nothing counts against " + first + "’s " + (w.excuses ? w.excuses.max : 2) + " absences.", shBodyL: "What it’s for, and the school", shBodyPh: "e.g. WAEC mock exams at Grace High School, 2–20 Nov", shGoL: busyL("Ask for academic leave") });
+        out.shGo = () => { if (!S.fFrom || !S.fTo) return this.setState({ shErr: "Pick the first and the last day." }); if (S.fTo < S.fFrom) return this.setState({ shErr: "The last day can’t be before the first." }); if (S.fBody.trim().length < 10) return this.setState({ shErr: "Say what it’s for — the exams or the programme, and the school." }); req("academic", { subject: S.fBody.trim().slice(0, 60), body: S.fBody.trim(), fromDate: S.fFrom, toDate: S.fTo }, ["Sent to the centre", "The " + w.member.centre + " desk will reply in Messages → Requests. Until they answer, any absence in those dates is held, not fined."]); };
       }
       if (sh === "appeal") {
         out.chargeOpts = w.charges.map(c => ({ v: c.id, l: c.label + " · " + c.when }));

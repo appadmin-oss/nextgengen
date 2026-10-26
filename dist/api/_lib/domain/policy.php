@@ -490,6 +490,10 @@ const POLICY_DEFAULTS = [
          * FIRST time, there is no "tardy" grey band to sit in, and a day with
          * no sign-out (closing time is the rule) is a day not completed. */
         'lateFine'               => 500,    // ₦ per redline late, from the first
+        /* ₦ per absence nobody asked to be excused. An absence covered by a
+           leave request waits for the desk's decision; approved academic leave
+           is not an absence at all (member_absence_cover). */
+        'absenceFine'            => 1000,
         'tardyIsLate'            => true,   // past resumption + grace is late
         'checkoutRequired'       => true,   // no sign-out = absence, as §1.3
     ],
@@ -604,6 +608,7 @@ function policy_settings_save(array $in, string $by): array {
         if ($type === 'member') {
             $clean[$type]['enabled'] = array_key_exists('enabled', $src) ? !empty($src['enabled']) : !empty($c['enabled']);
             $clean[$type]['lateFine'] = max(0, min(10000000, (int)($src['lateFine'] ?? $c['lateFine'])));
+            $clean[$type]['absenceFine'] = max(0, min(10000000, (int)($src['absenceFine'] ?? $c['absenceFine'] ?? 1000)));
             $clean[$type]['tardyIsLate'] = array_key_exists('tardyIsLate', $src) ? !empty($src['tardyIsLate']) : !empty($c['tardyIsLate']);
             $clean[$type]['checkoutRequired'] = array_key_exists('checkoutRequired', $src) ? !empty($src['checkoutRequired']) : !empty($c['checkoutRequired']);
         }
@@ -987,6 +992,25 @@ function policy_apply(string $personId, string $type): array {
         }
     }
 
+    /* NGG members: an absence nobody asked to be excused is fined. One fine per
+       absent DAY (tier 500000 + the day number), so re-evaluating never charges
+       twice. A day covered by an OPEN request is held until the desk decides —
+       a parent who told us in time is not fined while we have not answered;
+       an approved request excuses it; a declined or withdrawn one does not. */
+    if ($type === 'member' && (int)($cfg['absenceFine'] ?? 0) > 0 && function_exists('member_absence_cover')) {
+        $amt = (int)$cfg['absenceFine'];
+        foreach (db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY date", [$personId]) as $a) {
+            $d = (string)$a['date'];
+            $cover = member_absence_cover($personId, $d);
+            if ($cover === 'approved' || $cover === 'academic' || $cover === 'open') continue;
+            if (policy_issue($personId, $type, 'fine', 500000 + intdiv((int)strtotime($d . ' 00:00:00 UTC'), 86400), [
+                'amount' => $amt, 'status' => 'pending',
+                'reason' => 'Absent on ' . gmdate('D j M Y', (int)strtotime($d . ' 00:00:00 UTC')) . ($cover === 'declined' ? ' — the request was not approved' : ' with no absence request')
+                    . ' — ₦' . number_format((float)$amt) . ' absence fine.',
+            ])) $issued[] = 'fine';
+        }
+    }
+
     // §2.3 Volunteer dormancy — a pattern of missed Review Times.
     if ($type === 'volunteer') {
         $rcap = (int)($cfg['reviewMissedCap'] ?? 2);
@@ -1204,6 +1228,8 @@ function policy_sweep_member_absences(?string $upto = null): array {
         foreach ($members as $row) {
             $id = (string)$row['memberId'];
             if (!programme_is_day($d, member_calendar_for($row, $cal, $centreDays))) continue;   // not their centre's day
+            // Approved academic leave: the day is not theirs to attend, so it is not an absence.
+            if (function_exists('member_absence_cover') && member_absence_cover($id, $d) === 'academic') continue;
             if (!array_key_exists($id, $present)) {
                 if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
             } elseif ($since !== '' && $d >= $since && $present[$id] === '') {

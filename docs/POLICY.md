@@ -21,6 +21,23 @@ Maximum **two (2) absences** for the whole program (valid, verified emergencies 
 - **Strike 3 — Eviction:** third missed session → flagged for permanent
   expulsion; checked out, no certificate, forfeits all showcases.
 
+**NGG members — asking first, and what an unasked absence costs.** A member (or
+their parent, from the family app) asks the desk to excuse an absence with a
+*leave of absence* request, which always needs a reason. The allowance is the
+member band's `absenceLimit` (two by default) and the count is the engine's own:
+absences logged, plus days still ahead on open or approved leave. A request
+that would go past the limit is refused with how many are left.
+
+- **Nobody asked:** the absence is fined at the member band's `absenceFine`
+  (₦1,000 by default; 0 switches it off), one fine per absent day.
+- **Asked, not yet decided:** the absence is held — no fine until the desk
+  answers. Declined, it is fined then; approved, it is excused (and still counts
+  towards the limit).
+- **Academic leave** is its own request: weeks away for school exams or a school
+  programme (up to ten weeks a request, with a reason and the school). Approved,
+  its days are not absences at all: the sweep does not log them, absences already
+  logged on them are voided, and they never count towards the limit.
+
 ### 1.2 Lateness & suspension
 - **1-Hour Advance Resumption Protocol:** if the block opens 08:00, the student
   check-in deadline is **07:00** sharp. Missing it is recorded as **tardy** —

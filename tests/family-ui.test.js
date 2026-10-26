@@ -185,8 +185,12 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('the absence sheet opens with focus inside it', await fp.evaluate(() => !!document.activeElement.closest('[role=dialog]')));
     await fp.fill('[role=dialog] input[type=date] >> nth=0', '2026-11-07');
     await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
+    await waitText(fp, /Say why Tobi will be away/);
+    chk('…and refuses an absence with no reason, saying so', true);
+    await fp.fill('[role=dialog] textarea', 'Family wedding');
+    await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
     await waitText(fp, /The centre has been told/);
-    chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs, with no reason needed',
+    chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs, with its reason',
       php(`echo json_encode(db_row("SELECT kind, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID'"));`) === '{"kind":"leave","fam":1}');
     await fp.keyboard.press('Escape');
 
