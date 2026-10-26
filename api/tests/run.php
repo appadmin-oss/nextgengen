@@ -28037,6 +28037,36 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('projects: saving and marking wait for the Academy, as the portal\'s other saves do',
         in_array('member.mentor.project.save', ACADEMY_GATED_MENTOR_OPS, true) && in_array('member.mentor.project.mark', ACADEMY_GATED_MENTOR_OPS, true));
     chk('projects: one audit event per save', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.save' AND subject = ?", [$PID])['c'] === 3);
+
+    /* Supervision written up by the lead (member_mp_supervision_record): it closes the booking,
+       reaches the mentor's My role, and dates the "Feedback received professionally" row. */
+    $fbRow = static fn() => array_values(array_filter(backend_dispatch('member.mentor.commitments', $p('NGG-MP1'))['commitments'] ?? [], static fn($r) => $r['key'] === 'feedback'))[0] ?? [];
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: before any are written, My role says so instead of a fixed “Up to date”', ($fbRow()['statusText'] ?? '') === 'No supervision written up yet');
+    $bk = backend_dispatch('member.mentor.supervision.book', $p('NGG-MPL', ['mentorId' => 'MEN-MP1']));
+    $tm = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: a booking shows on the lead’s Mentors list as open, with its date', !empty($bk['ok']) && $tm['booked'] === true && $tm['bookedOn'] === $bk['date'] && $tm['notesAt'] === '');
+    chk('supervision notes: only a lead or coordinator writes them, for someone they lead, and says something',
+        (backend_dispatch('member.mentor.supervision.record', $p('NGG-MP1', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'ok']))['error'] ?? '') === 'write_the_feedback'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-NOBODY', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'not_in_team'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => array_fill(0, 6, 'x')]))['error'] ?? '') === 'too_many'
+        && !db_row("SELECT 1 FROM mentor_supervision WHERE mentorId = 'MEN-MP1' AND feedbackAt <> ''"));
+    $rc = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => ['Call two families before Saturday', '  ', 'Log every one-to-one']]));
+    $sr = db_all("SELECT * FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: written up early, the booking becomes the held supervision on that day — one row, blanks dropped',
+        !empty($rc['ok']) && count($sr) === 1 && $sr[0]['status'] === 'held' && $sr[0]['onDate'] === $T && $rc['onDate'] === $T
+        && json_decode($sr[0]['agreedJson'], true) === ['Call two families before Saturday', 'Log every one-to-one']);
+    $rl = backend_dispatch('member.mentor.commitments', $p('NGG-MP1'));
+    chk('supervision notes: the mentor reads the feedback and what was agreed in My role, and no supervision is still coming',
+        ($rl['feedback']['text'] ?? '') === 'Good work this month on the huddles.' && ($rl['agreedLast']['items'] ?? []) === ['Call two families before Saturday', 'Log every one-to-one']
+        && $rl['supervision'] === null && str_starts_with($fbRow()['statusText'] ?? '', 'Last supervision notes '));
+    $tm2 = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: the lead’s list shows the booking closed and when notes were last written; the mentor is told',
+        $tm2['booked'] === false && $tm2['notesAt'] !== '' && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MP1' AND title = 'Your supervision notes'"));
+    $r2 = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'A quick check-in in the corridor went well.']));
+    chk('supervision notes: notes without a booking record a supervision held that day', !empty($r2['ok']) && (int)db_row("SELECT COUNT(*) c FROM mentor_supervision WHERE mentorId = 'MEN-MP1'")['c'] === 2);
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
     setting_set('mentor_automation', null);   // portalLive does not outlive these tests
 })();
 

@@ -115,6 +115,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.commitments'    => 'member_mp_role',
             'member.mentor.supervision.prep' => 'member_mp_supervision_prep',
             'member.mentor.supervision.book' => 'member_mp_supervision_book',
+            'member.mentor.supervision.record' => 'member_mp_supervision_record',
             'member.mentor.retreat.book'   => 'member_mp_retreat_book',
             'member.mentor.team'           => 'member_mp_team',
             'member.mentor.academy'        => 'member_mp_academy',

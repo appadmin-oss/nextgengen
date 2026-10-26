@@ -3156,3 +3156,28 @@ The owner's rules, built on the policy engine rather than beside it:
   logged on them are voided, and they never count towards the limit.
 - An absence always needs a reason (the handoff's "optional" is overruled).
 
+## Supervision notes: the last fixed row on My role (2026-10-26)
+
+The owner's screenshot of *My role* ("Support NGGC projects and activities ·
+None assigned") was answered by the projects work (76c641ab). The same list had
+one more row that read fixed text: *Feedback received professionally* always
+said "Up to date", and `mentor_supervision.feedback` / `feedbackAt` were read
+but nothing ever wrote them.
+
+- `member.mentor.supervision.record` (mentor-portal.php, action
+  `supervisionRecord`): a lead or coordinator, for a mentor in `mp_team_rows`,
+  writes the feedback (10+ characters) and up to five agreed points
+  (`MP_SUPERVISION_AGREED_MAX`). It closes the open booking — `onDate` becomes
+  the day it was written if that is earlier than booked — or records a
+  supervision held without one. The mentor is notified; Academy-gated like the
+  portal's other saves.
+- `member_mp_role`: the coming supervision is one not yet written up; "agreed
+  last time" includes one written up today.
+- `member_mp_team`: `booked` now means an open booking (any date, not yet
+  written up), with `bookedOn` and `notesAt`; the Mentors row's button is
+  *Book supervision* or *Write up supervision* (`Mp15SupNotes`).
+- The `feedback` commitment row is derived: "No supervision written up yet",
+  or "Last supervision notes {date}", amber after 120 days.
+- Tests: PHP "supervision notes: …" (7 checks); mentor-v15 books, writes up and
+  reads it back through the screen.
+

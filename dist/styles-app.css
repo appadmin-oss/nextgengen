@@ -14056,6 +14056,10 @@ button.m9x-ev-sum { cursor: pointer; }
 .mpj-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .mpj-go { min-height: 44px; padding: 0 16px; border-radius: 12px; border: 0; background: #0b0b0c; color: #fff; font: inherit; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .mpj-go:disabled { background: #8d8d93; cursor: not-allowed; }
+/* Supervision write-up (Mp15SupNotes): the agreed points are a real fieldset, one input each. */
+.mpj fieldset.mpj-f { border: 0; margin: 0; padding: 0; min-width: 0; gap: 6px; }
+.mpj fieldset.mpj-f legend { padding: 0; margin-bottom: 4px; }
+.mpj fieldset.mpj-f .grw-btn { align-self: flex-start; }
 .mpj-danger { color: #b0361c; border-color: #e6b8ab; }
 .mpj-card { border-top: 1px solid #efeee9; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .grw-card > .mpj-card:first-of-type { border-top: 0; padding-top: 0; }
