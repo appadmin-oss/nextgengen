@@ -24419,6 +24419,37 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
                          ['kind' => 'task', 'prompt' => 'Play a C major triad and say which notes you used.', 'rubric' => 'Up to 3.', 'points' => 3]]]])['ok']));
     db_exec("DELETE FROM curriculum_units WHERE title = 'Guess it'");
 
+    /* ── Watch a video and tell me ──────────────────────────────────────
+       A lesson can send a learner to a video and ask what they took from
+       it. The video travels WITH the question so it plays inside the exam,
+       and it is verified the only way it honestly can be: marked on what
+       only watching could produce. There is deliberately no keyword gate —
+       it would pass the child who skimmed a transcript and fail the one who
+       understood it and said so in their own words. */
+    $watch = fn(string $url) => backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+        'course' => 'Piano', 'week' => 9, 'position' => 7, 'title' => 'Watch and tell', 'status' => 'published',
+        'checks' => [['kind' => 'watch', 'prompt' => 'What did they do with their wrist?', 'videoUrl' => $url,
+                      'rubric' => 'Up to 3 for a specific detail from the video.', 'points' => 3]]]]);
+    chk('watch: a question about a video nobody was shown is refused',
+        ($watch('')['error'] ?? '') === 'watch_needs_video');
+    chk('watch: a link the exam cannot play is refused where it is written, not found on a Saturday',
+        ($watch('https://example.org/lesson.mp4')['error'] ?? '') === 'watch_needs_video'
+        && ($watch('http://www.youtube.com/watch?v=dQw4w9WgXcQ')['error'] ?? '') === 'watch_needs_video');
+    $w = $watch('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    chk('watch: a YouTube link saves, and the video is stored on the question itself',
+        !empty($w['ok']) && (string)db_row("SELECT videoUrl FROM curriculum_checks WHERE unitId = ?", [$w['unit']['unitId']])['videoUrl']
+            === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    chk('watch: …and it reaches the learner, because it IS the question — unlike the answer, which does not',
+        ($w['unit']['checks'][0]['videoUrl'] ?? '') === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+        && !isset(curriculum_unit_public(
+              db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']]), [],
+              db_all('SELECT * FROM curriculum_checks WHERE unitId = ?', [$w['unit']['unitId']]), false)['checks'][0]['answer']));
+    chk('watch: a question of any other kind carries no video, whatever the request said',
+        (string)db_row("SELECT COUNT(*) c FROM curriculum_checks WHERE kind <> 'watch' AND videoUrl <> ''")['c'] === '0');
+    chk('watch: a video question is not multiple choice, so it satisfies the review on its own',
+        (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']])['status'] === 'published');
+    db_exec("DELETE FROM curriculum_units WHERE title = 'Watch and tell'");
+
     // Import: dry run, digest, apply, re-run.
     $rows = [
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Hand position', 'summary' => 'Curved fingers.', 'checks' => [['kind' => 'short', 'prompt' => 'Why curve your fingers?', 'answer' => 'Control and speed']]],
@@ -28019,6 +28050,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     // The job: Sunday tick reminder once a week; Saturday due reminder.
     $sun = gmdate('Y-m-d', strtotime(results_week_start($today) . 'T00:00:00Z') + 6 * 86400);
+    /* CLOCK-INDEPENDENT, because the bug below is only reachable for one
+       hour a week and a test you can only run in that hour protects
+       nothing. The guard asks "has this member been sent one since the
+       week began?" — so the boundary it compares against must never be
+       later than the moment a row written now would carry, whatever the
+       offset between the programme's local date and UTC. */
+    $wsNow = results_week_start(results_today());
+    $boundary = gmdate('Y-m-d\TH:i:s', strtotime($wsNow . 'T00:00:00Z') - (results_now_lagos() - time()));
+    chk('results job: the once-a-week guard and the log it reads are on the same clock',
+        $boundary <= now_iso() && $boundary <= gmdate('Y-m-d\TH:i:s'));
+
+    /* THIS CAUGHT A REAL BUG, one hour a week. The programme's "today" is
+       Lagos; results_log stamps UTC. For the hour between UTC Sunday 23:00
+       and local Monday midnight the two disagree about which week a row
+       belongs to, so the once-per-week guard could not see the row it had
+       just written and sent the reminder again. The suite happened to be
+       run inside that hour. */
     $j1 = results_job_run($sun); $j2 = results_job_run($sun);
     chk('job: the Sunday "tick your week" goes once per member per week', $j1['tick'] >= 1 && $j2['tick'] === 0);
     unset($GLOBALS['__ai_results_mock']);

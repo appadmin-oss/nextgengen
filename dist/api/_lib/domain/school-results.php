@@ -1255,8 +1255,19 @@ function results_job_run(?string $today = null, int $limit = 200): array {
     $dow = (int)gmdate('N', strtotime($today . 'T00:00:00Z'));
     $ws = results_week_start($today);
     $sent = ['tick' => 0, 'stall' => 0, 'due' => 0];
-    $once = static function (string $memberId, string $term, string $kind) use ($ws): bool {
-        if (db_row('SELECT 1 FROM results_log WHERE memberId = ? AND kind = ? AND at >= ? LIMIT 1', [$memberId, $kind, $ws . 'T00:00:00'])) return false;
+    /* TWO CLOCKS, ONE COMPARISON.
+       `$ws` is a date in the programme's own time zone (results_today() is
+       Lagos, or whatever attendance_settings says); `results_log.at` is
+       stamped in UTC by now_iso(). Comparing them as plain strings is wrong
+       by the offset, and for the hour either side of a local Monday
+       midnight it is wrong in the direction that matters: the row written a
+       moment ago sorts BEFORE the week it belongs to, the guard does not
+       see it, and a member gets the same reminder twice.
+       So the boundary is converted to the instant `at` is measured against
+       — local midnight expressed in UTC. */
+    $wsAt = gmdate('Y-m-d\TH:i:s', strtotime($ws . 'T00:00:00Z') - (results_now_lagos() - time()));
+    $once = static function (string $memberId, string $term, string $kind) use ($wsAt): bool {
+        if (db_row('SELECT 1 FROM results_log WHERE memberId = ? AND kind = ? AND at >= ? LIMIT 1', [$memberId, $kind, $wsAt])) return false;
         return true;
     };
     $sys = ['id' => '', 'name' => 'NGG', 'role' => 'system'];

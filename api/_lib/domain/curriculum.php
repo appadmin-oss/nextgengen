@@ -41,7 +41,13 @@ const CURR_STATUSES       = ['draft', 'published', 'retired'];
 const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'ebook', 'code', 'archive', 'interactive', 'link'];
 /** A material's life: an editor's goes straight to approved; an instructor's waits. */
 const CURR_MATERIAL_STATUSES = ['approved', 'pending', 'rejected'];
-const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code'];
+/* 'watch' is a question about a video the lesson sends them to: they watch
+   it inside the exam and write what they took from it. It is marked like
+   any other written answer — against the rubric, by the AI when one is
+   configured and by the instructor otherwise. There is deliberately no
+   keyword gate: a child who can guess which three words to type has not
+   watched anything, and a child who writes it their own way would fail. */
+const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code', 'watch'];
 /* How the AI marks each open kind. Only `short` has one right answer; the rest
  * are judged against the rubric, and a reflection is never marked for having
  * the "right" opinion. */
@@ -52,6 +58,12 @@ const CURR_MARKING_GUIDE = [
     'reflection' => 'A personal reflection. There is no right answer and no opinion is marked down. Judge honesty, specific detail from their own experience, and a link to the lesson. Never mark down anything personal they disclose.',
     'project'    => 'A description of a project they made (perhaps with a link you cannot open). Judge the description against the rubric criteria: what they built, how, what they learned. If they give only a link and no description, you cannot judge it.',
     'code'       => 'Code they wrote. Trace it mentally: does it do what the prompt asks, is the logic sound, is it readable. Small syntax slips cost less than wrong logic.',
+    /* VERIFYING A VIDEO. You cannot check that somebody pressed play, and a
+       keyword gate would only check that they guessed which three words to
+       type — passing the child who skimmed a transcript and failing the one
+       who understood it and said so in their own words. So what is judged is
+       what only watching could produce: the specifics. */
+    'watch'      => 'What they took from a video the lesson sent them to. You cannot see whether they watched it, so judge what only watching could produce: specific details, an example or a moment from the video itself, and their own words rather than the title restated. A summary that could have been written from the title alone earns little, however well written; a rough account with a real detail in it earns more. Never mark down their English.',
 ];
 const CURR_IMPORT_MAX     = 1000;
 const CURR_BULK_MAX       = 500;
@@ -170,6 +182,10 @@ function curriculum_unit_public(array $u, array $materials, array $checks, bool 
             $o = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'],
                   'options' => json_decode((string)$c['options'], true) ?: [], 'points' => (int)$c['points'],
                   'source' => (string)$c['source']];
+            /* The video travels with the question, to the learner as well as
+               to the editor: it is what they are being asked about, not an
+               answer, so withholding it would withhold the question. */
+            if ((string)$c['kind'] === 'watch' && trim((string)($c['videoUrl'] ?? '')) !== '') $o['videoUrl'] = (string)$c['videoUrl'];
             if ($withAnswers) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
             return $o;
         }, $checks),
@@ -524,6 +540,21 @@ function curriculum_course_suggest(string $course): string {
  *
  * @return array{ok:bool,error?:string,detail?:string,unit?:array,materials?:list<array>,checks?:list<array>}
  */
+/**
+ * Is this a video the lesson can actually play?
+ *
+ * The same two hosts the member's renderer embeds, and nothing else: a link
+ * the exam cannot play is a question the learner cannot answer, and it must
+ * be refused where it is written rather than discovered on a Saturday.
+ */
+function curriculum_video_ok(string $url): bool {
+    $u = trim($url);
+    if (!preg_match('~^https://~i', $u)) return false;
+    return (bool)preg_match('~^https://(?:www\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/)[\\w-]{6,}~i', $u)
+        || (bool)preg_match('~^https://(?:www\\.)?vimeo\\.com/\\d+~i', $u)
+        || (bool)preg_match('~^https://player\\.vimeo\\.com/video/\\d+~i', $u);
+}
+
 function curriculum_validate(array $d, bool $allowNewCourse = false): array {
     $course = curriculum_clean_text($d['course'] ?? '', 120);
     $canon = curriculum_course_canonical($course);
@@ -612,10 +643,20 @@ function curriculum_validate(array $d, bool $allowNewCourse = false): array {
             if ($idx === null || $idx >= count($opts)) return ['ok' => false, 'error' => 'mcq_answer_missing', 'detail' => 'check ' . ($i + 1) . ': the answer must be one of its options'];
             $answer = (string)$idx;
         }
+        /* Only a 'watch' question carries a video, and it must carry one —
+           otherwise it is a question about a film nobody was shown. */
+        $video = '';
+        if ($kind === 'watch') {
+            $video = trim((string)($c['videoUrl'] ?? ''));
+            if ($video === '' || !curriculum_video_ok($video)) {
+                return ['ok' => false, 'error' => 'watch_needs_video',
+                        'detail' => 'check ' . ($i + 1) . ': a “watch and tell me” question needs a YouTube or Vimeo link'];
+            }
+        }
         $checks[] = ['checkId' => preg_match('/^CHK-[A-F0-9]{6,16}$/', (string)($c['checkId'] ?? '')) ? (string)$c['checkId'] : '',
             'kind' => $kind, 'prompt' => $prompt, 'options' => json_encode($opts, JSON_UNESCAPED_UNICODE), 'answer' => mb_substr($answer, 0, 2000),
             'rubric' => curriculum_clean_text($c['rubric'] ?? '', 2000), 'points' => max(1, min(20, (int)($c['points'] ?? 1))),
-            'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
+            'videoUrl' => $video, 'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
         if (count($checks) > CURR_MAX_CHECKS) return ['ok' => false, 'error' => 'too_many_checks', 'max' => CURR_MAX_CHECKS];
     }
     if ($status === 'published' && !$checks) {
@@ -652,8 +693,15 @@ function curriculum_fingerprint_stored(array $bundle): string {
         'title' => (string)$u['title'], 'summary' => (string)$u['summary'], 'objectives' => (string)$u['objectives'], 'body' => (string)$u['body'],
         'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark']];
     $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title']], $bundle['materials']);
+    /* Every field the validated shape carries has to appear here too, in the
+       same order: these two hashes are compared to decide "unchanged", so a
+       field on one side and not the other makes every row look edited —
+       which turns a re-import of the same sheet into an update of every
+       lesson in it. That is what adding `videoUrl` did until this line
+       learned about it. */
     $checks = array_map(static fn($c) => ['kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'], 'options' => (string)$c['options'],
-        'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'], 'source' => (string)$c['source']], $bundle['checks']);
+        'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'],
+        'videoUrl' => (string)($c['videoUrl'] ?? ''), 'source' => (string)$c['source']], $bundle['checks']);
     return hash('sha256', json_encode([$unit, $mats, $checks], JSON_UNESCAPED_UNICODE));
 }
 
@@ -698,7 +746,8 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         }
         foreach ($v['checks'] as $i => $c) {
             $fields = ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => $c['options'], 'answer' => $c['answer'],
-                       'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source']];
+                       'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source'],
+                       'videoUrl' => (string)($c['videoUrl'] ?? '')];
             if ($c['checkId'] !== '' && db_row('SELECT id FROM curriculum_checks WHERE checkId = ? AND unitId = ?', [$c['checkId'], $unitId])) {
                 db_update('curriculum_checks', $fields, ['checkId' => $c['checkId']]);
             } else {

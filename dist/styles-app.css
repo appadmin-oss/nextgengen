@@ -15105,3 +15105,5 @@ button.m9x-ev-sum { cursor: pointer; }
   font-size: 12.5px; line-height: 1.55; color: var(--ink-600, #4a5168);
 }
 .led-ref a { color: var(--ink-900, #1a2233); }
+.led-q-video { grid-column: 1 / -1; }
+.led-bad { font-size: 12px; color: #a3221f; line-height: 1.4; }
