@@ -4222,3 +4222,43 @@ CREATE TABLE IF NOT EXISTS member_collectors (
 );
 
 INSERT INTO schema_version (version) VALUES (181) ON DUPLICATE KEY UPDATE version = version;
+
+-- 182: Summer School Portal v3 — deferred bulk actions (the undo window),
+-- each staff member's recent children, the promoted member's Summer link,
+-- incidents and guardian messages.
+CREATE TABLE IF NOT EXISTS pending_actions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  pendingId VARCHAR(48) NOT NULL UNIQUE, op VARCHAR(80) NOT NULL, args MEDIUMTEXT,
+  requesterId VARCHAR(64) NOT NULL, label VARCHAR(160) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending', commitAt VARCHAR(32) NOT NULL,
+  result MEDIUMTEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', doneAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_pend_due (status, commitAt)
+);
+CREATE TABLE IF NOT EXISTS summer_recent (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  staffId VARCHAR(64) NOT NULL, studentId VARCHAR(64) NOT NULL, at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_srecent_one (staffId, studentId)
+);
+ALTER TABLE members ADD COLUMN fromSummerId VARCHAR(64) NOT NULL DEFAULT '';
+CREATE INDEX idx_members_fromsummer ON members(fromSummerId);
+CREATE TABLE IF NOT EXISTS summer_incidents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  incidentId VARCHAR(48) NOT NULL UNIQUE, cohortId VARCHAR(48) NOT NULL DEFAULT '', studentId VARCHAR(64) NOT NULL DEFAULT '',
+  childName VARCHAR(255) NOT NULL DEFAULT '', centre VARCHAR(120) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', kind VARCHAR(32) NOT NULL DEFAULT '',
+  severity VARCHAR(16) NOT NULL DEFAULT 'low', note TEXT,
+  byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open', toldAt VARCHAR(32) NOT NULL DEFAULT '', toldBy VARCHAR(64) NOT NULL DEFAULT '',
+  closedAt VARCHAR(32) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_sinc_edition (cohortId, status)
+);
+CREATE TABLE IF NOT EXISTS summer_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  messageId VARCHAR(48) NOT NULL UNIQUE, cohortId VARCHAR(48) NOT NULL DEFAULT '', template VARCHAR(32) NOT NULL DEFAULT '',
+  title VARCHAR(160) NOT NULL DEFAULT '', body TEXT, audience VARCHAR(32) NOT NULL DEFAULT '',
+  channel VARCHAR(16) NOT NULL DEFAULT 'email', recipients INT NOT NULL DEFAULT 0,
+  delivered INT NOT NULL DEFAULT 0, failed INT NOT NULL DEFAULT 0,
+  byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_smsg_edition (cohortId, createdAt)
+);
+
+INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;

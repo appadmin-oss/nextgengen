@@ -1134,6 +1134,9 @@ function admin_summer_absence_alert(array $p): array {
         $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND status = 'active'
                         AND studentId NOT IN (SELECT studentId FROM attendance WHERE date = ?) ORDER BY fullName LIMIT 300", [$cid, $today]);
     }
+    /* A bulk alert waits out its undo window (pending.php); a named child's
+       follow-up is one deliberate email and goes now. */
+    if ($one === '' && ($d = pending_defer('admin.summer.absence.alert', $p + ['cohortId' => $cid], 'Alert ' . count($rows) . ' guardians', count($rows)))) return $d + ['absent' => count($rows)];
     $sent = 0; $skipped = 0;
     foreach ($rows as $s) {
         $to = trim((string)($s['parentEmail'] ?? ''));

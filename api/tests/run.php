@@ -31754,5 +31754,110 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     }
 })();
 
+/* Summer School Portal v3 (domain/summer-portal.php, domain/pending.php):
+   one roster derivation behind every count, the palette's search and recent
+   children, centre scope on the way in, and the undo window — a deferred bulk
+   act does nothing until it commits, and a cancelled one never does. */
+(function () {
+    $A = 'NGG-2025-0099';
+    $progWas = setting_get('programme');
+    setting_set('programme', ['enabled' => false], $A);   // register-basis days: deterministic
+    $ed = 'SS3-ED-T';
+    db_insert('summer_cohorts', ['cohortId' => $ed, 'year' => 2026, 'name' => 'SS3 Test Edition', 'startDate' => gmdate('Y-m-d', strtotime('-20 days')),
+        'endDate' => gmdate('Y-m-d', strtotime('+20 days')), 'status' => 'closed', 'createdAt' => now_iso()]);
+    $kid = function (string $id, string $name, array $extra = []) use ($ed) {
+        db_insert('summer_students', array_merge(['studentId' => $id, 'cohortId' => $ed, 'token' => 'SS3TOK-' . $id, 'handle' => strtolower($id), 'fullName' => $name,
+            'centre' => 'SS3 Centre', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'verified', 'parentEmail' => strtolower($id) . '@example.com',
+            'displayId' => 'S3-26-' . substr($id, -3), 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()], $extra));
+    };
+    $kid('SS3-K-001', 'Adaora Steady');
+    $kid('SS3-K-002', 'Bolu Stopped');
+    $kid('SS3-K-003', 'Chidi Pending', ['regStatus' => 'parent_pending']);
+    $kid('SS3-K-004', 'Dayo Graduate', ['status' => 'graduated']);
+    $mark = function (string $id, int $daysAgo) use ($ed) {
+        $d = gmdate('Y-m-d', strtotime(attendance_today() . ' -' . $daysAgo . ' days'));
+        db_insert('attendance', ['cohortId' => $ed, 'studentId' => $id, 'token' => 'SS3TOK-' . $id, 'date' => $d, 'checkInAt' => $d . 'T08:30:00Z', 'method' => 'qr', 'status' => 'present', 'createdAt' => now_iso()]);
+    };
+    foreach ([6, 5, 4, 3, 2, 1] as $n) { $mark('SS3-K-001', $n); $mark('SS3-K-004', $n); }
+    foreach ([6, 5, 4] as $n) $mark('SS3-K-002', $n);
+    $q = fn(array $a) => backend_dispatch('admin.summer.portal', array_merge(['requesterId' => $A, 'editionId' => $ed], $a));
+
+    $boot = $q(['view' => 'boot']);
+    chk('ss3 · boot names the edition and its days so far', !empty($boot['ok']) && $boot['edition']['id'] === $ed && $boot['edition']['dayN'] === 6);
+    chk('ss3 · the stopped badge counts the child who came then stopped', ($boot['badges']['stopped'] ?? -1) === 1);
+    chk('ss3 · an unconfirmed registration is a badge', ($boot['badges']['regOpen'] ?? -1) === 1);
+
+    $st = $q(['view' => 'people', 'pview' => 'stopped']);
+    chk('ss3 · the stopped view is exactly that child', $st['total'] === 1 && $st['rows'][0]['id'] === 'SS3-K-002');
+    chk('ss3 · the stopped tab count agrees with the list', $st['views']['stopped'] === 1);
+    chk('ss3 · a list row carries no card token or full email', !isset($st['rows'][0]['token']) && !isset($st['rows'][0]['email']));
+    $all = $q(['view' => 'people', 'sort' => 'DROP TABLE', 'pview' => 'nonsense']);
+    chk('ss3 · an unknown sort and view fall back rather than erroring', !empty($all['ok']) && $all['applied']['sort'] === 'name' && $all['applied']['pview'] === 'all' && $all['total'] === 4);
+    $risk = $q(['view' => 'people', 'pview' => 'risk']);
+    chk('ss3 · at risk is under the risk rate (3 of 6 days is 50%, not under)', $risk['total'] === 0);
+    $fac = $q(['view' => 'people', 'f_today' => 'absent']);
+    chk('ss3 · a facet filters above the page and counts the other facets', $fac['total'] >= 1 && isset($fac['facets']['centre']['SS3 Centre']));
+
+    $s1 = backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => 'Bolu']);
+    chk('ss3 · search finds a child by name', count($s1['children']) === 1 && $s1['children'][0]['id'] === 'SS3-K-002');
+    db_insert('qr_codes', ['token' => 'SS3CARD-90417', 'batch' => 'SS3', 'cohortId' => $ed, 'status' => 'assigned', 'studentId' => 'SS3-K-001', 'assignedName' => 'Adaora Steady', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    $s2 = backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => '0417']);
+    chk('ss3 · the last four digits of a card find its holder', in_array('SS3-K-001', array_column($s2['children'], 'id'), true));
+    chk('ss3 · search returns at most six', count(backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => 'a'])['children']) <= SS3_SEARCH_MAX);
+
+    $c = $q(['view' => 'child', 'studentId' => 'SS3-K-002']);
+    chk('ss3 · the drawer opens a child with consents and a pattern strip', ($c['child']['id'] ?? '') === 'SS3-K-002' && count($c['child']['consents']) === count(CONSENT_TYPES) && count($c['child']['strip']) === 6);
+    $rec = backend_dispatch('admin.summer.recent', ['requesterId' => $A]);
+    chk('ss3 · opening a child puts them first in recent', ($rec['children'][0]['id'] ?? '') === 'SS3-K-002');
+
+    $reg = $q(['view' => 'register', 'rf' => 'absent', 'date' => gmdate('Y-m-d', strtotime(attendance_today() . ' -1 days'))]);
+    chk('ss3 · the register names who was not in on a day', $reg['kpis']['absent'] === 1 && $reg['list'][0]['id'] === 'SS3-K-002');
+
+    // Centre scope on the way in: a coordinator scoped elsewhere sees none of it.
+    db_insert('centres', ['centreId' => 'CEN-SS3-OTHER', 'name' => 'SS3 Other', 'code' => 'SO', 'status' => 'active']);
+    db_insert('members', ['memberId' => 'NGG-SS3-SCOPED', 'fullName' => 'Scoped Coordinator', 'email' => 'ss3scoped@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'admin', 'centre' => 'SS3 Other', 'centreScope' => json_encode(['CEN-SS3-OTHER']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $sc = backend_dispatch('admin.summer.portal', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'view' => 'people']);
+    chk('ss3 · a scoped coordinator counts only their centres', !empty($sc['ok']) && $sc['total'] === 0);
+    chk('ss3 · and searches only their centres', count(backend_dispatch('admin.summer.search', ['requesterId' => 'NGG-SS3-SCOPED', 'q' => 'Bolu'])['children']) === 0);
+    $oc = $q(['view' => 'child', 'studentId' => 'SS3-K-002', 'requesterId' => 'NGG-SS3-SCOPED']);
+    chk('ss3 · and cannot open another centre’s child', array_key_exists('child', $oc) && $oc['child'] === null);
+
+    // The undo window.
+    $before = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0);
+    $d = backend_dispatch('admin.summer.absence.alert', ['requesterId' => $A, 'cohortId' => $ed, 'defer' => 8]);
+    chk('ss3 · a bulk alert with a window is parked, not sent', !empty($d['deferred']) && $d['pendingId'] !== '' && $d['seconds'] === 8);
+    chk('ss3 · nothing was sent while parked', (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before);
+    chk('ss3 · flushing before the window ends is refused', (backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d['pendingId']])['error'] ?? '') === 'not_due');
+    chk('ss3 · somebody else cannot cancel it', (backend_dispatch('admin.pending.cancel', ['requesterId' => 'NGG-SS3-SCOPED', 'pendingId' => $d['pendingId']])['error'] ?? '') === 'not_yours');
+    chk('ss3 · the requester can undo it', !empty(backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $d['pendingId']])['cancelled']));
+    pending_commit_due(50);
+    chk('ss3 · a cancelled act never commits', db_row('SELECT status FROM pending_actions WHERE pendingId = ?', [$d['pendingId']])['status'] === 'cancelled'
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before);
+    $d2 = backend_dispatch('admin.summer.absence.alert', ['requesterId' => $A, 'cohortId' => $ed, 'defer' => 8]);
+    db_exec('UPDATE pending_actions SET commitAt = ? WHERE pendingId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 1), $d2['pendingId']]);
+    $f = backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d2['pendingId']]);
+    chk('ss3 · when the window ends the act commits, as the requester', ($f['status'] ?? '') === 'committed' && !empty($f['result']['ok'])
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before + 1);
+    chk('ss3 · it is too late to undo once committed', (backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $d2['pendingId']])['error'] ?? '') === 'too_late');
+    chk('ss3 · a second flush reports, never repeats', (backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d2['pendingId']])['status'] ?? '') === 'committed'
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before + 1);
+
+    // Into NGG: a parked move makes no member row; a real one links back.
+    db_insert('centres', ['centreId' => 'CEN-SS3-NGG', 'name' => 'SS3 Club', 'code' => 'SC', 'status' => 'active', 'programmes' => 'ngg']);
+    $gr = backend_dispatch('admin.summer.graduates', ['requesterId' => $A, 'editionId' => $ed, 'stage' => 'all']);
+    chk('ss3 · graduates are the children at or over the graduate rate', !empty($gr['ok']) && $gr['counts']['ready'] === 2 && $gr['threshold'] === SUMMER_GRADUATE_RATE);
+    $pm = backend_dispatch('admin.club.promote', ['requesterId' => $A, 'studentId' => 'SS3-K-004', 'centre' => 'SS3 Club', 'defer' => 8]);
+    chk('ss3 · a parked promotion creates no member yet', !empty($pm['deferred']) && !db_row("SELECT id FROM members WHERE fromSummerId = 'SS3-K-004'"));
+    backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $pm['pendingId']]);
+    $pr = backend_dispatch('admin.club.promote', ['requesterId' => $A, 'studentId' => 'SS3-K-004', 'centre' => 'SS3 Club']);
+    chk('ss3 · a promotion records which participant the member was', !empty($pr['ok']) && db_row('SELECT fromSummerId FROM members WHERE memberId = ?', [$pr['memberId']])['fromSummerId'] === 'SS3-K-004');
+    $gr2 = backend_dispatch('admin.summer.graduates', ['requesterId' => $A, 'editionId' => $ed, 'stage' => 'promoted']);
+    chk('ss3 · and Into NGG moves them to the promoted stage', $gr2['counts']['promoted'] === 1 && ($gr2['rows'][0]['memberId'] ?? '') === $pr['memberId']);
+    chk('ss3 · a bulk invoice with nobody selected is refused', (backend_dispatch('admin.summer.graduates.invoice', ['requesterId' => $A, 'memberIds' => []])['error'] ?? '') !== '');
+
+    setting_set('programme', is_array($progWas) ? $progWas : [], $A);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

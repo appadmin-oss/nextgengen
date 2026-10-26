@@ -111,6 +111,7 @@ const CENTRE_NAME_TABLES = [
     'events',
     'mentor_record_cover',
     'mentors',
+    'summer_incidents',
     'summer_students',
     'testimonials',
     'v3_scores',

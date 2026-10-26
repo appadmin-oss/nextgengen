@@ -414,6 +414,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.sg.note'            => 'admin_sg_note',
             // Summer School (QR attendance + enrollment)
             'admin.summer.overview'       => 'admin_summer_overview',
+            /* Summer School Portal v3 (domain/summer-portal.php): one read per
+               screen, the palette's search and recent children, the Into NGG
+               list and its one-press invoices. Bulk acts that reach people
+               wait out an undo window (domain/pending.php). */
+            'admin.summer.portal'         => 'admin_summer_portal',
+            'admin.summer.search'         => 'admin_summer_search',
+            'admin.summer.recent'         => 'admin_summer_recent',
+            'admin.summer.graduates'      => 'admin_summer_graduates',
+            'admin.summer.graduates.invoice' => 'admin_summer_graduates_invoice',
+            'admin.pending.cancel'        => 'admin_pending_cancel',
+            'admin.pending.flush'         => 'admin_pending_flush',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',
             /* Summer School structure. An EDITION is one season
                (`summer_cohorts`, whose id is the `cohortId` every summer table

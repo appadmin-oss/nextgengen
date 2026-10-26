@@ -308,6 +308,13 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
     }
 
+    /* Bulk acts parked for their undo window (domain/pending.php) whose tab
+     * closed before the window ended: commit them here so nothing waits. */
+    if (function_exists('pending_commit_due')) {
+        try { pending_commit_due(100); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'pending.commit', $e->getMessage()); }
+    }
+
     /* The Monday quote mail — once per member per week, drained in batches. */
     if (function_exists('qotw_mail_run')) {
         try { qotw_mail_run(); }

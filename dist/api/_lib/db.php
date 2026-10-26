@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 181;
+const NGG_SCHEMA_TARGET = 182;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5303,6 +5303,50 @@ function db_migrate(PDO $db): void {
               createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_mcoll_member ON member_collectors(memberId);
+        ",
+
+        /* Summer School Portal v3. `pending_actions` holds a bulk act for its
+           undo window: nothing is promoted, invoiced or sent until the row is
+           committed (domain/pending.php). `summer_recent` is each staff
+           member's last children opened, for the command palette.
+           `members.fromSummerId` links a promoted member to the participant
+           they were, which until now lived only in a free-text note. Incidents
+           and guardian messages are the coordinator's day-to-day record. */
+        182 => "
+            CREATE TABLE IF NOT EXISTS pending_actions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              pendingId TEXT NOT NULL UNIQUE, op TEXT NOT NULL, args TEXT NOT NULL DEFAULT '{}',
+              requesterId TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'pending', commitAt TEXT NOT NULL,
+              result TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT '', doneAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pend_due ON pending_actions(status, commitAt);
+            CREATE TABLE IF NOT EXISTS summer_recent (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              staffId TEXT NOT NULL, studentId TEXT NOT NULL, at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_srecent_one ON summer_recent(staffId, studentId);
+            ALTER TABLE members ADD COLUMN fromSummerId TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_fromsummer ON members(fromSummerId);
+            CREATE TABLE IF NOT EXISTS summer_incidents (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              incidentId TEXT NOT NULL UNIQUE, cohortId TEXT NOT NULL DEFAULT '', studentId TEXT NOT NULL DEFAULT '',
+              childName TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '',
+              severity TEXT NOT NULL DEFAULT 'low', note TEXT NOT NULL DEFAULT '',
+              byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'open', toldAt TEXT NOT NULL DEFAULT '', toldBy TEXT NOT NULL DEFAULT '',
+              closedAt TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_sinc_edition ON summer_incidents(cohortId, status);
+            CREATE TABLE IF NOT EXISTS summer_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              messageId TEXT NOT NULL UNIQUE, cohortId TEXT NOT NULL DEFAULT '', template TEXT NOT NULL DEFAULT '',
+              title TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', audience TEXT NOT NULL DEFAULT '',
+              channel TEXT NOT NULL DEFAULT 'email', recipients INTEGER NOT NULL DEFAULT 0,
+              delivered INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+              byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_smsg_edition ON summer_messages(cohortId, createdAt);
         ",
     ];
 

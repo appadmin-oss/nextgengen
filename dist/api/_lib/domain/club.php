@@ -121,6 +121,7 @@ function admin_club_promote_bulk(array $p): array {
     $ids = array_values(array_unique(array_filter(array_map(fn($v) => trim((string)$v), $ids))));
     if (!count($ids)) return ['ok' => false, 'error' => 'nothing_selected'];
     if (count($ids) > CLUB_PROMOTE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CLUB_PROMOTE_MAX];
+    if ($d = pending_defer('admin.club.promote.bulk', array_merge($p, ['studentIds' => $ids]), 'Move ' . count($ids) . ' children to NGG', count($ids))) return $d;
 
     $results = []; $promoted = 0; $refused = 0;
     foreach ($ids as $sid) {
@@ -253,6 +254,11 @@ function admin_club_promote(array $p): array {
         $chosen = club_promote_suggestion((string)($s['centre'] ?? ''), null, participant_home_address($s), true)['name'];
         if ($chosen === '') return ['ok' => false, 'error' => 'centre_required', 'detail' => 'Choose which NGG centre they will join.'];
     }
+    /* Held for its undo window when the screen asked for one (pending.php):
+       the centre is resolved above so the commit posts them where the
+       coordinator saw, and nothing — the member row, the welcome email — exists
+       until the window ends. */
+    if ($d = pending_defer('admin.club.promote', array_merge($p, ['centre' => $chosen]), 'Move ' . (string)$s['fullName'] . ' to NGG', 1)) return $d + ['centre' => $chosen, 'name' => (string)$s['fullName']];
     $newId = new_id('NGG', 'members', 'memberId');
     /* Carry the record across.
      *
@@ -284,6 +290,9 @@ function admin_club_promote(array $p): array {
         'parentPhone' => $guardianPhone,
         'joinDate' => gmdate('Y-m-d'),
         'notes' => 'Promoted from Summer ' . $s['studentId'] . ' (' . $s['cohortId'] . ')',
+        /* The link back, as a column: Into NGG asks "which participants have a
+           member row yet" for a page of graduates in one query. */
+        'fromSummerId' => (string)$s['studentId'],
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
