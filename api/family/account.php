@@ -18,7 +18,15 @@ switch ($action) {
                                                           'refEntryId' => $b['refEntryId'] ?? '']); break;
     case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;
+    case 'report.sign': $res = gs_call('family.report.sign', $base + ['id' => (string)($b['id'] ?? '')]); break;
+    case 'plan.sign':   $res = gs_call('family.plan.sign', $base + ['linkId' => $b['linkId'] ?? '', 'resultId' => (string)($b['resultId'] ?? '')]); break;
+    case 'results.remind': $res = gs_call('family.results.remind', $base + ['linkId' => $b['linkId'] ?? '', 'resultId' => (string)($b['resultId'] ?? '')]); break;
+    case 'results.upload': $res = gs_call('family.results.upload', $base + ['linkId' => $b['linkId'] ?? '', 'resultId' => (string)($b['resultId'] ?? ''),
+                                                          'fileUrl' => (string)($b['fileUrl'] ?? ''), 'mime' => (string)($b['mime'] ?? ''), 'size' => (int)($b['size'] ?? 0)]); break;
+    case 'rsvp':        $res = gs_call('family.rsvp', $base + ['eventId' => (string)($b['eventId'] ?? ''), 'answer' => (string)($b['answer'] ?? '')]); break;
+    case 'mentor.book': $res = gs_call('family.mentor.book', $base + ['linkId' => $b['linkId'] ?? '', 'slotId' => (string)($b['slotId'] ?? '')]); break;
     default: json_error('unknown_action', 400);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', ($res['error'] ?? '') === 'too_many_attempts' ? 429 : 400, $res['detail'] ?? null);
+// read_only is a 403: a family route never writes a profile, collectors or consents.
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', ($res['error'] ?? '') === 'too_many_attempts' ? 429 : (($res['error'] ?? '') === 'read_only' ? 403 : 400), $res['detail'] ?? null);
 unset($res['ok']); json_ok($res);

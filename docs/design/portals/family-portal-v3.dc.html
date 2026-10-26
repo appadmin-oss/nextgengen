@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./vendor/phosphor/phosphor.css">
+<script src="./family-portal-data-2.js"></script>
+<script src="./family-portal-data-3.js"></script>
+<style>
+@font-face{font-family:"Bricolage Grotesque";font-weight:700;font-display:swap;src:url("./assets/fonts/bricolage-700.woff2") format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-weight:800;font-display:swap;src:url("./assets/fonts/bricolage-800.woff2") format("woff2")}
+html,body{margin:0;height:100%;background:#efede8}
+*{box-sizing:border-box}
+a{color:#0b0b0c;text-underline-offset:2px}
+a:hover{color:#6b4b00}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid #f5b026;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none;animation:none}}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" style="height:100vh; width:100%; display:flex; align-items:center; justify-content:center; padding:{{ outerPad }}; font-family:'Geist', system-ui, sans-serif; font-size:15px; line-height:1.45; color:#0b0b0c; -webkit-font-smoothing:antialiased;">
+<div style="width:{{ frameW }}; height:{{ frameH }}; max-width:100%; max-height:100%; border-radius:{{ frameR }}; box-shadow:{{ frameSh }}; overflow:hidden; position:relative; display:flex; background:#f6f4f0;">
+
+<sc-if value="{{ signedOut }}">
+  <div style="flex:1; overflow-y:auto; display:flex; align-items:center; justify-content:center; padding:24px 18px;">
+    <div style="width:min(420px, 100%); display:flex; flex-direction:column; gap:22px;">
+      <div style="display:flex; align-items:center; gap:10px;"><img src="assets/logo.png" alt="" style="width:36px; height:36px; border-radius:50%;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:20px; letter-spacing:-0.01em;">NGG Family</span></div>
+      <div style="display:flex; flex-direction:column; gap:8px;"><h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:34px; line-height:1.05; letter-spacing:-0.02em; text-wrap:balance;">{{ siH }}</h1><p style="margin:0; color:#4a4a50; text-wrap:pretty;">{{ siP }}</p></div>
+      <div style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:20px; display:flex; flex-direction:column; gap:14px;">
+        <sc-if value="{{ siEmailStep }}" hint-placeholder-val="{{ true }}">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Your email<input type="email" value="{{ siEmail }}" onChange="{{ onSiEmail }}" onKeyDown="{{ onSiKey }}" placeholder="the one you gave NGG" autoComplete="email" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none; background:#fff;"></label>
+          <button onClick="{{ siSend }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Email me a sign-in code</button>
+        </sc-if>
+        <sc-if value="{{ siCodeStep }}">
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">6-digit code<input inputMode="numeric" value="{{ siCode }}" onChange="{{ onSiCode }}" onKeyDown="{{ onSiKey }}" placeholder="••• •••" autoComplete="one-time-code" style="height:56px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:24px; letter-spacing:.3em; font-family:'Geist Mono', monospace; outline:none; text-align:center;"></label>
+          <button onClick="{{ siVerify }}" style="height:52px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:16px; font-weight:600;">Sign in</button>
+          <button onClick="{{ siBack }}" style="height:40px; border:0; background:transparent; font-size:14px; color:#4a4a50; text-decoration:underline;">Use a different email</button>
+        </sc-if>
+        <sc-if value="{{ siHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a;">{{ siErr }}</span></sc-if>
+      </div>
+      <p style="margin:0; font-size:13px; color:#6b6b72; text-wrap:pretty;">This is for parents and guardians of NGG members. Children sign in on the member app with their own code.</p>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ signedIn }}" hint-placeholder-val="{{ true }}">
+  <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+    <aside aria-label="Family" style="width:288px; flex-shrink:0; background:#fbfaf7; border-right:1px solid #e8e5dd; display:flex; flex-direction:column; padding:18px 14px 14px; gap:18px; overflow-y:auto; overscroll-behavior:contain;">
+      <div style="display:flex; align-items:center; gap:10px; padding:0 6px;"><img src="assets/logo.png" alt="" style="width:30px; height:30px; border-radius:50%;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.01em;">NGG Family</span></div>
+      <section aria-labelledby="kids-h" style="display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; align-items:center; gap:6px; padding:0 4px 0 8px;"><h2 id="kids-h" style="margin:0; font-size:12.5px; font-weight:500; color:#6b6b72; flex:1;">Your children · {{ kidsN }}</h2><button onClick="{{ toAdd }}" aria-label="Add a child" title="Add a child" style="width:32px; height:32px; border:0; border-radius:9px; background:transparent; display:grid; place-items:center; color:#3a3a40;" style-hover="background:#efede8"><i class="ph ph-plus" aria-hidden="true" style="font-size:16px;"></i></button></div>
+        <sc-if value="{{ hasNeeds }}"><button onClick="{{ toNeeds }}" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid #f3e3bb; border-radius:12px; background:#fffaf0; text-align:left; width:100%;" style-hover="background:#fdf2d8"><i class="ph-fill ph-bell-simple" aria-hidden="true" style="font-size:18px; color:#b07a00;"></i><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:13.5px; font-weight:600;">{{ needsH }}</b><span style="font-size:12px; color:#7a5600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ needsS }}</span></span><i class="ph ph-caret-right" aria-hidden="true" style="color:#7a5600;"></i></button></sc-if>
+        <div style="display:flex; flex-direction:column; gap:4px;">
+          <sc-for list="{{ wardList }}" as="w" hint-placeholder-count="3">
+            <button onClick="{{ w.onClick }}" aria-current="{{ w.cur }}" aria-label="{{ w.aria }}" style="display:flex; align-items:center; gap:12px; padding:8px 10px; border:1px solid {{ w.bd }}; border-radius:14px; background:{{ w.bg }}; box-shadow:{{ w.sh }}; text-align:left; width:100%; transition:background .15s, box-shadow .15s;" style-hover="background:#fff">
+              <span style="width:40px; height:40px; border-radius:50%; background:{{ w.tone }}; display:grid; place-items:center; font-size:14px; font-weight:600; flex-shrink:0; opacity:{{ w.op }};">{{ w.ini }}</span>
+              <span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;">
+                <span style="display:flex; align-items:center; gap:6px;"><b style="font-size:14.5px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ w.name }}</b><sc-if value="{{ w.hasAlerts }}"><span title="{{ w.alertL }}" style="min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;">{{ w.alerts }}</span></sc-if></span>
+                <span style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:{{ w.sc }}; min-width:0;"><span style="width:8px; height:8px; border-radius:50%; background:{{ w.dot }}; flex-shrink:0;"></span><span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ w.sub }}</span></span>
+                
+              </span>
+            </button>
+          </sc-for>
+        </div>
+      </section>
+      <nav aria-label="Sections" style="display:flex; flex-direction:column; gap:2px; flex:1 0 auto; border-top:1px solid #e8e5dd; padding-top:14px;">
+        <span style="font-size:12.5px; font-weight:500; color:#6b6b72; padding:0 8px 6px;">{{ ctxL }}</span>
+        <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+          <button onClick="{{ n.onClick }}" aria-current="{{ n.cur }}" aria-keyshortcuts="{{ n.kbd }}" title="{{ n.tip }}" style="display:flex; align-items:center; gap:12px; min-height:52px; padding:6px 12px; border:0; border-radius:12px; background:{{ n.bg }}; font-size:14.5px; font-weight:{{ n.fw }}; text-align:left; width:100%;" style-hover="background:#efede8"><i class="{{ n.icon }}" aria-hidden="true" style="font-size:19px;"></i><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span>{{ n.label }}</span><sc-if value="{{ n.hasHint }}"><span style="font-size:12px; font-weight:400; color:{{ n.hc }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ n.hint }}</span></sc-if></span><sc-if value="{{ n.hasBadge }}"><span style="min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:{{ n.bb }}; color:{{ n.bf }}; font-size:12px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ n.badge }}</span></sc-if></button>
+        </sc-for>
+      </nav>
+      <button onClick="{{ toAccount }}" style="display:flex; align-items:center; gap:10px; padding:10px; border:1px solid #e8e5dd; border-radius:14px; background:{{ accBg }}; text-align:left;"><span style="width:36px; height:36px; border-radius:50%; background:#0b0b0c; color:#f5b026; display:grid; place-items:center; font-size:13px; font-weight:600; flex-shrink:0;">{{ gIni }}</span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14px; font-weight:600;">{{ gName }}</b><span style="font-size:12.5px; color:#6b6b72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ gEmail }}</span></span><i class="ph ph-gear" aria-hidden="true" style="color:#6b6b72;"></i></button>
+    </aside>
+  </sc-if>
+
+  <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+    <sc-if value="{{ narrow }}">
+      <header style="flex-shrink:0; background:#f6f4f0; padding:{{ topPad }} 14px 8px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid #e8e5dd;">
+        <div style="display:flex; align-items:center; gap:10px;"><img src="assets/logo.png" alt="" style="width:28px; height:28px; border-radius:50%;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:17px; flex:1;">NGG Family</span><button onClick="{{ toAccount }}" aria-label="Your account" style="width:44px; height:44px; border:0; border-radius:50%; background:transparent; display:grid; place-items:center;"><span style="width:34px; height:34px; border-radius:50%; background:#0b0b0c; color:#f5b026; display:grid; place-items:center; font-size:12.5px; font-weight:600;">{{ gIni }}</span></button></div>
+        <button onClick="{{ openSw }}" aria-haspopup="dialog" aria-label="Switch child" style="display:flex; align-items:center; gap:10px; min-height:56px; padding:8px 12px 8px 8px; border:1px solid #e8e5dd; border-radius:16px; background:#fff; text-align:left; width:100%;">
+          <span style="width:40px; height:40px; border-radius:50%; background:{{ cur.tone }}; display:grid; place-items:center; font-size:14px; font-weight:600; flex-shrink:0; position:relative;">{{ cur.ini }}<span style="position:absolute; right:-1px; bottom:-1px; width:12px; height:12px; border-radius:50%; background:{{ cur.dot }}; border:2px solid #fff;"></span></span>
+          <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ cur.name }}</b><span style="font-size:12.5px; color:{{ cur.sc }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ cur.sub }}</span></span>
+          <sc-if value="{{ multi }}"><span style="font-size:12.5px; font-weight:500; color:#3a3a40; display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">Switch<i class="ph ph-caret-up-down" aria-hidden="true"></i></span></sc-if>
+          <sc-if value="{{ cur.hasAlerts }}"><span style="min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:12px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ cur.alerts }}</span></sc-if>
+        </button>
+      </header>
+    </sc-if>
+
+    <main style="flex:1; overflow-y:auto; overscroll-behavior:contain;">
+      <div style="max-width:780px; margin:0 auto; padding:{{ mPad }}; display:flex; flex-direction:column; gap:16px;">
+
+        <sc-if value="{{ showWardHead }}">
+          <div style="display:flex; align-items:center; gap:12px;"><span style="width:44px; height:44px; border-radius:50%; background:{{ wd.tone }}; display:grid; place-items:center; font-size:15px; font-weight:600; flex-shrink:0;">{{ wd.ini }}</span><div style="flex:1; min-width:0; display:flex; flex-direction:column;"><h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:{{ h1 }}; line-height:1.05; letter-spacing:-0.02em;">{{ viewTitle }}</h1><span style="font-size:13.5px; color:#6b6b72;">{{ wd.name }} · {{ wd.meta }}</span></div></div>
+        </sc-if>
+
+        <sc-if value="{{ hasSub }}">
+          <div role="tablist" aria-label="{{ subAria }}" style="display:flex; gap:4px; padding:4px; background:#efede8; border-radius:14px; overflow-x:auto; scrollbar-width:none;">
+            <sc-for list="{{ subTabs }}" as="t" hint-placeholder-count="3"><button role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.onClick }}" style="flex:1 0 auto; min-height:40px; padding:0 14px; border:0; border-radius:10px; background:{{ t.bg }}; box-shadow:{{ t.sh }}; font-size:14px; font-weight:{{ t.fw }}; color:{{ t.fg }}; white-space:nowrap; display:inline-flex; align-items:center; justify-content:center; gap:6px;">{{ t.l }}<sc-if value="{{ t.hasN }}"><span style="min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:11px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ t.n }}</span></sc-if></button></sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isToday }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:baseline; gap:4px 12px; flex-wrap:wrap;"><h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:{{ h1 }}; line-height:1.05; letter-spacing:-0.02em;">{{ hello }}</h1><span style="font-size:13.5px; color:#6b6b72;">{{ nowL }}</span></div>
+          <section aria-labelledby="hero-n" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; border-radius:22px; overflow:hidden;">
+            <div style="padding:14px 16px; display:flex; align-items:center; gap:12px; background:{{ st.bg }}; color:{{ st.fg }};">
+              <i class="{{ st.icon }}" aria-hidden="true" style="font-size:26px; flex-shrink:0;"></i>
+              <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:1px;"><h2 id="hero-n" style="margin:0; font-size:17px; font-weight:700; letter-spacing:-0.01em;">{{ st.h }}</h2><span style="font-size:13.5px; text-wrap:pretty;">{{ st.s }}</span></div>
+            </div>
+            <div style="padding:8px 16px 4px; display:flex; flex-direction:column;">
+              <sc-for list="{{ ttShown }}" as="c" hint-placeholder-count="2">
+                <div style="display:flex; align-items:center; gap:12px; min-height:44px; border-bottom:1px solid #f4f2ed;">
+                  <span style="font-family:'Geist Mono', monospace; font-size:12.5px; color:#4a4a50; width:{{ ttW }}; flex-shrink:0;">{{ c.time }}</span>
+                  <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:{{ c.fw }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.name }}</b><span style="font-size:12.5px; color:#6b6b72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.sub }}</span></span>
+                  <sc-if value="{{ c.hasTag }}"><span style="height:22px; padding:0 8px; border-radius:999px; background:{{ c.tbg }}; color:{{ c.tfg }}; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; flex-shrink:0;">{{ c.tag }}</span></sc-if>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ hasTT }}"><button onClick="{{ toggleTT }}" aria-expanded="{{ ttOpenA }}" style="width:100%; height:44px; border:0; background:#fff; font-size:13.5px; font-weight:600; color:#3a3a40; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#fbfaf7">{{ ttL }}<i class="{{ ttIcon }}" aria-hidden="true"></i></button></sc-if>
+          </section>
+          <section aria-labelledby="acct-h" style="background:#0b0b0c; color:#fff; border-radius:22px; padding:18px; display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; align-items:center; gap:8px;"><i class="ph ph-wallet" aria-hidden="true" style="font-size:19px; color:#f5b026;"></i><h2 id="acct-h" style="margin:0; font-size:15px; font-weight:600; flex:1;">{{ ac.h }}</h2><button onClick="{{ ac.toFees }}" style="height:36px; padding:0 12px; border:1px solid rgba(255,255,255,.28); border-radius:10px; background:transparent; color:#fff; font-size:13px; font-weight:500; display:inline-flex; align-items:center; gap:6px;">Statement<i class="ph ph-arrow-right" aria-hidden="true"></i></button></div>
+            <div style="display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;">
+              <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; min-width:0;"><span style="font-size:13px; color:rgba(255,255,255,.72);">{{ ac.lab }}</span><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:{{ acFs }}; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{{ ac.amount }}</span><span style="font-size:13.5px; color:rgba(255,255,255,.82); text-wrap:pretty;">{{ ac.sub }}</span></div>
+              <sc-if value="{{ ac.canPay }}"><button onClick="{{ ac.pay }}" style="flex:0 1 auto; min-width:160px; height:48px; padding:0 18px; border:0; border-radius:14px; background:#f5b026; color:#2a1d00; font-size:15px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-lock-simple" aria-hidden="true"></i>{{ ac.payL }}</button></sc-if>
+              <sc-if value="{{ ac.pending }}"><span style="height:32px; padding:0 12px; border-radius:999px; background:#2a2108; color:#f8d98a; font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-hourglass-medium" aria-hidden="true"></i>{{ ac.pendingL }}</span></sc-if>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap:8px;">
+              <sc-for list="{{ ac.facts }}" as="f" hint-placeholder-count="3"><div style="background:#1a1a1d; border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:2px; min-width:0;"><span style="font-size:12.5px; color:rgba(255,255,255,.66);">{{ f.l }}</span><b style="font-size:15.5px; font-weight:600; font-variant-numeric:tabular-nums;">{{ f.v }}</b><span style="font-size:12px; color:rgba(255,255,255,.66); text-wrap:pretty;">{{ f.s }}</span></div></sc-for>
+            </div>
+          </section>
+          <sc-if value="{{ hasTodo }}">
+            <section aria-labelledby="todo-h" style="display:flex; flex-direction:column; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px;"><h2 id="todo-h" style="margin:0; font-size:16px; font-weight:600;">For you to do</h2><span style="min-width:22px; height:22px; padding:0 7px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:12px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ todoN }}</span></div>
+              <div style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; border-radius:18px; overflow:hidden;">
+                <sc-for list="{{ todo }}" as="t" hint-placeholder-count="3">
+                  <button onClick="{{ t.onClick }}" style="display:flex; align-items:center; gap:12px; padding:12px 14px; border:0; border-top:{{ t.bt }}; background:#fff; text-align:left; width:100%; min-height:60px;" style-hover="background:#fbfaf7">
+                    <span style="width:36px; height:36px; border-radius:10px; background:{{ t.ibg }}; color:{{ t.ifg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ t.icon }}" aria-hidden="true" style="font-size:18px;"></i></span>
+                    <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600; text-wrap:pretty;">{{ t.h }}</b><span style="font-size:12.5px; color:#6b6b72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.s }}</span></span>
+                    <i class="ph ph-caret-right" aria-hidden="true" style="color:#8a8a90; flex-shrink:0;"></i>
+                  </button>
+                </sc-for>
+                <sc-if value="{{ todoMore }}"><button onClick="{{ toggleTodo }}" style="width:100%; height:44px; border:0; border-top:1px solid #f1efea; background:#fff; font-size:13.5px; font-weight:600; color:#3a3a40;" style-hover="background:#fbfaf7">{{ todoMoreL }}</button></sc-if>
+              </div>
+            </section>
+          </sc-if>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap:10px;">
+            <sc-for list="{{ tiles }}" as="k" hint-placeholder-count="4">
+              <button onClick="{{ k.onClick }}" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:14px; text-align:left; display:flex; flex-direction:column; gap:4px; min-height:104px; min-width:0;" style-hover="border-color:#c9c7bf">
+                <span style="display:flex; align-items:center; gap:6px; font-size:12.5px; color:#4a4a50;"><i class="{{ k.icon }}" aria-hidden="true" style="font-size:15px;"></i>{{ k.l }}</span>
+                <span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:26px; letter-spacing:-0.02em; line-height:1.05; color:{{ k.c }};">{{ k.v }}</span>
+                <span style="font-size:12.5px; color:#4a4a50; text-wrap:pretty;">{{ k.s }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <section aria-labelledby="inbox-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; border-radius:18px; overflow:hidden;">
+            <div style="padding:12px 16px 4px; display:flex; align-items:center; gap:8px;"><h2 id="inbox-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Latest from NGG</h2><button onClick="{{ toInbox }}" style="height:36px; padding:0 4px; border:0; background:transparent; font-size:13.5px; font-weight:600; display:inline-flex; align-items:center; gap:4px;">All<i class="ph ph-arrow-right" aria-hidden="true"></i></button></div>
+            <sc-for list="{{ inbox }}" as="m" hint-placeholder-count="3">
+              <button onClick="{{ m.onClick }}" style="display:flex; align-items:center; gap:12px; padding:12px 16px; border:0; border-top:1px solid #f1efea; background:#fff; width:100%; text-align:left; min-height:56px;" style-hover="background:#fbfaf7"><span style="width:8px; height:8px; border-radius:50%; background:{{ m.dot }}; flex-shrink:0;"></span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14px; font-weight:{{ m.fw }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ m.h }}</b><span style="font-size:12.5px; color:#6b6b72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ m.b }}</span></span><span style="font-size:12px; color:#6b6b72; white-space:nowrap;">{{ m.t }}</span></button>
+            </sc-for>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ isAtt }}">
+        <sc-if value="{{ subRecord }}">
+          <section style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
+            <span style="width:96px; height:96px; border-radius:50%; background:{{ att.ring }}; display:grid; place-items:center; flex-shrink:0;"><span style="width:76px; height:76px; border-radius:50%; background:#fff; display:grid; place-items:center; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:24px;">{{ att.rate }}</span></span>
+            <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px;"><b style="font-size:18px; font-weight:600;">{{ att.h }}</b><span style="font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ att.s }}</span></div>
+          </section>
+          <section aria-labelledby="att-strip" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:16px 18px; display:flex; flex-direction:column; gap:12px;">
+            <h2 id="att-strip" style="margin:0; font-size:16px; font-weight:600;">The last 14 Saturdays</h2>
+            <div style="display:grid; grid-template-columns:repeat(14, minmax(0, 1fr)); gap:4px;"><sc-for list="{{ att.strip }}" as="d" hint-placeholder-count="14"><span title="{{ d.t }}" style="aspect-ratio:1/1.4; border-radius:6px; background:{{ d.c }}; display:grid; place-items:center; color:{{ d.fg }};"><i class="{{ d.icon }}" aria-hidden="true" style="font-size:12px;"></i></span></sc-for></div>
+            <div style="display:flex; gap:14px; flex-wrap:wrap; font-size:12.5px; color:#4a4a50;"><span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; border-radius:3px; background:#22a05a;"></span>In</span><span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; border-radius:3px; background:#e0a100;"></span>Late</span><span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; border-radius:3px; background:#d94141;"></span>Missed</span><span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:10px; height:10px; border-radius:3px; background:#e8e5dd;"></span>No class</span></div>
+          </section>
+          <sc-if value="{{ att.hasLate }}">
+            <section aria-labelledby="att-late" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+              <div style="padding:14px 18px 6px;"><h2 id="att-late" style="margin:0; font-size:16px; font-weight:600;">Late arrivals</h2></div>
+              <sc-for list="{{ att.late }}" as="l" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:12px; padding:12px 18px; border-top:1px solid #f1efea;"><i class="ph ph-clock" aria-hidden="true" style="color:#7a5600; font-size:18px;"></i><span style="flex:1;">{{ l.date }}</span><b style="font-weight:600; color:#7a5600;">{{ l.min }}</b></div></sc-for>
+            </section>
+          </sc-if>
+          <section aria-labelledby="att-rules" style="background:#fbfaf7; border:1px solid #e8e5dd; border-radius:20px; padding:16px 18px; display:flex; flex-direction:column; gap:10px;">
+            <h2 id="att-rules" style="margin:0; font-size:16px; font-weight:600;">How a Saturday works</h2>
+            <sc-for list="{{ dayRules }}" as="r" hint-placeholder-count="4"><div style="display:flex; gap:12px; align-items:flex-start;"><i class="{{ r.icon }}" aria-hidden="true" style="font-size:19px; margin-top:1px;"></i><span style="font-size:14px; color:#3a3a40; text-wrap:pretty;">{{ r.t }}</span></div></sc-for>
+          </section>
+          <button onClick="{{ newLeave }}" style="height:52px; border:0; border-radius:16px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-calendar-blank" aria-hidden="true"></i>{{ leaveL }}</button>
+        </sc-if>
+        <sc-if value="{{ subComing }}">
+          <section aria-label="Coming up" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <sc-for list="{{ evs }}" as="e" hint-placeholder-count="4">
+              <div style="display:flex; gap:14px; padding:16px 18px; border-top:{{ e.bt }}; align-items:flex-start;">
+                <span style="width:52px; height:58px; border-radius:14px; background:{{ e.dbg }}; display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;"><b style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:22px; line-height:1;">{{ e.dd }}</b><span style="font-size:12px; color:#4a4a50;">{{ e.mm }}</span></span>
+                <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;">
+                  <div style="display:flex; gap:8px; align-items:baseline; flex-wrap:wrap;"><b style="font-size:15px; font-weight:600; flex:1 1 200px; text-wrap:pretty;">{{ e.title }}</b><sc-if value="{{ e.expected }}"><span style="height:24px; padding:0 9px; border-radius:999px; background:#fdf2d8; color:#7a5600; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">Families expected</span></sc-if></div>
+                  <span style="font-size:13px; color:#4a4a50;">{{ e.when }} · {{ e.where }}</span>
+                  <sc-if value="{{ e.canRsvp }}"><div role="radiogroup" aria-label="Your answer" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"><sc-for list="{{ e.opts }}" as="o" hint-placeholder-count="2"><button role="radio" aria-checked="{{ o.sel }}" onClick="{{ o.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ o.bd }}; background:{{ o.bg }}; color:{{ o.fg }}; font-size:14px; font-weight:500;">{{ o.l }}</button></sc-for></div></sc-if>
+                  <sc-if value="{{ e.hasState }}"><span style="font-size:13px; font-weight:600; color:{{ e.stc }};">{{ e.state }}</span></sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </section>
+          <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">Parent sessions are part of membership. If you can’t come, the centre shares the notes afterwards.</span>
+        </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ isProg }}">
+          <sc-if value="{{ subLessons }}">
+          <section aria-labelledby="pg-l" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:14px;">
+            <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><h2 id="pg-l" style="margin:0; font-size:16px; font-weight:600; flex:1;">Lessons this term</h2><sc-if value="{{ lr.hasOver }}"><span style="height:24px; padding:0 9px; border-radius:999px; background:#fdf2d8; color:#7a5600; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center;">{{ lr.overL }}</span></sc-if></div>
+            <div style="display:flex; align-items:baseline; gap:8px;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:36px; letter-spacing:-0.02em; line-height:1;">{{ lr.done }}</span><span style="font-size:14px; color:#4a4a50;">{{ lr.of }}</span></div>
+            <div style="height:10px; border-radius:999px; background:#efede8; overflow:hidden;"><div style="height:100%; width:{{ lr.pct }}; background:#0b0b0c; border-radius:999px;"></div></div>
+            <div style="display:flex; flex-direction:column; border-top:1px solid #f1efea;">
+              <sc-for list="{{ lr.next }}" as="u" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid #f1efea;"><span style="width:36px; height:36px; border-radius:10px; background:{{ u.ibg }}; color:{{ u.ifg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ u.icon }}" aria-hidden="true" style="font-size:18px;"></i></span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600;">{{ u.title }}</b><span style="font-size:12.5px; color:{{ u.dc }};">{{ u.sub }}</span></span></div>
+              </sc-for>
+            </div>
+            <span style="font-size:12.5px; color:#6b6b72;">{{ lr.note }}</span>
+          </section>
+          </sc-if>
+          <sc-if value="{{ subMentor }}">
+          <section aria-labelledby="pg-m" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="pg-m" style="margin:0; font-size:16px; font-weight:600;">{{ mt.h }}</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">{{ mt.s }}</span></div>
+            <sc-if value="{{ mt.booked }}"><div role="status" style="border-radius:14px; background:#e8f5ec; color:#17663a; padding:12px 14px; display:flex; gap:10px; align-items:center;"><i class="ph ph-calendar-check" aria-hidden="true" style="font-size:20px;"></i><b style="font-weight:600; flex:1;">{{ mt.bookedL }}</b><button onClick="{{ mt.book }}" style="height:36px; padding:0 12px; border:1px solid #b9dcc6; border-radius:10px; background:#fff; color:#17663a; font-size:13.5px; font-weight:600;">Change</button></div></sc-if>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-if value="{{ mt.free }}"><button onClick="{{ mt.book }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">Book a meeting</button></sc-if><button onClick="{{ mt.ask }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:600;">Ask a question</button></div>
+          </section>
+          <section aria-labelledby="pg-c" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><h2 id="pg-c" style="margin:0; font-size:16px; font-weight:600; flex:1;">Mentor’s weekly check-in</h2><span style="height:26px; padding:0 10px; border-radius:999px; background:{{ cm.bg }}; color:{{ cm.fg }}; font-size:13px; font-weight:600; display:inline-flex; align-items:center; gap:6px;"><span style="width:7px; height:7px; border-radius:50%; background:{{ cm.dot }};"></span>{{ cm.rating }}</span></div>
+            <p style="margin:0; font-size:15px; line-height:1.55; color:#1f1f23; text-wrap:pretty;">{{ cm.summary }}</p>
+            <span style="font-size:12.5px; color:#6b6b72;">{{ cm.by }} · {{ cm.period }}</span>
+          </section>
+          <section aria-labelledby="pg-k" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; gap:14px; align-items:flex-start;">
+            <span style="width:40px; height:40px; border-radius:12px; background:{{ cd.ibg }}; color:{{ cd.ifg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ cd.icon }}" aria-hidden="true" style="font-size:20px;"></i></span>
+            <div style="flex:1; display:flex; flex-direction:column; gap:2px;"><h2 id="pg-k" style="margin:0; font-size:16px; font-weight:600;">{{ cd.h }}</h2><span style="font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ cd.s }}</span></div>
+          </section>
+          <section style="background:#0b0b0c; color:#fff; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:center; gap:10px;"><i class="ph ph-lock-simple" aria-hidden="true" style="font-size:20px; color:#f5b026;"></i><h2 style="margin:0; font-size:16px; font-weight:600;">{{ priv.h }}</h2></div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;"><sc-for list="{{ priv.items }}" as="p" hint-placeholder-count="4"><span style="height:30px; padding:0 12px; border-radius:999px; background:#1f1f22; font-size:13px; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-eye-slash" aria-hidden="true" style="color:#a3a3a8;"></i>{{ p }}</span></sc-for></div>
+            <p style="margin:0; font-size:13.5px; color:rgba(255,255,255,.75); text-wrap:pretty;">{{ priv.p }}</p>
+          </section>
+        </sc-if>
+          <sc-if value="{{ subScore }}">
+            <sc-if value="{{ sc.has }}">
+              <section aria-labelledby="sc-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:16px;">
+                <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+                  <div style="flex:1 1 220px; display:flex; flex-direction:column; gap:4px;"><h2 id="sc-h" style="margin:0; font-size:13.5px; font-weight:500; color:#4a4a50;">NGG Leadership Index · {{ sc.session }}</h2><div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:48px; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{{ sc.total }}</span><span style="font-size:15px; color:#4a4a50;">of 100</span><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ sc.dbg }}; color:{{ sc.dfg }}; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">{{ sc.delta }}</span></div><span style="font-size:12.5px; color:#6b6b72;">Scored by {{ sc.by }} · {{ sc.taken }}</span></div>
+                  <div style="flex:1 1 220px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; display:flex; gap:8px; align-items:center;"><i class="ph-fill ph-star" aria-hidden="true" style="color:#22a05a;"></i>Strongest: <b style="font-weight:600;">{{ sc.hi }}</b></span><span style="font-size:13.5px; display:flex; gap:8px; align-items:center;"><i class="ph-fill ph-arrow-circle-up" aria-hidden="true" style="color:#e0a100;"></i>Growing next: <b style="font-weight:600;">{{ sc.lo }}</b></span></div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <sc-for list="{{ sc.rows }}" as="r" hint-placeholder-count="10">
+                    <div role="img" aria-label="{{ r.aria }}" style="display:flex; flex-direction:column; gap:6px;">
+                      <div style="display:flex; align-items:baseline; gap:8px;"><span style="flex:1; font-size:14px; font-weight:500;">{{ r.k }}</span><b style="font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.v }}</b><span style="width:28px; text-align:right; font-size:12.5px; font-weight:600; color:{{ r.dc }}; font-variant-numeric:tabular-nums;">{{ r.d }}</span></div>
+                      <div style="position:relative; height:8px; border-radius:999px; background:#efede8;"><div style="height:100%; width:{{ r.w }}; background:{{ r.c }}; border-radius:999px;"></div><span style="position:absolute; top:-3px; left:{{ r.pw }}; width:2px; height:14px; border-radius:1px; background:#6b6b72;"></span></div>
+                    </div>
+                  </sc-for>
+                </div>
+                <span style="font-size:12.5px; color:#6b6b72; display:flex; gap:6px; align-items:center;"><span style="width:2px; height:12px; background:#6b6b72; border-radius:1px;"></span>Grey mark: last session’s score</span>
+              </section>
+              <section aria-labelledby="sc-n" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:8px;"><h2 id="sc-n" style="margin:0; font-size:16px; font-weight:600;">What the mentor sees</h2><p style="margin:0; font-size:15px; line-height:1.55; text-wrap:pretty;">{{ sc.note }}</p></section>
+              <section aria-labelledby="sc-t" style="background:#fdf6e3; border:1px solid #f3e3bb; border-radius:20px; padding:18px; display:flex; gap:14px; align-items:flex-start;"><span style="width:40px; height:40px; border-radius:12px; background:#f5b026; color:#2a1d00; display:grid; place-items:center; flex-shrink:0;"><i class="ph ph-house-line" aria-hidden="true" style="font-size:20px;"></i></span><div style="display:flex; flex-direction:column; gap:2px;"><h2 id="sc-t" style="margin:0; font-size:15px; font-weight:600;">At home this week · {{ sc.lo }}</h2><span style="font-size:14px; color:#3a3a40; text-wrap:pretty;">{{ sc.tip }}</span></div></section>
+            </sc-if>
+            <sc-if value="{{ sc.none }}"><section style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:22px 18px; display:flex; flex-direction:column; gap:6px;"><b style="font-size:16px; font-weight:600;">The first scorecard comes after four Saturdays</b><span style="font-size:14px; color:#4a4a50; text-wrap:pretty;">The mentor scores ten leadership skills out of 10 each session: communication, confidence, critical thinking, initiative, team building, execution, problem solving, accountability, service and multiplication.</span></section></sc-if>
+          </sc-if>
+          <sc-if value="{{ subRes }}">
+            <sc-if value="{{ rs.multi }}"><div role="radiogroup" aria-label="Session" style="display:flex; gap:6px; overflow-x:auto; scrollbar-width:none;"><sc-for list="{{ rs.tabs }}" as="o" hint-placeholder-count="2"><button role="radio" aria-checked="{{ o.sel }}" onClick="{{ o.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ o.bd }}; background:{{ o.bg }}; color:{{ o.fg }}; font-size:14px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ o.l }}</button></sc-for></div></sc-if>
+            <sc-if value="{{ rs.missing }}">
+              <section style="background:#fff; border:1px solid #f3c7c2; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; gap:14px; align-items:flex-start;"><span style="width:44px; height:44px; border-radius:12px; background:#fdeaea; color:#a12a2a; display:grid; place-items:center; flex-shrink:0;"><i class="ph ph-upload-simple" aria-hidden="true" style="font-size:22px;"></i></span><div style="display:flex; flex-direction:column; gap:4px;"><b style="font-size:16px; font-weight:600; text-wrap:pretty;">{{ rs.mH }}</b><span style="font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ rs.mS }}</span></div></div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;"><button onClick="{{ rs.remind }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">{{ rs.remindL }}</button><button onClick="{{ rs.upload }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:600; display:inline-flex; align-items:center; gap:8px;"><i class="ph ph-camera" aria-hidden="true"></i>Upload it for them</button></div>
+              </section>
+            </sc-if>
+            <sc-if value="{{ rs.processing }}"><section role="status" style="background:#fbfaf7; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; gap:14px; align-items:flex-start;"><i class="ph ph-hourglass-medium" aria-hidden="true" style="font-size:24px;"></i><div style="display:flex; flex-direction:column; gap:2px;"><b style="font-size:16px; font-weight:600;">{{ rs.pH }}</b><span style="font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ rs.pS }}</span></div></section></sc-if>
+            <sc-if value="{{ rs.has }}">
+              <section aria-labelledby="rs-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+                <div style="padding:16px 18px; display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+                  <div style="flex:1 1 220px; display:flex; flex-direction:column; gap:2px;"><h2 id="rs-h" style="margin:0; font-size:16px; font-weight:600;">{{ rs.name }}</h2><span style="font-size:12.5px; color:#6b6b72;">{{ rs.school }} · {{ rs.uploaded }}</span></div>
+                  <div style="display:flex; align-items:baseline; gap:8px;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:34px; letter-spacing:-0.02em; line-height:1;">{{ rs.avg }}</span><span style="font-size:13px; color:#4a4a50;">average</span><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ rs.adbg }}; color:{{ rs.adfg }}; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">{{ rs.ad }}</span></div>
+                </div>
+                <sc-for list="{{ rs.subjects }}" as="s" hint-placeholder-count="6"><div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #f1efea;"><span style="flex:1; min-width:0; font-size:14.5px;">{{ s.k }}</span><b style="font-weight:600; font-variant-numeric:tabular-nums; width:30px; text-align:right;">{{ s.v }}</b><span style="width:36px; height:24px; border-radius:8px; background:{{ s.gbg }}; color:{{ s.gfg }}; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ s.g }}</span><span style="width:32px; text-align:right; font-size:12.5px; font-weight:600; color:{{ s.dc }}; font-variant-numeric:tabular-nums;">{{ s.d }}</span></div></sc-for>
+                <button onClick="{{ rs.viewDoc }}" style="width:100%; height:46px; border:0; border-top:1px solid #f1efea; background:#fff; font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#fbfaf7"><i class="ph ph-file-image" aria-hidden="true"></i>See the uploaded report</button>
+              </section>
+              <sc-if value="{{ hasPlan }}">
+                <section aria-labelledby="pl-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:14px;">
+                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><i class="ph ph-path" aria-hidden="true" style="font-size:20px;"></i><h2 id="pl-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Session plan</h2><span style="height:24px; padding:0 9px; border-radius:999px; background:#e8f5ec; color:#17663a; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">Checked by the mentor</span></div>
+                  <p style="margin:0; font-size:15px; line-height:1.55; text-wrap:pretty;">{{ pl.summary }}</p>
+                  <div style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:12.5px; font-weight:600; color:#4a4a50;">Aiming for</span><sc-for list="{{ pl.focus }}" as="f" hint-placeholder-count="2"><span style="font-size:14px; display:flex; gap:8px; align-items:flex-start;"><i class="ph ph-target" aria-hidden="true" style="margin-top:2px;"></i>{{ f }}</span></sc-for></div>
+                  <div style="border-radius:14px; background:#f6f4f0; display:flex; flex-direction:column;"><sc-for list="{{ pl.actions }}" as="a" hint-placeholder-count="3"><div style="display:flex; gap:12px; padding:12px 14px; border-bottom:1px solid #ebe8e0; flex-wrap:wrap;"><b style="width:64px; flex-shrink:0; font-size:13.5px; font-weight:600;">{{ a.who }}</b><span style="flex:1 1 200px; font-size:14px; color:#1f1f23; text-wrap:pretty;">{{ a.what }}</span></div></sc-for></div>
+                  <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">{{ pl.by }}</span>
+                  <sc-if value="{{ pl.acked }}"><div role="status" style="border-radius:14px; background:#e8f5ec; color:#17663a; padding:12px 14px; display:flex; gap:10px; align-items:center; font-size:14px;"><i class="ph ph-seal-check" aria-hidden="true" style="font-size:20px;"></i>{{ pl.ackL }}</div></sc-if>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-if value="{{ pl.open }}"><button onClick="{{ pl.sign }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; display:inline-flex; align-items:center; gap:8px;"><i class="ph ph-signature" aria-hidden="true"></i>I’ve read this plan</button></sc-if><button onClick="{{ pl.ask }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:600;">Ask the mentor</button></div>
+                </section>
+              </sc-if>
+            </sc-if>
+          </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ isMoney }}">
+          <section aria-labelledby="mo-h" style="background:#0b0b0c; color:#fff; border-radius:22px; padding:20px; display:flex; flex-direction:column; gap:16px;">
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <span id="mo-h" style="font-size:13.5px; color:rgba(255,255,255,.72);">{{ mo.lab }}</span>
+              <span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:44px; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{{ mo.amount }}</span>
+              <span style="font-size:14px; color:rgba(255,255,255,.82); text-wrap:pretty;">{{ mo.sub }}</span>
+            </div>
+            <sc-if value="{{ mo.hasLines }}">
+              <div style="border-radius:14px; background:#1a1a1d; display:flex; flex-direction:column;">
+                <sc-for list="{{ mo.lines }}" as="l" hint-placeholder-count="2">
+                  <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border-top:1px solid {{ l.bt }};">
+                    <span style="width:32px; height:32px; border-radius:10px; background:#2a2a2e; color:#f5b026; display:grid; place-items:center; flex-shrink:0;"><i class="{{ l.icon }}" aria-hidden="true" style="font-size:16px;"></i></span>
+                    <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600;">{{ l.label }}</b><span style="font-size:12.5px; color:rgba(255,255,255,.62); text-wrap:pretty;">{{ l.detail }}</span></span>
+                    <b style="font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;">{{ l.amount }}</b>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ mo.pending }}">
+              <div role="status" style="border-radius:14px; background:#2a2108; color:#f8d98a; padding:12px 14px; display:flex; gap:10px; align-items:flex-start;"><i class="ph ph-hourglass-medium" aria-hidden="true" style="font-size:19px; margin-top:1px;"></i><span style="font-size:13.5px; text-wrap:pretty;">{{ mo.pendingL }}</span></div>
+            </sc-if>
+            <sc-if value="{{ mo.canPay }}">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <sc-if value="{{ mo.online }}"><button onClick="{{ openPay }}" style="flex:1 1 200px; height:52px; border:0; border-radius:14px; background:#f5b026; color:#2a1d00; font-size:15px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-lock-simple" aria-hidden="true"></i>Pay {{ mo.amount }} online</button></sc-if>
+                <button onClick="{{ toggleBank }}" aria-expanded="{{ mo.bankOpen }}" style="flex:1 1 160px; height:52px; border:1px solid rgba(255,255,255,.28); border-radius:14px; background:transparent; color:#fff; font-size:14.5px; font-weight:500;">Pay by bank transfer</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{ mo.showBank }}">
+              <div style="border-radius:14px; background:#1a1a1d; padding:14px; display:flex; flex-direction:column; gap:8px; font-size:14px;">
+                <sc-for list="{{ mo.bank }}" as="b" hint-placeholder-count="4"><div style="display:flex; gap:10px; align-items:baseline;"><span style="color:rgba(255,255,255,.6); width:118px; flex-shrink:0;">{{ b.k }}</span><b style="font-weight:600; font-family:{{ b.ff }}; overflow-wrap:anywhere;">{{ b.v }}</b></div></sc-for>
+                <span style="font-size:12.5px; color:rgba(255,255,255,.66); text-wrap:pretty;">Use the reference as the narration and keep the slip. A member of staff records it and a second one checks it against the bank, usually within two working days. Please don’t pay online as well.</span>
+              </div>
+            </sc-if>
+          </section>
+
+          <sc-if value="{{ mo.hasFines }}">
+            <section aria-labelledby="fn-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+              <div style="padding:14px 18px 6px;"><h2 id="fn-h" style="margin:0; font-size:16px; font-weight:600;">Fines</h2></div>
+              <sc-for list="{{ mo.fines }}" as="x" hint-placeholder-count="1">
+                <div style="display:flex; align-items:flex-start; gap:12px; padding:14px 18px; border-top:1px solid #f1efea; flex-wrap:wrap;"><span style="flex:1 1 220px; display:flex; flex-direction:column; gap:2px;"><b style="font-size:15px; font-weight:600;">{{ x.amount }} · {{ x.when }}</b><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">{{ x.reason }}</span></span><sc-if value="{{ x.canAppeal }}"><button onClick="{{ x.appeal }}" style="height:40px; padding:0 14px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:600;">Appeal it</button></sc-if><sc-if value="{{ x.appealed }}"><span style="height:30px; padding:0 10px; border-radius:999px; background:#fdf2d8; color:#7a5600; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center;">Appeal sent · on hold</span></sc-if></div>
+              </sc-for>
+            </section>
+          </sc-if>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap:12px;">
+            <section aria-labelledby="nx-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:16px 18px; display:flex; flex-direction:column; gap:10px;">
+              <h2 id="nx-h" style="margin:0; font-size:16px; font-weight:600;">Coming up</h2>
+              <sc-for list="{{ mo.next }}" as="x" hint-placeholder-count="2">
+                <div style="display:flex; align-items:center; gap:12px;"><i class="ph ph-calendar-blank" aria-hidden="true" style="font-size:18px; color:#4a4a50;"></i><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span style="font-size:14.5px; font-weight:500;">{{ x.label }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ x.when }}</span></span><b style="font-weight:600; font-variant-numeric:tabular-nums;">{{ x.amount }}</b></div>
+              </sc-for>
+              <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty; border-top:1px solid #f1efea; padding-top:10px;">{{ mo.termsL }}</span>
+            </section>
+            <section aria-labelledby="pp-h" style="background:#fbfaf7; border:1px solid #e8e5dd; border-radius:20px; padding:16px 18px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><h2 id="pp-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">{{ pp.h }}</h2><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ pp.cbg }}; color:{{ pp.cfg }}; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center;">{{ pp.chip }}</span></div>
+              <div style="display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;"><span style="font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:28px; letter-spacing:-0.02em; line-height:1; font-variant-numeric:tabular-nums;">{{ pp.cost }}</span><span style="font-size:13.5px; color:#4a4a50;">{{ pp.costL }}</span></div>
+              <div role="img" aria-label="{{ pp.aria }}" style="display:flex; flex-direction:column; gap:6px;">
+                <div style="position:relative; height:12px; border-radius:999px; overflow:hidden; display:flex; gap:2px;">
+                  <span style="flex:{{ pp.tFlex }}; background:#e2dfd6; position:relative; overflow:hidden;"><span style="position:absolute; inset:0 auto 0 0; width:{{ pp.tFill }}; background:#8a8a90;"></span></span>
+                  <span style="flex:{{ pp.sFlex }}; background:#e2dfd6; position:relative; overflow:hidden;"><span style="position:absolute; inset:0 auto 0 0; width:{{ pp.sFill }}; background:#22a05a;"></span></span>
+                </div>
+                <div style="display:flex; justify-content:space-between; gap:8px; font-size:12px; color:#6b6b72;"><span>{{ pp.tL }}</span><span>{{ pp.sL }}</span></div>
+              </div>
+              <p style="margin:0; font-size:13px; color:#4a4a50; text-wrap:pretty;">{{ pp.note }}</p>
+            </section>
+          </div>
+
+          <section aria-labelledby="st-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 10px; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="st-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Statement</h2><span style="font-size:12.5px; color:#6b6b72;">{{ mo.stCount }}</span></div>
+              <div role="tablist" aria-label="Show" style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">
+                <sc-for list="{{ mo.stTabs }}" as="t" hint-placeholder-count="5"><button role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.onClick }}" style="height:34px; padding:0 12px; border-radius:999px; border:1px solid {{ t.bd }}; background:{{ t.bg }}; color:{{ t.fg }}; font-size:13px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ t.l }}</button></sc-for>
+              </div>
+            </div>
+            <sc-for list="{{ mo.rows }}" as="r" hint-placeholder-count="6">
+              <sc-if value="{{ r.head }}"><div style="padding:8px 18px; background:#f6f4f0; border-top:1px solid #efede8; font-size:12.5px; font-weight:600; color:#4a4a50; display:flex; gap:8px;"><span style="flex:1;">{{ r.month }}</span><span style="font-weight:500; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ r.net }}</span></div></sc-if>
+              <sc-if value="{{ r.item }}"><div style="display:flex; align-items:center; gap:12px; padding:11px 18px; border-top:1px solid #f1efea;"><span style="width:32px; height:32px; border-radius:50%; background:{{ r.ibg }}; color:{{ r.ifg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ r.icon }}" aria-hidden="true" style="font-size:15px;"></i></span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span style="font-size:14px; font-weight:500; color:{{ r.nc }};">{{ r.note }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ r.when }}</span></span><span style="display:flex; flex-direction:column; align-items:flex-end;"><b style="font-weight:600; font-variant-numeric:tabular-nums; color:{{ r.ac }}; text-decoration:{{ r.td }};">{{ r.amount }}</b><sc-if value="{{ r.hasTag }}"><span style="font-size:11.5px; color:#17663a; font-weight:500;">{{ r.tag }}</span></sc-if></span></div></sc-if>
+            </sc-for>
+            <sc-if value="{{ mo.stEmpty }}"><div style="padding:22px 18px; border-top:1px solid #f1efea; color:#6b6b72; font-size:14px;">{{ mo.stEmptyL }}</div></sc-if>
+            <sc-if value="{{ mo.stMore }}"><button onClick="{{ mo.showMore }}" style="width:100%; height:48px; border:0; border-top:1px solid #f1efea; background:#fff; font-size:14px; font-weight:600;" style-hover="background:#fbfaf7">{{ mo.stMoreL }}</button></sc-if>
+          </section>
+          <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">Something wrong on the statement? <button onClick="{{ appealAny }}" style="border:0; background:transparent; padding:0; font-size:12.5px; color:#0b0b0c; text-decoration:underline; text-underline-offset:2px;">Question a charge</button>. Nothing here affects whether {{ wd.first }} can come in on a Saturday.</span>
+        </sc-if>
+
+        <sc-if value="{{ isReq }}">
+        <sc-if value="{{ subReq }}">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
+            <sc-for list="{{ reqKinds }}" as="k" hint-placeholder-count="3"><button onClick="{{ k.onClick }}" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:14px; text-align:left; display:flex; flex-direction:column; gap:8px; min-height:104px;" style-hover="border-color:#c9c7bf"><span style="width:38px; height:38px; border-radius:12px; background:#fdf1d6; color:#6b4b00; display:grid; place-items:center;"><i class="{{ k.icon }}" aria-hidden="true" style="font-size:19px;"></i></span><b style="font-size:14.5px; font-weight:600;">{{ k.l }}</b><span style="font-size:12.5px; color:#6b6b72;">{{ k.s }}</span></button></sc-for>
+          </div>
+          <section aria-labelledby="rq-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 6px;"><h2 id="rq-h" style="margin:0; font-size:16px; font-weight:600;">What you’ve told the centre</h2></div>
+            <sc-for list="{{ reqs }}" as="r" hint-placeholder-count="2">
+              <div style="display:flex; flex-direction:column; gap:6px; padding:14px 18px; border-top:1px solid #f1efea;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><b style="font-size:15px; font-weight:600; flex:1 1 200px;">{{ r.h }}</b><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ r.sbg }}; color:{{ r.sfg }}; font-size:12.5px; font-weight:600; display:inline-flex; align-items:center;">{{ r.st }}</span></div>
+                <span style="font-size:13px; color:#6b6b72;">{{ r.sub }}</span>
+                <sc-if value="{{ r.hasReply }}"><div style="border-radius:12px; background:#f6f4f0; padding:10px 12px; font-size:13.5px; color:#3a3a40; text-wrap:pretty;"><b style="font-weight:600;">Desk:</b> {{ r.reply }}</div></sc-if>
+                <sc-if value="{{ r.open }}"><button onClick="{{ r.withdraw }}" style="align-self:flex-start; height:36px; padding:0 12px; border:1px solid #d9d6cd; border-radius:10px; background:#fff; font-size:13.5px; font-weight:500;">Withdraw</button></sc-if>
+              </div>
+            </sc-for>
+            <sc-if value="{{ reqEmpty }}"><div style="padding:22px 18px; border-top:1px solid #f1efea; color:#6b6b72; font-size:14px;">Nothing yet. If {{ wd.first }} will be away, or a charge looks wrong, tell the centre here.</div></sc-if>
+          </section>
+          <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">The desk sees these with your name. {{ wd.first }} doesn’t see the ones you raise.</span>
+        </sc-if>
+        <sc-if value="{{ subInbox }}">
+          <div role="radiogroup" aria-label="Show" style="display:flex; gap:6px; overflow-x:auto; scrollbar-width:none;"><sc-for list="{{ ibCats }}" as="o" hint-placeholder-count="2"><button role="radio" aria-checked="{{ o.sel }}" onClick="{{ o.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ o.bd }}; background:{{ o.bg }}; color:{{ o.fg }}; font-size:14px; font-weight:500; white-space:nowrap; flex-shrink:0;">{{ o.l }}</button></sc-for></div>
+          <section aria-label="Messages" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <sc-for list="{{ ibRows }}" as="m" hint-placeholder-count="5">
+              <button onClick="{{ m.onClick }}" style="display:flex; align-items:flex-start; gap:12px; padding:14px 16px; border:0; border-top:{{ m.bt }}; background:#fff; width:100%; text-align:left;" style-hover="background:#fbfaf7">
+                <span style="width:8px; height:8px; border-radius:50%; background:{{ m.dot }}; margin-top:8px; flex-shrink:0;"></span>
+                <span style="width:36px; height:36px; border-radius:10px; background:#efede8; display:grid; place-items:center; flex-shrink:0;"><i class="{{ m.icon }}" aria-hidden="true" style="font-size:18px;"></i></span>
+                <span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><b style="font-size:14.5px; font-weight:{{ m.fw }};">{{ m.h }}</b><span style="font-size:13px; color:#4a4a50; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">{{ m.b }}</span><span style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px;"><span style="font-size:12px; color:#6b6b72;">{{ m.meta }}</span><sc-if value="{{ m.hasChip }}"><span style="height:20px; padding:0 7px; border-radius:999px; background:{{ m.cbg }}; color:{{ m.cfg }}; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center;">{{ m.chip }}</span></sc-if></span></span>
+                <i class="ph ph-caret-right" aria-hidden="true" style="color:#8a8a90; margin-top:10px;"></i>
+              </button>
+            </sc-for>
+            <sc-if value="{{ ibEmpty }}"><div style="padding:22px 18px; color:#6b6b72; font-size:14px;">Nothing here.</div></sc-if>
+          </section>
+          <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">Everything here is also sent by text and email. Reports need your signature so the mentor knows home has seen them.</span>
+        </sc-if>
+        </sc-if>
+
+        <sc-if value="{{ isPending }}">
+          <section style="background:#fff; border:1px solid #e8e5dd; border-radius:22px; padding:20px; display:flex; flex-direction:column; gap:16px;">
+            <div style="display:flex; align-items:center; gap:14px;"><span style="width:60px; height:60px; border-radius:50%; background:{{ wd.tone }}; display:grid; place-items:center; font-size:20px; font-weight:600;">{{ wd.ini }}</span><div style="display:flex; flex-direction:column;"><h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:26px; letter-spacing:-0.02em;">{{ pd.h }}</h1><span style="font-size:13.5px; color:#6b6b72;">{{ pd.s }}</span></div></div>
+            <div style="display:flex; flex-direction:column; gap:0;">
+              <sc-for list="{{ pd.steps }}" as="s" hint-placeholder-count="3"><div style="display:flex; gap:12px;"><div style="display:flex; flex-direction:column; align-items:center;"><span style="width:26px; height:26px; border-radius:50%; background:{{ s.bg }}; color:{{ s.fg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ s.icon }}" aria-hidden="true" style="font-size:14px;"></i></span><span style="width:2px; flex:1; min-height:18px; background:{{ s.line }};"></span></div><div style="padding-bottom:14px; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600;">{{ s.h }}</b><span style="font-size:13px; color:#6b6b72; text-wrap:pretty;">{{ s.s }}</span></div></div></sc-for>
+            </div>
+            <p style="margin:0; font-size:13.5px; color:#4a4a50; text-wrap:pretty;">Your email matches the parent email on this record, but an email address on its own doesn’t prove who you are. Someone at the centre checks before anything about {{ wd.first }} is shown here. If {{ wd.first }} gives you their Anchor code, you can connect straight away.</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;"><button onClick="{{ toAdd }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">Use their code instead</button><button onClick="{{ pdWithdraw }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:500;">Withdraw the ask</button></div>
+          </section>
+        </sc-if>
+
+        <sc-if value="{{ isAdd }}">
+          <div style="display:flex; flex-direction:column; gap:2px;"><h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:{{ h1 }}; line-height:1.05; letter-spacing:-0.02em;">Add a child</h1><span style="font-size:14px; color:#4a4a50;">{{ addSub }}</span></div>
+          <sc-if value="{{ addDone }}">
+            <div role="status" style="border-radius:18px; background:#e8f5ec; color:#17663a; padding:16px; display:flex; gap:12px; align-items:flex-start;"><i class="ph ph-check-circle" aria-hidden="true" style="font-size:24px;"></i><div style="display:flex; flex-direction:column; gap:2px;"><b style="font-size:16px; font-weight:600;">{{ addDoneH }}</b><span style="font-size:14px; text-wrap:pretty;">{{ addDoneS }}</span></div></div>
+          </sc-if>
+          <section aria-labelledby="ad-code" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-code" style="margin:0; font-size:17px; font-weight:600;">With their Anchor code</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">It’s on their member app under Circle. Giving you the code is their yes, so you connect straight away, and they’re told.</span></div>
+            <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Anchor code<input inputMode="numeric" value="{{ adCode }}" onChange="{{ onAdCode }}" placeholder="6 digits" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:20px; letter-spacing:.2em; font-family:'Geist Mono', monospace; outline:none;"></label>
+            <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Part of their name<input value="{{ adName }}" onChange="{{ onAdName }}" placeholder="e.g. their first name" style="height:50px; padding:0 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:16px; outline:none;"></label>
+            <div role="radiogroup" aria-label="You are their" style="display:flex; gap:6px; flex-wrap:wrap;"><span style="font-size:14px; font-weight:500; width:100%;">You are their</span><sc-for list="{{ rels }}" as="r" hint-placeholder-count="4"><button role="radio" aria-checked="{{ r.sel }}" onClick="{{ r.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ r.bd }}; background:{{ r.bg }}; color:{{ r.fg }}; font-size:14px; font-weight:500;">{{ r.l }}</button></sc-for></div>
+            <sc-if value="{{ adHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a; text-wrap:pretty;">{{ adErr }}</span></sc-if>
+            <button onClick="{{ adGo }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">Connect</button>
+            <span style="font-size:12px; color:#6b6b72;">Prototype: try code 482913 with the name “Bisi”.</span>
+          </section>
+          <sc-if value="{{ hasSugg }}">
+            <section aria-labelledby="ad-rec" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="ad-rec" style="margin:0; font-size:17px; font-weight:600;">We found a record with your email</h2><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">You can ask to connect. The centre checks it’s really you first, usually within two days.</span></div>
+              <sc-for list="{{ sugg }}" as="s" hint-placeholder-count="1"><div style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:14px; background:#f6f4f0;"><span style="width:40px; height:40px; border-radius:50%; background:#d9dcf0; display:grid; place-items:center; font-weight:600;">{{ s.ini }}</span><span style="flex:1; display:flex; flex-direction:column;"><b style="font-weight:600;">{{ s.first }}</b><span style="font-size:12.5px; color:#6b6b72;">{{ s.centre }} centre</span></span><button onClick="{{ s.ask }}" style="height:40px; padding:0 14px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600;">Ask to connect</button></div></sc-for>
+            </section>
+          </sc-if>
+          <span style="font-size:12.5px; color:#6b6b72;">{{ addMax }}</span>
+        </sc-if>
+
+        <sc-if value="{{ isAcc }}">
+          <h1 style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:800; font-size:{{ h1 }}; line-height:1.05; letter-spacing:-0.02em;">Your account</h1>
+          <section aria-labelledby="ac-p" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 8px; display:flex; align-items:center; gap:8px;"><h2 id="ac-p" style="margin:0; font-size:16px; font-weight:600; flex:1;">About you</h2><span style="font-size:12.5px; color:#6b6b72; display:inline-flex; align-items:center; gap:5px;"><i class="ph ph-lock-simple" aria-hidden="true"></i>Kept by the centre</span></div>
+            <sc-for list="{{ pf }}" as="p" hint-placeholder-count="4"><div style="display:flex; gap:12px; padding:12px 18px; border-top:1px solid #f1efea; align-items:baseline; flex-wrap:wrap;"><span style="width:120px; flex-shrink:0; font-size:13.5px; color:#6b6b72;">{{ p.k }}</span><b style="font-weight:500; flex:1 1 180px; overflow-wrap:anywhere;">{{ p.v }}</b></div></sc-for>
+            <div style="padding:12px 18px 16px; border-top:1px solid #f1efea; display:flex; gap:12px; align-items:center; flex-wrap:wrap;"><span style="flex:1 1 220px; font-size:13px; color:#4a4a50; text-wrap:pretty;">Your details can’t be edited here, so reports, evaluations and alerts always reach the right person.</span><button onClick="{{ pfAsk }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:600;">Ask to change</button></div>
+          </section>
+          <section aria-labelledby="ac-k" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 8px; display:flex; flex-direction:column; gap:2px;"><h2 id="ac-k" style="margin:0; font-size:16px; font-weight:600;">Who can collect</h2><span style="font-size:13px; color:#4a4a50; text-wrap:pretty;">Children leave only with someone on their list. The desk checks ID.</span></div>
+            <sc-for list="{{ acColl }}" as="c" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:12px; padding:12px 18px; border-top:1px solid #f1efea;"><span style="width:38px; height:38px; border-radius:50%; background:{{ c.tone }}; display:grid; place-items:center; font-size:13px; font-weight:600; flex-shrink:0;">{{ c.ini }}</span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-weight:600;">{{ c.name }}</b><span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">{{ c.list }}</span></span><button onClick="{{ c.change }}" style="height:36px; padding:0 12px; border:1px solid #d9d6cd; border-radius:10px; background:#fff; font-size:13px; font-weight:500;">Change</button></div></sc-for>
+          </section>
+          <section aria-labelledby="ac-g" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 8px; display:flex; flex-direction:column; gap:2px;"><h2 id="ac-g" style="margin:0; font-size:16px; font-weight:600;">Consents</h2><span style="font-size:13px; color:#4a4a50;">All five are compulsory and were given on the application.</span></div>
+            <sc-for list="{{ consents }}" as="c" hint-placeholder-count="5"><div style="display:flex; align-items:flex-start; gap:12px; padding:12px 18px; border-top:1px solid #f1efea;"><i class="ph-fill ph-check-circle" aria-hidden="true" style="color:#22a05a; font-size:20px; margin-top:1px;"></i><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:500;">{{ c.l }}</b><span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">{{ c.s }}</span></span></div></sc-for>
+            <div style="padding:12px 18px 16px; border-top:1px solid #f1efea; font-size:13px; color:#4a4a50; text-wrap:pretty;">These are conditions of membership, so they can’t be changed or withdrawn here. <a href="Policies.dc.html">Read the policies</a>.</div>
+          </section>
+          <section aria-labelledby="ac-c" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; overflow:hidden;">
+            <div style="padding:14px 18px 6px;"><h2 id="ac-c" style="margin:0; font-size:16px; font-weight:600;">Children on this account</h2></div>
+            <sc-for list="{{ accWards }}" as="w" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:12px; padding:12px 18px; border-top:1px solid #f1efea;"><span style="width:38px; height:38px; border-radius:50%; background:{{ w.tone }}; display:grid; place-items:center; font-size:13px; font-weight:600;">{{ w.ini }}</span><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-weight:600;">{{ w.name }}</b><span style="font-size:12.5px; color:#6b6b72;">{{ w.sub }}</span></span><button onClick="{{ w.remove }}" style="height:36px; padding:0 12px; border:1px solid #d9d6cd; border-radius:10px; background:#fff; font-size:13px; font-weight:500;">{{ w.removeL }}</button></div></sc-for>
+          </section>
+          <section aria-labelledby="ac-n" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:10px;">
+            <h2 id="ac-n" style="margin:0; font-size:16px; font-weight:600;">Messages you’ll get</h2>
+            <sc-for list="{{ notes }}" as="n" hint-placeholder-count="3"><div style="display:flex; gap:12px; align-items:flex-start;"><i class="{{ n.icon }}" aria-hidden="true" style="font-size:19px; margin-top:1px;"></i><span style="display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600;">{{ n.h }}</b><span style="font-size:13.5px; color:#4a4a50; text-wrap:pretty;">{{ n.s }}</span></span></div></sc-for>
+            <span style="font-size:12.5px; color:#6b6b72; text-wrap:pretty;">These are part of membership and can’t be switched off. When it comes to a child’s attendance and safety, home always needs to know.</span>
+          </section>
+          <section aria-labelledby="ac-s" style="background:#fff; border:1px solid #e8e5dd; border-radius:20px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+            <h2 id="ac-s" style="margin:0; font-size:16px; font-weight:600;">Signing in</h2>
+            <button role="switch" aria-checked="{{ mfaOn }}" onClick="{{ toggleMfa }}" style="display:flex; align-items:center; gap:12px; border:0; background:transparent; padding:0; text-align:left;"><span style="flex:1; display:flex; flex-direction:column;"><b style="font-size:14.5px; font-weight:600;">Two-step sign-in</b><span style="font-size:13px; color:#4a4a50;">Ask for a PIN from an authenticator app as well as the email code.</span></span><span style="width:46px; height:28px; border-radius:999px; background:{{ mfaTrack }}; position:relative; flex-shrink:0;"><span style="position:absolute; top:3px; left:{{ mfaKnob }}; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2);"></span></span></button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;"><button onClick="{{ signOut }}" style="height:44px; padding:0 16px; border:1px solid #d9d6cd; border-radius:12px; background:#fff; font-size:14px; font-weight:500;">Sign out</button><button onClick="{{ signOutAll }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:transparent; font-size:14px; font-weight:500; color:#a12a2a;">Sign out on every device</button></div>
+          </section>
+        </sc-if>
+
+      </div>
+    </main>
+
+    <sc-if value="{{ narrow }}">
+      <nav aria-label="Main" style="flex-shrink:0; display:flex; border-top:1px solid #e8e5dd; background:#fff; padding:4px 4px calc(6px + env(safe-area-inset-bottom));">
+        <sc-for list="{{ navItems }}" as="t" hint-placeholder-count="5">
+          <button onClick="{{ t.onClick }}" aria-current="{{ t.cur }}" style="flex:1; min-height:54px; border:0; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; position:relative; color:{{ t.c }};"><span style="width:56px; height:30px; border-radius:999px; background:{{ t.pill }}; display:grid; place-items:center; transition:background .2s;"><i class="{{ t.icon2 }}" aria-hidden="true" style="font-size:22px;"></i></span><span style="font-size:11.5px; font-weight:{{ t.fw }};">{{ t.short }}</span><sc-if value="{{ t.hasBadge }}"><span style="position:absolute; top:4px; left:calc(50% + 6px); min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:{{ t.bb }}; color:{{ t.bf }}; font-size:10.5px; font-weight:600; display:inline-flex; align-items:center; justify-content:center;">{{ t.badge }}</span></sc-if></button>
+        </sc-for>
+      </nav>
+    </sc-if>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasSw }}">
+  <div onClick="{{ closeSw }}" style="position:absolute; inset:0; background:rgba(11,11,12,.36); z-index:65; display:flex; align-items:flex-end; justify-content:center;">
+    <div role="dialog" aria-modal="true" aria-labelledby="sw-h" onClick="{{ stop }}" style="width:min(520px, 100%); background:#fff; border-radius:22px 22px 0 0; padding:8px 14px calc(16px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:6px; box-shadow:0 -20px 60px rgba(11,11,12,.2);">
+      <span style="width:40px; height:4px; border-radius:999px; background:#dcd9d0; align-self:center; margin:4px 0 8px;"></span>
+      <h2 id="sw-h" style="margin:0 4px 6px; font-size:17px; font-weight:600;">Whose pages?</h2>
+      <sc-for list="{{ wardList }}" as="w" hint-placeholder-count="3">
+        <button onClick="{{ w.onPick }}" aria-current="{{ w.cur }}" style="display:flex; align-items:center; gap:12px; min-height:64px; padding:8px 10px; border:1px solid {{ w.bd }}; border-radius:16px; background:{{ w.bg }}; text-align:left; width:100%;">
+          <span style="width:44px; height:44px; border-radius:50%; background:{{ w.tone }}; display:grid; place-items:center; font-size:15px; font-weight:600; flex-shrink:0; position:relative;">{{ w.ini }}<span style="position:absolute; right:-1px; bottom:-1px; width:12px; height:12px; border-radius:50%; background:{{ w.dot }}; border:2px solid #fff;"></span></span>
+          <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><b style="font-size:15px; font-weight:600;">{{ w.name }}</b><span style="font-size:12.5px; color:{{ w.sc }};">{{ w.sub }}</span><span style="font-size:12.5px; color:{{ w.alc }};">{{ w.alertL }}</span></span>
+          <sc-if value="{{ w.check }}"><i class="ph-fill ph-check-circle" aria-hidden="true" style="font-size:22px;"></i></sc-if>
+        </button>
+      </sc-for>
+      <button onClick="{{ swAdd }}" style="display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 10px; border:1px dashed #d9d6cd; border-radius:16px; background:transparent; text-align:left; font-size:15px; font-weight:500;"><span style="width:44px; height:44px; border-radius:50%; border:1px dashed #c9c7bf; display:grid; place-items:center;"><i class="ph ph-plus" aria-hidden="true"></i></span>Add a child</button>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasSheet }}">
+  <div onClick="{{ closeSheet }}" style="position:absolute; inset:0; background:rgba(11,11,12,.36); z-index:60; display:flex; align-items:{{ sheetAlign }}; justify-content:center; padding:{{ sheetPad }};">
+    <div role="dialog" aria-modal="true" aria-labelledby="sh-h" onClick="{{ stop }}" style="width:min(520px, 100%); max-height:92%; overflow-y:auto; background:#fff; border-radius:{{ sheetR }}; box-shadow:0 30px 80px rgba(11,11,12,.25); display:flex; flex-direction:column;">
+      <div style="display:flex; align-items:center; gap:10px; padding:16px 18px 10px;"><h2 id="sh-h" style="margin:0; font-family:'Bricolage Grotesque', Geist, sans-serif; font-weight:700; font-size:21px; flex:1;">{{ shTitle }}</h2><button onClick="{{ closeSheet }}" aria-label="Close" style="width:44px; height:44px; border:0; border-radius:50%; background:#f6f4f0; font-size:18px;"><i class="ph ph-x" aria-hidden="true"></i></button></div>
+      <div style="padding:4px 18px 18px; display:flex; flex-direction:column; gap:14px;">
+        <sc-if value="{{ shDone }}">
+          <div role="status" style="border-radius:16px; background:#e8f5ec; color:#17663a; padding:16px; display:flex; gap:12px; align-items:flex-start;"><i class="ph ph-check-circle" aria-hidden="true" style="font-size:24px;"></i><div style="display:flex; flex-direction:column; gap:2px;"><b style="font-size:16px; font-weight:600;">{{ shDoneH }}</b><span style="font-size:14px; text-wrap:pretty;">{{ shDoneS }}</span></div></div>
+          <button onClick="{{ closeSheet }}" style="height:50px; border:0; border-radius:14px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600;">Done</button>
+        </sc-if>
+        <sc-if value="{{ shForm }}">
+          <p style="margin:0; font-size:14px; color:#4a4a50; text-wrap:pretty;">{{ shLead }}</p>
+          <sc-if value="{{ shIsPay }}">
+            <div style="border-radius:16px; background:#f6f4f0; padding:14px; display:flex; flex-direction:column; gap:8px;"><sc-for list="{{ payLines }}" as="l" hint-placeholder-count="2"><div style="display:flex; gap:10px; font-size:14.5px;"><span style="flex:1; color:#4a4a50;">{{ l.k }}</span><b style="font-weight:600; font-variant-numeric:tabular-nums;">{{ l.v }}</b></div></sc-for></div>
+            <span style="font-size:13px; color:#6b6b72; display:flex; gap:6px; align-items:center;"><i class="ph ph-lock-simple" aria-hidden="true"></i>Paystack handles the payment. NGG never sees your card.</span>
+          </sc-if>
+          <sc-if value="{{ shIsLeave }}">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">From<input type="date" value="{{ fFrom }}" onChange="{{ onFFrom }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">To<input type="date" value="{{ fTo }}" onChange="{{ onFTo }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px;"></label></div>
+          </sc-if>
+          <sc-if value="{{ shIsAppeal }}">
+            <label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">Which charge<select value="{{ fRef }}" onChange="{{ onFRef }}" style="height:48px; padding:0 12px; border:1px solid #d9d6cd; border-radius:12px; font-size:15px; background:#fff;"><sc-for list="{{ chargeOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.v }}">{{ o.l }}</option></sc-for></select></label>
+          </sc-if>
+          <sc-if value="{{ shIsCard }}">
+            <div role="radiogroup" aria-label="What happened" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ cardWhy }}" as="r" hint-placeholder-count="3"><button role="radio" aria-checked="{{ r.sel }}" onClick="{{ r.onClick }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ r.bd }}; background:{{ r.bg }}; color:{{ r.fg }}; font-size:14px; font-weight:500;">{{ r.l }}</button></sc-for></div>
+          </sc-if>
+          <sc-if value="{{ shIsUpload }}">
+            <label style="position:relative; display:flex; flex-direction:column; align-items:center; gap:8px; padding:22px 16px; border:1.5px dashed {{ upBd }}; border-radius:16px; background:#fbfaf7; text-align:center; cursor:pointer;"><i class="{{ upIcon }}" aria-hidden="true" style="font-size:30px;"></i><b style="font-size:15px; font-weight:600; overflow-wrap:anywhere;">{{ upL }}</b><span style="font-size:13px; color:#6b6b72;">A clear photo of every page, or a PDF. Up to 10 MB.</span><input type="file" accept="image/*,application/pdf" capture="environment" onChange="{{ onUpFile }}" style="position:absolute; inset:0; opacity:0; cursor:pointer;"></label>
+            <div style="display:flex; flex-direction:column; gap:6px;"><sc-for list="{{ upChecks }}" as="c" hint-placeholder-count="3"><span style="font-size:13.5px; color:#3a3a40; display:flex; gap:8px; align-items:flex-start;"><i class="ph ph-check" aria-hidden="true" style="margin-top:2px;"></i>{{ c }}</span></sc-for></div>
+          </sc-if>
+          <sc-if value="{{ shIsMeet }}"><div role="radiogroup" aria-label="Time" style="display:flex; flex-direction:column; gap:8px;"><sc-for list="{{ slots }}" as="s" hint-placeholder-count="3"><button role="radio" aria-checked="{{ s.sel }}" onClick="{{ s.onClick }}" style="display:flex; align-items:center; gap:10px; min-height:52px; padding:0 14px; border:1px solid {{ s.bd }}; border-radius:14px; background:{{ s.bg }}; text-align:left; font-size:14.5px; font-weight:500;"><i class="{{ s.icon }}" aria-hidden="true" style="font-size:20px;"></i>{{ s.l }}</button></sc-for></div></sc-if>
+          <sc-if value="{{ shIsMsg }}"><div style="border-radius:16px; background:#f6f4f0; padding:14px; display:flex; flex-direction:column; gap:6px;"><span style="font-size:12.5px; color:#6b6b72;">{{ msg.meta }}</span><p style="margin:0; font-size:15px; line-height:1.55; text-wrap:pretty;">{{ msg.b }}</p></div><sc-if value="{{ msg.signed }}"><span style="font-size:13.5px; color:#17663a; display:flex; gap:6px; align-items:center;"><i class="ph ph-seal-check" aria-hidden="true"></i>{{ msg.signedL }}</span></sc-if></sc-if>
+          <sc-if value="{{ shHasBody }}"><label style="display:flex; flex-direction:column; gap:6px; font-size:14px; font-weight:500;">{{ shBodyL }}<textarea value="{{ fBody }}" onChange="{{ onFBody }}" rows="4" placeholder="{{ shBodyPh }}" style="padding:12px 14px; border:1px solid #d9d6cd; border-radius:14px; font-size:15px; outline:none; resize:vertical; line-height:1.45;"></textarea></label></sc-if>
+          <sc-if value="{{ shHasErr }}"><span role="alert" style="font-size:13.5px; color:#a12a2a;">{{ shErr }}</span></sc-if>
+          <button onClick="{{ shGo }}" style="height:52px; border:0; border-radius:14px; background:{{ shGoBg }}; color:{{ shGoFg }}; font-size:15.5px; font-weight:700;">{{ shGoL }}</button>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasToast }}">
+  <div role="status" aria-live="polite" style="position:absolute; left:50%; transform:translateX(-50%); bottom:{{ toastB }}; z-index:70; background:#0b0b0c; color:#fff; padding:12px 16px; border-radius:14px; font-size:14px; display:flex; align-items:center; gap:10px; box-shadow:0 12px 30px rgba(11,11,12,.2); width:max-content; max-width:calc(100% - 32px);"><i class="ph ph-check-circle" aria-hidden="true" style="color:#f5b026;"></i><span>{{ toast }}</span></div>
+</sc-if>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;signedIn&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Preview&quot;},&quot;device&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;auto&quot;,&quot;tsType&quot;:&quot;'auto'|'phone'&quot;,&quot;section&quot;:&quot;Preview&quot;},&quot;startView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;today&quot;,&quot;attendance&quot;,&quot;progress&quot;,&quot;money&quot;,&quot;requests&quot;,&quot;account&quot;,&quot;add&quot;],&quot;default&quot;:&quot;today&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Preview&quot;},&quot;paymentState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;normal&quot;,&quot;transferChecking&quot;,&quot;onlineOff&quot;],&quot;default&quot;:&quot;normal&quot;,&quot;tsType&quot;:&quot;'normal'|'transferChecking'|'onlineOff'&quot;,&quot;section&quot;:&quot;Fees&quot;}}">
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  state = { ttOpen: false, todoAll: false, sw: false, ready: !!(window.FAM_DATA && window.FAM_DATA.events), sub: {}, rsvp: {}, booked: {}, acked: {}, uploaded: {}, reminded: {}, signed: {}, read: {}, ibCat: 'all', rsI: 0, slot: 0, upFile: '', msgId: null, w: 1280, sec: null, wi: 0, out: null, siStep: 'email', siEmail: '', siCode: '', siErr: '', sheet: null, fFrom: '', fTo: '', fRef: '', fBody: '', fWhy: 'lost', shErr: '', shDone: null, paid: {}, appealed: {}, newReqs: {}, withdrawn: {}, bank: false, adCode: '', adName: '', adRel: 'parent', adErr: '', added: [], asked: {}, adDone: null, removed: {}, pfName: null, pfPhone: null, pfErr: '', mfa: false, toast: '', stF: 'all', stN: 14 };
+  T = { ok: ['#e8f5ec', '#17663a', '#22a05a'], warn: ['#fdf2d8', '#7a5600', '#e0a100'], bad: ['#fdeaea', '#a12a2a', '#d94141'], neutral: ['#efede8', '#48484e', '#9a9aa0'] };
+  componentDidMount() {
+    if (!window.FAM_DATA) this.poll = setInterval(() => { if (window.FAM_DATA && window.FAM_DATA.events) { clearInterval(this.poll); this.setState({ ready: true }); } }, 50);
+    const el = this.rootRef.current;
+    this.ro = new ResizeObserver(() => { const w = Math.round(el.getBoundingClientRect().width); if (Math.abs(w - this.state.w) > 8) this.setState({ w }); });
+    if (el) this.ro.observe(el);
+    this.onKey = e => {
+      if (e.key === 'Escape') { if (this.state.sw) return this.setState({ sw: false }); if (this.state.sheet) return this.setState({ sheet: null, shDone: null, shErr: '' }); }
+      const t = e.target; if (t && /INPUT|TEXTAREA|SELECT/.test(t.tagName)) return; if (e.metaKey || e.ctrlKey || e.altKey || this.state.sheet) return;
+      const secs = ['today', 'attendance', 'progress', 'money', 'requests'];
+      if (/^[1-5]$/.test(e.key)) { this.go(secs[+e.key - 1]); }
+      else if (e.key === '[' || e.key === ']') { const n = (window.FAM_DATA && this.wards ? this.wards().length : 1); const wi = (this.state.wi + (e.key === ']' ? 1 : n - 1)) % n; this.setState({ wi }); }
+    };
+    document.addEventListener('keydown', this.onKey);
+    try { const v = +localStorage.getItem('ngg.family.wi'); if (v > 0) this.setState({ wi: v }); } catch (e) {}
+  }
+  componentDidUpdate() { if (this.lastWi !== this.state.wi) { this.lastWi = this.state.wi; try { localStorage.setItem('ngg.family.wi', String(this.state.wi)); } catch (e) {} } }
+  componentWillUnmount() { this.ro && this.ro.disconnect(); document.removeEventListener('keydown', this.onKey); clearInterval(this.poll); clearTimeout(this.tt); }
+  D() { return window.FAM_DATA; }
+  needs(x) {
+    const S = this.state, rs = [], W = { warn: ['#fdf2d8', '#7a5600'], bad: ['#fdeaea', '#a12a2a'], neutral: ['#efede8', '#48484e'] };
+    if (x.status !== 'active') return rs;
+    if (!S.paid[x.linkId]) x.conduct.fines.forEach(fn => { if (!S.appealed[fn.id]) rs.push(['Fine to review', 'ph ph-warning-circle', W.warn]); });
+    if ((this.curRes(x) || {}).status === 'missing') rs.push(['Results due', 'ph ph-upload-simple', W.bad]);
+    if (this.planOpen(x)) rs.push(['Plan to sign', 'ph ph-signature', W.warn]);
+    this.inbox().filter(m => m.sign && !m.signed && m.ward === x.linkId).forEach(() => rs.push(['Report to sign', 'ph ph-file-text', W.neutral]));
+    return rs;
+  }
+  curRes(x) { const r = (x.results || [])[0]; if (!r) return null; return this.state.uploaded[x.linkId + r.id] ? Object.assign({}, r, { status: 'processing' }) : r; }
+  planOpen(x) { const r = (x.results || []).find(y => y.status === 'uploaded' && y.plan); return r && !r.plan.ack && !this.state.acked[x.linkId + r.id] ? r : null; }
+  inbox() { const S = this.state; return this.D().inbox.map(m => Object.assign({}, m, { unread: m.unread && !S.read[m.id], signed: m.signed || (S.signed[m.id] ? 'today' : '') })); }
+  toast(t) { clearTimeout(this.tt); this.setState({ toast: t }); this.tt = setTimeout(() => this.setState({ toast: '' }), 3800); }
+  go(sec, extra) { this.setState(Object.assign({ sec }, extra || {})); const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0; }
+  naira(n) { return '₦' + Number(n).toLocaleString('en'); }
+  ini(n) { return n.split(' ').map(w => w[0]).slice(0, 2).join(''); }
+  wards() {
+    const S = this.state, D = this.D();
+    return D.wards.concat(S.added).filter(w => !S.removed[w.linkId]).map(w => {
+      if (w.status !== 'active') return w;
+      const paid = S.paid[w.linkId]; const reqs = (S.newReqs[w.linkId] || []).concat(w.requests).map(r => S.withdrawn[r.id] ? Object.assign({}, r, { status: 'withdrawn' }) : r);
+      const ps = this.props.paymentState || 'normal';
+      let fees = paid ? Object.assign({}, w.fees, { outstanding: 0, payable: 0, lines: [], joining: null, entries: [{ id: 'E-new', when: 'Today', month: 'October 2026', kind: 'payment', note: w.fees.joining ? 'Joining invoice · Paystack' : 'Payment · Paystack', amount: paid, dir: 'credit' }].concat(w.fees.entries) }) : w.fees;
+      if (ps === 'transferChecking' && w.linkId === 'GW-8B2D40' && !paid) fees = Object.assign({}, fees, { offlinePending: true });
+      if (ps === 'onlineOff') fees = Object.assign({}, fees, { payOnline: false });
+      return Object.assign({}, w, { fees, requests: reqs });
+    });
+  }
+  renderVals() {
+    const S = this.state, D = this.D();
+    const dev = this.props.device || 'auto';
+    const phoneFrame = dev === 'phone' && S.w >= 640;
+    const base = { rootRef: this.rootRef, frameW: phoneFrame ? '390px' : '100%', frameH: phoneFrame ? '844px' : '100%', frameR: phoneFrame ? '40px' : '0', frameSh: phoneFrame ? '0 30px 80px rgba(0,0,0,.18), 0 0 0 10px #0b0b0c' : 'none', outerPad: phoneFrame ? '24px' : '0' };
+    if (!S.ready || !D) return Object.assign(base, { signedIn: true, signedOut: false, wide: true, narrow: false });
+    const W = phoneFrame || dev === 'phone' ? 390 : S.w, wide = W >= 900, narrow = !wide, phone = W < 640;
+    const T = this.T, N = n => this.naira(n);
+    const signedIn = S.out === null ? this.props.signedIn !== false : !S.out;
+    const out = Object.assign(base, { signedIn, signedOut: !signedIn, wide, narrow, stop: e => e.stopPropagation(), hasToast: !!S.toast, toast: S.toast, toastB: narrow ? '92px' : '28px', h1: phone ? '28px' : '34px', mPad: phone ? '16px 14px 28px' : narrow ? '22px 20px 32px' : '32px 32px 64px', topPad: phoneFrame ? '44px' : '10px' });
+
+    if (!signedIn) {
+      const step = S.siStep;
+      Object.assign(out, { siEmailStep: step === 'email', siCodeStep: step === 'code', siEmail: S.siEmail, siCode: S.siCode, siHasErr: !!S.siErr, siErr: S.siErr,
+        siH: step === 'email' ? 'See how your child is doing at NGG.' : 'Check your email', siP: step === 'email' ? 'Attendance, lessons, fees and what their mentor says, all in one place. We’ll email you a code, so there’s no password to remember.' : 'We sent a 6-digit code to ' + S.siEmail + '. It works for 15 minutes.',
+        onSiEmail: e => this.setState({ siEmail: e.target.value, siErr: '' }), onSiCode: e => this.setState({ siCode: e.target.value.replace(/\D/g, '').slice(0, 6), siErr: '' }),
+        siSend: () => { if (!/^\S+@\S+\.\S+$/.test(S.siEmail.trim())) return this.setState({ siErr: 'That doesn’t look like an email address.' }); this.setState({ siStep: 'code', siErr: '' }); },
+        siVerify: () => { if (S.siCode.length !== 6) return this.setState({ siErr: 'The code is 6 digits.' }); this.setState({ out: false, siStep: 'email', siCode: '' }); this.toast('Signed in'); },
+        siBack: () => this.setState({ siStep: 'email', siCode: '', siErr: '' }) });
+      out.onSiKey = e => { if (e.key === 'Enter') (S.siStep === 'email' ? out.siSend : out.siVerify)(); };
+      return out;
+    }
+
+    const wards = this.wards();
+    const wi = Math.min(S.wi, wards.length - 1);
+    const w = wards[wi];
+    const active = w && w.status === 'active';
+    const sec0 = S.sec || this.props.startView || 'today';
+    const sec = !w ? 'add' : (!active && ['today', 'attendance', 'progress', 'money', 'requests'].includes(sec0)) ? 'pending' : sec0;
+    const stOf = x => { if (x.status !== 'active') return ['Waiting for the centre to confirm', '#9a9aa0', '#6b6b72']; const t = x.today; if (t.status === 'starting') return ['Starts ' + x.starting, '#9a9aa0', '#6b6b72']; return t.status === 'present' ? ['In since ' + t.in, T.ok[2], '#17663a'] : t.status === 'late' ? ['In since ' + t.in + ' · late', T.warn[2], '#7a5600'] : ['Not in yet', T.bad[2], '#a12a2a']; };
+    out.wardList = wards.map((x, i) => { const on = i === wi && !['add', 'account'].includes(sec); const s = stOf(x); return { name: x.member.fullName, first: x.member.first, ini: this.ini(x.member.fullName), tone: x.member.tone, sub: s[0], dot: s[1], sc: s[2], cur: on ? 'true' : undefined, sel: on ? 'true' : 'false', bg: on ? '#fff' : 'transparent', bd: on ? '#e8e5dd' : 'transparent', onClick: () => this.go(x.status === 'active' ? (['add', 'account', 'pending'].includes(sec) ? 'today' : sec) : 'pending', { wi: i }) }; });
+    if (narrow) out.wardList.forEach(x => { x.bg = x.sel === 'true' ? '#fff' : 'transparent'; x.bd = x.sel === 'true' ? '#0b0b0c' : '#e8e5dd'; });
+    wards.forEach((x, i) => { const rs = this.needs(x); const a = x.status === 'active' ? rs.length : 0; const o = out.wardList[i]; o.reasons = rs.map(r => ({ l: r[0], icon: r[1], bg: r[2][0], fg: r[2][1] })); o.hasAlerts = a > 0; o.op = x.status === 'active' ? 1 : 0.6; o.sh = o.sel === 'true' ? '0 1px 3px rgba(11,11,12,.10)' : 'none'; o.aria = x.member.fullName + '. ' + o.sub + (rs.length ? '. ' + rs.map(r => r[0]).join(', ') : ''); o.alerts = String(a); o.alertL = a ? rs.map(r => r[0]).join(' · ') : (x.status === 'active' ? 'All good' : 'Waiting to connect'); o.alc = a ? '#7a5600' : '#6b6b72'; o.check = o.sel === 'true'; o.onPick = () => { this.setState({ sw: false }); o.onClick(); }; });
+    const cw = out.wardList[wi];
+    { const nk = wards.filter((x, i) => x.status === 'active' && +out.wardList[i].alerts > 0); const nt = nk.reduce((t, x) => t + +out.wardList[wards.indexOf(x)].alerts, 0);
+      const rv = D.events.filter(e => e.expected && !S.rsvp[e.id]).slice(0, 1).length; const nAll = nt + rv; out.hasNeeds = nAll > 0; out.needsH = nAll + (nAll === 1 ? ' thing needs you' : ' things need you'); out.needsS = nk.map(x => x.member.first).concat(rv ? ['an event reply'] : []).join(', ');
+      out.toNeeds = () => { const i0 = nk.length ? wards.indexOf(nk[0]) : S.wi; this.go('today', { todoAll: true, wi: S.wi < wards.length && nk.includes(wards[S.wi]) ? S.wi : i0 }); }; }
+    out.kidsN = String(wards.length); out.cur = cw || {}; out.multi = wards.length > 1; out.hasSw = !!S.sw; out.openSw = () => this.setState({ sw: true }); out.closeSw = () => this.setState({ sw: false }); out.swAdd = () => { this.setState({ sw: false }); this.go('add', { adDone: null, adErr: '' }); };
+    out.ctxL = !['add', 'account'].includes(sec) && cw ? cw.first + '’s pages' : 'Pages';
+    const owed = active ? w.fees.payable : 0;
+    const openReq = active ? w.requests.filter(r => r.status === 'open').length : 0;
+    const rMiss = active && (this.curRes(w) || {}).status === 'missing', pOpen = active && !!this.planOpen(w);
+    const unread = this.inbox().filter(m => m.unread).length;
+    const tot = x => x.reduce((a, b) => a + b, 0);
+    const NAV = [['today', 'Today', 'Today', 'house-line'], ['attendance', 'Saturdays', 'Saturdays', 'calendar-check'], ['progress', 'Growth', 'Growth', 'chart-line-up'], ['money', 'Fees & fines', 'Fees', 'wallet'], ['requests', 'Messages', 'Messages', 'chat-circle-text']];
+    const HINT = active ? { today: [stOf(w)[0], stOf(w)[2]], attendance: [w.attendance.daysRan ? w.attendance.rate + '% this term' : 'First Saturday ' + (w.starting || ''), w.attendance.daysRan && w.attendance.rate < 80 ? '#a12a2a' : '#6b6b72'], progress: rMiss ? ['School results not uploaded', '#a12a2a'] : pOpen ? ['A plan to sign', '#7a5600'] : w.score ? ['Leadership index ' + tot(w.score.now) + ' of 100', '#6b6b72'] : ['First scorecard after four Saturdays', '#6b6b72'], money: owed ? [N(owed) + (w.fees.joining ? ' · joining invoice' : ' to pay'), '#7a5600'] : ['Nothing to pay', '#17663a'], requests: unread ? [unread + ' unread', '#0b0b0c'] : openReq ? [openReq + ' waiting for a reply', '#0b0b0c'] : ['Reports, alerts, requests', '#6b6b72'] } : {};
+    const badges = { money: owed ? ['1', '#f5b026', '#2a1d00'] : null, progress: rMiss || pOpen ? [String((rMiss ? 1 : 0) + (pOpen ? 1 : 0)), '#f5b026', '#2a1d00'] : null, requests: unread + openReq ? [String(unread + openReq), '#0b0b0c', '#fff'] : null };
+    out.navItems = NAV.map(n => { const on = sec === n[0] || (n[0] === 'today' && sec === 'pending'); const b = badges[n[0]]; return { label: n[1], short: n[2], icon: 'ph ph-' + n[3], icon2: (on ? 'ph-fill ph-' : 'ph ph-') + n[3], cur: on ? 'page' : undefined, bg: on ? '#efede8' : 'transparent', fw: on ? 600 : 500, c: on ? '#0b0b0c' : '#6b6b72', pill: on ? '#f5b026' : 'transparent', hint: (HINT[n[0]] || [''])[0], hc: (HINT[n[0]] || ['', '#6b6b72'])[1], hasHint: !!HINT[n[0]], kbd: String(NAV.indexOf(n) + 1), tip: n[1] + ' · press ' + (NAV.indexOf(n) + 1), hasBadge: !!b, badge: b ? b[0] : '', bb: b ? b[1] : '', bf: b ? b[2] : '', onClick: () => this.go(n[0]) }; });
+    const g = D.guardian; const gName = g.fullName;
+    Object.assign(out, { gName, gEmail: g.email, gIni: this.ini(gName), accBg: sec === 'account' ? '#fff' : 'transparent', toAccount: () => this.go('account'), toAdd: () => this.go('add', { adDone: null, adErr: '' }),
+      isToday: sec === 'today', isAtt: sec === 'attendance', isProg: sec === 'progress', isMoney: sec === 'money', isReq: sec === 'requests', isPending: sec === 'pending', isAdd: sec === 'add', isAcc: sec === 'account' });
+    out.showWardHead = active && ['attendance', 'progress', 'money', 'requests'].includes(sec);
+    out.viewTitle = { attendance: 'Saturdays', progress: 'Growth', money: 'Fees & fines', requests: 'Messages' }[sec] || '';
+    if (w) out.wd = { name: w.member.fullName, first: w.member.first, ini: this.ini(w.member.fullName), tone: w.member.tone, centre: w.member.centre, meta: active ? [w.member.displayId, w.member.centre, w.member.track, w.member.level].filter(Boolean).join(' · ') : w.member.centre + ' centre · waiting to connect' };
+    const paidNow = x => !!S.paid[x.linkId];
+    const openSheet = (kind, extra) => this.setState(Object.assign({ sheet: kind, shDone: null, shErr: '', fBody: '', fFrom: '', fTo: '', fWhy: 'lost' }, extra || {}));
+
+    if (active && sec === 'today') {
+      const hr = 11; out.nowL = D.NOW.day + ' · ' + D.NOW.time; out.acFs = phone ? '34px' : '40px'; out.hello = (hr < 12 ? 'Good morning, ' : 'Good afternoon, ') + gName.split(' ')[0];
+      const t = w.today;
+      const s = t.status === 'starting' ? ['neutral', 'ph ph-flag-banner', 'First Saturday: ' + w.starting, 'Doors open at 09:00 at the ' + w.member.centre + ' centre. ' + w.member.first + '’s mentor is ' + w.member.mentor + '.'] : t.status === 'present' ? ['ok', 'ph ph-check-circle', 'In since ' + t.in, 'On time. Sign-out opens at 14:00, and you’ll get a text when ' + w.member.first + ' leaves.'] : t.status === 'late' ? ['warn', 'ph ph-clock', 'In since ' + t.in + ', ' + t.lateMinutes + ' min late', 'Doors open at 09:00 with 10 minutes’ grace. You’ll get a text at sign-out.'] : ['bad', 'ph ph-door-open', 'Not in yet', 'Doors opened at 09:00. If ' + w.member.first + ' is away today, tell the centre.'];
+      out.st = { bg: T[s[0]][0], fg: T[s[0]][1], icon: s[1], h: w.member.first + ' · ' + s[2], s: s[3] };
+      const nowM = 11 * 60 + 40; const m = x => +x.split(':')[0] * 60 + +x.split(':')[1];
+      const ttAll = w.timetable.map(c => { const now = m(c[0]) <= nowM && nowM < m(c[1]); return { time: c[0] + '–' + c[1], name: c[2], sub: [c[3], c[4]].filter(Boolean).join(' · '), now, bg: now ? '#fdf6e3' : 'transparent', fw: now ? 700 : 600, past: m(c[1]) <= nowM }; });
+      const ni = ttAll.findIndex(c => c.now), nx = ttAll.findIndex(c => !c.past && !c.now);
+      ttAll.forEach((c, i) => { c.hasTag = c.now || i === nx; c.tag = c.now ? 'Now' : 'Next'; c.tbg = c.now ? '#0b0b0c' : '#efede8'; c.tfg = c.now ? '#f5b026' : '#48484e'; });
+      const focus = [ni, nx].filter(i => i >= 0);
+      const short = w.today.status === 'starting' ? [] : (focus.length ? focus.map(i => ttAll[i]) : ttAll.slice(0, 2));
+      out.ttShown = S.ttOpen ? ttAll : short; out.hasTT = ttAll.length > short.length; out.ttOpenA = S.ttOpen ? 'true' : 'false';
+      out.ttL = S.ttOpen ? 'Show less' : 'Full day at ' + w.member.centre + ' · ' + ttAll.length + ' blocks'; out.ttIcon = S.ttOpen ? 'ph ph-caret-up' : 'ph ph-caret-down'; out.toggleTT = () => this.setState(s => ({ ttOpen: !s.ttOpen })); out.ttW = phone ? '84px' : '96px';
+      const todo = [];
+      wards.forEach((x, i) => {
+        if (x.status !== 'active') { if (0) todo.push(['ph ph-hourglass-medium', x.member.first + ': waiting for the ' + x.member.centre + ' desk', 'You asked on ' + x.asked + '. You’ll get an email when they confirm.', 'See', () => this.go('pending', { wi: i }), 'neutral', 5]); return; }
+        x.conduct.fines.forEach(fn => { if (!S.appealed[fn.id] && !S.paid[x.linkId]) todo.push(['ph ph-warning-circle', 'A ' + N(fn.amount) + ' fine for ' + x.member.first, fn.reason, 'Review', () => this.go('money', { wi: i }), 'warn', 0]); });
+        const cr0 = this.curRes(x); if (cr0 && cr0.status === 'missing') todo.push(['ph ph-upload-simple', x.member.first + '’s ' + (cr0.baseline ? 'last school report isn’t' : cr0.name + ' results aren’t') + ' in yet', 'Due ' + cr0.due + '. Members upload their results every session, and the mentor builds the plan from them.', 'See', () => this.go('progress', { wi: i, rsI: 0, sub: Object.assign({}, S.sub, { progress: 'results' }) }), 'warn', 1]);
+        const po = this.planOpen(x); if (po) todo.push(['ph ph-signature', 'Read and sign ' + x.member.first + '’s session plan', 'Built from the ' + po.name + ' results and checked by ' + po.plan.reviewedBy + '.', 'Read', () => this.go('progress', { wi: i, rsI: 0, sub: Object.assign({}, S.sub, { progress: 'results' }) }), 'neutral', 2]);
+      });
+      this.inbox().filter(m => m.sign && !m.signed).forEach(m => todo.push(['ph ph-file-text', 'Sign: ' + m.h, 'So the mentor knows home has seen it.', 'Open', () => openSheet('msg', { msgId: m.id, read: Object.assign({}, S.read, { [m.id]: 1 }) }), 'neutral']));
+      D.events.filter(e => e.expected && !S.rsvp[e.id]).slice(0, 1).forEach(e => todo.push(['ph ph-calendar-star', 'Can you come? ' + e.title, e.date + ' · ' + e.time + '. Families are expected.', 'Reply', () => this.go('attendance', { sub: Object.assign({}, S.sub, { attendance: 'coming' }) }), 'neutral']));
+      const RANK = { 'ph ph-warning-circle': 0, 'ph ph-upload-simple': 1, 'ph ph-signature': 2, 'ph ph-file-text': 3, 'ph ph-calendar-star': 4, 'ph ph-hourglass-medium': 5 };
+      todo.sort((a, b) => RANK[a[0]] - RANK[b[0]]);
+      out.todoN = String(todo.length); out.todoMore = todo.length > 3; out.todoMoreL = S.todoAll ? 'Show fewer' : 'Show ' + (todo.length - 3) + ' more'; out.toggleTodo = () => this.setState(s => ({ todoAll: !s.todoAll }));
+      out.todo = todo.slice(0, S.todoAll ? 8 : 3).map((x, ti) => ({ bt: ti ? '1px solid #f1efea' : '0', icon: x[0], h: x[1], s: x[2], cta: x[3], onClick: x[4], bg: x[5] === 'warn' ? '#fffaf0' : '#fff', bd: x[5] === 'warn' ? '#f3e3bb' : '#e8e5dd', ibg: x[5] === 'warn' ? '#fdf2d8' : '#efede8', ifg: x[5] === 'warn' ? '#7a5600' : '#3a3a40' }));
+      out.hasTodo = todo.length > 0;
+      { const F = w.fees, P = F.programme, first = w.member.first, pend = !!F.offlinePending;
+        const paidSoFar = F.entries.filter(r => r.dir === 'credit' && r.kind !== 'training' && r.kind !== 'writeoff' && !r.void).reduce((t, r) => t + r.amount, 0);
+        const chip = P.paused ? 'Paused' : { starting: 'Starts ' + (F.joining ? F.joining.start : w.starting), training: 'In training', service: 'Serving · ' + P.pct + '% earned off', complete: 'MOU complete' }[P.phase];
+        const actv = wards.filter(x => x.status === 'active'), house = actv.reduce((t, x) => t + x.fees.payable, 0);
+        out.ac = { h: first + '’s account', lab: F.joining ? 'Joining invoice · ' + F.joining.invoiceId : F.payable ? 'To pay now' : 'Nothing to pay', amount: N(F.payable),
+          sub: F.payable ? (F.joining ? 'Membership and the first month’s commitment fee, charged only for the Saturdays left.' : F.lines.map(l => l.label).join(' + ')) : 'Thank you. Nothing is owed for ' + first + '.',
+          canPay: F.payable > 0 && !pend, payL: F.payOnline ? 'Pay ' + N(F.payable) : 'How to pay', pay: () => F.payOnline ? openSheet('pay') : this.go('money', { bank: true }), pending: pend && F.payable > 0, pendingL: 'Bank transfer being checked',
+          facts: [['Next charge', F.next[0] ? N(F.next[0].amount) : '—', F.next[0] ? F.next[0].when : 'Nothing scheduled'], ['Training place', chip, 'Covered by NGG, not a bill']].concat(actv.length > 1 ? [['All your children', N(house), house ? 'To pay across ' + actv.length + ' children' : 'Nothing owed']] : []).map(f => ({ l: f[0], v: f[1], s: f[2] })),
+          toFees: () => this.go('money') }; }
+      const rc = this.curRes(w), sDelta = w.score ? tot(w.score.now) - tot(w.score.prev) : 0;
+      const cr = { on_track: ['On track', '#17663a'], watch: ['Worth watching', '#7a5600'], at_risk: ['Needs support', '#a12a2a'], none: ['Not yet', '#6b6b72'] }[w.companion.rating];
+      out.tiles = [
+        ['ph ph-calendar-check', 'Attendance', w.attendance.daysRan ? w.attendance.rate + '%' : '—', w.attendance.daysRan ? w.attendance.present + ' of ' + w.attendance.daysRan + ' Saturdays this term' : 'Starts ' + w.starting, w.attendance.daysRan && w.attendance.rate < 80 ? '#a12a2a' : '#0b0b0c', 'attendance'],
+        ['ph ph-chart-line-up', 'Leadership index', w.score ? String(tot(w.score.now)) : '—', w.score ? (sDelta >= 0 ? '+' : '−') + Math.abs(sDelta) + ' since last session · of 100' : 'First score after four Saturdays', '#0b0b0c', 'progress', 'score'],
+        ['ph ph-exam', 'School results', rc ? (rc.status === 'uploaded' ? rc.avg + '%' : rc.status === 'processing' ? 'Reading' : 'Missing') : '—', rc ? (rc.status === 'uploaded' ? rc.name + ' average' : rc.status === 'processing' ? 'The plan goes to the mentor first' : 'Due ' + rc.due) : 'Nothing yet', rc && rc.status === 'missing' ? '#a12a2a' : '#0b0b0c', 'progress', 'results'],
+        ['ph ph-heart', 'Mentor says', cr[0], w.member.mentor + ' · ' + w.companion.period.replace('Week of ', 'w/c '), cr[1], 'progress', 'mentor']
+      ].map(k => ({ icon: k[0], l: k[1], v: k[2], s: k[3], c: k[4], onClick: () => this.go(k[5], { sub: Object.assign({}, S.sub, { [k[5]]: k[6] || 'record' }) }) }));
+      out.inbox = this.inbox().filter(m => m.ward === 'all' || m.ward === w.linkId).slice(0, 3).map(m => ({ icon: m.icon, h: m.h, b: m.b, t: m.t, dot: m.unread ? '#f5b026' : 'transparent', fw: m.unread ? 600 : 500, onClick: () => openSheet('msg', { msgId: m.id, read: Object.assign({}, S.read, { [m.id]: 1 }) }) }));
+      out.toInbox = () => this.go('requests', { sub: Object.assign({}, S.sub, { requests: 'inbox' }) });
+    }
+
+    if (active && sec === 'attendance') {
+      const a = w.attendance;
+      out.att = { rate: a.rate + '%', ring: 'conic-gradient(' + (a.rate >= 85 ? '#22a05a' : a.rate >= 70 ? '#e0a100' : '#d94141') + ' ' + a.rate + '%, #efede8 0)', h: a.daysRan ? a.present + ' of ' + a.daysRan + ' Saturdays this term' : 'No Saturdays yet', s: w.today.status === 'starting' ? 'First Saturday: ' + w.starting + '.' : w.today.status === 'present' ? 'Today: in at ' + w.today.in + ', on time.' : w.today.status === 'late' ? 'Today: in at ' + w.today.in + ', ' + w.today.lateMinutes + ' minutes late.' : 'Today: not in yet.',
+        strip: a.recent.map((d, i) => { const M = { p: ['#22a05a', '#fff', 'ph ph-check', 'In'], l: ['#e0a100', '#2a1d00', 'ph ph-clock', 'Late'], a: ['#d94141', '#fff', 'ph ph-x', 'Missed'], x: ['#e8e5dd', '#6b6b72', 'ph ph-minus', 'No class (holiday)'] }[d]; return { c: M[0], fg: M[1], icon: M[2], t: (i === a.recent.length - 1 ? 'Today' : (a.recent.length - 1 - i) + ' weeks ago') + ': ' + M[3] }; }),
+        hasLate: a.late.length > 0, late: a.late.map(l => ({ date: l.date, min: l.minutes + ' min late' })) };
+      out.dayRules = [['ph ph-door-open', 'Doors open at 09:00. After 09:10 it counts as late.'], ['ph ph-sign-in', 'You get a text and email when ' + w.member.first + ' checks in, and again at sign-out.'], ['ph ph-sign-out', 'Sign-out opens at 14:00. Leaving earlier needs a coordinator, so collect them from the desk.'], ['ph ph-warning', 'Leaving without signing out counts as “no sign-out” and can be fined. You’ll be told the same day.']].map(r => ({ icon: r[0], t: r[1] }));
+      out.leaveL = 'Tell the centre ' + w.member.first + ' will be away'; out.newLeave = () => openSheet('leave');
+    }
+
+    if (active && sec === 'progress') {
+      const L = w.learning;
+      out.lr = { done: String(L.completed), of: 'of ' + L.total + ' lessons done · ' + L.pct + '%', pct: L.pct + '%', hasOver: L.overdue > 0, overL: L.overdue + ' overdue',
+        next: L.next.map(u => ({ title: u.title, sub: u.course + ' · week ' + u.week + ' · ' + u.due, dc: u.overdue ? '#a12a2a' : '#6b6b72', icon: u.overdue ? 'ph ph-warning-circle' : u.status === 'in_progress' ? 'ph ph-play-circle' : 'ph ph-circle', ibg: u.overdue ? '#fdeaea' : u.status === 'in_progress' ? '#fdf1d6' : '#efede8', ifg: u.overdue ? '#a12a2a' : u.status === 'in_progress' ? '#6b4b00' : '#6b6b72' })),
+        note: 'Lessons are done on the member app. You can see what’s done, but not ' + w.member.first + '’s answers.' };
+      const c = w.companion; const R = { on_track: ['On track', T.ok], watch: ['Worth watching', T.warn], at_risk: ['Needs support', T.bad], none: ['Not yet', T.neutral] }[c.rating];
+      out.cm = { rating: R[0], bg: R[1][0], fg: R[1][1], dot: R[1][2], summary: c.summary, by: c.by, period: c.period };
+      const k = w.conduct;
+      out.cd = k.state === 'good' ? { icon: 'ph ph-seal-check', ibg: T.ok[0], ifg: T.ok[1], h: 'Conduct: in good standing', s: 'No warnings or fines this term.' } : { icon: 'ph ph-warning', ibg: T.warn[0], ifg: T.warn[1], h: 'Conduct: a warning this month', s: k.reason + ' A third one starts a review with the centre lead.' };
+      out.priv = { h: 'What stays with ' + w.member.first, items: ['Journal', 'Reflections', 'Coach chats', 'Messages with their mentor'], p: 'Not even you can see these, so ' + w.member.first + ' can be honest with their mentor. If a mentor is ever worried about ' + w.member.first + '’s safety, the centre calls you straight away.' };
+    }
+
+    if (active && sec === 'money') {
+      const F = w.fees, P = F.programme, TM = F.terms, J = F.joining, first = w.member.first;
+      const pend = !!F.offlinePending, online = F.payOnline && !pend;
+      const KI = { dues: 'ph ph-calendar-check', membership: 'ph ph-identification-badge', fine: 'ph ph-warning', adjustment: 'ph ph-pencil-simple-line', payment: 'ph ph-arrow-down-left', waiver: 'ph ph-hand-heart', training: 'ph ph-graduation-cap', writeoff: 'ph ph-graduation-cap' };
+      const lines = J ? J.items : F.lines;
+      const ref = J ? J.invoiceId : 'NGG-BAL-' + w.member.displayId.replace('-', '');
+      const isPlace = r => r.kind === 'training' || r.kind === 'writeoff';
+      const FIL = { all: () => true, charges: r => r.dir === 'charge' && !isPlace(r), payments: r => r.dir === 'credit' && !isPlace(r), fines: r => r.kind === 'fine', place: isPlace };
+      const list = F.entries.filter(FIL[S.stF] || FIL.all);
+      const shown = list.slice(0, S.stN);
+      const rows = []; let cur = '';
+      shown.forEach(r => {
+        if (r.month !== cur) { cur = r.month; const inM = list.filter(x => x.month === cur && !isPlace(x)); const ch = inM.filter(x => x.dir === 'charge').reduce((t, x) => t + x.amount, 0), pd = inM.filter(x => x.dir === 'credit').reduce((t, x) => t + x.amount, 0); rows.push({ head: true, item: false, month: cur.replace(' 2026', ''), net: [ch ? 'Charged ' + N(ch) : '', pd ? 'Paid ' + N(pd) : ''].filter(Boolean).join(' · ') }); }
+        const pl = isPlace(r), cr = r.dir === 'credit';
+        rows.push({ head: false, item: true, note: r.note, when: r.when, icon: KI[r.kind] || 'ph ph-receipt', amount: (cr ? '− ' : '') + N(r.amount), ac: pl ? '#8a8a90' : cr ? '#17663a' : '#0b0b0c', nc: pl ? '#4a4a50' : '#0b0b0c', td: r.void ? 'line-through' : 'none', ibg: pl ? '#efede8' : cr ? T.ok[0] : r.kind === 'fine' ? T.warn[0] : '#efede8', ifg: pl ? '#6b6b72' : cr ? T.ok[1] : r.kind === 'fine' ? T.warn[1] : '#3a3a40', hasTag: pl || !!r.void, tag: r.void ? 'Cancelled' : 'Covered by NGG, not a bill' });
+      });
+      const TABS = [['all', 'All'], ['charges', 'Charges'], ['payments', 'Payments'], ['fines', 'Fines'], ['place', 'Training place']];
+      out.mo = {
+        lab: J ? 'Joining invoice · ' + J.invoiceId : F.payable ? 'To pay now' : 'Nothing to pay',
+        amount: N(F.payable),
+        sub: J ? first + '’s place at ' + w.member.centre + ' is confirmed. Paying this completes membership. ' + first + '’s first Saturday is ' + J.start + '.' : F.payable ? 'What’s owed on ' + first + '’s account today.' : 'Thank you. Nothing is owed for ' + first + '.',
+        hasLines: F.payable > 0 && lines.length > 0,
+        lines: lines.map((l, i) => ({ icon: KI[l.kind] || 'ph ph-receipt', label: l.label, detail: l.detail, amount: N(l.amount), bt: i ? '#2a2a2e' : 'transparent' })),
+        pending: pend && F.payable > 0, pendingL: 'A bank transfer for ' + N(F.payable) + ' is with the desk to check. Online payment is paused until it’s checked, so nobody pays twice.',
+        canPay: F.payable > 0 && !pend, online, bankOpen: S.bank ? 'true' : 'false', showBank: (S.bank || !online) && F.payable > 0 && !pend,
+        bank: [['Account name', D.bank.name, 'inherit'], ['Bank', D.bank.bank, 'inherit'], ['Account no.', D.bank.account, "'Geist Mono', monospace"], ['Amount', N(F.payable), "'Geist Mono', monospace"], ['Reference', ref, "'Geist Mono', monospace"]].map(b => ({ k: b[0], v: b[1], ff: b[2] })),
+        hasFines: w.conduct.fines.length > 0 && !paidNow(w),
+        fines: w.conduct.fines.map(x => ({ amount: N(x.amount), when: x.when, reason: x.reason, canAppeal: !S.appealed[x.id], appealed: !!S.appealed[x.id], appeal: () => openSheet('appeal', { fRef: x.id }) })),
+        next: F.next.map(x => ({ label: x.label, when: x.when, amount: N(x.amount) })),
+        termsL: 'Membership is ' + N(TM.membershipFee) + ' a year, renewed on the date ' + first + ' joined. The commitment fee is ' + N(TM.monthly) + ' a month, charged on the 1st; a first month is charged only for the Saturdays left. While something is owed, a reminder is emailed every ' + TM.remindEvery + ' days.',
+        stTabs: TABS.map(t => { const on = S.stF === t[0]; return { l: t[1], sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: () => this.setState({ stF: t[0], stN: 14 }) }; }),
+        rows, stCount: list.length + (list.length === 1 ? ' entry' : ' entries'), stEmpty: !list.length, stEmptyL: S.stF === 'fines' ? 'No fines. ' + first + ' has a clean record.' : 'Nothing here yet.',
+        stMore: list.length > S.stN, stMoreL: 'Show ' + Math.min(20, list.length - S.stN) + ' more of ' + (list.length - S.stN), showMore: () => this.setState(s2 => ({ stN: s2.stN + 20 }))
+      };
+      const tm = P.trainingMonths, sm = P.serviceMonths, leave = ' If ' + first + ' leaves before the MOU is complete, the part not yet earned off becomes due.';
+      const PH = {
+        starting: ['Starts ' + (J ? J.start : w.starting), T.neutral, N(0), 'nothing yet', 'NGG covers the cost of ' + first + '’s training place. It shows here as it builds up, so nothing comes as a surprise, and service earns it off: ' + tm + ' months of training, then ' + sm + ' months of service.' + leave],
+        training: ['In training', T.neutral, N(P.cost), 'what ' + first + '’s training has cost NGG so far', 'Not a bill, and not part of what you pay. From ' + P.serviceStarts + ', each month of service earns part of it off. When the MOU is complete it is fully covered.' + leave],
+        service: ['Serving · ' + P.pct + '% earned off', T.ok, N(P.cost), 'cost of the place · ' + N(P.covered) + ' earned off so far', 'Not a bill, and not part of what you pay. Each month of service earns part of it off: ' + P.servedMonths + ' of ' + sm + ' months so far. Fully covered on ' + P.completes + '.' + leave],
+        complete: ['MOU complete', T.ok, N(P.cost), 'fully covered by NGG', first + ' has completed the MOU. The training place is fully covered.']
+      }[P.phase];
+      const paused = P.paused ? ' Earning off is paused while ' + first + ' is suspended, and starts again when the suspension ends.' : '';
+      out.pp = { h: 'Training place', chip: P.paused ? 'Paused' : PH[0], cbg: P.paused ? T.warn[0] : PH[1][0], cfg: P.paused ? T.warn[1] : PH[1][1], cost: PH[2], costL: PH[3], note: PH[4] + paused,
+        tFlex: String(tm), sFlex: String(sm), tFill: Math.min(100, Math.round(P.months / tm * 100)) + '%', sFill: Math.round(P.servedMonths / sm * 100) + '%',
+        tL: 'Training · ' + tm + ' months', sL: 'Service · ' + sm + ' months', aria: first + ' is ' + P.months + ' months into ' + (tm + sm) + '. ' + P.servedMonths + ' months of service done.' };
+      out.openPay = () => openSheet('pay'); out.toggleBank = () => this.setState(s2 => ({ bank: !s2.bank }));
+      out.appealAny = () => openSheet('appeal', { fRef: ((w.conduct.fines[0] || F.entries.find(r => r.dir === 'charge' && r.kind !== 'training') || {}).id) || '' });
+    }
+
+    if (active && sec === 'requests') {
+      out.reqKinds = [['leave', 'ph ph-calendar-blank', 'Tell the centre about an absence', 'Before or after. They’re marked excused.'], ['appeal', 'ph ph-scales', 'Appeal a charge', 'A fine or fee you think is wrong'], ['idcard', 'ph ph-identification-card', 'Replacement ID card', 'Lost, damaged or wrong name'], ['mentor', 'ph ph-chat-teardrop-text', 'Ask the mentor', 'About growth, results or the plan']].map(k => ({ icon: k[1], l: k[2], s: k[3], onClick: () => openSheet(k[0], { fRef: (w.conduct.fines[0] || w.fees.entries.find(r => r.dir === 'charge' && r.kind !== 'training') || {}).id || '' }) }));
+      const SM = { open: ['With the desk', T.warn], approved: ['Approved', T.ok], declined: ['Not approved', T.bad], withdrawn: ['Withdrawn', T.neutral] };
+      out.reqs = w.requests.map(r => ({ h: D.kinds[r.kind] + (r.subject ? ': ' + r.subject : ''), sub: (r.from ? r.from + (r.to && r.to !== r.from ? ' to ' + r.to : '') + ' · ' : '') + 'Sent ' + r.at, st: SM[r.status][0], sbg: SM[r.status][1][0], sfg: SM[r.status][1][1], hasReply: !!r.reply, reply: r.reply || '', open: r.status === 'open', withdraw: () => { this.setState(s => ({ withdrawn: Object.assign({}, s.withdrawn, { [r.id]: 1 }) })); this.toast('Withdrawn'); } }));
+      out.reqEmpty = !w.requests.length;
+    }
+
+    if (w && sec === 'pending') {
+      out.pd = { h: 'Waiting to connect to ' + w.member.first, s: w.member.centre + ' centre · asked ' + (w.asked || 'just now'), steps: [['ph ph-check', 'You asked', w.asked || 'Just now', T.ok[2], '#fff', '#e8e5dd'], ['ph ph-hourglass-medium', 'The ' + w.member.centre + ' desk checks the record', 'They confirm the relationship with the details NGG already has. Usually within two days.', '#f5b026', '#2a1d00', '#e8e5dd'], ['ph ph-envelope-simple', 'You get an email', 'Then ' + w.member.first + '’s attendance, lessons and fees show here, and ' + w.member.first + ' is told.', '#efede8', '#6b6b72', 'transparent']].map(s => ({ icon: s[0], h: s[1], s: s[2], bg: s[3], fg: s[4], line: s[5] })) };
+      out.pdWithdraw = () => { this.setState(s => ({ removed: Object.assign({}, s.removed, { [w.linkId]: 1 }), wi: 0, sec: 'today' })); this.toast('Ask withdrawn'); };
+    }
+
+    if (sec === 'add') {
+      const count = wards.length;
+      out.addSub = 'Connect any NGG member you look after, up to ' + D.max + ' on one account.';
+      out.addMax = count + ' of ' + D.max + ' children on this account.';
+      out.adCode = S.adCode; out.adName = S.adName; out.onAdCode = e => this.setState({ adCode: e.target.value.replace(/\D/g, '').slice(0, 6), adErr: '' }); out.onAdName = e => this.setState({ adName: e.target.value, adErr: '' });
+      out.rels = Object.keys(D.relationships).map(k => { const on = S.adRel === k; return { l: D.relationships[k], sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: () => this.setState({ adRel: k }) }; });
+      out.adHasErr = !!S.adErr; out.adErr = S.adErr;
+      out.adGo = () => {
+        if (count >= D.max) return this.setState({ adErr: 'A family account holds up to ' + D.max + ' children.' });
+        if (S.adCode.length !== 6 || S.adName.trim().length < 2) return this.setState({ adErr: 'Enter the 6-digit code and at least two letters of their name.' });
+        if (S.adCode !== '482913' || S.adName.trim().toLowerCase().indexOf('bisi') !== 0) return this.setState({ adErr: 'That code and name don’t match a member. Check the code on their app. After a few wrong tries we pause for 15 minutes.' });
+        if (S.added.some(x => x.member.first === 'Bisi')) return this.setState({ adErr: 'You’re already connected to Bisi.' });
+        const nw = JSON.parse(JSON.stringify(D.wards[0])); nw.linkId = 'GW-NEW1'; nw.relationship = S.adRel; nw.via = 'code'; nw.since = 'Today';
+        Object.assign(nw.member, { fullName: 'Bisi Adeyemi', first: 'Bisi', displayId: 'AYO-0907', centre: 'Ayobo', track: 'Public Speaking', level: 'Level 1', tone: '#d4e6ea', mentor: 'Grace Okon' });
+        nw.today = { status: 'absent', in: '', out: '', lateMinutes: 0 }; nw.requests = []; nw.conduct = { state: 'good', reason: '', finesOwed: 0, fines: [] };
+        nw.fees = Object.assign({}, D.wards[0].fees, { outstanding: 0, payable: 0, lines: [], joining: null, entries: [{ id: 'E-x', when: 'Thu 1 Oct', month: 'October 2026', kind: 'dues', note: 'Commitment fee · October', amount: 2000, dir: 'charge' }, { id: 'E-y', when: 'Fri 2 Oct', month: 'October 2026', kind: 'payment', note: 'Payment · Paystack', amount: 2000, dir: 'credit' }] });
+        this.setState(s => ({ added: s.added.concat([nw]), adCode: '', adName: '', adDone: ['Connected to Bisi', 'Bisi has been told that a family account is now following their record. You’ll find them in your list.'] }));
+      };
+      out.addDone = !!S.adDone; out.addDoneH = S.adDone ? S.adDone[0] : ''; out.addDoneS = S.adDone ? S.adDone[1] : '';
+      const sugg = D.suggestions.filter(s => !S.asked[s.memberId]);
+      out.hasSugg = sugg.length > 0;
+      out.sugg = sugg.map(s => ({ first: s.firstName, ini: s.firstName[0], centre: s.centre, ask: () => { const nw = { linkId: 'GW-ASK-' + s.memberId, status: 'pending', relationship: S.adRel, via: 'record', member: { fullName: s.firstName + ' Adeyemi', first: s.firstName, centre: s.centre, tone: '#d9dcf0' }, asked: 'Today' }; this.setState(st => ({ asked: Object.assign({}, st.asked, { [s.memberId]: 1 }), added: st.added.concat([nw]), adDone: ['Asked to connect to ' + s.firstName, 'The ' + s.centre + ' desk will check and email you, usually within two days.'] })); } }));
+    }
+
+    if (sec === 'account') {
+      out.pf = [['Name', g.fullName], ['Phone', g.phone], ['Email', g.email], ['With NGG since', g.createdAt]].map(x => ({ k: x[0], v: x[1] }));
+      out.pfAsk = () => openSheet('profile');
+      out.acColl = wards.filter(x => x.status === 'active').map(x => ({ name: x.member.first, ini: this.ini(x.member.fullName), tone: x.member.tone, list: (x.collectors || []).map(c => c[0] + ' (' + c[1] + ')').join(', '), change: () => this.setState({ wi: wards.indexOf(x), sheet: 'collect', shDone: null, shErr: '', fBody: '' }) }));
+      out.consents = D.consents.map((c, i) => ({ l: c[0], s: 'Given 12 Jan 2025 on the application' + (i === 4 ? '. First name only: never a surname, age or school with a photo.' : '') }));
+      out.accWards = wards.map(x => ({ name: x.member.fullName, ini: this.ini(x.member.fullName), tone: x.member.tone, sub: x.status === 'active' ? (D.relationships[x.relationship] || 'Parent') + ' · connected ' + (x.since || '') + (x.via === 'code' ? ' with their code' : ' by the centre') : 'Waiting for the ' + x.member.centre + ' desk', removeL: x.status === 'active' ? 'Disconnect' : 'Withdraw', remove: () => { this.setState(s => ({ removed: Object.assign({}, s.removed, { [x.linkId]: 1 }), wi: 0 })); this.toast(x.status === 'active' ? 'Disconnected from ' + x.member.first : 'Ask withdrawn'); } }));
+      out.notes = [['ph ph-sign-in', 'Check-in and sign-out', 'A text and email each Saturday when they arrive and leave.'], ['ph ph-envelope-simple', 'The Monday summary', 'Last week for every child: attendance, lessons and anything new.'], ['ph ph-bell-ringing', 'Alerts', 'Fines, missed sign-outs and anything the centre needs you to know the same day.']].map(n => ({ icon: n[0], h: n[1], s: n[2] }));
+      out.mfaOn = S.mfa ? 'true' : 'false'; out.mfaTrack = S.mfa ? '#0b0b0c' : '#d9d6cd'; out.mfaKnob = S.mfa ? '21px' : '3px';
+      out.toggleMfa = () => { this.setState(s => ({ mfa: !s.mfa })); this.toast(S.mfa ? 'Two-step sign-in is off' : 'Scan the QR code in your authenticator app to finish'); };
+      out.signOut = () => this.setState({ out: true, sec: null }); out.signOutAll = () => { this.setState({ out: true, sec: null }); this.toast('Signed out on every device'); };
+    }
+
+    const SUBS = { attendance: [['record', 'Record'], ['coming', 'Coming up']], progress: [['score', 'Scorecard'], ['results', 'Results'], ['lessons', 'Lessons'], ['mentor', 'Mentor']], requests: [['inbox', 'Inbox'], ['req', 'Requests']] };
+    const sub = active && SUBS[sec] ? (S.sub[sec] || SUBS[sec][0][0]) : '';
+    const subN = { results: (rMiss ? 1 : 0) + (pOpen ? 1 : 0), inbox: unread, req: openReq, coming: D.events.filter(e => e.expected && !S.rsvp[e.id]).length };
+    out.hasSub = !!sub; out.subAria = out.viewTitle;
+    out.subTabs = sub ? SUBS[sec].map(t => { const on = sub === t[0], n = subN[t[0]] || 0; return { l: t[1], sel: on ? 'true' : 'false', bg: on ? '#fff' : 'transparent', sh: on ? '0 1px 2px rgba(11,11,12,.14)' : 'none', fw: on ? 600 : 500, fg: on ? '#0b0b0c' : '#4a4a50', hasN: n > 0, n: String(n), onClick: () => this.setState(s => ({ sub: Object.assign({}, s.sub, { [sec]: t[0] }) })) }; }) : [];
+    Object.assign(out, { subRecord: sub === 'record', subComing: sub === 'coming', subScore: sub === 'score', subRes: sub === 'results', subLessons: sub === 'lessons', subMentor: sub === 'mentor', subInbox: sub === 'inbox', subReq: sub === 'req' });
+    const pill = (on, l, fn) => ({ l, sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: fn });
+
+    if (active && sec === 'attendance') {
+      const bk = S.booked[w.linkId];
+      const list = D.events.slice();
+      if (bk !== undefined) { const p = w.mentorSlots[bk].split(' · '), d = p[0].split(' '); list.unshift({ id: 'MEET', dd: d[1], mm: d[2], date: p[0], time: p[1].split(' ')[0], title: 'Meeting with ' + w.member.mentor, where: p[1].split(' ').slice(1).join(' '), meet: true }); }
+      out.evs = list.map((e, i) => { const r = S.rsvp[e.id]; return { dd: e.dd, mm: e.mm, title: e.title, when: e.date + ' · ' + e.time, where: e.where, bt: i ? '1px solid #f1efea' : '0', expected: !!e.expected, canRsvp: !e.info && !e.meet,
+        opts: [['yes', 'I’ll come'], ['no', 'Can’t make it']].map(o => pill(r === o[0], o[1], () => { this.setState(s => ({ rsvp: Object.assign({}, s.rsvp, { [e.id]: o[0] }) })); this.toast(o[0] === 'yes' ? 'Thanks. The centre has you down.' : 'Thanks for telling us. The notes come to Messages afterwards.'); })),
+        hasState: !!(e.meet || e.info), state: e.meet ? 'Booked · reminder the day before' : e.info ? 'No class' : '', stc: e.meet ? '#17663a' : '#6b6b72', dbg: e.meet ? '#e8f5ec' : e.info ? '#efede8' : '#fdf6e3' }; });
+    }
+
+    if (active && sec === 'progress') {
+      const first = w.member.first, sc = w.score;
+      if (sc) {
+        const t1 = tot(sc.now), d = t1 - tot(sc.prev), I = sc.now.map((v, i) => i);
+        const hi = I.reduce((a, i) => sc.now[i] > sc.now[a] ? i : a, 0), lo = I.reduce((a, i) => sc.now[i] < sc.now[a] ? i : a, 0);
+        out.sc = { has: true, none: false, session: sc.session, total: String(t1), delta: (d >= 0 ? '+' : '−') + Math.abs(d) + ' since last session', dbg: d >= 0 ? T.ok[0] : T.bad[0], dfg: d >= 0 ? T.ok[1] : T.bad[1], by: sc.by, taken: sc.taken, hi: D.skills[hi], lo: D.skills[lo], note: sc.note, tip: D.homeTips[D.skills[lo]],
+          rows: D.skills.map((k, i) => { const v = sc.now[i], p = sc.prev[i], dd = v - p; return { k, v: v + '/10', w: v * 10 + '%', pw: 'calc(' + p * 10 + '% - 1px)', c: v >= 8 ? '#22a05a' : v >= 6 ? '#3a3a40' : '#e0a100', d: dd ? (dd > 0 ? '+' : '−') + Math.abs(dd) : '0', dc: dd > 0 ? '#17663a' : dd < 0 ? '#a12a2a' : '#6b6b72', aria: k + ': ' + v + ' out of 10, ' + (dd > 0 ? 'up ' + dd : dd < 0 ? 'down ' + -dd : 'no change') + ' since last session' }; }) };
+      } else out.sc = { has: false, none: true, rows: [] };
+      const RS = (w.results || []).map(r => S.uploaded[w.linkId + r.id] ? Object.assign({}, r, { status: 'processing' }) : r);
+      const ri = Math.min(S.rsI, Math.max(0, RS.length - 1)), r = RS[ri] || {};
+      const grade = s => (D.grades.find(g2 => s >= g2[0]) || [0, 'F9'])[1];
+      const up = r.avg >= r.prevAvg;
+      out.rs = { tabs: RS.map((x, i) => pill(i === ri, x.name, () => this.setState({ rsI: i }))), multi: RS.length > 1, missing: r.status === 'missing', processing: r.status === 'processing', has: r.status === 'uploaded',
+        mH: first + ' hasn’t uploaded ' + (r.baseline ? 'their last school report' : 'their ' + r.name + ' results') + ' yet',
+        mS: 'Due ' + r.due + '. Members upload their school results every session, and the mentor builds the plan from them.' + (S.reminded[w.linkId] ? ' ' + first + ' was reminded just now.' : r.reminded ? ' ' + first + ' was reminded on ' + r.reminded + '.' : ''),
+        remindL: S.reminded[w.linkId] ? 'Reminded' : 'Remind ' + first, remind: () => { if (S.reminded[w.linkId]) return; this.setState(s => ({ reminded: Object.assign({}, s.reminded, { [w.linkId]: 1 }) })); this.toast(first + ' gets a reminder on the member app.'); },
+        upload: () => openSheet('upload', { upFile: '' }), pH: 'Reading ' + first + '’s results', pS: 'The plan goes to ' + w.member.mentor + ' first, then comes to you here, usually within two days.',
+        name: r.name, school: r.school, uploaded: 'uploaded ' + (r.uploaded || ''), avg: r.avg + '%', ad: r.prevAvg != null ? (up ? '+' : '−') + Math.abs(r.avg - r.prevAvg) + ' on last term' : '', adbg: up ? T.ok[0] : T.bad[0], adfg: up ? T.ok[1] : T.bad[1],
+        subjects: (r.subjects || []).map(s => { const dd = s[1] - s[2]; return { k: s[0], v: String(s[1]), g: grade(s[1]), gbg: s[1] >= 70 ? T.ok[0] : s[1] >= 50 ? '#efede8' : T.bad[0], gfg: s[1] >= 70 ? T.ok[1] : s[1] >= 50 ? '#48484e' : T.bad[1], d: (dd >= 0 ? '+' : '−') + Math.abs(dd), dc: dd > 0 ? '#17663a' : dd < 0 ? '#a12a2a' : '#6b6b72' }; }),
+        viewDoc: () => this.toast('Opens the uploaded report in a new tab.') };
+      out.hasPlan = !!(r.plan && r.status === 'uploaded');
+      if (out.hasPlan) { const P2 = r.plan, ack = P2.ack || (S.acked[w.linkId + r.id] ? 'today' : '');
+        out.pl = { by: 'Drafted by NGG’s assistant from the results on ' + P2.drafted + ', then checked and edited by ' + P2.reviewedBy + ' on ' + P2.reviewed + '. The instructors and the centre lead see it too.', summary: P2.summary, focus: P2.focus, actions: P2.actions.map(a => ({ who: a[0], what: a[1] })), acked: !!ack, open: !ack, ackL: 'You signed this ' + (P2.ack ? 'on ' + P2.ack : 'today') + '. ' + P2.reviewedBy + ' can see that.',
+          sign: () => { this.setState(s => ({ acked: Object.assign({}, s.acked, { [w.linkId + r.id]: 1 }) })); this.toast('Signed. ' + P2.reviewedBy + ' can see you’ve read it.'); }, ask: () => openSheet('mentor') }; }
+      const bk = S.booked[w.linkId];
+      out.mt = { h: 'Meet ' + w.member.mentor, s: 'Mentors meet every family at least once a term, and whenever something needs talking through.', booked: bk !== undefined, free: bk === undefined, bookedL: bk !== undefined ? w.mentorSlots[bk] : '', book: () => openSheet('meet', { slot: bk || 0 }), ask: () => openSheet('mentor') };
+    }
+
+    if (active && sec === 'requests') {
+      const all = this.inbox(), nameOf = id => { const x = wards.find(y => y.linkId === id); return x ? x.member.first : 'All your children'; };
+      const list = all.filter(m => S.ibCat === 'all' || m.cat === S.ibCat);
+      out.ibCats = [['all', 'All'], ['report', 'Reports'], ['alert', 'Alerts'], ['centre', 'From the centre']].map(c => { const n = (c[0] === 'all' ? all : all.filter(m => m.cat === c[0])).filter(m => m.unread).length; return pill(S.ibCat === c[0], c[1] + (n ? ' · ' + n : ''), () => this.setState({ ibCat: c[0] })); });
+      out.ibRows = list.map((m, i) => ({ icon: m.icon, h: m.h, b: m.b, meta: m.t + ' · ' + nameOf(m.ward), dot: m.unread ? '#f5b026' : 'transparent', fw: m.unread ? 600 : 500, bt: i ? '1px solid #f1efea' : '0', hasChip: !!m.sign, chip: m.signed ? 'Signed' : 'Needs your signature', cbg: m.signed ? T.ok[0] : T.warn[0], cfg: m.signed ? T.ok[1] : T.warn[1], onClick: () => openSheet('msg', { msgId: m.id, read: Object.assign({}, S.read, { [m.id]: 1 }) }) }));
+      out.ibEmpty = !list.length;
+    }
+
+    const sh = S.sheet;
+    out.hasSheet = !!sh && active; out.closeSheet = () => this.setState({ sheet: null, shDone: null, shErr: '' });
+    out.sheetAlign = phone ? 'flex-end' : 'center'; out.sheetPad = phone ? '0' : '16px'; out.sheetR = phone ? '22px 22px 0 0' : '20px';
+    out.shDone = !!S.shDone; out.shForm = !S.shDone; out.shDoneH = S.shDone ? S.shDone[0] : ''; out.shDoneS = S.shDone ? S.shDone[1] : '';
+    out.shHasErr = !!S.shErr; out.shErr = S.shErr; out.shGoBg = '#0b0b0c'; out.shGoFg = '#fff';
+    out.fFrom = S.fFrom; out.fTo = S.fTo; out.fBody = S.fBody; out.fRef = S.fRef;
+    out.onFFrom = e => this.setState({ fFrom: e.target.value, shErr: '' }); out.onFTo = e => this.setState({ fTo: e.target.value, shErr: '' }); out.onFBody = e => this.setState({ fBody: e.target.value, shErr: '' }); out.onFRef = e => this.setState({ fRef: e.target.value });
+    out.shIsPay = sh === 'pay'; out.shIsLeave = sh === 'leave'; out.shIsAppeal = sh === 'appeal'; out.shIsCard = sh === 'idcard'; out.shHasBody = !['pay', 'upload', 'meet', 'msg'].includes(sh); out.shIsUpload = sh === 'upload'; out.shIsMeet = sh === 'meet'; out.shIsMsg = sh === 'msg';
+    if (out.hasSheet) {
+      const first = w.member.first;
+      const addReq = (kind, extra) => { const r = Object.assign({ id: 'R-' + Date.now(), kind, status: 'open', at: 'Today' }, extra); this.setState(s => ({ newReqs: Object.assign({}, s.newReqs, { [w.linkId]: [r].concat(s.newReqs[w.linkId] || []) }) })); };
+      if (sh === 'upload') {
+        const r0 = this.curRes(w) || {};
+        Object.assign(out, { shTitle: 'Upload ' + first + '’s results', shLead: (r0.baseline ? 'Their last school report' : 'The ' + r0.name + ' report') + '. ' + first + ' is told you uploaded it.', upL: S.upFile || 'Take a photo or choose a file', upIcon: S.upFile ? 'ph ph-file-check' : 'ph ph-camera', upBd: S.upFile ? '#22a05a' : '#c9c7bf', shGoL: 'Upload' });
+        out.upChecks = ['The name and school are visible', 'Every subject and score can be read', 'The term and year are on it'];
+        out.onUpFile = e => { const f0 = e.target.files && e.target.files[0]; if (f0) this.setState({ upFile: f0.name, shErr: '' }); };
+        out.shGo = () => { if (!S.upFile) return this.setState({ shErr: 'Take a photo of the report or choose the file first.' }); this.setState(s => ({ uploaded: Object.assign({}, s.uploaded, { [w.linkId + r0.id]: 1 }), shDone: ['Uploaded', 'NGG’s assistant reads the scores and drafts a plan. ' + w.member.mentor + ' checks it, then it comes to you here, usually within two days.'] })); };
+      }
+      if (sh === 'meet') {
+        const sl = w.mentorSlots || [];
+        out.slots = sl.map((t, i) => { const on = S.slot === i; return { l: t, sel: on ? 'true' : 'false', bg: on ? '#fdf6e3' : '#fff', bd: on ? '#0b0b0c' : '#d9d6cd', icon: on ? 'ph-fill ph-radio-button' : 'ph ph-circle', onClick: () => this.setState({ slot: i }) }; });
+        Object.assign(out, { shTitle: 'Meet ' + w.member.mentor, shLead: 'Times ' + w.member.mentor + ' has kept free. You’ll get a reminder the day before.', shGoL: 'Book this time' });
+        out.shGo = () => this.setState(s => ({ booked: Object.assign({}, s.booked, { [w.linkId]: s.slot }), shDone: ['Booked', sl[S.slot] + ' with ' + w.member.mentor + '. It’s in Saturdays → Coming up.'] }));
+      }
+      if (sh === 'msg') {
+        const m = this.inbox().find(x => x.id === S.msgId) || {};
+        out.msg = { meta: m.t, b: m.b, signed: !!m.signed, signedL: 'Signed. The mentor can see you’ve read it.' };
+        Object.assign(out, { shTitle: m.h || '', shLead: '', shGoL: m.sign && !m.signed ? 'Sign as read' : 'Close' });
+        out.shGo = () => { if (m.sign && !m.signed) { this.setState(s => ({ signed: Object.assign({}, s.signed, { [m.id]: 1 }), sheet: null })); this.toast('Signed. The mentor can see you’ve read it.'); } else this.setState({ sheet: null }); };
+      }
+      if (sh === 'mentor') {
+        Object.assign(out, { shTitle: 'Ask ' + w.member.mentor, shLead: 'It goes to ' + w.member.mentor + ', and the centre lead can see it. Expect a reply within two days.', shBodyL: 'Your question', shBodyPh: 'e.g. How can I help with the reading at home?', shGoL: 'Send' });
+        out.shGo = () => { if (S.fBody.trim().length < 5) return this.setState({ shErr: 'Write your question first.' }); addReq('mentor', { subject: S.fBody.trim().slice(0, 60) }); this.setState({ shDone: ['Sent to ' + w.member.mentor, 'The reply comes to Messages → Requests.'] }); };
+      }
+      if (sh === 'profile' || sh === 'collect') {
+        const pr = sh === 'profile';
+        Object.assign(out, { shTitle: pr ? 'Ask to change your details' : 'Change who can collect ' + first, shLead: pr ? 'The centre keeps family details as they were checked at registration. Say what has changed and they’ll update it after a quick check.' : 'Give the person’s full name, how they’re related and their phone number. They’ll need ID at the desk.', shBodyL: pr ? 'What should change' : 'Add or remove', shBodyPh: pr ? 'e.g. My phone number is now 0809 …' : 'e.g. Add Mrs Kemi Bello, aunt, 0813 …', shGoL: 'Send to the centre' });
+        out.shGo = () => { if (S.fBody.trim().length < 8) return this.setState({ shErr: 'Tell the centre a little more.' }); addReq(sh, { subject: S.fBody.trim().slice(0, 60) }); this.setState({ shDone: ['Sent', 'The ' + w.member.centre + ' desk checks it and replies in Messages → Requests, usually within two days.'] }); };
+      }
+      if (sh === 'pay') {
+        Object.assign(out, { shTitle: w.fees.joining ? 'Pay ' + first + '’s joining invoice' : 'Pay for ' + first, shLead: 'You’ll go to Paystack to pay by card, bank or USSD, then come straight back here.', shGoL: 'Continue to Paystack', shGoBg: '#f5b026', shGoFg: '#2a1d00' });
+        out.payLines = (w.fees.joining ? w.fees.joining.items : w.fees.lines).map(r => ({ k: r.label, v: N(r.amount) })).concat([{ k: 'Total', v: N(w.fees.payable) }]);
+        out.shGo = () => this.setState(s => ({ paid: Object.assign({}, s.paid, { [w.linkId]: w.fees.payable }), shDone: ['Paid ' + N(w.fees.payable), 'Thank you. A receipt is on its way to ' + g.email + '. Paystack reference PSK-' + (w.member.displayId.replace('-', '')) + '-24OCT.'] }));
+      }
+      if (sh === 'leave') {
+        Object.assign(out, { shTitle: first + ' will be away', shLead: 'The centre marks those days as excused, so they don’t count against ' + first + '’s attendance.', shBodyL: 'Why (optional)', shBodyPh: 'e.g. family wedding, hospital appointment', shGoL: 'Tell the centre' });
+        out.shGo = () => { if (!S.fFrom) return this.setState({ shErr: 'Pick the first day ' + first + ' will be away.' }); if (S.fTo && S.fTo < S.fFrom) return this.setState({ shErr: 'The last day can’t be before the first.' }); const fd = d => new Date(d + 'T12:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); addReq('leave', { subject: S.fBody.trim().slice(0, 60), from: fd(S.fFrom), to: fd(S.fTo || S.fFrom) }); this.setState({ shDone: ['The centre has been told', 'The ' + w.member.centre + ' desk will reply here. ' + first + ' won’t be marked absent for those days.'] }); };
+      }
+      if (sh === 'appeal') {
+        out.chargeOpts = w.conduct.fines.map(x => ({ v: x.id, l: 'Fine ' + N(x.amount) + ' · ' + x.when })).concat(w.fees.entries.filter(r => r.dir === 'charge' && r.kind !== 'fine' && r.kind !== 'training').slice(0, 8).map(r => ({ v: r.id, l: r.note + ' ' + N(r.amount) + ' · ' + r.when })));
+        Object.assign(out, { shTitle: 'Appeal a charge', shLead: 'Say what happened. The centre lead reads every appeal, and the charge is on hold while they decide.', shBodyL: 'What happened', shBodyPh: 'e.g. I collected her early from the desk because of a family emergency.', shGoL: 'Send the appeal' });
+        out.shGo = () => { if (S.fBody.trim().length < 10) return this.setState({ shErr: 'Tell the centre a little more, so they can decide fairly.' }); addReq('appeal', { subject: (out.chargeOpts.find(o => o.v === S.fRef) || out.chargeOpts[0] || {}).l || '' }); this.setState(s => ({ appealed: Object.assign({}, s.appealed, { [S.fRef]: 1 }), shDone: ['Appeal sent', 'The charge is on hold. You’ll get an email when the centre lead decides, usually within a week.'] })); };
+      }
+      if (sh === 'idcard') {
+        out.cardWhy = [['lost', 'Lost'], ['damaged', 'Damaged'], ['name', 'Wrong name or photo']].map(r => { const on = S.fWhy === r[0]; return { l: r[1], sel: on ? 'true' : 'false', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c', bd: on ? '#0b0b0c' : '#d9d6cd', onClick: () => this.setState({ fWhy: r[0] }) }; });
+        Object.assign(out, { shTitle: 'New ID card for ' + first, shLead: 'The old card stops working as soon as the new one is printed. Collect it from the ' + w.member.centre + ' desk.', shBodyL: 'Anything else (optional)', shBodyPh: 'e.g. it went through the wash', shGoL: 'Ask for a new card' });
+        out.shGo = () => { addReq('idcard', { subject: { lost: 'Lost', damaged: 'Damaged', name: 'Wrong name or photo' }[S.fWhy] }); this.setState({ shDone: ['Asked for a new card', 'You’ll get a text when it’s ready to collect, usually the next Saturday.'] }); };
+      }
+    }
+    return out;
+  }
+}
+</script>
+</body>
+</html>

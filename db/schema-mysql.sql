@@ -4171,3 +4171,32 @@ ALTER TABLE members MODIFY COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
 ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT;
 
 INSERT INTO schema_version (version) VALUES (179) ON DUPLICATE KEY UPDATE version = version;
+
+-- 180: Family Portal v3 — inbox categories and signatures, family RSVPs,
+-- mentor meeting slots, and the centre's list of who may collect a child.
+ALTER TABLE guardian_notices ADD COLUMN cat VARCHAR(16) NOT NULL DEFAULT 'centre';
+ALTER TABLE guardian_notices ADD COLUMN memberId VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE guardian_notices ADD COLUMN sign TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE guardian_notices ADD COLUMN signedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN familiesExpected TINYINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS guardian_rsvps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guardianId VARCHAR(64) NOT NULL, eventId VARCHAR(64) NOT NULL, answer VARCHAR(8) NOT NULL DEFAULT 'yes',
+  reminded TINYINT NOT NULL DEFAULT 0, updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_grsvp_one (guardianId, eventId)
+);
+CREATE TABLE IF NOT EXISTS mentor_slots (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  slotId VARCHAR(48) NOT NULL UNIQUE, mentorId VARCHAR(64) NOT NULL, startAt VARCHAR(32) NOT NULL, mode VARCHAR(16) NOT NULL DEFAULT 'centre',
+  bookedBy VARCHAR(64) NOT NULL DEFAULT '', memberId VARCHAR(64) NOT NULL DEFAULT '', bookedAt VARCHAR(32) NOT NULL DEFAULT '',
+  reminded TINYINT NOT NULL DEFAULT 0, createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mslot_mentor (mentorId, startAt), KEY idx_mslot_member (memberId, startAt)
+);
+CREATE TABLE IF NOT EXISTS member_collectors (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, name VARCHAR(160) NOT NULL, relation VARCHAR(60) NOT NULL DEFAULT '', phone VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mcoll_member (memberId)
+);
+
+INSERT INTO schema_version (version) VALUES (180) ON DUPLICATE KEY UPDATE version = version;

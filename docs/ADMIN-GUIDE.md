@@ -1456,17 +1456,40 @@ tick the connections and use **Approve**, **Refuse** or **Disconnect** in the ba
 that appears. Refusing and disconnecting ask for the reason the parent is emailed.
 
 Parents sign in at **/family** with their own email — a six-digit code, no
-password. The account is laid out like the other portals: their children down
-the left (along the top on a phone), and five screens for the child chosen —
-**Today** (what needs them, with one-tap *will be away*, *lost ID card* and
-*question a charge*), **Attendance & conduct**, **Fees** (with *Pay online*),
-**Lessons & timetable** and **Messages to the centre** — plus *Emails &
-connection*. The address carries the child and the screen, so a shared link
-opens the same place. It is a separate account, not a member account: it cannot open
-any member page, and nothing in it can reach the Control Room. On it they see,
-for each child: today's sign-in (late, and by how much), attendance this term,
-conduct and fines, fees due, lesson progress and the weekly check-in. They
-**never** see the child's journal, reflections, coach chats or messages.
+password. The family app has five sections, the same on a phone (a bar at the
+bottom) and a computer (a sidebar): **Today** (how the child is today, what is
+owed, what needs the parent, the latest messages), **Saturdays** (the record,
+and *Coming up*: events to answer and a booked mentor meeting), **Growth** (the
+Leadership Index, school results and the session plan, lessons, the mentor),
+**Fees** (what is owed, the statement, the training place) and **Messages**
+(the household inbox and their requests to the centre). On a phone the top is
+one bar: the child (tap to switch), a bell with the number of things waiting,
+and their account. The address carries the child, section and sub-tab, so a
+shared link opens the same place. It is a separate account, not a member
+account: it cannot open any member page, and nothing in it can reach the
+Control Room. They **never** see the child's journal, reflections, coach chats
+or messages with their mentor.
+
+**What a parent can do there:** answer an event (*I'll come* / *Can't make
+it*); sign a monthly report and an approved session plan as read (the mentor
+sees it); remind a child whose school results are late, or upload a photo of
+the report for them (the child then checks the scores and writes the plan, as
+before); book one of the mentor's free times or ask the mentor a question; and
+tell the centre about an absence, appeal a charge or ask for a new ID card.
+
+**What a parent cannot change:** their own name and phone, who may collect the
+child, and the five consents are **read-only** in the family app. *Ask to
+change* sends a request to the desk (*Change family details*, *Change who can
+collect*) — you check it and make the change. Who may collect a child is in
+their record: **People → Members**, open the member, *Who can collect…* (one
+person per line: name, relation, phone). A session plan is shown to the
+family only after the mentor has approved it.
+
+**The monthly report** is written for every connected child on the first days
+of the month and lands in the family inbox asking for a signature. Families
+expected at an event who haven't answered are reminded three days and one day
+before; both sides of a mentor meeting are reminded the day before. Mark an
+event *families expected* on the event itself.
 
 A parent connects to a child in one of two ways:
 
@@ -1482,10 +1505,12 @@ listed on their own Circle screen. A child cannot remove it themselves —
 **Disconnect…** here does, at once, and the parent is emailed your reason.
 Refusing a request also needs a reason.
 
-From the family account a parent can tell the centre a child will be away,
-appeal a charge, or ask for a replacement card. These arrive in **Member
-requests** marked *From their family account*, and your reply is emailed to
-the parent as well as the member. A parent cannot claim a payment — an
+From the family account a parent can tell the centre a child will be away (no
+reason needed), appeal a charge, ask for a replacement card, ask the mentor a
+question, or ask for their details or the collectors to change. These arrive
+in **Member requests** marked *From their family account* (a question for the
+mentor also goes straight to the mentor), and your reply is emailed to the
+parent as well as the member. A parent cannot claim a payment — an
 offline payment needs a verified receipt, which is the member's path.
 
 Every family email is **always on** and cannot be switched off: every sign-in

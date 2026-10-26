@@ -40,6 +40,8 @@ function rate_limit_default(string $op): ?array {
         'timetable.load'     => ['max' => 30, 'window' => 60],    // a link token is a bearer secret; slows guessing
         'family.verify'      => ['max' => 10, 'window' => 60],
         'family.write'       => ['max' => 30, 'window' => 60],
+        // A report photo arrives in up to 80 pieces; one upload must fit, ten in a minute must not.
+        'family.upload'      => ['max' => 160, 'window' => 60],
         'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
         'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
         'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still

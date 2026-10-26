@@ -3041,3 +3041,48 @@ that draw as lists). What was not mobile was everything mounted through `CrPanel
   for feedback through `window.prompt`, which a phone draws as a system dialog with no room to write;
   it is a form now. Posts opens each post from the server (`admin.posts.get`) before editing, so the
   editor holds the stored body rather than a list row's excerpt.
+
+## Family Portal v3 (2026-10-26)
+
+The handoff `design_handoff_family_portal_v3` (README, SCREENS, UX_SPEC,
+API_DATA) built on live data. `/family` is now `src/modules/family3/`: the
+design compiled (`fp3-view.jsx` from `docs/design/portals/family-portal-v3.dc.html`),
+an adapter from the real reads (`fp3-data.jsx`) and the design's logic ported
+onto them (`fp3-app.jsx`). `page-family.jsx` is a one-line wrapper; the v2
+screens are gone. `fp3-subs.json` is the reviewable list of every change made
+to the design's markup.
+
+- **Server** (`domain/family-portal.php`, migration 180): `family.ward` gains
+  the Leadership Index (the mentor's, never the child's self-score), school
+  results per term with the plan only once a mentor approved it, collectors,
+  consents, the mentor's free times, a booked meeting, and `fees3` — the Fees
+  page worked out on the server (the client adds no money up). New ops:
+  `family.inbox`, `family.report.sign`, `family.plan.sign` (a `plan_acks` row
+  the mentor sees), `family.results.remind` (once a day), `family.results.upload`
+  (a photo through the family's own piece store, `api/family/upload-chunk.php`),
+  `family.events` / `family.rsvp` (`guardian_rsvps`, the family's own row),
+  `family.mentor.book` (`mentor_slots`; the claim is the UPDATE). Request kinds
+  `askmentor`, `familydetails`, `collect`. `family.profile` now answers 403
+  `read_only`. Jobs: the monthly report and the event / meeting reminders in
+  `webcron.php`.
+- **Found on the way:** `family.ward`'s appealable charges filtered the ledger
+  on `direction = 'debit'`, which nothing writes, so a parent was never offered
+  a charge to appeal. It reads `'charge'` and leaves the training place out.
+- **Deviations from the handoff, deliberately:** the phone's top is one bar
+  (child switcher, a bell for what needs you, the account) instead of a logo row
+  plus a switcher card, and the page header no longer repeats the child; the
+  sub-tabs stay pinned while a section scrolls; the active bottom tab is an ink
+  icon and label with a short gold rule, not a gold blob; Today's account card
+  is a status chip, one full-width Pay, the facts as a list and the statement as
+  its last row; the report upload takes a photo, not a PDF (this host's family
+  path stores images), and has no `capture` so a parent can pick the photo the
+  school sent on WhatsApp; a day with no class says "No class today" rather
+  than "Not in yet"; every control in the page is 44px on a touch screen.
+- **Collectors in the Control Room:** a member's drawer shows *Who can collect*
+  and *Who can collect…* edits the list (one per line), through
+  `admin.member.collectors` — `people`, centre-scoped.
+- **Still to build:** the mentor portal's "times
+  families can book" (`member.mentor.slots` / `slotAdd` / `slotRemove` exist).
+  Until mentors publish times, a family's *Book a meeting* says there are none
+  and offers *Ask a question*.
+

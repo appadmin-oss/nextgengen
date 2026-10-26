@@ -25370,6 +25370,117 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $a = family_weekly_run(attendance_today()); $b = family_weekly_run(attendance_today());
     chk('family: the weekly mail goes once per family per week', $a['sent'] >= 1 && $b['sent'] === 0 && count($mailTo('mum@example.com')) === 1);
 
+    // ── Family Portal v3 ────────────────────────────────────────────────
+    chk('family v3: a parent cannot edit their own profile; it is a request to the desk', (backend_dispatch('family.profile', ['guardianId' => $gid, 'fullName' => 'X'])['error'] ?? '') === 'read_only');
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('family v3: no scorecard is an empty state, not a card of zeros', array_key_exists('score', $w3) && $w3['score'] === null);
+    chk('family v3: a parent is offered the charges they can appeal, and never the training place', (function () use ($gid, $lid) {
+        db_insert('member_ledger', ['entryId' => 'FEE-FA-1', 'memberId' => 'NGG-FA-KID', 'kind' => 'dues', 'direction' => 'charge', 'amount' => 2000, 'note' => 'Commitment fee', 'periodKey' => 'fa-1', 'createdAt' => now_iso()]);
+        db_insert('member_ledger', ['entryId' => 'FEE-FA-2', 'memberId' => 'NGG-FA-KID', 'kind' => 'training', 'direction' => 'charge', 'amount' => 6000, 'note' => 'Training', 'periodKey' => 'fa-2', 'createdAt' => now_iso()]);
+        $ids = array_column(backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['charges'] ?? [], 'entryId');
+        db_exec("DELETE FROM member_ledger WHERE entryId IN ('FEE-FA-1', 'FEE-FA-2')");
+        return in_array('FEE-FA-1', $ids, true) && !in_array('FEE-FA-2', $ids, true);
+    })());
+    chk('family v3: five consents, each with the date it was given, and no way to change them', count($w3['consents'] ?? []) === 5 && ($w3['consents'][0]['given'] ?? '') !== '');
+    db_insert('member_collectors', ['memberId' => 'NGG-FA-KID', 'name' => 'Kemi Bello', 'relation' => 'Aunt', 'phone' => '0813 000 0000', 'createdAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MTR-FA', 'fullName' => 'Funmi Adebayo', 'status' => 'active', 'centre' => 'Egbeda']);
+    db_insert('mentor_assignments', ['memberId' => 'NGG-FA-KID', 'mentorId' => 'MTR-FA', 'status' => 'active']);
+    $mo = gmdate('Y-m'); $pm = gmdate('Y-m', strtotime($mo . '-01T12:00:00Z') - 86400);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $pm, 'scores' => '7,7,7,6,6,7,7,6,6,4', 'total' => 63, 'byKind' => 'mentor', 'mentorId' => 'MTR-FA', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $mo, 'scores' => '8,7,8,7,6,8,8,7,7,5', 'total' => 71, 'byKind' => 'mentor', 'mentorId' => 'MTR-FA', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $mo, 'scores' => '10,10,10,10,10,10,10,10,10,10', 'total' => 100, 'byKind' => 'member', 'mentorId' => '', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('family v3: the scorecard is the mentor\'s, with the one before it — never the child\'s self-score', array_sum($w3['score']['now'] ?? []) === 71 && array_sum($w3['score']['prev'] ?? []) === 63 && ($w3['score']['by'] ?? '') === 'Funmi Adebayo');
+    chk('family v3: the collectors the centre keeps, and the mentor by name', ($w3['collectors'][0]['name'] ?? '') === 'Kemi Bello' && ($w3['mentor']['name'] ?? '') === 'Funmi Adebayo');
+
+    // Results: owed, reminded once a day, uploaded by a parent, plan hidden until approved.
+    db_exec("UPDATE members SET joinDate = ? WHERE memberId = 'NGG-FA-KID'", [gmdate('Y-m-d', strtotime('-2 years'))]);
+    $res = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'] ?? [];
+    $term = (string)($res[0]['id'] ?? '');
+    chk('family v3: an owed term with nothing uploaded is "missing", newest first', $term !== '' && $res[0]['status'] === 'missing' && $res[0]['plan'] === null);
+    $GLOBALS['__mail_sink'] = [];
+    $rm = backend_dispatch('family.results.remind', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term]);
+    chk('family v3: a parent can remind the child about their results', !empty($rm['ok']) && (bool)array_filter($inbox('NGG-FA-KID'), fn($t) => strpos($t, 'results are due') !== false));
+    chk('family v3: …once a day', (backend_dispatch('family.results.remind', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['error'] ?? '') === 'too_soon');
+    chk('family v3: an upload must be a file this site stored', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => 'https://evil.example/x.jpg', 'mime' => 'image/jpeg', 'size' => 900])['error'] ?? '') === 'bad_type');
+    chk('family v3: …and no bigger than the limit', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abc', 'mime' => 'image/jpeg', 'size' => RESULTS_MAX_BYTES + 1])['error'] ?? '') === 'too_large');
+    $up = backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abc', 'mime' => 'image/jpeg', 'size' => 900]);
+    $res = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'];
+    chk('family v3: a parent\'s upload starts the child\'s loop and reads as "processing"', !empty($up['ok']) && $res[0]['status'] === 'processing' && $res[0]['uploadedBy'] === 'guardian');
+    chk('family v3: a second upload for the same term is refused', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abd', 'mime' => 'image/jpeg', 'size' => 900])['error'] ?? '') === 'already_uploaded');
+    db_insert('growth_plans', ['planId' => 'GP-FA-1', 'uploadId' => (string)$up['uploadId'], 'memberId' => 'NGG-FA-KID', 'term' => $term, 'summary' => 'Maths first.', 'status' => 'draft', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('family v3: a plan the mentor has not approved is never shown, and cannot be signed', backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'][0]['plan'] === null
+        && (backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['error'] ?? '') === 'not_reviewed');
+    db_exec("UPDATE growth_plans SET status = 'sent', approvedAt = ?, approvedByName = 'Funmi Adebayo' WHERE planId = 'GP-FA-1'", [$now]);
+    $pl = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'][0];
+    chk('family v3: an approved plan is shown, unsigned, with who checked it', $pl['status'] === 'uploaded' && ($pl['plan']['reviewedBy'] ?? '') === 'Funmi Adebayo' && $pl['plan']['signedAt'] === null);
+    $sg = backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term]);
+    chk('family v3: signing is one step, idempotent, and recorded for the mentor', !empty($sg['ok']) && !empty(backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['already'])
+        && (int)db_row("SELECT COUNT(*) c FROM plan_acks WHERE planId = 'GP-FA-1'")['c'] === 1 && (bool)db_row("SELECT 1 FROM results_log WHERE memberId = 'NGG-FA-KID' AND kind = 'family-sign'"));
+
+    // The inbox: categories, signatures, one guardian's only.
+    family_notice_add($gid, 'announcement', 'A-1', 'Closed on Saturday', 'Public holiday.', 'Egbeda desk');
+    family_reports_run(substr($now, 0, 7) . '-02');
+    $ib = backend_dispatch('family.inbox', ['guardianId' => $gid]);
+    $rep = array_values(array_filter($ib['rows'] ?? [], fn($r) => $r['cat'] === 'report'))[0] ?? null;
+    chk('family v3: the monthly report lands in the inbox, about the child, asking for a signature', $rep && $rep['sign'] === true && $rep['wardLinkId'] === $lid);
+    chk('family v3: …once, however often the job runs', family_reports_run(substr($now, 0, 7) . '-02')['made'] === 0);
+    chk('family v3: the inbox filters by category', count(backend_dispatch('family.inbox', ['guardianId' => $gid, 'cat' => 'report'])['rows']) >= 1
+        && !array_filter(backend_dispatch('family.inbox', ['guardianId' => $gid, 'cat' => 'report'])['rows'], fn($r) => $r['cat'] !== 'report'));
+    $ann = array_values(array_filter($ib['rows'], fn($r) => $r['cat'] === 'centre'))[0] ?? null;
+    chk('family v3: a notice that asks for no signature cannot be signed', (backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $ann['id'] ?? ''])['error'] ?? '') === 'not_signable');
+    chk('family v3: signing a report is idempotent', !empty(backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $rep['id']])['ok']) && !empty(backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $rep['id']])['already']));
+    chk('family v3: another guardian cannot sign this family\'s report', (backend_dispatch('family.report.sign', ['guardianId' => 'GDN-0000000000', 'id' => $rep['id']])['error'] ?? '') === 'not_found');
+
+    // Events and RSVPs: the family's own answer.
+    $day = gmdate('Y-m-d', time() + 5 * 86400);
+    db_insert('events', ['eventId' => 'EV-FA-1', 'title' => 'Parent forum', 'kind' => 'forum', 'startAt' => $day . 'T14:00:00', 'centre' => 'Egbeda', 'status' => 'published', 'familiesExpected' => 1]);
+    db_insert('events', ['eventId' => 'EV-FA-2', 'title' => 'No class', 'kind' => 'closure', 'startAt' => $day . 'T09:00:00', 'centre' => 'Egbeda', 'status' => 'published']);
+    db_insert('events', ['eventId' => 'EV-FA-3', 'title' => 'Elsewhere', 'kind' => 'forum', 'startAt' => $day . 'T09:00:00', 'centre' => 'Ikeja', 'status' => 'published']);
+    $ev = backend_dispatch('family.events', ['guardianId' => $gid]);
+    $ids = array_column($ev['rows'] ?? [], 'id');
+    chk('family v3: events at this family\'s centres only, expected ones marked', in_array('EV-FA-1', $ids, true) && !in_array('EV-FA-3', $ids, true)
+        && (array_values(array_filter($ev['rows'], fn($r) => $r['id'] === 'EV-FA-1'))[0]['expected'] ?? false) === true);
+    chk('family v3: an RSVP is yes or no, and a closure takes none', !empty(backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-1', 'answer' => 'yes'])['ok'])
+        && (backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-2', 'answer' => 'yes'])['error'] ?? '') === 'closed'
+        && (backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-1', 'answer' => 'maybe'])['error'] ?? '') === 'bad_answer');
+    chk('family v3: …and it is the family\'s row, not the child\'s', (backend_dispatch('family.events', ['guardianId' => $gid])['rsvp']['EV-FA-1'] ?? '') === 'yes'
+        && !db_row("SELECT 1 FROM event_rsvps WHERE eventId = 'EV-FA-1'"));
+
+    // Meeting the mentor: a free time, claimed once.
+    $at = gmdate('Y-m-d', time() + 4 * 86400) . 'T14:15';
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-1', 'mentorId' => 'MTR-FA', 'startAt' => $at, 'mode' => 'centre', 'createdAt' => $now]);
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-2', 'mentorId' => 'MTR-FA', 'startAt' => gmdate('Y-m-d', time() + 6 * 86400) . 'T10:00', 'mode' => 'phone', 'createdAt' => $now]);
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-X', 'mentorId' => 'MTR-OTHER', 'startAt' => $at, 'mode' => 'centre', 'createdAt' => $now]);
+    chk('family v3: the mentor\'s free times are offered', count(backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['mentorSlots'] ?? []) === 2);
+    chk('family v3: another mentor\'s time cannot be booked', (backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-X'])['error'] ?? '') === 'slot_taken');
+    $bk = backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-1']);
+    $bk2 = backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-2']);
+    chk('family v3: booking another time frees the first', !empty($bk['ok']) && !empty($bk2['ok'])
+        && (string)db_row("SELECT bookedBy FROM mentor_slots WHERE slotId = 'SLOT-FA-1'")['bookedBy'] === ''
+        && (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['meeting']['slotId'] ?? '') === 'SLOT-FA-2');
+    chk('family v3: a taken time cannot be taken again', (backend_dispatch('family.mentor.book', ['guardianId' => 'GDN-0000000000', 'linkId' => $lid, 'slotId' => 'SLOT-FA-2'])['error'] ?? '') === 'not_found');
+
+    // The new request kinds.
+    chk('family v3: a question for the mentor is a request, with a minimum', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'hm'])['error'] ?? '') === 'need_reason'
+        && !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'How can I help with reading?'])['ok']));
+    chk('family v3: an absence needs no reason from a parent', !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05'])['ok']));
+    chk('family v3: collectors are changed by the desk, and a scoped admin elsewhere cannot', !empty(backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-ADM', 'memberId' => 'NGG-FA-KID', 'collectors' => [['name' => 'Ada Obi', 'relation' => 'Grandmother', 'phone' => '0803 111 2222']]])['ok'])
+        && (backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-SCOPED', 'memberId' => 'NGG-FA-KID'])['error'] ?? '') === 'out_of_scope'
+        && ($w = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])) && count($w['collectors']) === 1 && $w['collectors'][0]['name'] === 'Ada Obi');
+    db_exec("DELETE FROM mentor_slots WHERE slotId LIKE 'SLOT-FA-%'");
+    db_exec("DELETE FROM events WHERE eventId LIKE 'EV-FA-%'");
+    db_exec("DELETE FROM guardian_rsvps WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM guardian_notices WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM member_collectors WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentor_scorecards WHERE subjectId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MTR-FA'");
+    db_exec("DELETE FROM growth_plans WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM plan_acks WHERE planId = 'GP-FA-1'");
+    db_exec("DELETE FROM results_uploads WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM results_log WHERE memberId LIKE 'NGG-FA-%'");
+
     // The desk: scope per row, a reason to refuse, one audit event per run.
     chk('family: a scoped admin cannot approve outside their centres', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-SCOPED', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId']]])['results'][0]['error'] ?? '') === 'out_of_scope');
     chk('family: refusing needs a reason', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'refuse', 'linkIds' => [$ask['link']['linkId']]])['error'] ?? '') === 'need_reason');

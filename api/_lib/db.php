@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 179;
+const NGG_SCHEMA_TARGET = 180;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5246,6 +5246,39 @@ function db_migrate(PDO $db): void {
            not a thing a list of materials can say. */
         179 => "
             ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT NOT NULL DEFAULT '';
+        ",
+        /* Family Portal v3 (domain/family.php). The inbox learns what a notice
+         * is (a report, an alert, a word from the centre), which child it is
+         * about and whether it asks for a signature; a family answers an event
+         * on its own row, not as a member's RSVP; a mentor publishes times a
+         * family may book; and the centre keeps the list of who may collect a
+         * child, which a family reads but cannot write. */
+        180 => "
+            ALTER TABLE guardian_notices ADD COLUMN cat TEXT NOT NULL DEFAULT 'centre';
+            ALTER TABLE guardian_notices ADD COLUMN memberId TEXT NOT NULL DEFAULT '';
+            ALTER TABLE guardian_notices ADD COLUMN sign INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE guardian_notices ADD COLUMN signedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE events ADD COLUMN familiesExpected INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE IF NOT EXISTS guardian_rsvps (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              guardianId TEXT NOT NULL, eventId TEXT NOT NULL, answer TEXT NOT NULL DEFAULT 'yes',
+              reminded INTEGER NOT NULL DEFAULT 0, updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_grsvp_one ON guardian_rsvps(guardianId, eventId);
+            CREATE TABLE IF NOT EXISTS mentor_slots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              slotId TEXT NOT NULL UNIQUE, mentorId TEXT NOT NULL, startAt TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'centre',
+              bookedBy TEXT NOT NULL DEFAULT '', memberId TEXT NOT NULL DEFAULT '', bookedAt TEXT NOT NULL DEFAULT '',
+              reminded INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mslot_mentor ON mentor_slots(mentorId, startAt);
+            CREATE INDEX IF NOT EXISTS idx_mslot_member ON mentor_slots(memberId, startAt);
+            CREATE TABLE IF NOT EXISTS member_collectors (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, name TEXT NOT NULL, relation TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mcoll_member ON member_collectors(memberId);
         ",
     ];
 

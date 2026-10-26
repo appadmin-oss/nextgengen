@@ -44,6 +44,13 @@ const MEMBER_REQUEST_KINDS = [
        child sent — "something happened at school" — was refused. Raised only
        through member_feedback_create(), never member_request_create(). */
     'feedback' => 'Idea or feedback',
+    /* Raised by a parent through the family account only (FAMILY_REQUEST_KINDS):
+       a question for the mentor, a change to the family's own details, and a
+       change to who may collect the child. Profile and collectors are
+       read-only to a family, so these are how they change. */
+    'askmentor'     => 'Question for the mentor',
+    'familydetails' => 'Change family details',
+    'collect'       => 'Change who can collect',
 ];
 
 /** What a piece of feedback is about, and what the desk sees for each. */
@@ -323,10 +330,11 @@ function member_request_create(array $p): array
         if ($row['toDate'] !== '' && $row['toDate'] < $row['fromDate']) [$row['fromDate'], $row['toDate']] = [$row['toDate'], $row['fromDate']];
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, so the desk can answer without asking.'];
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
-    } elseif (in_array($kind, ['details', 'mentor', 'help'], true)) {
-        if (mb_strlen($body) < 6) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
+    } elseif (in_array($kind, ['details', 'mentor', 'help', 'askmentor', 'familydetails', 'collect'], true)) {
+        if (mb_strlen($body) < (in_array($kind, ['askmentor', 'familydetails', 'collect'], true) ? 5 : 6)) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
             'details' => 'Say what is wrong and what it should be.', 'mentor' => 'Say what is not working, so the coordinator can help.',
-            'help' => 'Tell us what happened.'][$kind]];
+            'help' => 'Tell us what happened.', 'askmentor' => 'Write your question first.', 'familydetails' => 'Say what has changed.',
+            'collect' => 'Give the name, how they are related and their phone number.'][$kind]];
         if ($row['subject'] === '') $row['subject'] = MEMBER_REQUEST_KINDS[$kind];
     } elseif ($kind === 'appeal') {
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'An appeal needs the reason it is being appealed.'];

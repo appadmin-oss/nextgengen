@@ -42,7 +42,7 @@ const FAMILY_NOTIFY_KEYS = ['checkin', 'weekly', 'alerts'];
 const FAMILY_NOTIFY_DEFAULT = ['checkin' => true, 'weekly' => true, 'alerts' => true];
 /* The requests a guardian may raise for a ward. Not `payment`: an offline
    payment claim needs a verified receipt, and that path is the member's. */
-const FAMILY_REQUEST_KINDS = ['leave', 'appeal', 'idcard'];
+const FAMILY_REQUEST_KINDS = ['leave', 'appeal', 'idcard', 'askmentor', 'familydetails', 'collect'];
 const FAMILY_WEEKLY_BATCH = 40;
 
 function family_email_norm(string $e): string {
@@ -224,17 +224,13 @@ function family_notices_read(array $p): array {
     return ['ok' => true, 'unread' => (int)(db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = ? AND readAt = ''", [$gid])['c'] ?? 0)];
 }
 
-/** family.profile — the guardian's own name and phone. The email IS the sign-in, so it is not editable here. */
+/** family.profile — refused: a guardian's details are read-only to the family (403 read_only at the route). */
 function family_profile(array $p): array {
-    $gid = (string)($p['guardianId'] ?? '');
-    $name = trim(preg_replace('/\s+/', ' ', (string)($p['fullName'] ?? '')));
-    $phone = trim((string)($p['phone'] ?? ''));
-    if (mb_strlen($name) > 120) return ['ok' => false, 'error' => 'name_too_long'];
-    if ($phone !== '' && !preg_match('/^[+0-9 ()-]{7,24}$/', $phone)) return ['ok' => false, 'error' => 'bad_phone'];
-    db_update('guardians', ['fullName' => $name, 'phone' => $phone, 'updatedAt' => now_iso()], ['guardianId' => $gid]);
-    return family_me(['guardianId' => $gid]);
+    /* Read-only since Family Portal v3: family details are kept as they were
+       checked at registration, so reports, evaluations and alerts reach the
+       right person. A change is a `familydetails` request the desk decides. */
+    return ['ok' => false, 'error' => 'read_only', 'detail' => 'Your details can’t be edited here. Ask the centre to change them.'];
 }
-
 /**
  * family.ward.add — two ways in.
  *   code:   the child's Anchor code + a part of their name. The child gave the
@@ -381,8 +377,11 @@ function family_ward(array $p): array {
         'requests' => array_map('member_request_public', $reqs),
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
         'charges' => array_map(static fn($e) => ['entryId' => (string)$e['entryId'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'createdAt' => (string)$e['createdAt']],
-            db_all("SELECT entryId, note, amount, createdAt FROM member_ledger WHERE memberId = ? AND direction = 'debit' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 10", [$mid])),
-    ];
+            /* 'charge', which is what the ledger writes. This read said 'debit' and so
+               offered a parent nothing to appeal, ever. The training place is not a
+               bill (FEES_SPEC_v2 §4), so it is not offered either. */
+            db_all("SELECT entryId, note, amount, createdAt FROM member_ledger WHERE memberId = ? AND direction = 'charge' AND kind NOT IN ('training', 'writeoff') AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 10", [$mid])),
+    ] + (function_exists('family_v3_ward') ? family_v3_ward($m, $gid) : []);
 }
 
 /**
@@ -397,7 +396,10 @@ function family_request_create(array $p): array {
     $kind = (string)($p['kind'] ?? '');
     if (!in_array($kind, FAMILY_REQUEST_KINDS, true)) return ['ok' => false, 'error' => 'unknown_kind'];
     $g = db_row('SELECT fullName, email FROM guardians WHERE guardianId = ? LIMIT 1', [$gid]);
-    return member_request_create([
+    /* A parent telling the centre about an absence need not say why (the
+       handoff's sheet marks it optional); the desk's queue still shows a line. */
+    if ($kind === 'leave' && trim((string)($p['body'] ?? '')) === '') $p['body'] = 'No reason given.';
+    $res = member_request_create([
         'memberId' => (string)$l['memberId'], 'kind' => $kind,
         'subject' => (string)($p['subject'] ?? ''), 'body' => (string)($p['body'] ?? ''),
         'fromDate' => (string)($p['fromDate'] ?? ''), 'toDate' => (string)($p['toDate'] ?? ''),
@@ -405,6 +407,16 @@ function family_request_create(array $p): array {
         'raisedBy' => 'guardian:' . $gid,
         'raisedByName' => trim((string)($g['fullName'] ?? '')) !== '' ? (string)$g['fullName'] : 'A parent (' . mask_email((string)($g['email'] ?? '')) . ')',
     ]);
+    /* A question for the mentor reaches the mentor, not only the desk's queue
+       (the centre lead can read it there). */
+    if (!empty($res['ok']) && $kind === 'askmentor' && function_exists('results_mentor_of')) {
+        $mentor = results_mentor_of((string)$l['memberId']);
+        $child = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
+        if ($mentor && (string)($mentor['mentorMember'] ?? '') !== '') notify_people([['memberId' => (string)$mentor['mentorMember']]], ['kind' => 'mentor',
+            'title' => 'A question from ' . mp_first((string)($child['fullName'] ?? '')) . '’s family', 'intro' => trim((string)($p['body'] ?? '')),
+            'body' => 'Reply from the requests queue; the family sees it in their account.', 'linkPage' => 'mentor', 'ctaPath' => '/mentor/ngg', 'ctaLabel' => 'Open the mentor portal →']);
+    }
+    return $res;
 }
 
 /** family.request.withdraw — only one this guardian raised, only while open. */

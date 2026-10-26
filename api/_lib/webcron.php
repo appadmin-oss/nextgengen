@@ -300,6 +300,14 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.weekly', $e->getMessage()); }
     }
 
+    /* Family Portal v3: the monthly report (inbox, to sign) on the first days
+     * of a month, and the event and mentor-meeting reminders. Both are keyed
+     * so a 15-minute tick sends each one once (domain/family-portal.php). */
+    if (function_exists('family_reports_run')) {
+        try { family_reports_run(); family_reminders_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
+    }
+
     /* The Monday quote mail — once per member per week, drained in batches. */
     if (function_exists('qotw_mail_run')) {
         try { qotw_mail_run(); }

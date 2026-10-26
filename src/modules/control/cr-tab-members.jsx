@@ -151,8 +151,11 @@ function crBulkSummary(r, verb) {
 }
 
 async function crMemOpen(ctx, memberId) {
-  let d;
-  try { d = (await NGGApi.admin.memberDetail(memberId)).detail; }
+  let d, coll = null;
+  try {
+    const [r, c] = await Promise.all([NGGApi.admin.memberDetail(memberId), NGGApi.admin.families.collectors(memberId).catch(() => null)]);
+    d = r.detail; coll = c ? c.collectors || [] : null;
+  }
   catch (e) { ctx.toast(crErr(e, "Couldn’t open that record."), null, true); return; }
   const m = d.member || {}, data = ctx.data || {};
   const div = (data.divisions || []).find(x => x.id === m.division);
@@ -166,13 +169,34 @@ async function crMemOpen(ctx, memberId) {
     sections: [
       { h: "Parent or guardian", rows: [["Name", m.parentName], ["Phone", m.parentPhone], ["Email", m.parentEmail]] },
       { h: "Mentor", rows: [["Mentor", d.mentor ? d.mentor.fullName : "None assigned"]] },
+      /* Read by the family app and changed only here: a parent asks (a "Change
+         who can collect" request) and the desk checks it before saving. */
+      coll && m.type !== "Summer" ? { h: "Who can collect", rows: coll.length ? coll.map(c => [c.name, [c.relation, c.phone].filter(Boolean).join(" · ")]) : [["", "Nobody listed yet."]] } : null,
       m.notes ? { h: "Staff notes", text: m.notes } : null,
     ],
     actions: [
       { l: "Edit", primary: true, run: () => crMemEdit(ctx, m) },
       { l: "Correct the join date", run: () => crMemJoinDate(ctx, m) },
+      coll && m.type !== "Summer" ? { l: "Who can collect…", run: () => crMemCollectors(ctx, m, coll) } : null,
       { l: "Open full record", run: () => { ctx.closeDrawer(); ctx.setSub(m.memberId); } },
-    ],
+    ].filter(Boolean),
+  });
+}
+
+/** Who may collect a member, one per line as "Name, relation, phone". Up to eight; the desk checks ID at collection. */
+function crMemCollectors(ctx, m, list) {
+  ctx.closeDrawer();
+  ctx.form({
+    title: "Who can collect " + (m.fullName || "this member"), submit: "Save the list", busyLabel: "Saving…",
+    intro: "One person per line: name, how they are related, phone. Their family sees this list and cannot change it.",
+    values: { lines: (list || []).map(c => [c.name, c.relation, c.phone].filter(Boolean).join(", ")).join("\n") },
+    fields: [{ id: "lines", l: "People", type: "textarea", rows: 6, ph: "Kemi Bello, aunt, 0813 000 0000",
+      check: v => String(v).split("\n").filter(x => x.trim()).length > 8 ? "Eight people at most." : "" }],
+    onSubmit: async v => {
+      const rows = String(v.lines || "").split("\n").map(x => x.trim()).filter(Boolean).map(x => { const p = x.split(",").map(y => y.trim()); return { name: p[0] || "", relation: p[1] || "", phone: p.slice(2).join(", ") }; });
+      return NGGApi.admin.families.collectorsSet(m.memberId, rows);
+    },
+    done: (v, r) => "Saved · " + crPlural(((r && r.collectors) || []).length, "person") + " can collect " + (m.fullName || "them") + ".",
   });
 }
 

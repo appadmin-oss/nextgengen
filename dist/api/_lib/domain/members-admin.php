@@ -305,6 +305,9 @@ function member_merge_policy(): array {
         'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',
         'guardian_wards'         => 'MOVE',           // a parent's link follows the child
+        'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
+        'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
+        'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child
         'circle_confirmations'   => 'MOVE',
         'circle_remarks'         => 'MOVE',
         'post_comments'          => 'MOVE',

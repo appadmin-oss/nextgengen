@@ -745,6 +745,22 @@
        hands back the image inline when there is not. Never fails because
        Cloudinary is unconfigured. */
     uploadOrInline: uploadOrInline,
+    /* A photo of a document (a school report) as a data URL, at the size the
+       'proof' preset uses: every score on it has to stay readable, which the
+       1000px inline size does not promise. Never above 3.5MB of base64, the
+       most the family piece store takes (80 pieces). */
+    documentToDataUrl: async (file) => {
+      let out = file;
+      try { const tools = await ensureImageTools(); const prep = await tools.prepare(file, SHRINK.proof); if (!prep.skipped && prep.blob) out = prep.blob; } catch (_) {}
+      let url = typeSendable(out && out.type) ? await blobToDataUrl(out) : '';
+      for (const step of [{ maxPx: 2000, quality: 0.8 }, { maxPx: 1600, quality: 0.74 }, { maxPx: 1300, quality: 0.7 }]) {
+        if (url && url.length <= 3500000 && /^data:image\/(jpeg|png|webp);/.test(url)) break;
+        const shrunk = await canvasShrink(file, step.maxPx, step.quality, 320);
+        if (!shrunk) break;
+        url = await blobToDataUrl(shrunk);
+      }
+      return url;
+    },
     /* Act as one of the person's own roles ('instructor') while a portal is open; '' clears it. */
     setPortalAs: (v) => { portalAs = v === 'instructor' ? 'instructor' : ''; },
     // Exposed for the browser test: the no-network fallback shrink, which
@@ -1263,6 +1279,25 @@
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
       pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
+      inbox:    (cat, cursor) => request('/family/inbox.php' + qs({ cat: cat || '', cursor: cursor || '' })),
+      events:   () => request('/family/events.php'),
+      /* A photo of a school report, stored in pieces under the family's own
+         cookie (a member's piece store refuses a family session). Answers the
+         stored URL; family.results.upload then takes only that. */
+      uploadReport: async (dataUrl, onPart) => {
+        const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl || '');
+        if (!m) throw Object.assign(new Error('bad_type'), { code: 'bad_type' });
+        const PIECE = 60000, b64 = m[2], total = Math.ceil(b64.length / PIECE);
+        if (total > 80) throw Object.assign(new Error('too_large'), { code: 'too_large' });
+        const bytes = new Uint8Array(12); window.crypto.getRandomValues(bytes);
+        const uploadId = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        let last = null;
+        for (let i = 0; i < total; i++) {
+          last = await request('/family/upload-chunk.php', { body: { uploadId, index: i, total, mime: m[1], data: b64.slice(i * PIECE, (i + 1) * PIECE) }, timeout: 60000 });
+          if (onPart) onPart((i + 1) / total);
+        }
+        return { url: last && last.url, mime: m[1], size: Math.floor(b64.length * 3 / 4) };
+      },
     },
     admin: {
       /* The accounts desk: who cannot sign in, and the members behind each
@@ -1363,6 +1398,9 @@
       families: {
         list:   (q) => request('/admin/families.php' + qs(q || {})),
         decide: (action, linkIds, note) => request('/admin/families.php', { body: { action, linkIds, note: note || '' } }),
+        /* Who may collect one member: read by their family, written only here. */
+        collectors:    (memberId) => request('/admin/families.php' + qs({ collectors: memberId })),
+        collectorsSet: (memberId, collectors) => request('/admin/families.php', { body: { action: 'collectors', memberId, collectors } }),
       },
       requests: {
         list:   (q) => request('/admin/requests.php' + qs(q || {})),

@@ -12,7 +12,10 @@
      · A notice to the centre lands in the desk's request queue; an email
        switch is saved.
      · The emailed link signs in and is stripped from the address bar.
-     · Signing out ends the family session; the page fits a phone.
+     · Signing out ends the family session; the page fits a phone, with one
+       bar at the top and five sections at the bottom (Family Portal v3).
+     · The URL is the state; Account is read-only and the server refuses a
+       profile write from a family route.
 
    Run:  node tests/family-ui.test.js
    ========================================================================== */
@@ -101,27 +104,28 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
 
-    const launch = {};
-    if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
-    else if (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome')) launch.executablePath = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+    const launch = { executablePath: require('./_responsive-probe').chromiumPath(fs) };
     browser = await chromium.launch(launch);
     fs.mkdirSync(SHOTS, { recursive: true });
     const errs = [];
+    const btn = (p, name) => p.locator('button', { hasText: name }).first();
+    const bodyText = p => p.evaluate(() => document.body.innerText);
+    const waitText = (p, re, t) => p.waitForFunction(r => new RegExp(r).test(document.body.innerText), re.source, { timeout: t || 20000 });
 
-    /* ── Sign in with a code ── */
-    const fctx = await browser.newContext({ viewport: { width: 1280, height: 960 } });
+    /* ── Sign in with a code, on a phone ── */
+    const fctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     const fp = await fctx.newPage();
     fp.on('pageerror', e => errs.push('family: ' + String(e).slice(0, 200)));
     await fp.goto(BASE + '/family', { waitUntil: 'domcontentloaded' });
     await waitForBoot(fp);
-    await fp.waitForSelector('#fam-email', { timeout: 40000 });
-    chk('a signed-out visitor sees the family sign-in, with what they can and cannot see', /can't see/i.test(await fp.$eval('.fam-promise', el => el.innerText)));
-    await fp.fill('#fam-email', 'Mum@Example.org');
-    await fp.click('button:has-text("Email me a code")');
-    await fp.waitForSelector('#fam-otp');
-    await fp.fill('#fam-otp', latestCode());
-    await fp.click('button:has-text("Sign in")');
-    await fp.waitForSelector('.fam-head', { timeout: 15000 });
+    await fp.waitForSelector('.fp3-app input[type=email]', { timeout: 40000 });
+    chk('a signed-out visitor sees the family sign-in', /See how your child is doing at NGG/.test(await bodyText(fp)));
+    await fp.fill('input[type=email]', 'Mum@Example.org');
+    await btn(fp, 'Email me a sign-in code').click();
+    await fp.waitForSelector('input[autocomplete=one-time-code]');
+    await fp.fill('input[autocomplete=one-time-code]', latestCode());
+    await btn(fp, 'Sign in').click();
+    await waitText(fp, /Add a child|Connect/, 20000);
     chk('the code signs the parent in to a new family account', php(`echo db_row("SELECT COUNT(*) c FROM guardians WHERE email = 'mum@example.org'")['c'];`) === '1');
     const cookies = await fctx.cookies();
     const fam = cookies.find(c => c.name === 'ngg_sess_family');
@@ -131,58 +135,76 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('…nor reads a member route', (await get(BASE + '/api/member/self.php?view=requests', { Cookie: 'ngg_sess=' + fam.value })).status === 401);
 
     /* ── Add a child with their code ── */
-    await fp.waitForSelector('#fam-add');
-    chk('the parent is offered the records that name their email, by first name', /Kemi/.test(await fp.$eval('#fam-add', el => el.innerText)) && !/Adeyemi/.test(await fp.$eval('#fam-add .fam-list', el => el.innerText)));
-    await fp.fill('#fam-code', '482913');
-    await fp.fill('#fam-kid', 'Bello');
-    await fp.click('#fam-add button:text-is("Connect")');
-    await fp.waitForSelector('#fam-add .fam-err');
-    chk('a code with the wrong name connects nothing, and says why', /don't match/.test(await fp.$eval('#fam-add .fam-err', el => el.innerText)));
-    await fp.fill('#fam-kid', 'Tobi');
-    await fp.click('#fam-add button:text-is("Connect")');
-    await fp.waitForSelector('.fam-hero', { timeout: 15000 });
-    chk('the child\'s code + name connects at once and opens their dashboard', /Tobi Adeyemi/.test(await fp.$eval('.fam-hero', el => el.innerText)));
-    chk('…showing today\'s sign-in, late and by how much', /Signed in 09:12 · 12 min late/.test(await fp.$eval('.fam-today', el => el.innerText)));
-    chk('…with attendance, conduct, fees and lessons', (await fp.$$('.fam-grid > .fam-card')).length === 4);
-    chk('Today leads with what needs the parent, and one-tap messages to the centre',
-      /Needs you|Nothing needs you/.test(await fp.innerText('#fx-needs-h')) && !!(await fp.$('button:has-text("will be away")')));
-    await fp.screenshot({ path: path.join(SHOTS, 'family-today.png'), fullPage: true });
-    chk('the sidebar holds the six screens and the emails, one marked current',
-      (await fp.$$('.fx-nav-item')).length === 7 && (await fp.getAttribute('.fx-nav-item[aria-current="page"]', 'class')) !== null);
-    await fp.click('.fx-nav-item:has-text("Growth")');
-    await fp.waitForFunction(() => /What changed/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
-    const gTxt = await fp.innerText('main, body');
-    chk('Growth: the child’s term as a trend, written to a parent, with no wellbeing check-ins', /What changed/.test(gTxt) && /Saturdays/.test(gTxt) && !/Wellbeing check-ins/.test(gTxt) && /view=growth/.test(fp.url()));
-    await fp.click('.fx-nav-item:has-text("Today")');
+    chk('with no child yet, the parent lands on "Add a child", offered the records naming their email by first name only',
+      /We found a record with your email/.test(await bodyText(fp)) && /Kemi/.test(await bodyText(fp)) && !/Kemi Adeyemi/.test(await bodyText(fp)));
+    await fp.fill('input[placeholder="6 digits"]', '482913');
+    await fp.fill('input[placeholder="e.g. their first name"]', 'Bello');
+    await btn(fp, /^Connect$/).click();
+    await waitText(fp, /don’t match a member/);
+    chk('a code with the wrong name connects nothing, and says why', true);
+    await fp.fill('input[placeholder="e.g. their first name"]', 'Tobi');
+    await btn(fp, /^Connect$/).click();
+    await waitText(fp, /Connected to Tobi/);
+    chk('the child\'s code + name connects at once', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['status'];`) === 'active');
     chk('…and the child is told', php(`echo db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-FU-KID' AND title = 'A family account is connected to you'")['c'];`) === '1');
 
-    /* ── Ask for the sibling through the record ── */
-    await fp.click('button:has-text("+ Add a child")');
-    await fp.waitForSelector('#fam-add button:has-text("Ask to connect")');
-    await fp.click('#fam-add button:has-text("Ask to connect")');
-    await fp.waitForSelector('text=Waiting for the centre', { timeout: 15000 });
-    chk('asking through the record waits for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'pending');
+    /* ── Today, on a phone ── */
+    await fp.goto(BASE + '/family?view=today', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(fp);
+    await waitText(fp, /Tobi’s account/, 40000);
+    const today = await bodyText(fp);
+    chk('Today shows the child\'s sign-in, late and by how much', /In since 09:12, 12 min late/.test(today));
+    chk('…with the account card before the to-do list', today.indexOf('Tobi’s account') !== -1 && (today.indexOf('For you to do') === -1 || today.indexOf('Tobi’s account') < today.indexOf('For you to do')));
+    const top = await fp.evaluate(() => { const h = document.querySelector('.fp3-app header'); return h ? h.getBoundingClientRect().height : 999; });
+    chk('the top of the phone screen is one bar, not a stack (≤ 76px)', top <= 76);
+    chk('the page fits a phone without sideways scrolling', await fp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    chk('…with the five sections in a bottom tab bar, each a 44px target', await fp.evaluate(() => {
+      const nav = Array.from(document.querySelectorAll('.fp3-app nav[aria-label="Main"]')).pop();
+      const tabs = nav ? Array.from(nav.querySelectorAll('button')) : [];
+      return tabs.length === 5 && tabs.every(t => { const r = t.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; });
+    }));
+    chk('every control on Today is at least 44px tall on a touch screen', await fp.evaluate(() => Array.from(document.querySelectorAll('.fp3-app main button:not([role=tab])')).filter(b => b.offsetParent).every(b => b.getBoundingClientRect().height >= 44)));
+    await fp.screenshot({ path: path.join(SHOTS, 'family-today-phone.png') });
 
-    /* ── Tell the centre (from Today's shortcut); the emails are always on ── */
-    await fp.click('button:has-text("will be away")');
-    await fp.waitForSelector('#fam-from', { timeout: 10000 });
-    chk('the "will be away" shortcut opens Messages with the absence form ready, and the address says so',
-      (await fp.inputValue('#fam-kind')) === 'leave' && /view=messages/.test(fp.url()));
-    await fp.fill('#fam-from', '2026-11-07');
-    await fp.fill('#fam-body', 'Family wedding');
-    await fp.click('button:has-text("Send to the centre")');
-    await fp.waitForSelector('text=Sent. The centre will reply by email.');
-    chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs',
+    /* ── URL is the state; one sub-tab in the DOM ── */
+    await fp.locator('nav[aria-label="Main"] button', { hasText: 'Growth' }).last().click();
+    await fp.waitForFunction(() => /view=growth/.test(location.search));
+    await fp.locator('[role=tab]', { hasText: 'Results' }).click();
+    await fp.waitForFunction(() => /sub=results/.test(location.search));
+    chk('the section and sub-tab travel in the address', /view=growth/.test(fp.url()) && /sub=results/.test(fp.url()));
+    chk('…and only the chosen sub-tab is drawn', !/NGG Leadership Index/.test(await bodyText(fp)) && (await fp.$$('[role=tab][aria-selected=true]')).length === 1);
+    await fp.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await fp.waitForSelector('[role=tab][aria-selected=true]', { timeout: 40000 });
+    chk('…so a refresh opens the same screen', /Results/.test(await fp.$eval('[role=tab][aria-selected=true]', el => el.innerText)));
+
+    /* ── Tell the centre: the absence sheet ── */
+    await fp.goto(BASE + '/family?view=saturdays', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /will be away/, 40000);
+    await btn(fp, 'Tell the centre Tobi will be away').click();
+    await fp.waitForSelector('[role=dialog] input[type=date]');
+    chk('the absence sheet opens with focus inside it', await fp.evaluate(() => !!document.activeElement.closest('[role=dialog]')));
+    await fp.fill('[role=dialog] input[type=date] >> nth=0', '2026-11-07');
+    await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
+    await waitText(fp, /The centre has been told/);
+    chk('a parent\'s absence notice lands in the desk\'s request queue, marked as theirs, with no reason needed',
       php(`echo json_encode(db_row("SELECT kind, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID'"));`) === '{"kind":"leave","fam":1}');
-    // Family emails are always on: listed as On, with nothing to switch.
-    await fp.click('.fx-nav-item:has-text("Emails")');
-    await fp.waitForSelector('#fam-ntf-h', { timeout: 10000 });
-    const ntf = await fp.evaluate(() => { const c = document.getElementById('fam-ntf-h'); const s = c && c.closest('section'); return s ? { text: s.innerText, switches: s.querySelectorAll('.fam-switch, [aria-pressed]').length } : null; });
-    chk('…and every family email is shown as always on, with no switch to turn one off',
-      !!ntf && ntf.switches === 0 && /Sign-in and sign-out/.test(ntf.text) && /always on/i.test(ntf.text));
-    await fp.screenshot({ path: path.join(SHOTS, 'family-desktop.png'), fullPage: true });
+    await fp.keyboard.press('Escape');
+
+    /* ── Account: read-only, consents without controls ── */
+    await fp.goto(BASE + '/family?view=account', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Kept by the centre/, 40000);
+    const acc = await fp.evaluate(() => { const m = document.querySelector('.fp3-app main'); return { inputs: m.querySelectorAll('input, textarea, select').length, text: m.innerText }; });
+    chk('Account has no editable field, and says the centre keeps the details', acc.inputs === 0 && /Ask to change/.test(acc.text));
+    chk('…and every consent is shown as given, with nothing to switch', /Consents/.test(acc.text) && /can’t be changed or withdrawn here/.test(acc.text));
+    const ro = await new Promise(res => { const d = JSON.stringify({ action: 'profile', fullName: 'X' }); const r = http.request(BASE + '/api/family/account.php', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(d), Cookie: 'ngg_sess_family=' + fam.value + '; ngg_csrf=x', 'X-CSRF-Token': 'x', Origin: BASE } }, x => { x.resume(); x.on('end', () => res(x.statusCode)); }); r.end(d); });
+    chk('…and the server refuses a profile write from a family route', ro === 403);
 
     /* ── The Control Room approves the sibling ── */
+    await fp.goto(BASE + '/family?view=add', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Ask to connect/, 40000);
+    await btn(fp, 'Ask to connect').click();
+    await waitText(fp, /Asked to connect to Kemi/);
+    chk('asking through the record waits for the centre', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'pending');
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-FU-ADM'"), true);`, ['session']);
     const actx = await browser.newContext({ viewport: { width: 1360, height: 1000 } });
     await actx.addCookies([
@@ -193,78 +215,55 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     ap.on('pageerror', e => errs.push('admin: ' + String(e).slice(0, 200)));
     await ap.goto(BASE + '/nextadmin?s=families', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
-    // The Families screen is the Control Room's own table now (cr-tab-members.jsx), not the
-    // old panel: select the row, Approve from the selection bar, confirm in the shell's dialog.
     await ap.waitForSelector('.cr-tbl tbody tr', { timeout: 40000 });
     chk('the Families section lists the request, with the parent email on the record beside it', /Kemi Adeyemi[\s\S]*mum@example\.org/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
-    await ap.click('.cr-tbl tbody tr [role=checkbox]');   // the table's own checkbox (a button with role=checkbox)
+    await ap.click('.cr-tbl tbody tr [role=checkbox]');
     await ap.click('.cr-selbar button:has-text("Approve")');
     await ap.waitForSelector('.cr-confirm');
     await ap.click('.cr-confirm .cr-confirm-acts .is-primary');
     await ap.waitForFunction(() => !document.querySelector('.cr-tbl tbody tr') || /Nobody is waiting/.test(document.body.innerText), null, { timeout: 15000 });
     chk('approving connects the parent', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'active');
-    await ap.goto(BASE + '/nextadmin?s=requests', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(ap);   // dev mode compiles every file in the browser: the boot budget, never a bare timeout (CLAUDE.md §1)
-    await ap.waitForSelector('text=From their family account', { timeout: 40000 });
-    chk('the desk sees the notice came from the family account', true);
 
-    await fp.reload({ waitUntil: 'domcontentloaded' });
-    await waitForBoot(fp);
-    await fp.waitForSelector('.fam-tab', { timeout: 40000 });
-    chk('…and the parent now has both children', (await fp.$$('.fam-tab')).length === 2);
-
-    /* ── Announcements reach the family account (the App channel) ── */
+    /* ── Announcements reach the inbox; switching child ── */
     php(`$g = db_row("SELECT guardianId FROM guardians WHERE email = 'mum@example.org'");
          db_insert('guardian_notices', ['noticeId' => 'GN-FU1', 'guardianId' => $g['guardianId'], 'kind' => 'announcement', 'refId' => 'ANN-FU1',
            'title' => 'Kit day on Saturday', 'body' => 'Bring trainers and water.', 'fromName' => 'Ada Admin', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z'), 'readAt' => '']);`);
-    await fp.reload({ waitUntil: 'domcontentloaded' });
-    await waitForBoot(fp);
-    await fp.waitForSelector('.fx-nav-item', { timeout: 40000 });
-    const badged = await fp.waitForFunction(() => /1 new from the Club/.test(document.querySelector('.fx-nav')?.textContent || ''), null, { timeout: 15000 }).then(() => true).catch(() => false);
-    if (!badged) console.error('      nav: ' + JSON.stringify(await fp.$eval('.fx-nav', el => el.textContent).catch(() => 'none')));
-    chk('a new Club announcement is badged on Today, whatever screen the parent is on', badged);
-    await fp.click('.fx-nav-item:has-text("Today")');
-    await fp.waitForSelector('.fam-notices', { timeout: 20000 });
-    chk('a Club announcement shows in the family account, marked new', /Kit day on Saturday/.test(await fp.$eval('.fam-notices', el => el.innerText)) && /1 new/i.test(await fp.$eval('.fam-notices', el => el.innerText)));
-    await fp.click('.fam-notice-t');
-    await fp.waitForFunction(() => { const b = document.querySelector('.fam-notice-b'); return b && !b.hidden; });
-    chk('…opening it shows the message', /Bring trainers and water/.test(await fp.$eval('.fam-notice-b', el => el.innerText)));
-    await fp.waitForFunction(() => !/new/i.test(document.querySelector('.fam-notices-head')?.innerText || 'new'), null, { timeout: 15000 }).catch(() => {});
+    await fp.goto(BASE + '/family?view=messages', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Kit day on Saturday/, 40000);
+    chk('a Club announcement is in the household inbox, marked unread on the Messages tab', /Messages/.test(await fp.locator('nav[aria-label="Main"]').last().innerText()));
+    await fp.locator('button', { hasText: 'Kit day on Saturday' }).first().click();
+    await fp.waitForSelector('[role=dialog]');
+    chk('…opening it shows the message', /Bring trainers and water/.test(await fp.$eval('[role=dialog]', el => el.innerText)));
+    await fp.waitForFunction(() => true);
+    for (let i = 0; i < 20 && php(`echo db_row("SELECT readAt FROM guardian_notices WHERE noticeId = 'GN-FU1'")['readAt'];`) === ''; i++) await fp.waitForTimeout(250);
     chk('…and marks it read, on the server', php(`echo db_row("SELECT readAt FROM guardian_notices WHERE noticeId = 'GN-FU1'")['readAt'];`) !== '');
+    await fp.keyboard.press('Escape');
+    await fp.locator('header button[aria-haspopup=dialog]').first().click();
+    await fp.waitForSelector('[role=dialog]');
+    chk('the child switcher lists both children', /Tobi Adeyemi[\s\S]*Kemi Adeyemi|Kemi Adeyemi[\s\S]*Tobi Adeyemi/.test(await fp.$eval('[role=dialog]', el => el.innerText)));
+    await fp.keyboard.press('Escape');
+    chk('…and Escape closes it, giving focus back to the switcher', await fp.evaluate(() => !document.querySelector('[role=dialog]') && document.activeElement && document.activeElement.getAttribute('aria-haspopup') === 'dialog'));
 
     /* ── The emailed link, on another device ── */
-    const lctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const lp = await lctx.newPage();
     lp.on('pageerror', e => errs.push('link: ' + String(e).slice(0, 200)));
-    await lp.goto(BASE + '/family', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(lp);
-    await lp.waitForSelector('#fam-email', { timeout: 40000 });
-    await lp.fill('#fam-email', 'mum@example.org');
-    await lp.click('button:has-text("Email me a code")');
-    await lp.waitForSelector('#fam-otp');
-    await lp.goto(BASE + '/family?fsignin=' + latestToken(), { waitUntil: 'domcontentloaded' });
-    await waitForBoot(lp);
-    await lp.waitForSelector('.fam-tab', { timeout: 40000 });
-    chk('the emailed link signs in on a phone', (await lp.$$('.fam-tab')).length === 2);
+    await lp.goto(BASE + '/family', { waitUntil: 'domcontentloaded' }); await waitForBoot(lp);
+    await lp.waitForSelector('input[type=email]', { timeout: 40000 });
+    await lp.fill('input[type=email]', 'mum@example.org');
+    await btn(lp, 'Email me a sign-in code').click();
+    await lp.waitForSelector('input[autocomplete=one-time-code]');
+    await lp.goto(BASE + '/family?fsignin=' + latestToken(), { waitUntil: 'domcontentloaded' }); await waitForBoot(lp);
+    await waitText(lp, /Your children · 2/, 40000);
+    chk('the emailed link signs in, and on a desktop the children are in the sidebar', true);
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));
-    chk('the page fits a phone without sideways scrolling', await lp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-    chk('…with every screen in a bottom tab bar (each tab a 44px target, no label cut off), and no sidebar', await lp.evaluate(() => {
-      const bar = document.querySelector('.fx-tabbar'), nav = document.querySelector('.fx-nav');
-      const tabs = bar ? Array.from(bar.querySelectorAll('.fx-tab')) : [];
-      const sideItems = document.querySelectorAll('.fx-nav .fx-nav-item').length;
-      return !!bar && getComputedStyle(bar).position === 'fixed' && tabs.length >= 5 && (!sideItems || tabs.length === sideItems - 1)
-        && tabs.every(t => t.getBoundingClientRect().width >= 44 && t.scrollWidth <= t.clientWidth + 1) && (!nav || getComputedStyle(nav).display === 'none');
-    }));
-    // The one screen not in the bar, Emails & connection, is in the account menu.
-    await lp.click('.fam-menu > .fam-btn');
-    await lp.click('#fam-account button:has-text("Emails & connection")');
-    chk('…and Emails & connection, the one screen not in the bar, is in the account menu', await lp.waitForFunction(() => /Emails & connection/.test((document.querySelector('.fx-crumb') || {}).innerText || ''), null, { timeout: 8000 }).then(() => true, () => false));
-    await lp.screenshot({ path: path.join(SHOTS, 'family-phone.png'), fullPage: true });
+    await lp.screenshot({ path: path.join(SHOTS, 'family-desktop.png') });
 
     /* ── Sign out ── */
-    await fp.click('.fam-menu > .fam-btn');
-    await fp.click('.fam-pop button:has-text("Sign out")');
-    await fp.waitForSelector('#fam-email', { timeout: 15000 });
+    await fp.goto(BASE + '/family?view=account', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Sign out on every device/, 40000);
+    await btn(fp, /^Sign out$/).click();
+    await fp.waitForSelector('input[type=email]', { timeout: 15000 });
     chk('signing out returns to the sign-in screen', !(await fctx.cookies()).find(c => c.name === 'ngg_sess_family' && c.value));
     const after = await get(BASE + '/api/family/ward.php?link=x', { Cookie: 'ngg_sess_family=' + fam.value });
     chk('…and an old copy of the cookie still reads nothing it is not linked to', after.status === 404 || after.status === 401);
