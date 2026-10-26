@@ -4244,4 +4244,65 @@ CREATE TABLE IF NOT EXISTS study_drills (
   KEY idx_drill_marked (memberId, markedAt)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS providers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  providerId VARCHAR(40) NOT NULL UNIQUE,
+  name VARCHAR(190) NOT NULL DEFAULT '',
+  slug VARCHAR(190) NOT NULL DEFAULT '',
+  country VARCHAR(80) NOT NULL DEFAULT '',
+  url VARCHAR(500) NOT NULL DEFAULT '',
+  free TINYINT NOT NULL DEFAULT 0,
+  costNote VARCHAR(255) NOT NULL DEFAULT '',
+  notes TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  position INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_prv_status (status, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS provider_awards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  awardId VARCHAR(40) NOT NULL UNIQUE,
+  providerId VARCHAR(40) NOT NULL DEFAULT '',
+  title VARCHAR(255) NOT NULL DEFAULT '',
+  kind VARCHAR(24) NOT NULL DEFAULT 'certificate',
+  level VARCHAR(80) NOT NULL DEFAULT '',
+  courses TEXT,
+  url VARCHAR(500) NOT NULL DEFAULT '',
+  examNote VARCHAR(500) NOT NULL DEFAULT '',
+  costNote VARCHAR(255) NOT NULL DEFAULT '',
+  free TINYINT NOT NULL DEFAULT 0,
+  validMonths INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  position INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_paw_provider (providerId, status, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS member_credentials (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  credId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  providerId VARCHAR(40) NOT NULL DEFAULT '',
+  awardId VARCHAR(40) NOT NULL DEFAULT '',
+  state VARCHAR(16) NOT NULL DEFAULT 'aiming',
+  grade VARCHAR(80) NOT NULL DEFAULT '',
+  credentialRef VARCHAR(190) NOT NULL DEFAULT '',
+  evidenceUrl VARCHAR(500) NOT NULL DEFAULT '',
+  awardedOn VARCHAR(32) NOT NULL DEFAULT '',
+  expiresOn VARCHAR(32) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(40) NOT NULL DEFAULT '',
+  note TEXT,
+  recordedBy VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_mcr_one (memberId, awardId),
+  KEY idx_mcr_state (state, awardedOn),
+  KEY idx_mcr_centre (centre, state),
+  KEY idx_mcr_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (183) ON DUPLICATE KEY UPDATE version = version;

@@ -77,6 +77,9 @@ function cleanup() {
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-LRN-M1','fullName'=>'Ada Learner','email'=>'lrn-m1@example.org','type'=>'NGG','status'=>'active','role'=>'member','track'=>'Piano','courses'=>json_encode(['Piano']),'centre'=>'Egbeda','createdAt'=>${now},'updatedAt'=>${now}]);`
+      /* A club admin holds `curriculum`, which is what writes the provider
+         registry and records a result against a member. */
+      + `db_insert('members', ['memberId'=>'NGG-LRN-ADM','fullName'=>'Lrn Admin','email'=>'lrn-adm@example.org','type'=>'NGG','status'=>'active','role'=>'club_admin','createdAt'=>${now},'updatedAt'=>${now}]);`
       /* Two lessons in one course, so "this week" has something to order and
          the course page has more than one row. */
       + `db_insert('curriculum_units', ['unitId'=>'LRN-U1','course'=>'Piano','level'=>'Year 1 · Foundation','week'=>1,'position'=>1,'title'=>'Finding middle C','summary'=>'Where the hands go.','status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode(['Find middle C']),'body'=>"## Warm-up\\n\\nSit tall. Press **middle C**.\\n",'durationMins'=>30,'createdAt'=>${now},'updatedAt'=>${now},'publishedAt'=>${now}]);`
@@ -222,6 +225,51 @@ function cleanup() {
     await W.waitForSelector('.lrn-card', { timeout: 60000 });
     chk('…and the week shows school WITH the Club lessons, not behind another tab',
       /school this week/i.test(await W.innerText('.lrn-main')) && /Mathematics/.test(await W.innerText('.lrn-main')));
+
+    /* ── Where the work leads ──────────────────────────────────────────────
+       A child who finishes a course should be able to see there is a
+       recognised certificate at the end of it, and say they are going for
+       it. What they must NOT be able to do is claim they hold one — that is
+       the centre's record of them (domain/providers.php). */
+    console.log('where the work leads');
+    php(`$p = backend_dispatch('admin.providers.save', ['requesterId' => 'NGG-LRN-ADM',
+            'data' => ['name' => 'Trinity College London', 'url' => 'https://www.trinitycollege.com/']]);
+         $a = backend_dispatch('admin.providers.award.save', ['requesterId' => 'NGG-LRN-ADM',
+            'data' => ['providerId' => $p['providerId'], 'title' => 'Graded Examination in Music',
+                       'kind' => 'graded_exam', 'level' => 'Grade 3', 'courses' => ['Piano']]]);
+         file_put_contents('${TMP.replace(/\\/g, '/')}/award.txt', $a['awardId']);`, ['bootstrap']);
+
+    const C = await open('/learn/course/piano');
+    await C.waitForSelector('.lrn-award', { timeout: 60000 });
+    chk('a course says where it leads, and names the body that awards it',
+      /Where this leads/i.test(await C.innerText('.lrn-main'))
+      && /Graded Examination in Music/.test(await C.innerText('.lrn-award'))
+      && /Trinity College London/.test(await C.innerText('.lrn-award')));
+    chk('…and offers no way to claim they hold it — their centre records that',
+      (await C.$$('.lrn-award-aim')).length === 1
+      && !/I (hold|have) (it|this)/i.test(await C.innerText('.lrn-main')));
+
+    await C.click('.lrn-award-aim');
+    await C.waitForFunction(() => {
+      const b = document.querySelector('.lrn-award-aim');
+      return b && /You're going for this/.test(b.innerText);
+    }, null, { timeout: 30000 });
+    chk('"I\'m going for this" is the member\'s own aim, recorded against them',
+      php(`echo (string)(db_row("SELECT state FROM member_credentials WHERE memberId = 'NGG-LRN-M1'")['state'] ?? '');`, ['bootstrap']) === 'aiming');
+
+    /* A result the CENTRE records shows as held, and on the week page —
+       a credential does not belong to the course it came from. */
+    php(`$aw = trim(file_get_contents('${TMP.replace(/\\/g, '/')}/award.txt'));
+         backend_dispatch('admin.providers.credential.set', ['requesterId' => 'NGG-LRN-ADM',
+            'memberId' => 'NGG-LRN-M1', 'data' => ['awardId' => $aw, 'state' => 'earned',
+            'awardedOn' => '2026-03-14', 'grade' => 'Merit']]);`, ['bootstrap']);
+    const H = await open('/learn');
+    await H.waitForSelector('.lrn-earned', { timeout: 60000 });
+    chk('a credential their centre recorded shows on the week, wherever it came from',
+      /1 credential/i.test(await H.innerText('.lrn-earned'))
+      && /Graded Examination in Music/.test(await H.innerText('.lrn-earned')));
+    await H.context().close();
+    await C.context().close();
     await W.context().close();
     await S.context().close();
     await P.context().close();

@@ -169,7 +169,7 @@ function LearnLessonCard({ u, showCourse }) {
 }
 
 /* ── This week ───────────────────────────────────────────────────────────── */
-function LearnWeek({ d, plan, onRetry }) {
+function LearnWeek({ d, plan, aw, onRetry }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your lessons"/>;
   const units = d.units || [];
   if (!units.length) return (
@@ -190,6 +190,15 @@ function LearnWeek({ d, plan, onRetry }) {
   const done = units.length - open.length;
   return (
     <div className="lrn-stack">
+      {aw && (aw.earned > 0) && (
+        <section className="lrn-earned" aria-label="What you hold">
+          <i className="ph-fill ph-seal-check" aria-hidden="true"/>
+          <p>
+            <b>{aw.earned} {aw.earned === 1 ? "credential" : "credentials"}</b> from outside NGG
+            {" · "}{(aw.held || []).filter(h => h.state === "earned").map(h => h.title).slice(0, 3).join(", ")}
+          </p>
+        </section>
+      )}
       <section className="lrn-prog" aria-label="Your progress">
         <div>
           <p className="lrn-prog-n">{done} of {units.length} lessons done</p>
@@ -303,7 +312,7 @@ function LearnCourses({ d }) {
 }
 
 /* ── One course, week by week ────────────────────────────────────────────── */
-function LearnCourse({ d, slug }) {
+function LearnCourse({ d, slug, aw, onAim }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading the course"/>;
   const units = (d.units || []).filter(u => lrnSlug(u.course || "Whole Club") === slug);
   const name = units.length ? (units[0].course || "Whole Club") : "";
@@ -324,7 +333,78 @@ function LearnCourse({ d, slug }) {
           <ul className="lrn-list">{w.units.map(u => <LearnLessonCard key={u.unitId} u={u}/>)}</ul>
         </section>
       ))}
+      <LearnAwards aw={aw} course={name} onAim={onAim}/>
     </div>
+  );
+}
+
+/* ── Where the work leads: credentials from outside NGG ──────────────────── */
+
+/**
+ * One award. A child who has done twenty-four weeks of a course should be
+ * able to see that there is a recognised certificate at the end of it, and
+ * say they are going for it — which is all they may do here. A RESULT is
+ * recorded by their centre (domain/providers.php), never asserted on this
+ * screen, so there is no control here that claims one.
+ */
+function LearnAward({ a, onAim, busy }) {
+  const held = a.state === "earned" || a.state === "lapsed";
+  return (
+    <li>
+      <div className={"lrn-award" + (held ? " is-held" : "")}>
+        <div className="lrn-award-top">
+          <span className="lrn-award-by">{a.provider}</span>
+          {a.free && !held && <span className="lrn-card-chip">Free</span>}
+          {a.state && <span className={"lrn-card-chip" + (a.state === "earned" ? " ok" : a.state === "lapsed" ? " warn" : "")}>{a.stateLabel}</span>}
+        </div>
+        <span className="lrn-award-title">{a.title}{a.level ? " · " + a.level : ""}</span>
+        <span className="lrn-award-meta">
+          {a.kindLabel}
+          {a.grade ? " · " + a.grade : ""}
+          {a.awardedOn ? " · " + a.awardedOn : ""}
+          {!held && a.costNote ? " · " + a.costNote : ""}
+        </span>
+        {a.examNote && !held && <span className="lrn-award-meta">{a.examNote}</span>}
+        <div className="lrn-award-acts">
+          {a.url && <a className="lrn-award-link" href={a.url} target="_blank" rel="noopener noreferrer">About it ↗</a>}
+          {a.evidenceUrl && <a className="lrn-award-link" href={a.evidenceUrl} target="_blank" rel="noopener noreferrer">Your certificate ↗</a>}
+          {!held && onAim && (
+            <button type="button" className={"lrn-award-aim" + (a.state === "aiming" ? " is-on" : "")}
+                    aria-pressed={a.state === "aiming"} disabled={busy}
+                    onClick={() => onAim(a)}>
+              {a.state === "aiming" ? "You're going for this" : "I'm going for this"}
+            </button>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** The routes out of ONE course, plus anything they already hold from it. */
+function LearnAwards({ aw, course, onAim }) {
+  const [busy, setBusy] = React.useState("");
+  if (!aw) return null;
+  const mine = (aw.held || []).filter(a => !course || (a.fromCourses || []).indexOf(course) >= 0);
+  const open = (aw.routes || []).filter(a => !course || (a.fromCourses || []).indexOf(course) >= 0);
+  if (!mine.length && !open.length) return null;
+  const aim = async (a) => {
+    setBusy(a.awardId);
+    try { await NGGApi.member.providerAim(a.awardId, a.state === "aiming"); if (onAim) await onAim(); }
+    catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
+  return (
+    <section className="lrn-group" aria-label="Where this leads">
+      <h3 className="lrn-group-h">Where this leads</h3>
+      <p className="lrn-note">
+        These are awarded by bodies outside NGG. Your centre records a result — here you can say what you are working towards.
+      </p>
+      <ul className="lrn-list">
+        {mine.map(a => <LearnAward key={a.awardId} a={a} busy={busy === a.awardId}/>)}
+        {open.map(a => <LearnAward key={a.awardId} a={a} onAim={aim} busy={busy === a.awardId}/>)}
+      </ul>
+    </section>
   );
 }
 
@@ -746,6 +826,7 @@ function LearnApp() {
   const [route, setRoute] = React.useState(lrnRoute);
   const [d, setD] = React.useState(null);
   const [plan, setPlan] = React.useState(null);
+  const [aw, setAw] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = React.useCallback(() => {
     setErr("");
@@ -755,7 +836,11 @@ function LearnApp() {
      week" means both kinds of work. Its own request and its own silence:
      school results not being set up must never cost anybody their lessons. */
   const loadPlan = React.useCallback(() => NGGApi.member.studyPlan().then(setPlan).catch(() => setPlan(null)), []);
-  React.useEffect(() => { load(); loadPlan(); }, [load, loadPlan]);
+  /* Where the work leads. Its own request and its own silence too: an empty
+     registry, or a deployment that has not filled one in, must cost nobody
+     their lessons. */
+  const loadAwards = React.useCallback(() => NGGApi.member.providersMine().then(setAw).catch(() => setAw(null)), []);
+  React.useEffect(() => { load(); loadPlan(); loadAwards(); }, [load, loadPlan, loadAwards]);
   React.useEffect(() => {
     const sync = () => { setRoute(lrnRoute()); window.scrollTo(0, 0); };
     window.addEventListener("popstate", sync);
@@ -800,12 +885,12 @@ function LearnApp() {
           ? <ErrorState title="Couldn't load your lessons" code={err} onRetry={load}/>
           : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load}/>
           : view === "courses" ? <LearnCourses d={d}/>
-          : view === "course" ? <LearnCourse d={d} slug={route.slug}/>
+          : view === "course" ? <LearnCourse d={d} slug={route.slug} aw={aw} onAim={loadAwards}/>
           : view === "plan" ? <LearnPlan d={plan} onRetry={loadPlan}/>
           : view === "drill" ? <LearnDrill itemId={route.itemId} onChanged={loadPlan}/>
           : view === "review" ? <LearnReview d={d}/>
           : view === "helper" ? <CurStudyHelper units={(d && d.units) || []}/>
-          : <LearnWeek d={d} plan={plan} onRetry={load}/>}
+          : <LearnWeek d={d} plan={plan} aw={aw} onRetry={load}/>}
       </main>
     </div></div>
   );

@@ -31808,5 +31808,145 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     }
 })();
 
+
+/* ── Where a course leads: providers, awards and who holds one ───────────── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Prv ' . $id,
+        'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role,
+        'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-PRV-ADM', 'club_admin');                       // holds `curriculum`
+    $mk('NGG-PRV-ED', 'editor');                            // does not
+    $mk('NGG-PRV-M1', 'member', ['track' => 'Piano', 'centre' => 'Egbeda']);
+    $mk('NGG-PRV-M2', 'member', ['track' => 'Guitar', 'centre' => 'Egbeda']);
+    $A = 'NGG-PRV-ADM';
+
+    chk('providers: writing the registry is the curriculum cap, not an editor\'s',
+        (backend_dispatch('admin.providers.save', ['requesterId' => 'NGG-PRV-ED', 'data' => ['name' => 'x']])['error'] ?? '') === 'forbidden');
+
+    chk('providers: a body needs a name',
+        (backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => ['name' => '  ']])['error'] ?? '') === 'name_required');
+
+    $p1 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
+        'name' => 'Trinity College London', 'country' => 'United Kingdom',
+        'url' => 'https://www.trinitycollege.com/', 'free' => false, 'costNote' => 'Entry fee per grade']]);
+    $p2 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
+        'name' => 'freeCodeCamp', 'url' => 'https://www.freecodecamp.org/', 'free' => true]]);
+    chk('providers: a body is added and reads back', !empty($p1['ok']) && !empty($p2['ok'])
+        && ($p1['provider']['slug'] ?? '') === 'trinity-college-london' && ($p2['provider']['free'] ?? false) === true);
+    $P1 = (string)$p1['providerId']; $P2 = (string)$p2['providerId'];
+
+    chk('providers: a url that is not http(s) is dropped rather than stored',
+        ($p1['provider']['url'] ?? '') === 'https://www.trinitycollege.com/'
+        && (backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => ['name' => 'Bad', 'url' => 'javascript:alert(1)']])['provider']['url'] ?? 'x') === '');
+
+    $a1 = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P1, 'title' => 'Graded Examination in Music', 'kind' => 'graded_exam',
+        'level' => 'Grade 3', 'courses' => ['Piano', 'Piano', ' Guitar '], 'validMonths' => 0]]);
+    $a2 = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P2, 'title' => 'Responsive Web Design', 'kind' => 'certificate',
+        'courses' => ['Practical Coding'], 'free' => true]]);
+    chk('providers: an award is added under its body, its courses deduped and trimmed',
+        !empty($a1['ok']) && ($a1['award']['courses'] ?? []) === ['Piano', 'Guitar']
+        && ($a1['award']['provider'] ?? '') === 'Trinity College London');
+    $AW1 = (string)$a1['awardId']; $AW2 = (string)$a2['awardId'];
+
+    chk('providers: an award must name a body that exists',
+        (backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => ['providerId' => 'PRV-NOPE', 'title' => 'x']])['error'] ?? '') === 'provider_not_found');
+
+    /* Rule 2 — `earned` requires the date every count is built on. */
+    $noDate = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned']]);
+    chk('providers: "holds it" is refused without the date it was awarded',
+        ($noDate['error'] ?? '') === 'awarded_on_required');
+
+    /* Rule 3 — an award belongs to its body, and a mismatch is refused. */
+    $cross = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'providerId' => $P2, 'state' => 'aiming']]);
+    chk('providers: an award claimed under the wrong body is refused, never re-pointed',
+        ($cross['error'] ?? '') === 'award_not_of_provider');
+
+    $ok1 = backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-03-14', 'grade' => 'Merit']]);
+    chk('providers: a result is recorded against the member, with their centre',
+        !empty($ok1['ok']) && (string)(db_row("SELECT centre FROM member_credentials WHERE memberId = 'NGG-PRV-M1'")['centre'] ?? '') === 'Egbeda');
+
+    /* Rule 1 — one row per member per award; recording again corrects it. */
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-03-14', 'grade' => 'Distinction']]);
+    chk('providers: recording it again is a correction, not a second credential',
+        (int)db_row("SELECT COUNT(*) c FROM member_credentials WHERE memberId = 'NGG-PRV-M1' AND awardId = '$AW1'")['c'] === 1
+        && (string)db_row("SELECT grade FROM member_credentials WHERE memberId = 'NGG-PRV-M1'")['grade'] === 'Distinction');
+
+    /* A member's own aim, and the line they may not cross. */
+    $aim = backend_dispatch('member.providers.aim', ['memberId' => 'NGG-PRV-M2', 'awardId' => $AW1]);
+    chk('providers: a member can say they are working towards one', !empty($aim['ok'])
+        && (string)db_row("SELECT state FROM member_credentials WHERE memberId = 'NGG-PRV-M2'")['state'] === 'aiming');
+    chk('providers: a member cannot assert they hold one — their centre records that',
+        (prv_credential_write(db_row("SELECT * FROM members WHERE memberId = 'NGG-PRV-M2'"),
+            ['awardId' => $AW1, 'state' => 'earned', 'awardedOn' => '2026-01-01'], false, 'NGG-PRV-M2')['error'] ?? '') === 'staff_records_this');
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M2',
+        'data' => ['awardId' => $AW1, 'state' => 'registered']]);
+    chk('providers: once the centre has recorded a result, the member cannot take it back',
+        (backend_dispatch('member.providers.aim', ['memberId' => 'NGG-PRV-M2', 'awardId' => $AW1, 'remove' => true])['error'] ?? '') === 'staff_records_this');
+
+    /* Rule 6 — lapsed is derived from the date, never written by a job. */
+    $lapsing = backend_dispatch('admin.providers.award.save', ['requesterId' => $A, 'data' => [
+        'providerId' => $P2, 'title' => 'Expiring thing', 'validMonths' => 12, 'courses' => ['Piano']]]);
+    backend_dispatch('admin.providers.credential.set', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1',
+        'data' => ['awardId' => (string)$lapsing['awardId'], 'state' => 'earned', 'awardedOn' => '2020-01-01']]);
+    $old = db_row("SELECT * FROM member_credentials WHERE memberId = 'NGG-PRV-M1' AND awardId = '" . (string)$lapsing['awardId'] . "'");
+    chk('providers: an award with a validity gets an expiry from the date it was given',
+        (string)$old['expiresOn'] === '2021-01-01');
+    chk('providers: and it reads as lapsed without any job having run',
+        prv_is_lapsed($old) === true && prv_shown_state($old) === 'lapsed'
+        && prv_shown_state(['state' => 'earned', 'expiresOn' => '']) === 'earned');
+
+    /* The member's own screen: where their courses lead. */
+    $mine = backend_dispatch('member.providers.mine', ['memberId' => 'NGG-PRV-M1']);
+    $titles = array_map(static fn($r) => $r['title'], $mine['held'] ?? []);
+    chk('providers: a member sees what they hold', !empty($mine['ok']) && in_array('Graded Examination in Music', $titles, true));
+    $routeTitles = array_map(static fn($r) => $r['title'], $mine['routes'] ?? []);
+    chk('providers: and a route they do NOT hold only when one of their own courses leads to it',
+        !in_array('Responsive Web Design', $routeTitles, true));
+    chk('providers: a credential they hold still shows after they leave the course that led to it',
+        count(array_filter($mine['held'] ?? [], static fn($h) => $h['state'] === 'lapsed')) === 1);
+
+    /* Rule 5 — a body in use is not deleted silently, and retire is the answer. */
+    $del = backend_dispatch('admin.providers.delete', ['requesterId' => $A, 'providerId' => $P1]);
+    chk('providers: a body members hold awards from is not deleted silently',
+        ($del['error'] ?? '') === 'provider_in_use' && (int)($del['uses']['credentials'] ?? 0) >= 2);
+    $ret = backend_dispatch('admin.providers.delete', ['requesterId' => $A, 'providerId' => $P1, 'retire' => true]);
+    chk('providers: retiring it keeps every record resolving (rule 4)',
+        !empty($ret['retired'])
+        && (int)db_row("SELECT COUNT(*) c FROM member_credentials WHERE providerId = '$P1'")['c'] >= 2
+        && (string)db_row("SELECT status FROM providers WHERE providerId = '$P1'")['status'] === 'retired');
+
+    /* The board: what the programme can actually claim. */
+    $b = backend_dispatch('admin.providers.board', ['requesterId' => $A]);
+    $row = null; foreach ($b['awards'] ?? [] as $r) if ($r['awardId'] === $AW1) $row = $r;
+    chk('providers: the board counts holders per award, biggest first, and names them',
+        !empty($b['ok']) && $row && (int)$row['earned'] === 1 && (int)$row['registered'] === 1
+        && ($row['holders'][0]['memberId'] ?? '') === 'NGG-PRV-M1');
+    chk('providers: and counts the people, not the rows', (int)($b['people'] ?? 0) === 2);
+
+    /* One person's record. */
+    $one = backend_dispatch('admin.providers.member', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1']);
+    chk('providers: one member\'s credentials read back with the body that awarded them',
+        !empty($one['ok']) && count($one['credentials']) === 2
+        && in_array('Trinity College London', array_map(static fn($c) => $c['provider'], $one['credentials']), true));
+
+    /* An award nobody holds goes; one people hold does not. */
+    chk('providers: an award people hold is not deleted silently',
+        (backend_dispatch('admin.providers.award.delete', ['requesterId' => $A, 'awardId' => $AW1])['error'] ?? '') === 'award_in_use');
+    chk('providers: an award nobody holds is deleted',
+        !empty(backend_dispatch('admin.providers.award.delete', ['requesterId' => $A, 'awardId' => $AW2])['deleted']));
+
+    db_exec("DELETE FROM member_credentials WHERE memberId LIKE 'NGG-PRV-%'");
+    db_exec("DELETE FROM provider_awards WHERE providerId IN ('$P1', '$P2')");
+    db_exec("DELETE FROM providers WHERE providerId IN ('$P1', '$P2')");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PRV-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

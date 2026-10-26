@@ -3298,3 +3298,57 @@ injects `display: none !important` into the page it drives, to hide a toast
 over a control it must click. That is the harness overriding the product for
 one assertion, not the product shipping an override, so it is an ALLOW entry.
 `npm run test:all` had been failing at that step before any of this work.
+
+### Where a course leads: the provider registry
+
+The curriculum named its routes out from the day it was written —
+`curriculum-studio-trades` sends a learner to Trinity Drama and the NBTE
+National Skills Qualification, practical coding to freeCodeCamp, tech
+foundations to Cisco NetAcad and Google — and all of it lived in lesson prose
+and material links. Two things were wrong at once: a child finished
+twenty-four weeks and nothing told them there was a recognised certificate at
+the end of it, and nobody could answer how many members hold one.
+
+Three tables, because the domain has three things: the organisation
+(`providers`), the thing it awards (`provider_awards`), and the person who
+holds it (`member_credentials`). Merging any two loses something real — one
+body awards many different things, and "Trinity Grade 1" is not "Trinity".
+
+The rules, each with a test:
+
+1. **One row per member per award.** Recording it again is a correction, not a
+   second credential. Grade 1 and Grade 2 are different awards, so a ladder
+   still works.
+2. **`earned` requires the date it was awarded.** Every count is built on it;
+   a credential without one is a claim, not a record.
+3. **An award belongs to its body.** A credential naming an award that is not
+   under that provider is refused, never quietly re-pointed.
+4. **Retiring a body takes nothing away.** A certificate already earned is in
+   somebody's hand — same rule as retiring a centre.
+5. **A body in use is not deleted silently.** It reports `uses` and refuses
+   with `provider_in_use` unless `retire` (checked FIRST) or `force`.
+6. **Lapsed is derived, never stored.** An expiry is a date and a date passes
+   without any job running. Computed on read it cannot go stale; written by a
+   nightly job it can, and then the record lies.
+
+**A member can only ever say "I'm going for this."** A result is the
+programme's record of them, so `prv_credential_write($m, $in, $byStaff, ...)`
+refuses any state but `aiming` from the member themselves, and refuses to let
+them edit a row once their centre has recorded against it. One writer behind
+both callers, so a credential cannot be recorded two different ways.
+
+Two bugs worth naming, both mine, both caught by tests rather than review:
+
+- **`in_array((string)($d['status'] ?? 'active'), …) ? (string)$d['status'] : 'active'`**
+  reads the default in the test and the RAW value in the result, so an omitted
+  status stored `''` — and a row with an empty status is invisible to every
+  read in the file. `prv_status()` defaults it once.
+- **`held` meant "has a row", not "holds it".** The moment a member pressed
+  "I'm going for this" the award jumped out of `routes` into `held`, where no
+  button is drawn — so their own control vanished under them. An aim and an
+  exam entry are routes in progress; only `earned` and `lapsed` are held.
+
+**A third centre guard exists that is easy to miss:** a table carrying a
+`centre` NAME must also have a `centreId` column, because `db_insert` mirrors
+one into the other — the insert fails on the missing column, and the failure
+surfaces as every later assertion in the block going wrong at once.

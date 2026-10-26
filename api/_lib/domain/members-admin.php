@@ -284,6 +284,11 @@ function member_merge_policy(): array {
         'member_progress'        => 'MOVE_UNIQUE',
         'lesson_feedback'        => 'MOVE_UNIQUE',    // one tap per person per lesson; the survivor's stands
         'study_drills'           => 'MOVE',           // their practice history; both accounts' goes come with them
+        /* A credential is held by a PERSON, not an account row, so a merge
+           must not drop one: MOVE_UNIQUE keeps the survivor's record of an
+           award both rows claim (unique on memberId+awardId) and brings
+           across every award only the duplicate held. */
+        'member_credentials'     => 'MOVE_UNIQUE',
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',

@@ -1133,10 +1133,72 @@ mentor, or opened from a message, and the browser's Back button goes back. It
 could not be any of those things before, because a lesson was an overlay on
 the dashboard with no address of its own.
 
+A **course** page ends with *Where this leads* — the recognised credentials
+that course prepares them for, and a button to say they are going for one.
+What they hold shows on **This week**, wherever it came from.
+
 A lesson page carries, in this order: last session's review (which can always
 be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
+
+### Where courses lead: the awarding bodies outside NGG
+
+Our curriculum has always pointed somewhere. Practical Coding leads to
+freeCodeCamp; Stage & Studio Trades to Trinity Drama and the NBTE National
+Skills Qualification; Tech Foundations to Cisco NetAcad and Google; music to
+Trinity and ABRSM. Until now all of that lived in lesson text and links, which
+meant two things went wrong at once: **a child finished twenty-four weeks of
+work and nothing told them there was a recognised certificate at the end of
+it**, and when a funder asked how many of our members hold an external
+credential, we had no answer.
+
+**Control Room → Learning → Where courses lead** is the registry and the
+roll-up. Three things, kept separate because they are separate:
+
+| | What it is |
+|---|---|
+| **An awarding body** | The organisation — freeCodeCamp, Trinity College London, NBTE. Its country, its website, whether it is free. |
+| **An award** | The thing a member can actually hold — "Responsive Web Design", "Graded Examination in Music · Grade 3". Each names **which of our courses lead to it**, and how long it stays valid. |
+| **A credential** | One member against one award. |
+
+A member is in one of four states against an award: **working towards it**,
+**entered for it**, **holds it**, or **sat it, not yet passed**. An award with
+a validity period also reads as **expired** once its date passes — that is
+worked out from the date each time it is read, so it can never be out of date.
+
+#### Who records what
+
+- **The member** can only ever say *"I'm going for this"*, on their course page
+  in the Learn app. That is their aim, and they can take it back.
+- **The centre** records a result (`curriculum`). A child cannot claim they
+  hold a certificate; the programme records it. Once a result is recorded, the
+  member can no longer change that row.
+- Recording **"holds it" needs the date it was awarded.** The refusal is
+  deliberate: every count on every screen is built on that date, and a
+  credential without one is a claim rather than a record.
+
+#### Setting it up
+
+1. Add each awarding body, with its website and whether it charges.
+2. Add what it awards. **Attach the courses that lead to it** — this is the
+   step that makes the route appear for members; an award with no course
+   attached is in the registry but reaches nobody.
+3. Fees and grade names change every year. Put this year's in the award's cost
+   note rather than trusting what is written here.
+
+#### Things that will refuse, and why
+
+- **"A body members hold awards from is not deleted silently."** Retire it
+  instead. Retiring keeps every record resolving — somebody's certificate does
+  not stop being theirs because we stopped offering the route — and simply
+  stops anything new being added against it.
+- **"That award is not awarded by that body."** Refused rather than quietly
+  re-pointed, so a mis-click cannot move somebody's credential to the wrong
+  organisation.
+- **Recording the same award twice** corrects the first record. It never
+  creates a second credential — Grade 1 and Grade 2 are different awards, so a
+  ladder still works normally.
 
 ### School: practising for their own exams (/learn/plan)
 

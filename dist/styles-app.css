@@ -15320,6 +15320,31 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-card-meta { font-size: 13px; color: var(--lrn-ink-3); }
 .lrn-card-late { font-size: 12.5px; font-weight: 650; color: var(--lrn-late); }
 
+/* Where the work leads: credentials awarded outside NGG. On the Learn app's
+   own token set — no new colours, no new radii (CLAUDE.md §8). */
+.lrn-card-chip.ok { background: #e7f3ea; color: var(--lrn-ok); }
+.lrn-card-chip.warn { background: #fdeeea; color: var(--lrn-late); }
+.lrn-earned { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+  border-radius: 14px; background: #f3faf4; border: 1px solid #cfe6d5; }
+.lrn-earned i { font-size: 22px; color: var(--lrn-ok); flex: none; }
+.lrn-earned p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--lrn-ink-2); }
+.lrn-award { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--lrn-line);
+  border-radius: 14px; background: var(--lrn-s1); }
+.lrn-award.is-held { border-left: 4px solid var(--lrn-ok); }
+.lrn-award-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lrn-award-by { font-size: 12px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-award-title { font-size: 16px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.lrn-award-meta { font-size: 13px; color: var(--lrn-ink-3); line-height: 1.5; }
+.lrn-award-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.lrn-award-link { font-size: 13.5px; font-weight: 600; color: var(--lrn-accent);
+  min-height: 44px; display: inline-flex; align-items: center; }
+.lrn-award-aim { min-height: 44px; padding: 0 14px; border-radius: 99px; cursor: pointer;
+  border: 1px solid var(--lrn-line); background: var(--lrn-s2); color: var(--lrn-ink);
+  font: inherit; font-size: 13.5px; font-weight: 650; }
+.lrn-award-aim:hover { border-color: var(--lrn-ink-3); }
+.lrn-award-aim.is-on { background: var(--lrn-accent); border-color: var(--lrn-accent); color: #fff; }
+.lrn-award-aim[disabled] { opacity: .6; cursor: default; }
+
 .lrn-course { display: grid; gap: 6px; padding: 16px; text-decoration: none; color: inherit;
   background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
 .lrn-course:hover { border-color: var(--lrn-ink-3); }

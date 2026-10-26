@@ -288,6 +288,72 @@ Object.assign(CR_TAB_DEFS, {
       return out;
     },
   },
+  /* WHERE COURSES LEAD (domain/providers.php).
+     The curriculum has always named its routes out, in lesson prose and
+     loose links. This is the question that prose could never answer: what
+     do our members actually hold? Biggest first, with the people named, so
+     it is a board to act on rather than an export to read. */
+  providers: {
+    skeleton: ["kpis", "cards"],
+    load: async () => {
+      const [board, reg] = await Promise.all([
+        NGGApi.admin.providers.board(),
+        NGGApi.admin.providers.list().catch(() => ({ providers: [] })),
+      ]);
+      return { board, providers: reg.providers || [], canEdit: !!reg.canEdit };
+    },
+    facts: d => {
+      const t = (d.board && d.board.totals) || {};
+      const top = ((d.board && d.board.awards) || [])[0];
+      return "Outside credentials: " + crNum(t.earned || 0) + " held by " + crNum(d.board.people || 0) + " members; "
+        + crNum(t.registered || 0) + " entered, " + crNum(t.aiming || 0) + " working towards"
+        + (top ? "; most held: " + top.title + " (" + top.earned + ")" : "");
+    },
+    blocks: (d) => {
+      const b = d.board || {}, t = b.totals || {}, rows = b.awards || [];
+      const out = [{ type: "kpis", span: 6, items: [
+        { l: "Credentials held", v: crNum(t.earned || 0), dn: "awarded by bodies outside NGG" },
+        { l: "Members holding one", v: crNum(b.people || 0), dn: "across your centres" },
+        { l: "Entered for an exam", v: crNum(t.registered || 0), dn: "result not in yet", tone: (t.registered || 0) ? "warn" : "flat" },
+        { l: "Working towards one", v: crNum(t.aiming || 0), dn: "members' own aims" },
+      ] }];
+      if (!d.providers.length) {
+        out.push({ type: "note", icon: "certificate", text: "No awarding bodies yet.",
+          sub: "The curriculum already points at freeCodeCamp, Trinity College London, Cisco NetAcad, Google and NBTE. Add each body here with what it awards and which courses lead to it, and members see the route at the end of their course." });
+        return out;
+      }
+      if (!rows.length) {
+        out.push({ type: "note", icon: "certificate", text: "Nothing recorded yet.",
+          sub: "Members can say what they are working towards from their course page. A result is recorded here, by their centre — a child never claims one themselves." });
+      } else {
+        out.push({ type: "cards", span: 6, title: "What our members hold", sub: "Most held first",
+          empty: "Nothing recorded yet.",
+          cards: rows.map(a => ({
+            icon: a.earned ? "seal-check" : a.registered ? "hourglass" : "target",
+            title: a.title + (a.level ? " \u00b7 " + a.level : ""),
+            sub: a.provider + " \u00b7 " + a.kindLabel + (a.free ? " \u00b7 free" : ""),
+            tag: a.earned + " held",
+            tone: a.earned ? "up" : a.registered ? "warn" : "flat",
+            meta: [["Entered", String(a.registered)], ["Working towards", String(a.aiming)], ["Sat, not yet passed", String(a.missed)]]
+              .concat(a.holders.length ? [["Held by", a.holders.map(h => h.name + (h.grade ? " (" + h.grade + ")" : "")).join(", ")]] : []),
+          })) });
+      }
+      /* The registry itself, so a coordinator can see what is on offer and
+         which courses each route is attached to. */
+      out.push({ type: "cards", span: 6, title: "The awarding bodies", sub: "What each awards, and the courses that lead to it",
+        empty: "None yet.",
+        cards: d.providers.map(p => ({
+          icon: p.free ? "gift" : "buildings",
+          title: p.name,
+          sub: [p.country, p.free ? "free" : p.costNote].filter(Boolean).join(" \u00b7 "),
+          tag: p.awardCount + (p.awardCount === 1 ? " award" : " awards"),
+          tone: p.status === "retired" ? "flat" : "up",
+          meta: (p.awards || []).slice(0, 8).map(a => [a.title + (a.level ? " \u00b7 " + a.level : ""),
+            ((a.courses || []).join(", ") || "no course attached yet") + " \u00b7 " + a.earned + " held"]),
+        })) });
+      return out;
+    },
+  },
   curriculum: {
     skeleton: ["table"],
     load: async ctx => {
