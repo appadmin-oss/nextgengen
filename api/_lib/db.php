@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 182;
+const NGG_SCHEMA_TARGET = 183;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5347,6 +5347,13 @@ function db_migrate(PDO $db): void {
               byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_smsg_edition ON summer_messages(cohortId, createdAt);
+        ",
+        /* 183 — one email, several member accounts (siblings on a parent's
+         * address). A sign-in code for such an address proves the inbox, not a
+         * person, so the verified challenge keeps the accounts it may open
+         * (comma-separated memberIds) and the browser picks one (auth_pick). */
+        183 => "
+            ALTER TABLE auth_sessions ADD COLUMN pickIds TEXT DEFAULT '';
         ",
     ];
 

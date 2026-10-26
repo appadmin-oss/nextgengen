@@ -4262,3 +4262,7 @@ CREATE TABLE IF NOT EXISTS summer_messages (
 );
 
 INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;
+
+-- 183: one email, several member accounts — the accounts a verified challenge may open.
+ALTER TABLE auth_sessions ADD COLUMN pickIds TEXT;
+INSERT INTO schema_version (version) VALUES (183) ON DUPLICATE KEY UPDATE version = version;

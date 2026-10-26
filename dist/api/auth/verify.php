@@ -34,6 +34,9 @@ if (empty($res['ok'])) {
     json_error($code, $code === 'rate_limited' ? 429 : 400);
 }
 
+// An address several accounts share: the code is proven, no session yet — the person picks (auth/pick.php).
+if (!empty($res['pick'])) json_ok(['pick' => $res['pick'], 'pickToken' => $res['pickToken'], 'pickMinutes' => $res['pickMinutes'] ?? 10]);
+
 $mfa = (string)($res['mfa'] ?? '');
 if (!empty($res['volunteer'])) {
     // An instructor, volunteer or mentor signing in with an emailed code: the

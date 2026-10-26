@@ -8713,3 +8713,20 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .cur-say-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .cur-say-done { font-size: .85rem; font-weight: 600; color: #1f8a4c; }
 @media (pointer: coarse) { .cur-say-opt { min-height: 44px; } }
+
+/* "Who's signing in?" — an email several member accounts share (api-client.js authPickDialog).
+   Kept the same in styles.css and journal/app.css: the dialog is built by the API client for both. */
+.ngg-pick-back { position: fixed; inset: 0; z-index: 2147483000; background: rgba(11, 11, 12, .55); display: grid; place-items: center; padding: 16px; }
+.ngg-pick { box-sizing: border-box; width: min(440px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: #fff; color: #0b0b0c; border-radius: 18px; padding: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); font: inherit; }
+.ngg-pick-h { margin: 0 0 4px; font-size: 20px; font-weight: 700; line-height: 1.25; }
+.ngg-pick-p { margin: 0 0 14px; font-size: 14.5px; color: #4a4a50; line-height: 1.45; }
+.ngg-pick-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ngg-pick-who { box-sizing: border-box; width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid #d6d4cc; border-radius: 14px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ngg-pick-who:hover { background: #f7f6f2; }
+.ngg-pick-who:focus-visible, .ngg-pick-cancel:focus-visible { outline: 3px solid #1e4fae; outline-offset: 2px; }
+.ngg-pick-face { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: #f5b026; color: #0b0b0c; font-weight: 700; font-size: 15px; }
+.ngg-pick-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ngg-pick-t { display: flex; flex-direction: column; min-width: 0; }
+.ngg-pick-t b { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.ngg-pick-t small { font-size: 13px; color: #4a4a50; }
+.ngg-pick-cancel { min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; color: #0b0b0c; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }
