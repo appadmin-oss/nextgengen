@@ -8171,9 +8171,14 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-app.is-comfortable { --cr-pad: 14px; }
 .cr-app *, .cr-app *::before, .cr-app *::after { box-sizing: border-box; }
 /* Legacy .btn buttons keep their own colour: `color: inherit` here outranked
-   .btn-primary and drew navy text on a navy button across the Control Room. */
+   .btn-primary and drew navy text on a navy button across the Control Room.
+   Excluding .btn fixed that one family and left every other: at (0,2,1) this reset
+   still outranked `.cr-btn.is-primary` and `.cr-ptab[aria-selected]` (0,2,0), so the
+   primary buttons and the selected page tab drew ink text on an ink fill — measured
+   at 1.00:1 on "Curriculum". `:where()` gives the reset no weight beyond `.cr-app`,
+   so any component that states its own colour wins, as a reset should let it. */
 .cr-app button, .cr-app input, .cr-app textarea, .cr-app select { font: inherit; }
-.cr-app button:not(.btn), .cr-app input, .cr-app textarea, .cr-app select { color: inherit; }
+.cr-app :where(button:not(.btn), input, textarea, select) { color: inherit; }
 .admin-proof-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-200, #e6e8ee); flex-wrap: wrap; text-align: left; }
 .admin-proof-row > div:first-child { flex: 1; min-width: 200px; }
 .admin-proof-text { font-size: 13px; color: var(--ink-700); margin-top: 4px; padding: 8px 10px; border-left: 3px solid var(--gold-400, #f5b026); background: var(--cream-50, #faf7ee); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -8364,7 +8369,11 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 
 /* ── Blocks (§3) ───────────────────────────────────────────────────────── */
 .cr-box { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); }
-.cr-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; background: var(--cr-line); border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); overflow: hidden; }
+/* Columns from the count (CrKpis sets --cols). auto-fit at 180px put six into five
+   columns and left a grey hole the width of four tiles beside the sixth. Narrower than
+   the count can hold, auto-fit takes over again. */
+.cr-kpis { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 1px; background: var(--cr-line); border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); overflow: hidden; }
+@media (max-width: 1100px) { .cr-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 .cr-kpi { background: var(--cr-bg); padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .cr-kpi-l { font-size: 13px; color: var(--cr-muted-2); }
 .cr-kpi-v { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -8871,10 +8880,14 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-pblock { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .cr-pblock h2 { margin: 0; font-size: 17px; font-weight: 600; }
 .cr-pbox { border: 1px solid var(--cr-line); border-radius: var(--cr-r-xl); overflow: hidden; background: var(--cr-bg); }
-.cr-pkpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.cr-pkpi { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); padding: 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.cr-pkpi > span:first-child { font-size: 12.5px; color: var(--cr-muted-2); }
-.cr-pkpi b { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* One compact panel of figures, not a stack of cards: six separate 14px-padded cards
+   took 270px of a 390px phone before the list the page exists for. Joined by hairlines
+   like the desktop row, columns balanced to the count (CrKpis), half the height. */
+.cr-pkpis { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 1px; background: var(--cr-line); border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); overflow: hidden; }
+.cr-pkpi { background: var(--cr-bg); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cr-pkpi > span:first-child { font-size: 12px; line-height: 1.3; color: var(--cr-muted-2); }
+.cr-pkpi b { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cr-pkpi .cr-hint { font-size: 11.5px; line-height: 1.3; }
 .cr-pkpi .cr-kpi-d { font-size: 12px; }
 .cr-pkpi .cr-kpi-d em { color: var(--cr-muted-3); font-weight: 400; font-style: normal; }
 .cr-prow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--cr-line-4); background: var(--cr-bg); text-align: left; color: var(--cr-ink); }
@@ -8907,7 +8920,9 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-psearch { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r-lg); }
 .cr-psearch .ph { font-size: 18px; color: var(--cr-muted-3); }
 .cr-psearch input { border: 0; outline: none; flex: 1; font-size: 16px; min-width: 0; background: transparent; }
-.cr-pchips { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+/* flex-shrink: 0 — a scroller in a flex column may shrink below its content (its min-height
+   resolves to 0), and on any page taller than the screen this row was cut in half. */
+.cr-pchips { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; flex-shrink: 0; }
 .cr-pchips .cr-chip, .cr-pchips .cr-fchip { height: 44px; padding: 0 14px; font-size: 14px; flex-shrink: 0; }
 .cr-pchips .cr-clear { height: 44px; font-size: 14px; flex-shrink: 0; }
 .cr-popt { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 14px; border: 0; border-bottom: 1px solid var(--cr-line-4); background: var(--cr-bg); text-align: left; font-size: 15px; }
@@ -10395,7 +10410,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-de4d1ca{width:var(--dc-width, unset);height:var(--dc-height, unset);max-width:100%;max-height:100%;border-radius:var(--dc-border-radius, unset);box-shadow:var(--dc-box-shadow, unset);overflow:hidden;display:flex;background:#f4f4f2;position:relative}
 .i6-7b4b119{width:240px;flex-shrink:0;background:#fbfbfa;border-right:1px solid #e8e5dd;display:flex;flex-direction:column;padding:16px 12px;gap:14px}
 .i6-074a37b{display:flex;align-items:center;gap:10px;padding:0 6px}
-.i6-f8c0c6e{display:inline-flex;flex:none;border-radius:50%}
+.i6-474b5d1{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;flex:none;border-radius:50%}
 .i6-8c5fb1e{width:28px;height:28px;border-radius:50%}
 .i6-7ecbcd2{display:flex;flex-direction:column}
 .i6-a1b26d5{font-size:14px;font-weight:700}
@@ -10412,7 +10427,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-bca52a9{width:32px;height:32px;border-radius:50%;background:#0b0b0c;color:#f5b026;font-size:12px;font-weight:700;display:grid;place-items:center}
 .i6-b26da36{flex:1;display:flex;flex-direction:column;min-width:0}
 .i6-da61ab1{font-size:13.5px;font-weight:600}
-.i6-433b8bb{width:40px;height:40px;flex-shrink:0;border:0;border-radius:10px;background:none;cursor:pointer;font-size:20px;color:#3a3a40;display:grid;place-items:center}
+.i6-ab8d4e4{width:44px;height:44px;flex-shrink:0;border:0;border-radius:10px;background:none;cursor:pointer;font-size:20px;color:#3a3a40;display:grid;place-items:center}
 .i6-efc68b4{flex:1;min-width:0;display:flex;flex-direction:column}
 .i6-3e94324{height:56px;flex-shrink:0;display:flex;align-items:center;gap:6px;padding:0 8px 0 16px;background:#fbfbfa;border-bottom:1px solid #e8e5dd}
 .i6-748876f{width:44px;height:44px;margin-left:-10px;border:0;background:none;cursor:pointer;font-size:22px;display:grid;place-items:center}
@@ -10422,7 +10437,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-6bdefea{flex:1;min-height:0;overflow-y:auto}
 .i6-ad422fd{max-width:960px;margin:0 auto;padding:var(--dc-padding, unset);display:flex;flex-direction:column;gap:16px}
 .i6-5ab52c4{position:relative;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.i6-9381adc{height:40px;padding:0 12px 0 6px;border-radius:999px;border:1px solid #d6d4cc;background:#fff;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;max-width:100%}
+.i6-0b1bf9f{height:44px;padding:0 12px 0 6px;border-radius:999px;border:1px solid #d6d4cc;background:#fff;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;max-width:100%}
 .i6-f9763f2{height:28px;padding:0 9px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:11px;font-weight:700;display:inline-flex;align-items:center;letter-spacing:.04em}
 .i6-380d631{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .i6-5f28b55{font-size:12.5px;color:#6b6b72}
@@ -10463,7 +10478,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-61a6fca{display:block;font-size:13px;color:#6b6b72;margin-top:2px}
 .i6-c87525a{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .i6-b80c2a2{font-size:18px;color:#6b6b72}
-.i6-ae80cd9{height:40px;padding:0 12px;border-radius:999px;border:1px solid #d6d4cc;background:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.i6-c32f206{height:44px;padding:0 12px;border-radius:999px;border:1px solid #d6d4cc;background:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .i6-60e2aae{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
 .i6-3755b3c{flex-shrink:0;padding:6px 10px;border-radius:10px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:12.5px;font-weight:var(--dc-font-weight, unset);white-space:nowrap}
 .i6-ea1f792{font-family:'Geist Mono',monospace;margin-right:6px}
@@ -10868,7 +10883,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .i6-de41457{position:absolute;left:50%;bottom:var(--dc-bottom, unset);transform:translateX(-50%);background:#0b0b0c;color:#fff;border-radius:12px;padding:10px 10px 10px 16px;display:flex;align-items:center;gap:14px;font-size:14px;box-shadow:0 12px 32px rgba(11,11,12,.2);z-index:50;max-width:calc(100% - 24px)}
 .i6-50fd1d3{height:44px;padding:0 12px;border-radius:8px;border:0;background:#f5b026;color:#0b0b0c;font-weight:600;cursor:pointer}
 .i6-d07fe32:hover{background:#efefed}
-.i6-c566619:hover{background:#efefed}
+.i6-4d2e832:hover{background:#efefed}
 .i6-106e195:hover{background:#fafaf8}
 :where(.i6-app) *{box-sizing:border-box}
 :where(.i6-app) a{color:#0b0b0c;text-underline-offset:2px}
@@ -14399,6 +14414,21 @@ button.m9x-ev-sum { cursor: pointer; }
 .led-back:hover { background: var(--cream-50, #fbf8f1); }
 .led-ident { flex: 1 1 100%; min-width: 0; order: 3; }
 @container (min-width: 44rem) { .led-ident { flex: 1 1 14rem; order: 0; } }
+/* A narrow editor pins only what you reach for mid-lesson — the status and Save — and
+   lets Back and the title scroll away. The whole bar pinned wrapped to three rows (190px
+   of a 740px phone, with the keyboard still to come). `display: contents` makes the bar's
+   children the editor's own grid items, so `.led-act` sticks for the length of the lesson
+   rather than only inside its 190px bar. */
+@container (max-width: 43.99rem) {
+  .led-top { display: contents; }
+  .led-back { justify-self: start; }
+  .led-ident { order: 0; }
+  .led-act {
+    position: sticky; top: 0; z-index: 5; padding: 8px 0;
+    background: var(--paper, #fbf8f1); border-bottom: 1px solid var(--line-cool-soft, #d9dde5);
+  }
+  .led-act .btn { flex: 1 1 auto; }
+}
 .led-title {
   width: 100%; border: 0; background: transparent; padding: 2px 0;
   font-family: var(--font-display); font-size: clamp(18px, 1.4cqi + 15px, 24px); font-weight: 800;
@@ -14473,8 +14503,13 @@ button.m9x-ev-sum { cursor: pointer; }
 }
 .led-see-body {
   padding: 16px 18px; border: 1px solid var(--line-cool-soft, #d9dde5); border-radius: 12px; background: #fff;
-  max-height: 60vh; overflow: auto; overscroll-behavior: contain;
 }
+/* Its own scroll box only where it sits BESIDE the text. Underneath it on a narrow
+   column, a 60vh box with its own overflow was a scroller inside the page's scroller —
+   a swipe that started on it scrolled the preview, not the page — for no gain, since
+   the page already scrolls to it. */
+@container (min-width: 52rem) { .led-see-body { max-height: 60vh; overflow: auto; overscroll-behavior: contain; } }
+.led-see-body:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
 .led-see-title { font-family: var(--font-display); font-size: 19px; font-weight: 800; margin: 0 0 6px; letter-spacing: -.01em; }
 .led-see-sum { margin: 0 0 12px; font-size: 13.5px; color: var(--ink-600, #4a5168); line-height: 1.55; }
 
@@ -14490,6 +14525,175 @@ button.m9x-ev-sum { cursor: pointer; }
 .cur-rte-part:disabled { opacity: .45; cursor: not-allowed; }
 .cur-rte-part.is-whole { background: var(--navy-900, #16233f); border-color: var(--navy-900, #16233f); color: #fff; font-weight: 700; }
 .cur-rte-part.is-whole:hover:not(:disabled) { background: #0f1930; }
+
+/* The editor on a touch screen. It is a form somebody writes a lesson in, not a dense
+   roster, so the Control Room's 40px concession for .btn-sm does not apply here: every
+   control takes the full 44px floor (CLAUDE.md §9). */
+@media (pointer: coarse) {
+  .led-back, .cur-rte-part, .led .btn, .led .btn-sm, .led .admin-select { min-height: 44px; }
+  .led-x { width: 44px; height: 44px; }
+  .led-more > summary { display: flex; align-items: center; min-height: 44px; padding: 0; }
+}
+
+/* ══ The old panels, drawn in the Control Room's own design system ═══════════════
+   Twenty-five screens still mount a page-admin.jsx panel inside the Control Room
+   through CrPanelMount (`.cr-panel.admin-main`): Members, Families, Centres, ID cards,
+   Accounts, Sessions, Missions, Anchor, Timetable, Curriculum, Mentors, Mentorship,
+   Volunteers, Companion, Community, Broadcast, Newsletter, Posts, Site, Status pages,
+   Forms, Promos, Wisdom, Summer, sign-in security. They kept the old vocabulary's look
+   — navy pill buttons with a drop shadow that jump on hover, 10px tracked monospace
+   labels, cream cards, display-face headings — beside tabs drawn in the new one, so
+   one screen read as two products.
+
+   Rewriting each as blocks (CONTRACT.md) is the end state, and a panel at a time. Until
+   then this maps the OLD CLASSES onto the NEW COMPONENTS' exact values — .btn is
+   .cr-btn, .chip is .cr-pill, .admin-table is .cr-tbl, .admin-tab is .cr-tab — so a
+   control looks the same whichever file drew it, and every panel moves at once without
+   a line of its logic touched. Scoped to `.cr-app .cr-panel`: the same classes outside
+   the Control Room (the portals, the public site) are not affected.
+
+   PHONE (`data-tree="phone"`, which the shell sets below 600px) is designed rather than
+   shrunk: sections lose their card chrome and run edge to edge, filter grids and field
+   rows stack, a section's actions become one row of equal buttons, tab strips scroll
+   instead of wrapping, wide tables keep their first column pinned while the rest
+   scrolls under it, and a drawer is a full-height sheet with its actions pinned at the
+   bottom where a thumb is. Not a container query: `container-type` would make the panel
+   the containing block for the panels' own `position: fixed` drawers. */
+
+.cr-app .cr-panel { font-family: var(--cr-font); color: var(--cr-ink); }
+
+/* Buttons → .cr-btn. One primary per bar; gold was a second primary, so it is the primary. */
+.cr-app .cr-panel .btn {
+  height: 36px; padding: 0 14px; gap: 6px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r);
+  background: var(--cr-bg); color: var(--cr-ink); box-shadow: none; transform: none;
+  font-family: var(--cr-font); font-size: 13.5px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  transition: opacity .12s var(--cr-ease), background-color .12s var(--cr-ease);
+}
+.cr-app .cr-panel .btn:hover:not(:disabled), .cr-app .cr-panel .btn:active:not(:disabled) { transform: none; box-shadow: none; opacity: .88; background: var(--cr-s1); border-color: var(--cr-line-hover); }
+.cr-app .cr-panel .btn-sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: var(--cr-r-sm); border-color: var(--cr-line-2); }
+.cr-app .cr-panel .btn-lg { height: 40px; padding: 0 16px; font-size: 14px; }
+.cr-app .cr-panel :is(.btn-primary, .btn-gold),
+.cr-app .cr-panel :is(.btn-primary, .btn-gold):hover:not(:disabled) { background: var(--cr-ink); border-color: var(--cr-ink); color: var(--cr-on-ink); }
+.cr-app .cr-panel .btn:disabled { opacity: .45; }
+
+/* Chips → .cr-pill: sentence case, the UI face, toned by meaning. */
+.cr-app .cr-panel .chip {
+  height: 24px; padding: 0 9px; border: 0; border-radius: var(--cr-r-pill);
+  background: var(--cr-neutral-bg); color: var(--cr-neutral-fg);
+  font-family: var(--cr-font); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none;
+}
+.cr-app .cr-panel .chip-lime { background: var(--cr-ok-bg); color: var(--cr-ok-fg); }
+.cr-app .cr-panel .chip-gold { background: var(--cr-gold-bg); color: var(--cr-gold-fg); }
+.cr-app .cr-panel :is(.chip-crimson, .chip-coral) { background: var(--cr-bad-bg); color: var(--cr-bad-fg); }
+.cr-app .cr-panel .chip-navy { background: var(--cr-ink); color: var(--cr-on-ink); }
+
+/* Type. Headings in the UI face at the shell's sizes; labels readable, not 10px mono. */
+.cr-app .cr-panel :is(.admin-h2, .admin-h3, .admin-h4, .admin-detail-h, .admin-drawer-head h3) { font-family: var(--cr-font); letter-spacing: -0.01em; color: var(--cr-ink); }
+.cr-app .cr-panel .admin-h2 { font-size: 20px; font-weight: 600; }
+.cr-app .cr-panel :is(.admin-h3, .admin-drawer-head h3) { font-size: 16px; font-weight: 600; }
+.cr-app .cr-panel :is(.admin-h4, .admin-detail-h) { font-size: 14px; font-weight: 600; }
+.cr-app .cr-panel .admin-hint { margin: 0 0 14px; font-size: 13px; color: var(--cr-muted-3); }
+.cr-app .cr-panel .admin-cell-sub { font-size: 12px; letter-spacing: 0; color: var(--cr-muted-3); }
+.cr-app .cr-panel :is(.admin-field > span, .admin-label, .admin-field-label, .admin-fields-h) {
+  font-family: var(--cr-font); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--cr-text);
+}
+.cr-app .cr-panel .admin-empty { padding: 28px 16px; font-size: 13.5px; color: var(--cr-muted-3); }
+.cr-app .cr-panel .admin-count { background: var(--cr-s2); color: var(--cr-muted-2); }
+
+/* Fields → .cr-input / .cr-select at the form height. */
+.cr-app .cr-panel :is(.admin-input, .admin-select) {
+  min-height: 40px; padding: 8px 12px; border: 1px solid var(--cr-line-3); border-radius: var(--cr-r);
+  background-color: var(--cr-bg); font-family: var(--cr-font); font-size: 14px; color: var(--cr-ink);
+}
+.cr-app .cr-panel .admin-select {
+  padding-right: 32px; appearance: none; -webkit-appearance: none;
+  background: var(--cr-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 256 256'%3E%3Cpath fill='%230b0b0c' d='M213.7 101.7l-80 80a8 8 0 0 1-11.4 0l-80-80a8 8 0 0 1 11.4-11.4L128 164.7l74.3-74.4a8 8 0 0 1 11.4 11.4z'/%3E%3C/svg%3E") no-repeat right 12px center;
+}
+.cr-app .cr-panel :is(.admin-input, .admin-select):focus { border-color: var(--cr-ink); }
+
+/* Surfaces → .cr-box / .cr-card: a hairline, not a lift. */
+.cr-app .cr-panel .admin-section { padding: 20px; margin-bottom: 16px; border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); }
+.cr-app .cr-panel .admin-section-head { margin-bottom: 14px; }
+.cr-app .cr-panel :is(.admin-card, .admin-tile) {
+  border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); box-shadow: none; transform: none;
+}
+.cr-app .cr-panel :is(.admin-card, .admin-tile):hover { transform: none; box-shadow: none; border-color: var(--cr-line-hover); }
+.cr-app .cr-panel :is(.admin-note-card, .admin-callout, .admin-bulkbar) { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-s1); }
+
+/* Tables → .cr-tbl inside a .cr-box. */
+.cr-app .cr-panel .admin-table-wrap { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); background: var(--cr-bg); }
+.cr-app .cr-panel .admin-table { font-size: var(--cr-row-font); }
+.cr-app .cr-panel .admin-table th {
+  background: var(--cr-s1); font-family: var(--cr-font); font-size: 12.5px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  color: var(--cr-muted-2); border-bottom: 1px solid var(--cr-line);
+}
+.cr-app .cr-panel .admin-table td { padding: var(--cr-pad) 14px; font-size: var(--cr-row-font); border-bottom: 1px solid var(--cr-line-4); }
+.cr-app .cr-panel .admin-table tbody tr:hover { background: var(--cr-s1); }
+.cr-app .cr-panel .admin-table tbody tr.is-selected { background: var(--cr-s2); }
+
+/* Tabs → .cr-tab. */
+.cr-app .cr-panel :is(.admin-tabs, .admin-anchor-tabs) { gap: 22px; border-bottom: 1px solid var(--cr-line); overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.cr-app .cr-panel :is(.admin-tab, .admin-anchor-tab) {
+  height: 40px; padding: 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent;
+  font-family: var(--cr-font); font-size: 14px; font-weight: 400; color: var(--cr-muted-3); white-space: nowrap;
+}
+.cr-app .cr-panel :is(.admin-tab, .admin-anchor-tab):hover { color: var(--cr-ink); }
+.cr-app .cr-panel :is(.admin-tab.is-active, .admin-tab[aria-selected="true"], .admin-anchor-tab.is-active, .admin-anchor-tab[aria-selected="true"]) {
+  color: var(--cr-ink); font-weight: 600; border-bottom-color: var(--cr-ink);
+}
+
+/* The panels' drawers, in the shell's drawer chrome. */
+.cr-app .cr-panel .admin-drawer { background: var(--cr-scrim-menu); backdrop-filter: none; }
+.cr-app .cr-panel .admin-drawer-panel { font-family: var(--cr-font); box-shadow: var(--cr-sh-sheet); }
+
+/* Reach on a touch screen: the shell's own rule gives .cr-btn 44px; these are its twins. */
+@media (pointer: coarse) {
+  .cr-app .cr-panel :is(.btn, .btn-sm, .admin-tab, .admin-anchor-tab, .admin-input, .admin-select) { min-height: 44px; }
+}
+
+/* ── Phone ─────────────────────────────────────────────────────────────────── */
+/* Edge to edge: a 20px card padding inside the shell's own 16px gutter left a phone
+   about 300px of a 390px screen for the table it is there to read. */
+.cr-app[data-tree="phone"] .cr-panel .admin-section { padding: 16px 0; margin-bottom: 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--cr-line); background: none; }
+.cr-app[data-tree="phone"] .cr-panel .admin-h2 { font-size: 18px; }
+/* A heading and its actions: the actions take their own full row of equal buttons, not
+   a ragged wrap under the title. */
+.cr-app[data-tree="phone"] .cr-panel :is(.admin-section-head, .admin-section-actions) { flex-direction: column; align-items: stretch; gap: 10px; }
+.cr-app[data-tree="phone"] .cr-panel .admin-section-actions { display: flex; flex-direction: row; flex-wrap: wrap; }
+.cr-app[data-tree="phone"] .cr-panel .admin-section-actions > :is(.btn, a, button) { flex: 1 1 auto; justify-content: center; }
+/* Filters and field rows: one column — two 150px selects side by side truncate both. */
+.cr-app[data-tree="phone"] .cr-panel :is(.admin-filters, .admin-filters-5, .admin-filters-6, .admin-fields-row, .admin-fields) { grid-template-columns: minmax(0, 1fr); }
+.cr-app[data-tree="phone"] .cr-panel .admin-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cr-app[data-tree="phone"] .cr-panel .admin-tile { padding: 14px; }
+/* A wide table scrolls sideways under its first column, which stays put: the name a
+   row belongs to is never scrolled off while you read across it. */
+.cr-app[data-tree="phone"] .cr-panel .admin-table-wrap { border-radius: var(--cr-r); }
+.cr-app[data-tree="phone"] .cr-panel .admin-table :is(th, td):first-child { position: sticky; left: 0; z-index: 1; background: var(--cr-bg); box-shadow: 1px 0 0 var(--cr-line); }
+.cr-app[data-tree="phone"] .cr-panel .admin-table th:first-child { z-index: 2; background: var(--cr-s1); }
+.cr-app[data-tree="phone"] .cr-panel .admin-table :is(th, td) { padding-left: 12px; padding-right: 12px; }
+/* A drawer is a sheet: the whole screen, its actions pinned where the thumb is. */
+.cr-app[data-tree="phone"] .cr-panel .admin-drawer-panel { width: 100%; }
+.cr-app[data-tree="phone"] .cr-panel .admin-fields { padding: 16px; }
+.cr-app[data-tree="phone"] .cr-panel .admin-drawer-foot { position: sticky; bottom: 0; background: var(--cr-bg); border-top: 1px solid var(--cr-line); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+.cr-app[data-tree="phone"] .cr-panel .admin-drawer-foot > :is(.btn, button) { flex: 1 1 auto; justify-content: center; }
+
+/* A long explanation in an old panel, folded on a phone (crFoldHints, cr-ui.jsx): three
+   lines and a More, so the form or list it explains is on the first screen. The text is
+   all still there — read in full by a screen reader, shown in full by one tap. */
+.cr-app[data-tree="phone"] .cr-panel .admin-hint.cr-fold { position: relative; max-height: calc(1.5em * 3 + 12px); overflow: hidden; }
+.cr-app[data-tree="phone"] .cr-panel .admin-hint.cr-fold.is-open { max-height: none; padding-bottom: 44px; }
+.cr-fold-btn {
+  position: absolute; right: 0; bottom: 0; min-height: 44px; min-width: 64px; padding: 12px 0 0 40px; border: 0;
+  background: linear-gradient(to right, transparent, var(--cr-bg) 36px); color: var(--cr-ink);
+  font: 600 13px/1.5 var(--cr-font); text-decoration: underline; text-underline-offset: 2px;
+}
+.cr-app[data-tree="phone"] .cr-panel .admin-hint.cr-fold.is-open .cr-fold-btn { background: none; }
+
+/* Centres → one centre's map or Summer venue, given the page to itself (cr-tab-members.jsx). */
+.cr-ce-sub { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.cr-ce-sub > .cr-panel { align-self: stretch; }
+.cr-ce-h { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.cr-list-row > .cr-btn { flex: none; margin-left: auto; }
 
 /* ══ The lesson block editor (lesson-editor.jsx) ═════════════════════════════
    BUILT FOR THE PHONE FIRST. Everything below the first container query is

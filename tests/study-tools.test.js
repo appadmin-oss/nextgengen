@@ -53,7 +53,7 @@ function cleanup() { try { if (server) process.kill(-server.pid); } catch (_) {}
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/' + d + '/chrome-linux/chrome' });
+    browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || require('./_responsive-probe').chromiumPath(require('fs')) });
     const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
     const tok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-STT-1'"), false);`);
     await ctx.addCookies([{ name: 'ngg_sess', value: tok, domain: '127.0.0.1', path: '/', httpOnly: true }, { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);

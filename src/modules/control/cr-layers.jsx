@@ -6,6 +6,30 @@
    ========================================================================== */
 
 /* ── Drawer (§4.2) ── */
+/* One section of a drawer, the same on a desk and a phone. The phone branch used to
+   draw `rows` and `text` and silently drop `list`, so anything a tab listed in a
+   drawer simply did not exist on a phone. A list row may carry one action
+   (`act: { l, run }`), for the one-person decision that belongs beside the name. */
+function crDrawerSec(s, i, phone) {
+  const val = f => f[1] == null || f[1] === "" ? "—" : f[1];
+  return (
+    <div key={i} className="cr-sheet-sec">
+      {s.h && <h4>{s.h}</h4>}
+      {s.rows && (phone
+        ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{val(f)}</b></div>)}</div>
+        : <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{val(f)}</dd></React.Fragment>)}</dl>)}
+      {s.text && <p className="cr-prose" style={{ fontSize: phone ? 15 : 13.5 }}>{s.text}</p>}
+      {s.list && <div className={phone ? "cr-pbox cr-list" : "cr-box cr-list"}>{s.list.length ? s.list.map((r, j) => (
+        <div key={j} className="cr-list-row">
+          <span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span>
+          <span className="cr-list-text"><b>{r.t}</b>{r.s && <span>{r.s}</span>}</span>
+          {r.m && <span className="cr-list-m">{r.m}</span>}
+          {r.act && <button type="button" className="cr-btn is-sm" onClick={r.act.run}>{r.act.l}</button>}
+        </div>
+      )) : <div className="cr-tempty" style={{ padding: 16 }}>{s.empty || "Nothing yet."}</div>}</div>}
+    </div>
+  );
+}
 function CrDrawer({ d, phone, onClose }) {
   const ref = React.useRef(null);
   useCrTrap(ref, true);
@@ -22,7 +46,7 @@ function CrDrawer({ d, phone, onClose }) {
         <div className="cr-pfull-who"><CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/><span>{d.sub}</span></div>
         {d.stats && d.stats.length > 0 && <div className="cr-pstats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
         {d.fields && d.fields.length > 0 && <div className="cr-pbox cr-pfields">{d.fields.map((f, i) => <div key={i}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div>}
-        {sections.map((s, i) => <div key={i} className="cr-sheet-sec"><h4>{s.h}</h4>{s.rows ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div> : s.text ? <p className="cr-prose" style={{ fontSize: 15 }}>{s.text}</p> : null}</div>)}
+        {sections.map((s, i) => crDrawerSec(s, i, true))}
       </div>
       {acts.length > 0 && <div className="cr-pfull-foot">{acts.map((a, i) => btn(a, i, true))}</div>}
     </div>
@@ -38,14 +62,7 @@ function CrDrawer({ d, phone, onClose }) {
         <div className="cr-sheet-body">
           {d.stats && d.stats.length > 0 && <div className="cr-stats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
           {d.fields && d.fields.length > 0 && <dl className="cr-dl">{d.fields.map((f, i) => <React.Fragment key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></React.Fragment>)}</dl>}
-          {sections.map((s, i) => (
-            <div key={i} className="cr-sheet-sec">
-              <h4>{s.h}</h4>
-              {s.rows && <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></React.Fragment>)}</dl>}
-              {s.text && <p className="cr-prose" style={{ fontSize: 13.5 }}>{s.text}</p>}
-              {s.list && <div className="cr-box cr-list">{s.list.length ? s.list.map((r, j) => <div key={j} className="cr-list-row"><span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span><span className="cr-list-text"><b>{r.t}</b>{r.s && <span>{r.s}</span>}</span>{r.m && <span className="cr-list-m">{r.m}</span>}</div>) : <div className="cr-tempty" style={{ padding: 16 }}>{s.empty || "Nothing yet."}</div>}</div>}
-            </div>
-          ))}
+          {sections.map((s, i) => crDrawerSec(s, i, false))}
         </div>
         {acts.length > 0 && <div className="cr-sheet-foot">{acts.map((a, i) => btn(a, i))}</div>}
       </aside>

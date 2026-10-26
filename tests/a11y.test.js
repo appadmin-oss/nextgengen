@@ -97,8 +97,8 @@ async function as(memberId, admin, viewport) {
       echo 'ok';`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
-    const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    const exe = require('./_responsive-probe').chromiumPath(fs);
+    browser = await chromium.launch(exe ? { executablePath: exe } : {});
     const AXE = path.join(ROOT, 'node_modules', 'axe-core', 'axe.min.js');
     const only = process.env.A11Y_ONLY || '';
     const report = [];

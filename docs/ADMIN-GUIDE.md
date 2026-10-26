@@ -166,6 +166,18 @@ centres' requests.
 events, posts, photo review, comments, community, tournaments, promotions,
 announcements, forms, site content, public status pages.
 
+- **Sessions** (Learning → Sessions) shows one year at a time; the arrows step
+  a year back or forward, and the year stays in the address, so a refresh or a
+  shared link opens the same year. Tap a session to change its dates, name,
+  theme or cover.
+- **Missions** (Learning → Missions) lists proof waiting for review first, then
+  the twelve weeks. Tap a submission to verify it (the XP is awarded) or to
+  return it with feedback, which you write in a form and the member sees. Each
+  week has its own **Add**.
+- **Posts** (Content → Posts) lists every post, drafts and archived included.
+  Tapping one opens the stored post for editing. A new post stays a draft until
+  its status is set to Published.
+
 **Inbox** — newsletter and messages.
 
 **System** — Access & roles, Audit log, Diagnostics, Integrations &
@@ -480,6 +492,15 @@ are refused.
 Each row shows what depends on it: members posted there, Summer School
 participants enrolled and waitlisted in the current edition, and groups. When
 you try to delete one, the refusal adds volunteers to that list.
+
+**Open a centre** (tap its row on a phone) to see its record, with **Edit**,
+**Map and geo-fence**, **Summer venue** (when it runs Summer School), the public
+page when it is live, and **Remove**. Edit is one form: identity, programmes,
+location and leads, contact and meeting times, and — once the public page is
+published — the page's words and pictures. The map and the Summer venue each open
+on a page of their own, with *All centres* to come back. A note at the top counts
+the centres that are not mapped yet, because the check-in desk cannot confirm
+somebody is at a centre without its map.
 
 ### Retiring versus deleting
 
@@ -1349,7 +1370,10 @@ Summer School centres never appear here.
 - **Programme:** Timetable (clashes refused; export), Curriculum, Tournaments
   (results come from the games played on the chess screen, so they are
   read-only here).
-- **Comms:** Announcements (below). **Gate:** Check-in desks (a new desk's
+- **Comms:** Announcements (below). **New announcement** asks who gets it —
+  everyone, NGG members, Summer School, or any one centre — and shows how many
+  active members each reaches; the confirm repeats that number. A centre name
+  the system does not know is refused rather than sent to everyone. **Gate:** Check-in desks (a new desk's
   password is shown once), Duty rota. **Team & centres:** Team, Centres,
   Volunteers, Staff activity.
 - On a phone the bottom bar holds Home, Roster, Timetable, Check-ins and More.
@@ -1426,7 +1450,10 @@ notification **and** an email with a link straight to the right screen:
 ### Family accounts — parents and guardians
 
 **Control Room → People → Families.** Needs `people`; a centre-scoped admin
-sees and decides only their own centres' children.
+sees and decides only their own centres' children. Choose *Waiting*,
+*Connected*, *Refused*, *Disconnected* or *Left by the parent* above the list;
+tick the connections and use **Approve**, **Refuse** or **Disconnect** in the bar
+that appears. Refusing and disconnecting ask for the reason the parent is emailed.
 
 Parents sign in at **/family** with their own email — a six-digit code, no
 password. The account is laid out like the other portals: their children down

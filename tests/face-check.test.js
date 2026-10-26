@@ -82,7 +82,7 @@ async function desk(chromium, exe, cam, token) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    const exe = process.env.CHROMIUM_PATH || '/opt/pw-browsers/' + d + '/chrome-linux/chrome';
+    const exe = process.env.CHROMIUM_PATH || require('./_responsive-probe').chromiumPath(require('fs'));
 
     // Off by default: no face check offered.
     let r = await desk(chromium, exe, cam('man_b'), 'SUMQR-FACE0001'); b1 = r.b;

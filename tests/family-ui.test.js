@@ -193,13 +193,15 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     ap.on('pageerror', e => errs.push('admin: ' + String(e).slice(0, 200)));
     await ap.goto(BASE + '/nextadmin?s=families', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
-    await ap.waitForSelector('.admin-table tbody tr', { timeout: 40000 });
-    chk('the Families section lists the request, with the parent email on the record beside it', /Kemi Adeyemi[\s\S]*mum@example\.org/.test(await ap.$eval('.admin-table tbody', el => el.innerText)));
-    await ap.check('.admin-table tbody tr input[type=checkbox]');
-    await ap.click('.admin-bulkbar button:has-text("Approve")');
-    await ap.waitForSelector('.dialog-card');
-    await ap.click('.dialog-card .dialog-actions .btn-primary');
-    await ap.waitForFunction(() => !document.querySelector('.admin-table tbody tr') || /Nobody is waiting/.test(document.body.innerText), null, { timeout: 15000 });
+    // The Families screen is the Control Room's own table now (cr-tab-members.jsx), not the
+    // old panel: select the row, Approve from the selection bar, confirm in the shell's dialog.
+    await ap.waitForSelector('.cr-tbl tbody tr', { timeout: 40000 });
+    chk('the Families section lists the request, with the parent email on the record beside it', /Kemi Adeyemi[\s\S]*mum@example\.org/.test(await ap.$eval('.cr-tbl tbody', el => el.innerText)));
+    await ap.click('.cr-tbl tbody tr [role=checkbox]');   // the table's own checkbox (a button with role=checkbox)
+    await ap.click('.cr-selbar button:has-text("Approve")');
+    await ap.waitForSelector('.cr-confirm');
+    await ap.click('.cr-confirm .cr-confirm-acts .is-primary');
+    await ap.waitForFunction(() => !document.querySelector('.cr-tbl tbody tr') || /Nobody is waiting/.test(document.body.innerText), null, { timeout: 15000 });
     chk('approving connects the parent', php(`echo db_row("SELECT status FROM guardian_wards WHERE memberId = 'NGG-FU-SIB'")['status'];`) === 'active');
     await ap.goto(BASE + '/nextadmin?s=requests', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);   // dev mode compiles every file in the browser: the boot budget, never a bare timeout (CLAUDE.md §1)
