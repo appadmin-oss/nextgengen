@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 184;
+const NGG_SCHEMA_TARGET = 185;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5372,6 +5372,41 @@ function db_migrate(PDO $db): void {
             ALTER TABLE notifications ADD COLUMN groupKey TEXT NOT NULL DEFAULT '';
             ALTER TABLE notifications ADD COLUMN actionLabel TEXT NOT NULL DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_notif_group ON notifications(memberId, groupKey);
+        ",
+
+        /* Support cases (domain/support.php). A case, not a ticket: one problem
+           a person brought, its priority by impact (P1–P4), its category, and a
+           lifecycle (new → open → pending → solved → closed). Messages are rows,
+           so an author, a time and the internal/visible line survive. Cases
+           are opened inside the member and family portals, never publicly. */
+        185 => "
+            CREATE TABLE IF NOT EXISTS support_cases (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo INTEGER NOT NULL UNIQUE,
+              status TEXT NOT NULL DEFAULT 'new', priority TEXT NOT NULL DEFAULT 'P3',
+              category TEXT NOT NULL DEFAULT 'other', subcategory TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              requesterKind TEXT NOT NULL DEFAULT 'visitor', requesterId TEXT NOT NULL DEFAULT '',
+              name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
+              memberId TEXT NOT NULL DEFAULT '', centre TEXT NOT NULL DEFAULT '', centreId TEXT NOT NULL DEFAULT '',
+              assigneeId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'web',
+              pageUrl TEXT NOT NULL DEFAULT '', userAgent TEXT NOT NULL DEFAULT '',
+              ipHash TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '', updatedAt TEXT NOT NULL DEFAULT '', lastActivityAt TEXT NOT NULL DEFAULT '',
+              lastReplyBy TEXT NOT NULL DEFAULT 'requester', respondBy TEXT NOT NULL DEFAULT '',
+              firstResponseAt TEXT NOT NULL DEFAULT '', solvedAt TEXT NOT NULL DEFAULT '', closedAt TEXT NOT NULL DEFAULT '',
+              rating INTEGER NOT NULL DEFAULT 0, ratingNote TEXT NOT NULL DEFAULT '', followUpOf INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_scase_status ON support_cases(status, respondBy);
+            CREATE INDEX IF NOT EXISTS idx_scase_requester ON support_cases(requesterKind, requesterId);
+            CREATE INDEX IF NOT EXISTS idx_scase_assignee ON support_cases(assigneeId, status);
+            CREATE TABLE IF NOT EXISTS support_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseNo INTEGER NOT NULL, authorKind TEXT NOT NULL DEFAULT 'requester', authorId TEXT NOT NULL DEFAULT '',
+              authorName TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '', internal INTEGER NOT NULL DEFAULT 0,
+              files TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_smsgs_case ON support_messages(caseNo, id);
         ",
     ];
 

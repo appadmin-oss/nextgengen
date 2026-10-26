@@ -4280,3 +4280,33 @@ ALTER TABLE notifications ADD COLUMN actionLabel VARCHAR(60) NOT NULL DEFAULT ''
 CREATE INDEX idx_notif_group ON notifications(memberId, groupKey);
 
 INSERT INTO schema_version (version) VALUES (184) ON DUPLICATE KEY UPDATE version = version;
+
+-- 185: support cases — one problem a person brought, by priority and category,
+-- with its thread of messages (domain/support.php).
+CREATE TABLE IF NOT EXISTS support_cases (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo INT NOT NULL UNIQUE,
+  status VARCHAR(16) NOT NULL DEFAULT 'new', priority VARCHAR(4) NOT NULL DEFAULT 'P3',
+  category VARCHAR(32) NOT NULL DEFAULT 'other', subcategory VARCHAR(80) NOT NULL DEFAULT '',
+  subject VARCHAR(200) NOT NULL DEFAULT '',
+  requesterKind VARCHAR(16) NOT NULL DEFAULT 'visitor', requesterId VARCHAR(64) NOT NULL DEFAULT '',
+  name VARCHAR(160) NOT NULL DEFAULT '', email VARCHAR(190) NOT NULL DEFAULT '', phone VARCHAR(40) NOT NULL DEFAULT '',
+  memberId VARCHAR(64) NOT NULL DEFAULT '', centre VARCHAR(120) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '',
+  assigneeId VARCHAR(64) NOT NULL DEFAULT '', source VARCHAR(16) NOT NULL DEFAULT 'web',
+  pageUrl VARCHAR(500) NOT NULL DEFAULT '', userAgent VARCHAR(300) NOT NULL DEFAULT '',
+  ipHash VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', lastActivityAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastReplyBy VARCHAR(16) NOT NULL DEFAULT 'requester', respondBy VARCHAR(32) NOT NULL DEFAULT '',
+  firstResponseAt VARCHAR(32) NOT NULL DEFAULT '', solvedAt VARCHAR(32) NOT NULL DEFAULT '', closedAt VARCHAR(32) NOT NULL DEFAULT '',
+  rating INT NOT NULL DEFAULT 0, ratingNote VARCHAR(600) NOT NULL DEFAULT '', followUpOf INT NOT NULL DEFAULT 0,
+  KEY idx_scase_status (status, respondBy), KEY idx_scase_requester (requesterKind, requesterId), KEY idx_scase_assignee (assigneeId, status)
+);
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo INT NOT NULL, authorKind VARCHAR(16) NOT NULL DEFAULT 'requester', authorId VARCHAR(64) NOT NULL DEFAULT '',
+  authorName VARCHAR(160) NOT NULL DEFAULT '', body TEXT, internal TINYINT NOT NULL DEFAULT 0,
+  files TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_smsgs_case (caseNo, id)
+);
+
+INSERT INTO schema_version (version) VALUES (185) ON DUPLICATE KEY UPDATE version = version;

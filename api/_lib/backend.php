@@ -432,6 +432,22 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.summer.graduates.invoice' => 'admin_summer_graduates_invoice',
             'admin.pending.cancel'        => 'admin_pending_cancel',
             'admin.pending.flush'         => 'admin_pending_flush',
+            /* Support cases (domain/support.php). The public ops resolve WHO is
+               asking from the cookies in the route, never from the body. */
+            'support.meta'                => 'support_meta',
+            'support.suggest'             => 'support_suggest',
+            'support.open'                => 'support_open',
+            'support.mine'                => 'support_mine',
+            'support.case'                => 'support_view',
+            'support.reply'               => 'support_reply',
+            'support.solve'               => 'support_solve',
+            'support.rate'                => 'support_rate',
+            'support.file'                => 'support_file',
+            'admin.support.list'          => 'admin_support_list',
+            'admin.support.case'          => 'admin_support_case',
+            'admin.support.reply'         => 'admin_support_reply',
+            'admin.support.bulk'          => 'admin_support_bulk',
+            'admin.support.open'          => 'admin_support_open',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',
             /* Summer School structure. An EDITION is one season
                (`summer_cohorts`, whose id is the `cohortId` every summer table

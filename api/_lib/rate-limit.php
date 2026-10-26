@@ -42,6 +42,9 @@ function rate_limit_default(string $op): ?array {
         'family.write'       => ['max' => 30, 'window' => 60],
         // A report photo arrives in up to 80 pieces; one upload must fit, ten in a minute must not.
         'family.upload'      => ['max' => 160, 'window' => 60],
+        // A case emails its owner and can page staff (P1/P2): per signed-in person.
+        'support.open'       => ['max' => 6,  'window' => 3600],
+        'support.write'      => ['max' => 30, 'window' => 600],   // replies, solve, rate
         'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
         'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
         'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still

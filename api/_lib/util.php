@@ -445,9 +445,9 @@ function notify_people(array $members, array $n): int {
  * grant them per person (capsExtra).
  */
 const ADMIN_ROLES = [
-    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding'],
+    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding', 'support'],
                        'summary' => 'Everything, including settings, roles and access. Keep to two or three people.'],
-    'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum'],
+    'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum', 'support'],
                        'summary' => 'Runs the programme day to day: both programmes, members, the door, content and the inbox. No money, settings or roles.'],
     'club_admin'   => ['label' => 'Club coordinator', 'tier' => 3, 'queued' => true, 'caps' => ['club', 'people', 'checkin', 'curriculum'],
                        'summary' => 'The year-round Club: members, centres, volunteers, the door, the timetable and the curriculum. Suspensions, merges and centre changes wait for a second admin.'],
@@ -469,6 +469,7 @@ const ADMIN_CAPS = [
     'curriculum' => 'Lessons, materials, checks and the Club\'s course list',
     'content'    => 'Posts, events, missions, sessions, assignments, the Journal, quotes and announcements',
     'inbox'      => 'Newsletter and messages',
+    'support'    => 'Support cases: answering members, families and visitors, and their priority and status',
     'fees'       => 'Dues, training fees, fines and payments',
     'journal'    => 'Writing the programme\'s institutional record',
     'safeguarding' => 'Safeguarding cases: reading reports about young people and recording what was done',

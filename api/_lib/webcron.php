@@ -308,6 +308,13 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
     }
 
+    /* Support cases: solved ones nobody reopened close, and ones waiting on a
+     * person who never wrote back are solved with a note (domain/support.php). */
+    if (function_exists('support_housekeeping')) {
+        try { support_housekeeping(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'support.tidy', $e->getMessage()); }
+    }
+
     /* Bulk acts parked for their undo window (domain/pending.php) whose tab
      * closed before the window ended: commit them here so nothing waits. */
     if (function_exists('pending_commit_due')) {

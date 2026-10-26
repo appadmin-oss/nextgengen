@@ -2297,7 +2297,7 @@ chk('s-status: still leaks no PII with registration added', (function () {
 })());
 
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
-chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum']
+chk('admin role caps = both programmes, the door and support cases, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum', 'support']
     && !array_intersect(admin_role_caps('admin'), ['fees', 'journal', 'settings', 'rbac']));
 chk('club_admin role caps = the Club, its people, the door and what it teaches', admin_role_caps('club_admin') === ['club', 'people', 'checkin', 'curriculum']);
 chk('the Control Room keeps no copy of the roles — it reads them from admin.roles', (function () {
@@ -32051,6 +32051,77 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $nw = null; foreach ($list('NTF-A')['notifications'] as $n) if ($n['title'] === 'Nowhere to go') $nw = $n;
     chk('notif · an item with nowhere to go has no button', $nw !== null && $nw['action'] === null);
     chk('notif · the unread count is returned with the list', is_int($list('NTF-A')['unread']));
+})();
+
+/* Support cases (domain/support.php): opened only inside a portal, by the
+   person signed in; a person sees only their own; priority sets the target;
+   the lifecycle reopens on a reply and follows a closed case up; staff see
+   internal notes the person never does; bulk is capped, per-row and scoped. */
+(function () {
+    $A = 'NGG-2025-0099';
+    foreach (['SUP-M1' => 'Tolu Support', 'SUP-M2' => 'Ada Other'] as $id => $nm) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $m1 = support_who_member('SUP-M1'); $m2 = support_who_member('SUP-M2');
+    $open = fn(array $who, array $x) => backend_dispatch('support.open', array_merge(['who' => $who, 'category' => 'fees', 'priority' => 'P2',
+        'subject' => 'My transfer is not showing', 'body' => 'I paid 5,000 on Monday by transfer and the account still shows it owed.'], $x));
+    chk('support · nobody outside a portal can open a case', (backend_dispatch('support.open', ['who' => support_nobody(), 'category' => 'fees', 'subject' => 'x x x x', 'body' => str_repeat('a', 30)])['error'] ?? '') === 'sign_in_required');
+    chk('support · a case needs a category it knows', ($open($m1, ['category' => 'nonsense'])['error'] ?? '') === 'category_required');
+    chk('support · and enough words to act on', ($open($m1, ['body' => 'help'])['error'] ?? '') === 'body_required');
+    $c = $open($m1, []);
+    chk('support · a member opens a case and gets a number', !empty($c['ok']) && $c['caseNo'] >= 100001);
+    $row = db_row('SELECT * FROM support_cases WHERE caseNo = ?', [$c['caseNo']]);
+    chk('support · the response target follows the priority (P2: a day)', abs(strtotime($row['respondBy']) - strtotime($row['createdAt']) - 24 * 3600) < 5 && $row['status'] === 'new');
+    $again = $open($m1, ['body' => 'Still not showing a day later, please look.']);
+    chk('support · the same problem again adds to the open case, not a second number', !empty($again['appended']) && $again['caseNo'] === $c['caseNo']);
+    $c2 = $open($m1, ['subject' => 'A different problem entirely', 'category' => 'cards', 'priority' => 'nonsense']);
+    chk('support · an unknown priority falls back to normal', db_row('SELECT priority FROM support_cases WHERE caseNo = ?', [$c2['caseNo']])['priority'] === 'P3');
+    chk('support · case numbers are minted from the highest, never a count', $c2['caseNo'] === $c['caseNo'] + 1);
+    chk('support · a member sees their own cases', count(backend_dispatch('support.mine', ['who' => $m1])['cases']) === 2);
+    chk('support · and nobody else’s', count(backend_dispatch('support.mine', ['who' => $m2])['cases']) === 0
+        && (backend_dispatch('support.case', ['who' => $m2, 'caseNo' => $c['caseNo']])['error'] ?? '') === 'not_found');
+    $about = $open($m1, ['subject' => 'About a stranger', 'memberId' => 'SUP-M2', 'category' => 'other']);
+    chk('support · a case cannot be about somebody the asker may not speak for', db_row('SELECT memberId FROM support_cases WHERE caseNo = ?', [$about['caseNo']])['memberId'] === '');
+
+    $lst = backend_dispatch('admin.support.list', ['requesterId' => $A]);
+    chk('support · the queue lists active cases with counts', !empty($lst['ok']) && $lst['kpis']['active'] === 3 && $lst['counts']['new'] === 2 && $lst['counts']['open'] === 1 && $lst['kpis']['urgent'] === 2);
+    chk('support · an unknown sort or status falls back rather than erroring', !empty(backend_dispatch('admin.support.list', ['requesterId' => $A, 'sort' => '1;DROP', 'status' => 'nope'])['ok']));
+    chk('support · the queue finds a case by its number', backend_dispatch('admin.support.list', ['requesterId' => $A, 'q' => (string)$c['caseNo'], 'status' => 'all'])['total'] === 1);
+    backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Checked with the bank team; nothing yet.', 'internal' => true]);
+    $pub = backend_dispatch('support.case', ['who' => $m1, 'caseNo' => $c['caseNo']])['case'];
+    chk('support · an internal note never reaches the person', !preg_grep('/bank team/', array_column($pub['messages'], 'body')));
+    chk('support · and does not count as a reply', db_row('SELECT firstResponseAt FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['firstResponseAt'] === '');
+    $rp = backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Please send the reference on the bank alert.']);
+    $row = db_row('SELECT * FROM support_cases WHERE caseNo = ?', [$c['caseNo']]);
+    chk('support · a staff reply waits for the person and records the first response', $rp['status'] === 'pending' && $row['firstResponseAt'] !== '' && $row['assigneeId'] === $A);
+    chk('support · the person sees it as waiting for them', backend_dispatch('support.case', ['who' => $m1, 'caseNo' => $c['caseNo']])['case']['statusL'] === 'Waiting for you');
+    backend_dispatch('support.reply', ['who' => $m1, 'caseNo' => $c['caseNo'], 'body' => 'The reference is 0012345.']);
+    chk('support · the person’s reply puts it back with the team', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['status'] === 'open');
+    chk('support · somebody else cannot reply to it', (backend_dispatch('support.reply', ['who' => $m2, 'caseNo' => $c['caseNo'], 'body' => 'hi'])['error'] ?? '') === 'not_found');
+    backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Found it and applied it.', 'status' => 'solved']);
+    chk('support · rating waits for solved, and counts once', !empty(backend_dispatch('support.rate', ['who' => $m1, 'caseNo' => $c['caseNo'], 'rating' => 5])['ok'])
+        && (backend_dispatch('support.rate', ['who' => $m1, 'caseNo' => $c['caseNo'], 'rating' => 1])['error'] ?? '') === 'already_rated');
+    db_exec('UPDATE support_cases SET solvedAt = ? WHERE caseNo = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - (SUPPORT_CLOSE_DAYS + 1) * 86400), $c['caseNo']]);
+    support_housekeeping();
+    chk('support · a solved case nobody reopened closes', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['status'] === 'closed');
+    $fu = backend_dispatch('support.reply', ['who' => $m1, 'caseNo' => $c['caseNo'], 'body' => 'It has come back again this month, same problem.']);
+    chk('support · a reply to a closed case becomes a follow-up that points back', !empty($fu['followUp']) && (int)db_row('SELECT followUpOf FROM support_cases WHERE caseNo = ?', [$fu['caseNo']])['followUpOf'] === $c['caseNo']);
+    db_exec("UPDATE support_cases SET status = 'pending', lastActivityAt = ? WHERE caseNo = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - (SUPPORT_PENDING_DAYS + 1) * 86400), $c2['caseNo']]);
+    support_housekeeping();
+    chk('support · a case waiting on a person who never replied is solved, with a note saying so', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c2['caseNo']])['status'] === 'solved'
+        && (bool)db_row("SELECT id FROM support_messages WHERE caseNo = ? AND authorKind = 'system' AND internal = 0", [$c2['caseNo']]));
+
+    $b = backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'priority', 'value' => 'P1', 'caseNos' => [$c2['caseNo'], $about['caseNo'], 999999]]);
+    chk('support · bulk reports per case: applied and not found', $b['applied'] === 2 && $b['refused'] === 1);
+    chk('support · bulk is capped and says so', (backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'status', 'value' => 'open', 'caseNos' => range(1, SUPPORT_BULK_MAX + 1)])['error'] ?? '') === 'too_many');
+    chk('support · only somebody who answers cases can be given one', (backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'assign', 'value' => 'SUP-M2', 'caseNos' => [$c2['caseNo']]])['error'] ?? '') === 'bad_assignee');
+    db_insert('centres', ['centreId' => 'CEN-SUP-OTHER', 'name' => 'Support Other', 'code' => 'SP', 'status' => 'active']);
+    db_insert('members', ['memberId' => 'NGG-SUP-SCOPED', 'fullName' => 'Scoped Support', 'email' => 'supscoped@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'admin', 'centre' => 'Support Other', 'centreScope' => json_encode(['CEN-SUP-OTHER']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('support · a scoped admin sees only their centres’ cases', backend_dispatch('admin.support.list', ['requesterId' => 'NGG-SUP-SCOPED', 'status' => 'all'])['total'] === 0
+        && (backend_dispatch('admin.support.case', ['requesterId' => 'NGG-SUP-SCOPED', 'caseNo' => $c['caseNo']])['error'] ?? '') === 'not_found');
+    db_insert('members', ['memberId' => 'NGG-SUP-EDIT', 'fullName' => 'Editor Only', 'email' => 'supedit@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('support · without the support capability the queue is refused', (backend_dispatch('admin.support.list', ['requesterId' => 'NGG-SUP-EDIT'])['error'] ?? '') === 'forbidden');
+    chk('support · the help answers are found by what is typed', in_array('signin', array_column(backend_dispatch('support.suggest', ['q' => 'cannot sign in password'])['articles'], 'id'), true));
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
