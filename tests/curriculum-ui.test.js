@@ -219,15 +219,23 @@ async function contextFor(memberId, admin, viewport) {
        thing to type, so defaulting to it was defaulting to the review the
        programme refuses to publish. */
     chk('a new question is a practical one by default, not four options',
-        await ap.$eval('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', el => el.value) === 'task');
-    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'mcq');
-    await ap.fill('.led-q textarea[aria-label="Question 1"]', 'How many white keys are in an octave?');
-    await ap.fill('.led-opt >> nth=0 >> input.admin-input', '5');
-    await ap.fill('.led-opt >> nth=1 >> input.admin-input', '7');
-    await ap.check('.led-opt >> nth=1 >> input[type=radio]');
+        await ap.$eval('.lq >> nth=0 >> .lq-kind select', el => el.value) === 'task');
+    await ap.selectOption('.lq >> nth=0 >> .lq-kind select', 'mcq');
+    await ap.fill('.lq >> nth=0 >> .lq-ask textarea', 'How many white keys are in an octave?');
+    await ap.fill('.lq-opt >> nth=0 >> .lq-opt-text', '5');
+    await ap.fill('.lq-opt >> nth=1 >> .lq-opt-text', '7');
+    await ap.check('.lq-opt >> nth=1 >> input[type=radio]');
+    chk('the right answer is a state of the whole option row, not a dot beside it',
+        await ap.$$eval('.lq-opt', els => els.filter(e => e.classList.contains('is-right')).length === 1));
     await ap.click('.led-exam button:has-text("Add a question")');
-    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Question 2"]', 'Play a C major scale and say where your thumb went under.');
-    await ap.fill('.led-q >> nth=1 >> textarea[aria-label="Rubric for question 2"]', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    await ap.fill('.lq >> nth=1 >> .lq-ask textarea', 'Play a C major scale and say where your thumb went under.');
+    await ap.fill('.lq >> nth=1 >> .lq-rubric textarea', 'Up to 3: played evenly (2); can say where the thumb crossed (1).');
+    /* Every field in a question carries a visible label. Placeholders used
+       to do that job, which means the label disappears the moment somebody
+       types and a screen reader never had one at all. */
+    chk('every field in a question has a label of its own, not a placeholder standing in for one',
+        await ap.$$eval('.lq textarea, .lq input:not([type=radio])', els => els.every(e =>
+          (e.labels && e.labels.length > 0) || !!e.getAttribute('aria-label'))));
     chk('the editor names the exam this course points at, so a question is held to that standard',
         /Trinity College London/.test(await ap.$eval('.led-exam', el => el.innerText)));
     await ap.click('.led-top button:has-text("Create lesson")');
@@ -532,16 +540,16 @@ async function contextFor(memberId, admin, viewport) {
     await ap.click('.le-row:last-child .le-ed');
     await ap.keyboard.type('Watch it twice: once for the sound, once for the hand.');
     await ap.click('.led-exam button:has-text("Add a question")');
-    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'watch');
-    await ap.waitForSelector('.led-q-video');
+    await ap.selectOption('.lq >> nth=0 >> .lq-kind select', 'watch');
+    await ap.waitForSelector('.lq-video');
     chk('a watch question asks for the video it is about',
-        /The video they watch/.test(await ap.$eval('.led-q-video', el => el.innerText)));
-    await ap.fill('.led-q-video input', 'https://example.org/not-a-video.mp4');
+        /The video they watch/.test(await ap.$eval('.lq-video', el => el.innerText)));
+    await ap.fill('.lq-video input', 'https://example.org/not-a-video.mp4');
     chk('…and says so when the exam could not play it, where it is written',
-        /not a YouTube or Vimeo link/.test(await ap.$eval('.led-q-video', el => el.innerText)));
-    await ap.fill('.led-q-video input', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-    await ap.fill('.led-q textarea[aria-label="Question 1"]', 'What did her thumb do before the hand moved?');
-    await ap.fill('.led-q textarea[aria-label="Rubric for question 1"]', 'Up to 3 for a detail from the video itself, in their own words.');
+        /not a YouTube or Vimeo link/.test(await ap.$eval('.lq-video', el => el.innerText)));
+    await ap.fill('.lq-video input', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    await ap.fill('.lq >> nth=0 >> .lq-ask textarea', 'What did her thumb do before the hand moved?');
+    await ap.fill('.lq >> nth=0 >> .lq-rubric textarea', 'Up to 3 for a detail from the video itself, in their own words.');
     await ap.click('.led-top button:has-text("Create lesson")');
     await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
     await ap.screenshot({ path: path.join(SHOTS, 'video-question-editor.png'), fullPage: true });

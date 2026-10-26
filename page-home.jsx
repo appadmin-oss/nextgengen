@@ -486,6 +486,11 @@ function CommunityCollage() {
 /* =========== Testimonials =========== */
 function Testimonials() {
   const sceneFor = ["studio", "graduation", "techLab", "speaker"];
+  /* Nothing invented stands in for somebody's words. Until there are real,
+     consented, attributable quotes (data.js), the section is not drawn —
+     an empty row of cards would say "we have no stories" more loudly than
+     leaving it out, and a fabricated one would say something worse. */
+  if (!TESTIMONIALS.length) return null;
   return (
     <section className="section" style={{background:"var(--cream-50)"}}>
       <div className="container">

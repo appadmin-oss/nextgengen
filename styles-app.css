@@ -15107,3 +15107,110 @@ button.m9x-ev-sum { cursor: pointer; }
 .led-ref a { color: var(--ink-900, #1a2233); }
 .led-q-video { grid-column: 1 / -1; }
 .led-bad { font-size: 12px; color: #a3221f; line-height: 1.4; }
+
+/* ══ A question, as a block ══════════════════════════════════════════════════
+   The exam used to be a form sitting under a writing surface: a full-width
+   native dropdown, a bare number next to a bare ×, and two textareas whose
+   placeholders were doing the work of labels. On one screen that read as two
+   different products, and the placeholder-as-label part was not only taste —
+   the label vanishes the moment somebody types, and a screen reader never
+   had one at all.
+
+   Same tokens as the lesson blocks above it, same control height, same
+   hairlines. Phone first; the two marking fields sit side by side only when
+   there is a desk to put them on. */
+
+.lq {
+  display: grid; gap: 10px; padding: 12px;
+  border: 1px solid var(--line-cool-soft, #d9dde5); border-radius: 12px; background: #fff;
+}
+.lq + .lq { margin-top: 2px; }
+.lq.is-mcq { background: var(--cream-50, #fbf8f1); }
+
+.lq-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lq-n {
+  width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: var(--navy-900, #16233f); color: #fff; font: 700 12px/1 var(--font-mono);
+}
+.lq-kind { flex: 1 1 11rem; min-width: 0; }
+.lq-kind > select {
+  width: 100%; height: 36px; padding: 0 28px 0 11px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background-color: #fff;
+  font: 600 14px/1 inherit; color: var(--ink-900, #1a2233);
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235a6488' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 10px 6px;
+}
+.lq-pts { display: inline-flex; align-items: center; gap: 7px; }
+.lq-pts > span { font-size: 12.5px; font-weight: 600; color: var(--ink-600, #4a5168); }
+.lq-pts > input {
+  width: 4rem; height: 36px; padding: 0 9px; text-align: center;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff;
+  font: 600 16px/1 var(--font-mono); color: var(--ink-900, #1a2233);
+}
+.lq-ai {
+  height: 22px; padding: 0 9px; display: inline-grid; place-items: center; border-radius: 999px;
+  background: var(--gold-100, #fdf0d2); color: #6b4700;
+  font: 700 10.5px/1 var(--font-mono); letter-spacing: .1em;
+}
+.lq-del {
+  margin-left: auto; width: 32px; height: 32px; flex: none; display: grid; place-items: center; cursor: pointer;
+  border: 0; border-radius: 8px; background: transparent; color: var(--ink-500, #5a6488);
+}
+.lq-del:hover { background: #fdeceb; color: #a3221f; }
+.lq-del:focus-visible { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+
+.lq-f { display: grid; gap: 5px; min-width: 0; }
+.lq-f > span, .lq-label { font-size: 12.5px; font-weight: 600; color: var(--ink-600, #4a5168); }
+.lq-f textarea, .lq-f input {
+  width: 100%; min-width: 0; padding: 9px 11px; font-size: 16px; line-height: 1.5;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff;
+  color: var(--ink-900, #1a2233); font-family: inherit; resize: vertical;
+}
+.lq-f textarea:focus-visible, .lq-f input:focus-visible, .lq-opt-text:focus-visible, .lq-kind > select:focus-visible, .lq-pts > input:focus-visible {
+  outline: 2px solid var(--navy-900, #16233f); outline-offset: 1px;
+}
+.lq-ask textarea { font-size: 16px; font-weight: 500; }
+.lq-note, .lq-bad { font-size: 12px; font-style: normal; line-height: 1.45; }
+.lq-note { color: var(--ink-500, #5a6488); }
+.lq-bad { color: #a3221f; }
+.lq-hint { margin: 0; font-size: 12px; color: var(--ink-500, #5a6488); line-height: 1.5; }
+
+.lq-mark { display: grid; gap: 10px; }
+@container (min-width: 40rem) {
+  .lq-mark { grid-template-columns: 1fr 1fr; }
+  .lq-mark > .lq-video, .lq-mark > .lq-hint { grid-column: 1 / -1; }
+}
+
+/* The options. The right answer is a state of the ROW, not a dot beside it —
+   on a phone a 16px radio is the whole signal otherwise. */
+.lq-opts { display: grid; gap: 7px; }
+.lq-opts > ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lq-opt { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+.lq-opt-text {
+  min-width: 0; height: 40px; padding: 0 11px; font-size: 16px;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 8px; background: #fff; color: var(--ink-900, #1a2233);
+}
+.lq-opt.is-right .lq-opt-text { border-color: #1f8a4c; background: #f1fbf4; }
+.lq-tick { position: relative; width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer; }
+.lq-tick > input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+.lq-tick > span {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-cool, #c3c9d4); background: #fff;
+}
+.lq-opt.is-right .lq-tick > span {
+  border-color: #1f8a4c; background: #1f8a4c no-repeat center / 12px 9px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 9'%3E%3Cpath d='M1 4.6L4.3 8 11 1' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.lq-tick > input:focus-visible + span { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+.lq-add {
+  justify-self: start; height: 34px; padding: 0 13px; cursor: pointer;
+  border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 999px; background: transparent;
+  font: 600 13px/1 inherit; color: var(--ink-600, #4a5168);
+}
+.lq-add:hover { background: #fff; color: var(--ink-900, #1a2233); }
+
+@media (pointer: coarse) {
+  .lq-kind > select, .lq-pts > input, .lq-opt-text { min-height: 44px; }
+  .lq-del, .lq-tick { min-width: 44px; min-height: 44px; }
+  .lq-add { min-height: 44px; }
+}

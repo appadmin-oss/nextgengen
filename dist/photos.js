@@ -19,15 +19,20 @@
  * arriving on free data would pay for these, or wait for them to time out,
  * on the very first page.
  *
- * Turned on, every scene is drawn here instead — a composed gradient, not a
- * photograph, deterministic per scene so the pages keep their colour.
- * Default OFF, because deleting a programme's home-page imagery is not a
- * decision this file gets to make.
+ * It is ON by default, and that is a deliberate change. The scenes are
+ * photographs of other people's children standing in for NGG's own cohort —
+ * one of them was captioned "Current cohort" — on a live site about real
+ * Nigerian teenagers. There is no version of that which is fine, and the
+ * host it cost was the smaller half of the problem.
  *
- * The better fix is neither: these are photographs of other people's
- * children standing in for NGG's own cohort — one is captioned "Current
- * cohort" — and the programme has its own. Replacing them with real centre
- * photographs in /assets removes the host AND the pretence.
+ * Scenes are composed locally instead: a gradient on the programme's own
+ * palette, deterministic per scene, so the pages keep their rhythm and
+ * nothing pretends to be a photograph of anybody.
+ *
+ * The real fix is the programme's own photographs from its own centres, in
+ * /assets, with the consent that comes with them. A deployment that has put
+ * licensed imagery back can opt out with
+ * `<meta name="ngg-local-media" content="false"/>`.
  */
 function photosLocalOnly() {
   try {
@@ -37,7 +42,7 @@ function photosLocalOnly() {
       if (m) return m.content !== "false";
     }
   } catch (e) {}
-  return false;
+  return true;
 }
 
 /* A stand-in that costs nothing and still composes: two seeded tones on the

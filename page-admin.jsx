@@ -2375,60 +2375,107 @@ function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnab
             {!f.checks.length
               ? <p className="led-warn"><LedIcon name="alert"/> No questions yet — so nothing from this session is ever asked about again. A week later your class walks into the next one with this one already fading.</p>
               : <p className="led-hint">{f.checks.reduce((n, c) => n + (Number(c.points) || 1), 0)} marks · passes at {f.passMark}%</p>}
-            {f.checks.map((c, i) => (
-              <div key={c.checkId || i} className="led-q">
-                <div className="led-q-top">
-                  <span className="led-q-n">{i + 1}</span>
-                  <select className="admin-select" value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} aria-label={"Question " + (i + 1) + " type"} disabled={ro}>
-                    {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                  </select>
-                  <label className="led-pts"><span className="sr-only">{"Marks for question " + (i + 1)}</span>
-                    <input className="admin-input" type="number" min={1} max={20} value={c.points} onChange={e => setCheck(i, "points", e.target.value)} disabled={ro}/></label>
-                  {c.source === "ai" && <span className="chip chip-gold" title="Written by the AI — read it before publishing">AI</span>}
-                  {!ro && <button type="button" className="led-x" aria-label={"Remove question " + (i + 1)}
-                    onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
-                </div>
-                <textarea className="admin-input" rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)}
-                          placeholder="The question" aria-label={"Question " + (i + 1)} disabled={ro}/>
-                {c.kind === "mcq" ? (
-                  <div className="led-opts" role="radiogroup" aria-label={"Options for question " + (i + 1) + " — choose the right one"}>
-                    {c.options.map((o, k) => (
-                      <div key={k} className="led-opt">
-                        <input type="radio" name={"ans-" + i} checked={String(k) === String(c.answer)} onChange={() => setCheck(i, "answer", String(k))}
-                               aria-label={"Option " + (k + 1) + " is the right answer"} disabled={ro}/>
-                        <input className="admin-input" value={o} onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
-                               placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)} disabled={ro}/>
-                        {!ro && c.options.length > 2 && <button type="button" className="led-x" aria-label={"Remove option " + (k + 1)}
-                          onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
-                      </div>
-                    ))}
-                    {!ro && c.options.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
-                  </div>
-                ) : (
-                  <div className="led-q-marking">
-                    {/* Only a 'watch' question carries a video, and it must:
-                        a question about a film nobody was shown is a question
-                        nobody can answer, so it is refused on save. */}
-                    {c.kind === "watch" && <label className="led-f led-q-video"><span>The video they watch</span>
-                      <input className="admin-input" value={c.videoUrl || ""} inputMode="url"
-                             placeholder="https://www.youtube.com/watch?v=…"
-                             aria-label={"Video for question " + (i + 1)} disabled={ro}
-                             aria-invalid={c.videoUrl && !curVideoEmbed(c.videoUrl) ? "true" : undefined}
-                             onChange={e => setCheck(i, "videoUrl", e.target.value.trim())}/>
-                      {c.videoUrl && !curVideoEmbed(c.videoUrl)
-                        ? <span className="led-bad" role="alert">That is not a YouTube or Vimeo link — the exam can only play those.</span>
-                        : <span className="led-hint">They watch it inside the exam, then write what they took from it.</span>}
-                    </label>}
-                    <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)}
-                      placeholder={c.kind === "short" ? "A model answer — what full marks looks like" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (there is no right answer)" : c.kind === "watch" ? "What somebody who actually watched it would be able to say" : "What a strong answer includes"}
-                      aria-label={"Model answer for question " + (i + 1)} disabled={ro}/>
-                    <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)}
-                      placeholder="Rubric — what a marker looks for, and how the marks are earned" aria-label={"Rubric for question " + (i + 1)} disabled={ro}/>
-                    <p className="led-hint">{CUR_MARK_HINT[c.kind] || ""}</p>
-                  </div>
-                )}
-              </div>
-            ))}
+            {/* A QUESTION IS A BLOCK, like everything else in this editor.
+                What was here was a form: a full-width native dropdown, a bare
+                number beside a bare ×, and two textareas whose placeholders
+                were doing the work of labels — so the lesson above was a
+                writing surface and the exam below it was a 2014 admin panel
+                on the same screen. Placeholders are not labels (they vanish
+                when you type, and a screen reader is left with nothing), so
+                every field here has one. */}
+            {f.checks.map((c, i) => {
+              const marking = CUR_MARK_HINT[c.kind] || "";
+              const kindLabel = (CUR_CHECK_KIND_OPTS.find(([k]) => k === c.kind) || [, c.kind])[1];
+              const badVideo = c.kind === "watch" && c.videoUrl && !curVideoEmbed(c.videoUrl);
+              return (
+                <article key={c.checkId || i} className={"lq" + (c.kind === "mcq" ? " is-mcq" : "")} aria-label={"Question " + (i + 1) + " — " + kindLabel}>
+                  <header className="lq-top">
+                    <span className="lq-n" aria-hidden="true">{i + 1}</span>
+                    <label className="lq-kind">
+                      <span className="sr-only">{"What question " + (i + 1) + " asks for"}</span>
+                      <select value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} disabled={ro}>
+                        {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label className="lq-pts">
+                      <span>Marks</span>
+                      <input type="number" min={1} max={20} value={c.points}
+                             onChange={e => setCheck(i, "points", e.target.value)} disabled={ro}
+                             aria-label={"Marks for question " + (i + 1)}/>
+                    </label>
+                    {c.source === "ai" && <span className="lq-ai" title="Written by the AI — read it before publishing">AI</span>}
+                    {!ro && <button type="button" className="lq-del" aria-label={"Remove question " + (i + 1)}
+                      onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
+                  </header>
+
+                  <label className="lq-f lq-ask">
+                    <span>What you are asking</span>
+                    <textarea rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} disabled={ro}
+                              placeholder={c.kind === "watch" ? "What did her thumb do before the hand moved?" : "Ask it the way you would say it out loud"}/>
+                  </label>
+
+                  {c.kind === "mcq" ? (
+                    <div className="lq-opts">
+                      <span className="lq-label" id={"lqo-" + i}>The options — tick the right one</span>
+                      <ul role="radiogroup" aria-labelledby={"lqo-" + i}>
+                        {c.options.map((o, k) => {
+                          const right = String(k) === String(c.answer);
+                          return (
+                            <li key={k} className={"lq-opt" + (right ? " is-right" : "")}>
+                              <label className="lq-tick">
+                                <input type="radio" name={"ans-" + i} checked={right} disabled={ro}
+                                       onChange={() => setCheck(i, "answer", String(k))}
+                                       aria-label={"Option " + (k + 1) + " is the right answer"}/>
+                                <span aria-hidden="true"/>
+                              </label>
+                              <input className="lq-opt-text" value={o} disabled={ro}
+                                     onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
+                                     placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)}/>
+                              {!ro && c.options.length > 2 && <button type="button" className="lq-del" aria-label={"Remove option " + (k + 1)}
+                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
+                    </div>
+                  ) : (
+                    <div className="lq-mark">
+                      {/* Only a 'watch' question carries a video, and it must:
+                          a question about a film nobody was shown is a question
+                          nobody can answer, so it is refused on save. */}
+                      {c.kind === "watch" && (
+                        <label className="lq-f lq-video">
+                          <span>The video they watch</span>
+                          <input value={c.videoUrl || ""} inputMode="url" disabled={ro}
+                                 placeholder="https://www.youtube.com/watch?v=…"
+                                 aria-invalid={badVideo ? "true" : undefined}
+                                 aria-label={"Video for question " + (i + 1)}
+                                 onChange={e => setCheck(i, "videoUrl", e.target.value.trim())}/>
+                          {badVideo
+                            ? <em className="lq-bad" role="alert">That is not a YouTube or Vimeo link — the exam can only play those.</em>
+                            : <em className="lq-note">It plays inside the exam, so they never leave the question to find it.</em>}
+                        </label>
+                      )}
+                      <label className="lq-f lq-model">
+                        <span>{c.kind === "reflection" ? "What a thoughtful answer touches on" : "What full marks looks like"}</span>
+                        <textarea rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)} disabled={ro}
+                          placeholder={c.kind === "short" ? "The ideas it has to contain, in any wording"
+                            : c.kind === "reflection" ? "There is no right answer here — say what an honest one would mention"
+                            : c.kind === "watch" ? "Something only somebody who actually watched it could say"
+                            : "What a strong answer includes"}/>
+                      </label>
+                      <label className="lq-f lq-rubric">
+                        <span>How the marks are earned</span>
+                        <textarea rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} disabled={ro}
+                          placeholder={"Up to " + (Number(c.points) || 1) + ": what earns each one"}/>
+                      </label>
+                      {!!marking && <p className="lq-hint">{marking}</p>}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
             {!ro && <div className="led-add">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>Add a question</button>
               {!!api.ai && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
