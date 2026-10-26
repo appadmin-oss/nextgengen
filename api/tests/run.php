@@ -24472,15 +24472,25 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
        used to sit on the home page under real centre names; these are the
        guards that stop that happening again with real children's words. */
     (function () use ($u1) {
+        /* A SESSION is the twelve-week block, not a Saturday. The question is
+           put in the last three weeks of one — so the fixture is a session
+           ending in a fortnight. */
         $unit = (string)$u1['unit']['unitId'];
+        $today = gmdate('Y-m-d');
+        db_exec("DELETE FROM sessions WHERE sessionId = 'TST-SESS'");
+        db_insert('sessions', ['sessionId' => 'TST-SESS', 'code' => 'TONI', 'year' => (int)gmdate('Y'), 'name' => 'Toni',
+            'startDate' => gmdate('Y-m-d', strtotime($today . ' -5 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +14 days')),
+            'theme' => '', 'isActive' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $sid = 'TST-SESS';
         $say = fn(string $body, string $showAs = 'initials') => member_testimonial_give([
-            'memberId' => 'NGG-CUR-M1', 'unitId' => $unit, 'course' => 'Music', 'body' => $body, 'showAs' => $showAs]);
+            'memberId' => 'NGG-CUR-M1', 'sessionId' => $sid, 'course' => 'Music', 'body' => $body, 'showAs' => $showAs]);
 
-        /* It has to be a session of theirs. "One per session" is the only
-           thing bounding how many one account can write, and a unitId the
-           client invents is not a session. */
-        chk('testimonial: a session the member does not have is not a session',
-            (member_testimonial_give(['memberId' => 'NGG-CUR-M1', 'unitId' => 'U-MADE-UP', 'body' => 'Lovely lesson, really.'])['error'] ?? '') === 'not_found');
+        chk('testimonial: it is asked about the SESSION that is ending, not about a lesson',
+            (testi_session_ask()['sessionId'] ?? '') === $sid);
+        /* "One per session" is the only thing bounding how many one account
+           can write, so a sessionId the client invents is not a session. */
+        chk('testimonial: a session nobody is being asked about is refused',
+            (member_testimonial_give(['memberId' => 'NGG-CUR-M1', 'sessionId' => 'SESS-MADE-UP', 'body' => 'Lovely term, really.'])['error'] ?? '') === 'not_asked_now');
         chk('testimonial: a couple of words is not a testimonial', ($say('ok')['error'] ?? '') === 'too_short');
         $w = $say('I can find middle C without looking now, and I showed my sister.', 'first');
         chk('testimonial: it saves, and it is NEW — not published because a child wrote it',
@@ -24522,7 +24532,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
         // One per session: a second thought is a correction, not a second one.
         chk('testimonial: one per session — writing again replaces it',
-            (int)db_row("SELECT COUNT(*) c FROM testimonials WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit])['c'] === 1);
+            (int)db_row("SELECT COUNT(*) c FROM testimonials WHERE memberId = 'NGG-CUR-M1' AND sessionId = ?", [$sid])['c'] === 1);
 
         /* Withdrawal: the same box, emptied, and it must work on a published
            one. Consent that cannot be withdrawn was not consent. */
@@ -24538,8 +24548,215 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         chk('testimonial: …and they can still READ the queue, because the words are useful to staff either way',
             !empty(backend_dispatch('admin.testimonials.list', ['requesterId' => 'NGG-CUR-ADM', 'status' => 'all'])['ok']));
 
+        /* Mid-term there is nothing to say yet, so the question is not put —
+           and an answer already given is still editable, because a window
+           governs when somebody is ASKED, never whether they may take their
+           own words back. */
+        db_update('sessions', ['endDate' => gmdate('Y-m-d', strtotime($today . ' +60 days'))], ['sessionId' => $sid]);
+        chk('testimonial: mid-term the question is not put at all', testi_session_ask() === null);
+        chk('testimonial: …but what they already wrote is still theirs to change',
+            !empty($say('Second thoughts, and better ones, about the term.')['ok']));
+
         db_exec("DELETE FROM testimonials WHERE memberId = 'NGG-CUR-M1'");
         db_exec("DELETE FROM consents WHERE studentId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM sessions WHERE sessionId = 'TST-SESS'");
+
+        /* ── How today went: the OTHER question, asked every lesson ──────
+           Three taps, never published, and there is no op here that could
+           publish it. What it must do is pay for itself: an instructor
+           opening the board sees the lesson most of the class could not
+           follow, at the top, with their words on it. */
+        $fb = fn(string $who, string $sig, string $body = '') => member_lesson_feedback_give(
+            ['memberId' => $who, 'unitId' => $unit, 'signal' => $sig, 'body' => $body]);
+        chk('feedback: a lesson the member does not have is refused',
+            (member_lesson_feedback_give(['memberId' => 'NGG-CUR-M1', 'unitId' => 'U-MADE-UP', 'signal' => 'got'])['error'] ?? '') === 'not_found');
+        chk('feedback: only the three answers are answers', ($fb('NGG-CUR-M1', 'brilliant')['error'] ?? '') === 'bad_signal');
+        chk('feedback: one tap is enough, and the words are optional', !empty($fb('NGG-CUR-M1', 'lost')['ok'])
+            && (string)db_row("SELECT signal FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'lost');
+        chk('feedback: one per member per lesson — tapping again corrects it, it does not add one',
+            !empty($fb('NGG-CUR-M1', 'got', 'I got it in the end')['ok'])
+            && (int)db_row("SELECT COUNT(*) c FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit])['c'] === 1
+            && (string)db_row("SELECT signal FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'got');
+        /* Two more who actually TAKE Piano — NGG-CUR-M2 is a guitarist, so
+           this lesson is not theirs and the tap would rightly be refused. */
+        foreach (['NGG-CUR-P1', 'NGG-CUR-P2'] as $pid) {
+            db_insert('members', ['memberId' => $pid, 'fullName' => 'Piano ' . $pid, 'email' => strtolower($pid) . '@example.com',
+                'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'track' => 'Piano', 'centre' => 'Egbeda',
+                'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        }
+        $fb('NGG-CUR-P1', 'lost', 'I could not see which key was middle C');
+        $fb('NGG-CUR-P2', 'mostly');
+        chk('feedback: a "mostly" counts half a miss, because a class that could only follow with help was not taught either',
+            lfb_miss_pct(['got' => 1, 'mostly' => 2, 'lost' => 1]) === 50);
+        $board = backend_dispatch('admin.curriculum.feedback', ['requesterId' => 'NGG-CUR-ADM']);
+        $top = $board['lessons'][0] ?? [];
+        chk('feedback: the board answers the question an instructor HAS — which lesson is not landing',
+            !empty($board['ok']) && ($top['unitId'] ?? '') === $unit
+            && ($top['got'] ?? 0) === 1 && ($top['mostly'] ?? 0) === 1 && ($top['lost'] ?? 0) === 1
+            && ($top['voices'] ?? 0) === 3 && ($top['missPct'] ?? 0) === 50 && !empty($top['enough']));
+        chk('feedback: …with the words from the ones who struggled, and only those',
+            count($top['said'] ?? []) === 1 && strpos($top['said'][0]['body'] ?? '', 'middle C') !== false);
+        chk('feedback: it is never published — there is no public op, and no publish verb anywhere in the file',
+            !function_exists('public_lesson_feedback')
+            && (backend_dispatch('public.lesson.feedback', [])['error'] ?? '') === 'unknown_op'
+            && !preg_match('/function\\s+\\w*(publish|public)\\w*lesson_feedback/i', (string)file_get_contents(__DIR__ . '/../_lib/domain/lesson-feedback.php')));
+        chk('feedback: clearing the tap takes the answer back entirely',
+            !empty(member_lesson_feedback_give(['memberId' => 'NGG-CUR-M1', 'unitId' => $unit, 'signal' => ''])['removed'])
+            && !db_row("SELECT id FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit]));
+        db_exec("DELETE FROM lesson_feedback");
+        db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-P1','NGG-CUR-P2')");
+
+        /* ── The division IS the enrolment ───────────────────────────────
+           `courseSource = division`: a member takes their division's own
+           shared curriculum and nothing from the strands. It exists because
+           the old fallback was doing a bad impression of it — a member with
+           no courses on record was handed all seven of Technology's strands
+           at once, which is a wall, not a curriculum. */
+        $tech = 'Technology & Applied Engineering';
+        /* The division spine is SEEDED (curriculum-divisions-2026.json) — the
+           real thing the mode delivers, not a fixture standing in for it. */
+        $spine = db_row("SELECT unitId FROM curriculum_units WHERE course = ? AND status = 'published' ORDER BY week LIMIT 1", [$tech]);
+        chk('division mode: the division spine ships with the code and is published', (bool)$spine);
+        $spineId = (string)($spine['unitId'] ?? '');
+        db_insert('members', ['memberId' => 'NGG-CUR-D1', 'fullName' => 'Div Member', 'email' => 'div1@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => 'Coding', 'courses' => json_encode(['Coding']),
+            'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $mD = fn() => curriculum_member_row('NGG-CUR-D1');
+
+        $ctx = null;
+        $inMember = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: by default the member keeps the courses chosen for them',
+            in_array('Coding', $inMember, true) && !in_array($tech, $inMember, true));
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'division']]);
+        chk('division mode: the setting is stored, and only the two modes are modes',
+            curriculum_schedule()['courseSource'] === 'division'
+            && (function () { backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'whatever']]);
+                              return curriculum_schedule()['courseSource']; })() === 'division');
+
+        $ctx = null;
+        $inDiv = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: the member now takes their DIVISION\'s curriculum, not their strand',
+            in_array($tech, $inDiv, true) && !in_array('Coding', $inDiv, true));
+        chk('division mode: …and Chess, because Chess is every division\'s',
+            in_array('Chess', $inDiv, true));
+        chk('division mode: the division\'s own lesson actually reaches them',
+            $spineId !== '' && isset(curriculum_member_units($mD())[$spineId]));
+
+        /* A member with no division is not handed somebody else's curriculum. */
+        db_insert('members', ['memberId' => 'NGG-CUR-D2', 'fullName' => 'No Div', 'email' => 'div2@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => '', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $ctx = null;
+        chk('division mode: a member with no division gets Chess and the Club-wide lessons, never a division that is not theirs',
+            curriculum_member_courses(curriculum_member_row('NGG-CUR-D2'), $ctx) === ['Chess']);
+
+        /* THE COVERAGE BOARD. The spine that ships is Year 1 only, so turning
+           the mode on strands every Year 2 and 3 member. That has to be a
+           number on a screen, not something a child discovers. */
+        $cov = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        $techRow = null;
+        foreach ($cov['rows'] ?? [] as $r) if ($r['name'] === $tech) $techRow = $r;
+        chk('division coverage: every division is listed with a year-by-year verdict',
+            !empty($cov['ok']) && count($cov['rows']) === 4 && $techRow && count($techRow['years']) === CURR_PROGRAMME_YEARS);
+        chk('division coverage: Year 1 has a spine; Years 2 and 3 are named as gaps',
+            $techRow['years'][0]['has'] === true && $techRow['years'][1]['has'] === false && $techRow['gaps'] === [2, 3]);
+        chk('division coverage: it counts the members a gap would actually strand, rather than leaving it to be inferred',
+            $cov['stranded'] === 0 && $techRow['years'][0]['members'] >= 1);
+        staff_curriculum_year(['requesterId' => 'NGG-CUR-ADM', 'viaAdmin' => true, 'memberId' => 'NGG-CUR-D1', 'year' => 2]);
+        $cov2 = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        chk('division coverage: …so placing that member in a year with no spine makes the count go up',
+            $cov2['stranded'] === 1);
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'member']]);
+        chk('division mode: turning it off puts the member back on their own courses',
+            (function () { $c = null; return in_array('Coding', curriculum_member_courses(curriculum_member_row('NGG-CUR-D1'), $c), true); })());
+        db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-D1','NGG-CUR-D2')");
+        db_exec("DELETE FROM member_state WHERE memberId = 'NGG-CUR-D1'");
+
+        /* ── Studying for school: one session of the growth plan ─────────
+           The plan from a member's results already said "Mathematics, 62 →
+           70, three sessions a week" and there was nowhere to do one. A
+           drill is that session, and finishing it has to close three loops:
+           the week's own counter, the spaced repetition, and the level the
+           next one sits at. */
+        db_insert('growth_plans', ['planId' => 'GP-TEST-1', 'uploadId' => 'UP-TEST-1', 'memberId' => 'NGG-CUR-M1',
+            'term' => '2026-1', 'summary' => 'Two subjects this term.', 'status' => 'live', 'committed' => 1,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('growth_plan_items', ['itemId' => 'GI-TEST-1', 'planId' => 'GP-TEST-1', 'subject' => 'Mathematics',
+            'current' => 62, 'target' => 70, 'method' => 'retrieval', 'what' => 'Past questions, out loud.',
+            'whenWhere' => 'After supper, at the table.', 'sessionsPerWeek' => 3, 'helper' => 'self', 'position' => 0]);
+
+        $drillQs = static function () {
+            $qs = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $qs[] = ['q' => "What is $i + $i?", 'options' => ['One', (string)($i * 2), 'Three', 'Four'],
+                         'answer' => 1, 'why' => 'Add it to itself.'];
+            }
+            return json_encode(['questions' => $qs]);
+        };
+        $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'test-key'];
+        $GLOBALS['__ai_mock'] = static fn($profile, $system, $turns) => ['ok' => true, 'provider' => 'groq', 'text' => $drillQs()];
+
+        $plan = backend_dispatch('member.study.plan', ['memberId' => 'NGG-CUR-M1']);
+        chk('study: the School screen is ONE call, already shaped — the app never reads the results payload',
+            !empty($plan['ok']) && $plan['state'] === 'ready' && count($plan['items']) === 1
+            && $plan['items'][0]['subject'] === 'Mathematics' && $plan['items'][0]['target'] === 70
+            && $plan['items'][0]['planned'] === 3 && $plan['items'][0]['doneThisWeek'] === 0
+            && $plan['items'][0]['level'] === 2);
+
+        $start = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a drill is five questions at the level they are working at',
+            !empty($start['ok']) && count($start['questions']) === 5 && $start['level'] === 2 && $start['subject'] === 'Mathematics');
+        chk('study: the ANSWERS never travel to the browser — there is nothing to read off the page',
+            !isset($start['questions'][0]['answer']) && !isset($start['questions'][0]['why']));
+        chk('study: a subject that is not on their plan is not a subject',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-NOPE'])['error'] ?? '') === 'not_found');
+
+        // Four of five right: enough to move up, and one card to make.
+        $mark = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'],
+            'answers' => [1, 1, 1, 1, 0]]);
+        chk('study: it is marked here, with the REASON rather than just a verdict',
+            !empty($mark['ok']) && $mark['correct'] === 4 && $mark['asked'] === 5 && $mark['pct'] === 80
+            && $mark['marks'][4]['right'] === false && strpos((string)$mark['marks'][4]['why'], 'Add it') === 0);
+        chk('study: …and it cannot be marked twice',
+            (backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'], 'answers' => [1,1,1,1,1]])['error'] ?? '') === 'already_marked');
+
+        /* The three loops. */
+        chk('study: the week\'s check-in goes up by one — through the PLAN\'s own counter, not a second tally',
+            ($mark['tick']['done'] ?? 0) === 1 && ($mark['tick']['planned'] ?? 0) === 3
+            && (int)db_row("SELECT done FROM plan_checkins WHERE itemId = 'GI-TEST-1'")['done'] === 1);
+        chk('study: what they got wrong becomes a flashcard, in the spaced repetition they already have',
+            ($mark['cardsMade'] ?? 0) === 1
+            && (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 1
+            && (string)db_row("SELECT name FROM study_decks WHERE memberId = 'NGG-CUR-M1'")['name'] === 'School · Mathematics');
+        chk('study: 80% moves the next one up a level', ($mark['nextLevel'] ?? 0) === 3
+            && drill_level_for('NGG-CUR-M1', 'Mathematics') === 3);
+
+        // The same card is not made twice, however often they miss it again.
+        $s2 = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        $m2 = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $s2['drillId'], 'answers' => [0, 0, 0, 0, 0]]);
+        chk('study: a question already on a card is not carded twice — the count would be a lie',
+            (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 5);
+        chk('study: and nought out of five steps the level back down', ($m2['nextLevel'] ?? 0) === 2);
+
+        /* The daily bound, said as itself. */
+        for ($i = 0; $i < DRILL_PER_DAY; $i++) backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a sitting is short, and the day has a bound it names',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1'])['error'] ?? '') === 'enough_today');
+
+        /* With nothing to write the questions, it says so rather than
+           handing a child an empty paper. */
+        unset($GLOBALS['__ai_mock'], $GLOBALS['CONFIG']['ai']);
+        db_exec("DELETE FROM study_drills WHERE memberId = 'NGG-CUR-M1'");
+        chk('study: with no AI and no question bank it refuses honestly, and points somewhere real',
+            (function () { $r = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+                           return ($r['error'] ?? '') === 'no_questions' && strpos((string)($r['message'] ?? ''), 'flashcards') !== false; })());
+
+        db_exec("DELETE FROM study_cards WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM study_decks WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM plan_checkins WHERE itemId = 'GI-TEST-1'");
+        db_exec("DELETE FROM growth_plan_items WHERE planId = 'GP-TEST-1'");
+        db_exec("DELETE FROM growth_plans WHERE planId = 'GP-TEST-1'");
     })();
 
     // Import: dry run, digest, apply, re-run.

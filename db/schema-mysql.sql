@@ -4310,3 +4310,55 @@ CREATE TABLE IF NOT EXISTS support_messages (
 );
 
 INSERT INTO schema_version (version) VALUES (185) ON DUPLICATE KEY UPDATE version = version;
+
+-- 186 (was 181 on the community-audit branch): two questions, two rhythms. "How did today go?" after every LESSON —
+-- a tap, for the person teaching, never published. "What did this term give
+-- you?" after every SESSION, the twelve-week block — and that is the
+-- testimonial. testimonials.unitId stays, unread, so a deployment that
+-- already ran 180 keeps resolving.
+ALTER TABLE testimonials ADD COLUMN sessionId VARCHAR(40) NOT NULL DEFAULT '';
+CREATE INDEX idx_testi_session ON testimonials(memberId, sessionId);
+
+CREATE TABLE IF NOT EXISTS lesson_feedback (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fid VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  signal VARCHAR(16) NOT NULL DEFAULT '',
+  body TEXT,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_lfb_one (memberId, unitId),
+  KEY idx_lfb_unit (unitId, signal),
+  KEY idx_lfb_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (186) ON DUPLICATE KEY UPDATE version = version;
+
+-- 187 (was 182 on the community-audit branch): studying for school in the Learn app (domain/study-drill.php). The
+-- growth plan already said WHAT to work on; a drill is one of its sessions,
+-- actually done — marked with reasons, ticking the week's check-in, and
+-- turning what was got wrong into spaced-repetition cards.
+CREATE TABLE IF NOT EXISTS study_drills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  drillId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  itemId VARCHAR(40) NOT NULL DEFAULT '',
+  subject VARCHAR(120) NOT NULL DEFAULT '',
+  topic VARCHAR(190) NOT NULL DEFAULT '',
+  level INT NOT NULL DEFAULT 2,
+  source VARCHAR(16) NOT NULL DEFAULT '',
+  asked INT NOT NULL DEFAULT 0,
+  correct INT NOT NULL DEFAULT 0,
+  questionsJson MEDIUMTEXT,
+  answersJson MEDIUMTEXT,
+  startedAt VARCHAR(32) NOT NULL DEFAULT '',
+  markedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_drill_member (memberId, subject, startedAt),
+  KEY idx_drill_marked (memberId, markedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (187) ON DUPLICATE KEY UPDATE version = version;

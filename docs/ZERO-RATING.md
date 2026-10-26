@@ -179,7 +179,7 @@ What is defensible to say, because it is measured:
   by a test that fails if that changes.
 - About 2.3 MB once, about 5 KB a week after that.
 - No tracking, no advertising, no analytics host.
-- A curriculum of 588 lessons across 21 courses, taught at centres in
+- A curriculum of 588 lessons across 39 courses, taught at centres in
   Nigeria, to 10–17 year olds.
 
 What is not yet true, and should not be claimed:

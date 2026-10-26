@@ -2,16 +2,23 @@
 /**
  * WHAT A MEMBER SAYS ABOUT A SESSION — asked at the end of every one.
  *
+ * A SESSION is the twelve-week block, four a year (TONI, MEDI, SUMMER, DOMI),
+ * not a Saturday. This was built per LESSON first and that was wrong: asking
+ * a child for a testimonial twenty-four times a term produces a diary, not a
+ * testimonial, and nothing worth publishing. What is asked every Saturday is
+ * a different and much smaller question, and it lives in
+ * `domain/lesson-feedback.php`: did today land? It is never published.
+ *
  * The home page used to carry four testimonials attributed to named people:
  * a fifteen-year-old from Egbeda, a parent, a mentor of four years. Nobody
  * said any of them. They were written to show what the section would look
  * like and they shipped to a live site about real children.
  *
- * This is where the real ones come from. A member finishes a session and is
- * asked one question, in one line, every week. Over a term that is a record
- * of what the programme actually did for somebody, in their own words,
- * written the day it happened rather than reconstructed for a funder's
- * report eighteen months later.
+ * This is where the real ones come from. A member finishes a term and is
+ * asked one question, in one line. Four a year is a record of what the
+ * programme actually did for somebody, in their own words, written while
+ * they still remember it rather than reconstructed for a funder's report
+ * eighteen months later.
  *
  * ── The rules, which ARE the feature ───────────────────────────────────────
  *
@@ -48,6 +55,40 @@ const TESTI_MIN       = 12;
 const TESTI_SHOW_AS   = ['initials', 'first', 'anon'];
 const TESTI_STATUSES  = ['new', 'published', 'declined', 'withdrawn'];
 const TESTI_PUBLIC_MAX = 24;
+/* WHEN THE QUESTION IS PUT. Not on the first Saturday of a term — there is
+   nothing to say yet — and not forever afterwards either. The last three
+   weeks of a session, and then for two months after it ends so that somebody
+   who was away for the close of term is still asked. */
+const TESTI_ASK_BEFORE_DAYS = 21;
+const TESTI_ASK_AFTER_DAYS  = 60;
+
+/**
+ * The session a member is asked about today, or null.
+ *
+ * Read from the `sessions` table rather than session_current(), because that
+ * one is scoped to the calendar year and the session a member should be
+ * asked about in early January is December's.
+ */
+function testi_session_ask(?string $today = null): ?array {
+    $today = $today ?? gmdate('Y-m-d');
+    $cur = db_row('SELECT * FROM sessions WHERE startDate <= ? AND endDate >= ? ORDER BY startDate DESC LIMIT 1', [$today, $today]);
+    if ($cur) {
+        $left = (int)round((strtotime(iso_date($cur['endDate']) . ' UTC') - strtotime($today . ' UTC')) / 86400);
+        return $left <= TESTI_ASK_BEFORE_DAYS ? $cur : null;
+    }
+    $prev = db_row('SELECT * FROM sessions WHERE endDate < ? ORDER BY endDate DESC LIMIT 1', [$today]);
+    if (!$prev) return null;
+    $since = (int)round((strtotime($today . ' UTC') - strtotime(iso_date($prev['endDate']) . ' UTC')) / 86400);
+    return $since <= TESTI_ASK_AFTER_DAYS ? $prev : null;
+}
+
+/** A session as the member and the review queue see it named. */
+function testi_session_public(?array $s): ?array {
+    if (!$s) return null;
+    return ['sessionId' => (string)$s['sessionId'], 'name' => (string)($s['name'] ?: $s['code']),
+            'startDate' => iso_date($s['startDate']), 'endDate' => iso_date($s['endDate']),
+            'theme' => (string)($s['theme'] ?? '')];
+}
 
 /** The distinct members a set of testimonial rows belongs to. */
 function testi_member_ids(array $rows): array {
@@ -71,12 +112,13 @@ function testi_public(array $r, bool $withName = false): array {
         'showAs' => (string)$r['showAs'],
         'status' => (string)$r['status'],
         'course' => (string)$r['course'],
+        'sessionId' => (string)$r['sessionId'],
         'createdAt' => (string)$r['createdAt'],
     ];
     if ($withName) {
         $out['memberId'] = (string)$r['memberId'];
         $out['centre'] = (string)$r['centre'];
-        $out['unitId'] = (string)$r['unitId'];
+        $out['sessionId'] = (string)$r['sessionId'];
         $out['note'] = (string)($r['note'] ?? '');
     }
     return $out;
@@ -108,28 +150,32 @@ function testi_byline(array $m, string $showAs): string {
  * The member writes one, for a session.
  *
  * One per session: writing again replaces what they wrote, because a second
- * thought about the same Saturday is a correction, not a second testimonial.
+ * thought about the same term is a correction, not a second testimonial.
  * Replacing a PUBLISHED one sends it back for review — the words on the site
  * must be words somebody approved.
  *
- * It must be a session of THEIRS. Not because somebody would write a kind
- * word about a lesson they never sat, but because "one per session" is the
- * only thing bounding how many of these one account can create, and a unitId
- * the client invents is not a session.
+ * It must be the session they are actually being asked about. "One per
+ * session" is the only thing bounding how many of these one account can
+ * create, and a sessionId the client invents is not a session.
  */
 function member_testimonial_give(array $p): array {
     $m = function_exists('curriculum_member_row') ? curriculum_member_row((string)($p['memberId'] ?? '')) : null;
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
-    $unitId = (string)($p['unitId'] ?? '');
-    if ($unitId === '' || !isset(curriculum_member_units($m)[$unitId])) return ['ok' => false, 'error' => 'not_found'];
+    $ask = testi_session_ask();
+    $sessionId = (string)($p['sessionId'] ?? '');
+    /* An EXISTING one may always be edited or withdrawn, whatever the clock
+       says — the window governs when the question is PUT, never whether
+       somebody may take their own words back. */
+    $existing = $sessionId !== ''
+        ? db_row('SELECT * FROM testimonials WHERE memberId = ? AND sessionId = ? LIMIT 1', [(string)$m['memberId'], $sessionId])
+        : null;
+    if (!$existing && (!$ask || $sessionId !== (string)$ask['sessionId'])) return ['ok' => false, 'error' => 'not_asked_now'];
 
     $body = function_exists('curriculum_clean_text')
         ? curriculum_clean_text($p['body'] ?? '', TESTI_MAX)
         : mb_substr(trim((string)($p['body'] ?? '')), 0, TESTI_MAX);
     $showAs = (string)($p['showAs'] ?? 'initials');
     if (!in_array($showAs, TESTI_SHOW_AS, true)) $showAs = 'initials';
-
-    $existing = db_row('SELECT * FROM testimonials WHERE memberId = ? AND unitId = ? LIMIT 1', [(string)$m['memberId'], $unitId]);
 
     /* An empty body is a WITHDRAWAL, not a validation error. It is how the
        member takes one back — the same box they wrote it in, emptied — and
@@ -144,7 +190,7 @@ function member_testimonial_give(array $p): array {
     }
 
     $row = [
-        'memberId' => (string)$m['memberId'], 'unitId' => $unitId,
+        'memberId' => (string)$m['memberId'], 'sessionId' => $sessionId,
         'course' => (string)($p['course'] ?? ($m['track'] ?? '')),
         'centre' => (string)($m['centre'] ?? ''),
         'body' => $body, 'showAs' => $showAs,
@@ -164,13 +210,18 @@ function member_testimonial_give(array $p): array {
     return ['ok' => true, 'tid' => $tid, 'status' => 'new'];
 }
 
-/** What this member has already said about this session, so the box is not blank twice. */
+/**
+ * Whether to put the question, which session it is about, and what they
+ * already said — one call, because the screen needs all three to decide
+ * whether to draw anything at all.
+ */
 function member_testimonial_mine(array $p): array {
     $m = function_exists('curriculum_member_row') ? curriculum_member_row((string)($p['memberId'] ?? '')) : null;
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
-    $r = db_row('SELECT * FROM testimonials WHERE memberId = ? AND unitId = ? LIMIT 1',
-                [(string)$m['memberId'], (string)($p['unitId'] ?? '')]);
-    return ['ok' => true, 'mine' => $r ? testi_public($r) : null];
+    $ask = testi_session_ask();
+    $sid = (string)($p['sessionId'] ?? ($ask['sessionId'] ?? ''));
+    $r = $sid === '' ? null : db_row('SELECT * FROM testimonials WHERE memberId = ? AND sessionId = ? LIMIT 1', [(string)$m['memberId'], $sid]);
+    return ['ok' => true, 'session' => testi_session_public($ask), 'mine' => $r ? testi_public($r) : null];
 }
 
 /**

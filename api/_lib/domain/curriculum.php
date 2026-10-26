@@ -1112,6 +1112,81 @@ const CURR_PLAN_ARC = [
     ['Showcase and reflection', 'Present the capstone, celebrate the term, and set one goal for next term.'],
 ];
 
+/**
+ * THE DIVISION COVERAGE BOARD — which division has a curriculum, for which year.
+ *
+ * `courseSource = division` makes the division the enrolment, so a division
+ * with no lessons for a year is not a gap in a report: it is that year's
+ * members opening their portal and finding nothing. The spine that ships
+ * (curriculum-divisions-2026.json) covers Year 1 only, so this board exists
+ * to make the other two years visible while they are written, rather than
+ * discovered by a child.
+ *
+ * Counts the division's OWN course — the one named after it — because that is
+ * exactly what the mode delivers. Strand courses are reported separately by
+ * admin_curriculum_coverage().
+ */
+function admin_curriculum_divisions(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $cfg = curriculum_schedule();
+    $divisions = function_exists('nggc_divisions') ? nggc_divisions() : [];
+
+    $byCourse = [];
+    foreach (db_all("SELECT course, level, status, COUNT(*) n FROM curriculum_units
+                     WHERE status IN ('published','draft') AND course <> '' GROUP BY course, level, status") as $r) {
+        $y = curriculum_level_year((string)$r['level']);
+        $byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']]
+            = ($byCourse[mb_strtolower(trim((string)$r['course']))][$y][(string)$r['status']] ?? 0) + (int)$r['n'];
+    }
+
+    /* Who it would reach. Counted through the SAME resolver a member's own
+       page uses, so this cannot drift from what they actually see. */
+    $heads = []; $unplaced = 0;
+    $placed = [];
+    foreach (db_all('SELECT memberId, stateValue FROM member_state WHERE stateKey = ?', [CURR_YEAR_KEY]) as $r) $placed[(string)$r['memberId']] = (int)$r['stateValue'];
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
+    if ($scope !== null) {
+        if (!$scope) $where .= ' AND 1 = 0';
+        else { $where .= ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = $scope; }
+    }
+    foreach (db_all("SELECT memberId, track, courses, division, centre FROM members WHERE $where", $args) as $m) {
+        $dv = curriculum_member_division($m);
+        if ($dv === '') { $unplaced++; continue; }
+        $y = curriculum_member_year($m, $placed[(string)$m['memberId']] ?? 0)['year'];
+        $k2 = mb_strtolower($dv);
+        $heads[$k2]['n'] = ($heads[$k2]['n'] ?? 0) + 1;
+        $heads[$k2][$y] = ($heads[$k2][$y] ?? 0) + 1;
+    }
+
+    $rows = [];
+    foreach ($divisions as $d) {
+        $k = mb_strtolower((string)$d['name']);
+        $years = [];
+        for ($y = 1; $y <= CURR_PROGRAMME_YEARS; $y++) {
+            $pub = (int)($byCourse[$k][$y]['published'] ?? 0);
+            $drf = (int)($byCourse[$k][$y]['draft'] ?? 0);
+            $years[] = ['year' => $y, 'published' => $pub, 'draft' => $drf, 'has' => $pub > 0,
+                        /* The number that matters: members placed in this
+                           year who, in division mode, would open their portal
+                           and find nothing. */
+                        'members' => (int)($heads[$k][$y] ?? 0)];
+        }
+        $rows[] = ['id' => (string)$d['id'], 'name' => (string)$d['name'],
+                   'members' => (int)($heads[$k]['n'] ?? 0),
+                   'noYear' => (int)($byCourse[$k][0]['published'] ?? 0),   // lessons whose level names no year
+                   'years' => $years,
+                   'gaps' => array_values(array_map(static fn($y) => $y['year'], array_filter($years, static fn($y) => !$y['has'])))];
+    }
+    /* Members who, in division mode, are placed in a year their division has
+       no published spine for. Counted, not estimated — it is the cost of
+       turning the mode on today, and nobody should have to infer it. */
+    $stranded = 0;
+    foreach ($rows as $r) foreach ($r['years'] as $y) if (!$y['has']) $stranded += (int)$y['members'];
+    return ['ok' => true, 'rows' => $rows, 'courseSource' => (string)$cfg['courseSource'],
+            'years' => CURR_PROGRAMME_YEARS, 'unplaced' => $unplaced, 'stranded' => $stranded];
+}
+
 function admin_curriculum_coverage(array $p): array {
     $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
     $catalogue = function_exists('club_catalogue') ? club_catalogue() : [];
@@ -1385,7 +1460,11 @@ function curriculum_course_ctx(): array {
     $byLower = [];
     foreach ($catalogue as $courses) foreach ($courses as $c) $byLower[mb_strtolower(trim((string)$c))] = (string)$c;
     $unitCourses = array_column(db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND status = 'published'"), 'course');
-    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => []];
+    /* Read ONCE here rather than per member: curriculum_due_run() resolves
+       courses for every active member on the programme, and a setting_get()
+       inside that loop is a per-row query by another name. */
+    $src = function_exists('curriculum_schedule') ? (string)curriculum_schedule()['courseSource'] : 'member';
+    return ['catalogue' => $catalogue, 'byLower' => $byLower, 'unitCourses' => $unitCourses, 'div' => [], 'courseSource' => $src];
 }
 
 /* ── A member's courses, chosen, not guessed ─────────────────────────────────
@@ -1699,14 +1778,54 @@ function curriculum_division_courses(string $divId, array &$ctx): array {
 }
 
 /**
- * A member's courses: the ones chosen for them (members.courses), or — for a
- * record nobody has assigned yet — what their track and the disciplines on
- * their card name (member_courses_from_text), or, when those name nothing,
- * the division they are placed in. Chess is every division's (§6), so a
- * member who takes anything takes Chess too.
+ * The division a member belongs to, by the NAME the catalogue spells it with,
+ * or ''. Resolved the way the rest of the programme resolves it: what is on
+ * the record, else what their track plainly means, else the division of a
+ * course they already carry.
+ */
+function curriculum_member_division(array $m): string {
+    $d = trim((string)($m['division'] ?? ''));
+    if ($d !== '' && function_exists('nggc_division') && ($x = nggc_division($d))) return (string)$x['name'];
+    if (function_exists('nggc_division_for_track')) {
+        $id = nggc_division_for_track((string)($m['track'] ?? ''));
+        if ($id !== '' && ($x = nggc_division($id))) return (string)$x['name'];
+    }
+    foreach (member_courses_of($m) as $c) { $dv = course_division((string)$c); if ($dv !== '') return $dv; }
+    return '';
+}
+
+/**
+ * A member's courses.
+ *
+ * TWO MODES, and which one is live is a setting — `courseSource` on the
+ * curriculum schedule (Control Room → Learning → Curriculum → Schedule).
+ *
+ *   'member'   (default) the courses chosen for them (members.courses), or —
+ *              for a record nobody has assigned yet — what their track and
+ *              the disciplines on their card name, or, failing those, every
+ *              course in their division.
+ *
+ *   'division' THE DIVISION IS THE ENROLMENT. A member takes their division's
+ *              OWN shared curriculum — the spine every course inside it
+ *              shares (curriculum-divisions-2026.json) — and nothing from the
+ *              individual strands. This exists because the fallback above was
+ *              doing a bad impression of it: a member with no courses on
+ *              record was handed all seven of Technology's strands at once,
+ *              which is a wall of lessons, not a curriculum. A division has
+ *              one spine; that is what the mode delivers.
+ *
+ * Club-wide lessons (course = '') reach everybody in both modes, and Chess is
+ * every division's (§6), so it is added in both.
  */
 function curriculum_member_courses(array $m, ?array &$ctx = null): array {
     if ($ctx === null) $ctx = curriculum_course_ctx();
+    if (($ctx['courseSource'] ?? 'member') === 'division') {
+        $dv = curriculum_member_division($m);
+        /* No division on the record is not a reason to hand them somebody
+           else's curriculum: they get the Club-wide lessons and Chess, and
+           the coverage board names them as unplaced. */
+        return $dv === '' ? ['Chess'] : [$dv, 'Chess'];
+    }
     $out = member_courses_of($m);
     if (!$out) {
         $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? '');
@@ -2103,14 +2222,15 @@ function member_curriculum_unit(array $p): array {
             'unitVersion' => (int)$b['unit']['version'], 'startedAt' => now_iso(), 'updatedAt' => now_iso()]); } catch (\Throwable $e) {}
         $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     }
-    /* What they already said about this session, so the box is not blank a
-       second time and a change reads as a change (domain/testimonials.php). */
-    $say = function_exists('member_testimonial_mine')
-        ? (member_testimonial_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
+    /* How they said today went, so the taps show their own answer back
+       (domain/lesson-feedback.php). This is NOT the testimonial — that is
+       asked once a session, not once a Saturday. */
+    $say = function_exists('member_lesson_feedback_mine')
+        ? (member_lesson_feedback_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
             'progress' => curriculum_progress_public($pr, $b),
             'review' => curriculum_opening_review($units, $id, (string)$m['memberId']),
-            'say' => $say];
+            'feedback' => $say];
 }
 
 /**
@@ -2262,13 +2382,36 @@ function admin_curriculum_document(array $p): array {
  */
 const CURR_TUTOR_PER_DAY = 20;
 const CURR_TUTOR_Q_MAX   = 600;
+/* How much of the conversation travels back. Enough for a follow-up and a
+   follow-up to that; not so much that a long thread crowds out the lesson. */
+const CURR_TUTOR_TURNS   = 8;
 
+/**
+ * THE STUDY HELPER — a tutor, not a search box.
+ *
+ * It was a one-shot form: one question in, one paragraph out, no memory. A
+ * child who read the answer and said "I still don't get it" was starting
+ * again from nothing, because only the latest question was ever sent. That is
+ * not what being stuck is like, and it is the whole reason the thing felt
+ * useless. It carries the conversation now.
+ *
+ * Three things it is given that it never had:
+ *   - the THREAD, so a follow-up is a follow-up;
+ *   - the member's programme YEAR, so a Year 1 child and a Year 3 child
+ *     asking the same question are not answered the same way;
+ *   - WHAT THEY GOT WRONG on this lesson's review, when they have sat it. A
+ *     tutor who can see the actual mistake teaches the actual gap instead of
+ *     re-explaining the part they already understood.
+ *
+ * What it still must not do: give away an answer to a graded question, do an
+ * assignment, or carry on as if distress were a study question.
+ */
 function member_curriculum_ask(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
     $q = trim(mb_substr((string)($p['question'] ?? ''), 0, CURR_TUTOR_Q_MAX));
     if (mb_strlen($q) < 4) return ['ok' => false, 'error' => 'question_too_short'];
-    $units = curriculum_member_units($m);
+    $units = curriculum_member_units($m, $placement);
     $id = (string)($p['unitId'] ?? '');
     if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
     $key = 'ai.tutor.' . gmdate('Y-m-d');
@@ -2281,20 +2424,82 @@ function member_curriculum_ask(array $p): array {
     // Spend the allowance BEFORE the model is called, so parallel requests cannot all slip under it.
     db_upsert('member_state', ['memberId' => (string)$m['memberId'], 'stateKey' => $key, 'stateValue' => (string)($used + 1), 'updatedAt' => now_iso()],
               ['memberId', 'stateKey'], ['stateValue' => (string)($used + 1), 'updatedAt' => now_iso()]);
-    $u = $units[$id]['unit'];
+
+    $b = $units[$id];
+    $u = $b['unit'];
     $obj = implode('; ', json_decode((string)$u['objectives'], true) ?: []);
-    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n" . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
-    $system = 'You are the NGG study helper: a patient, encouraging tutor for a 10–17 year old member of Next Generation Genius in Nigeria. '
-        . 'Answer ONLY about the lesson below. Explain simply, give one short worked example, and end with one quick question that checks understanding. '
-        . 'Keep it under 160 words, in plain British English. Never do their assignment or give answers to graded checks — help them think it through instead. '
-        . 'If the question is not about the lesson, say kindly that you can only help with this lesson. Never ask for personal details.' . "\n\nTHE LESSON:\n" . $lesson;
-    $r = ai_chat($system, [['role' => 'me', 'text' => $q]], 420, 'coach');
+    $lesson = "Course: {$u['course']}\nLesson: {$u['title']}\nObjectives: $obj\n\n"
+            . mb_substr(preg_replace('/##\s*This week.s assignment.*$/su', '', (string)$u['body']), 0, 6000);
+
+    /* WHAT THEY ALREADY GOT WRONG. The prompt, their answer and the mark —
+       never the model answer, which is the thing they must not be handed. */
+    $wrong = curriculum_ask_gaps($b, (string)$m['memberId']);
+
+    $year = (int)($placement['year'] ?? 1);
+    $system = 'You are the NGG study helper: a patient, encouraging tutor for a ' . (($year >= 3) ? '15-17' : ($year === 2 ? '12-15' : '10-13'))
+        . ' year old member of Next Generation Genius in Nigeria, in year ' . $year . ' of three. '
+        . 'Teach, do not lecture. Explain the ONE thing they are stuck on, in short sentences, with a concrete example they could '
+        . 'actually try — use Nigerian everyday things for examples, not American ones. Build on what has already been said in this '
+        . 'conversation rather than starting again. End with one short question that checks they followed. '
+        . 'At most 200 words, plain British English, no markdown headings. '
+        . 'NEVER give the answer to a graded question and never do their assignment — help them work it out. '
+        . 'If they ask about something close to the lesson, help anyway; only decline if it is nothing to do with their studies. '
+        . 'Never ask for personal details.'
+        . ($wrong !== '' ? "\n\nTHEY RECENTLY GOT THESE WRONG in this lesson's review. Teach to this gap; do not read them the answer:\n" . $wrong : '')
+        . "\n\nTHE LESSON:\n" . $lesson;
+
+    /* The thread. The client sends it back; it is capped here rather than
+       trusted, and only the text is taken — a role the client invents must
+       not be able to put words in the system's mouth. */
+    $turns = [];
+    foreach (is_array($p['history'] ?? null) ? $p['history'] : [] as $t) {
+        if (!is_array($t)) continue;
+        $text = trim(mb_substr((string)($t['text'] ?? ''), 0, 1200));
+        if ($text === '') continue;
+        $turns[] = ['role' => (string)($t['role'] ?? '') === 'ai' ? 'ai' : 'me', 'text' => $text];
+    }
+    $turns = array_slice($turns, -CURR_TUTOR_TURNS);
+    $turns[] = ['role' => 'me', 'text' => $q];
+
+    $r = ai_chat($system, $turns, 560, 'coach');
     if (empty($r['ok'])) {
         // A failed answer is given back.
         db_exec('UPDATE member_state SET stateValue = ? WHERE memberId = ? AND stateKey = ?', [(string)$used, (string)$m['memberId'], $key]);
         return ['ok' => false, 'error' => (string)($r['error'] ?? 'ai_failed')];
     }
     return ['ok' => true, 'answer' => mb_substr(trim((string)$r['text']), 0, 2400), 'left' => CURR_TUTOR_PER_DAY - $used - 1, 'limit' => CURR_TUTOR_PER_DAY];
+}
+
+/**
+ * The questions this member got wrong on a lesson, as a line each: the
+ * question, what they wrote, and what it scored. Never the model answer —
+ * that is precisely what the tutor must not hand over.
+ */
+function curriculum_ask_gaps(array $b, string $memberId): string {
+    $pr = db_row('SELECT answers, marks FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [(string)$b['unit']['unitId'], $memberId]);
+    if (!$pr) return '';
+    $answers = json_decode((string)$pr['answers'], true) ?: [];
+    $marks = json_decode((string)$pr['marks'], true) ?: [];
+    if (!$marks) return '';
+    $out = [];
+    foreach ($b['checks'] as $c) {
+        $cid = (string)$c['checkId'];
+        $mk = $marks[$cid] ?? null;
+        if (!is_array($mk) || !isset($mk['points'])) continue;
+        $pts = (int)$c['points'];
+        if ($pts <= 0 || (float)$mk['points'] >= $pts) continue;      // they got it
+        $mine = $answers[$cid] ?? '';
+        if ((string)$c['kind'] === 'mcq') {
+            $opts = json_decode((string)$c['options'], true) ?: [];
+            $mine = is_numeric($mine) && isset($opts[(int)$mine]) ? (string)$opts[(int)$mine] : '(no answer)';
+        }
+        $mine = trim(mb_substr((string)$mine, 0, 300));
+        $out[] = '- Question: ' . mb_substr((string)$c['prompt'], 0, 240)
+               . "\n  They answered: " . ($mine === '' ? '(nothing)' : $mine)
+               . "\n  Scored " . (int)$mk['points'] . ' of ' . $pts;
+        if (count($out) >= 4) break;
+    }
+    return implode("\n", $out);
 }
 
 /** Render the curriculum document through its template (api/_lib/templates). */
@@ -2917,13 +3122,25 @@ const CURR_SCHEDULE_DEFAULTS = ['enabled' => true, 'startDate' => '', 'remindBef
                                    it off rather than leave children staring
                                    at a review nobody will ever mark. The
                                    questions stay on the lesson either way. */
-                                'reviewAtStart' => true];
+                                'reviewAtStart' => true,
+                                /* WHERE A MEMBER'S COURSES COME FROM.
+                                   'member'   — the courses chosen for each
+                                                member (the default).
+                                   'division' — the division is the enrolment:
+                                                everyone takes their division's
+                                                own shared curriculum and
+                                                nothing from the strands.
+                                   curriculum_member_courses() is the whole
+                                   behaviour; this names which half runs. */
+                                'courseSource' => 'member'];
+const CURR_COURSE_SOURCES = ['member', 'division'];
 const CURR_DUE_BATCH = 60;
 
 function curriculum_schedule(): array {
     $c = setting_get('curriculum');
     $c = (is_array($c) ? $c : []) + CURR_SCHEDULE_DEFAULTS;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$c['startDate'])) $c['startDate'] = '';
+    if (!in_array((string)$c['courseSource'], CURR_COURSE_SOURCES, true)) $c['courseSource'] = 'member';
     return $c;
 }
 
@@ -3058,6 +3275,8 @@ function admin_curriculum_schedule(array $p): array {
     $next = [
         'enabled' => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
         'reviewAtStart' => array_key_exists('reviewAtStart', $in) ? !empty($in['reviewAtStart']) : !empty($cur['reviewAtStart']),
+        'courseSource' => in_array((string)($in['courseSource'] ?? ''), CURR_COURSE_SOURCES, true)
+            ? (string)$in['courseSource'] : (string)$cur['courseSource'],
         'startDate' => $start,
         'remindBeforeDays' => max(0, min(30, (int)($in['remindBeforeDays'] ?? $cur['remindBeforeDays']))),
         'remindEveryDays' => max(1, min(30, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']))),

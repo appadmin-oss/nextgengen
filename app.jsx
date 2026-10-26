@@ -79,6 +79,10 @@ const ROUTES = [
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
   { id: "dashboard",   title: "My NGG · Member portal",                    desc: "Your missions, mentor, streak and journal — the member dashboard.", chrome: "own", index: false },
+  /* The Learn app. Its own place, with its own addresses — /learn/lesson/<id>
+     is a lesson a member can bookmark and send, which it could not be while
+     the curriculum was a sheet over the portal. */
+  { id: "learn",       title: "Learn · NGG",                               desc: "The NGG Club curriculum: this week's lessons, your courses, the review and the study helper.", chrome: "own", index: false },
   { id: "summerprofile", title: "ID card · NGG",                           desc: "The page an NGG or Summer School card opens when it is scanned.", addressable: false, index: false },
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
@@ -343,8 +347,12 @@ function App() {
     const inMentorSubtree = (page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "")) || (page === "instructor" && /^\/instructor(\/|$)/.test(window.location.pathname || ""));
     /* Study tools own /study/<tab>/<tool> (src/modules/tools/tools-core.jsx), and forward the old /study/cards-style addresses themselves. */
     const inStudySubtree = page === "study" && /^\/study(\/|$)/.test(window.location.pathname || "");
+    /* The Learn app owns /learn/<view>/<id> (page-learn.jsx) and reads it
+       itself, so a deep lesson address must not be rewritten back to /learn
+       on mount — that is what made a lesson unbookmarkable before. */
+    const inLearnSubtree = page === "learn" && /^\/learn(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && !inStudySubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && !inStudySubtree && !inLearnSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -413,6 +421,7 @@ function App() {
     anchor:    <AnchorPage    setPage={setPage}/>,
     profile:   <ProfilePage   setPage={setPage}/>,
     dashboard: <DashboardPage setPage={setPage}/>,
+    learn:     <LearnPage     setPage={setPage}/>,
     book:      <BookPage      setPage={setPage}/>,
     media:     <MediaPage     setPage={setPage}/>,
     parents:   <ParentsPage   setPage={setPage}/>,

@@ -1010,9 +1010,23 @@
       curriculumLesson: (o) => request('/member/curriculum.php', { body: Object.assign({ action: 'lesson' }, o) }),
       curriculumPlace: (placements) => request('/member/curriculum.php', { body: { action: 'place', placements } }),
       curriculumConfirm: (memberId, unitIds, done) => request('/member/curriculum.php', { body: { action: 'confirm', memberId, unitIds, done: done !== false } }),
-      curriculumAsk:     (unitId, question) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question }, timeout: 60000 }),
+      /* `history` is the conversation so far ([{role:'me'|'ai', text}]). Without
+         it every question was cold, so "I still don't get it" meant nothing. */
+      curriculumAsk:     (unitId, question, history) => request('/member/curriculum.php', { body: { action: 'ask', unitId, question, history: history || [] }, timeout: 60000 }),
       /* What they thought of the session. An empty body withdraws one. */
       testimonialGive:   (o) => request('/member/curriculum.php', { body: Object.assign({ action: 'testimonial' }, o) }),
+      /* How today's lesson went. A tap, never published — the testimonial
+         above is the other question, asked once a session. */
+      lessonFeedback:    (unitId, signal, body) => request('/member/curriculum.php', { body: { action: 'feedback', unitId, signal, body: body || '' } }),
+      /* Studying for school: one session of the growth plan. The questions
+         come back without their answers — marking happens on the server. */
+      studyPlan:         () => request('/member/curriculum.php' + qs({ view: 'study' })),
+      studyStart:        (itemId, topic, exam) => request('/member/curriculum.php', { body: { action: 'drill', itemId, topic: topic || '', exam: exam || '' }, timeout: 60000 }),
+      studyMark:         (drillId, answers) => request('/member/curriculum.php', { body: { action: 'drill', drillId, answers } }),
+      /* Whether the term question is open, which session it is about, and
+         what they already said — one call, because the screen needs all
+         three before it draws anything. */
+      testimonialMine:   () => request('/member/curriculum.php' + qs({ view: 'testimonial' })),
       curriculumYear:    (memberId, year) => request('/member/curriculum.php', { body: { action: 'year', memberId, year } }),
       curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
       // An instructor's material for a lesson — a link, or a file uploaded first.
@@ -1574,6 +1588,8 @@
         coverage: () => request('/admin/curriculum.php' + qs({ view: 'coverage' })),
         /* What members said about their own sessions, and the one act that
            puts any of it on the public site. */
+        feedback: (course) => request('/admin/curriculum.php' + qs({ view: 'feedback', course: course || '' })),
+        divisions: () => request('/admin/curriculum.php' + qs({ view: 'divisions' })),
         testimonials: (status) => request('/admin/curriculum.php' + qs({ view: 'testimonials', status: status || 'new' })),
         testimonialDecide: (tid, status, note) => request('/admin/curriculum.php', { body: { action: 'testimonial', tid, status, note: note || '' } }),
         plan:    (o) => request('/admin/curriculum.php', { body: Object.assign({ action: 'plan' }, o || {}), timeout: 120000 }),

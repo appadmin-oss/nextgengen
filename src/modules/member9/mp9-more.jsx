@@ -1,7 +1,11 @@
 /* The Anchor Journal app. Opened in the same tab, always. */
 const MP9_JOURNAL_URL = "/journal/";
 /* The apps beside the portal, in the desktop sidebar: [label, icon, address]. */
-const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
+/* The places a member goes OUTSIDE the portal shell. Learn joined them when
+   the curriculum stopped being a sheet over this tab and became its own app
+   at /learn — a lesson has an address now, and the portal links into it
+   rather than drawing a second copy of it. */
+const MP9_APPS = [["Learn", "ph ph-book-open-text", "/learn"], ["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -97,10 +101,11 @@ Object.assign(Mp9Portal.prototype, {
     NGGApi.member.curriculumDocument ? NGGApi.member.curriculumDocument().catch(() => null) : null;
     window.open("/api/member/curriculum-doc.php" + (word ? "?format=doc" : ""), "_blank", "noopener");
   },
+  /* A lesson is a PLACE now (page-learn.jsx), so this hands it over rather
+     than drawing it in a sheet. Two renderers for one lesson is the forked
+     renderer CLAUDE.md §11 names; there is one, and it is the Learn app's. */
   openLesson(unitId) {
-    this.openSheet({ k: "lesson", id: unitId });
-    this.setState({ lesson: null, lessonErr: null, lPart: 0 });
-    NGGApi.member.curriculumUnit(unitId).then(r => this.setState({ lesson: r })).catch(e => this.setState({ lessonErr: mp9Err(e) }));
+    try { location.assign("/learn/lesson/" + encodeURIComponent(unitId)); } catch (_) {}
   },
   oppItems() {
     const o = this.dd("opps") || {}, s = this.state;

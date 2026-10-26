@@ -3222,3 +3222,183 @@ but nothing ever wrote them.
   read as nested inside the touch-only query. Phones looked right; laptops got
   a near-bare page. Fixed, and `build.js` now refuses a stylesheet whose braces
   do not balance (`validateCssBraces`), naming the line the open block starts on.
+## Two questions, two rhythms — and a font that was two fonts (2026-10-26)
+
+**The testimonial was being asked after every lesson.** That was wrong, and the
+owner said so: a session here is the twelve-week block (TONI, MEDI, SUMMER,
+DOMI), not a Saturday. A child asked for something quotable twenty-four times
+a term answers twice, and what comes back is a diary.
+
+It is two features now.
+
+- **How did today go** (`domain/lesson-feedback.php`, migration 181) — after
+  every LESSON. Three taps: *I could do it · I could follow but I'd need help ·
+  I could not follow*. Words optional, asked second, and only of the child who
+  struggled. **Never published, by anybody** — there is no op in that file that
+  could, and a test asserts there never is one. Seen by the instructor for
+  their own courses and centre, and by admins holding `curriculum` or `club`.
+- **What did this term give you** (`domain/testimonials.php`) — after every
+  SESSION, in its last three weeks and for two months after it ends
+  (`testi_session_ask`). Consent, byline and withdrawal are unchanged.
+
+The feedback has to pay for itself or it is worse than nothing: it costs the
+child a tap and buys them nothing. So `lfb_board()` does not hand back rows to
+read — it answers the question an instructor actually has, **which lessons are
+not landing**, worst first, with the words from the children who were lost
+attached to the lesson they were lost in. A "needed help" counts as half a
+miss, because a class that could only follow with help was not taught either.
+Control Room → Learning → **How lessons land**.
+
+### The font was two fonts
+
+`styles-app.css` declared Geist as seven static faces (400/500/600) while
+`assets/fonts/fonts.css` declared it as one variable file covering 100–900.
+The member portal sets every heading at **700** — a weight the statics did not
+have — so headings resolved to the variable file and the body text beside them
+to the static cut. **One screen, two physical fonts.** Before the variable file
+was added, 700 was a faux-bold of the static 600: fake, but consistent, which
+is why this appeared as a regression.
+
+One source now. Measured after: every weight 400–800 comes from
+`geist-variable.woff2`, one request instead of five, and Latin Extended
+actually renders where it previously fell back to the system face.
+
+### Read aloud, and the study helper
+
+Both were reported as bad, and both were bad for findable reasons.
+
+- **Read aloud** called `getVoices()` synchronously — empty on the first call
+  in Chrome and on Android, so the first press got no voice at all. It read
+  the raw Markdown ("hash hash warm dash up"). It stopped after ~15 seconds
+  (Chrome kills a long utterance) and truncated at 3,000 characters. It now
+  waits for `voiceschanged`, speaks `mp9Speakable()` output — headings as
+  sentences, links as their words, code announced rather than recited — in
+  sentence-sized chunks with a `resume()` heartbeat.
+- **The study helper** sent only the latest question. There was no thread, and
+  the previous answer was wiped on each press, so "I still don't get it" was a
+  cold start — which is the one thing being stuck is never like. It carries
+  the conversation now (`CURR_TUTOR_TURNS`), and is given the member's
+  programme year and **what they actually got wrong on that lesson's review**
+  (`curriculum_ask_gaps`, never the model answer), so it can teach the gap
+  instead of re-explaining the part they already had.
+
+## The curriculum stops being a modal; the division becomes the enrolment (2026-10-26)
+
+The owner, on the member portal: *"The LMS is not really what I want it to be.
+It is currently just a modal. The structure of the member portal is also not
+good."* And: *"The use of the course in division feature is not available yet?"*
+
+Both were fair, and both had findable causes.
+
+### It really was a modal
+
+`openLesson()` called `openSheet({ k: "lesson" })` — the SAME overlay the
+portal uses for *Edit profile* and *Gate pass*. The whole of a Saturday's
+teaching was paginated inside a sheet (`lPart`: read → materials → check) on
+top of a dashboard tab. No address, nothing to bookmark or send to a mentor,
+and the browser's Back closed it instead of going back.
+
+**`/learn` is its own app now** (`page-learn.jsx`), the way the Anchor Journal
+and the Study tools are:
+
+    /learn                  This week — what to do now
+    /learn/courses          My courses
+    /learn/course/<slug>    One course, week by week
+    /learn/lesson/<unitId>  A lesson, FULL SCREEN
+    /learn/review           How the review works
+    /learn/helper           The study helper
+
+Every one is real: `app.jsx` gained `inLearnSubtree` so a deep lesson address
+is not rewritten back to `/learn` on mount, which is precisely what made a
+lesson unbookmarkable. `tests/learn-app.test.js` pins the thing that changed —
+that it is a PLACE: cold-loading `/learn/lesson/<id>` opens that lesson, Back
+goes back, and signed out the address is kept so signing in lands on it.
+
+**There is still only one lesson renderer.** The portal's `openLesson()` now
+hands over to `/learn/lesson/<id>` rather than drawing its own; the app reuses
+`CurriculumText`, `CurriculumMaterials`, `CurCheckField`, `DashOpeningReview`
+and `DashLessonFeedback` rather than forking them (CLAUDE.md §11). What is new
+is the place, not the parts.
+
+**A container cannot be styled by its own container query.** `.lrn-app` carried
+both `container-type: inline-size` and the responsive grid, so at desktop width
+the grid stayed in its phone shape while the rail took its desktop one — and
+the two overlapped, swallowing every click. The container is `.lrn-app`; the
+grid is `.lrn-shell` inside it.
+
+### The division as the enrolment
+
+There was no such feature — only a last-resort FALLBACK, and a bad one: a
+member with no courses on record was handed *every* course in their division,
+which is why one screen showed Automation, Coding, Cybersecurity and Practical
+Coding side by side at week 8. That is a wall, not a curriculum.
+
+`courseSource` on the curriculum schedule now names which half runs:
+
+- **`member`** (default) — unchanged.
+- **`division`** — the member takes their division's OWN shared curriculum,
+  the spine every course inside it shares
+  (`curriculum-divisions-2026.json`, already in the box), and nothing from the
+  strands. Club-wide lessons and Chess still reach everyone; a member with no
+  division gets those and never somebody else's curriculum.
+
+**The spine ships for Year 1 only**, so turning the mode on would strand every
+Year 2 and 3 member. That is a number on a screen now, not something a child
+discovers: `admin_curriculum_divisions()` reports every division against every
+year and counts exactly how many members each gap would strand.
+
+### School inside Learn: the half of the growth plan that was never built
+
+A coordinator agreed a growth plan with a member after every report card —
+subjects, where they are, where they are going, and *three sessions a week* —
+and then nothing in the product let them do a session. `plan_checkins` counted
+practice the programme had no way of providing. The plan was a promise with no
+second half.
+
+`/learn/plan` is that half, and it is deliberately **not a new plan**: it reads
+`growth_plan_items` as they already are. A subject gives five questions; the
+marking shows the working, not a tick; and one marking closes three loops at
+once — the plan's own weekly counter via `member_results_tick()`, a flashcard
+in `School · <subject>` for everything missed (the SM-2 schedule that already
+existed), and the next level. Five levels, 80% up, under 40% down, eight drills
+a day.
+
+Questions come from a past-questions bank first (`study_bank`, optional), then
+the AI layer, and **with neither it refuses in words** and points at their
+flashcards. A child is never handed a blank paper, and never a question the
+screen cannot explain the working for.
+
+The bank could not be verified from this container — the network is closed to
+it — so it is strictly optional, bounded (6s, 256KB, no redirects) and can only
+ever fail *silently into AI*. Nothing claims it works until a deployment points
+it at a real endpoint.
+
+**`e.message` is the raw code; `e.data.message` is the sentence.** `api-client`
+builds its error as `new Error(data.error)`, so the server's human wording
+lands on `err.data.message` and `err.message` is `no_questions`. Reading the
+wrong one put that literal string in front of a child. The idiom in this
+codebase is `(e.data && e.data.message) || fallback`.
+
+### Six more free AI providers, one branch
+
+Cerebras, Mistral, Together, GitHub Models, DeepSeek and a self-hosted
+`custom` endpoint all speak the OpenAI chat-completions shape, so the
+groq-only branch in `ai.php` became **one** generic branch over `AI_OAI_COMPAT`
+rather than one branch each. Six of the eleven providers now have a free tier
+that does not expire into a card — which, on shared hosting with no budget, is
+the difference between a feature and a disabled feature. They all join the same
+fallback chain, so two or three keys is the configuration that survives an
+afternoon of rate limits.
+
+### A lesson is not a sheet any more, and the suites say so
+
+`member-v9.test.js` drove `[role="dialog"] button:has-text("I've done")` —
+the lesson sheet that was removed when the lesson became a place. It pins the
+**handoff** now (the portal opens `/learn/lesson/<id>`), and the answering is
+owned by `tests/learn-app.test.js`, which already covers it end to end. One
+behaviour, one suite.
+
+`curriculum-ui.test.js` and `responsive-staff.test.js` were never broken by
+that change: those runs had collided on `api/config.php`, which every node E2E
+suite writes and refuses to start beside. **They cannot be run concurrently** —
+run one at a time they are 66/0 and 4/0, and always were.

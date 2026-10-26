@@ -14,10 +14,12 @@ if ($method === 'GET') {
     elseif ($view === 'seed') $res = gs_call('admin.curriculum.seed', ['requesterId' => $mid, 'key' => (string)($_GET['key'] ?? '')]);
     elseif ($view === 'courses') $res = gs_call('admin.club.catalogue.get', ['requesterId' => $mid]);
     elseif ($view === 'coverage') $res = gs_call('admin.curriculum.coverage', ['requesterId' => $mid]);
+    elseif ($view === 'divisions') $res = gs_call('admin.curriculum.divisions', ['requesterId' => $mid]);
     elseif ($view === 'schedule') $res = gs_call('admin.curriculum.schedule', ['requesterId' => $mid]);
     elseif ($view === 'submissions') $res = gs_call('admin.curriculum.submissions', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'pending')]);
     /* What members said about their sessions, waiting to be read. Lives on
        this desk because it is the same people and the same screen. */
+    elseif ($view === 'feedback') $res = gs_call('admin.curriculum.feedback', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? '')]);
     elseif ($view === 'testimonials') $res = gs_call('admin.testimonials.list', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'new')]);
     elseif ($view === 'report') $res = gs_call('admin.curriculum.report', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''), 'memberId' => (string)($_GET['memberId'] ?? '')]);
     else $res = gs_call('admin.curriculum.list', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''),

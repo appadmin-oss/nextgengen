@@ -8694,6 +8694,36 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
    Asked at the end of every session, after the work. It is deliberately the
    quietest card on the page: nothing depends on it, and a child who does not
    feel like writing should be able to tell that at a glance. */
+/* ── How today went: three taps ─────────────────────────────────────────────
+   Sized for a thumb on a phone first (44px floor, a real column each), and
+   only then allowed to sit in a row where there is room. A container query,
+   not a media query: this card lives inside a panel whose width is not the
+   window's (CLAUDE.md §11). */
+.cur-fb { border-left: 4px solid var(--gold-500, #f5b026); display: grid; gap: 10px; container-type: inline-size; }
+.cur-fb-note { margin: 0; font-size: .82rem; line-height: 1.5; color: var(--ink-500, #5a6488); }
+.cur-fb-taps { display: grid; gap: 8px; }
+.cur-fb-tap {
+  display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 10px;
+  min-height: 52px; padding: 8px 12px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--line-200, #e3e0d8); border-radius: 12px;
+  background: #fff; color: var(--ink-800, #2c3450); font: inherit; font-size: .95rem;
+}
+.cur-fb-tap:hover { border-color: var(--ink-400, #8a90a6); }
+.cur-fb-ico { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--cream-100, #f3ece0); font-weight: 700; font-size: 1rem; }
+.cur-fb-lab { white-space: pre-line; line-height: 1.3; }
+.cur-fb-tap.is-on { border-color: var(--navy-900, #16233f); background: var(--cream-50, #fbf8f1); font-weight: 600; }
+.cur-fb-tap.is-on.is-got .cur-fb-ico    { background: #1d7a4c; color: #fff; }
+.cur-fb-tap.is-on.is-mostly .cur-fb-ico { background: #8a6400; color: #fff; }
+.cur-fb-tap.is-on.is-lost .cur-fb-ico   { background: #b42318; color: #fff; }
+.cur-fb-more { display: grid; gap: 6px; font-size: .85rem; color: var(--ink-600, #4a5168); }
+.cur-fb-more textarea {
+  width: 100%; padding: 10px 12px; font: inherit; font-size: .95rem; line-height: 1.5;
+  border: 1.5px solid var(--line-200, #e3e0d8); border-radius: 12px; background: #fff; resize: vertical;
+}
+.cur-fb-done { margin: 0; font-size: .85rem; font-weight: 600; color: #1d7a4c; }
+@container (min-width: 420px) { .cur-fb-taps { grid-template-columns: repeat(3, 1fr); } }
+
 .cur-say { border-left: 4px solid var(--navy-700, #1c2a5e); display: grid; gap: 10px; }
 .cur-say-q { margin: 0; font-size: 1rem; line-height: 1.55; color: var(--ink-800, #2c3450); }
 .cur-say-f textarea {

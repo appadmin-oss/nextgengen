@@ -2572,6 +2572,13 @@ function DashCurriculum() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [open, setOpen] = React.useState("");
+  const [say, setSay] = React.useState(null);
+  /* Its own request, and its own failure: the term question never being
+     asked must not cost anybody their lessons. */
+  const loadSay = React.useCallback(() => {
+    NGGApi.member.testimonialMine().then(setSay).catch(() => setSay(null));
+  }, []);
+  React.useEffect(() => { loadSay(); }, [loadSay]);
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculum().then(setData).catch(e => setErr(e.code || e.message || "failed"));
@@ -2594,6 +2601,9 @@ function DashCurriculum() {
   data.units.forEach(u => { const w = weeks.find(x => x.week === u.week); w ? w.units.push(u) : weeks.push({ week: u.week, units: [u] }); });
   return (
     <div className="cur">
+      {/* Once a session, in its last weeks — never a gate on anything. The
+          server decides whether the question is open (testi_session_ask). */}
+      {say && say.session && <DashTermSay ask={say.session} mine={say.mine} onSaved={loadSay}/>}
       <div className="dash-card cur-summary">
         <div>
           <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
@@ -2747,7 +2757,80 @@ function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
  *   · It will not hold on to it. Clearing the box takes it back, published
  *     or not, without asking anybody.
  */
-function DashSessionSay({ unitId, course, mine, onSaved }) {
+/* ── HOW DID TODAY GO ───────────────────────────────────────────────────────
+ *
+ * Three taps, two seconds, after every lesson. Private to the people who
+ * teach them (domain/lesson-feedback.php) — it is never published and there
+ * is no op that could publish it.
+ *
+ * This replaced a text box asking for a testimonial after every lesson, which
+ * was the wrong question at the wrong rhythm: a child asked to write
+ * something quotable twenty-four times a term answers twice. The considered
+ * sentence is asked once a SESSION and lives in DashTermSay below.
+ *
+ * The words are optional, asked SECOND, and only of the child who did not
+ * follow — because that is the only one whose words change what somebody
+ * does next Saturday.
+ */
+const CUR_FB = [
+  { id: "got",    label: "I could do it",   icon: "\u2713" },
+  { id: "mostly", label: "I could follow,\nbut I'd need help", icon: "\u2248" },
+  { id: "lost",   label: "I could not follow", icon: "?" },
+];
+
+function DashLessonFeedback({ unitId, mine, onSaved }) {
+  const [signal, setSignal] = React.useState((mine && mine.signal) || "");
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [busy, setBusy] = React.useState(false);
+  const [saidAt, setSaidAt] = React.useState(0);
+  const send = async (sig, text) => {
+    setBusy(true);
+    try {
+      await NGGApi.member.lessonFeedback(unitId, sig, text);
+      setSaidAt(Date.now());
+      if (onSaved) onSaved();
+    } catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  const tap = (id) => { const next = signal === id ? "" : id; setSignal(next); send(next, next ? body : ""); };
+  return (
+    <section className="dash-card cur-fb" aria-label="How today went">
+      <h3 className="cur-sec-h">How did that go?</h3>
+      <p className="cur-fb-note">Only your instructor sees this. It never goes anywhere else, and it is not marked.</p>
+      <div className="cur-fb-taps" role="group" aria-label="How did that go?">
+        {CUR_FB.map(o => (
+          <button key={o.id} type="button" disabled={busy}
+                  className={"cur-fb-tap is-" + o.id + (signal === o.id ? " is-on" : "")}
+                  aria-pressed={signal === o.id} onClick={() => tap(o.id)}>
+            <span className="cur-fb-ico" aria-hidden="true">{o.icon}</span>
+            <span className="cur-fb-lab">{o.label}</span>
+          </button>
+        ))}
+      </div>
+      {/* Asked only of the child who struggled: a nice note on "got it" is
+          pleasant and is not why an instructor opens this. */}
+      {(signal === "lost" || signal === "mostly") && (
+        <label className="cur-fb-more">
+          <span>What was hard? (you can skip this)</span>
+          <textarea rows={2} value={body} maxLength={400} disabled={busy}
+                    placeholder="e.g. I did not understand where the variable goes"
+                    onChange={e => setBody(e.target.value)}
+                    onBlur={() => body !== ((mine && mine.body) || "") && send(signal, body)}/>
+        </label>
+      )}
+      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you \u2014 your instructor will see this.</p>}
+    </section>
+  );
+}
+
+/* ── WHAT THIS TERM GAVE YOU ────────────────────────────────────────────────
+ *
+ * The testimonial, asked once a SESSION — the twelve-week block, four a year
+ * — in the last three weeks of it and for two months after it ends. The
+ * server decides whether the question is open at all (testi_session_ask);
+ * this draws nothing when it is not.
+ */
+function DashTermSay({ ask, mine, onSaved }) {
   const [body, setBody] = React.useState((mine && mine.body) || "");
   const [showAs, setShowAs] = React.useState((mine && mine.showAs) || "initials");
   const [busy, setBusy] = React.useState(false);
@@ -2757,11 +2840,11 @@ function DashSessionSay({ unitId, course, mine, onSaved }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const r = await NGGApi.member.testimonialGive({ unitId, course, body: body.trim(), showAs });
+      const r = await NGGApi.member.testimonialGive({ sessionId: ask.sessionId, body: body.trim(), showAs });
       setDone(true);
       toast.success(r.status === "withdrawn" ? "Taken back. Nobody will see it."
-        : had ? "Changed. It goes back to your instructor to read."
-        : "Thank you — your instructor will read it.");
+        : had ? "Changed. Somebody at NGG reads it before it goes anywhere."
+        : "Thank you \u2014 somebody at NGG will read it.");
       if (onSaved) onSaved();
     } catch (e2) {
       toast.error(e2.code === "too_short" ? "A few more words than that." : humanizeError(e2.code, e2.code));
@@ -2769,14 +2852,15 @@ function DashSessionSay({ unitId, course, mine, onSaved }) {
   };
   const SHOW = [["initials", "My initials"], ["first", "My first name"], ["anon", "Don\u2019t say who"]];
   return (
-    <form className="dash-card cur-say" onSubmit={save} aria-label="What you thought of this session">
-      <h3 className="cur-sec-h">Before you go</h3>
-      <p className="cur-say-q">What did today give you? One or two lines, in your own words.</p>
+    <form className="dash-card cur-say" onSubmit={save} aria-label={"What " + ask.name + " gave you"}>
+      <div className="eyebrow cur-eyebrow">{ask.name.toUpperCase()} IS ENDING</div>
+      <h3 className="cur-sec-h">What did this term give you?</h3>
+      <p className="cur-say-q">One or two lines, in your own words. Not today \u2014 the whole term.</p>
       <label className="cur-say-f">
-        <span className="sr-only">What today gave you</span>
+        <span className="sr-only">What this term gave you</span>
         <textarea rows={3} value={body} maxLength={600} disabled={busy}
                   onChange={e => { setBody(e.target.value); setDone(false); }}
-                  placeholder="Something you can do now that you could not do this morning."/>
+                  placeholder="Something you can do now that you could not do in week one."/>
       </label>
       <fieldset className="cur-say-as">
         <legend>If this ever goes on the website, show me as</legend>
@@ -2789,13 +2873,13 @@ function DashSessionSay({ unitId, course, mine, onSaved }) {
         ))}
       </fieldset>
       <p className="cur-say-note">
-        Nobody sees this but your instructor unless you and your parent or guardian have
-        agreed it can go on the website — and even then, somebody at NGG decides, not a computer.
+        Nobody sees this but NGG staff unless you and your parent or guardian have
+        agreed it can go on the website \u2014 and even then, a person decides, not a computer.
         {had ? " Clearing the box takes it back." : ""}
       </p>
       <div className="cur-say-acts">
         <button type="submit" className="btn btn-primary" disabled={busy || (!body.trim() && !had)}>
-          {busy ? "Saving…" : had ? (body.trim() ? "Change it" : "Take it back") : "Send it"}
+          {busy ? "Saving\u2026" : had ? (body.trim() ? "Change it" : "Take it back") : "Send it"}
         </button>
         {done && <span className="cur-say-done" role="status">Saved.</span>}
       </div>
@@ -2957,7 +3041,7 @@ function DashCurriculumLesson({ unitId, onBack }) {
       )}
       {/* Last on the page, after the work, because that is when somebody
           knows what the session gave them. Never a gate on any of it. */}
-      {opened && <DashSessionSay unitId={unitId} course={u.course} mine={d.say} onSaved={load}/>}
+      {opened && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={load}/>}
     </article>
   );
 }

@@ -8086,17 +8086,20 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
    no hex of its own. Prefix .cr- only. Layout follows the root's own width
    (the React tree branches on it); nothing here keys off the window.
    ========================================================================== */
-/* Geist, self-hosted (assets/fonts/qcard, OFL): the type of the Control Room
-   v2 system, the sign-in pop-up and the studios. Latin and Latin Extended,
-   400 / 500 / 600, and Geist Mono 500. Without these the system's
-   `--cr-font` fell back to the device's own sans-serif. */
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-ext-400-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
-@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
-@font-face { font-family: "Geist Mono"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-mono-latin-500-normal.woff2) format("woff2"); }
+/* Geist is declared ONCE, in assets/fonts/fonts.css, as the variable file
+   that covers 100-900 — and this is where seven static @font-face rules for
+   the same family used to sit beside it.
+
+   Two sources for one family is not a duplicate, it is a BUG you can see.
+   These statics covered 400/500/600 only, so weight 700 — which the member
+   portal sets every heading in — resolved to the variable file instead,
+   while the body text beside it came from the static cut. One screen, two
+   physical fonts, headings subtly the wrong shape against their own page.
+   Before the variable file existed, 700 was a faux-bold of the static 600:
+   fake, but at least consistent.
+
+   One file now serves every weight, 700 is real rather than synthesised, and
+   a first visit fetches one font instead of up to seven. */
 
 /* The Control Room v2 tokens. Declared once, for the Control Room and for the
    surfaces that share its design system outside it: the sign-in pop-up and the
@@ -12039,6 +12042,24 @@ button.m9x-ev-sum { cursor: pointer; }
 .sth-btn { min-height: 44px; min-width: 110px; padding: 0 18px; border-radius: 999px; border: 0; background: var(--sth-ink); color: #fff; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
 .sth-btn:disabled { opacity: .5; cursor: not-allowed; }
 .sth-ans { white-space: pre-wrap; padding: 12px 14px; border-radius: 12px; background: var(--sth-s1); font-size: 14.5px; line-height: 1.55; }
+/* The thread. The helper used to be a form that replaced its own answer, so
+   there was nothing to lay out; a conversation needs turns you can tell
+   apart at a glance and a question box that stays put under them. */
+.sth-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; max-height: 52vh; overflow-y: auto; }
+.sth-turn { display: grid; gap: 3px; }
+.sth-who { font-size: 11.5px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--sth-ink-3); }
+.sth-bubble { margin: 0; white-space: pre-wrap; padding: 11px 13px; border-radius: 12px; font-size: 14.5px; line-height: 1.6; }
+.sth-turn.is-me .sth-bubble { background: #eef1f8; color: var(--sth-ink); }
+.sth-turn.is-ai .sth-bubble { background: var(--sth-s1); color: var(--sth-ink); border: 1px solid var(--sth-line); }
+.sth-turn.is-care .sth-bubble { background: #fdf6e3; border-color: #e8c97a; }
+.sth-bubble.is-wait { color: var(--sth-ink-3); font-style: italic; }
+/* "Ask a question" is hard when you do not know what you do not understand. */
+.sth-openers { display: grid; gap: 8px; }
+.sth-opener { min-height: 44px; padding: 10px 14px; text-align: left; cursor: pointer; font: inherit; font-size: 14px;
+  border: 1px dashed var(--sth-line); border-radius: 12px; background: transparent; color: var(--sth-ink); }
+.sth-opener:hover { border-style: solid; background: var(--sth-s1); }
+.sth-restart { min-height: 36px; padding: 0 12px; cursor: pointer; font: inherit; font-size: 13px;
+  border: 0; background: none; color: var(--sth-ink-3); text-decoration: underline; }
 .sth-ans.is-err { background: #fbe9e7; color: #a8231b; }
 .sth-ans.is-care { background: #fbf1d9; color: #4a3500; }
 
@@ -16417,3 +16438,208 @@ button.m9x-ev-sum { cursor: pointer; }
 .hc-way span { color: #4a4a50; font-size: 14px; }
 .hc-safe a { color: inherit; font-weight: 600; }
 .sup-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* ============================================================================
+   THE LEARN APP (/learn, page-learn.jsx)
+   ===========================================================================
+   Its own closed token set on `.lrn-app`, the way the studios have theirs:
+   nothing below carries a hex of its own. Geist, light surfaces, one accent.
+
+   MOBILE FIRST and not scaled down — a phone gets one column, a bottom bar
+   and 44px targets by default, and the rail only appears when the APP'S OWN
+   root is wide enough. Container queries, never the window's width: this app
+   is also mounted inside the portal's shell, where the two are not the same
+   (CLAUDE.md §11).
+   ========================================================================== */
+.lrn-app {
+  --lrn-bg: #faf9f6; --lrn-s1: #ffffff; --lrn-s2: #f4f2ed;
+  --lrn-ink: #16171a; --lrn-ink-2: #45474d; --lrn-ink-3: #6c6f77;
+  --lrn-line: #e4e1d9; --lrn-accent: #16233f; --lrn-gold: #f5b026;
+  --lrn-late: #b42318; --lrn-ok: #1d6b30;
+  --lrn-r: 14px; --lrn-r-sm: 10px; --lrn-tap: 44px;
+  --lrn-sp: 16px;
+  font-family: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--lrn-ink);
+  background: var(--lrn-bg);
+  min-height: 100vh; min-height: 100dvh;
+  /* The CONTAINER, and only that. An element cannot be styled by a container
+     query whose container it is, so the layout that responds to this width
+     lives on `.lrn-shell` inside it — putting both on one element silently
+     left the grid in its phone shape while the rail took its desktop one,
+     and the two overlapped. */
+  container-type: inline-size;
+  -webkit-font-smoothing: antialiased;
+}
+.lrn-shell {
+  display: grid;
+  grid-template-areas: "top" "main" "rail";
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh; min-height: 100dvh;
+}
+.lrn-app *, .lrn-app *::before, .lrn-app *::after { box-sizing: border-box; }
+.lrn-app :focus-visible { outline: 3px solid var(--lrn-gold); outline-offset: 2px; border-radius: 4px; }
+
+.lrn-top { grid-area: top; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px var(--lrn-sp); background: var(--lrn-s1); border-bottom: 1px solid var(--lrn-line); position: sticky; top: 0; z-index: 5; }
+.lrn-home { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-height: var(--lrn-tap); }
+.lrn-logo { width: 30px; height: 30px; object-fit: contain; }
+.lrn-home span { display: grid; line-height: 1.15; }
+.lrn-home b { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.lrn-home small { font-size: 11px; color: var(--lrn-ink-3); }
+.lrn-exit { display: inline-flex; align-items: center; gap: 6px; min-height: var(--lrn-tap); padding: 0 12px;
+  border-radius: var(--lrn-r-sm); text-decoration: none; color: var(--lrn-ink-2); font-size: 14px; font-weight: 500; }
+.lrn-exit:hover { background: var(--lrn-s2); }
+
+/* The phone's bottom bar. It is the nav until there is room for a rail. */
+.lrn-rail { grid-area: rail; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  background: var(--lrn-s1); border-top: 1px solid var(--lrn-line); position: sticky; bottom: 0; z-index: 5;
+  padding-bottom: env(safe-area-inset-bottom, 0); }
+.lrn-rail-item { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; min-height: 58px;
+  text-decoration: none; color: var(--lrn-ink-3); font-size: 11.5px; font-weight: 500; }
+.lrn-rail-item i { font-size: 21px; }
+.lrn-rail-item.is-on { color: var(--lrn-accent); font-weight: 650; }
+
+.lrn-main { grid-area: main; width: 100%; max-width: 760px; margin: 0 auto; padding: var(--lrn-sp) var(--lrn-sp) 28px; }
+.lrn-stack { display: grid; gap: 22px; }
+
+/* Three states, every time: waiting, empty, and an honest error with a retry. */
+.lrn-wait { height: 3px; border-radius: 3px; margin: 28px 0; background: var(--lrn-s2); overflow: hidden; position: relative; }
+.lrn-wait::after { content: ""; position: absolute; inset: 0; width: 38%; background: var(--lrn-accent); animation: lrnWait 1.1s ease-in-out infinite; }
+@keyframes lrnWait { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .lrn-wait::after { animation: none; width: 100%; opacity: .35; } }
+.lrn-empty { display: grid; justify-items: center; gap: 10px; text-align: center; padding: 40px 18px;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-empty i { font-size: 34px; color: var(--lrn-ink-3); }
+.lrn-empty h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
+.lrn-empty p { margin: 0; max-width: 46ch; font-size: 14.5px; line-height: 1.6; color: var(--lrn-ink-2); }
+
+.lrn-prog { display: grid; gap: 10px; padding: 14px 16px; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-prog-n { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.lrn-prog-s { margin: 0; font-size: 13.5px; color: var(--lrn-ink-3); }
+.lrn-prog-s.is-late { color: var(--lrn-late); font-weight: 600; }
+.lrn-meter { height: 7px; border-radius: 99px; background: var(--lrn-s2); overflow: hidden; }
+.lrn-meter > span { display: block; height: 100%; background: var(--lrn-accent); border-radius: 99px; }
+.lrn-meter.is-sm { height: 5px; }
+
+.lrn-group { display: grid; gap: 10px; }
+.lrn-group-h { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--lrn-ink-3); }
+.lrn-group-h.is-late { color: var(--lrn-late); }
+.lrn-list, .lrn-shelf { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+.lrn-card { display: grid; gap: 5px; padding: 14px 16px; text-decoration: none; color: inherit;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-card:hover { border-color: var(--lrn-ink-3); }
+.lrn-card.is-late { border-left: 4px solid var(--lrn-late); }
+.lrn-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lrn-card-course { font-size: 12px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-card-chip { font-size: 11.5px; font-weight: 650; padding: 3px 9px; border-radius: 99px; background: var(--lrn-s2); color: var(--lrn-ink-2); }
+.lrn-card-title { font-size: 17px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.lrn-card-meta { font-size: 13px; color: var(--lrn-ink-3); }
+.lrn-card-late { font-size: 12.5px; font-weight: 650; color: var(--lrn-late); }
+
+.lrn-course { display: grid; gap: 6px; padding: 16px; text-decoration: none; color: inherit;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-course:hover { border-color: var(--lrn-ink-3); }
+.lrn-course-n { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.lrn-course-m { font-size: 13px; color: var(--lrn-ink-3); }
+.lrn-course-title { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+
+.lrn-aside { display: grid; gap: 8px; padding: 16px; background: var(--lrn-s2); border-radius: var(--lrn-r); }
+.lrn-aside-h { margin: 0; font-size: 15px; font-weight: 650; }
+.lrn-aside p { margin: 0; font-size: 14px; line-height: 1.6; color: var(--lrn-ink-2); }
+.lrn-aside-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.lrn-btn { display: inline-flex; align-items: center; justify-content: center; min-height: var(--lrn-tap);
+  padding: 0 18px; border: 0; border-radius: var(--lrn-r-sm); cursor: pointer; text-decoration: none;
+  background: var(--lrn-accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600; }
+.lrn-btn:disabled { opacity: .5; cursor: not-allowed; }
+.lrn-btn.is-ghost { background: transparent; color: var(--lrn-ink); border: 1px solid var(--lrn-line); }
+.lrn-btn.is-ghost:hover { background: var(--lrn-s1); }
+.lrn-chip { min-height: 34px; padding: 0 11px; border-radius: 99px; cursor: pointer; font: inherit; font-size: 12.5px;
+  border: 1px solid var(--lrn-line); background: var(--lrn-s1); color: var(--lrn-ink-2); }
+.lrn-chip.is-on { background: var(--lrn-accent); color: #fff; border-color: var(--lrn-accent); font-weight: 600; }
+
+/* ── A lesson ────────────────────────────────────────────────────────────── */
+.lrn-lesson { display: grid; gap: 20px; }
+.lrn-back { display: inline-flex; align-items: center; gap: 7px; min-height: var(--lrn-tap);
+  text-decoration: none; color: var(--lrn-ink-2); font-size: 14px; font-weight: 500; }
+.lrn-back:hover { color: var(--lrn-ink); }
+.lrn-lesson-head { display: grid; gap: 8px; justify-items: start; }
+.lrn-lesson-eyebrow { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--lrn-ink-3); }
+.lrn-lesson-title { margin: 0; font-size: 27px; font-weight: 700; line-height: 1.18; letter-spacing: -0.025em; }
+.lrn-lesson-sum { margin: 0; font-size: 16px; line-height: 1.6; color: var(--lrn-ink-2); }
+.lrn-sec { display: grid; gap: 12px; padding: 18px; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-sec-h { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--lrn-ink-3); }
+.lrn-sec-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.lrn-objectives { margin: 0; padding-left: 20px; display: grid; gap: 7px; font-size: 15.5px; line-height: 1.6; }
+.lrn-note { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--lrn-ink-3); }
+.lrn-result { margin: 0; font-size: 14.5px; font-weight: 600; }
+.lrn-checks { gap: 16px; }
+
+/* Read aloud. The speed control sits with it because a child reading along
+   needs it more than an adult does. */
+.lrn-aloud { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lrn-aloud-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 13px;
+  border: 1px solid var(--lrn-line); border-radius: 99px; cursor: pointer; background: var(--lrn-s1);
+  color: var(--lrn-ink); font: inherit; font-size: 13.5px; font-weight: 600; }
+.lrn-aloud-btn i { font-size: 17px; }
+.lrn-aloud-btn.is-on { background: var(--lrn-accent); color: #fff; border-color: var(--lrn-accent); }
+.lrn-aloud-rate { display: flex; gap: 5px; }
+
+/* ── Studying for school: the plan, and one sitting ──────────────────────── */
+.lrn-plan { display: grid; gap: 9px; padding: 15px 16px; text-decoration: none; color: inherit;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-plan:hover { border-color: var(--lrn-ink-3); }
+.lrn-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lrn-plan-sub { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.lrn-plan-aim { font-size: 14px; color: var(--lrn-ink-2); line-height: 1.5; }
+.lrn-plan-week { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* One pip per session the plan asks for this week. Counting them is faster
+   than reading "2 of 3", which is why the words come after, not instead. */
+.lrn-pip { width: 20px; height: 6px; border-radius: 99px; background: var(--lrn-s2); }
+.lrn-pip.is-on { background: var(--lrn-ok); }
+.lrn-plan-wk { font-size: 12.5px; color: var(--lrn-ink-3); margin-left: 4px; }
+.lrn-plan-go { display: grid; gap: 10px; }
+.lrn-plan-err { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--lrn-late); }
+.lrn-field { display: grid; gap: 5px; font-size: 13px; color: var(--lrn-ink-2); }
+.lrn-input { width: 100%; min-height: var(--lrn-tap); padding: 0 12px; font: inherit; font-size: 15px;
+  color: var(--lrn-ink); background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+/* The OS draws its own arrow on a native select and it never matches. One
+   caret, ours, and the field keeps this app's surface (CLAUDE.md §8). */
+.lrn-input.is-sel { appearance: none; -webkit-appearance: none; padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%236c6f77' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 13px center; background-size: 11px; }
+
+.lrn-score { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.lrn-qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: lrnq; }
+.lrn-q { display: grid; gap: 10px; padding: 16px; background: var(--lrn-s1);
+  border: 1px solid var(--lrn-line); border-left: 4px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-q.is-right { border-left-color: var(--lrn-ok); }
+.lrn-q.is-wrong { border-left-color: var(--lrn-late); }
+.lrn-q-t { margin: 0; font-size: 16px; line-height: 1.55; font-weight: 500; }
+.lrn-q-n { font-weight: 700; color: var(--lrn-ink-3); margin-right: 5px; }
+.lrn-q-opts { display: grid; gap: 7px; }
+.lrn-opt { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 10px;
+  min-height: var(--lrn-tap); padding: 10px 12px; cursor: pointer; font-size: 15px; line-height: 1.45;
+  border: 1.5px solid var(--lrn-line); border-radius: var(--lrn-r-sm); background: var(--lrn-s1); }
+.lrn-opt:hover { border-color: var(--lrn-ink-3); }
+.lrn-opt input { margin-top: 3px; accent-color: var(--lrn-accent); }
+/* Right and wrong are never colour ALONE: the right one is also named in the
+   explanation under it, which is what a colour-blind reader goes by. */
+.lrn-opt.is-right { border-color: var(--lrn-ok); background: #f1f8f2; font-weight: 600; }
+.lrn-opt.is-wrong { border-color: var(--lrn-late); background: #fdf1f0; }
+.lrn-why { margin: 0; padding: 11px 13px; font-size: 14.5px; line-height: 1.6;
+  color: var(--lrn-ink-2); background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
+
+/* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
+@container (min-width: 720px) {
+  .lrn-shell { grid-template-areas: "top top" "rail main"; grid-template-columns: 216px 1fr; grid-template-rows: auto 1fr; }
+  .lrn-rail { position: sticky; top: 56px; align-self: start; display: grid; grid-auto-flow: row; grid-auto-columns: auto;
+    gap: 2px; padding: 14px 12px; border-top: 0; border-right: 1px solid var(--lrn-line); background: transparent; min-height: calc(100dvh - 56px); }
+  .lrn-rail-item { grid-auto-flow: column; justify-items: start; justify-content: start; align-items: center; gap: 11px;
+    min-height: var(--lrn-tap); padding: 0 12px; border-radius: var(--lrn-r-sm); font-size: 14.5px; }
+  .lrn-rail-item.is-on { background: var(--lrn-s1); box-shadow: 0 0 0 1px var(--lrn-line); }
+  .lrn-main { padding: 26px 28px 48px; margin: 0; max-width: 720px; }
+  .lrn-lesson-title { font-size: 32px; }
+  /* Two fields sit side by side once there is room for both to stay legible. */
+  .lrn-plan-go { grid-template-columns: 1fr auto; align-items: end; }
+}
