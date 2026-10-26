@@ -16,6 +16,9 @@ if ($method === 'GET') {
     elseif ($view === 'coverage') $res = gs_call('admin.curriculum.coverage', ['requesterId' => $mid]);
     elseif ($view === 'schedule') $res = gs_call('admin.curriculum.schedule', ['requesterId' => $mid]);
     elseif ($view === 'submissions') $res = gs_call('admin.curriculum.submissions', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'pending')]);
+    /* What members said about their sessions, waiting to be read. Lives on
+       this desk because it is the same people and the same screen. */
+    elseif ($view === 'testimonials') $res = gs_call('admin.testimonials.list', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'new')]);
     elseif ($view === 'report') $res = gs_call('admin.curriculum.report', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''), 'memberId' => (string)($_GET['memberId'] ?? '')]);
     else $res = gs_call('admin.curriculum.list', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''),
         'status' => (string)($_GET['status'] ?? ''), 'q' => (string)($_GET['q'] ?? '')]);
@@ -56,6 +59,8 @@ if ($method === 'GET') {
             'year'   => gs_call('staff.curriculum.year', ['requesterId' => $mid, 'viaAdmin' => true, 'memberId' => (string)($b['memberId'] ?? ''),
                          'year' => $b['year'] ?? null, 'ip' => client_ip()]),
             'courses' => gs_call('admin.club.catalogue.set', ['requesterId' => $mid, 'catalogue' => $b['catalogue'] ?? null, 'reset' => !empty($b['reset']), 'ip' => client_ip()]),
+            'testimonial' => gs_call('admin.testimonials.decide', ['requesterId' => $mid, 'tid' => (string)($b['tid'] ?? ''),
+                         'status' => (string)($b['status'] ?? ''), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]),
             default  => ['ok' => false, 'error' => 'unknown_action'],
         };
     }

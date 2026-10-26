@@ -457,6 +457,9 @@ return [
         'public.stats'     => 300,  // 5 min
         'public.events'    => 120,
         'public.posts'     => 120,
+        // What members said about their own sessions. Short, because a
+        // withdrawal or a consent turned off has to leave the page quickly.
+        'public.testimonials'      => 120,
         'public.session'   => 300,
         'public.anchorContent' => 300,
         'public.centres'   => 300,  // centre list; purged on centre_upsert/delete

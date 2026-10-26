@@ -3878,6 +3878,12 @@ function consent_record(string $subjectId, string $type, string $status, string 
         'method' => mb_substr($method, 0, 60), 'actorName' => mb_substr(trim($actorName), 0, 120),
         'createdAt' => now_iso(),
     ]);
+    /* Withdrawing site visibility takes a published testimonial off the home
+       page, and that page is cached. The read already re-checks consent on
+       every request (domain/testimonials.php), so without this purge the
+       words would linger for the cache's TTL and no longer than that — but
+       "no longer than two minutes" is not what withdrawing consent means. */
+    if ($type === 'site_visibility' && function_exists('cache_invalidate')) cache_invalidate('testimonials');
     return ['ok' => true];
 }
 

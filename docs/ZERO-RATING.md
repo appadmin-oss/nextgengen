@@ -1,5 +1,50 @@
 # Free data for learners — what an operator needs from us
 
+## 0. Read this first: none of this is automatic
+
+There is a national scheme, it is live, and **it does not switch itself on for
+us.**
+
+On **1 October 2026** the NCC and ALTON (the operators' association) launched
+the *Zero Rated Data Access to Approved Educational Platforms and Content
+Initiative*: eligible learners get **up to 100 MB of free data a day**, and it
+works **only on approved platforms**. Anything off that list comes out of the
+learner's own bundle as usual.
+
+Two halves, and only one of them is automatic:
+
+- **For the learner — automatic.** On an operator that has implemented it,
+  nothing is installed and nothing is signed up for. They open an approved
+  site and it does not bill them.
+- **For NGG — an application.** The approved list is decided by the Federal
+  Ministry of Education together with the NCC, under an operator-sponsored
+  model. A platform is on that list because somebody put it there.
+
+So building the app well does not earn free data. It makes NGG **approvable**,
+and makes the thing being approved one line instead of six. The rest of this
+file is what you put in front of them.
+
+### What to be careful about when making the case
+
+- **Eligibility, as announced, is narrower than NGG.** Reporting describes the
+  first phase as targeting senior secondary and tertiary students, widening to
+  other learners later. NGG members are 10–17 and many are in junior
+  secondary. Whether they are covered in phase one is a question to ask, not
+  one to assume — and it is the first thing a submission should address.
+- **The approved categories are a good fit.** The announced categories include
+  learning management systems and technical and vocational training
+  platforms. NGG is plainly both.
+- **Nobody should pay anybody.** There is no fee for this, and warnings about
+  people charging students to "register" are already circulating.
+- **Confirm before quoting.** The figures and dates here come from reporting
+  and from the NCC's own consultation material (the Joint NCC-Industry
+  Committee consultation ran 19 June – 9 July 2026). The platform
+  accreditation route itself was not published anywhere I could reach, so the
+  next step is the NCC and the Federal Ministry of Education directly, and
+  ALTON for the operator side. Do not build a plan on this paragraph without
+  checking it.
+
+
 A mobile operator asked to zero-rate an educational service does not want a
 description of the service. It wants two things it can put in a contract:
 
@@ -124,6 +169,10 @@ configured, the bucket's host joins the whitelist and belongs in this table.
 
 ## 5. Making the case
 
+This is the part that goes to the NCC, the Federal Ministry of Education and
+ALTON — not to an operator's account manager, because under the
+operator-sponsored model the approval comes first.
+
 What is defensible to say, because it is measured:
 
 - One hostname. No third-party request on any page a learner uses, enforced
@@ -138,5 +187,8 @@ What is not yet true, and should not be claimed:
 - The bundle is not split by audience, so a learner carries staff tooling
   they cannot open.
 - The marketing pages use stock photography unless §3 is turned on.
-- No operator has agreed to anything. This document is what you hand them;
-  it is not evidence that the conversation has happened.
+- No operator has agreed to anything, and NGG is not on the approved list.
+  This document is what you submit; it is not evidence that anybody has said
+  yes, and nothing in the codebase can make them.
+- Whether 10–17 year olds outside senior secondary are eligible in the first
+  phase is unknown to us. Ask it directly rather than discovering it later.

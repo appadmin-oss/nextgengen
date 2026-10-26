@@ -86,6 +86,9 @@ function gs_cache_purge(string $op): void {
 function gs_cache_topics(): array {
     return [
         'posts'    => ['public.posts', 'post.get'],
+        /* A published testimonial, a withdrawn one, and a consent turned off
+           on a member record all change what the home page may show. */
+        'testimonials' => ['public.testimonials'],
         'events'   => ['public.events'],
         'anchor'   => ['public.anchorContent'],
         /* A centre's name, code and colour drive the public centre list, the

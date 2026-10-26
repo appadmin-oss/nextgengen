@@ -2103,9 +2103,14 @@ function member_curriculum_unit(array $p): array {
             'unitVersion' => (int)$b['unit']['version'], 'startedAt' => now_iso(), 'updatedAt' => now_iso()]); } catch (\Throwable $e) {}
         $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
     }
+    /* What they already said about this session, so the box is not blank a
+       second time and a change reads as a change (domain/testimonials.php). */
+    $say = function_exists('member_testimonial_mine')
+        ? (member_testimonial_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
             'progress' => curriculum_progress_public($pr, $b),
-            'review' => curriculum_opening_review($units, $id, (string)$m['memberId'])];
+            'review' => curriculum_opening_review($units, $id, (string)$m['memberId']),
+            'say' => $say];
 }
 
 /**

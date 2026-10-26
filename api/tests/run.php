@@ -24450,6 +24450,84 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']])['status'] === 'published');
     db_exec("DELETE FROM curriculum_units WHERE title = 'Watch and tell'");
 
+    /* ── What a member says about a session ─────────────────────────────
+       Asked at the end of every one. The rules ARE the feature: private
+       until a person decides otherwise, never published without the
+       guardian's consent on the record, named the way the member chose,
+       and withdrawable by them at any time. Four invented testimonials
+       used to sit on the home page under real centre names; these are the
+       guards that stop that happening again with real children's words. */
+    (function () use ($u1) {
+        $unit = (string)$u1['unit']['unitId'];
+        $say = fn(string $body, string $showAs = 'initials') => member_testimonial_give([
+            'memberId' => 'NGG-CUR-M1', 'unitId' => $unit, 'course' => 'Music', 'body' => $body, 'showAs' => $showAs]);
+
+        /* It has to be a session of theirs. "One per session" is the only
+           thing bounding how many one account can write, and a unitId the
+           client invents is not a session. */
+        chk('testimonial: a session the member does not have is not a session',
+            (member_testimonial_give(['memberId' => 'NGG-CUR-M1', 'unitId' => 'U-MADE-UP', 'body' => 'Lovely lesson, really.'])['error'] ?? '') === 'not_found');
+        chk('testimonial: a couple of words is not a testimonial', ($say('ok')['error'] ?? '') === 'too_short');
+        $w = $say('I can find middle C without looking now, and I showed my sister.', 'first');
+        chk('testimonial: it saves, and it is NEW — not published because a child wrote it',
+            !empty($w['ok']) && $w['status'] === 'new'
+            && (string)db_row('SELECT status FROM testimonials WHERE tid = ?', [$w['tid']])['status'] === 'new');
+        chk('testimonial: it is not on the public page', !public_testimonials()['testimonials']);
+
+        /* The consent gate. Publishing a child's words under a byline is the
+           one act here that leaves the programme. */
+        $pub = fn() => backend_dispatch('admin.testimonials.decide', ['requesterId' => 'NGG-CUR-ED', 'tid' => $w['tid'], 'status' => 'published']);
+        /* The SAME ledger the summer board reads before printing a child's
+           name — not a second consent flag of this feature's own. */
+        $consent = fn(string $status) => consent_record('NGG-CUR-M1', 'site_visibility', $status, 'Test suite', 'Suite');
+        chk('testimonial: a member with nothing in the consent ledger cannot be published, and is told why',
+            ($pub()['error'] ?? '') === 'no_visibility_consent');
+        $consent('declined');
+        chk('testimonial: a guardian who said no is a refusal too, not a gap',
+            ($pub()['error'] ?? '') === 'no_visibility_consent');
+        $consent('granted');
+        chk('testimonial: with the guardian\'s consent, a person publishes it', !empty($pub()['ok']));
+        $live = public_testimonials()['testimonials'];
+        chk('testimonial: …and it appears, named the way the MEMBER chose, never in full',
+            count($live) === 1 && strpos($live[0]['q'], 'middle C') !== false
+            && $live[0]['from'] === 'Cur' && strpos($live[0]['from'], 'NGG-CUR-M1') === false);
+
+        /* Consent read again on every request, so withdrawing it takes the
+           words down without anybody remembering to unpublish them. */
+        $consent('declined');
+        chk('testimonial: withdrawing the consent takes it off the site, with no second action',
+            !public_testimonials()['testimonials']);
+        $consent('granted');
+
+        /* Editing published words sends them back: the site shows what
+           somebody approved, and these are not that any more. */
+        $say('Actually what I got was the confidence to play in front of people.');
+        chk('testimonial: changing it un-publishes it, because the site shows approved words',
+            (string)db_row('SELECT status FROM testimonials WHERE tid = ?', [$w['tid']])['status'] === 'new'
+            && !public_testimonials()['testimonials']);
+
+        // One per session: a second thought is a correction, not a second one.
+        chk('testimonial: one per session — writing again replaces it',
+            (int)db_row("SELECT COUNT(*) c FROM testimonials WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit])['c'] === 1);
+
+        /* Withdrawal: the same box, emptied, and it must work on a published
+           one. Consent that cannot be withdrawn was not consent. */
+        $pub();
+        chk('testimonial: a member takes it back by clearing the box, published or not',
+            ($say('')['status'] ?? '') === 'withdrawn' && !public_testimonials()['testimonials']);
+        chk('testimonial: …and it cannot be quietly put back up', ($pub()['error'] ?? '') === 'withdrawn');
+
+        /* Publishing is a CONTENT act. The club admin who runs the curriculum
+           and reads the words on the queue cannot put them on the site. */
+        chk('testimonial: the curriculum lead who reads them cannot publish them — that is content',
+            (backend_dispatch('admin.testimonials.decide', ['requesterId' => 'NGG-CUR-ADM', 'tid' => $w['tid'], 'status' => 'published'])['error'] ?? '') === 'forbidden');
+        chk('testimonial: …and they can still READ the queue, because the words are useful to staff either way',
+            !empty(backend_dispatch('admin.testimonials.list', ['requesterId' => 'NGG-CUR-ADM', 'status' => 'all'])['ok']));
+
+        db_exec("DELETE FROM testimonials WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM consents WHERE studentId = 'NGG-CUR-M1'");
+    })();
+
     // Import: dry run, digest, apply, re-run.
     $rows = [
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Hand position', 'summary' => 'Curved fingers.', 'checks' => [['kind' => 'short', 'prompt' => 'Why curve your fingers?', 'answer' => 'Control and speed']]],

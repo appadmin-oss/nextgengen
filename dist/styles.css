@@ -8689,3 +8689,27 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 /* A "watch and tell me" question plays its video inside the exam. */
 .cur-watch { display: grid; gap: 8px; margin: 0 0 10px; }
 .cur-watch-note { margin: 0; font-size: .85rem; line-height: 1.5; color: var(--ink-600, #4a5168); }
+
+/* ══ One line about today ════════════════════════════════════════════════════
+   Asked at the end of every session, after the work. It is deliberately the
+   quietest card on the page: nothing depends on it, and a child who does not
+   feel like writing should be able to tell that at a glance. */
+.cur-say { border-left: 4px solid var(--navy-700, #1c2a5e); display: grid; gap: 10px; }
+.cur-say-q { margin: 0; font-size: 1rem; line-height: 1.55; color: var(--ink-800, #2c3450); }
+.cur-say-f textarea {
+  width: 100%; padding: 11px 13px; font: 400 16px/1.6 inherit; color: var(--ink-900, #1a2233);
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 10px; background: #fff; resize: vertical;
+}
+.cur-say-as { border: 0; margin: 0; padding: 0; display: grid; gap: 7px; }
+.cur-say-as > legend { padding: 0; font-size: .85rem; font-weight: 600; color: var(--ink-600, #4a5168); }
+.cur-say-opt {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 13px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 999px; background: #fff;
+  font-size: .9rem; color: var(--ink-800, #2c3450); margin-right: 7px;
+}
+.cur-say-opt.is-on { border-color: var(--navy-900, #16233f); background: var(--cream-50, #fbf8f1); font-weight: 600; }
+.cur-say-opt input { accent-color: var(--navy-900, #16233f); }
+.cur-say-note { margin: 0; font-size: .82rem; line-height: 1.5; color: var(--ink-500, #5a6488); }
+.cur-say-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cur-say-done { font-size: .85rem; font-weight: 600; color: #1f8a4c; }
+@media (pointer: coarse) { .cur-say-opt { min-height: 44px; } }

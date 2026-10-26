@@ -256,6 +256,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.curriculum.plan'    => 'admin_curriculum_plan',
             'admin.curriculum.report'  => 'admin_curriculum_report',
             'admin.curriculum.schedule' => 'admin_curriculum_schedule',
+            'admin.testimonials.list'   => 'admin_testimonials_list',
+            'admin.testimonials.decide' => 'admin_testimonials_decide',
             'admin.curriculum.submissions' => 'admin_curriculum_submissions',
             'admin.curriculum.review' => 'admin_curriculum_review',
             'admin.curriculum.file'    => 'admin_curriculum_file_put',
@@ -263,6 +265,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.curriculum.unit'   => 'member_curriculum_unit',
             'member.curriculum.submit' => 'member_curriculum_submit',
             'member.curriculum.ask'    => 'member_curriculum_ask',
+            'member.testimonial.give'  => 'member_testimonial_give',
+            'member.testimonial.mine'  => 'member_testimonial_mine',
             'member.curriculum.document' => 'member_curriculum_document',
             'staff.curriculum'         => 'staff_curriculum',
             'staff.curriculum.member'  => 'staff_curriculum_member',
@@ -307,6 +311,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.timetableLoad'     => 'public_timetable_load',
             'public.timetableTerm'     => 'public_timetable_term',
             'public.programme'         => 'public_programme',
+            /* What members said about their own sessions — the only source
+               the home page has for testimonials (domain/testimonials.php). */
+            'public.testimonials'      => 'public_testimonials',
             'admin.club.catalogue.get' => 'admin_club_catalogue_get',
             'admin.roles'              => 'admin_roles',
             'admin.status.board'       => 'admin_status_board',

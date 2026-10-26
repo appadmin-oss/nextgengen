@@ -486,21 +486,35 @@ function CommunityCollage() {
 /* =========== Testimonials =========== */
 function Testimonials() {
   const sceneFor = ["studio", "graduation", "techLab", "speaker"];
-  /* Nothing invented stands in for somebody's words. Until there are real,
-     consented, attributable quotes (data.js), the section is not drawn —
-     an empty row of cards would say "we have no stories" more loudly than
-     leaving it out, and a fabricated one would say something worse. */
-  if (!TESTIMONIALS.length) return null;
+  /* REAL ONES ONLY, from members, about their own sessions.
+     Four invented quotes used to live in data.js, attributed to named
+     people who never said them. These come from the end of a session, in a
+     member's own words, and reach this page only after somebody with
+     `content` published them AND the record carries the guardian's
+     visibility consent — which is read again on every request, so
+     withdrawing it takes the words down.
+     Nothing is drawn until there are some. An empty row of cards says "we
+     have no stories" louder than leaving it out. */
+  const [live, setLive] = React.useState(null);
+  React.useEffect(() => {
+    let gone = false;
+    NGGApi.public.testimonials()
+      .then(r => { if (!gone) setLive((r && r.testimonials) || []); })
+      .catch(() => { if (!gone) setLive([]); });
+    return () => { gone = true; };
+  }, []);
+  const items = live === null ? TESTIMONIALS : (live.length ? live : TESTIMONIALS);
+  if (!items.length) return null;
   return (
     <section className="section" style={{background:"var(--cream-50)"}}>
       <div className="container">
         <SectionHead
           eyebrow="THE KIND OF STORY WE BUILD"
           title="The work shows in the people."
-          sub="Illustrative of the journey a member goes through — a teenager who ships, a parent who sees the change, a mentor who keeps showing up. Real, named stories replace these as our first cohorts graduate."
+          sub="Members write one line at the end of a session, in their own words. These are the ones they and their guardians agreed we could show."
         />
         <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:18}}>
-          {TESTIMONIALS.map((t, i) => (
+          {items.map((t, i) => (
             <div key={i} className="card" style={{padding:0, display:"flex", flexDirection:"column", overflow:"hidden", border:"var(--rs-border-25, 1px solid rgba(12, 20, 50, 0.07))"}}>
               <div className="zoom-on-hover" style={{position:"relative", height:200}}>
                 <Photo name={sceneFor[i]} ratio="auto" style={{height:"100%", borderRadius:0}}/>

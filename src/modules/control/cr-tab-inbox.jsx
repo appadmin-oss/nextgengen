@@ -224,6 +224,42 @@ const CR_INBOX_SOURCES = {
       });
     },
   },
+  /* What members said about their sessions (domain/testimonials.php).
+     A child wrote these about themselves, so two things are different from
+     every other queue here: publishing needs the guardian's consent on the
+     record — without it there is no Publish button to press, because a
+     control that cannot act should not be drawn — and the words go out under
+     the byline the MEMBER chose, never their full name. */
+  testimonials: {
+    cap: "content",
+    async load() {
+      const r = await NGGApi.admin.curriculum.testimonials("new");
+      return (r.rows || []).map(t => {
+        const ok = !!t.consent;
+        const back = () => NGGApi.admin.curriculum.testimonialDecide(t.tid, "new", "");
+        const actions = [];
+        if (ok) actions.push({ l: "Publish", tone: "primary", run: async () => {
+          await NGGApi.admin.curriculum.testimonialDecide(t.tid, "published", "");
+          return { text: "Published · it is on the home page now", undo: back };
+        } });
+        actions.push({ l: "Not this one", note: { l: "Why (staff only)", req: false, ph: "e.g. names another child", help: "Kept on the record. The member is not told, and can still write another." },
+          run: async (it, v) => { await NGGApi.admin.curriculum.testimonialDecide(t.tid, "declined", v.why || ""); return { text: "Left unpublished", undo: back }; } });
+        return crItem({
+          id: "tst:" + t.tid, cat: "testimonials", kind: "Testimonial", icon: "quotes",
+          who: t.name || t.memberId, at: t.createdAt, unread: true,
+          title: t.course ? "After a " + t.course + " session" : "After a session",
+          body: t.body || "", search: [t.memberId, t.centre, t.course].join(" "),
+          facts: [["Member", t.memberId + (t.centre ? " · " + t.centre : "")],
+                  ["Goes out as", t.byline + " · " + (CR_TESTI_SHOW[t.showAs] || t.showAs)],
+                  ["Consent", ok ? "Guardian granted “Feature on our website”" : "Not granted"]],
+          note: ok
+            ? "Publishing puts these words on the public home page under that byline — never their full name. They can take it back at any time, and withdrawing the consent takes it down on its own."
+            : "No Publish here: the guardian has not granted “Feature on our website”. Record that consent on the member first. The words are still worth reading.",
+          actions,
+        });
+      });
+    },
+  },
   photos: {
     cap: "content",
     async load(ctx) {
@@ -309,7 +345,10 @@ const CR_APP_EXPORT = [
   ["Agreements", a => { const g = a.agreements || {}; return Object.keys(g).length ? Object.keys(g).map(t => t + ":" + g[t].status).join(" ") : ""; }],
   ["Policy version", (a, d) => d.policyVersion], ["Photo", a => a.photoUrl ? "Yes" : "No"], ["Role", a => a.role],
 ];
-const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments"];
+/* How the member chose to be signed, in the words the member saw. */
+const CR_TESTI_SHOW = { initials: "initials and age", first: "first name and age", anon: "not named at all" };
+
+const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments", "testimonials"];
 
 /** Load every queue this person may see, at once. A queue that fails is named, not hidden. */
 async function crInboxLoad(ctx) {
@@ -518,7 +557,7 @@ function CrInbox({ ctx, phone, data }) {
   );
   return <div className="cr-ib">{rail}{list}{pane}</div>;
 }
-const CR_INBOX_ICON = { messages: "envelope-simple", applications: "user-plus", approvals: "seal-check", requests: "hand", comments: "chat-circle", photos: "image" };
+const CR_INBOX_ICON = { messages: "envelope-simple", applications: "user-plus", approvals: "seal-check", requests: "hand", comments: "chat-circle", photos: "image", testimonials: "quotes" };
 
 function CrInboxClear({ handled }) {
   return (
@@ -721,4 +760,5 @@ Object.assign(CR_TAB_DEFS, {
   messages: crInboxTab("messages"),
   comments: crInboxTab("comments"),
   photos: crInboxTab("photos"),
+  testimonials: crInboxTab("testimonials"),
 });

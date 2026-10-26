@@ -32,6 +32,7 @@ const CR_PAGES = {
     { id: "messages", label: "Messages", desc: "Contact form and replies.", cap: "inbox" },
     { id: "comments", label: "Comments", desc: "Public comments waiting for moderation.", cap: "content" },
     { id: "photos", label: "Photo review", desc: "Headshots must pass before an ID card can print.", cap: "content" },
+    { id: "testimonials", label: "Testimonials", desc: "What members said about their own sessions, waiting to be read.", cap: "content" },
   ] },
   analytics: { label: "Analytics", icon: "chart-line-up", tabs: [
     { id: "dashboard", label: "M&E overview", desc: "Monitoring and evaluation against the formation goals.", cap: null },
