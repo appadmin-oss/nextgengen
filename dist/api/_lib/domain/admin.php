@@ -788,6 +788,9 @@ function admin_mentors_upsert(array $p): array {
 
 function admin_sessions_upsert(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
+    /* CACENTRE keeps the calendar (sessions_sync): an edit here would be
+       overwritten at the next sync, so it is refused with where to go. */
+    if (sessions_from_cacentre()) return ['ok' => false, 'error' => 'sessions_on_cacentre', 'editUrl' => sessions_source_status()['editUrl']];
     $data = $p['data'] ?? [];
     $sessionId = trim((string)($data['sessionId'] ?? ''));
     $cols = ['code','year','name','startDate','endDate','theme','isActive','coverUrl','notes'];
@@ -804,6 +807,13 @@ function admin_sessions_upsert(array $p): array {
     db_insert('sessions', $patch);
     audit('admin.session.create', $g['requester']['memberId'], $patch['sessionId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'sessionId' => $patch['sessionId']];
+}
+
+/** Fetch the calendar from CACENTRE now, whatever the throttle says. */
+function admin_sessions_sync(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $r = sessions_sync(true);
+    return ['ok' => true, 'sync' => $r, 'source' => sessions_source_status()];
 }
 
 // ── Anchor missions ──────────────────────────────────────────────────────

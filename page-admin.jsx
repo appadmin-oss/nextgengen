@@ -5995,18 +5995,43 @@ function StudentEditor({ s, onSaved, onDelete }) {
 function AdminSessions() {
   const [year, setYear] = React.useState(new Date().getFullYear());
   const [list, setList] = React.useState(null);
+  const [source, setSource] = React.useState(null);
   const [editing, setEditing] = React.useState(null);
-  const load = () => NGGApi.admin.sessions.list(year).then(r => setList(r.sessions || [])).catch(e => { toast.error(e.code || e.message); setList([]); });
+  const [syncing, setSyncing] = React.useState(false);
+  const load = () => NGGApi.admin.sessions.list(year).then(r => { setList(r.sessions || []); setSource(r.source || null); }).catch(e => { toast.error(e.code || e.message); setList([]); });
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [year]);
+  // CACENTRE keeps the one calendar; NGG fills its sessions from it (sessions_sync).
+  const fromCac = !!(source && source.fromCacentre);
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      const r = await NGGApi.admin.sessions.sync();
+      if (r.sync && r.sync.ok === false) toast.error("CACENTRE did not answer: " + (r.sync.error || "try again later"));
+      else toast.success("Sessions brought in from CACENTRE");
+      load();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setSyncing(false); }
+  };
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Sessions · {year}</h2>
-        <div style={{display:"flex", gap:8}}>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y - 1)}>◀ {year - 1}</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y + 1)}>{year + 1} ▶</button>
         </div>
       </div>
+      {source && !source.off && (
+        <div className="admin-sessions-source" role="status">
+          {fromCac
+            ? <span>Kept on CACENTRE, the one calendar for every site{source.syncedAt ? " · brought in " + fmtDate(source.syncedAt) : ""}.{source.error ? " Last try failed: " + source.error : ""}</span>
+            : <span>Edited here until CACENTRE answers{source.error ? " (" + source.error + ")" : ""}. After that, sessions are changed on CACENTRE.</span>}
+          <span style={{display:"flex", gap:8, flexWrap:"wrap"}}>
+            <button className="btn btn-ghost btn-sm" onClick={syncNow} disabled={syncing}>{syncing ? "Syncing…" : "Sync now"}</button>
+            {source.editUrl && <a className="btn btn-primary btn-sm" href={source.editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>}
+          </span>
+        </div>
+      )}
       {list === null ? <div className="dash-spinner"/> :
         <div className="admin-sessions-grid">
           {list.map(s => (
@@ -6020,20 +6045,22 @@ function AdminSessions() {
           ))}
         </div>
       }
-      {editing && <AdminSessionEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
+      {editing && <AdminSessionEditor data={editing} readOnly={fromCac} editUrl={source && source.editUrl} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
     </div>
   );
 }
 
-function AdminSessionEditor({ data, onClose, onSaved }) {
+function AdminSessionEditor({ data, readOnly, editUrl, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
   const save = async (e) => {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+    if (readOnly) return;
+    setBusy(true);
     try { await NGGApi.admin.sessions.upsert(d); onSaved(); }
-    catch (e) { toast.error(e.code || e.message); }
+    catch (e) { toast.error(e.code === "sessions_on_cacentre" ? "Sessions are kept on CACENTRE — change them there." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   return (
@@ -6043,17 +6070,28 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
           <h3 {...headingProps}>{d.sessionId} · {d.year}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
-        <div className="admin-fields">
-          <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
-          <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
-          <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
-          <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
-          <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
-          <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
-        </div>
+        {readOnly
+          ? <div className="admin-fields">
+              <p className="admin-sessions-note">This session comes from CACENTRE. Change its dates, name, theme or cover there; every site picks the change up within ten minutes.</p>
+              <dl className="admin-session-dl">
+                <dt>Name</dt><dd>{d.name}</dd>
+                <dt>Dates</dt><dd>{fmtDate(d.startDate)} — {fmtDate(d.endDate)}</dd>
+                <dt>Theme</dt><dd>{d.theme || "—"}</dd>
+              </dl>
+            </div>
+          : <div className="admin-fields">
+              <Field label="Display name" value={d.name||""} onChange={v => set("name", v)}/>
+              <Field label="Start date" value={d.startDate||""} onChange={v => set("startDate", v)} type="date" required/>
+              <Field label="End date"   value={d.endDate||""}   onChange={v => set("endDate", v)}   type="date" required/>
+              <Field label="Theme" value={d.theme||""} onChange={v => set("theme", v)} placeholder='"Build the room." etc.'/>
+              <Field label="Cover image URL" value={d.coverUrl||""} onChange={v => set("coverUrl", v)}/>
+              <FieldTextarea label="Internal notes" value={d.notes||""} onChange={v => set("notes", v)}/>
+            </div>}
         <div className="admin-drawer-foot">
-          <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+          <button type="button" className="btn btn-ghost" onClick={close}>{readOnly ? "Close" : "Cancel"}</button>
+          {readOnly
+            ? (editUrl && <a className="btn btn-primary" href={editUrl} target="_blank" rel="noopener noreferrer">Edit in CACENTRE ↗</a>)
+            : <button className="btn btn-primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button>}
         </div>
       </form>
     </div>

@@ -975,6 +975,7 @@
       sessions: {
         list:   (year) => request('/admin/sessions.php' + qs({ year })),
         upsert: (data) => request('/admin/sessions.php', { body: data }),
+        sync:   () => request('/admin/sessions.php', { body: { sync: true } }),
       },
       missions: {
         list:   () => request('/admin/missions.php'),

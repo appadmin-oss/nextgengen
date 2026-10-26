@@ -12,6 +12,9 @@ declare(strict_types=1);
 
 if (PHP_SAPI !== 'cli') { http_response_code(403); echo "CLI only\n"; exit(1); }
 error_reporting(E_ALL & ~E_DEPRECATED);
+/* The suite never reaches CACENTRE: unless a test says otherwise, it does not
+   answer, which leaves sessions exactly as NGG kept them before (sessions_sync). */
+$GLOBALS['__sessions_http_mock'] = fn($url) => null;
 
 $ROOT = dirname(__DIR__);                 // .../api
 $tmp = sys_get_temp_dir() . '/ngg-tests-' . getmypid() . '-' . bin2hex(random_bytes(3)) . '.db';
@@ -22160,6 +22163,52 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         && empty(backend_dispatch('admin.volunteers.nggCatalogue.get', ['requesterId' => 'NGG-NOBODY'])['ok']));
     if ($vid !== '') { db_exec('DELETE FROM qr_codes WHERE studentId = ?', [$vid]); db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$vid]); }
     db_exec("DELETE FROM applications WHERE email LIKE '%@nggdoor.test'");
+})();
+
+// ── Sessions are kept on CACENTRE (sessions_sync) ────────────────────────────
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $y = (int)gmdate('Y');
+    $wasNotes = db_row('SELECT notes FROM sessions WHERE sessionId = ?', ["MEDI-$y"])['notes'] ?? '';
+    chk('sessions: before CACENTRE has answered, NGG keeps and edits its own', !sessions_from_cacentre()
+        && !empty(backend_dispatch('admin.sessions.upsert', ['requesterId' => $ADM, 'data' => ['sessionId' => "MEDI-$y", 'theme' => 'local']])['ok']));
+    $asked = [];
+    $cal = [
+        ['session_id' => "TONI-$y", 'code' => 'TONI', 'year' => $y, 'name' => 'Toni', 'start_date' => "$y-01-08", 'end_date' => "$y-03-30", 'theme' => 'Begin', 'cover_url' => '/assets/toni.jpg', 'notes' => 'office only'],
+        ['session_id' => "MEDI-$y", 'code' => 'MEDI', 'year' => $y, 'name' => 'MEDI', 'start_date' => "$y-04-06", 'end_date' => "$y-06-28", 'theme' => 'Middle', 'cover_url' => ''],
+        ['session_id' => "SUMMER-$y", 'code' => 'SUMMER', 'year' => $y, 'name' => 'Summer School', 'start_date' => "$y-07-06", 'end_date' => "$y-08-30", 'theme' => '', 'cover_url' => 'javascript:x'],
+        ['session_id' => "DOMI-$y", 'code' => 'DOMI', 'year' => $y, 'name' => 'DOMI', 'start_date' => "$y-09-07", 'end_date' => "$y-12-13", 'theme' => '', 'cover_url' => ''],
+        ['session_id' => 'TONI-' . ($y + 1), 'code' => 'TONI', 'year' => $y + 1, 'name' => 'TONI', 'start_date' => ($y + 1) . '-01-06', 'end_date' => ($y + 1) . '-03-29', 'theme' => '', 'cover_url' => ''],
+        ['session_id' => 'broken', 'start_date' => 'x'],
+    ];
+    $GLOBALS['__sessions_http_mock'] = function ($url) use (&$asked, &$cal) { $asked[] = $url; return ['ok' => true, 'sessions' => $cal]; };
+    db_insert('sessions', ['sessionId' => 'CAMP-' . ($y + 1), 'code' => 'CAMP', 'year' => $y + 1, 'name' => 'CAMP', 'startDate' => ($y + 1) . '-12-20', 'endDate' => ($y + 1) . '-12-22',
+        'theme' => '', 'isActive' => 0, 'coverUrl' => '', 'notes' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.sessions.sync', ['requesterId' => $ADM]);
+    chk('sessions: it asks CACENTRE’s calendar door', ($asked[0] ?? '') === 'https://cacentre.afrovanguard.org.ng/api/programme-sessions.php');
+    $toni = db_row('SELECT * FROM sessions WHERE sessionId = ?', ["TONI-$y"]);
+    chk('sessions: dates, name, theme come from CACENTRE', !empty($r['ok']) && $toni['startDate'] === "$y-01-08" && $toni['name'] === 'Toni' && $toni['theme'] === 'Begin');
+    chk('sessions: a cover given as a path is CACENTRE’s; a bad one is dropped', $toni['coverUrl'] === 'https://cacentre.afrovanguard.org.ng/assets/toni.jpg'
+        && db_row('SELECT coverUrl FROM sessions WHERE sessionId = ?', ["SUMMER-$y"])['coverUrl'] === '');
+    chk('sessions: NGG’s own notes are kept, CACENTRE’s are not taken', (db_row('SELECT notes FROM sessions WHERE sessionId = ?', ["MEDI-$y"])['notes'] ?? null) === $wasNotes
+        && strpos((string)$toni['notes'], 'office only') === false);
+    chk('sessions: one CACENTRE no longer lists, not yet started, is removed', !db_row('SELECT id FROM sessions WHERE sessionId = ?', ['CAMP-' . ($y + 1)]));
+    chk('sessions: next year comes too, for the countdown', (bool)db_row('SELECT id FROM sessions WHERE sessionId = ?', ['TONI-' . ($y + 1)]));
+    chk('sessions: now kept on CACENTRE — the editor here refuses and says where', sessions_from_cacentre()
+        && (backend_dispatch('admin.sessions.upsert', ['requesterId' => $ADM, 'data' => ['sessionId' => "MEDI-$y", 'theme' => 'x']])['error'] ?? '') === 'sessions_on_cacentre');
+    $list = backend_dispatch('session.list', ['year' => $y]);
+    chk('sessions: the list says where they come from, and links to the editor', !empty($list['source']['fromCacentre']) && strpos($list['source']['editUrl'], '/admin/programme-sessions.php') !== false);
+    $asked = [];
+    ensure_year($y);
+    chk('sessions: read again within ten minutes, CACENTRE is not asked', $asked === []);
+    db_exec('DELETE FROM sessions WHERE year = ?', [$y + 3]);
+    chk('sessions: a year CACENTRE has not sent is not filled with NGG’s defaults', ensure_year($y + 3) === 0);
+    $GLOBALS['__sessions_http_mock'] = fn($url) => null;
+    $r = sessions_sync(true);
+    chk('sessions: when CACENTRE does not answer, what was synced stays, and the reason is kept', empty($r['ok']) && (bool)db_row('SELECT id FROM sessions WHERE sessionId = ?', ["TONI-$y"])
+        && sessions_source_status()['error'] !== '');
+    // Back to how the rest of the suite found it.
+    foreach (['sessions_synced_at', 'sessions_sync_error', 'sessions_sync_tried'] as $k) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

@@ -362,6 +362,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'circle.report'               => 'circle_report',
             'circle.cohort'               => 'circle_cohort',
             'admin.sessions.upsert'   => 'admin_sessions_upsert',
+            'admin.sessions.sync'     => 'admin_sessions_sync',
             'admin.missions.list'     => 'admin_missions_list',
             'admin.missions.upsert'   => 'admin_missions_upsert',
             'admin.missions.submissions' => 'admin_mission_submissions',

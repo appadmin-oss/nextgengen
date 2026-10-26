@@ -111,7 +111,7 @@ function session_list(array $p): array {
     $year = (int)($p['year'] ?? gmdate('Y'));
     ensure_year($year);
     $rows = db_all('SELECT * FROM sessions WHERE year = ? ORDER BY startDate', [$year]);
-    return ['ok' => true, 'sessions' => array_map('public_session', $rows)];
+    return ['ok' => true, 'sessions' => array_map('public_session', $rows), 'source' => sessions_source_status()];
 }
 
 function session_ensure_year(array $p): array {
