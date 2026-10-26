@@ -1140,18 +1140,17 @@ function MemberIDCard(props) {
    given + family name, one or two disciplines, role, photo and QR.
    ============================================================================ */
 
-var NGGC_FONTS_HREF = "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
+/* Poppins and IBM Plex Mono are in /assets/fonts, loaded by every page.
+   They were fetched from Google Fonts here, on the screen that rasterises a
+   card to pixels for print — which is exactly where that host must not be:
+   a run made while it is slow or blocked silently falls back to a system
+   face, and two batches printed on different days do not match. It is the
+   same reason Inter was vendored, written down in assets/fonts/fonts.css. */
 
-/** Ensure Poppins + IBM Plex Mono are loaded before a card is rasterised (the
- *  app itself ships Sora/JetBrains, so this design brings its own type). */
+/** The faces this design needs are already in the document; what remains is
+ *  to WAIT for them, because rasterising before they decode prints the
+ *  fallback. */
 function nggcEnsureFonts() {
-  try {
-    if (!document.getElementById("nggc-fonts")) {
-      var l = document.createElement("link");
-      l.id = "nggc-fonts"; l.rel = "stylesheet"; l.href = NGGC_FONTS_HREF;
-      document.head.appendChild(l);
-    }
-  } catch (e) {}
   if (!document.fonts || !document.fonts.load) return Promise.resolve();
   return Promise.all([
     document.fonts.load("300 23pt Poppins"), document.fonts.load("600 23pt Poppins"),

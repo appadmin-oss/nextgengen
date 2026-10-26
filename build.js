@@ -321,7 +321,14 @@ async function build() {
   // Insert the bundled scripts + a preload right after the React tags
   prod = prod.replace(
     /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
-    `$1<link rel="modulepreload" href="${A('app.min.js')}"/>\n`
+    /* `preload as="script"`, NOT `modulepreload`.
+       The bundle is a classic script (`<script defer>`), and a
+       modulepreload is fetched with module semantics — so the browser could
+       not reuse it and downloaded the whole bundle a SECOND time. The
+       browser's own Resource Timing said so: two entries, 4.97 MB each,
+       one initiated by the link and one by the script tag. On a phone on
+       metered data that is the single most expensive line in the build. */
+    `$1<link rel="preload" as="script" href="${A('app.min.js')}"/>\n`
     + ['data.js', 'photos.js', 'api-client.js', 'outbox.js', 'app.min.js']
         .map(f => `<script defer src="${A(f)}"></script>`).join('\n') + '\n'
   );

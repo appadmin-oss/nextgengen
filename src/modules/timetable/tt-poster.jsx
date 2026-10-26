@@ -14,14 +14,13 @@
 
 /* The poster styles' fonts (§8.9), loaded with the maker and never with the
    rest of the site. The app UI does not use them. */
-const TT_FONT_HREF = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Archivo:wght@500;700&family=Archivo+Black&family=Caveat:wght@600;700&family=Kalam:wght@400;700&family=Instrument+Serif:ital@0;1&display=swap";
-
-function ttEnsureFonts() {
-  if (typeof document === "undefined" || document.getElementById("tt-fonts")) return;
-  const l = document.createElement("link");
-  l.id = "tt-fonts"; l.rel = "stylesheet"; l.href = TT_FONT_HREF;
-  document.head.appendChild(l);
-}
+/* Every family this poster can draw in is in /assets/fonts, loaded with the
+   page. It used to fetch them from Google Fonts — and a poster is DRAWN to
+   an image file, so a host that is slow or blocked does not degrade the
+   page, it bakes the wrong typeface into something somebody prints and puts
+   on a wall. Nothing left to fetch; ttFontsReady still waits for the decode.
+   It is also the last third-party host in the app (docs/ZERO-RATING.md). */
+function ttEnsureFonts() {}
 
 /** Every family the chosen style uses, loaded before a file is drawn from it. */
 async function ttFontsReady(look) {

@@ -451,6 +451,60 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForSelector('.admin-main .admin-table', { timeout: 30000 });
     chk('the staff board lists the member with their rating and reasons', /Ada Learner/.test(await ap.$eval('.admin-main', el => el.innerText)));
 
+    /* ── Watch a video and tell me ──────────────────────────────────────
+       Last, on its own lesson, so nothing above has to be counted around
+       it. The video belongs to the QUESTION and plays inside the exam: a
+       learner sent away to find it loses the exam, the question and — on a
+       phone — the tab. */
+    await ap.goto(BASE + '/control/learning/curriculum/desk', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(ap);
+    await ap.waitForSelector('button:has-text("New lesson")', { timeout: 60000 });
+    await ap.click('button:has-text("New lesson")');
+    await ap.waitForSelector('.led');
+    await ap.fill('.led-title', 'Watch: how a hand crosses under');
+    await ap.selectOption('.led-card select >> nth=0', 'Music');
+    await ap.fill('.led-card input[type=number] >> nth=0', '4');
+    await ap.selectOption('.led-status select', 'published');
+    await ap.fill('.led textarea[placeholder^="What this session is"]', 'Someone else\'s hands, slowed right down.');
+    await ap.click('.le-start-alt:has-text("Start from nothing")');
+    await ap.click('.le-row:last-child .le-ed');
+    await ap.keyboard.type('Watch it twice: once for the sound, once for the hand.');
+    await ap.click('.led-exam button:has-text("Add a question")');
+    await ap.selectOption('.led-q >> nth=0 >> select[aria-label="Question 1 type"]', 'watch');
+    await ap.waitForSelector('.led-q-video');
+    chk('a watch question asks for the video it is about',
+        /The video they watch/.test(await ap.$eval('.led-q-video', el => el.innerText)));
+    await ap.fill('.led-q-video input', 'https://example.org/not-a-video.mp4');
+    chk('…and says so when the exam could not play it, where it is written',
+        /not a YouTube or Vimeo link/.test(await ap.$eval('.led-q-video', el => el.innerText)));
+    await ap.fill('.led-q-video input', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    await ap.fill('.led-q textarea[aria-label="Question 1"]', 'What did her thumb do before the hand moved?');
+    await ap.fill('.led-q textarea[aria-label="Rubric for question 1"]', 'Up to 3 for a detail from the video itself, in their own words.');
+    await ap.click('.led-top button:has-text("Create lesson")');
+    await ap.waitForFunction(() => /CUR-[A-F0-9]+ · version 1/.test(document.querySelector('.led-sub')?.innerText || ''), null, { timeout: 15000 });
+    await ap.screenshot({ path: path.join(SHOTS, 'video-question-editor.png'), fullPage: true });
+    chk('a watch lesson saves with the video on the question itself',
+        php(`echo db_row("SELECT k.videoUrl FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.title LIKE 'Watch:%'")['videoUrl'];`)
+          === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    await mp.goto(BASE + '/dashboard/learning?classic=1', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mp);
+    await mp.waitForSelector('.cur-item', { timeout: 40000 });
+    await mp.click('.cur-item:has-text("Watch: how a hand crosses under")');
+    await mp.waitForSelector('.cur-review, .cur-checks', { timeout: 20000 });
+    if (await mp.$('.cur-review button:has-text("Skip to today")')) await mp.click('.cur-review button:has-text("Skip to today")');
+    await mp.waitForSelector('.cur-watch', { timeout: 20000 });
+    chk('the member watches it INSIDE the exam, and is told what a good answer has in it',
+        !!(await mp.$('.cur-watch iframe')) && /in your own words/.test(await mp.$eval('.cur-watch-note', el => el.innerText)));
+    chk('…and the player is the privacy-preserving embed, not a bare YouTube page',
+        /youtube-nocookie\.com\/embed\//.test(await mp.$eval('.cur-watch iframe', el => el.getAttribute('src'))));
+    await mp.addStyleTag({ content: '.toast-host { display: none !important; }' });
+    await mp.screenshot({ path: path.join(SHOTS, 'video-question.png'), fullPage: true });
+    // The question on its own, so the shot is of the thing and not the page
+    // it sits on. (The player is blank in CI: this sandbox cannot reach
+    // YouTube, and every off-origin request is aborted on purpose.)
+    await mp.locator('.cur-checks').screenshot({ path: path.join(SHOTS, 'video-question-close.png') });
+
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

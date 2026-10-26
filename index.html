@@ -62,15 +62,15 @@
      today's date; leaves the static icon above as the offline/no-JS fallback. -->
 <script src="/assets/seasonal-icon.js" defer></script>
 
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link rel="preconnect" href="https://images.unsplash.com" crossorigin/>
-<link rel="preconnect" href="https://api.dicebear.com"/>
-<!-- Preload the heaviest above-the-fold font subset; display=swap means the
-     boot screen and first-paint text still render with the system fallback
-     while the brand fonts decode in parallel. -->
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Caveat+Brush&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'"/>
-<noscript><link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;800&family=Caveat+Brush&display=swap" rel="stylesheet"/></noscript>
+<!-- NO THIRD-PARTY ORIGIN ON THE CRITICAL PATH.
+     Sora, Caveat Brush and JetBrains Mono were fetched from Google Fonts,
+     which meant two extra hosts (fonts.googleapis.com, fonts.gstatic.com)
+     before the first heading could be drawn in the right face. They are in
+     /assets/fonts now, with the rest. A mobile operator zero-rating this
+     service whitelists HOSTNAMES: every extra one is a separate agreement,
+     and a learner on free data whose fonts come from a host the operator
+     did not whitelist either pays for them or waits for a timeout.
+     See docs/ZERO-RATING.md for the inventory an operator is handed. -->
 <!-- Phosphor icons (self-hosted, CSP-safe, offline) — used by the transparency status boards. -->
 <link rel="stylesheet" href="/vendor/phosphor/phosphor.css"/>
 <!-- Self-hosted Space Grotesk / Space Mono (+ Bricolage) for the Anchor Circle portal — CSP-safe, works offline. -->
@@ -78,6 +78,7 @@
 
 <!-- Preload the logo + main stylesheet so they don't wait on JSX evaluation. -->
 <link rel="preload" as="image" href="assets/logo.png"/>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/sora-latin-variable.woff2" crossorigin/>
 
 <link rel="stylesheet" href="styles.css"/>
 <link rel="stylesheet" href="styles-app.css"/>

@@ -26,7 +26,11 @@ const vm = require('vm');
 
 const OUT_FILE = 'timetable-about.html';
 const IMG_BASE = '/assets/timetable/landing/';
-const FONTS = 'https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap';
+/* Sora, Inter and JetBrains Mono are all in /assets/fonts. This page was
+   fetching them from Google Fonts, which put two third-party hosts in front
+   of a page whose whole job is to load fast on a phone — and which a mobile
+   operator zero-rating the service would have to whitelist separately. */
+const FONTS = '/assets/fonts/fonts.css';
 
 /** The maker's tables and parser, run outside a browser. React is never called: only top-level tables are evaluated. */
 function ttLandingLoadMaker(root, esbuild) {
@@ -125,8 +129,6 @@ function renderTimetableLanding(T, { css, origin, now }) {
 <meta property="og:image:alt" content="A school week printed in the Classic style">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/assets/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="image" href="${IMG_BASE}style-classic.webp" type="image/webp" fetchpriority="high">
 <link rel="stylesheet" href="${FONTS}">
 <link rel="stylesheet" href="/vendor/phosphor/phosphor.css">

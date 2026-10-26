@@ -68,8 +68,18 @@ function loadChromium() { try { return require('playwright-core').chromium; } ca
       if (!/text\/html/.test(r.headers()['content-type'] || '')) return route.fulfill({ response: r });
       return route.fulfill({ response: r, headers: Object.assign({}, r.headers(), { 'content-security-policy': CSP }) });
     });
-    // Google Fonts answered locally, so the stylesheet loads and its onload handler gets the chance to run.
-    await ctx.route(u => String(u).startsWith('https://fonts.googleapis.com/'), route => route.fulfill({ status: 200, contentType: 'text/css', body: '/* test */' }));
+    /* NO OUTSIDE HOST MAY BE REACHED AT ALL.
+       Google Fonts used to be answered locally here so its stylesheet could
+       load. Nothing fetches it now — every face is in /assets/fonts — so
+       instead of stubbing that host, every request that leaves this origin
+       is ABORTED and recorded. A page that still reaches out fails the test
+       by name, which is the promise docs/ZERO-RATING.md makes to an
+       operator: one hostname, nothing else. */
+    const offsite = [];
+    await ctx.route(u => !String(u).startsWith(BASE), route => {
+      offsite.push(route.request().url().slice(0, 120));
+      return route.abort();
+    });
     // Every violation the page sees, script or otherwise, from the first byte.
     await ctx.addInitScript(() => {
       window.__csp = [];
@@ -89,10 +99,23 @@ function loadChromium() { try { return require('playwright-core').chromium; } ca
     const home = await visit('/', 'the home page boots under the production CSP', p => waitForBoot(p));
     chk('…and the inline a11y script ran (it is allowed by its hash, not by unsafe-inline)',
         await home.evaluate(() => document.documentElement.getAttribute('data-contrast') !== null));
-    chk('…and the fonts stylesheet\'s onload handler ran (unsafe-hashes)',
-        await home.evaluate(() => [...document.querySelectorAll('link[rel=stylesheet][href*="fonts.googleapis"]')].every(l => l.media === 'all')));
+    chk('…and the display face is served from this origin, so it renders with no network of its own',
+        await home.evaluate(() => [...document.fonts].some(f => f.family === 'Sora')));
     await visit('/journal/', 'the Anchor Journal shell');
     await visit('/timetable-about.html', 'the Timetable Maker landing');
+    /* THE RATCHET. docs/ZERO-RATING.md promises an operator one hostname,
+       and `npm run zero-rating` proves it for the deployment they would
+       whitelist (local media on). What is guarded HERE is the default
+       build, where one third-party host is still reached on purpose and
+       written down — so this does not assert "none", which would be false
+       and would get the check deleted. It asserts "none that is not already
+       known", which fails the moment somebody adds a CDN link. */
+    const KNOWN_OFFSITE = ['images.unsplash.com'];   // §3 of docs/ZERO-RATING.md
+    const strangers = [...new Set(offsite.map(u => { try { return new URL(u).host; } catch (_) { return u; } }))]
+      .filter(h => !KNOWN_OFFSITE.includes(h));
+    chk('no page reaches a host that is not in the zero-rating inventory'
+        + (strangers.length ? ' — found ' + strangers.join(', ') : ''),
+        strangers.length === 0, strangers.join(' · '));
   } finally {
     try { if (browser) await browser.close(); } catch (_) {}
     try { if (server) process.kill(-server.pid); } catch (_) {}
