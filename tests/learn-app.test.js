@@ -108,7 +108,11 @@ function cleanup() {
     const P = await open('/learn');
     await P.waitForSelector('.lrn-card', { timeout: 20000 });
     chk('/learn opens This week, with the lesson to start', /Finding middle C/.test(await P.innerText('.lrn-main')));
-    chk('…and its own navigation, not the portal\'s', (await P.$$('.lrn-rail-item')).length === 4);
+    /* Pin the promise — every area of the app is reachable from its own rail —
+       rather than a count, which goes stale the moment an area is added. */
+    const rail = (await P.$$eval('.lrn-rail-item', ns => ns.map(n => n.innerText.trim()))).join('|');
+    chk('…and its own navigation, not the portal\'s',
+      ['This week', 'My courses', 'School', 'Review', 'Helper'].every(l => rail.includes(l)));
     chk('…and says how far through they are', /0 of 2 lessons done/.test(await P.innerText('.lrn-prog')));
 
     await P.click('.lrn-rail-item:has-text("My courses")');
@@ -180,6 +184,42 @@ function cleanup() {
     chk('…and every target is a real one (' + tap + 'px)', tap >= 44);
     chk('nothing scrolls sideways', await M.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await M.context().close();
+
+    /* ── Studying for school ───────────────────────────────────────────
+       The growth plan from this member's own results said what to work on;
+       the drill is one of those sessions, actually done. */
+    console.log('studying for school');
+    php(`db_insert('growth_plans', ['planId'=>'GP-LRN','uploadId'=>'UP-LRN','memberId'=>'NGG-LRN-M1','term'=>'2026-1',
+          'summary'=>'Two subjects this term.','status'=>'live','committed'=>1,'createdAt'=>now_iso(),'updatedAt'=>now_iso()]);
+        db_insert('growth_plan_items', ['itemId'=>'GI-LRN','planId'=>'GP-LRN','subject'=>'Mathematics','current'=>62,'target'=>70,
+          'method'=>'retrieval','what'=>'Past questions, out loud.','whenWhere'=>'After supper.','sessionsPerWeek'=>3,'helper'=>'self','position'=>0]);`, ['bootstrap']);
+
+    const S = await open('/learn/plan');
+    await S.waitForSelector('.lrn-plan', { timeout: 20000 });
+    chk('School shows the subjects their own results chose, with the week so far',
+      /Mathematics/.test(await S.innerText('.lrn-main')) && /62% now/.test(await S.innerText('.lrn-plan'))
+      && /0 of 3 this week/i.test(await S.innerText('.lrn-plan')));
+    await S.click('.lrn-plan');
+    await S.waitForFunction(() => location.pathname === '/learn/plan/GI-LRN');
+    chk('a subject has its own address too — the drill is not an overlay either',
+      !!(await S.$('.lrn-plan-go')) && /Past questions/.test(await S.innerText('.lrn-main')));
+    /* No AI is configured in this suite, so starting one must REFUSE in
+       words rather than hand a child a blank paper. That is the state a
+       deployment without a key is actually in. */
+    await S.click('.lrn-sec button:has-text("Start")');
+    await S.waitForSelector('.lrn-plan-err', { timeout: 20000 });
+    chk('with no question source it says so plainly, and points somewhere real',
+      /flashcards|questions right now/i.test(await S.innerText('.lrn-plan-err')));
+    await S.goBack();
+    await S.waitForFunction(() => location.pathname === '/learn/plan');
+    chk('Back goes back from a subject, like everywhere else in the app', !!(await S.$('.lrn-plan')));
+
+    const W = await open('/learn');
+    await W.waitForSelector('.lrn-card', { timeout: 20000 });
+    chk('…and the week shows school WITH the Club lessons, not behind another tab',
+      /school this week/i.test(await W.innerText('.lrn-main')) && /Mathematics/.test(await W.innerText('.lrn-main')));
+    await W.context().close();
+    await S.context().close();
     await P.context().close();
 
     chk('no page errors anywhere in the app', errs.length === 0);

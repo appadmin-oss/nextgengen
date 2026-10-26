@@ -4220,3 +4220,28 @@ CREATE TABLE IF NOT EXISTS lesson_feedback (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (181) ON DUPLICATE KEY UPDATE version = version;
+
+-- 182: studying for school in the Learn app (domain/study-drill.php). The
+-- growth plan already said WHAT to work on; a drill is one of its sessions,
+-- actually done — marked with reasons, ticking the week's check-in, and
+-- turning what was got wrong into spaced-repetition cards.
+CREATE TABLE IF NOT EXISTS study_drills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  drillId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  itemId VARCHAR(40) NOT NULL DEFAULT '',
+  subject VARCHAR(120) NOT NULL DEFAULT '',
+  topic VARCHAR(190) NOT NULL DEFAULT '',
+  level INT NOT NULL DEFAULT 2,
+  source VARCHAR(16) NOT NULL DEFAULT '',
+  asked INT NOT NULL DEFAULT 0,
+  correct INT NOT NULL DEFAULT 0,
+  questionsJson MEDIUMTEXT,
+  answersJson MEDIUMTEXT,
+  startedAt VARCHAR(32) NOT NULL DEFAULT '',
+  markedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_drill_member (memberId, subject, startedAt),
+  KEY idx_drill_marked (memberId, markedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;

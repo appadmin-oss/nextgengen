@@ -35,7 +35,8 @@ declare(strict_types=1);
  * from every major lab, so adding a model is a config line rather than a
  * deploy. anthropic and openai are direct because a programme paying for
  * them should not be paying a proxy margin too. */
-const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openai', 'openrouter'];
+const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openai', 'openrouter',
+                      'cerebras', 'mistral', 'deepseek', 'together', 'github', 'custom'];
 const AI_DEFAULT_MODEL = [
     'groq'       => 'llama-3.1-8b-instant',
     // Blank: the best Gemini model the key can use, asked of Google (gemini_pick_model).
@@ -44,7 +45,51 @@ const AI_DEFAULT_MODEL = [
     'anthropic'  => 'claude-opus-5-5',
     'openai'     => 'gpt-4.1-mini',
     'openrouter' => 'meta-llama/llama-3.1-8b-instruct',
+    'cerebras'   => 'llama-3.3-70b',
+    'mistral'    => 'mistral-small-latest',
+    'deepseek'   => 'deepseek-chat',
+    'together'   => 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    'github'     => 'gpt-4o-mini',
+    'custom'     => '',
 ];
+
+/* ── The OpenAI-shaped providers ─────────────────────────────────────────────
+ *
+ * Chat Completions is the shape most of the industry settled on, so these all
+ * differ in exactly two things: where the request goes and which key signs
+ * it. One branch serves all of them (ai_call_candidate), because five copies
+ * of the same twelve lines is five places for one of them to drift.
+ *
+ * `free` marks the ones with a genuine free tier at the time of writing —
+ * which is what a programme on shared hosting in Nigeria actually needs, and
+ * what the Study drills are written to run on. Rates and terms are theirs to
+ * change; this flag is a signpost for whoever sets the keys, not a promise.
+ *
+ * `custom` is the escape hatch: any OpenAI-compatible endpoint — a
+ * self-hosted Ollama or vLLM, a provider that did not exist when this was
+ * written — by naming `base_url` on the candidate. No deploy needed.
+ */
+const AI_OAI_COMPAT = [
+    'groq'     => ['url' => 'https://api.groq.com/openai/v1/chat/completions', 'label' => 'Groq',           'free' => true],
+    'openai'   => ['url' => 'https://api.openai.com/v1/chat/completions',      'label' => 'OpenAI',         'free' => false],
+    'cerebras' => ['url' => 'https://api.cerebras.ai/v1/chat/completions',     'label' => 'Cerebras',       'free' => true],
+    'mistral'  => ['url' => 'https://api.mistral.ai/v1/chat/completions',      'label' => 'Mistral',        'free' => true],
+    'deepseek' => ['url' => 'https://api.deepseek.com/chat/completions',       'label' => 'DeepSeek',       'free' => false],
+    'together' => ['url' => 'https://api.together.xyz/v1/chat/completions',    'label' => 'Together AI',    'free' => true],
+    'github'   => ['url' => 'https://models.inference.ai.azure.com/chat/completions', 'label' => 'GitHub Models', 'free' => true],
+    'custom'   => ['url' => '',                                               'label' => 'Self-hosted / other', 'free' => true],
+];
+
+/** Where an OpenAI-shaped candidate's request goes; '' when it cannot be known. */
+function ai_oai_endpoint(array $cand): string {
+    $prov = (string)($cand['provider'] ?? '');
+    $base = trim((string)($cand['base_url'] ?? ''));
+    if ($base !== '') {
+        // A base URL may be given whole, or as the root to append the path to.
+        return preg_match('~/chat/completions$~', $base) ? $base : rtrim($base, '/') . '/chat/completions';
+    }
+    return (string)(AI_OAI_COMPAT[$prov]['url'] ?? '');
+}
 
 function ai_config(): array {
     $cfg = $GLOBALS['CONFIG']['ai'] ?? null;
@@ -65,7 +110,8 @@ function ai_default_candidates(): array {
         $key = (string)($c[$prov . '_api_key'] ?? '');
         if ($key === '') continue;
         $byName[$prov] = ['provider' => $prov, 'api_key' => $key,
-                          'model' => (string)($c[$prov . '_model'] ?? AI_DEFAULT_MODEL[$prov])];
+                          'model' => (string)($c[$prov . '_model'] ?? AI_DEFAULT_MODEL[$prov]),
+                          'base_url' => (string)($c[$prov . '_base_url'] ?? '')];
     }
     if ($pref !== '' && isset($byName[$pref])) { $out[] = $byName[$pref]; unset($byName[$pref]); }
     foreach ($byName as $p) $out[] = $p;
@@ -86,11 +132,17 @@ function ai_profile_chain(string $profile = 'default'): array {
     $c = ai_config();
     $out = [];
     $push = function ($p) use (&$out) {
-        if (is_array($p) && !empty($p['api_key']) && in_array(($p['provider'] ?? ''), AI_PROVIDERS, true)) {
+        /* A key, or — for a self-hosted endpoint, which is the whole point
+           of `custom` — an address. An Ollama or vLLM box on the same network
+           has no key to give, and requiring one made it unconfigurable. */
+        $hasAuth = is_array($p) && (!empty($p['api_key']) || (($p['provider'] ?? '') === 'custom' && !empty($p['base_url'])));
+        if ($hasAuth && in_array(($p['provider'] ?? ''), AI_PROVIDERS, true)) {
             $out[] = [
                 'provider' => (string)$p['provider'],
-                'api_key' => (string)$p['api_key'],
+                'api_key' => (string)($p['api_key'] ?? ''),
                 'model' => (string)($p['model'] ?? (AI_DEFAULT_MODEL[$p['provider']] ?? '')),
+                // Only `custom` (and a proxy standing in for a known provider) needs one.
+                'base_url' => (string)($p['base_url'] ?? ''),
             ];
         }
     };
@@ -516,17 +568,25 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         return $text !== '' ? ['ok' => true, 'text' => trim((string)$text), 'provider' => 'openai', 'usage' => ai_oai_usage($j)] : ['ok' => false, 'error' => 'ai_empty', 'usage' => ai_oai_usage($j)];
     }
 
-    if ($cand['provider'] === 'groq') {
+    /* Every other OpenAI-shaped provider — Groq, Cerebras, Mistral, DeepSeek,
+     * Together, GitHub Models, and whatever `custom` points at. They differ in
+     * the endpoint and the key and in nothing else, so they share this. */
+    if (isset(AI_OAI_COMPAT[$cand['provider']])) {
+        $url = ai_oai_endpoint($cand);
+        if ($url === '') return ['ok' => false, 'error' => 'ai_no_endpoint'];
         $msgs = [['role' => 'system', 'content' => $system]];
         foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
         $body = json_encode(['model' => $cand['model'], 'max_tokens' => $maxTokens, 'temperature' => $temp, 'messages' => $msgs], JSON_UNESCAPED_SLASHES);
-        $r = ai_http_post('https://api.groq.com/openai/v1/chat/completions', $body, [
-            'Authorization: Bearer ' . $cand['api_key'], 'Content-Type: application/json',
-        ]);
+        $r = ai_http_post($url, $body, array_filter([
+            // A self-hosted endpoint may need no key at all.
+            trim((string)($cand['api_key'] ?? '')) !== '' ? 'Authorization: Bearer ' . $cand['api_key'] : null,
+            'Content-Type: application/json',
+        ]));
         if (!$r['ok']) return $r;
         $j = json_decode($r['body'], true);
         $text = $j['choices'][0]['message']['content'] ?? '';
-        return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'groq', 'usage' => ai_oai_usage($j)] : ['ok' => false, 'error' => 'ai_empty'];
+        return $text !== '' ? ['ok' => true, 'text' => trim((string)$text), 'provider' => (string)$cand['provider'], 'usage' => ai_oai_usage($j)]
+                            : ['ok' => false, 'error' => 'ai_empty', 'usage' => ai_oai_usage($j)];
     }
 
     // Gemini (gemini_generate: the model the key can use, shaped for it)

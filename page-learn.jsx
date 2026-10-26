@@ -42,6 +42,7 @@
 const LRN_NAV = [
   { id: "week",    path: "/learn",         label: "This week", icon: "ph ph-calendar-check" },
   { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books" },
+  { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
   { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target" },
   { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle" },
 ];
@@ -57,6 +58,7 @@ function lrnRoute() {
   if (seg[0] !== "learn") return { view: "week" };
   const a = seg[1] || "", b = seg.slice(2).join("/");
   if (a === "courses") return { view: "courses" };
+  if (a === "plan") return b ? { view: "drill", itemId: decodeURIComponent(b) } : { view: "plan" };
   if (a === "review") return { view: "review" };
   if (a === "helper") return { view: "helper" };
   if (a === "course") return { view: "course", slug: decodeURIComponent(b || "") };
@@ -167,7 +169,7 @@ function LearnLessonCard({ u, showCourse }) {
 }
 
 /* ── This week ───────────────────────────────────────────────────────────── */
-function LearnWeek({ d, onRetry }) {
+function LearnWeek({ d, plan, onRetry }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your lessons"/>;
   const units = d.units || [];
   if (!units.length) return (
@@ -199,6 +201,10 @@ function LearnWeek({ d, onRetry }) {
           <span style={{ width: d.pct + "%" }}/>
         </div>
       </section>
+      {/* School sits WITH the Club's lessons rather than behind another tab:
+          a member's week is one week, and a plan they agreed to in their own
+          results is not a different kind of thing to remember separately. */}
+      <LearnSchoolStrip plan={plan}/>
       {late.length > 0 && <LearnGroup title="Late — do these first" tone="late" units={late}/>}
       {next.length > 0 && <LearnGroup title={late.length ? "Then this" : "Start here"} units={next}/>}
       {going.length > 0 && <LearnGroup title="Carry on" units={going}/>}
@@ -211,6 +217,37 @@ function LearnWeek({ d, onRetry }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* The school plan, in one line per subject, on the week's own screen. Drawn
+   only when there is something outstanding — a finished week is not a thing
+   to nag somebody about. */
+function LearnSchoolStrip({ plan }) {
+  if (!plan || plan.state !== "ready") return null;
+  const owing = (plan.items || []).filter(it => it.doneThisWeek < it.planned);
+  if (!owing.length) return null;
+  return (
+    <section className="lrn-group" aria-label="School this week">
+      <h2 className="lrn-group-h">School this week</h2>
+      <ul className="lrn-list">
+        {owing.map(it => (
+          <li key={it.itemId}>
+            <a className="lrn-card" href={"/learn/plan/" + encodeURIComponent(it.itemId)}
+               onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/plan/" + encodeURIComponent(it.itemId)); }}>
+              <span className="lrn-card-top">
+                <span className="lrn-card-course">{it.subject}</span>
+                <span className="lrn-card-chip">{it.doneThisWeek} of {it.planned}</span>
+              </span>
+              <span className="lrn-card-title">
+                {it.current != null && it.target != null ? it.current + "% → " + it.target + "%" : "Practise " + it.subject}
+              </span>
+              <span className="lrn-card-meta">{plan.questions} questions · level {it.level} of {plan.levels}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -402,6 +439,248 @@ function LearnLesson({ unitId, onDone }) {
   );
 }
 
+/* ── Studying for school ─────────────────────────────────────────────────────
+ *
+ * The growth plan built from a member's school results already said what to
+ * work on — "Mathematics, 62 → 70, retrieval practice, three sessions a week"
+ * — and there was nowhere to do one of those sessions. This is that place.
+ *
+ * A drill is one session: five questions on that subject, at the level they
+ * are working at, marked with the REASON. Then the week's check-in goes up by
+ * one and everything they got wrong becomes a flashcard — the plan's own
+ * counter and the spaced repetition they already have, not a second of either.
+ *
+ * The screen takes ONE call (`member.study.plan`), already shaped for it, and
+ * a drill has a real address like everything else here: /learn/plan/<itemId>.
+ * Holding a drill in component state would have made it the very thing this
+ * app was built to stop being — a modal with no way back to it.
+ */
+function LearnPlan({ d, onRetry }) {
+  const [err, setErr] = React.useState("");
+  const retry = React.useCallback(() => { setErr(""); return onRetry().catch(e => setErr(e.code || e.message || "failed")); }, [onRetry]);
+  if (err) return <ErrorState title="Couldn't load your school plan" code={err} onRetry={retry}/>;
+  if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your plan"/>;
+  if (d.state !== "ready") return (
+    <div className="lrn-empty">
+      <i className="ph ph-exam" aria-hidden="true"/>
+      <h2>{d.state === "plan_empty" ? "Your plan has no subjects yet." : "No school plan yet."}</h2>
+      <p>
+        This is where you practise the subjects your own results say to work on. Upload a term's
+        result in your portal and agree the plan with your mentor — the subjects appear here, with
+        somewhere to actually do the work.
+      </p>
+      <a className="lrn-btn" href="/dashboard/results">Open School results</a>
+    </div>
+  );
+  return (
+    <div className="lrn-stack">
+      <section className="lrn-aside">
+        <h2 className="lrn-aside-h">From your own results</h2>
+        <p>{d.summary || "The subjects you agreed to work on this term."} Each go is {d.questions} questions,
+          marked straight away, and it counts towards your week.</p>
+        <p className="lrn-note">
+          {d.todayLeft > 0
+            ? d.todayLeft + " more " + (d.todayLeft === 1 ? "go" : "goes") + " today"
+            : "That is enough for today — come back tomorrow."}
+        </p>
+      </section>
+      <ul className="lrn-list">
+        {d.items.map(it => (
+          <li key={it.itemId}>
+            <a className="lrn-plan" href={"/learn/plan/" + encodeURIComponent(it.itemId)}
+               onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/plan/" + encodeURIComponent(it.itemId)); }}>
+              <span className="lrn-plan-top">
+                <span className="lrn-plan-sub">{it.subject}</span>
+                <span className="lrn-card-chip">Level {it.level} of {d.levels}</span>
+              </span>
+              <span className="lrn-plan-aim">
+                {it.current != null ? it.current + "% now" : "No score yet"}
+                {it.target != null ? <> → <b>{it.target}%</b></> : null}
+                {it.what ? " · " + it.what : ""}
+              </span>
+              <span className="lrn-plan-week">
+                {Array.from({ length: it.planned }).map((_, i) => (
+                  <span key={i} className={"lrn-pip" + (i < it.doneThisWeek ? " is-on" : "")} aria-hidden="true"/>
+                ))}
+                <span className="lrn-plan-wk">{it.doneThisWeek} of {it.planned} this week</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <div className="lrn-aside">
+        <h2 className="lrn-aside-h">What happens to what you get wrong</h2>
+        <p>It becomes a flashcard, in a deck for that subject, and comes back on the day you are most
+          likely to have forgotten it — in <a href="/study">Study tools</a>.</p>
+      </div>
+    </div>
+  );
+}
+
+/* Which exam the questions are written for. "Just school" is first because
+   it is most members: a JAMB paper is not what a JSS2 child needs. */
+const LRN_EXAMS = [["", "Just school"], ["waec", "WAEC"], ["neco", "NECO"], ["utme", "JAMB / UTME"]];
+
+/* One subject: set it up, sit it, see how it went — all at its own address,
+   one screen, no overlay. */
+function LearnDrill({ itemId, onChanged }) {
+  const [plan, setPlan] = React.useState(null);
+  const [drill, setDrill] = React.useState(null);
+  const [picked, setPicked] = React.useState({});
+  const [res, setRes] = React.useState(null);
+  const [topic, setTopic] = React.useState("");
+  const [exam, setExam] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.member.studyPlan().then(setPlan).catch(e => setErr(e.code || e.message || "failed"));
+  }, []);
+  React.useEffect(() => { load(); window.scrollTo(0, 0); }, [load]);
+
+  const item = plan && (plan.items || []).find(x => x.itemId === itemId);
+  const back = () => lrnGo("/learn/plan");
+
+  const start = async () => {
+    setBusy(true); setErr("");
+    try { setDrill(await NGGApi.member.studyStart(itemId, topic.trim(), exam)); setPicked({}); setRes(null); window.scrollTo(0, 0); }
+    catch (e) {
+      setErr(e.code === "enough_today" ? "That is enough for today. Come back tomorrow."
+        /* The server's refusal carries the sentence a child should read, and
+           api-client puts it on `e.data.message` — `e.message` is the raw
+           code, which is what a member was being shown. */
+        : e.code === "no_questions" ? ((e.data && e.data.message) || "Nobody can write you questions right now.")
+        : e.code === "plan_not_live" ? "This plan is not live yet."
+        : humanizeError(e.code, e.code));
+    } finally { setBusy(false); }
+  };
+  const mark = async () => {
+    setBusy(true);
+    try {
+      const qs = drill.questions || [];
+      setRes(await NGGApi.member.studyMark(drill.drillId, qs.map((_, i) => (picked[i] === undefined ? -1 : picked[i]))));
+      window.scrollTo(0, 0);
+      /* The week just moved, so the screens that show it are told — rather
+         than being left to go stale until somebody reloads. */
+      if (onChanged) onChanged();
+    } catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+
+  if (err && !plan) return <ErrorState title="Couldn't open this subject" code={err} onRetry={load}/>;
+  if (!plan) return <div className="lrn-wait" role="status" aria-label="Loading"/>;
+  if (!item) return (
+    <div className="lrn-empty"><i className="ph ph-exam" aria-hidden="true"/>
+      <h2>That subject is not on your plan.</h2>
+      <p>It may have changed when your plan was last agreed.</p>
+      <button type="button" className="lrn-btn" onClick={back}>My school plan</button></div>
+  );
+
+  const qs = (drill && drill.questions) || [];
+  const all = qs.length > 0 && qs.every((_, i) => picked[i] !== undefined);
+  return (
+    <div className="lrn-stack">
+      <button type="button" className="lrn-back" onClick={back}><i className="ph ph-arrow-left" aria-hidden="true"/> My school plan</button>
+      <header className="lrn-lesson-head">
+        <p className="lrn-lesson-eyebrow">
+          {item.subject} · level {drill ? drill.level : item.level} of {plan.levels}
+          {drill && drill.topic ? " · " + drill.topic : ""}
+        </p>
+        <h1 className="lrn-lesson-title">{res ? "How you did" : drill ? plan.questions + " questions" : item.subject}</h1>
+        {!drill && (
+          <p className="lrn-lesson-sum">
+            {item.current != null ? item.current + "% now" : "No score yet"}
+            {item.target != null ? " → " + item.target + "%" : ""}
+            {item.what ? " · " + item.what : ""}
+            {item.whenWhere ? " · " + item.whenWhere : ""}
+          </p>
+        )}
+      </header>
+
+      {/* 1 · Set it up. Both fields are optional: pressing the button is a
+            complete answer, because a blank field must never be a blocker. */}
+      {!drill && (
+        <section className="lrn-sec">
+          <h2 className="lrn-sec-h">This go</h2>
+          <div className="lrn-plan-go">
+            <label className="lrn-field">
+              <span>Anything in particular? (you can leave this)</span>
+              <input className="lrn-input" value={topic} maxLength={120} disabled={busy}
+                     placeholder="e.g. quadratic equations" onChange={e => setTopic(e.target.value)}/>
+            </label>
+            <label className="lrn-field">
+              <span>Written for</span>
+              <select className="lrn-input is-sel" value={exam} disabled={busy} onChange={e => setExam(e.target.value)}>
+                {LRN_EXAMS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+          </div>
+          <button type="button" className="lrn-btn" onClick={start} disabled={busy || plan.todayLeft <= 0}>
+            {busy ? "Writing your questions…" : "Start"}
+          </button>
+          {plan.todayLeft <= 0 && <p className="lrn-note">That is enough for today. Come back tomorrow.</p>}
+          {err && <p className="lrn-plan-err" role="alert">{err}</p>}
+          <p className="lrn-note">
+            {item.doneThisWeek} of {item.planned} done this week. What you get wrong becomes a flashcard.
+          </p>
+        </section>
+      )}
+
+      {/* 3 · How it went, above the paper, because it is what they came back for. */}
+      {res && (
+        <section className="lrn-sec" aria-live="polite">
+          <p className="lrn-score">{res.correct} of {res.asked} right · {res.pct}%</p>
+          <p className="lrn-note">
+            {res.nextLevel > res.level ? "That moves you up to level " + res.nextLevel + "."
+              : res.nextLevel < res.level ? "The next go steps back to level " + res.nextLevel + " to fill the gaps."
+              : "The next go stays at level " + res.level + "."}
+            {res.cardsMade > 0 ? " " + res.cardsMade + " flashcard" + (res.cardsMade === 1 ? "" : "s") + " made from what you missed." : ""}
+            {res.tick ? " This counts: " + res.tick.done + " of " + res.tick.planned + " for the week." : ""}
+          </p>
+          <div className="lrn-plan-go">
+            <button type="button" className="lrn-btn" onClick={back}>Back to my plan</button>
+            <button type="button" className="lrn-btn is-ghost" onClick={() => { setDrill(null); setRes(null); setPicked({}); load(); }}>Another go</button>
+          </div>
+        </section>
+      )}
+
+      {/* 2 · The paper. */}
+      {drill && (
+        <ol className="lrn-qs">
+          {qs.map((q, i) => {
+            const m = res && res.marks[i];
+            return (
+              <li key={i} className={"lrn-q" + (m ? (m.right ? " is-right" : " is-wrong") : "")}>
+                <p className="lrn-q-t"><span className="lrn-q-n">{i + 1}.</span> {q.q}</p>
+                <div className="lrn-q-opts" role="group" aria-label={"Question " + (i + 1)}>
+                  {q.options.map((o, k) => (
+                    <label key={k} className={"lrn-opt"
+                      + (m && k === m.answer ? " is-right" : "")
+                      + (m && k === m.picked && k !== m.answer ? " is-wrong" : "")}>
+                      <input type="radio" name={"q" + i} checked={picked[i] === k} disabled={!!res}
+                             onChange={() => setPicked(st => ({ ...st, [i]: k }))}/>
+                      <span>{o}</span>
+                    </label>
+                  ))}
+                </div>
+                {/* The reason, not just a verdict: this is the part that teaches. */}
+                {m && m.why && <p className="lrn-why"><b>{m.right ? "Why" : "How to get it"}:</b> {m.why}</p>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      {drill && !res && (
+        <div className="lrn-sec">
+          <button type="button" className="lrn-btn" onClick={mark} disabled={busy || !all}>{busy ? "Marking…" : "Mark my answers"}</button>
+          {!all && <p className="lrn-note">Answer all {qs.length} to mark them.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── The review: last session's questions, on their own ──────────────────── */
 function LearnReview({ d }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading"/>;
@@ -466,12 +745,17 @@ function LearnPage({ setPage }) {
 function LearnApp() {
   const [route, setRoute] = React.useState(lrnRoute);
   const [d, setD] = React.useState(null);
+  const [plan, setPlan] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculum().then(setD).catch(e => setErr(e.code || e.message || "failed"));
   }, []);
-  React.useEffect(() => { load(); }, [load]);
+  /* The school plan is loaded HERE, beside the curriculum, because "this
+     week" means both kinds of work. Its own request and its own silence:
+     school results not being set up must never cost anybody their lessons. */
+  const loadPlan = React.useCallback(() => NGGApi.member.studyPlan().then(setPlan).catch(() => setPlan(null)), []);
+  React.useEffect(() => { load(); loadPlan(); }, [load, loadPlan]);
   React.useEffect(() => {
     const sync = () => { setRoute(lrnRoute()); window.scrollTo(0, 0); };
     window.addEventListener("popstate", sync);
@@ -481,7 +765,7 @@ function LearnApp() {
   React.useEffect(() => { document.title = "Learn · NGG"; }, []);
 
   const view = route.view;
-  const here = view === "course" || view === "lesson" ? "courses" : view;
+  const here = view === "course" || view === "lesson" ? "courses" : view === "drill" ? "plan" : view;
 
   if (err === "not_ngg_member") return (
     <div className="lrn-app"><div className="lrn-shell"><div className="lrn-main"><div className="lrn-empty">
@@ -517,9 +801,11 @@ function LearnApp() {
           : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load}/>
           : view === "courses" ? <LearnCourses d={d}/>
           : view === "course" ? <LearnCourse d={d} slug={route.slug}/>
+          : view === "plan" ? <LearnPlan d={plan} onRetry={loadPlan}/>
+          : view === "drill" ? <LearnDrill itemId={route.itemId} onChanged={loadPlan}/>
           : view === "review" ? <LearnReview d={d}/>
           : view === "helper" ? <CurStudyHelper units={(d && d.units) || []}/>
-          : <LearnWeek d={d} onRetry={load}/>}
+          : <LearnWeek d={d} plan={plan} onRetry={load}/>}
       </main>
     </div></div>
   );

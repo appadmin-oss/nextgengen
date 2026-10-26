@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 181;
+const NGG_SCHEMA_TARGET = 182;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5301,6 +5301,41 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS uq_lfb_one ON lesson_feedback(memberId, unitId);
             CREATE INDEX IF NOT EXISTS idx_lfb_unit ON lesson_feedback(unitId, signal);
             CREATE INDEX IF NOT EXISTS idx_lfb_centreid ON lesson_feedback(centreId);
+        ",
+        /* STUDYING FOR SCHOOL, in the Learn app (domain/study-drill.php).
+           The growth plan from a member's school results already said WHAT to
+           work on — Maths 62 → 70, retrieval practice, three sessions a week
+           — and there has never been anywhere to actually DO one. A drill is
+           one of those sessions: a short adaptive set on that subject, marked
+           with reasons, which ticks the week's check-in and turns what they
+           got wrong into spaced-repetition cards.
+
+           One table. The member's LEVEL in a subject is not stored twice: it
+           is the level of their most recent drill in it, which is also what
+           makes it auditable — you can see the ladder they climbed. */
+        182 => "
+            CREATE TABLE IF NOT EXISTS study_drills (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              drillId TEXT UNIQUE NOT NULL,
+              memberId TEXT NOT NULL DEFAULT '',
+              itemId TEXT NOT NULL DEFAULT '',
+              subject TEXT NOT NULL DEFAULT '',
+              topic TEXT NOT NULL DEFAULT '',
+              level INTEGER NOT NULL DEFAULT 2,
+              source TEXT NOT NULL DEFAULT '',
+              asked INTEGER NOT NULL DEFAULT 0,
+              correct INTEGER NOT NULL DEFAULT 0,
+              questionsJson TEXT NOT NULL DEFAULT '[]',
+              answersJson TEXT NOT NULL DEFAULT '[]',
+              startedAt TEXT NOT NULL DEFAULT '',
+              markedAt TEXT NOT NULL DEFAULT ''
+            );
+            /* `idx_sd_*` is taken: study_decks already owns idx_sd_deck and
+               idx_sd_member, and an index name is global in SQLite — so
+               CREATE INDEX IF NOT EXISTS would have silently skipped these
+               and left the table unindexed. */
+            CREATE INDEX IF NOT EXISTS idx_drill_member ON study_drills(memberId, subject, startedAt);
+            CREATE INDEX IF NOT EXISTS idx_drill_marked ON study_drills(memberId, markedAt);
         ",
     ];
 

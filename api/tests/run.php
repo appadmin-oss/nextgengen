@@ -24658,6 +24658,91 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             (function () { $c = null; return in_array('Coding', curriculum_member_courses(curriculum_member_row('NGG-CUR-D1'), $c), true); })());
         db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-D1','NGG-CUR-D2')");
         db_exec("DELETE FROM member_state WHERE memberId = 'NGG-CUR-D1'");
+
+        /* ── Studying for school: one session of the growth plan ─────────
+           The plan from a member's results already said "Mathematics, 62 →
+           70, three sessions a week" and there was nowhere to do one. A
+           drill is that session, and finishing it has to close three loops:
+           the week's own counter, the spaced repetition, and the level the
+           next one sits at. */
+        db_insert('growth_plans', ['planId' => 'GP-TEST-1', 'uploadId' => 'UP-TEST-1', 'memberId' => 'NGG-CUR-M1',
+            'term' => '2026-1', 'summary' => 'Two subjects this term.', 'status' => 'live', 'committed' => 1,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('growth_plan_items', ['itemId' => 'GI-TEST-1', 'planId' => 'GP-TEST-1', 'subject' => 'Mathematics',
+            'current' => 62, 'target' => 70, 'method' => 'retrieval', 'what' => 'Past questions, out loud.',
+            'whenWhere' => 'After supper, at the table.', 'sessionsPerWeek' => 3, 'helper' => 'self', 'position' => 0]);
+
+        $drillQs = static function () {
+            $qs = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $qs[] = ['q' => "What is $i + $i?", 'options' => ['One', (string)($i * 2), 'Three', 'Four'],
+                         'answer' => 1, 'why' => 'Add it to itself.'];
+            }
+            return json_encode(['questions' => $qs]);
+        };
+        $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'test-key'];
+        $GLOBALS['__ai_mock'] = static fn($profile, $system, $turns) => ['ok' => true, 'provider' => 'groq', 'text' => $drillQs()];
+
+        $plan = backend_dispatch('member.study.plan', ['memberId' => 'NGG-CUR-M1']);
+        chk('study: the School screen is ONE call, already shaped — the app never reads the results payload',
+            !empty($plan['ok']) && $plan['state'] === 'ready' && count($plan['items']) === 1
+            && $plan['items'][0]['subject'] === 'Mathematics' && $plan['items'][0]['target'] === 70
+            && $plan['items'][0]['planned'] === 3 && $plan['items'][0]['doneThisWeek'] === 0
+            && $plan['items'][0]['level'] === 2);
+
+        $start = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a drill is five questions at the level they are working at',
+            !empty($start['ok']) && count($start['questions']) === 5 && $start['level'] === 2 && $start['subject'] === 'Mathematics');
+        chk('study: the ANSWERS never travel to the browser — there is nothing to read off the page',
+            !isset($start['questions'][0]['answer']) && !isset($start['questions'][0]['why']));
+        chk('study: a subject that is not on their plan is not a subject',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-NOPE'])['error'] ?? '') === 'not_found');
+
+        // Four of five right: enough to move up, and one card to make.
+        $mark = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'],
+            'answers' => [1, 1, 1, 1, 0]]);
+        chk('study: it is marked here, with the REASON rather than just a verdict',
+            !empty($mark['ok']) && $mark['correct'] === 4 && $mark['asked'] === 5 && $mark['pct'] === 80
+            && $mark['marks'][4]['right'] === false && strpos((string)$mark['marks'][4]['why'], 'Add it') === 0);
+        chk('study: …and it cannot be marked twice',
+            (backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'], 'answers' => [1,1,1,1,1]])['error'] ?? '') === 'already_marked');
+
+        /* The three loops. */
+        chk('study: the week\'s check-in goes up by one — through the PLAN\'s own counter, not a second tally',
+            ($mark['tick']['done'] ?? 0) === 1 && ($mark['tick']['planned'] ?? 0) === 3
+            && (int)db_row("SELECT done FROM plan_checkins WHERE itemId = 'GI-TEST-1'")['done'] === 1);
+        chk('study: what they got wrong becomes a flashcard, in the spaced repetition they already have',
+            ($mark['cardsMade'] ?? 0) === 1
+            && (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 1
+            && (string)db_row("SELECT name FROM study_decks WHERE memberId = 'NGG-CUR-M1'")['name'] === 'School · Mathematics');
+        chk('study: 80% moves the next one up a level', ($mark['nextLevel'] ?? 0) === 3
+            && drill_level_for('NGG-CUR-M1', 'Mathematics') === 3);
+
+        // The same card is not made twice, however often they miss it again.
+        $s2 = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        $m2 = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $s2['drillId'], 'answers' => [0, 0, 0, 0, 0]]);
+        chk('study: a question already on a card is not carded twice — the count would be a lie',
+            (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 5);
+        chk('study: and nought out of five steps the level back down', ($m2['nextLevel'] ?? 0) === 2);
+
+        /* The daily bound, said as itself. */
+        for ($i = 0; $i < DRILL_PER_DAY; $i++) backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a sitting is short, and the day has a bound it names',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1'])['error'] ?? '') === 'enough_today');
+
+        /* With nothing to write the questions, it says so rather than
+           handing a child an empty paper. */
+        unset($GLOBALS['__ai_mock'], $GLOBALS['CONFIG']['ai']);
+        db_exec("DELETE FROM study_drills WHERE memberId = 'NGG-CUR-M1'");
+        chk('study: with no AI and no question bank it refuses honestly, and points somewhere real',
+            (function () { $r = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+                           return ($r['error'] ?? '') === 'no_questions' && strpos((string)($r['message'] ?? ''), 'flashcards') !== false; })());
+
+        db_exec("DELETE FROM study_cards WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM study_decks WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM plan_checkins WHERE itemId = 'GI-TEST-1'");
+        db_exec("DELETE FROM growth_plan_items WHERE planId = 'GP-TEST-1'");
+        db_exec("DELETE FROM growth_plans WHERE planId = 'GP-TEST-1'");
     })();
 
     // Import: dry run, digest, apply, re-run.

@@ -939,6 +939,11 @@
       /* How today's lesson went. A tap, never published — the testimonial
          above is the other question, asked once a session. */
       lessonFeedback:    (unitId, signal, body) => request('/member/curriculum.php', { body: { action: 'feedback', unitId, signal, body: body || '' } }),
+      /* Studying for school: one session of the growth plan. The questions
+         come back without their answers — marking happens on the server. */
+      studyPlan:         () => request('/member/curriculum.php' + qs({ view: 'study' })),
+      studyStart:        (itemId, topic, exam) => request('/member/curriculum.php', { body: { action: 'drill', itemId, topic: topic || '', exam: exam || '' }, timeout: 60000 }),
+      studyMark:         (drillId, answers) => request('/member/curriculum.php', { body: { action: 'drill', drillId, answers } }),
       /* Whether the term question is open, which session it is about, and
          what they already said — one call, because the screen needs all
          three before it draws anything. */

@@ -1123,6 +1123,8 @@ inside the dashboard.
 | `/learn/courses` | **My courses** — the shelf, with how far through each one they are |
 | `/learn/course/<course>` | One course, week by week |
 | `/learn/lesson/<lesson>` | **A lesson, full screen** |
+| `/learn/plan` | **School** — their own school subjects and this week's practice |
+| `/learn/plan/<subject>` | One subject's drill |
 | `/learn/review` | How the review works, and what they will be asked about |
 | `/learn/helper` | The study helper |
 
@@ -1135,6 +1137,51 @@ A lesson page carries, in this order: last session's review (which can always
 be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
+
+### School: practising for their own exams (/learn/plan)
+
+NGG teaches a curriculum, but a child's school results are what decides their
+next five years. **School** is where they practise for those, inside the same
+app, on the plan their own results already produced.
+
+**It is not a new plan.** It is the growth plan a coordinator agreed with them
+after their last report card (People → a member → Results): the subjects, where
+they are now, where they are going, and how many sessions a week they
+committed to. School is that plan with the practice attached, so the sessions
+a child promised can actually be done rather than only counted.
+
+A subject's page gives them five questions. They answer, and the screen marks
+them with the working shown — **why**, not just a tick. Three things then
+happen at once, which is the whole point of it being here rather than in a
+separate tool:
+
+1. **The week's counter moves.** It is the plan's own counter, the same one the
+   coordinator sees at the next check-in. Practice done is practice recorded.
+2. **What they got wrong becomes flashcards**, in a deck called
+   `School · <subject>`, which the spaced repetition in Study tools then brings
+   back on the day they are about to forget it.
+3. **The next set moves with them.** Five levels; 80% or better moves up, under
+   40% moves down. A child who is struggling is not handed the same paper
+   again, and one who is flying is not held at the bottom.
+
+Eight drills a day, at most — after that it says so and sends them away. The
+limit is deliberate: this is practice, not a way to spend an evening.
+
+**Where the questions come from**, in order:
+
+1. **A past-questions bank**, if the deployment has one configured
+   (`study_bank` in `api/config.php`). Real WAEC, NECO and UTME past questions
+   beat anything generated — the wording and the difficulty are the ones the
+   child will actually meet.
+2. **The AI layer**, asked for questions at that child's level, in Nigerian
+   contexts and naira, and required to explain the working.
+3. **Neither** → it says so plainly and points them at their flashcards and
+   their instructor. It never hands a child a blank paper, and it never
+   invents a question it could not explain.
+
+If members report "Nobody can write you questions right now", the deployment
+has no question source — see **Settings → AI** and the `study_bank` block in
+`api/config.example.php`.
 
 ### Study tools (/study)
 

@@ -283,6 +283,7 @@ function member_merge_policy(): array {
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_progress'        => 'MOVE_UNIQUE',
         'lesson_feedback'        => 'MOVE_UNIQUE',    // one tap per person per lesson; the survivor's stands
+        'study_drills'           => 'MOVE',           // their practice history; both accounts' goes come with them
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',

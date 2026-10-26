@@ -16,6 +16,8 @@ if ($method === 'GET') {
         $res = isset($_GET['memberId'])
             ? gs_call('staff.curriculum.member', ['requesterId' => $mid, 'memberId' => (string)$_GET['memberId']])
             : gs_call('staff.curriculum', ['requesterId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'study') {
+        $res = gs_call('member.study.plan', ['memberId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'testimonial') {
         /* Whether the term question is open at all, which session it is
            about, and what they already said (domain/testimonials.php). */
@@ -47,6 +49,14 @@ if ($method === 'GET') {
            in domain/testimonials.php, not here. */
         $res = gs_call('member.testimonial.give', ['memberId' => $mid, 'sessionId' => (string)($b['sessionId'] ?? ''),
             'course' => (string)($b['course'] ?? ''), 'body' => (string)($b['body'] ?? ''), 'showAs' => (string)($b['showAs'] ?? 'initials')]);
+    } elseif ($action === 'drill') {
+        /* One session of their growth plan: start it, or hand the answers
+           back to be marked. The answers never travel to the browser. */
+        $res = (string)($b['drillId'] ?? '') !== ''
+            ? gs_call('member.study.drill.mark', ['memberId' => $mid, 'drillId' => (string)$b['drillId'],
+                'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []])
+            : gs_call('member.study.drill.start', ['memberId' => $mid, 'itemId' => (string)($b['itemId'] ?? ''),
+                'topic' => (string)($b['topic'] ?? ''), 'exam' => (string)($b['exam'] ?? '')]);
     } elseif ($action === 'feedback') {
         /* How today's lesson went: one tap, optionally a line. Never leaves
            the staff who teach them (domain/lesson-feedback.php). */

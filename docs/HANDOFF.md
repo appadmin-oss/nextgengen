@@ -3212,3 +3212,59 @@ Coding side by side at week 8. That is a wall, not a curriculum.
 Year 2 and 3 member. That is a number on a screen now, not something a child
 discovers: `admin_curriculum_divisions()` reports every division against every
 year and counts exactly how many members each gap would strand.
+
+### School inside Learn: the half of the growth plan that was never built
+
+A coordinator agreed a growth plan with a member after every report card —
+subjects, where they are, where they are going, and *three sessions a week* —
+and then nothing in the product let them do a session. `plan_checkins` counted
+practice the programme had no way of providing. The plan was a promise with no
+second half.
+
+`/learn/plan` is that half, and it is deliberately **not a new plan**: it reads
+`growth_plan_items` as they already are. A subject gives five questions; the
+marking shows the working, not a tick; and one marking closes three loops at
+once — the plan's own weekly counter via `member_results_tick()`, a flashcard
+in `School · <subject>` for everything missed (the SM-2 schedule that already
+existed), and the next level. Five levels, 80% up, under 40% down, eight drills
+a day.
+
+Questions come from a past-questions bank first (`study_bank`, optional), then
+the AI layer, and **with neither it refuses in words** and points at their
+flashcards. A child is never handed a blank paper, and never a question the
+screen cannot explain the working for.
+
+The bank could not be verified from this container — the network is closed to
+it — so it is strictly optional, bounded (6s, 256KB, no redirects) and can only
+ever fail *silently into AI*. Nothing claims it works until a deployment points
+it at a real endpoint.
+
+**`e.message` is the raw code; `e.data.message` is the sentence.** `api-client`
+builds its error as `new Error(data.error)`, so the server's human wording
+lands on `err.data.message` and `err.message` is `no_questions`. Reading the
+wrong one put that literal string in front of a child. The idiom in this
+codebase is `(e.data && e.data.message) || fallback`.
+
+### Six more free AI providers, one branch
+
+Cerebras, Mistral, Together, GitHub Models, DeepSeek and a self-hosted
+`custom` endpoint all speak the OpenAI chat-completions shape, so the
+groq-only branch in `ai.php` became **one** generic branch over `AI_OAI_COMPAT`
+rather than one branch each. Six of the eleven providers now have a free tier
+that does not expire into a card — which, on shared hosting with no budget, is
+the difference between a feature and a disabled feature. They all join the same
+fallback chain, so two or three keys is the configuration that survives an
+afternoon of rate limits.
+
+### A lesson is not a sheet any more, and the suites say so
+
+`member-v9.test.js` drove `[role="dialog"] button:has-text("I've done")` —
+the lesson sheet that was removed when the lesson became a place. It pins the
+**handoff** now (the portal opens `/learn/lesson/<id>`), and the answering is
+owned by `tests/learn-app.test.js`, which already covers it end to end. One
+behaviour, one suite.
+
+`curriculum-ui.test.js` and `responsive-staff.test.js` were never broken by
+that change: those runs had collided on `api/config.php`, which every node E2E
+suite writes and refuses to start beside. **They cannot be run concurrently** —
+run one at a time they are 66/0 and 4/0, and always were.

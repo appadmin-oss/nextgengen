@@ -192,20 +192,29 @@ async function as(memberId, admin, viewport) {
     await mb.waitForTimeout(1200);
     chk('Growth: a line for the record is a journal entry shared with the mentor', q(`(int)db_row("SELECT COUNT(*) c FROM journal WHERE memberId = 'NGG-MV-K1' AND visibility = 'mentor' AND body LIKE 'Built my first page%'")['c']`) === 1);
 
-    // ── Learn: a lesson and its check ──
+    // ── Learn: the portal hands the lesson over to the Learn app ──
+    /* A lesson used to be a sheet over this portal: no address, nothing to
+       send somebody, and Back closing it instead of going back. It is a
+       PLACE now, at /learn/lesson/<id>, and the answering of it belongs to
+       that app's own suite (tests/learn-app.test.js). What the portal still
+       owes is the handoff — so that is what this pins, rather than driving a
+       sheet that no longer exists. */
     await nav(mb, 'Learn');
     await mb.waitForFunction(() => /Web pages, part/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(async e => { console.error('DEBUG', mb.errs && mb.errs.join('\n'), (await mb.innerText('main')).slice(0, 1200)); throw e; });
     await mb.click('main button:has-text("Web pages, part")');
-    await mb.waitForSelector('[role="dialog"] button:has-text("I\'ve done")', { timeout: 20000 });
-    await mb.click('[role="dialog"] button:has-text("I\'ve done")');
-    await mb.click('[role="dialog"] button:has-text("<h1>")');
-    await mb.click('[role="dialog"] button:has-text("Check answers")');
-    await mb.waitForTimeout(1500);
-    chk('Learn: the lesson’s check is marked by the server', q(`(int)db_row("SELECT COUNT(*) c FROM curriculum_progress WHERE memberId = 'NGG-MV-K1' AND attempts >= 1")['c']`) >= 1);
+    await mb.waitForFunction(() => /^\/learn\/lesson\//.test(location.pathname), null, { timeout: 20000 });
+    await waitForBoot(mb);
+    await mb.waitForSelector('.lrn-lesson', { timeout: 60000 });
+    chk('Learn: a lesson opens the Learn app AT that lesson, not a sheet over the portal',
+      /^\/learn\/lesson\/CU-MV-\d+$/.test(new URL(mb.url()).pathname) && /Web pages, part/.test(await mb.innerText('.lrn-lesson')));
     await shot(mb, 'lesson');
-    await mb.keyboard.press('Escape');
 
     // ── Opportunities ──
+    /* Back out of the Learn app to the portal. It is a real navigation now,
+       not an overlay closing, so the portal boots again. */
+    await mb.goBack({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(mb);
+    await mb.waitForSelector('.m9-app main', { timeout: 60000 });
     await nav(mb, 'Learn', 'Opportunities');
     await mb.waitForFunction(() => /Girls in Tech/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
     const opp = await main(mb);

@@ -15383,6 +15383,51 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-aloud-btn.is-on { background: var(--lrn-accent); color: #fff; border-color: var(--lrn-accent); }
 .lrn-aloud-rate { display: flex; gap: 5px; }
 
+/* ── Studying for school: the plan, and one sitting ──────────────────────── */
+.lrn-plan { display: grid; gap: 9px; padding: 15px 16px; text-decoration: none; color: inherit;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-plan:hover { border-color: var(--lrn-ink-3); }
+.lrn-plan-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lrn-plan-sub { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; }
+.lrn-plan-aim { font-size: 14px; color: var(--lrn-ink-2); line-height: 1.5; }
+.lrn-plan-week { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* One pip per session the plan asks for this week. Counting them is faster
+   than reading "2 of 3", which is why the words come after, not instead. */
+.lrn-pip { width: 20px; height: 6px; border-radius: 99px; background: var(--lrn-s2); }
+.lrn-pip.is-on { background: var(--lrn-ok); }
+.lrn-plan-wk { font-size: 12.5px; color: var(--lrn-ink-3); margin-left: 4px; }
+.lrn-plan-go { display: grid; gap: 10px; }
+.lrn-plan-err { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--lrn-late); }
+.lrn-field { display: grid; gap: 5px; font-size: 13px; color: var(--lrn-ink-2); }
+.lrn-input { width: 100%; min-height: var(--lrn-tap); padding: 0 12px; font: inherit; font-size: 15px;
+  color: var(--lrn-ink); background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+/* The OS draws its own arrow on a native select and it never matches. One
+   caret, ours, and the field keeps this app's surface (CLAUDE.md §8). */
+.lrn-input.is-sel { appearance: none; -webkit-appearance: none; padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5l5-5' fill='none' stroke='%236c6f77' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 13px center; background-size: 11px; }
+
+.lrn-score { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+.lrn-qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; counter-reset: lrnq; }
+.lrn-q { display: grid; gap: 10px; padding: 16px; background: var(--lrn-s1);
+  border: 1px solid var(--lrn-line); border-left: 4px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-q.is-right { border-left-color: var(--lrn-ok); }
+.lrn-q.is-wrong { border-left-color: var(--lrn-late); }
+.lrn-q-t { margin: 0; font-size: 16px; line-height: 1.55; font-weight: 500; }
+.lrn-q-n { font-weight: 700; color: var(--lrn-ink-3); margin-right: 5px; }
+.lrn-q-opts { display: grid; gap: 7px; }
+.lrn-opt { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 10px;
+  min-height: var(--lrn-tap); padding: 10px 12px; cursor: pointer; font-size: 15px; line-height: 1.45;
+  border: 1.5px solid var(--lrn-line); border-radius: var(--lrn-r-sm); background: var(--lrn-s1); }
+.lrn-opt:hover { border-color: var(--lrn-ink-3); }
+.lrn-opt input { margin-top: 3px; accent-color: var(--lrn-accent); }
+/* Right and wrong are never colour ALONE: the right one is also named in the
+   explanation under it, which is what a colour-blind reader goes by. */
+.lrn-opt.is-right { border-color: var(--lrn-ok); background: #f1f8f2; font-weight: 600; }
+.lrn-opt.is-wrong { border-color: var(--lrn-late); background: #fdf1f0; }
+.lrn-why { margin: 0; padding: 11px 13px; font-size: 14.5px; line-height: 1.6;
+  color: var(--lrn-ink-2); background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
+
 /* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
 @container (min-width: 720px) {
   .lrn-shell { grid-template-areas: "top top" "rail main"; grid-template-columns: 216px 1fr; grid-template-rows: auto 1fr; }
@@ -15393,4 +15438,6 @@ button.m9x-ev-sum { cursor: pointer; }
   .lrn-rail-item.is-on { background: var(--lrn-s1); box-shadow: 0 0 0 1px var(--lrn-line); }
   .lrn-main { padding: 26px 28px 48px; margin: 0; max-width: 720px; }
   .lrn-lesson-title { font-size: 32px; }
+  /* Two fields sit side by side once there is room for both to stay legible. */
+  .lrn-plan-go { grid-template-columns: 1fr auto; align-items: end; }
 }

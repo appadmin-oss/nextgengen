@@ -272,6 +272,11 @@ function backend_dispatch(string $op, array $args = []): array {
             /* How today went — a tap, after every lesson, never published
                (domain/lesson-feedback.php). The testimonial above is the
                other question, asked once a session. */
+            /* Studying for school, in the Learn app: one session of the
+               growth plan, actually done (domain/study-drill.php). */
+            'member.study.drill.start' => 'member_study_drill_start',
+            'member.study.drill.mark'  => 'member_study_drill_mark',
+            'member.study.plan'        => 'member_study_plan',
             'member.lesson.feedback'   => 'member_lesson_feedback_give',
             'member.lesson.feedback.mine' => 'member_lesson_feedback_mine',
             'staff.curriculum.feedback' => 'staff_lesson_feedback',
