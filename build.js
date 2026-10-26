@@ -206,6 +206,7 @@ async function build() {
   // index.html MUST list the same files in the same order, or the prod bundle
   // silently diverges from what dev runs. Fail the build if they don't match.
   validateOrderAgainstIndex();
+  validateCssBraces();
 
   // The source treats classic-script top-level bindings (e.g.
   // `const { useState, useEffect } = React;` in components.jsx) as
@@ -463,6 +464,27 @@ async function build() {
 // Ensure the compile ORDER and index.html's JSX <script> tags agree. A
 // mismatch means the prod bundle would run different code than dev — a
 // class of bug that is invisible until a specific page breaks in prod only.
+/* A stylesheet with one unclosed brace is not an error to a browser: every
+   rule after it is read as nested inside the open block. An `@media (pointer:
+   coarse) {` lost its `}` once, and the whole Family Portal (and everything
+   after it in styles-app.css) applied on touch screens only — a laptop got an
+   unstyled page and nothing failed. Refuse to build a sheet like that. */
+function validateCssBraces() {
+  for (const f of ['styles.css', 'styles-app.css']) {
+    const p = path.join(ROOT, f);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+      .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, m => m.replace(/[{}]/g, ' '));
+    let depth = 0, line = 1, openedAt = 0;
+    for (const c of src) {
+      if (c === '\n') line++;
+      if (c === '{') { if (depth === 0) openedAt = line; depth++; }
+      if (c === '}') { depth--; if (depth < 0) { console.error(`[build] ${f}:${line} closes a brace that was never opened`); process.exit(1); } }
+    }
+    if (depth !== 0) { console.error(`[build] ${f}: a block opened at line ${openedAt} is never closed, so every rule after it is nested inside it`); process.exit(1); }
+  }
+}
+
 function validateOrderAgainstIndex() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const tags = [];

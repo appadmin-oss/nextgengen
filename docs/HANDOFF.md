@@ -3156,3 +3156,44 @@ The owner's rules, built on the policy engine rather than beside it:
   logged on them are voided, and they never count towards the limit.
 - An absence always needs a reason (the handoff's "optional" is overruled).
 
+
+## 2026-10-26 — Summer v3 server, the undo window, and notifications a member can act on
+
+- **Summer School Portal v3, server** (`domain/summer-portal.php`): one read per
+  screen (`admin.summer.portal` with `view` boot | today | people | register |
+  child | graduates), the palette's search (`admin.summer.search`, name, printed
+  ID or last 4+ card digits, six at most) and per-staff recent children
+  (`admin.summer.recent`). Every count is taken from one roster derivation per
+  request, so "9 stopped" on Today and the list behind it are the same nine.
+  Centre scope is applied on the way in.
+- **The undo window is real** (`domain/pending.php`, migration 182). Move to NGG
+  (one or many), the joining invoices and the bulk guardian alert accept
+  `defer` and return a `pendingId`; nothing is created or sent until the row
+  commits — the client when its countdown ends, any portal read, or the webcron
+  tick, each claiming the row so it commits once, re-run as the requester so the
+  gate is asked again. `admin.pending.cancel` inside the window leaves nothing
+  done. Joining invoices for many graduates are one op
+  (`admin.summer.graduates.invoice`, ≤200) rather than the handoff's client
+  loop, so the whole press has one undo.
+- `members.fromSummerId` links a promoted member to the participant they were
+  (it was only in a free-text note); Into NGG reads stages from it.
+- **Member notifications** (migration 183): per-person read and dismissed marks
+  in `notification_state` — reading a broadcast used to write `readAt` on the
+  shared row, i.e. read it for everybody; a broadcast's own `readAt` is now
+  ignored. `groupKey` keeps one live item for a running thing (Saturday's
+  timetable sent one alert per block, which is what filled the panel in the
+  report). Every item carries an `action` (label + page), from `actionLabel` or
+  the kind. The panel (`Mp9Notifications`) replaced the compiled one: groups,
+  actions, read/unread, dismiss with undo, loading and error-with-retry,
+  Escape returns focus to the bell. Its rows used to shrink below their text in
+  the flex column and overlap.
+- **Fonts and scrollbars in every compiled portal**: buttons and fields inherit
+  the portal font (a `<button>` takes the system face by default), at zero
+  specificity so a designed face still wins; one thin scrollbar, no steppers.
+- **/family was unstyled on any non-touch screen.** An `@media (pointer: coarse) {`
+  block for the lesson-quiz editor lost its closing `}` during the Family Portal
+  v3 edit, and a browser does not reject that: every rule after it in
+  styles-app.css — the whole Family Portal, and everything added since — was
+  read as nested inside the touch-only query. Phones looked right; laptops got
+  a near-bare page. Fixed, and `build.js` now refuses a stylesheet whose braces
+  do not balance (`validateCssBraces`), naming the line the open block starts on.

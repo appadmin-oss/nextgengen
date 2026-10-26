@@ -334,8 +334,7 @@ function audit(string $event, ?string $actorId, string $subject = '', array $met
 }
 
 function push_notification(string $memberId, array $n): void {
-    db_insert('notifications', [
-        'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
+    $row = [
         'memberId' => $memberId,
         'kind' => $n['kind'] ?? 'announcement',
         'title' => $n['title'] ?? '',
@@ -343,7 +342,43 @@ function push_notification(string $memberId, array $n): void {
         'linkPage' => $n['linkPage'] ?? '',
         'readAt' => '',
         'createdAt' => now_iso(),
-    ]);
+        'actionLabel' => mb_substr((string)($n['actionLabel'] ?? ''), 0, 60),
+    ];
+    if (isset($n['linkRef'])) $row['linkRef'] = (string)$n['linkRef'];
+    /* A running thing keeps ONE live item: the same groupKey updates the row
+       in place and makes it unread again, rather than stacking a new alert
+       for every step (Saturday's timetable sent one per block). */
+    $group = mb_substr((string)($n['groupKey'] ?? ''), 0, 96);
+    if ($group !== '') {
+        $have = db_row('SELECT notifId FROM notifications WHERE memberId = ? AND groupKey = ? ORDER BY id DESC LIMIT 1', [$memberId, $group]);
+        if ($have) {
+            db_update('notifications', $row, ['notifId' => (string)$have['notifId']]);
+            db_exec('DELETE FROM notification_state WHERE memberId = ? AND notifId = ?', [$memberId, (string)$have['notifId']]);
+            return;
+        }
+    }
+    db_insert('notifications', $row + ['notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4), 'groupKey' => $group]);
+}
+
+/**
+ * What a notification's button does: a label and the member-portal page it
+ * opens. The row's own actionLabel wins; otherwise the kind decides, and a
+ * notification with nowhere to go has no button rather than a dead one.
+ */
+function notification_action(array $n): ?array {
+    $page = (string)($n['linkPage'] ?? '');
+    if ($page === '') return null;
+    $label = trim((string)($n['actionLabel'] ?? ''));
+    if ($label === '') {
+        $kind = (string)($n['kind'] ?? '');
+        $byKind = ['mentor' => 'Open the chat', 'duty' => 'See what to do', 'formation' => 'See today’s plan', 'event' => 'Open the event',
+                   'mission' => 'See the mission', 'curriculum' => 'Open the lesson', 'safeguarding' => 'Open it', 'system' => 'Open it'];
+        $byPage = ['journal' => 'Open your journal', 'community' => 'Open the post', 'results' => 'See your results', 'money' => 'See what is owed',
+                   'account' => 'Open your account', 'records' => 'Open your record', 'events' => 'Open the event', 'timetable' => 'See the timetable',
+                   'learn' => 'Open learning', 'curriculum' => 'Open the lesson', 'mentor' => 'Open the chat', 'dashboard' => 'Open Today'];
+        $label = $byKind[$kind] ?? ($byPage[$page] ?? 'Open');
+    }
+    return ['label' => $label, 'page' => $page, 'ref' => (string)($n['linkRef'] ?? '')];
 }
 
 /**
@@ -1194,6 +1229,8 @@ function public_notification(array $n): array {
         'linkRef' => (string)($n['linkRef'] ?? ''),
         'readAt' => $n['readAt'] ?: '',
         'createdAt' => $n['createdAt'],
+        'action' => notification_action($n),
+        'broadcast' => (string)($n['memberId'] ?? '') === '*',
     ];
 }
 

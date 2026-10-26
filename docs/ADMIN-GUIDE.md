@@ -2670,6 +2670,16 @@ Saturday, Timetable, Study tools) wrap onto a second line as buttons on a
 narrow screen, so every one is visible. They used to scroll sideways out of
 sight. The same is true in the mentor and instructor portals.
 
+**Notifications.** The bell opens a panel of what happened, grouped Today,
+Yesterday, This week and Earlier. Every item that goes somewhere has a button
+that says where ("Open the chat", "See today's plan", "Open the event"); the
+button opens it and marks the item read. Each item can be marked read or
+unread, and dismissed (with Undo). These marks are the member's own: when one
+member reads or dismisses an announcement sent to everybody, it stays unread
+for everyone else (until now, the first reader marked it read for all). On a
+Saturday the timetable no longer sends one alert per block: there is one
+"Now · …" item, updated as the day moves on.
+
 **Signing out.** Every portal now has its own **Sign out**: the member,
 mentor and instructor portals carry it at the foot of the sidebar (the icon
 next to your name). On a phone, the member portal's round initials button in

@@ -31859,5 +31859,36 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('programme', is_array($progWas) ? $progWas : [], $A);
 })();
 
+/* Notifications a person can act on: read and dismiss are per person (a
+   broadcast read by one member stays unread for the next), a running thing
+   keeps one live item, and every item that goes somewhere says where. */
+(function () {
+    foreach (['NTF-A', 'NTF-B'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => 'Notif ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('notifications', ['notifId' => 'NTF-BC-1', 'memberId' => '*', 'kind' => 'announcement', 'title' => 'For everybody', 'body' => '', 'linkPage' => 'events', 'readAt' => '', 'createdAt' => now_iso(), 'audience' => '']);
+    $list = fn(string $m) => backend_dispatch('member.notifications', ['memberId' => $m]);
+    $find = function (string $m, string $id) use ($list) { foreach ($list($m)['notifications'] as $n) if ($n['notifId'] === $id) return $n; return null; };
+    chk('notif · a broadcast reaches both members unread', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? 'x') === '' && ($find('NTF-B', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'notifId' => 'NTF-BC-1']);
+    chk('notif · one member reading a broadcast does not read it for another', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? '') !== '' && ($find('NTF-B', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'notifId' => 'NTF-BC-1', 'unread' => true]);
+    chk('notif · and it can be marked unread again', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    chk('notif · an item with a page carries a named action', ($find('NTF-A', 'NTF-BC-1')['action']['page'] ?? '') === 'events' && ($find('NTF-A', 'NTF-BC-1')['action']['label'] ?? '') !== '');
+    backend_dispatch('member.notificationDismiss', ['memberId' => 'NTF-B', 'notifId' => 'NTF-BC-1']);
+    chk('notif · dismissing removes it from that member’s list only', $find('NTF-B', 'NTF-BC-1') === null && $find('NTF-A', 'NTF-BC-1') !== null);
+    backend_dispatch('member.notificationDismiss', ['memberId' => 'NTF-B', 'notifId' => 'NTF-BC-1', 'undo' => true]);
+    chk('notif · and undo brings it back', $find('NTF-B', 'NTF-BC-1') !== null);
+    chk('notif · nobody can mark a notification they cannot see', (backend_dispatch('member.notificationRead', ['memberId' => 'NTF-B', 'notifId' => 'NO-SUCH'])['error'] ?? '') === 'not_found');
+    push_notification('NTF-A', ['kind' => 'formation', 'title' => 'Now · 10:00 First', 'linkPage' => 'timetable', 'groupKey' => 'formation:test']);
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'all' => true]);
+    push_notification('NTF-A', ['kind' => 'formation', 'title' => 'Now · 13:00 Second', 'linkPage' => 'timetable', 'groupKey' => 'formation:test']);
+    $live = array_values(array_filter($list('NTF-A')['notifications'], fn($n) => strpos($n['title'], 'Now · ') === 0));
+    chk('notif · a running thing keeps one live item, updated and unread again', count($live) === 1 && $live[0]['title'] === 'Now · 13:00 Second' && $live[0]['readAt'] === '');
+    push_notification('NTF-A', ['kind' => 'system', 'title' => 'Nowhere to go']);
+    $nw = null; foreach ($list('NTF-A')['notifications'] as $n) if ($n['title'] === 'Nowhere to go') $nw = $n;
+    chk('notif · an item with nowhere to go has no button', $nw !== null && $nw['action'] === null);
+    chk('notif · the unread count is returned with the list', is_int($list('NTF-A')['unread']));
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

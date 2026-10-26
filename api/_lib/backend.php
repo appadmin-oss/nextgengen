@@ -43,6 +43,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'photo.chunk'             => 'photo_chunk_put',
             'member.notifications'    => 'member_notifications',
             'member.notificationRead' => 'member_notification_read',
+            'member.notificationDismiss' => 'member_notification_dismiss',
             'member.state.get'        => 'member_state_get',
             'member.state.set'        => 'member_state_set',
             'mfa.status'              => 'mfa_status',

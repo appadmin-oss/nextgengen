@@ -11,5 +11,7 @@
   "// notifications": "The notification panel is a flex column with a max height: without flex-shrink:0 its rows shrank below their text and the lines overlapped the next row, and the header's filter + 'mark read' overflowed sideways on a narrow panel.",
   "min-height:60px;padding:8px 18px;border:0;border-top:1px solid #f0efea;background:none;cursor:pointer;text-align:left": "flex-shrink:0;width:100%;min-height:60px;padding:10px 18px;border:0;border-top:1px solid #f0efea;background:none;cursor:pointer;text-align:left",
   "max-height:70%;overflow-y:auto;background:#fff;border-radius:18px": "max-height:70%;overflow-y:auto;overflow-x:hidden;background:#fff;border-radius:18px",
-  "display:flex;align-items:center;gap:8px;padding:14px 12px 10px 18px": "display:flex;flex-wrap:wrap;flex-shrink:0;align-items:center;gap:8px;padding:14px 12px 10px 18px"
+  "display:flex;align-items:center;gap:8px;padding:14px 12px 10px 18px": "display:flex;flex-wrap:wrap;flex-shrink:0;align-items:center;gap:8px;padding:14px 12px 10px 18px",
+  "// notifications panel": "The design's notification panel is replaced by Mp9Notifications (mp9-more.jsx): actions per item, dismiss, per-person read state, grouping and honest loading/error states. The bell still drives notifOpen (aria-expanded); the old panel is never drawn.",
+  "<sc-if value=\"{{ notifOpen }}\" hint-placeholder-val=\"{{ false }}\">": "<sc-if value=\"{{ notifLegacy }}\" hint-placeholder-val=\"{{ false }}\">"
 }

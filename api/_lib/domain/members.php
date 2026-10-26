@@ -286,8 +286,38 @@ function member_notifications(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     [$bc, $bcp] = notif_broadcast_clause($member);
-    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 50", array_merge([$memberId], $bcp));
-    return ['ok' => true, 'notifications' => array_map('public_notification', $rows)];
+    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 80", array_merge([$memberId], $bcp));
+    // This person's read and dismissed marks, in one read.
+    $state = [];
+    foreach (db_all('SELECT notifId, readAt, dismissedAt FROM notification_state WHERE memberId = ?', [$memberId]) as $st) $state[(string)$st['notifId']] = $st;
+    $out = [];
+    foreach ($rows as $r) {
+        $st = $state[(string)$r['notifId']] ?? null;
+        if ($st && (string)$st['dismissedAt'] !== '') continue;
+        /* A broadcast's own readAt is ignored: it was written by whoever read
+           it first, back when reading one marked it read for everybody. */
+        $own = (string)$r['memberId'] === '*' ? '' : (string)($r['readAt'] ?? '');
+        $r['readAt'] = $st ? (string)$st['readAt'] : $own;
+        if ($st && (string)$st['readAt'] === '' && $own !== '' && (string)$r['memberId'] !== '*') $r['readAt'] = $own;
+        $out[] = public_notification($r);
+        if (count($out) >= 50) break;
+    }
+    $unread = count(array_filter($out, static fn($n) => $n['readAt'] === ''));
+    return ['ok' => true, 'notifications' => $out, 'unread' => $unread];
+}
+
+/** One person's mark on one notification they can see. */
+function member_notification_mark(string $memberId, string $notifId, array $set): bool {
+    $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $row = db_row("SELECT notifId, memberId FROM notifications WHERE notifId = ? AND (memberId = ? OR $bc) LIMIT 1", array_merge([$notifId, $memberId], $bcp));
+    if (!$row) return false;
+    $have = db_row('SELECT id FROM notification_state WHERE memberId = ? AND notifId = ?', [$memberId, $notifId]);
+    if ($have) db_update('notification_state', $set, ['id' => $have['id']]);
+    else db_insert('notification_state', array_merge(['memberId' => $memberId, 'notifId' => $notifId, 'readAt' => '', 'dismissedAt' => ''], $set));
+    // The member's own row keeps its readAt in step, for the readers that predate the state table.
+    if ((string)$row['memberId'] === $memberId && array_key_exists('readAt', $set)) db_update('notifications', ['readAt' => $set['readAt']], ['notifId' => $notifId]);
+    return true;
 }
 
 /**
@@ -470,9 +500,22 @@ function admin_member_delete(array $p): array {
 
 function member_notification_read(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
-    $notifId = (string)($p['notifId'] ?? '');
-    $row = db_row("SELECT * FROM notifications WHERE notifId = ? AND (memberId = ? OR memberId = '*') LIMIT 1", [$notifId, $memberId]);
-    if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    db_update('notifications', ['readAt' => now_iso()], ['id' => $row['id']]);
+    $at = !empty($p['unread']) ? '' : now_iso();
+    if (!empty($p['all'])) {
+        $n = 0;
+        foreach (member_notifications(['memberId' => $memberId])['notifications'] as $x) {
+            if ($x['readAt'] === '' && member_notification_mark($memberId, (string)$x['notifId'], ['readAt' => $at])) $n++;
+        }
+        return ['ok' => true, 'marked' => $n];
+    }
+    if (!member_notification_mark($memberId, (string)($p['notifId'] ?? ''), ['readAt' => $at])) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true];
+}
+
+/** member.notificationDismiss — gone from this person's list (and read); `undo` brings it back. */
+function member_notification_dismiss(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $set = !empty($p['undo']) ? ['dismissedAt' => ''] : ['dismissedAt' => now_iso(), 'readAt' => now_iso()];
+    if (!member_notification_mark($memberId, (string)($p['notifId'] ?? ''), $set)) return ['ok' => false, 'error' => 'not_found'];
     return ['ok' => true];
 }

@@ -733,18 +733,47 @@ Object.assign(Mp9Portal.prototype, {
   },
   notifVals() {
     const s = this.state, n = (this.dd("notifs") || {}).notifications || [];
-    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable" };
-    const unreadL = n.filter(x => !x.readAt && !(s.readIds || {})[x.notifId]);
-    const shown = s.nUnread ? unreadL : n;
-    const markOne = id => { this.setState({ readIds: { ...(this.state.readIds || {}), [id]: true } }); NGGApi.member.markRead(id).catch(() => {}); };
+    const unread = n.filter(x => !mp9NotifRead(x, s)).length;
     return {
-      notifOpen: !!s.notif, toggleNotif: () => this.setState({ notif: !s.notif }), closeNotif: () => this.setState({ notif: false }),
-      nFilters: [["Everything", false], ["Unread only", true]].map(([l, v]) => ({ l, on: s.nUnread === v ? "true" : "false", bg: s.nUnread === v ? "#fff" : "transparent", sh: s.nUnread === v ? "0 1px 2px rgba(11,11,12,.1)" : "none", pick: () => this.setState({ nUnread: v }) })),
-      nEmpty: shown.length === 0, unread: unreadL.length, hasUnread: unreadL.length > 0,
-      notifs: shown.slice(0, 30).map(x => ({ icon: "ph ph-" + (/mentor|chat/.test(x.kind) ? "chat-circle-text" : /badge|award|mission/.test(x.kind) ? "medal" : /event/.test(x.kind) ? "calendar-check" : "bell"), t: x.title + (x.body ? " · " + x.body : ""), when: mp9When(x.createdAt),
-        dot: !x.readAt && !(s.readIds || {})[x.notifId] ? "#f5b026" : "transparent", open: () => { markOne(x.notifId); this.setState({ notif: false }); const to = PAGE[x.linkPage]; if (to) this.go(to); } })),
-      markRead: () => { unreadL.forEach(x => markOne(x.notifId)); },
+      notifOpen: !!s.notif, notifLegacy: false,
+      toggleNotif: e => { if (!s.notif) this._notifFrom = e && e.currentTarget; this.setState({ notif: !s.notif }); if (!s.notif) this.load("notifs"); },
+      closeNotif: () => this.setState({ notif: false }),
+      unread, hasUnread: unread > 0,
     };
+  },
+
+  /* The notification panel (Mp9Notifications). Read, unread and dismissed are
+     the member's own marks on the server (notification_state); the panel
+     shows them at once and saves behind, and puts the item back if the save
+     fails rather than pretending. */
+  notifPanel() {
+    const s = this.state;
+    if (!s.notif) return null;
+    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable" };
+    const close = () => { this.setState({ notif: false }); const t = this._notifFrom; if (t && t.focus) setTimeout(() => t.focus(), 0); };
+    const mark = (x, read) => {
+      this.setState(st => ({ readIds: { ...(st.readIds || {}), [x.notifId]: read ? 1 : -1 } }));
+      return NGGApi.member.markRead(x.notifId, !read).catch(() => this.setState(st => ({ readIds: { ...(st.readIds || {}), [x.notifId]: read ? -1 : 1 } })));
+    };
+    return <Mp9Notifications
+      items={((this.dd("notifs") || {}).notifications || []).filter(x => !(s.goneIds || {})[x.notifId])}
+      loading={!!(s.ld || {}).notifs && !this.dd("notifs")} error={(s.er || {}).notifs && !this.dd("notifs")}
+      retry={() => this.load("notifs")} isRead={x => mp9NotifRead(x, s)} unreadOnly={!!s.nUnread} setUnreadOnly={v => this.setState({ nUnread: v })}
+      narrow={this.state.w < 760} onClose={close}
+      onAct={x => { if (!mp9NotifRead(x, s)) mark(x, true); this.setState({ notif: false }); const to = PAGE[(x.action || {}).page]; if (to) this.go(to); }}
+      onToggleRead={x => mark(x, !mp9NotifRead(x, s))}
+      onAllRead={() => {
+        const left = ((this.dd("notifs") || {}).notifications || []).filter(x => !mp9NotifRead(x, s));
+        const ids = {}; left.forEach(x => { ids[x.notifId] = 1; });
+        this.setState(st => ({ readIds: { ...(st.readIds || {}), ...ids } }));
+        NGGApi.member.markAllRead().catch(() => this.load("notifs"));
+      }}
+      onDismiss={x => {
+        this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 1 }, notifGone: x }));
+        NGGApi.member.dismissNotif(x.notifId).catch(() => this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 0 }, notifGone: null })));
+      }}
+      gone={s.notifGone}
+      onUndoDismiss={x => { this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 0 }, notifGone: null })); NGGApi.member.dismissNotif(x.notifId, true).catch(() => {}); }}/>;
   },
 
   /* Today, under the greeting: the record drive when it is asking, then the
@@ -965,7 +994,7 @@ Object.assign(Mp9Portal.prototype, {
   render() {
     const dutyGo = d => { const scr = MP9_ROUTE[d.route] || (/results/.test(d.route) ? "results" : /money|account/.test(d.route) ? "money" : /learn/.test(d.route) ? "learn" : /mentor/.test(d.route) ? "mentor" : "today"); this.go(scr); return true; };
     const pv = this.state.pdfView;
-    return <>{Mp9View(this.renderVals())}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/>
+    return <>{Mp9View(this.renderVals())}{this.notifPanel()}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/>
       {pv ? <NggPdf open src={pv.src} name={pv.name} onClose={() => this.setState({ pdfView: null })}/> : null}</>;
   },
 });
@@ -1118,4 +1147,88 @@ function mp9PlanWhen(x, upd, tried) {
     whenSay: mp9WhenOk(x.whenWhere) ? "Your plan: " + mp9WhenLine(w) + ". A set time and place makes you far more likely to do it."
       : String(x.whenWhere || "").trim() && !w.days.length ? "You wrote: “" + x.whenWhere + "”. Pick the days and a time instead." : "Pick the days and a time. A set time and place makes you far more likely to do it.",
   };
+}
+
+/** Read, by the member's mark on this screen first, then the server's. */
+function mp9NotifRead(x, s) { const m = ((s || {}).readIds || {})[x.notifId]; return m === 1 ? true : m === -1 ? false : !!x.readAt; }
+
+function mp9NotifIcon(kind) {
+  return /mentor|chat/.test(kind) ? "chat-circle-text" : /badge|award|mission/.test(kind) ? "medal" : /event/.test(kind) ? "calendar-check"
+    : /formation|timetable/.test(kind) ? "clock" : /duty/.test(kind) ? "list-checks" : /curriculum|assign/.test(kind) ? "book-open-text"
+    : /safeguard/.test(kind) ? "shield-check" : /fee|money/.test(kind) ? "wallet" : "bell";
+}
+/** Today · Yesterday · This week · Earlier, by the device's own calendar. */
+function mp9NotifGroup(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "Earlier";
+  const day = x => { const y = new Date(x); y.setHours(0, 0, 0, 0); return y.getTime(); };
+  const diff = Math.round((day(Date.now()) - day(d)) / 864e5);
+  return diff <= 0 ? "Today" : diff === 1 ? "Yesterday" : diff < 7 ? "This week" : "Earlier";
+}
+
+/**
+ * The member's notifications: what happened, and the one thing to do about
+ * it. Every item that goes somewhere has a named action; each can be marked
+ * read or unread and dismissed (with undo). A dialog: Escape closes and focus
+ * goes back to the bell; Tab stays inside.
+ */
+function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, setUnreadOnly, narrow, onClose, onAct, onToggleRead, onAllRead, onDismiss, gone, onUndoDismiss }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const el = ref.current; if (el) { const f = el.querySelector("[data-autofocus]") || el; f.focus(); }
+    const key = e => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = Array.from(ref.current.querySelectorAll("button:not([disabled])")); if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
+  const unread = items.filter(x => !isRead(x)).length;
+  const shown = unreadOnly ? items.filter(x => !isRead(x)) : items;
+  const groups = [];
+  shown.slice(0, 50).forEach(x => { const g = mp9NotifGroup(x.createdAt); let last = groups[groups.length - 1]; if (!last || last.g !== g) { last = { g, items: [] }; groups.push(last); } last.items.push(x); });
+  return <>
+    <div className="m9n-scrim" onClick={onClose} aria-hidden="true"/>
+    <div ref={ref} className={"m9n-panel" + (narrow ? " is-narrow" : "")} role="dialog" aria-modal="true" aria-labelledby="m9n-h" tabIndex={-1}>
+      <div className="m9n-head">
+        <h2 id="m9n-h" className="m9n-title">Notifications</h2>
+        <span className="m9n-count" role="status" aria-live="polite">{unread ? unread + " unread" : "All read"}</span>
+        <button type="button" className="m9n-icon" onClick={onClose} aria-label="Close notifications" data-autofocus><i className="ph ph-x" aria-hidden="true"/></button>
+      </div>
+      <div className="m9n-tools">
+        <div className="m9n-seg" role="radiogroup" aria-label="Show">
+          {[["Everything", false], ["Unread", true]].map(([l, v]) =>
+            <button key={l} type="button" role="radio" aria-checked={unreadOnly === v ? "true" : "false"} className={"m9n-seg-b" + (unreadOnly === v ? " is-on" : "")} onClick={() => setUnreadOnly(v)}>{l}</button>)}
+        </div>
+        <button type="button" className="m9n-link" onClick={onAllRead} disabled={!unread}>Mark all read</button>
+      </div>
+      {gone ? <div className="m9n-undo" role="status"><span>Removed “{String(gone.title || "").slice(0, 40)}”.</span><button type="button" className="m9n-link" onClick={() => onUndoDismiss(gone)}>Undo</button></div> : null}
+      <div className="m9n-list">
+        {loading ? <p className="m9n-state">Loading your notifications…</p>
+        : error ? <div className="m9n-state"><p>We could not load your notifications.</p><button type="button" className="m9n-btn" onClick={retry}>Try again</button></div>
+        : !shown.length ? <p className="m9n-state">{unreadOnly && items.length ? "Nothing unread. You are up to date." : "You’re all caught up."}</p>
+        : groups.map(gr => <section key={gr.g} className="m9n-group" aria-label={gr.g}>
+            <h3 className="m9n-gh">{gr.g}</h3>
+            <ul className="m9n-ul">{gr.items.map(x => { const read = isRead(x); return <li key={x.notifId} className={"m9n-item" + (read ? "" : " is-unread")}>
+              <span className={"m9n-ic m9n-ic-" + (x.kind || "bell")} aria-hidden="true"><i className={"ph ph-" + mp9NotifIcon(x.kind || "")}/></span>
+              <div className="m9n-body">
+                <p className="m9n-t">{read ? null : <span className="m9n-sr">Unread: </span>}{x.title}</p>
+                {x.body ? <p className="m9n-b">{x.body}</p> : null}
+                <div className="m9n-row">
+                  <time className="m9n-when" dateTime={x.createdAt}>{mp9When(x.createdAt)}</time>
+                  {x.action ? <button type="button" className="m9n-act" onClick={() => onAct(x)}>{x.action.label}<i className="ph ph-arrow-right" aria-hidden="true"/></button> : null}
+                </div>
+              </div>
+              <div className="m9n-side">
+                <button type="button" className="m9n-icon" onClick={() => onToggleRead(x)} aria-label={read ? "Mark as unread: " + x.title : "Mark as read: " + x.title} title={read ? "Mark as unread" : "Mark as read"}>
+                  <i className={read ? "ph ph-envelope-simple" : "ph ph-envelope-simple-open"} aria-hidden="true"/></button>
+                <button type="button" className="m9n-icon" onClick={() => onDismiss(x)} aria-label={"Dismiss: " + x.title} title="Dismiss"><i className="ph ph-trash" aria-hidden="true"/></button>
+              </div>
+            </li>; })}</ul>
+          </section>)}
+      </div>
+    </div>
+  </>;
 }

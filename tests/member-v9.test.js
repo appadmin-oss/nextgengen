@@ -110,6 +110,8 @@ async function as(memberId, admin, viewport) {
         ['oppId' => 'OPP-SHUT', 'title' => 'Closed competition', 'org' => 'NGG', 'type' => 'Competition', 'closesOn' => '2020-01-01', 'why' => '', 'ageMin' => 0, 'ageMax' => 0, 'status' => 'active'],
       ]);
       db_insert('notifications', ['notifId' => 'N-MV-1', 'memberId' => 'NGG-MV-K1', 'kind' => 'mentor', 'title' => 'Ngozi replied to you', 'body' => '', 'linkPage' => 'mentor', 'readAt' => '', 'createdAt' => $now]);
+      db_insert('notifications', ['notifId' => 'N-MV-BC', 'memberId' => '*', 'kind' => 'announcement', 'title' => 'Parents’ evening is on Friday', 'body' => 'Bring a guardian; the hall opens at five.', 'linkPage' => 'events', 'readAt' => '', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 90000), 'audience' => '']);
+      for ($i = 0; $i < 9; $i++) db_insert('notifications', ['notifId' => 'N-MV-L' . $i, 'memberId' => 'NGG-MV-K1', 'kind' => 'system', 'title' => '12:30 · Break · Interact positively, build relationships and practise responsible communal behaviour ' . $i, 'body' => 'Division 1 · Creative & Performing Arts · Division 2 · Media & Content Strategy · Division 3 · Technology & Applied Engineering', 'linkPage' => '', 'readAt' => '', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 864000 - $i * 60)]);
       echo 'ok';`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -136,6 +138,39 @@ async function as(memberId, admin, viewport) {
     await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
     await mb.waitForTimeout(1200);
     chk('Today: the wellbeing answer is this week’s check-in', q(`db_row("SELECT wellbeing FROM member_checkins WHERE memberId = 'NGG-MV-K1'")['wellbeing'] ?? ''`) === 'Okay');
+
+    // ── Notifications: actions, per-person read, dismiss + undo, no overlap ──
+    await mb.click('button[aria-label="Notifications"]:visible');
+    await mb.waitForSelector('.m9n-panel .m9n-item', { timeout: 15000 });
+    const geo = await mb.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('.m9n-item')).map(li => li.getBoundingClientRect());
+      const list = document.querySelector('.m9n-list');
+      const btn = document.querySelector('.m9n-act');
+      return { overlap: items.some((r, i) => i && r.top < items[i - 1].bottom - 0.5), sideways: list.scrollWidth > list.clientWidth + 1,
+               scrolls: list.scrollHeight > list.clientHeight, font: btn ? getComputedStyle(btn).fontFamily : '', panelFont: getComputedStyle(document.querySelector('.m9n-panel')).fontFamily };
+    });
+    chk('Notifications: long items stack without overlapping', !geo.overlap);
+    chk('Notifications: the list scrolls up and down only, never sideways', geo.scrolls && !geo.sideways);
+    chk('Notifications: buttons use the portal’s font, not the system one', /Geist/.test(geo.font) && /Geist/.test(geo.panelFont));
+    const ptxt = await mb.innerText('.m9n-panel');
+    chk('Notifications: grouped by day, with a named action', /Today/.test(ptxt) && /Earlier/.test(ptxt) && /Open the chat/.test(ptxt));
+    await mb.click('.m9n-item:has-text("Parents’ evening") button[aria-label^="Dismiss"]');
+    chk('Notifications: dismissing offers undo', /Removed/.test(await mb.innerText('.m9n-panel')));
+    await mb.waitForTimeout(800);
+    chk('Notifications: a dismissed broadcast is gone for this member only', q(`db_row("SELECT dismissedAt FROM notification_state WHERE memberId = 'NGG-MV-K1' AND notifId = 'N-MV-BC'")['dismissedAt'] ?? ''`) !== ''
+      && q(`(int)db_row("SELECT COUNT(*) c FROM notification_state WHERE notifId = 'N-MV-BC' AND memberId <> 'NGG-MV-K1'")['c']`) === 0);
+    await mb.click('.m9n-undo button:has-text("Undo")');
+    await mb.waitForTimeout(800);
+    chk('Notifications: undo brings it back', /Parents’ evening/.test(await mb.innerText('.m9n-panel')) && q(`db_row("SELECT dismissedAt FROM notification_state WHERE memberId = 'NGG-MV-K1' AND notifId = 'N-MV-BC'")['dismissedAt'] ?? 'x'`) === '');
+    await mb.keyboard.press('Escape');
+    chk('Notifications: Escape closes the panel and returns focus to the bell', !(await mb.isVisible('.m9n-panel')) && await mb.evaluate(() => (document.activeElement || {}).getAttribute && document.activeElement.getAttribute('aria-label') === 'Notifications'));
+    await mb.click('button[aria-label="Notifications"]:visible');
+    await mb.click('.m9n-item:has-text("Ngozi replied") .m9n-act');
+    await mb.waitForTimeout(1200);
+    chk('Notifications: the action marks it read', q(`array_values(array_filter(backend_dispatch('member.notifications', ['memberId' => 'NGG-MV-K1'])['notifications'], fn($n) => $n['notifId'] === 'N-MV-1'))[0]['readAt'] ?? ''`) !== '');
+    chk('Notifications: and opens where it points (the mentor chat)', !(await mb.isVisible('.m9n-panel')) && /Coach Eke|Mentor/i.test(await mb.innerText('main')) && await mb.isVisible('main [aria-label="Message"]'));
+    await shot(mb, 'notifications');
+    await mb.click('aside nav button:has-text("Today")').catch(() => {}); await settle(mb);
 
     // ── My mentor ──
     await nav(mb, 'Mentor');

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 182;
+const NGG_SCHEMA_TARGET = 183;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5347,6 +5347,24 @@ function db_migrate(PDO $db): void {
               byId TEXT NOT NULL DEFAULT '', byName TEXT NOT NULL DEFAULT '', createdAt TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_smsg_edition ON summer_messages(cohortId, createdAt);
+        ",
+
+        /* Notifications a person can act on. `notification_state` holds each
+           person's read and dismissed marks — a broadcast row is shared, so
+           marking it read on the row marked it read for everybody. `groupKey`
+           lets a running thing (Saturday's timetable) keep ONE live item that
+           is updated, instead of a new alert every block. `actionLabel` names
+           the button when the default for the kind is not right. */
+        183 => "
+            CREATE TABLE IF NOT EXISTS notification_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, notifId TEXT NOT NULL,
+              readAt TEXT NOT NULL DEFAULT '', dismissedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_nstate_one ON notification_state(memberId, notifId);
+            ALTER TABLE notifications ADD COLUMN groupKey TEXT NOT NULL DEFAULT '';
+            ALTER TABLE notifications ADD COLUMN actionLabel TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_notif_group ON notifications(memberId, groupKey);
         ",
     ];
 

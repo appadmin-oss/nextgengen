@@ -4262,3 +4262,17 @@ CREATE TABLE IF NOT EXISTS summer_messages (
 );
 
 INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;
+
+-- 183: notifications a person can act on — per-person read/dismiss state,
+-- one live item per running thing (groupKey), and a named action.
+CREATE TABLE IF NOT EXISTS notification_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, notifId VARCHAR(64) NOT NULL,
+  readAt VARCHAR(32) NOT NULL DEFAULT '', dismissedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_nstate_one (memberId, notifId)
+);
+ALTER TABLE notifications ADD COLUMN groupKey VARCHAR(96) NOT NULL DEFAULT '';
+ALTER TABLE notifications ADD COLUMN actionLabel VARCHAR(60) NOT NULL DEFAULT '';
+CREATE INDEX idx_notif_group ON notifications(memberId, groupKey);
+
+INSERT INTO schema_version (version) VALUES (183) ON DUPLICATE KEY UPDATE version = version;

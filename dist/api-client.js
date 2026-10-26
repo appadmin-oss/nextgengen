@@ -922,7 +922,9 @@
       journalCreate: (data) => request('/member/journal.php', { body: data }),
       rsvp:          (data) => request('/member/rsvp.php', { body: data }),
       notifications: () => request('/member/notifications.php'),
-      markRead:      (notifId) => request('/member/notifications.php', { body: { notifId } }),
+      markRead:      (notifId, unread) => request('/member/notifications.php', { body: { notifId, unread: !!unread } }),
+      markAllRead:   () => request('/member/notifications.php', { body: { all: true } }),
+      dismissNotif:  (notifId, undo) => request('/member/notifications.php', { body: { action: 'dismiss', notifId, undo: !!undo } }),
       updateProfile: (data) => request('/member/profile.php', { body: data }),
       /* The photo is changed by asking: the new photo goes to the desk, which approves or declines it. */
       photoChange: {

@@ -191,7 +191,7 @@ function sf_tick(?int $now = null): array {
             foreach ($here as $mid) {
                 if ($budget <= 0) break;
                 if (!sf_once($date, $slot, $mid, 'push')) continue;
-                push_notification($mid, ['kind' => 'formation', 'title' => $b['start'] . ' · ' . $b['title'], 'body' => mb_substr($b['quote'] !== '' ? $b['quote'] : implode(' · ', array_slice((array)($b['for']['member'] ?? []), 0, 3)), 0, 140), 'linkPage' => 'dashboard']);
+                push_notification($mid, ['kind' => 'formation', 'title' => 'Now · ' . $b['start'] . ' ' . $b['title'], 'body' => mb_substr($b['quote'] !== '' ? $b['quote'] : implode(' · ', array_slice((array)($b['for']['member'] ?? []), 0, 3)), 0, 140), 'linkPage' => 'timetable', 'groupKey' => 'formation:' . $date]);
                 $budget--; $sent[] = [$slot, 'member', $mid];
             }
         }
@@ -200,7 +200,7 @@ function sf_tick(?int $now = null): array {
             foreach (db_all("SELECT memberId FROM mentors WHERE status = 'active' AND programme IN ('ngg','both') AND COALESCE(memberId,'') <> ''") as $r) {
                 if ($budget <= 0) break;
                 if (!sf_once($date, $slot, (string)$r['memberId'], 'push')) continue;
-                push_notification((string)$r['memberId'], ['kind' => 'mentor', 'title' => $b['start'] . ' · ' . $b['title'], 'body' => mb_substr(implode(' ', array_slice((array)$b['for']['mentor'], 0, 2)), 0, 140), 'linkPage' => 'mentor']);
+                push_notification((string)$r['memberId'], ['kind' => 'formation', 'title' => 'Now · ' . $b['start'] . ' ' . $b['title'], 'body' => mb_substr(implode(' ', array_slice((array)$b['for']['mentor'], 0, 2)), 0, 140), 'linkPage' => 'mentor', 'actionLabel' => 'Open the mentor desk', 'groupKey' => 'formation:' . $date]);
                 $budget--; $sent[] = [$slot, 'mentor', (string)$r['memberId']];
             }
         }
