@@ -166,6 +166,18 @@ centres' requests.
 events, posts, photo review, comments, community, tournaments, promotions,
 announcements, forms, site content, public status pages.
 
+- **Sessions** (Learning → Sessions) shows one year at a time; the arrows step
+  a year back or forward, and the year stays in the address, so a refresh or a
+  shared link opens the same year. Tap a session to change its dates, name,
+  theme or cover.
+- **Missions** (Learning → Missions) lists proof waiting for review first, then
+  the twelve weeks. Tap a submission to verify it (the XP is awarded) or to
+  return it with feedback, which you write in a form and the member sees. Each
+  week has its own **Add**.
+- **Posts** (Content → Posts) lists every post, drafts and archived included.
+  Tapping one opens the stored post for editing. A new post stays a draft until
+  its status is set to Published.
+
 **Inbox** — newsletter and messages.
 
 **System** — Access & roles, Audit log, Diagnostics, Integrations &

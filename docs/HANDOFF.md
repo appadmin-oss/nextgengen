@@ -3019,8 +3019,8 @@ that draw as lists). What was not mobile was everything mounted through `CrPanel
   check-ins (Mentors & volunteers); Announcements and Newsletter (Announcements). Same ops, same
   guards and refusals, same words. Centres' map and Summer-venue editors are real widgets and stay as a
   `custom` block on their own sub-page (`/control/members/centres/<id>/map`).
-- **Still mounted (next):** Data quality, ID cards, Sign-in security, Sessions, Missions, Anchor,
-  Timetable, Curriculum, Mentors, Pairings, Volunteers, Threads, Posts, Site, Status pages, Forms,
+- **Still mounted (next):** Data quality, ID cards, Sign-in security, Anchor,
+  Timetable, Curriculum, Mentors, Pairings, Volunteers, Threads, Site, Status pages, Forms,
   Promotions, Quote of the week, Summer. Until each is rebuilt, `.cr-app .cr-panel` in styles-app.css
   draws the old classes with the new components' exact values, and on a phone long panel intros fold
   to three lines (`crFoldHints`, cr-ui.jsx).
@@ -3034,4 +3034,10 @@ that draw as lists). What was not mobile was everything mounted through `CrPanel
   now (`admin_broadcast_audience`): everyone, a programme, or a real centre; anything else is refused.
 - **Server tables in a native tab:** build the `server` object in `load`, never in `blocks()` — a table
   refetches when `server` changes identity, so one made per render never leaves its skeleton.
-
+- **Second pass, same day:** Sessions, Missions (Learning) and Posts (Content) rebuilt as blocks.
+  Sessions keeps the year in the address (`/control/learning/sessions/2027`); changing year fetches
+  and sets the tab's data, because `useCrLoad` memoises `load` with the first render's ctx and so
+  sees a deep-linked year but never one picked afterwards. Missions' "return for another pass" asked
+  for feedback through `window.prompt`, which a phone draws as a system dialog with no room to write;
+  it is a form now. Posts opens each post from the server (`admin.posts.get`) before editing, so the
+  editor holds the stored body rather than a list row's excerpt.
