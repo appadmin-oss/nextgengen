@@ -981,6 +981,8 @@
       journalCreate: (data) => request('/member/journal.php', { body: data }),
       rsvp:          (data) => request('/member/rsvp.php', { body: data }),
       notifications: () => request('/member/notifications.php'),
+      /* Support cases from My NGG (api/member/support.php, domain/support.php). */
+      support: supportApi('/member/support.php'),
       markRead:      (notifId, unread) => request('/member/notifications.php', { body: { notifId, unread: !!unread } }),
       markAllRead:   () => request('/member/notifications.php', { body: { all: true } }),
       dismissNotif:  (notifId, undo) => request('/member/notifications.php', { body: { action: 'dismiss', notifId, undo: !!undo } }),
@@ -1230,6 +1232,8 @@
       securityRevokeOthers: () => request('/member/security.php', { body: { action: 'revoke_others' } }),
     },
     public: {
+      /* The help centre's answers (api/public/help.php). No case is opened publicly. */
+      help: (q) => request('/public/help.php' + (q ? qs({ q }) : '')),
       telegram:   () => request('/public/telegram.php'),
       stats:      () => request('/public/stats.php'),
       status:     () => request('/public/status.php'),
@@ -1336,6 +1340,8 @@
     },
     /* Family accounts — a parent's own sign-in (its own cookie; never a member session). */
     family: {
+      /* Support cases from the Family account — the same contract as the member's. */
+      support: supportApi('/family/support.php'),
       me:       () => request('/family/me.php'),
       request:  (email) => request('/family/request.php', { body: { email } }),
       verify:   (data) => request('/family/verify.php', { body: data }),
@@ -1364,6 +1370,15 @@
       },
     },
     admin: {
+      /* Support cases, answered from the Control Room (api/admin/support.php; cap `support`). */
+      support: {
+        list: (opts) => request('/admin/support.php' + qs(opts || {})),
+        get: (caseNo) => request('/admin/support.php' + qs({ caseNo })),
+        reply: (caseNo, body, opts) => request('/admin/support.php', { body: Object.assign({ action: 'reply', caseNo, body }, opts || {}), timeout: 60000 }),
+        bulk: (op, caseNos, value) => request('/admin/support.php', { body: { action: 'bulk', op, caseNos, value } }),
+        open: (payload) => request('/admin/support.php', { body: Object.assign({ action: 'open' }, payload || {}) }),
+        fileUrl: (caseNo, f) => BASE + '/admin/support-file.php' + qs({ caseNo, f }),
+      },
       /* The accounts desk: who cannot sign in, and the members behind each
          number. Nothing here ends an account — that is the MoU's question. */
       accounts: {
@@ -2202,6 +2217,21 @@
       suggest:     (submissionId) => request(path, { body: { action: 'suggest', submissionId }, timeout: 90000 }),
       draft:       (unitId, ai) => request(path, { body: { action: 'draft', unitId, ai: !!ai }, timeout: 90000 }),
       auto:        (on) => request(path, { body: { action: 'auto', on: !!on }, timeout: 60000 }),
+    };
+  }
+  /* One support desk, two doors: a member's and a family's route share the
+     contract (api/_lib/support-route.php), so one client serves both. */
+  function supportApi(base) {
+    return {
+      meta: () => request(base + '?view=meta'),
+      suggest: (q, category) => request(base + qs({ view: 'suggest', q: q || '', category: category || '' })),
+      mine: () => request(base + '?view=mine'),
+      get: (caseNo) => request(base + qs({ view: 'case', caseNo })),
+      open: (payload) => request(base, { body: Object.assign({ action: 'open' }, payload || {}), timeout: 90000 }),
+      reply: (caseNo, body, files) => request(base, { body: { action: 'reply', caseNo, body, files: files || [] }, timeout: 90000 }),
+      solve: (caseNo) => request(base, { body: { action: 'solve', caseNo } }),
+      rate: (caseNo, rating, note) => request(base, { body: { action: 'rate', caseNo, rating, note: note || '' } }),
+      fileUrl: (caseNo, f) => BASE + base + qs({ view: 'file', caseNo, f }),
     };
   }
   function qs(obj) {

@@ -45,7 +45,7 @@ const MP9_SIMPLE_UNDER = 13;
 /* Which area a screen belongs to, and that area's colour: one colour per place, so a child knows
    where they are by colour as well as by name. Each passes 4.5:1 with white text and on white. */
 const MP9_AREA_OF = { today: "today", mentor: "mentor", companion: "mentor", community: "mentor", growth: "grow", results: "grow", passport: "grow", journal: "grow",
-  learn: "learn", sat: "learn", timetable: "learn", tools: "learn", opps: "learn", me: "account", money: "account", records: "account", help: "account" };
+  learn: "learn", sat: "learn", timetable: "learn", tools: "learn", opps: "learn", me: "account", money: "account", records: "account", help: "account", support: "account" };
 /* Area hues stay clear of the status colours (green = done, amber-brown = warning, red = a problem),
    so a colour never says two things: Grow is teal, not green. Today is the NGG amber, deepened to
    pass 4.5:1 as text. Each is used in small doses — the tab, the icon, a tint — never as a page fill. */
@@ -765,7 +765,7 @@ class Mp9Portal extends React.Component {
 
 /* The address of every screen, under /dashboard. */
 const MP9_PATHS = { today: "", mentor: "mentor", growth: "growth", results: "results", companion: "companion", sat: "saturday", journal: "journal", opps: "opportunities",
-  community: "community", passport: "passport", help: "help", more: "more", learn: "learn", timetable: "timetable", me: "me", money: "account", records: "records" };
+  community: "community", passport: "passport", help: "help", more: "more", learn: "learn", timetable: "timetable", me: "me", money: "account", records: "records", support: "support" };
 function mp9ScreenFromPath() {
   const seg = (typeof location !== "undefined" ? location.pathname : "").replace(/^\/+|\/+$/g, "").split("/");
   if (seg[0] !== "dashboard" || !seg[1]) return "today";

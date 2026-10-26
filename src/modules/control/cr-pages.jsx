@@ -12,7 +12,7 @@
    ========================================================================== */
 
 const CR_GROUPS = [
-  { h: null, items: ["home", "inbox", "analytics"] },
+  { h: null, items: ["home", "inbox", "support", "analytics"] },
   { h: "People", items: ["members", "mentors", "mentorship", "money"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
@@ -33,6 +33,12 @@ const CR_PAGES = {
     { id: "comments", label: "Comments", desc: "Public comments waiting for moderation.", cap: "content" },
     { id: "photos", label: "Photo review", desc: "Headshots must pass before an ID card can print.", cap: "content" },
     { id: "testimonials", label: "Testimonials", desc: "What members said about their own sessions, waiting to be read.", cap: "content" },
+  ] },
+  /* Support cases (domain/support.php, cr-tab-support.jsx): opened by members
+     and families inside their portals, answered here. */
+  support: { label: "Support", icon: "lifebuoy", tabs: [
+    { id: "cases", label: "Cases", desc: "What members and families have asked the team, next reply due first.", cap: "support" },
+    { id: "support-health", label: "How we’re doing", desc: "Open and overdue cases, reply targets and how people rated the help.", cap: "support" },
   ] },
   analytics: { label: "Analytics", icon: "chart-line-up", tabs: [
     { id: "dashboard", label: "M&E overview", desc: "Monitoring and evaluation against the formation goals.", cap: null },

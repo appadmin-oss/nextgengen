@@ -720,6 +720,7 @@ class Cm3App extends React.Component {
     if (s.view === "files") { title = "Files"; sub = "Every photo, video, document and link shared in your channels"; }
     if (s.view === "journal") { title = "Journal"; sub = typeof cmTodayWords === "function" ? cmTodayWords() : "Your own record, and the programme’s"; }
     if (s.view === "arcade") { title = "Arcade"; sub = "Quick games between sessions. Scores are checked by NGG, so they’re fair."; }
+    if (s.view === "support") { title = "Support"; sub = "Ask the NGG team when something isn’t working. Your cases are the same ones as in My NGG."; }
     if (s.view === "mod") { title = s.modTab === "sg" ? "Safeguarding" : "Moderation"; sub = "Children’s posts are checked by people. Safeguarding is its own queue."; }
 
     const chHw = hw.filter(h => h.ch === s.ch), chFiles = (s.files || []).filter(f => f.ch === s.ch);
@@ -745,7 +746,7 @@ class Cm3App extends React.Component {
     const navItem = (label, icon, cur, badge, red, go) => ({ label, icon, cur: cur ? "page" : undefined, bg: cur ? "#efeee9" : "transparent", fw: cur ? 600 : 500, badge: String(badge || ""), hasBadge: !!badge, badgeBg: red ? "#b42318" : "#0b0b0c", go });
     const navViews = [["all", "Home", "ph ph-house"], ["unread", "Unread", "ph ph-tray", unreadN], ["mentions", "Mentions", "ph ph-at", mentionN], ["questions", "Questions", "ph ph-question"], ["saved", "Saved", "ph ph-bookmark-simple"], ["mine", "My posts", "ph ph-user"]].map(x => navItem(x[1], x[2], s.view === "home" && s.filter === x[0], x[3], false, goView("home", { filter: x[0], q: "" })));
     const navChans = myChans.map(c => { const curC = s.view === "channel" && s.ch === c.slug, un = s.read[c.slug] ? 0 : c.unread; return { name: c.name, icon: c.icon, color: c.color, unread: String(un), hasUnread: un > 0, cur: curC ? "page" : undefined, bg: curC ? "#efeee9" : "transparent", fw: curC ? 600 : un ? 600 : 500, go: this.goCh(c.slug) }; });
-    const navTools = [navItem("Homework", "ph ph-backpack", s.view === "homework", staff ? reviewN : todoN, false, goView("homework")), navItem("Files", "ph ph-folder-simple", s.view === "files", 0, false, goView("files")), navItem("Arcade", "ph ph-game-controller", s.view === "arcade", 0, false, goView("arcade")), navItem("Journal", "ph ph-notebook", s.view === "journal", 0, false, goView("journal"))];
+    const navTools = [navItem("Homework", "ph ph-backpack", s.view === "homework", staff ? reviewN : todoN, false, goView("homework")), navItem("Files", "ph ph-folder-simple", s.view === "files", 0, false, goView("files")), navItem("Arcade", "ph ph-game-controller", s.view === "arcade", 0, false, goView("arcade")), navItem("Journal", "ph ph-notebook", s.view === "journal", 0, false, goView("journal")), navItem("Support", "ph ph-lifebuoy", s.view === "support", 0, false, goView("support"))];
     if (admin) { navTools.push(navItem("Moderation", "ph ph-shield-check", s.view === "mod" && s.modTab !== "sg", (s.stats ? s.stats.counts.held + s.stats.counts.video + s.stats.counts.reported : queue.length), false, goView("mod", { modTab: "queue" }))); if (me0.canSafeguard) navTools.push(navItem("Safeguarding", "ph ph-lifebuoy", s.view === "mod" && s.modTab === "sg", openCases, true, goView("mod", { modTab: "sg" }))); }
     // "Preview as" is the prototype's role switcher; the real viewer is the signed-in person, so it is not shown.
     const roles = [];
@@ -983,7 +984,7 @@ class Cm3App extends React.Component {
       q: s.q, onQ: e => { const v = e.target.value; this.setState({ q: v, view: s.view === "channel" ? "channel" : "home", chTab: "posts" }); clearTimeout(this.qT); this.qT = setTimeout(() => { if (this.state.view === "home" || this.state.view === "channel") this.loadFeed(true); }, 350); },
       newPost: () => this.openComp("post"), setHw: () => this.openComp("homework"),
       navViews, navChans, navTools, myChanN: String(myChans.length),
-      headPad: narrow ? "8px 16px 12px" : "18px 28px 14px", bodyPad: narrow ? "14px 16px 100px" : "20px 28px 48px", maxW: onMod ? "1040px" : onFiles || s.view === "arcade" ? "900px" : "720px", h1Size: narrow ? "19px" : "23px",
+      headPad: narrow ? "8px 16px 12px" : "18px 28px 14px", bodyPad: narrow ? "14px 16px 100px" : "20px 28px 48px", maxW: onMod ? "1040px" : onFiles || s.view === "arcade" || s.view === "support" ? "900px" : "720px", h1Size: narrow ? "19px" : "23px",
       title, sub, hasHeadTile, headIcon: cur.icon, headColor: cur.color,
       showDigestBtn: s.view === "home" && s.filter === "all", digestExp: s.digest ? "true" : "false", digestBtnLabel: narrow ? "Catch up" : "Catch me up",
       toggleDigest: () => { set({ digest: !s.digest }); if (!s.digest) this.loadDigest(); },
@@ -1008,7 +1009,12 @@ class Cm3App extends React.Component {
       onPeople: s.view === "channel" && s.chTab === "people", people,
       onJournal: s.view === "journal", journalEl: s.view === "journal" && typeof CmJournalMine === "function" ? React.createElement(Cm3Journal, { auth: this.props.auth, onWrite: seed => this.setState({ writing: seed }) }) : null,
       offlineEl: s.offline ? React.createElement("p", { className: "cm3x-offline", role: "status" }, "You’re offline. What you’re writing is kept as a draft on this device — press Post again once you’re back online.") : null,
-      onArcade: s.view === "arcade", arcadeEl: s.view === "arcade" && typeof CmArcade === "function" ? React.createElement(CmArcade, { auth: this.props.auth }) : null,
+      /* The design's one full-width panel slot: the Arcade, and the support
+         desk (support-desk.jsx) — the same cases as My NGG, opened from here. */
+      onArcade: s.view === "arcade" || s.view === "support",
+      arcadeEl: s.view === "arcade" && typeof CmArcade === "function" ? React.createElement(CmArcade, { auth: this.props.auth })
+        : s.view === "support" && typeof NggSupportDesk === "function" ? React.createElement(NggSupportDesk, { api: NGGApi.member.support, source: "community",
+            safeguard: { text: "Read how to tell somebody", onClick: () => { location.href = "/dashboard/help"; } } }) : null,
       modLocked: s.view === "mod" && s.modLocked, modGateEl: s.view === "mod" && s.modLocked && typeof AdminTotpGate === "function" ? React.createElement("div", { className: "cm3x-gate" }, React.createElement("p", null, "Moderation needs your two-step code, the same as the Control Room."), React.createElement(AdminTotpGate, { member: this.props.auth && this.props.auth.member, onPass: () => { this.setState({ modLocked: false }); this.loadMod(); } })) : null,
       onMod, modStats, modQueue: onMod && s.modTab === "queue", qChips, qItems, qEmpty: !qItems.length, modSg: onMod && s.modTab === "sg" && me0.canSafeguard, caseItems, modChannels: onMod && s.modTab === "channels", chRows,
       newChannel: () => this.flash("Course channels are created from timetable slots. Add a slot in the Club portal’s Timetable."), modHealth: onMod && s.modTab === "health", health: { ai: "" }, hStats, hDays, hCentres, hTop, hQuiet,

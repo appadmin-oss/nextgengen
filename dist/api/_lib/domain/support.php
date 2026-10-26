@@ -247,7 +247,7 @@ function support_case_for(array $who, int $caseNo): ?array {
 /** Where the person reads their case: the portal they opened it from. */
 function support_case_url(int $caseNo, string $kind = 'member'): string {
     $o = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
-    return $o . ($kind === 'guardian' ? '/family?view=account&sub=help&case=' : '/dashboard?case=') . $caseNo;
+    return $o . ($kind === 'guardian' ? '/family?view=account&case=' : '/dashboard/support?case=') . $caseNo;
 }
 
 function support_mail(string $to, string $subject, string $title, string $intro, string $body, string $url): bool {
@@ -521,7 +521,57 @@ function admin_support_case(array $p): array {
         'pageUrl' => (string)$c['pageUrl'], 'userAgent' => (string)$c['userAgent'], 'firstResponseAt' => (string)$c['firstResponseAt'],
         'solvedAt' => (string)$c['solvedAt'], 'closedAt' => (string)$c['closedAt'], 'ratingNote' => (string)$c['ratingNote'], 'followUpOf' => (int)$c['followUpOf'],
         'source' => (string)$c['source'], 'ask' => SUPPORT_CATEGORIES[$c['category']]['ask'] ?? []],
-        'messages' => $msgs, 'others' => $others, 'agents' => $agents, 'replies' => support_canned()];
+        'messages' => $msgs, 'others' => $others, 'agents' => $agents, 'replies' => support_canned(), 'context' => support_context($c, $g['requester'])];
+}
+
+/**
+ * What staff would otherwise have to ask: the facts this platform already
+ * holds about the person a case is about, chosen by the case's category. A
+ * fees case shows the balance and the last payments; an attendance case the
+ * absences used and the last dates in; an account case the sign-in state. It
+ * reads, never writes, and shows money only to somebody holding `fees`.
+ *
+ * @return list<array{0:string,1:string}>
+ */
+function support_context(array $c, array $requester): array {
+    $id = (string)$c['memberId'] !== '' ? (string)$c['memberId'] : ((string)$c['requesterKind'] === 'member' ? (string)$c['requesterId'] : '');
+    $rows = [];
+    if ((string)$c['requesterKind'] === 'guardian') {
+        $kids = db_all("SELECT m.fullName FROM guardian_wards w JOIN members m ON m.memberId = w.memberId WHERE w.guardianId = ? AND w.status = 'active'", [(string)$c['requesterId']]);
+        $rows[] = ['Family', $kids ? implode(', ', array_column($kids, 'fullName')) : 'No children linked'];
+    }
+    $m = $id !== '' ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]) : null;
+    if (!$m) return $rows;
+    $rows[] = ['Member', (string)$m['fullName'] . ' · ' . ((string)($m['displayId'] ?? '') ?: (string)$m['memberId']) . ' · ' . (string)$m['centre'] . ' · ' . (string)$m['status']];
+    $cat = (string)$c['category'];
+    if ($cat === 'fees' && in_array('fees', member_effective_caps($requester), true) && function_exists('fees_balance')) {
+        $b = fees_balance($m);
+        $rows[] = ['To pay now', fees_money_text((int)$b['payable'])];
+        foreach (db_all("SELECT amount, method, reference, createdAt FROM member_ledger WHERE memberId = ? AND direction <> 'charge' AND kind = 'payment' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 3", [$id]) as $x) {
+            $rows[] = ['Paid', fees_money_text((int)$x['amount']) . ' on ' . substr((string)$x['createdAt'], 0, 10) . ((string)$x['method'] !== '' ? ' · ' . $x['method'] : '') . ((string)$x['reference'] !== '' ? ' · ' . $x['reference'] : '')];
+        }
+        $pend = (int)(db_row("SELECT COUNT(*) c FROM offline_payments WHERE memberId = ? AND status = 'pending'", [$id])['c'] ?? 0);
+        if ($pend) $rows[] = ['Waiting to be checked', $pend . ' offline payment' . ($pend === 1 ? '' : 's') . ' with evidence'];
+    } elseif ($cat === 'fees') {
+        $rows[] = ['Money', 'Needs the Fees permission to see'];
+    }
+    if (in_array($cat, ['attendance', 'summer'], true) && function_exists('member_excuses')) {
+        $e = member_excuses($m);
+        $rows[] = ['Absences', $e['used'] . ' of ' . $e['max'] . ' used'];
+        $days = array_column(db_all('SELECT date FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 6', [$id]), 'date');
+        $rows[] = ['Last in', $days ? implode(', ', $days) : 'No check-ins recorded'];
+    }
+    if ($cat === 'cards') {
+        $rows[] = ['Printed ID', (string)($m['displayId'] ?? '') ?: 'Not minted yet'];
+        $rows[] = ['Photo', (string)($m['photoUrl'] ?? '') !== '' ? 'On file' : 'None on file'];
+    }
+    if ($cat === 'account') {
+        $rows[] = ['Password', (string)($m['passwordHash'] ?? '') !== '' ? 'Set' : 'Never set'];
+        $rows[] = ['Two-step', (string)($m['totpSecret'] ?? '') !== '' ? 'On' : 'Off'];
+        $rows[] = ['Last sign-in', (string)($m['lastLoginAt'] ?? '') !== '' ? substr((string)$m['lastLoginAt'], 0, 16) : 'Never'];
+        $rows[] = ['Sign-in email', (string)($m['email'] ?? '') ?: ((string)($m['parentEmail'] ?? '') ?: 'None — a code cannot reach them')];
+    }
+    return $rows;
 }
 
 /** Saved replies: the openings staff type most, kept short and editable before sending. */

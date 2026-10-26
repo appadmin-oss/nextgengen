@@ -311,7 +311,17 @@ class Fp3Portal extends React.Component {
       </React.Fragment>
     );
     // Free messages on Telegram: the old account screen's one switch a parent controls, kept on Account.
-    out.mainSlotEnd = sec === "account" && typeof TelegramConnect === "function" ? <div className="fp3x-tg"><TelegramConnect/></div> : null;
+    /* Support cases (support-desk.jsx) sit on Account: the household's own
+       cases, opened here. A reply's email points to /family?view=account&case=N.
+       A safeguarding worry is not a case: it goes straight to the lead by phone. */
+    const supCase = Number(new URLSearchParams(window.location.search).get("case")) || 0;
+    const supPhone = typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "", supTel = typeof CONTACT !== "undefined" ? CONTACT.phone : "";
+    out.mainSlotEnd = sec === "account" ? <React.Fragment>
+      {typeof NggSupportDesk === "function" ? <div className="fp3x-support"><NggSupportDesk api={NGGApi.family.support} initialCase={supCase} source="family"
+        safeguard={supPhone ? { text: "Call " + supPhone, onClick: () => { location.href = "tel:" + String(supTel || supPhone).replace(/[^+\d]/g, ""); } } : null}
+        onCase={n => { try { const u = new URL(window.location.href); if (n) u.searchParams.set("case", n); else u.searchParams.delete("case"); window.history.replaceState({}, "", u.toString()); } catch (_) {} }}/></div> : null}
+      {typeof TelegramConnect === "function" ? <div className="fp3x-tg"><TelegramConnect/></div> : null}
+    </React.Fragment> : null;
 
     if (active && loaded && sec === "today") {
       const hr = +T0.hm.slice(0, 2);

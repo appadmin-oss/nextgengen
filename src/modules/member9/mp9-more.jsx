@@ -18,11 +18,11 @@ function mp9SimpleAreas(older) {
     ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "My club"]]],
     ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
     ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
-    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
+    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
 }
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
   timetable: "When to come to the centre", tools: "Flashcards, quizzes and a focus timer", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
-  results: "Add your school report", help: "Ask a grown-up at NGG for help", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
+  results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
 const MP9_SIMPLE_TILES = [["mentor", "Talk to my mentor", "ph ph-chat-circle-text"], ["learn", "My lessons", "ph ph-book-open-text"], ["sat", "This Saturday", "ph ph-calendar-star"], ["growth", "My goals", "ph ph-target"], ["journal", "My journal", "ph ph-notebook"]];
@@ -698,7 +698,7 @@ Object.assign(Mp9Portal.prototype, {
     const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
       ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Journal"]]],
       ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]])
+      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["support", "Support"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
@@ -709,7 +709,7 @@ Object.assign(Mp9Portal.prototype, {
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
@@ -749,7 +749,7 @@ Object.assign(Mp9Portal.prototype, {
   notifPanel() {
     const s = this.state;
     if (!s.notif) return null;
-    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable" };
+    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable", support: "support" };
     const close = () => { this.setState({ notif: false }); const t = this._notifFrom; if (t && t.focus) setTimeout(() => t.focus(), 0); };
     const mark = (x, read) => {
       this.setState(st => ({ readIds: { ...(st.readIds || {}), [x.notifId]: read ? 1 : -1 } }));
@@ -760,7 +760,9 @@ Object.assign(Mp9Portal.prototype, {
       loading={!!(s.ld || {}).notifs && !this.dd("notifs")} error={(s.er || {}).notifs && !this.dd("notifs")}
       retry={() => this.load("notifs")} isRead={x => mp9NotifRead(x, s)} unreadOnly={!!s.nUnread} setUnreadOnly={v => this.setState({ nUnread: v })}
       narrow={this.state.w < 760} onClose={close}
-      onAct={x => { if (!mp9NotifRead(x, s)) mark(x, true); this.setState({ notif: false }); const to = PAGE[(x.action || {}).page]; if (to) this.go(to); }}
+      onAct={x => { if (!mp9NotifRead(x, s)) mark(x, true); this.setState({ notif: false }); const a = x.action || {}, to = PAGE[a.page];
+        if (to === "support" && a.ref) { try { history.pushState({ page: "dashboard" }, "", "/dashboard/support?case=" + encodeURIComponent(a.ref)); } catch (_) {} this.setState({ scr: "support" }); return; }
+        if (to) this.go(to); }}
       onToggleRead={x => mark(x, !mp9NotifRead(x, s))}
       onAllRead={() => {
         const left = ((this.dd("notifs") || {}).notifications || []).filter(x => !mp9NotifRead(x, s));
@@ -930,6 +932,14 @@ Object.assign(Mp9Portal.prototype, {
   },
   slotEndInner() {
     const s = this.state;
+    /* Support cases (support-desk.jsx): the open case lives in the URL
+       (/dashboard/support?case=N), which is where a reply's email points. */
+    if (s.scr === "support" && typeof NggSupportDesk === "function") {
+      const q = new URLSearchParams(location.search), no = Number(q.get("case")) || 0;
+      return <div className="m9x-slot"><NggSupportDesk api={NGGApi.member.support} initialCase={no} source="portal"
+        safeguard={{ text: "Tell " + this.sgInfo().name + " instead", onClick: () => this.go("help") }}
+        onCase={n => { try { history.replaceState(history.state, "", "/dashboard/support" + (n ? "?case=" + n : "")); } catch (_) {} }}/></div>;
+    }
     if (s.scr === "learn" && typeof CurStudyHelper === "function" && ((this.dd("cur") || {}).units || []).length)
       return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")

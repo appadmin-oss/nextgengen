@@ -32121,6 +32121,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (backend_dispatch('admin.support.case', ['requesterId' => 'NGG-SUP-SCOPED', 'caseNo' => $c['caseNo']])['error'] ?? '') === 'not_found');
     db_insert('members', ['memberId' => 'NGG-SUP-EDIT', 'fullName' => 'Editor Only', 'email' => 'supedit@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     chk('support · without the support capability the queue is refused', (backend_dispatch('admin.support.list', ['requesterId' => 'NGG-SUP-EDIT'])['error'] ?? '') === 'forbidden');
+    $ca = $open($m1, ['category' => 'account', 'subject' => 'Cannot sign in at all', 'priority' => 'P3']);
+    $ctx = backend_dispatch('admin.support.case', ['requesterId' => $A, 'caseNo' => $ca['caseNo']])['context'] ?? [];
+    $lab = array_column($ctx, 0);
+    chk('support · staff see what is already known for the category (sign-in state for an account case)', in_array('Password', $lab, true) && in_array('Two-step', $lab, true) && in_array('Member', $lab, true));
+    $cf = backend_dispatch('admin.support.case', ['requesterId' => $A, 'caseNo' => $c2['caseNo'] - 1])['context'] ?? [];
+    chk('support · a fees case shows what is owed to somebody holding fees', in_array('To pay now', array_column($cf, 0), true));
     chk('support · the help answers are found by what is typed', in_array('signin', array_column(backend_dispatch('support.suggest', ['q' => 'cannot sign in password'])['articles'], 'id'), true));
 })();
 
