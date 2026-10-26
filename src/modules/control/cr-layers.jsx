@@ -278,6 +278,46 @@ function CrPalette({ pages, actions, phone, onClose, searchPeople, scope: initSc
 
 /* ── Ask (§4.4): the analyst, looking at the page on screen ── */
 const CR_ASK_SUGGESTIONS = ["Summarise this page in two lines", "What changed most since last week?", "Which centre needs attention?"];
+
+/* "Send me an export of the members grouped by their divisions." The analyst
+   reads aggregate figures with no names (insight-chat.php), so a request for a
+   list of people is not a question for it — it is the roster export, done here
+   through admin.members.list (the People capability, centre-scoped on the
+   server, capped at 5000), and NO name ever goes near the AI. Grouping is by
+   a field the roster has; anything else is plain name order. */
+const CR_ASK_GROUPS = [
+  ["division", /\bdivision/i, "Division"], ["centre", /\bcent(re|er)s?\b/i, "Centre"], ["level", /\blevels?\b/i, "Level"],
+  ["status", /\bstatus(es)?\b/i, "Status"], ["type", /\bprogrammes?\b|\bprograms?\b/i, "Programme"],
+];
+function crAskExportIntent(text) {
+  const t = String(text || "");
+  const verb = /\b(export|download|csv|spreadsheet|excel|sheet|send me|give me|list (of|all)|list the|print out)\b/i.test(t);
+  const who = /\b(members?|children|kids|students|roster|everyone|names)\b/i.test(t);
+  if (!verb || !who) return null;
+  const g = CR_ASK_GROUPS.find(x => x[1].test(t));
+  return { by: g ? g[0] : "", label: g ? g[2] : "" };
+}
+async function crAskMembersExport(intent) {
+  const [r, dv] = await Promise.all([
+    NGGApi.admin.members.list({ all: 1, sort: "fullName", dir: "asc" }),
+    intent.by === "division" ? NGGApi.admin.members.divisions().catch(() => ({ divisions: [] })) : Promise.resolve({ divisions: [] }),
+  ]);
+  const rows = (r && r.members) || [];
+  if (!rows.length) return "There are no members on the roster you can see, so there was nothing to export.";
+  const divName = Object.fromEntries(((dv && dv.divisions) || []).map(d => [d.id, d.name]));
+  const none = { division: "Not placed", centre: "No centre", level: "No level", status: "No status", type: "No programme" }[intent.by] || "";
+  const groupOf = m => !intent.by ? "" : intent.by === "division" ? (m.division ? divName[m.division] || m.division : none) : (String(m[intent.by] || "").trim() || none);
+  const sorted = rows.slice().sort((a, b) => { const ga = groupOf(a), gb = groupOf(b);
+    if (ga !== gb) return ga === none ? 1 : gb === none ? -1 : ga.localeCompare(gb);
+    return String(a.fullName || "").localeCompare(String(b.fullName || "")); });
+  const head = (intent.by ? [intent.label] : []).concat(["Name", "Member ID", "Centre", "Status", "Programme", "Level", "Email"]);
+  crDownloadCsv("members" + (intent.by ? "-by-" + intent.by : ""), head,
+    sorted.map(m => (intent.by ? [groupOf(m)] : []).concat([m.fullName, m.displayId || m.memberId, m.centre || "", m.status || "", m.type || "", m.level || "", m.email || ""])));
+  const counts = {}; sorted.forEach(m => { const k = groupOf(m); counts[k] = (counts[k] || 0) + 1; });
+  const capped = r.total > rows.length ? " (the first " + crNum(rows.length) + " of " + crNum(r.total) + ")" : "";
+  return "Downloaded " + crPlural(rows.length, "member") + capped + (intent.by ? ", grouped by " + intent.label.toLowerCase() + ": "
+    + Object.keys(counts).map(k => k + " " + counts[k]).join(", ") : ", in name order") + ". It is every member you can see, not just this page’s search.";
+}
 function CrAsk({ where, facts, mode, onClose }) {
   const [msgs, setMsgs] = React.useState([]);
   const [ask, setAsk] = React.useState("");
@@ -292,6 +332,15 @@ function CrAsk({ where, facts, mode, onClose }) {
     if (!t || thinking) return;
     setMsgs(m => m.concat([{ role: "user", text: t }]));
     setAsk(""); setThinking(true);
+    const ex = crAskExportIntent(t);
+    if (ex) {
+      let said;
+      try { said = await crAskMembersExport(ex); }
+      catch (e) { said = (e && (e.code === "forbidden" || e.code === "missing_cap" || e.status === 403)) ? "Exporting members needs the People permission, which your account doesn’t have." : "Couldn’t make the export. " + crErr(e, ""); }
+      setMsgs(m => m.concat([{ role: "ai", text: said }]));
+      setThinking(false);
+      return;
+    }
     ctl.current = window.AbortController ? new AbortController() : null;
     /* The figures on screen travel with the question, so the answer is about
        this page; the analyst scrubs and grounds it on the server (insight-chat.php). */
@@ -302,6 +351,8 @@ function CrAsk({ where, facts, mode, onClose }) {
       if (r && r.threadId) setThread(r.threadId);
       const turn = (r && r.turn) || {};
       answer = String(turn.answer || "").trim();
+      /* An empty answer is not an answer: say what the lenses found, or why nothing came back. */
+      if (!answer && Array.isArray(turn.claims) && turn.claims.length) answer = turn.claims.map(c => String((c && (c.text || c.claim)) || c || "").trim()).filter(Boolean).slice(0, 4).join(" ");
     } catch (e) {
       answer = e && (e.code === "question_identifies_someone" || e.message === "question_identifies_someone") ? "That question names somebody. Ask about the figures instead, without names or IDs." : "Couldn’t get an answer right now. " + crErr(e, "");
     }
@@ -313,7 +364,7 @@ function CrAsk({ where, facts, mode, onClose }) {
       <div className="cr-ask-head"><CrIcon n="sparkle"/><b>Analyst</b><span>Looking at {where}</span><button type="button" className="cr-iconbtn" style={{ width: 30, height: 30 }} aria-label="Close analyst" onClick={onClose}><CrIcon n="x"/></button></div>
       <div className="cr-ask-body" aria-live="polite">
         {!msgs.length && <>
-          <p>Ask about what’s on screen. Answers use the numbers on this page only.</p>
+          <p>Ask about what’s on screen. Answers use the numbers on this page only. Ask for an export of members (grouped by division, centre, level or status) and it downloads one.</p>
           <div className="cr-ask-sugs">{CR_ASK_SUGGESTIONS.map(s => <button key={s} type="button" className="cr-ask-sug" onClick={() => send(s)}>{s}</button>)}</div>
         </>}
         {msgs.map((m, i) => <div key={i} className={"cr-msg " + (m.role === "user" ? "is-user" : "is-ai")}>{m.text}</div>)}

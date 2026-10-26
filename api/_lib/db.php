@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 183;
+const NGG_SCHEMA_TARGET = 184;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5348,6 +5348,13 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_smsg_edition ON summer_messages(cohortId, createdAt);
         ",
+        /* 183 — one email, several member accounts (siblings on a parent's
+         * address). A sign-in code for such an address proves the inbox, not a
+         * person, so the verified challenge keeps the accounts it may open
+         * (comma-separated memberIds) and the browser picks one (auth_pick). */
+        183 => "
+            ALTER TABLE auth_sessions ADD COLUMN pickIds TEXT DEFAULT '';
+        ",
 
         /* Notifications a person can act on. `notification_state` holds each
            person's read and dismissed marks — a broadcast row is shared, so
@@ -5355,7 +5362,7 @@ function db_migrate(PDO $db): void {
            lets a running thing (Saturday's timetable) keep ONE live item that
            is updated, instead of a new alert every block. `actionLabel` names
            the button when the default for the kind is not right. */
-        183 => "
+        184 => "
             CREATE TABLE IF NOT EXISTS notification_state (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               memberId TEXT NOT NULL, notifId TEXT NOT NULL,

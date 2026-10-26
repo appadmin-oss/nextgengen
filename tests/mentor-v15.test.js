@@ -296,8 +296,11 @@ async function as(memberId, admin, viewport) {
     await mt.click('.m15c-drawer [aria-labelledby="m15c-verbal"] [role="radio"]:has-text("5")');
     await mt.click('.m15c-drawer button:has-text("Save · 11 of 15")');
     await mt.waitForSelector('.m15c-drawer', { state: 'detached', timeout: 15000 });
+    // The drawer closes on save; the row's total comes with the list's re-read.
+    await mt.waitForFunction(() => Array.from(document.querySelectorAll('main .m15c tr')).some(tr => /Daniel Okafor/.test(tr.innerText) && /11 of 15/.test(tr.innerText)), null, { timeout: 15000 }).catch(() => {});
     chk('Presence (verbal, vocal, visual) is saved for the week and shown as a total', /11 of 15/.test(await starRow.innerText())
-      && Number(q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`)) === 5);
+      && Number(q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`)) === 5,
+      (await starRow.innerText()).replace(/\n/g, ' | ') + ' · verbal=' + q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`));
     await mt.keyboard.press('Escape');
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
     // The old email link (?tab=results) lands on Class › School results, inside the portal
@@ -406,6 +409,28 @@ async function as(memberId, admin, viewport) {
       !!rq && /centre=Egbeda/.test(rq.url()) && !/Pick a centre|Couldn't load/.test(await ad.innerText('main')), (rq ? rq.url() : 'no roster request') + ' | ' + (await ad.innerText('main')).slice(0, 300).replace(/\n/g, ' '));
     await ad.click('nav >> text=Mentees');
     chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
+    // Mentors → book a supervision, then write it up: the mentor's My role reads the notes.
+    await ad.click('nav >> text=Mentors');
+    await ad.waitForFunction(() => /Ngozi Eke/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
+    const ngRow = ad.locator('main tr', { hasText: 'Ngozi Eke' }).first();
+    await ngRow.locator('button', { hasText: 'Book supervision' }).click();
+    await ngRow.locator('button', { hasText: 'Write up supervision' }).waitFor({ timeout: 20000 });
+    // The button turns at once; the date comes with the list's re-read.
+    await ad.waitForFunction(() => Array.from(document.querySelectorAll('main tr')).some(tr => /Ngozi Eke/.test(tr.innerText) && /supervision \d+ [A-Z][a-z]{2}/.test(tr.innerText)), null, { timeout: 20000 }).catch(() => {});
+    chk('Mentors: a booked supervision becomes “Write up supervision”, with its date on the row', /supervision \d+ [A-Z][a-z]{2}/.test(await ngRow.innerText()), (await ngRow.innerText()).replace(/\n/g, ' | '));
+    await ngRow.locator('button', { hasText: 'Write up supervision' }).click();
+    await ad.waitForSelector('form[aria-labelledby="mp15-sup-h"] textarea', { timeout: 20000 });
+    chk('…the write-up opens with Save held back until there is feedback', await ad.isDisabled('form[aria-labelledby="mp15-sup-h"] button[type="submit"]'));
+    await ad.fill('form[aria-labelledby="mp15-sup-h"] textarea', 'Your huddles are well run; keep the family calls going.');
+    await ad.fill('input[aria-label="Agreed 1"]', 'Call two families before Saturday');
+    await ad.click('form[aria-labelledby="mp15-sup-h"] button[type="submit"]');
+    await ad.waitForSelector('form[aria-labelledby="mp15-sup-h"]', { state: 'detached', timeout: 20000 }).catch(() => {});
+    const supRole = q(`member_mp_role(['requesterId' => 'NGG-MS-M1'])`);
+    const fbC = (supRole.commitments || []).find(r => r.key === 'feedback') || {};
+    chk('…saved: the mentor reads the feedback and what was agreed, and the feedback commitment dates from it',
+      (supRole.feedback || {}).text === 'Your huddles are well run; keep the family calls going.' && JSON.stringify((supRole.agreedLast || {}).items) === '["Call two families before Saturday"]'
+      && /^Last supervision notes /.test(fbC.statusText || ''), JSON.stringify([supRole.feedback, supRole.agreedLast, fbC.statusText]));
+    chk('…and the row offers the next booking again', await ngRow.locator('button', { hasText: 'Book supervision' }).isVisible().catch(() => false));
     // Control Room → Learning → Saturday formation: edit a block, every portal reads it
     await ad.goto(BASE + '/control/learning/formation', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ad);

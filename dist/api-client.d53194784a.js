@@ -144,7 +144,7 @@
          sign-in attempt is a 401 too, and it must not look like an expiry.
          A family-account 401 is a different principal's cookie entirely and
          says nothing about the member session. */
-      if (res.status === 401 && !/\/auth\/(login|verify|request|gateway|reset)/.test(path) && !/^\/family\//.test(path)) {
+      if (res.status === 401 && !/\/auth\/(login|verify|pick|request|gateway|reset)/.test(path) && !/^\/family\//.test(path)) {
         try { window.dispatchEvent(new CustomEvent('ngg:session-expired', { detail: { code: data.error || '' } })); } catch (_) {}
       }
       err.detail = data.detail;
@@ -156,6 +156,65 @@
       throw err;
     }
     return data;
+  }
+
+  /* ── "Who's signing in?" ──────────────────────────────────────────────────
+   * An email is often on several member accounts (brothers and sisters on a
+   * parent's address). The server checks the code, link or password first,
+   * then answers { pick, pickToken } instead of a session; this asks which
+   * account, and auth/pick.php opens it. It lives here, under auth.verify and
+   * auth.login, so every sign-in screen (the site, the journal, the portals,
+   * the timetable) gets it without each one learning a new step.
+   * Built from DOM nodes with textContent, never markup from a name. Escape
+   * or Cancel rejects with pick_cancelled; focus goes back where it was. */
+  function authPickDialog(people) {
+    return new Promise(resolve => {
+      const prev = document.activeElement;
+      const back = document.createElement('div'); back.className = 'ngg-pick-back';
+      const box = document.createElement('div'); box.className = 'ngg-pick';
+      box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'ngg-pick-h'); box.setAttribute('aria-describedby', 'ngg-pick-p');
+      const h = document.createElement('h2'); h.id = 'ngg-pick-h'; h.className = 'ngg-pick-h'; h.textContent = 'Who’s signing in?';
+      const p = document.createElement('p'); p.id = 'ngg-pick-p'; p.className = 'ngg-pick-p';
+      p.textContent = 'This email is on ' + people.length + ' NGG accounts. Choose yours.';
+      const list = document.createElement('ul'); list.className = 'ngg-pick-list';
+      const done = id => { document.removeEventListener('keydown', onKey, true); back.remove(); try { prev && prev.focus && prev.focus(); } catch (_) {} resolve(id); };
+      people.forEach(x => {
+        const li = document.createElement('li');
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ngg-pick-who';
+        const face = document.createElement('span'); face.className = 'ngg-pick-face'; face.setAttribute('aria-hidden', 'true');
+        if (x.photoUrl) { const img = document.createElement('img'); img.src = x.photoUrl; img.alt = ''; img.onerror = () => { img.remove(); face.textContent = x.initials || '?'; }; face.appendChild(img); }
+        else face.textContent = x.initials || '?';
+        const t = document.createElement('span'); t.className = 'ngg-pick-t';
+        const n = document.createElement('b'); n.textContent = x.name || x.first || 'Account';
+        const sub = document.createElement('small'); sub.textContent = [x.displayId, x.centre].filter(Boolean).join(' · ') || ' ';
+        t.appendChild(n); t.appendChild(sub);
+        b.appendChild(face); b.appendChild(t);
+        b.addEventListener('click', () => done(x.memberId));
+        li.appendChild(b); list.appendChild(li);
+      });
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'ngg-pick-cancel'; cancel.textContent = 'Cancel';
+      cancel.addEventListener('click', () => done(null));
+      box.appendChild(h); box.appendChild(p); box.appendChild(list); box.appendChild(cancel);
+      back.appendChild(box);
+      back.addEventListener('click', e => { if (e.target === back) done(null); });
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); return; }
+        if (e.key !== 'Tab') return;
+        const f = Array.from(box.querySelectorAll('button'));
+        const i = f.indexOf(document.activeElement);
+        if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+      }
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(back);
+      const first = box.querySelector('.ngg-pick-who'); if (first) first.focus();
+    });
+  }
+  async function withPick(r, remember) {
+    if (!r || !Array.isArray(r.pick)) return r;
+    const id = await authPickDialog(r.pick);
+    if (!id) { const e = new Error('pick_cancelled'); e.code = 'pick_cancelled'; e.status = 0; throw e; }
+    return request('/auth/pick.php', { body: { pickToken: r.pickToken, memberId: id, remember: !!remember } });
   }
 
   // ---- Cloudinary direct upload -------------------------------------------
@@ -775,11 +834,11 @@
       // script that types into every field (see bot_trap_tripped()).
       gateway: (identifier, hp) => request('/auth/gateway.php', { body: { identifier, hp: hp || '' } }),
       request: (identifier, hp) => request('/auth/request.php', { body: { identifier, hp: hp || '' } }),
-      login:   (identifier, password, remember, hp) => request('/auth/login.php', { body: { identifier, password, remember: !!remember, hp: hp || '' } }),
+      login:   (identifier, password, remember, hp) => request('/auth/login.php', { body: { identifier, password, remember: !!remember, hp: hp || '' } }).then(r => withPick(r, remember)),
       resetRequest: (identifier, hp) => request('/auth/reset-request.php', { body: { identifier, hp: hp || '' } }),
       resetConfirm: (creds) => request('/auth/reset-confirm.php', { body: creds }),
       setPassword: (password, current) => request('/auth/set-password.php', { body: { password, current: current || '' } }),
-      verify:  (creds) => request('/auth/verify.php', { body: creds }),
+      verify:  (creds) => request('/auth/verify.php', { body: creds }).then(r => withPick(r, creds && creds.remember)),
       studentLogin: (creds) => request('/auth/student-login.php', { body: creds }),
       me:      () => request('/auth/me.php'),
       /* Two-step sign-in, for whoever is signed in; family: true for a guardian. */

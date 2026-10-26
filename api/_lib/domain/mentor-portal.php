@@ -1902,7 +1902,13 @@ function mp_commitments(array $g, string $month, string $today): array {
              !$retreat || $retreat['booked'] ? 'ok' : 'warn', !$retreat ? 'Not scheduled yet' : ($retreat['booked'] ? 'Booked' : 'Not booked'), 'Retreat booking',
              $retreat && !$retreat['booked'] ? ['label' => 'Book my place', 'route' => 'action:retreat.book', 'retreatId' => (string)$retreat['retreatId']] : null),
         $row('anthem', 'NGGC Anthem and Pledge', 'Known, upheld and modelled', trim((string)($m['anthemAt'] ?? '')) !== '' ? 'ok' : 'warn', trim((string)($m['anthemAt'] ?? '')) !== '' ? 'Confirmed' : 'Not yet confirmed', 'Confirmed by your lead'),
-        $row('feedback', 'Feedback received professionally', 'Concerns raised through the proper channels', 'ok', 'Up to date', 'Noted by your lead'),
+        // The lead's last written-up supervision (member_mp_supervision_record), never a fixed "Up to date".
+        (function () use ($row, $mid, $today) {
+            $fb = $mid === '' ? null : db_row("SELECT feedbackAt FROM mentor_supervision WHERE mentorId = ? AND feedbackAt <> '' ORDER BY feedbackAt DESC LIMIT 1", [$mid]);
+            $days = $fb ? mp_days(substr((string)$fb['feedbackAt'], 0, 10), $today) : null;
+            return $row('feedback', 'Feedback received professionally', 'Concerns raised through the proper channels', $fb && $days > 120 ? 'warn' : 'ok',
+                $fb ? 'Last supervision notes ' . gmdate('j M', strtotime((string)$fb['feedbackAt'])) : 'No supervision written up yet', 'Noted by your lead');
+        })(),
     ];
 }
 function mp_journal_unanswered(array $g, array $ids): array {
@@ -1928,8 +1934,8 @@ function member_mp_role(array $p): array {
     $today = mp_today($p); $month = substr($today, 0, 7);
     $rows = mp_commitments($g, $month, $today);
     $mid = (string)($g['mentorId'] ?? '');
-    $sup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate >= ? ORDER BY onDate LIMIT 1", [$mid, $today]) : null;
-    $lastSup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate < ? ORDER BY onDate DESC LIMIT 1", [$mid, $today]) : null;
+    $sup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate >= ? AND feedbackAt = '' ORDER BY onDate LIMIT 1", [$mid, $today]) : null;
+    $lastSup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND (onDate < ? OR feedbackAt <> '') ORDER BY onDate DESC, id DESC LIMIT 1", [$mid, $today]) : null;
     $fb = $mid !== '' ? db_row("SELECT feedback, feedbackAt FROM mentor_supervision WHERE mentorId = ? AND feedback <> '' ORDER BY feedbackAt DESC LIMIT 1", [$mid]) : null;
     $pol = $mid !== '' ? db_row('SELECT acceptedAt, policyVersion FROM mentor_policy WHERE mentorId = ? ORDER BY id DESC LIMIT 1', [$mid]) : null;
     return ['ok' => true, 'me' => mp_me($g, mp_opts()), 'month' => $month, 'daysLeft' => mp_days($today, gmdate('Y-m-t', strtotime($today))),
@@ -1966,6 +1972,31 @@ function member_mp_supervision_book(array $p): array {
     db_insert('mentor_supervision', ['mentorId' => (string)$t['mentorId'], 'leadId' => (string)($g['mentorId'] ?? ''), 'onDate' => $tue, 'prepJson' => '', 'agreedJson' => '', 'feedback' => '', 'feedbackAt' => '', 'status' => 'booked', 'createdAt' => now_iso()]);
     if (trim((string)$t['memberId']) !== '' && function_exists('push_notification')) push_notification((string)$t['memberId'], ['kind' => 'mentor', 'title' => 'Supervision booked', 'body' => 'Tuesday ' . gmdate('j F', strtotime($tue)) . ', after STS.', 'linkPage' => 'mentor']);
     return ['ok' => true, 'date' => $tue];
+}
+/** supervisionRecord — the lead writes up a supervision: the feedback, and up to five things agreed.
+ *  It closes the open booking (held on the day it is written, if that is earlier than booked),
+ *  or records one held without a booking. The mentor reads it in My role, and the "Feedback
+ *  received professionally" commitment dates from it. */
+const MP_SUPERVISION_AGREED_MAX = 5;
+function member_mp_supervision_record(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    if (!in_array($g['mpRole'], ['lead', 'coord'], true)) return ['ok' => false, 'error' => 'forbidden'];
+    $mentorId = trim((string)($p['mentorId'] ?? ''));
+    $t = null; foreach (mp_team_rows($g) as $r) if ((string)$r['mentorId'] === $mentorId) $t = $r;
+    if (!$t) return ['ok' => false, 'error' => 'not_in_team'];
+    $fb = trim((string)($p['feedback'] ?? ''));
+    if (mb_strlen($fb) < 10) return ['ok' => false, 'error' => 'write_the_feedback'];
+    $agreed = array_values(array_filter(array_map(static fn($x) => mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$x)), 0, 200), (array)($p['agreed'] ?? [])), static fn($x) => $x !== ''));
+    if (count($agreed) > MP_SUPERVISION_AGREED_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => MP_SUPERVISION_AGREED_MAX];
+    $today = mp_today($p); $now = now_iso();
+    $row = ['feedback' => mb_substr($fb, 0, 2000), 'feedbackAt' => $now, 'agreedJson' => json_encode($agreed), 'status' => 'held'];
+    $open = db_row("SELECT id, onDate FROM mentor_supervision WHERE mentorId = ? AND feedbackAt = '' ORDER BY onDate DESC, id DESC LIMIT 1", [$mentorId]);
+    if ($open) db_update('mentor_supervision', $row + ['onDate' => min((string)$open['onDate'], $today)], ['id' => (int)$open['id']]);
+    else db_insert('mentor_supervision', $row + ['mentorId' => $mentorId, 'leadId' => (string)($g['mentorId'] ?? ''), 'onDate' => $today, 'prepJson' => '', 'createdAt' => $now]);
+    if (trim((string)$t['memberId']) !== '' && function_exists('push_notification'))
+        push_notification((string)$t['memberId'], ['kind' => 'mentor', 'title' => 'Your supervision notes', 'body' => mb_substr($fb, 0, 140), 'linkPage' => 'mentor']);
+    audit('mentor.supervision.record', $g['me'], $mentorId, ['agreed' => count($agreed), 'booked' => (bool)$open], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'onDate' => $open ? min((string)$open['onDate'], $today) : $today];
 }
 /** retreatBook — book my place at the next quarterly retreat. */
 function member_mp_retreat_book(array $p): array {
@@ -2029,8 +2060,10 @@ function member_mp_team(array $p): array {
         foreach (db_all("SELECT DISTINCT studentId FROM attendance WHERE date = ? AND studentId IN ($kp)", array_merge([$sat], $all)) as $r) $wasHere[$r['studentId']] = true;
         foreach (db_all("SELECT subjectId FROM mentor_reviews WHERE period = ? AND evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN ($kp)", array_merge([$satPeriod], $all)) as $r) $evald[$r['subjectId']] = true;
     }
-    $booked = [];
-    foreach (db_all("SELECT mentorId FROM mentor_supervision WHERE onDate >= ? AND mentorId IN ($ph)", array_merge([$today], $mids)) as $r) $booked[$r['mentorId']] = true;
+    /* A booking stays open until the lead writes it up (supervisionRecord); the last notes are dated. */
+    $booked = []; $notesAt = [];
+    foreach (db_all("SELECT mentorId, onDate FROM mentor_supervision WHERE feedbackAt = '' AND status IN ('booked','prep','prepared') AND mentorId IN ($ph)", $mids) as $r) $booked[$r['mentorId']] = (string)$r['onDate'];
+    foreach (db_all("SELECT mentorId, MAX(feedbackAt) at FROM mentor_supervision WHERE feedbackAt <> '' AND mentorId IN ($ph) GROUP BY mentorId", $mids) as $r) $notesAt[$r['mentorId']] = (string)$r['at'];
     $o = mp_opts(); $out = [];
     foreach ($team as $t) {
         $k = $kids[$t['mentorId']] ?? [];
@@ -2042,7 +2075,7 @@ function member_mp_team(array $p): array {
         $out[] = ['mentorId' => (string)$t['mentorId'], 'name' => (string)$t['fullName'], 'first' => mp_first((string)$t['fullName']), 'initials' => mp_initials((string)$t['fullName']),
                   'kind' => ['pod' => 'Pod mentor', 'peer' => 'Peer mentor', 'instructor' => 'Instructor mentor', 'lead' => 'Lead mentor', 'coord' => 'Coordinator'][$role] ?? 'Mentor',
                   'mentees' => count($k), 'seenPct' => $k ? (int)round(100 * $s / count($k)) : null, 'relAvg' => $rs ? round(array_sum($rs) / count($rs), 1) : null,
-                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']]),
+                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']]), 'bookedOn' => $booked[$t['mentorId']] ?? '', 'notesAt' => $notesAt[$t['mentorId']] ?? '',
                   'evalOf' => count(array_filter($k, static fn($x) => isset($wasHere[$x]))), 'evalDone' => count(array_filter($k, static fn($x) => isset($wasHere[$x]) && isset($evald[$x])))];
     }
     usort($out, static fn($a, $b) => [($a['seenPct'] ?? 101), $a['name']] <=> [($b['seenPct'] ?? 101), $b['name']]);

@@ -377,7 +377,6 @@ function member_request_email_change(array $p): array {
     $new = strtolower(trim((string)($p['email'] ?? '')));
     if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
     if ($new === strtolower((string)$m['email'])) return ['ok' => false, 'error' => 'same_email'];
-    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
     $token = rand_hex(20);
     db_update('members', ['pendingEmail' => $new, 'emailChangeToken' => $token, 'emailChangeExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 86400), 'updatedAt' => now_iso()], ['id' => $m['id']]);
     $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/api/member/confirm-email.php?m=' . rawurlencode($mid) . '&t=' . $token;
@@ -401,7 +400,7 @@ function member_confirm_email_change(array $p): array {
     if (strtotime((string)$m['emailChangeExpiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
     $new = strtolower(trim((string)$m['pendingEmail']));
     if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'invalid'];
-    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
+    // Another member may already use this address (a family inbox): allowed — sign-in asks who (auth_pick).
     db_update('members', ['email' => $new, 'pendingEmail' => '', 'emailChangeToken' => '', 'emailChangeExpiresAt' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
     audit('member.email.changed', $mid, $mid, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'email' => $new];

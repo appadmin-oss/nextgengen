@@ -139,12 +139,29 @@ function member_mp_projects(array $p): array {
 /** projectSave — create or edit a project and who is on it, in which group. The whole payload is checked before anything is written. */
 function member_mp_project_save(array $p): array {
     $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    return project_write($p, project_reach($g), [
+        'me' => (string)$g['me'], 'byName' => (string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? ''),
+        'centre' => (string)($g['mentorRow']['centre'] ?? $g['member']['centre'] ?? ''), 'today' => mp_today($p),
+        // A mentor or lead edits only the projects they set.
+        'mayEdit' => static fn(array $row) => (string)$row['createdBy'] === (string)$g['me'],
+    ]);
+}
+
+/**
+ * The one project write, for the mentor portal and the Control Room alike, so
+ * the rules cannot drift between them: dates, the cap on people and groups,
+ * every person checked against $reach (kind => [id => name]) with refusals
+ * named and nothing written, a finished part never removed, the people added
+ * told, one audit event. $o: me, byName, centre (a new project's), today,
+ * mayEdit(row) → bool.
+ */
+function project_write(array $p, array $reach, array $o): array {
     $title = trim((string)preg_replace('/\s+/u', ' ', (string)($p['title'] ?? '')));
     if (mb_strlen($title) < 3) return ['ok' => false, 'error' => 'name_the_project'];
     $title = mb_substr($title, 0, 160);
     $detail = mb_substr(trim((string)($p['detail'] ?? '')), 0, 2000);
     $start = trim((string)($p['startOn'] ?? '')); $due = trim((string)($p['dueOn'] ?? ''));
-    $today = mp_today($p);
+    $today = (string)$o['today'];
     if ($start === '') $start = $today;
     if ($due === '') return ['ok' => false, 'error' => 'set_a_finish_date'];
     foreach ([$start, $due] as $d) if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || !strtotime($d . 'T00:00:00Z')) return ['ok' => false, 'error' => 'bad_date'];
@@ -156,7 +173,6 @@ function member_mp_project_save(array $p): array {
     $raw = is_array($p['people'] ?? null) ? array_values($p['people']) : [];
     if (!$raw) return ['ok' => false, 'error' => 'choose_people'];
     if (count($raw) > PROJECT_MAX_PEOPLE) return ['ok' => false, 'error' => 'too_many', 'max' => PROJECT_MAX_PEOPLE];
-    $reach = project_reach($g);
     $want = []; $refused = []; $groups = [];
     foreach ($raw as $x) {
         if (!is_array($x)) return ['ok' => false, 'error' => 'bad_person'];
@@ -173,16 +189,15 @@ function member_mp_project_save(array $p): array {
     if (count($groups) > PROJECT_MAX_GROUPS) return ['ok' => false, 'error' => 'too_many_groups', 'max' => PROJECT_MAX_GROUPS];
 
     $pid = trim((string)($p['projectId'] ?? ''));
-    $now = now_iso();
-    $byName = (string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? '');
+    $now = now_iso(); $me = (string)$o['me'];
     if ($pid !== '') {
         $row = db_row('SELECT * FROM projects WHERE projectId = ? LIMIT 1', [$pid]);
-        if (!$row || (string)$row['createdBy'] !== $g['me']) return ['ok' => false, 'error' => 'not_found'];
+        if (!$row || !($o['mayEdit'])($row)) return ['ok' => false, 'error' => 'not_found'];
         db_update('projects', ['title' => $title, 'detail' => $detail, 'startOn' => $start, 'dueOn' => $due, 'status' => $status, 'updatedAt' => $now], ['projectId' => $pid]);
     } else {
         $pid = 'PRJ-' . strtoupper(bin2hex(random_bytes(5)));
-        db_insert('projects', ['projectId' => $pid, 'title' => $title, 'detail' => $detail, 'startOn' => $start, 'dueOn' => $due, 'centre' => (string)($g['mentorRow']['centre'] ?? $g['member']['centre'] ?? ''),
-            'status' => $status, 'createdBy' => $g['me'], 'createdByName' => $byName, 'createdAt' => $now, 'updatedAt' => $now]);
+        db_insert('projects', ['projectId' => $pid, 'title' => $title, 'detail' => $detail, 'startOn' => $start, 'dueOn' => $due, 'centre' => (string)($o['centre'] ?? ''),
+            'status' => $status, 'createdBy' => $me, 'createdByName' => (string)$o['byName'], 'createdAt' => $now, 'updatedAt' => $now]);
     }
     $have = [];
     foreach (db_all('SELECT kind, personId, groupName, status FROM project_people WHERE projectId = ?', [$pid]) as $r) $have[$r['kind'] . ':' . $r['personId']] = $r;
@@ -202,17 +217,17 @@ function member_mp_project_save(array $p): array {
         $mIds = array_column(array_filter($added, static fn($w) => $w['kind'] === 'mentor'), 'id');
         $who = $mIds ? array_column(db_all("SELECT mentorId, memberId FROM mentors WHERE memberId <> '' AND mentorId IN (" . implode(',', array_fill(0, count($mIds), '?')) . ')', $mIds), 'memberId', 'mentorId') : [];
         // A child is told who set it as title + surname, never a first name.
-        $from = staff_public_name($g['me'], 'your mentor');
+        $from = staff_public_name($me, 'NGG');
         $when = 'Finishes ' . gmdate('l j F', strtotime($due . 'T12:00:00Z')) . '.';
         foreach ($added as $w) {
             $to = $w['kind'] === 'mentor' ? ($who[$w['id']] ?? '') : $w['id'];
-            if ($to === '' || $to === $g['me']) continue;
+            if ($to === '' || $to === $me) continue;
             push_notification($to, ['kind' => $w['kind'] === 'mentor' ? 'mentor' : 'project', 'title' => 'New project: ' . $title,
                 'body' => $when . ($w['group'] !== '' ? ' You are in ' . $w['group'] . '.' : '') . ($w['kind'] === 'member' ? ' From ' . $from . '.' : ''),
                 'linkPage' => $w['kind'] === 'mentor' ? 'mentor' : 'community']);
         }
     }
-    audit('project.save', $g['me'], $pid, ['added' => count($added), 'moved' => $moved, 'removed' => $removed, 'kept' => $kept, 'status' => $status], (string)($p['ip'] ?? ''));
+    audit('project.save', $me, $pid, ['added' => count($added), 'moved' => $moved, 'removed' => $removed, 'kept' => $kept, 'status' => $status], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'projectId' => $pid, 'added' => count($added), 'moved' => $moved, 'removed' => $removed, 'kept' => $kept];
 }
 
@@ -318,4 +333,104 @@ function member_project_todos(string $mid, string $today): array {
         $out[] = portal_todo('project-' . $r['projectId'], 'flag-checkered', (string)$r['title'], 'Project · ' . $c['label'], 'Open', '/member/community', $c['tone'] === 'over' ? 'danger' : 'warning', 2, (string)$r['dueOn']);
     }
     return $out;
+}
+
+/* ── Control Room: Mentorship › Projects ──────────────────────────────────
+ * Projects were only reachable from the mentor portal, so an admin could
+ * neither see one nor set one. Staff holding `people` now see every project
+ * at the centres in their scope (centreScope; unscoped sees all), set one for
+ * any mentors and children at a centre in scope, edit, finish or cancel any
+ * project in scope, and set anyone's part. The save is project_write — the
+ * mentor portal's own — so the rules are the same; only the reach differs. */
+const PROJECT_ADMIN_LIST_MAX = 300;
+
+/** Which of these people the requester may put on a project: kind => [id => name], centre-scoped. */
+function admin_project_reach(array $requester, array $people): array {
+    $names = admin_centre_names_in_scope($requester);
+    $in = static fn(string $c) => $names === null || in_array($c, $names, true);
+    $ids = ['mentor' => [], 'member' => []];
+    foreach ($people as $x) if (is_array($x) && isset($ids[(string)($x['kind'] ?? '')])) $ids[(string)$x['kind']][] = trim((string)($x['id'] ?? ''));
+    $out = ['mentor' => [], 'member' => []];
+    $m = array_values(array_unique(array_filter($ids['mentor'])));
+    if ($m) foreach (db_all("SELECT mentorId, fullName, centre FROM mentors WHERE status = 'active' AND mentorId IN (" . implode(',', array_fill(0, count($m), '?')) . ')', $m) as $r)
+        if ($in((string)$r['centre'])) $out['mentor'][(string)$r['mentorId']] = (string)$r['fullName'];
+    $k = array_values(array_unique(array_filter($ids['member'])));
+    if ($k) foreach (db_all("SELECT memberId, fullName, centre FROM members WHERE status = 'active' AND COALESCE(NULLIF(type,''),'NGG') = 'NGG' AND COALESCE(NULLIF(role,''),'member') IN ('member','student')
+                             AND memberId NOT IN (SELECT memberId FROM mentors WHERE memberId <> '') AND memberId IN (" . implode(',', array_fill(0, count($k), '?')) . ')', $k) as $r)
+        if ($in((string)$r['centre'])) $out['member'][(string)$r['memberId']] = (string)$r['fullName'];
+    return $out;
+}
+function admin_project_in_scope(array $requester, array $row): bool {
+    $names = admin_centre_names_in_scope($requester);
+    return $names === null || in_array((string)$row['centre'], $names, true);
+}
+
+/** admin.projects — every project in scope, with its groups, progress and countdown, and the figures above them. */
+function admin_projects(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $names = admin_centre_names_in_scope($g['requester']);
+    $today = mp_today($p);
+    $where = ["status <> 'cancelled'"]; $args = [];
+    if ($names !== null) {
+        if (!$names) return ['ok' => true, 'today' => $today, 'projects' => [], 'total' => 0, 'centres' => [], 'stats' => ['open' => 0, 'soon' => 0, 'over' => 0, 'done' => 0, 'of' => 0]];
+        $where[] = 'centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')'; $args = $names;
+    }
+    $c = trim((string)($p['centre'] ?? ''));
+    if ($c !== '') { $where[] = 'centre = ?'; $args[] = $c; }
+    $w = ' WHERE ' . implode(' AND ', $where);
+    $total = (int)db_row('SELECT COUNT(*) c FROM projects' . $w, $args)['c'];
+    $rows = db_all('SELECT * FROM projects' . $w . " ORDER BY status = 'closed', dueOn, id DESC LIMIT " . PROJECT_ADMIN_LIST_MAX, $args);
+    $people = project_people_of(array_column($rows, 'projectId'));
+    $out = array_map(static fn($r) => project_shape($r, $people[$r['projectId']] ?? [], $today) + ['centre' => (string)$r['centre'], 'createdBy' => (string)$r['createdBy']], $rows);
+    $open = array_values(array_filter($out, static fn($x) => $x['status'] === 'open'));
+    $centres = $names ?? array_column(db_all("SELECT name FROM centres WHERE status = 'active' AND COALESCE(programmes,'') <> 'summer' ORDER BY name"), 'name');
+    return ['ok' => true, 'today' => $today, 'projects' => $out, 'total' => $total, 'capped' => $total > count($out), 'centres' => array_values($centres),
+        'stats' => ['open' => count($open),
+            'soon' => count(array_filter($open, static fn($x) => $x['countdown']['daysLeft'] !== null && $x['countdown']['daysLeft'] >= 0 && $x['countdown']['daysLeft'] <= 7)),
+            'over' => count(array_filter($open, static fn($x) => $x['countdown']['tone'] === 'over')),
+            'done' => array_sum(array_map(static fn($x) => $x['tally']['done'], $open)), 'of' => array_sum(array_map(static fn($x) => $x['tally']['of'], $open))],
+        'max' => ['people' => PROJECT_MAX_PEOPLE, 'groups' => PROJECT_MAX_GROUPS, 'days' => PROJECT_MAX_DAYS]];
+}
+
+/** admin.projects.people — who may be put on a project at one centre: its active mentors and children. */
+function admin_projects_people(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $c = trim((string)($p['centre'] ?? ''));
+    if ($c === '') return ['ok' => false, 'error' => 'choose_a_centre'];
+    if (!admin_project_in_scope($g['requester'], ['centre' => $c])) return ['ok' => false, 'error' => 'out_of_scope'];
+    $mentors = db_all("SELECT mentorId AS id, fullName AS name FROM mentors WHERE status = 'active' AND centre = ? ORDER BY fullName LIMIT 400", [$c]);
+    $kids = db_all("SELECT memberId AS id, fullName AS name, displayId FROM members WHERE status = 'active' AND COALESCE(NULLIF(type,''),'NGG') = 'NGG' AND COALESCE(NULLIF(role,''),'member') IN ('member','student')
+                    AND centre = ? AND memberId NOT IN (SELECT memberId FROM mentors WHERE memberId <> '') ORDER BY fullName LIMIT 1000", [$c]);
+    return ['ok' => true, 'centre' => $c, 'mentors' => $mentors, 'children' => $kids];
+}
+
+/** admin.project.save — set, edit, finish or cancel a project at a centre in scope. */
+function admin_project_save(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $req = $g['requester'];
+    $centre = trim((string)($p['centre'] ?? ''));
+    if (trim((string)($p['projectId'] ?? '')) === '') {
+        if ($centre === '') return ['ok' => false, 'error' => 'choose_a_centre'];
+        if (!admin_project_in_scope($req, ['centre' => $centre])) return ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    return project_write($p, admin_project_reach($req, is_array($p['people'] ?? null) ? $p['people'] : []), [
+        'me' => (string)$req['memberId'], 'byName' => (string)$req['fullName'], 'centre' => $centre, 'today' => mp_today($p),
+        'mayEdit' => static fn(array $row) => admin_project_in_scope($req, $row),
+    ]);
+}
+
+/** admin.project.mark — set anyone's part on a project in scope: done, not done yet, or excused. */
+function admin_project_mark(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $pid = trim((string)($p['projectId'] ?? '')); $status = (string)($p['status'] ?? '');
+    $kind = (string)($p['kind'] ?? ''); $who = trim((string)($p['personId'] ?? ''));
+    if (!in_array($status, PROJECT_PART_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
+    if (!in_array($kind, PROJECT_KINDS, true) || $who === '') return ['ok' => false, 'error' => 'bad_person'];
+    $pr = db_row('SELECT * FROM projects WHERE projectId = ? LIMIT 1', [$pid]);
+    if (!$pr || $pr['status'] === 'cancelled' || !admin_project_in_scope($g['requester'], $pr)) return ['ok' => false, 'error' => 'not_found'];
+    if (!db_row('SELECT 1 FROM project_people WHERE projectId = ? AND kind = ? AND personId = ?', [$pid, $kind, $who])) return ['ok' => false, 'error' => 'not_on_project'];
+    db_update('project_people', ['status' => $status, 'doneAt' => $status === 'done' ? now_iso() : '', 'note' => mb_substr(trim((string)($p['note'] ?? '')), 0, 500)],
+        ['projectId' => $pid, 'kind' => $kind, 'personId' => $who]);
+    audit('project.mark', (string)$g['requester']['memberId'], $pid, ['kind' => $kind, 'personId' => $who, 'status' => $status, 'by' => 'control-room'], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }

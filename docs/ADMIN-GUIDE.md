@@ -1731,6 +1731,17 @@ mentor's projects this month ("1 of 2 done · next finishes 20 Oct"), and turns
 into a to-do when a part is past its finish date. Saving and marking wait for
 the Academy, as the portal's other saves do.
 
+**Supervision, written up.** In **Mentors**, *Book supervision* books the
+Tuesday after STS; the button then reads *Write up supervision* and the row
+shows the date. After the meeting, the lead (or a coordinator) writes what they
+told the mentor and up to five things agreed, and saves. That closes the
+booking (on the day it was written, if earlier than booked), the mentor is
+told, and in **My role** they read the feedback and the agreed points. The
+commitment *Feedback received professionally* dates from the last notes ("Last
+supervision notes 3 Oct"), says "No supervision written up yet" until there are
+some, and turns amber after four months without any. Notes can also be written
+for a supervision held without a booking.
+
 **Safeguarding.** *Report a concern* is in the Mentor Portal's header,
 for every mentor, cleared or not. A report goes to the safeguarding officer for
 that centre (the staff member holding `safeguarding` with the centre in scope),

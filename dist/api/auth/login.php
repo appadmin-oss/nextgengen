@@ -34,6 +34,9 @@ if (empty($res['ok'])) {
     json_error($code, $code === 'rate_limited' ? 429 : 401);
 }
 
+// One password on several accounts that share the address: the person picks (auth/pick.php).
+if (!empty($res['pick'])) json_ok(['pick' => $res['pick'], 'pickToken' => $res['pickToken'], 'pickMinutes' => $res['pickMinutes'] ?? 10]);
+
 $member = $res['member'] ?? [];
 $mfa = (string)($res['mfa'] ?? '');
 session_issue($member, false, '', !empty($body['remember']), ['mfaP' => $mfa]);

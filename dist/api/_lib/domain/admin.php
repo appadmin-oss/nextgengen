@@ -316,14 +316,11 @@ function admin_member_consent(array $p): array {
  * not exist — and every one of those is invisible until somebody tries to
  * use the record, by which time it is one row among thousands.
  *
- * THE DUPLICATE CHECK IS THE IMPORTANT ONE. `email` is indexed but not
- * unique, and sign-in resolves an identifier with
- * `WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1`. Two members
- * sharing an address therefore means one of them can never sign in, and
- * which one is whichever the database returns first — it can change when
- * rows move. A duplicate is refused rather than merged, because merging two
- * people's records automatically is a worse mistake than refusing one
- * entry.
+ * A SHARED EMAIL IS ALLOWED. Brothers and sisters on a parent's address are
+ * normal. It used to be refused, because sign-in opened whichever row the
+ * database returned first; sign-in now proves the inbox and asks "Who's
+ * signing in?" (auth_pick in auth.php), so every account on an address can
+ * be reached. The roster's data-quality view still lists shared addresses.
  *
  * @return array{ok: bool, error?: string, detail?: string, data?: array}
  */
@@ -364,17 +361,7 @@ function admin_member_validate(array $data, ?array $existing): array {
                 'detail' => '"' . $data['parentEmail'] . '" is not an email address.'];
     }
 
-    if ($email !== '') {
-        $clash = $id
-            ? db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? AND memberId <> ? LIMIT 1', [strtolower($email), $id])
-            : db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? LIMIT 1', [strtolower($email)]);
-        if ($clash) {
-            return ['ok' => false, 'error' => 'email_taken',
-                    'detail' => $email . ' is already on ' . (string)$clash['fullName'] . "'s record ("
-                        . (string)$clash['memberId'] . '). Sign-in resolves an address to one member, so two '
-                        . 'records sharing one would leave whichever the database returned second unable to sign in.'];
-        }
-    }
+    // An email shared with another member (siblings on a parent's address) is allowed: sign-in asks who (auth_pick).
 
     /*
      * The vocabularies the rest of the system actually uses, not a plausible

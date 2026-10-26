@@ -703,6 +703,9 @@ class Mp15Portal extends React.Component {
     if (S.scr === 'week') return <div className={cls}><FormationDay audience="mentor" compact={true} onMore={() => this.go('sat', { step: 'before' })}/></div>;
     if (S.scr === 'sat') return <div className={cls}><FormationDay audience="mentor" compact={true}/></div>;
     if (S.scr === 'projects') return <div className={cls}><Mp15Projects act={(a, b, ok) => this.act(a, b, ok).then(r => { if (r) this.refresh(['role']); return r; })} today={this.today()}/></div>;
+    if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
+      if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}
+        save={b => this.act('supervisionRecord', Object.assign({ mentorId: m.mentorId }, b), 'Supervision notes saved. ' + m.first + ' can read them in My role.').then(r => { if (r) { this.setState({ supFor: null, supBooked: Object.assign({}, S.supBooked, { [m.mentorId]: false }) }); this.refresh(['team']); } return r; })}/></div>; }
     if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
     return null;
   }
@@ -901,9 +904,9 @@ class Mp15Portal extends React.Component {
     const cOk = !!S.cKid && !!S.cCat && S.cText.trim().length > 10;
     const cHint = !S.cKid ? 'Choose the child first.' : !S.cCat ? 'Choose what kind of concern.' : S.cText.trim().length <= 10 ? 'Write what happened, in a sentence or two.' : '';
     const mtAll = (c.isLead ? ((S.d.team || {}).mentors || []) : []).map(m => { const pct = m.seenPct; const tone = m.commitments === 'On track' ? 'ok' : m.commitments === 'Below 5 mentees' ? 'bad' : 'warn'; const booked = m.booked || !!(S.supBooked || {})[m.mentorId];
-      return { name: m.name, kind: m.kind + (m.evalOf ? ' · ' + (m.evalDone || 0) + ' of ' + m.evalOf + ' evaluated Saturday' : ''), n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
-        commit: m.commitments, cBg: MP15_TONE[tone][0], cFg: MP15_TONE[tone][1], need: !!m.needSupport, supL: booked ? 'Booked' : 'Book supervision', supOp: booked ? 0.55 : 1,
-        sup: () => { if (booked) return; this.act('supervisionBook', { mentorId: m.mentorId }, r => 'Supervision booked with ' + m.first + ' for ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ' after STS').then(r => { if (r) { set({ supBooked: { ...(S.supBooked || {}), [m.mentorId]: true } }); this.refresh(['team']); } }); } }; });
+      return { name: m.name, kind: m.kind + (m.evalOf ? ' · ' + (m.evalDone || 0) + ' of ' + m.evalOf + ' evaluated Saturday' : '') + (m.bookedOn ? ' · supervision ' + mp15Fmt(m.bookedOn, { day: 'numeric', month: 'short' }) : m.notesAt ? ' · last notes ' + mp15Fmt(m.notesAt, { day: 'numeric', month: 'short' }) : ''), n: m.mentees, pctN: pct === null ? 101 : pct, pct: pct === null ? '—' : pct + '%', pBg: pct === null ? '#d6d4cc' : pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: m.relAvg === null ? '—' : Number(m.relAvg).toFixed(1),
+        commit: m.commitments, cBg: MP15_TONE[tone][0], cFg: MP15_TONE[tone][1], need: !!m.needSupport, supL: booked ? 'Write up supervision' : 'Book supervision', supOp: 1,
+        sup: () => { if (booked) { set({ supFor: m.mentorId }); return; } this.act('supervisionBook', { mentorId: m.mentorId }, r => 'Supervision booked with ' + m.first + ' for ' + mp15Fmt(r.date, { weekday: 'long', day: 'numeric', month: 'long' }) + ' after STS').then(r => { if (r) { set({ supBooked: { ...(S.supBooked || {}), [m.mentorId]: true } }); this.refresh(['team']); } }); } }; });
     const mq = (S.mtQ || '').trim().toLowerCase(), mf = S.mtF || 'all';
     const mt = mtAll.filter(m => (mf === 'all' || m.need) && (!mq || m.name.toLowerCase().includes(mq))).sort((a, b) => mf === 'need' ? a.pctN - b.pctN : 0);
     const withPct = mtAll.filter(m => m.pctN <= 100);
@@ -1244,6 +1247,35 @@ function Mp15PodGrowth({ centre, open }) {
 const MP15_PJ_TONE = { ok: 'is-ok', soon: 'is-soon', due: 'is-soon', over: 'is-over', neutral: '', done: '' };
 const MP15_PJ_PART = { assigned: 'Not done yet', done: 'Done', excused: 'Excused' };
 function mp15PjBlank(today) { return { projectId: '', title: '', detail: '', startOn: today, dueOn: '', sel: {}, groups: [], q: '', newGroup: '' }; }
+/* A lead writes up a supervision: what they told the mentor, and up to five
+   things agreed. It closes the open booking; the mentor reads it in My role,
+   where "Feedback received professionally" dates from it
+   (member_mp_supervision_record). */
+const MP15_SUP_AGREED_MAX = 5;
+function Mp15SupNotes({ m, save, onClose }) {
+  const [fb, setFb] = React.useState('');
+  const [agreed, setAgreed] = React.useState(['', '', '']);
+  const [busy, setBusy] = React.useState(false);
+  const ref = React.useRef(null);
+  React.useEffect(() => { if (ref.current) { ref.current.focus(); ref.current.scrollIntoView({ block: 'nearest' }); } }, []);
+  React.useEffect(() => { const k = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, [onClose]);
+  const ok = fb.trim().length >= 10 && !busy;
+  const submit = e => { e.preventDefault(); if (!ok) return; setBusy(true); save({ feedback: fb.trim(), agreed: agreed.map(x => x.trim()).filter(Boolean) }).then(() => setBusy(false)); };
+  return (
+    <form className="grw-card mpj mpj-form" aria-labelledby="mp15-sup-h" onSubmit={submit}>
+      <div className="mpj-top"><h3 id="mp15-sup-h">Supervision with {m.first}</h3><button type="button" className="grw-btn" onClick={onClose}>Close</button></div>
+      <p className="mpj-detail">{m.bookedOn ? 'Booked for ' + mp15Fmt(m.bookedOn, { weekday: 'long', day: 'numeric', month: 'long' }) + '. ' : ''}Write it up after you have met. {m.first} reads it in My role, and it counts as their feedback for the month.</p>
+      <label className="mpj-f">What you told {m.first}<textarea ref={ref} rows={5} value={fb} onChange={e => setFb(e.target.value)} placeholder="What is going well, what to work on, and anything you were concerned about"/></label>
+      <fieldset className="mpj-f"><legend>What you agreed <small>up to {MP15_SUP_AGREED_MAX}, one each</small></legend>
+        {agreed.map((a, i) => <input key={i} aria-label={'Agreed ' + (i + 1)} value={a} onChange={e => setAgreed(agreed.map((x, j) => j === i ? e.target.value : x))} placeholder={i === 0 ? 'e.g. Call two families before Saturday' : ''}/>)}
+        {agreed.length < MP15_SUP_AGREED_MAX && <button type="button" className="grw-btn" onClick={() => setAgreed(agreed.concat(['']))}>Add another</button>}
+      </fieldset>
+      <div className="mpj-acts"><button type="submit" className="mpj-go" disabled={!ok} aria-disabled={!ok}>{busy ? 'Saving…' : 'Save the notes'}</button>
+        {!ok && !busy && <span className="mpj-detail" role="status">Write at least a sentence of feedback first.</span>}</div>
+    </form>
+  );
+}
+
 function Mp15Projects({ act, today }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState(null);

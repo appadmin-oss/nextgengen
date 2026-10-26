@@ -6917,6 +6917,24 @@ chk('threads: that flag and the ask agree, in both directions', (function () {
     return $agreeOff && $agreeOn;
 })());
 
+chk('analyst: an empty answer is never a success — no points says what it can read, and points survive a failed composition', (function () {
+    $cfg = __ichat_config_on();
+    // Every lens finds nothing (a request for a list of people, which it cannot see).
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) {
+        if ($profile === ICHAT_ROUTER_PROFILE) return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['lenses' => ['mechanism', 'risk'], 'why' => 'w', 'answerable' => true, 'restated' => 'r'])];
+        if ($profile === ICHAT_ANSWER_PROFILE) return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['answer' => '', 'claims' => []])];
+        return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['points' => []])];
+    };
+    $r1 = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Can you send me an export of the members grouped by their divisions?']);
+    // The lenses found points but the composer failed: the points are the answer.
+    $GLOBALS['__ai_mock'] = __ichat_mock(['composerDown' => true]);
+    $r2 = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why does Wednesday run so much lower than Saturday?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r1['ok']) && ($r1['error'] ?? '') === 'no_evidence') return true;   // no data in range is a valid shape
+    return str_contains((string)($r1['turn']['answer'] ?? ''), 'no names') && str_contains((string)$r1['turn']['answer'], 'Export CSV')
+        && str_contains((string)($r2['turn']['answer'] ?? ''), 'Wednesday runs lowest');
+})());
+
 chk('the chat routes to the lenses the question needs, and no more', (function () {
     $seen = [];
     $cfg = __ichat_config_on();
@@ -9207,16 +9225,12 @@ chk('an email that is not an email is refused', (function () {
         'data' => ['fullName' => 'Bad Email', 'email' => 'not-an-address', 'centre' => 'Egbeda']]);
     return ($r['error'] ?? '') === 'email_invalid';
 })());
-chk('a duplicate email is refused, because sign-in resolves one address to one member', (function () {
-    /* email is indexed but not unique, and auth does
-       WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1 — so two records
-       sharing an address leave whichever the database returns second unable
-       to sign in, and which one that is can change when rows move. */
+chk('a shared email is allowed (siblings on a parent’s address) — sign-in asks who', (function () {
     $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
-        'data' => ['fullName' => 'Impostor', 'email' => 'ayochild@example.com', 'centre' => 'Egbeda']]);
-    return ($r['error'] ?? '') === 'email_taken'
-        && strpos((string)($r['detail'] ?? ''), 'Ayo Child') !== false
-        && (int)db_row("SELECT COUNT(*) c FROM members WHERE lower(email)='ayochild@example.com'")['c'] === 1;
+        'data' => ['fullName' => 'Ayo Sibling', 'email' => 'ayochild@example.com', 'centre' => 'Egbeda']]);
+    $ok = !empty($r['ok']) && (int)db_row("SELECT COUNT(*) c FROM members WHERE lower(email)='ayochild@example.com'")['c'] === 2;
+    if (!empty($r['ok'])) db_exec("DELETE FROM members WHERE fullName = 'Ayo Sibling' AND lower(email) = 'ayochild@example.com'");
+    return $ok;
 })());
 chk('…but a member keeping their own email is not a duplicate of themselves', (function () {
     $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
@@ -28037,6 +28051,78 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('projects: saving and marking wait for the Academy, as the portal\'s other saves do',
         in_array('member.mentor.project.save', ACADEMY_GATED_MENTOR_OPS, true) && in_array('member.mentor.project.mark', ACADEMY_GATED_MENTOR_OPS, true));
     chk('projects: one audit event per save', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.save' AND subject = ?", [$PID])['c'] === 3);
+
+    /* The Control Room (Mentorship › Projects): staff with `people` see and run every project in their centres. */
+    foreach ([['C-PRJ-PV', 'Portalville', 'PRJPV'], ['C-PRJ-OT', 'Otherton', 'PRJOT']] as [$cid, $cn, $code])
+        if (!db_row('SELECT 1 FROM centres WHERE name = ?', [$cn])) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => $code, 'status' => 'active', 'programmes' => 'ngg', 'slug' => strtolower($code), 'createdAt' => $now]);
+    $otId = (string)db_row("SELECT centreId FROM centres WHERE name = 'Otherton'")['centreId'];
+    db_insert('members', ['memberId' => 'NGG-PRJ-SCO', 'fullName' => 'Scoped Admin', 'email' => 'scoped.prj@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin',
+        'centre' => 'Otherton', 'centreScope' => json_encode([$otId]), 'createdAt' => $now, 'updatedAt' => $now]);
+    $al = backend_dispatch('admin.projects', ['requesterId' => $SU, 'today' => $T]);
+    $mine = array_values(array_filter($al['projects'] ?? [], static fn($x) => $x['projectId'] === $PID))[0] ?? null;
+    chk('control room: an admin sees projects set in the mentor portal, with groups, progress and the countdown',
+        !empty($al['ok']) && $mine && $mine['centre'] === 'Portalville' && isset($mine['countdown']['label'], $mine['tally']['of']) && isset($al['stats']['open']));
+    chk('control room: a centre-scoped admin sees only their centres’ projects, and a member without `people` sees none',
+        !array_filter(backend_dispatch('admin.projects', ['requesterId' => 'NGG-PRJ-SCO'])['projects'] ?? [], static fn($x) => $x['centre'] !== 'Otherton')
+        && empty(backend_dispatch('admin.projects', ['requesterId' => 'NGG-MPK1'])['ok']));
+    $pp = backend_dispatch('admin.projects.people', ['requesterId' => $SU, 'centre' => 'Portalville']);
+    chk('control room: the people at a centre — its mentors and its children, never a mentor listed as a child',
+        in_array('MEN-MP1', array_column($pp['mentors'] ?? [], 'id'), true) && in_array('NGG-MPK7', array_column($pp['children'] ?? [], 'id'), true)
+        && !in_array('NGG-MP1', array_column($pp['children'] ?? [], 'id'), true)
+        && (backend_dispatch('admin.projects.people', ['requesterId' => 'NGG-PRJ-SCO', 'centre' => 'Portalville'])['error'] ?? '') === 'out_of_scope');
+    $aBase = ['requesterId' => $SU, 'today' => $T, 'title' => 'Centre open day', 'detail' => 'Set up, welcome families, clear away.', 'startOn' => '2026-10-10', 'dueOn' => '2026-10-24', 'centre' => 'Portalville'];
+    $as = backend_dispatch('admin.project.save', $aBase + ['people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]]);
+    $APID = $as['projectId'] ?? '';
+    chk('control room: an admin sets a project for mentors and children at a centre, in groups; the child is told',
+        !empty($as['ok']) && $as['added'] === 3 && db_row('SELECT createdBy, centre FROM projects WHERE projectId = ?', [$APID]) === ['createdBy' => $SU, 'centre' => 'Portalville']
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MPK7' AND title = 'New project: Centre open day'"));
+    chk('control room: the whole payload is checked — a child outside the scope is named and nothing is written; a scoped admin cannot set one elsewhere',
+        ($r = backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO', 'centre' => 'Otherton'] + $aBase + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]))['error'] === 'not_yours_to_assign'
+        && $r['refused'][0]['id'] === 'NGG-MPK7'
+        && (backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO'] + $aBase + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1']]])['error'] ?? '') === 'out_of_scope'
+        && (int)db_row("SELECT COUNT(*) c FROM projects WHERE title = 'Centre open day'")['c'] === 1);
+    chk('control room: an admin edits a project a lead set (moving people between groups), and a scoped admin elsewhere cannot',
+        !empty(($e = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'projectId' => $PID] + $base + ['people' => array_map(static fn($x) => ['kind' => $x['kind'], 'id' => $x['id'], 'group' => 'Everyone'],
+            db_all('SELECT kind, personId AS id FROM project_people WHERE projectId = ?', [$PID]))]))['ok']) && $e['moved'] > 0
+        && (backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO', 'today' => $T, 'projectId' => $PID] + $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1']]])['error'] ?? '') === 'not_found');
+    chk('control room: an admin sets anyone’s part, and finishes the project; one audit event each',
+        !empty(backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $APID, 'kind' => 'member', 'personId' => 'NGG-MPK6', 'status' => 'excused'])['ok'])
+        && db_row("SELECT status FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK6'", [$APID])['status'] === 'excused'
+        && (backend_dispatch('admin.project.mark', ['requesterId' => 'NGG-PRJ-SCO', 'projectId' => $APID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done'])['error'] ?? '') === 'not_found'
+        && !empty(backend_dispatch('admin.project.save', ['projectId' => $APID, 'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]] + $aBase)['ok'])
+        && db_row('SELECT status FROM projects WHERE projectId = ?', [$APID])['status'] === 'closed'
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.mark' AND subject = ?", [$APID])['c'] === 1);
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PRJ-SCO'");
+
+    /* Supervision written up by the lead (member_mp_supervision_record): it closes the booking,
+       reaches the mentor's My role, and dates the "Feedback received professionally" row. */
+    $fbRow = static fn() => array_values(array_filter(backend_dispatch('member.mentor.commitments', $p('NGG-MP1'))['commitments'] ?? [], static fn($r) => $r['key'] === 'feedback'))[0] ?? [];
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: before any are written, My role says so instead of a fixed “Up to date”', ($fbRow()['statusText'] ?? '') === 'No supervision written up yet');
+    $bk = backend_dispatch('member.mentor.supervision.book', $p('NGG-MPL', ['mentorId' => 'MEN-MP1']));
+    $tm = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: a booking shows on the lead’s Mentors list as open, with its date', !empty($bk['ok']) && $tm['booked'] === true && $tm['bookedOn'] === $bk['date'] && $tm['notesAt'] === '');
+    chk('supervision notes: only a lead or coordinator writes them, for someone they lead, and says something',
+        (backend_dispatch('member.mentor.supervision.record', $p('NGG-MP1', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'ok']))['error'] ?? '') === 'write_the_feedback'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-NOBODY', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'not_in_team'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => array_fill(0, 6, 'x')]))['error'] ?? '') === 'too_many'
+        && !db_row("SELECT 1 FROM mentor_supervision WHERE mentorId = 'MEN-MP1' AND feedbackAt <> ''"));
+    $rc = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => ['Call two families before Saturday', '  ', 'Log every one-to-one']]));
+    $sr = db_all("SELECT * FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: written up early, the booking becomes the held supervision on that day — one row, blanks dropped',
+        !empty($rc['ok']) && count($sr) === 1 && $sr[0]['status'] === 'held' && $sr[0]['onDate'] === $T && $rc['onDate'] === $T
+        && json_decode($sr[0]['agreedJson'], true) === ['Call two families before Saturday', 'Log every one-to-one']);
+    $rl = backend_dispatch('member.mentor.commitments', $p('NGG-MP1'));
+    chk('supervision notes: the mentor reads the feedback and what was agreed in My role, and no supervision is still coming',
+        ($rl['feedback']['text'] ?? '') === 'Good work this month on the huddles.' && ($rl['agreedLast']['items'] ?? []) === ['Call two families before Saturday', 'Log every one-to-one']
+        && $rl['supervision'] === null && str_starts_with($fbRow()['statusText'] ?? '', 'Last supervision notes '));
+    $tm2 = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: the lead’s list shows the booking closed and when notes were last written; the mentor is told',
+        $tm2['booked'] === false && $tm2['notesAt'] !== '' && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MP1' AND title = 'Your supervision notes'"));
+    $r2 = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'A quick check-in in the corridor went well.']));
+    chk('supervision notes: notes without a booking record a supervision held that day', !empty($r2['ok']) && (int)db_row("SELECT COUNT(*) c FROM mentor_supervision WHERE mentorId = 'MEN-MP1'")['c'] === 2);
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
     setting_set('mentor_automation', null);   // portalLive does not outlive these tests
 })();
 
@@ -31857,6 +31943,83 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('ss3 · a bulk invoice with nobody selected is refused', (backend_dispatch('admin.summer.graduates.invoice', ['requesterId' => $A, 'memberIds' => []])['error'] ?? '') !== '');
 
     setting_set('programme', is_array($progWas) ? $progWas : [], $A);
+})();
+
+
+/* ── One email, several member accounts: "Who's signing in?" (auth.php auth_pick) ── */
+(function () {
+    $now = now_iso(); $E = 'family.inbox@example.com';
+    foreach ([['NGG-SH-1', 'Ada Shared', ''], ['NGG-SH-2', 'Bayo Shared', ''], ['NGG-SH-3', 'Chi Shared', 'suspended']] as [$id, $n, $st])
+        db_insert('members', ['memberId' => $id, 'fullName' => $n, 'email' => $id === 'NGG-SH-2' ? ' Family.Inbox@example.com ' : $E, 'type' => 'NGG', 'status' => $st ?: 'active',
+            'role' => 'member', 'centre' => 'Egbeda', 'displayId' => '026-9' . substr($id, -1) . '1', 'createdAt' => $now, 'updatedAt' => $now]);
+    $acc = array_column(auth_email_accounts('FAMILY.inbox@example.com'), 'memberId');
+    chk('shared email: the accounts behind an address, whatever its case or spacing — a suspended one is not offered', $acc === ['NGG-SH-1', 'NGG-SH-2']);
+    $f = auth_find_member($E, '10.9.9.1', 'request');
+    chk('shared email: the door no longer opens the first row — it knows the address is shared', $f['member'] === null && count($f['shared'] ?? []) === 2);
+
+    $GLOBALS['__mail_sink'] = [];
+    $rq = auth_request(['identifier' => $E, 'ip' => '10.9.9.1']);
+    $mail = $GLOBALS['__mail_sink'][0] ?? [];
+    $ch = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    chk('shared email: ONE code, to the inbox, naming who is on it, keyed by the address not a child',
+        !empty($rq['ok']) && count($GLOBALS['__mail_sink']) === 1 && ($mail['to'] ?? '') === $E && str_contains($mail['html'] ?? '', 'Ada and Bayo')
+        && $ch && $ch['memberId'] === auth_shared_key($E) && $ch['pickIds'] === 'NGG-SH-1,NGG-SH-2');
+    $wrong = auth_verify(['memberId' => $E, 'otp' => $ch['otp'] === '000000' ? '111111' : '000000', 'ip' => '10.9.9.1']);
+    chk('shared email: a wrong code is wrong, and opens nothing', ($wrong['error'] ?? '') === 'invalid' && empty($wrong['pick']));
+    $v = auth_verify(['memberId' => $E, 'otp' => $ch['otp'], 'ip' => '10.9.9.1']);
+    chk('shared email: the right code (typed with the email) proves the inbox and offers the accounts — no session yet',
+        !empty($v['ok']) && empty($v['member']) && array_column($v['pick'] ?? [], 'memberId') === ['NGG-SH-1', 'NGG-SH-2'] && ($v['pick'][1]['first'] ?? '') === 'Bayo'
+        && ($v['pick'][0]['displayId'] ?? '') === '026-911' && $v['pickToken'] === $ch['token']);
+    chk('shared email: an account not on the address cannot be picked, nor the suspended one',
+        (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-2025-0001'])['error'] ?? '') === 'not_on_this_email'
+        && (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-3'])['error'] ?? '') === 'not_on_this_email');
+    $pk = auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-2', 'ip' => '10.9.9.1']);
+    chk('shared email: picking opens that account, once', !empty($pk['ok']) && ($pk['member']['memberId'] ?? '') === 'NGG-SH-2'
+        && (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'already_used');
+    // The magic link takes the same road.
+    $GLOBALS['__mail_sink'] = [];
+    auth_request(['identifier' => $E, 'ip' => '10.9.9.2']);
+    $ch2 = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    $v2 = auth_verify(['token' => $ch2['token'], 'ip' => '10.9.9.2']);
+    db_exec("UPDATE auth_sessions SET verifiedAt = ? WHERE id = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - (AUTH_PICK_MINUTES * 60 + 5)), (int)$ch2['id']]);
+    chk('shared email: the emailed link offers the same choice, and a pick left too long expires', count($v2['pick'] ?? []) === 2
+        && (auth_pick(['pickToken' => $ch2['token'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'expired');
+    // An account suspended between the code and the pick is not opened.
+    auth_request(['identifier' => $E, 'ip' => '10.9.9.3']);
+    $ch3 = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    $v3 = auth_verify(['memberId' => 'Family.Inbox@example.com', 'otp' => $ch3['otp'], 'ip' => '10.9.9.3']);
+    db_exec("UPDATE members SET status = 'suspended' WHERE memberId = 'NGG-SH-1'");
+    chk('shared email: suspended after the code, before the pick — not opened', count($v3['pick'] ?? []) === 2 && (auth_pick(['pickToken' => $v3['pickToken'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'member_gone');
+    db_exec("UPDATE members SET status = 'active' WHERE memberId = 'NGG-SH-1'");
+
+    // Passwords: the password says whose; the same password on two offers those two.
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId = 'NGG-SH-1'", [password_hash_best('ada-password-1')]);
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId = 'NGG-SH-2'", [password_hash_best('bayo-password-2')]);
+    $l1 = auth_login(['identifier' => $E, 'password' => 'bayo-password-2', 'ip' => '10.9.9.4']);
+    chk('shared email: a password signs straight into the account it belongs to', !empty($l1['ok']) && ($l1['member']['memberId'] ?? '') === 'NGG-SH-2' && empty($l1['pick']));
+    chk('shared email: a password that fits no account on it is refused, the same way as ever', (auth_login(['identifier' => $E, 'password' => 'nobody-at-all', 'ip' => '10.9.9.4'])['error'] ?? '') === 'invalid_login');
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId IN ('NGG-SH-1','NGG-SH-2')", [password_hash_best('one-family-pass')]);
+    $l2 = auth_login(['identifier' => $E, 'password' => 'one-family-pass', 'ip' => '10.9.9.4']);
+    chk('shared email: one password set for both — the person picks among the accounts it opens', !empty($l2['ok']) && array_column($l2['pick'] ?? [], 'memberId') === ['NGG-SH-1', 'NGG-SH-2']
+        && !empty(auth_pick(['pickToken' => $l2['pickToken'], 'memberId' => 'NGG-SH-1'])['ok']));
+    chk('shared email: the gateway offers a password when any account on the address has one', in_array('password', auth_gateway(['identifier' => $E, 'device' => 'dev-shared-1'])['methods'] ?? [], true));
+
+    // A password reset: one email, one link per account.
+    $GLOBALS['__mail_sink'] = [];
+    $rr = auth_reset_request(['identifier' => $E, 'ip' => '10.9.9.5']);
+    $rm = $GLOBALS['__mail_sink'][0]['html'] ?? '';
+    $links = db_all("SELECT memberId FROM auth_sessions WHERE purpose = 'reset' AND memberId IN ('NGG-SH-1','NGG-SH-2','NGG-SH-3') AND verifiedAt = '' ORDER BY id");
+    chk('shared email: a reset sends one email with a link for each account (not the suspended one)', !empty($rr['ok']) && count($GLOBALS['__mail_sink']) === 1
+        && str_contains($rm, 'Set Ada') && str_contains($rm, 'Set Bayo') && !str_contains($rm, 'Chi') && array_column($links, 'memberId') === ['NGG-SH-1', 'NGG-SH-2']);
+    unset($GLOBALS['__mail_sink']);
+
+    // A member's own email may now be a family inbox.
+    chk('shared email: a member may change their email to one a sibling uses', !empty(member_request_email_change(['memberId' => 'NGG-SH-3', 'email' => 'ayochild@example.com'])['ok']));
+    // One account on an address behaves exactly as before.
+    db_exec("UPDATE members SET email = 'just.bayo@example.com' WHERE memberId = 'NGG-SH-2'");
+    chk('shared email: an address with one account still opens it directly', (auth_find_member('just.bayo@example.com', '10.9.9.6', 'request')['member']['memberId'] ?? '') === 'NGG-SH-2'
+        && auth_resolve_member_id('just.bayo@example.com') === 'NGG-SH-2');
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-SH-1','NGG-SH-2','NGG-SH-3')");
 })();
 
 /* Notifications a person can act on: read and dismiss are per person (a

@@ -26,6 +26,7 @@ const MENTOR_PORTAL_ACTIONS = [
     'concern'         => ['member.mentor.concern.create', ['subjectId', 'category', 'body'], 'mentor.concern'],
     'supervisionPrep' => ['member.mentor.supervision.prep', ['answers'], 'mentor.meeting'],
     'supervisionBook' => ['member.mentor.supervision.book', ['mentorId'], 'mentor.meeting'],
+    'supervisionRecord' => ['member.mentor.supervision.record', ['mentorId', 'feedback', 'agreed'], 'mentor.meeting'],
     'retreatBook'     => ['member.mentor.retreat.book', ['retreatId'], ''],
     'academyResult'   => ['member.mentor.academy.result', ['moduleId', 'answers'], 'mentor.meeting'],
     'saturdayPlan'    => ['member.mentor.saturday.plan', ['date', 'agenda', 'oneToOnes', 'share'], ''],
