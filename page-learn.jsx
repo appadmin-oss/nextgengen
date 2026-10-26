@@ -400,7 +400,7 @@ function LearnLesson({ unitId, onDone }) {
             <LearnReadAloud text={u.body} label="the lesson"/>
           </div>
           <CurriculumText text={u.body}/>
-          <CurriculumMaterials materials={u.materials}/>
+          <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
         </section>
       )}
 

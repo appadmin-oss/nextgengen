@@ -30,7 +30,11 @@ let passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; } else { failed++; console.error('  ✗ FAIL: ' + m); } };
 /* Prose that names the flag (a comment explaining why it is not used, or the
    compiler that strips it from a design) is not a use of it. */
-const ALLOW = { 'tools/dc-compile.js': 3, 'tests/no-important.test.js': 99 };
+/* A browser test may INJECT the flag into a page it is driving — hiding a
+   toast that sits over the control it needs to click. That is the harness
+   overriding the product for one assertion, not the product shipping an
+   override, which is what this file bans. */
+const ALLOW = { 'tools/dc-compile.js': 3, 'tests/no-important.test.js': 99, 'tests/curriculum-ui.test.js': 1 };
 let seen = 0;
 for (const f of files) {
   const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

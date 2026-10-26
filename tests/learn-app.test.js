@@ -100,13 +100,17 @@ function cleanup() {
       p.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource|\[BABEL\]/.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
       await p.goto(BASE + at, { waitUntil: 'domcontentloaded' });
       await waitForBoot(p);
-      await p.waitForSelector('.lrn-app', { timeout: 30000 });
+      await p.waitForSelector('.lrn-app', { timeout: 60000 });
+      /* The shell is up; its DATA is still in flight. Everything below waits
+         on a round trip through a cold `php -S`, so it gets the same generous
+         budget the boot does — a tight one passes on an idle machine and
+         flakes the moment this suite runs after the others (CLAUDE.md §1). */
       return p;
     };
 
     console.log('the app has a place of its own');
     const P = await open('/learn');
-    await P.waitForSelector('.lrn-card', { timeout: 20000 });
+    await P.waitForSelector('.lrn-card', { timeout: 60000 });
     chk('/learn opens This week, with the lesson to start', /Finding middle C/.test(await P.innerText('.lrn-main')));
     /* Pin the promise — every area of the app is reachable from its own rail —
        rather than a count, which goes stale the moment an area is added. */
@@ -122,14 +126,14 @@ function cleanup() {
     await P.waitForFunction(() => /^\/learn\/course\//.test(location.pathname));
     /* The address changes on the push; the screen changes on the render after
        it. Wait for the screen, or this reads the previous one. */
-    await P.waitForSelector('.lrn-course-title', { timeout: 10000 });
+    await P.waitForSelector('.lrn-course-title', { timeout: 60000 });
     /* Case-insensitively: the week headings are `text-transform: uppercase`
        and innerText reflects that (CLAUDE.md §9). */
     chk('a course has its own address too, with its weeks in order',
       new URL(P.url()).pathname === '/learn/course/piano' && /week 1[\s\S]*week 2/i.test(await P.innerText('.lrn-main')));
 
     await P.click('.lrn-card:has-text("Finding middle C")');
-    await P.waitForSelector('.lrn-lesson', { timeout: 15000 });
+    await P.waitForSelector('.lrn-lesson', { timeout: 60000 });
     const lessonUrl = new URL(P.url()).pathname;
     chk('a LESSON has an address — the thing it could never have as a sheet', lessonUrl === '/learn/lesson/LRN-U1');
     chk('…and opens full screen, with the lesson and its questions', !!(await P.$('.lrn-lesson-title')) && !!(await P.$('.lrn-checks')));
@@ -140,7 +144,7 @@ function cleanup() {
 
     console.log('the address survives a cold load');
     const Q = await open('/learn/lesson/LRN-U2');
-    await Q.waitForSelector('.lrn-lesson', { timeout: 20000 });
+    await Q.waitForSelector('.lrn-lesson', { timeout: 60000 });
     chk('a lesson link opens that lesson, loaded cold — so it can be sent to somebody',
       /The C major scale/.test(await Q.innerText('.lrn-lesson-title')));
     chk('…and the router leaves the address alone rather than rewriting it to /learn',
@@ -153,10 +157,10 @@ function cleanup() {
     chk('a lesson opens with the PREVIOUS one\'s review, before today\'s teaching', !!(await Q.$('.cur-review')) || !!(await Q.$('[aria-label*="review" i]')));
     const skip = await Q.$('.lrn-lesson button:has-text("Skip"), .lrn-lesson button:has-text("skip")');
     if (skip) await skip.click();
-    await Q.waitForSelector('.lrn-checks', { timeout: 15000 });
+    await Q.waitForSelector('.lrn-checks', { timeout: 60000 });
     await Q.click('.lrn-checks .cur-opt:has-text("Thumb")');
     await Q.click('.lrn-checks button[type="submit"]');
-    await Q.waitForFunction(() => /Score:|complete/i.test(document.querySelector('.lrn-checks').innerText), { timeout: 15000 });
+    await Q.waitForFunction(() => /Score:|complete/i.test(document.querySelector('.lrn-checks').innerText), { timeout: 60000 });
     chk('answering in the app marks it and completes the lesson',
       php(`echo (string)db_row("SELECT status FROM curriculum_progress WHERE unitId='LRN-U2' AND memberId='NGG-LRN-M1'")['status'];`, ['bootstrap']) === 'completed');
     chk('…and the lesson asks how it went, which is never published',
@@ -168,7 +172,7 @@ function cleanup() {
     const R = await ctx.newPage();
     await R.goto(BASE + '/learn/lesson/LRN-U1', { waitUntil: 'domcontentloaded' });
     await waitForBoot(R);
-    await R.waitForSelector('.lrn-app', { timeout: 30000 });
+    await R.waitForSelector('.lrn-app', { timeout: 60000 });
     chk('signed out, /learn is still a real page that says what it is and offers the way in',
       /Sign in to open your lessons/.test(await R.innerText('.lrn-main')));
     chk('…and the lesson address is kept, so signing in lands on the lesson',
@@ -177,7 +181,7 @@ function cleanup() {
 
     console.log('on a phone');
     const M = await open('/learn', 390);
-    await M.waitForSelector('.lrn-card', { timeout: 20000 });
+    await M.waitForSelector('.lrn-card', { timeout: 60000 });
     const bar = await M.evaluate(() => { const r = document.querySelector('.lrn-rail').getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), w: Math.round(r.width) }; });
     chk('the phone gets a bottom bar, not a rail squeezed sideways', bar.w > 300 && bar.top > 400);
     const tap = await M.evaluate(() => Math.min.apply(null, [...document.querySelectorAll('.lrn-rail-item')].map(e => Math.round(e.getBoundingClientRect().height))));
@@ -195,7 +199,7 @@ function cleanup() {
           'method'=>'retrieval','what'=>'Past questions, out loud.','whenWhere'=>'After supper.','sessionsPerWeek'=>3,'helper'=>'self','position'=>0]);`, ['bootstrap']);
 
     const S = await open('/learn/plan');
-    await S.waitForSelector('.lrn-plan', { timeout: 20000 });
+    await S.waitForSelector('.lrn-plan', { timeout: 60000 });
     chk('School shows the subjects their own results chose, with the week so far',
       /Mathematics/.test(await S.innerText('.lrn-main')) && /62% now/.test(await S.innerText('.lrn-plan'))
       && /0 of 3 this week/i.test(await S.innerText('.lrn-plan')));
@@ -207,7 +211,7 @@ function cleanup() {
        words rather than hand a child a blank paper. That is the state a
        deployment without a key is actually in. */
     await S.click('.lrn-sec button:has-text("Start")');
-    await S.waitForSelector('.lrn-plan-err', { timeout: 20000 });
+    await S.waitForSelector('.lrn-plan-err', { timeout: 60000 });
     chk('with no question source it says so plainly, and points somewhere real',
       /flashcards|questions right now/i.test(await S.innerText('.lrn-plan-err')));
     await S.goBack();
@@ -215,7 +219,7 @@ function cleanup() {
     chk('Back goes back from a subject, like everywhere else in the app', !!(await S.$('.lrn-plan')));
 
     const W = await open('/learn');
-    await W.waitForSelector('.lrn-card', { timeout: 20000 });
+    await W.waitForSelector('.lrn-card', { timeout: 60000 });
     chk('…and the week shows school WITH the Club lessons, not behind another tab',
       /school this week/i.test(await W.innerText('.lrn-main')) && /Mathematics/.test(await W.innerText('.lrn-main')));
     await W.context().close();

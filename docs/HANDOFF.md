@@ -3268,3 +3268,33 @@ behaviour, one suite.
 that change: those runs had collided on `api/config.php`, which every node E2E
 suite writes and refuses to start beside. **They cannot be run concurrently** —
 run one at a time they are 66/0 and 4/0, and always were.
+
+### The lesson sheet is gone, not just unreachable
+
+`openLesson()` navigated to `/learn/lesson/<id>`, which left the member
+portal's whole lesson sheet — markup, check questions, marking, part
+tracking, read-aloud — sitting in the tree with nothing able to open it. Dead
+is not harmless: it was a SECOND renderer for a lesson, and a second renderer
+is what CLAUDE.md §11 forbids, because the two drift and what you see stops
+being what the member gets. Removed from both halves — the `shLesson` block in
+`member-portal-v9.dc.html` (recompiled to `mp9-view.jsx`) and the values in
+`mp9-more.jsx`. `speak()`, `canSpeak()` and the PDF reader stay: the mentor
+thread and the journal prompt use them.
+
+**The sheet knew something the shared component did not.** A PDF on the image
+cloud is not delivered to a browser, so its own address opens an error page;
+the sheet fetched it through `api/member/lesson-file.php` instead, and the
+Learn app, built on `CurriculumMaterials`, did not. That fix now lives in the
+shared component where every surface gets it — but it is passed IN
+(`fileUrl={curMemberFile}`), because the route is gated on a member session
+and the same component draws an instructor's preview. The caller names its own
+gate; neither surface has to know about the other's. "Open ↗" follows the same
+address as the reader, or the one control meant to rescue an unreadable file
+is the one that opens the error page.
+
+**A pre-existing failure, reported rather than hidden:** `no-important.test.js`
+was already red on this branch from `3a8e3d2` — `curriculum-ui.test.js`
+injects `display: none !important` into the page it drives, to hide a toast
+over a control it must click. That is the harness overriding the product for
+one assertion, not the product shipping an override, so it is an ALLOW entry.
+`npm run test:all` had been failing at that step before any of this work.

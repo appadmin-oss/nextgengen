@@ -3007,7 +3007,7 @@ function DashCurriculumLesson({ unitId, onBack }) {
         <section className="dash-card">
           <h3 className="cur-sec-h">The lesson</h3>
           <CurriculumText text={u.body}/>
-          <CurriculumMaterials materials={u.materials}/>
+          <CurriculumMaterials materials={u.materials} fileUrl={curMemberFile}/>
         </section>
       )}
       {opened && u.checks.length > 0 && (
