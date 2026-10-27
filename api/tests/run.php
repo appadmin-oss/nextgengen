@@ -24877,6 +24877,79 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('member: …and the multiple-choice points were still awarded',
         (int)$right['progress']['score'] === 2 && (int)$right['progress']['maxScore'] === 5);
 
+    // The Learn app's own record: picked up, kept, noted (domain/learn.php).
+    (function () use ($uid) {
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'] ?? [];
+        chk('learn: opening a lesson is what "pick up where you left off" reads', ($L['recent'][0]['unitId'] ?? '') === $uid);
+        $n = backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => "  Thumb under on F.\r\nPractise slowly.  "]);
+        chk('learn: a note is kept, trimmed, with its time', !empty($n['ok']) && $n['note'] === "Thumb under on F.\nPractise slowly." && $n['noteAt'] !== '');
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: …and comes back on the list read and on the lesson', ($L['notes'][0]['note'] ?? '') === $n['note']
+            && backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid])['mine']['note'] === $n['note']);
+        chk('learn: a note over the limit is refused and names it', (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => str_repeat('a', LEARN_NOTE_MAX + 1)])['error'] ?? '') === 'too_long');
+        $guitar = (string)(db_row("SELECT unitId FROM curriculum_units WHERE course = 'Guitar' LIMIT 1")['unitId'] ?? 'none');
+        chk('learn: nobody keeps a note on, or saves, a lesson that is not theirs',
+            (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'note' => 'x'])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'saved' => true])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar])['error'] ?? '') === 'not_found');
+        chk('learn: …nor on anybody else\'s list', empty(backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['learn']['notes']));
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => true]);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: a lesson saved for later is on the saved list, and its note survives the save', ($L['saved'][0]['unitId'] ?? '') === $uid && ($L['notes'][0]['note'] ?? '') === $n['note']);
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => false]);
+        backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => '   ']);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: unsaving and an empty note take it off both lists', $L['saved'] === [] && $L['notes'] === []);
+        chk('learn: one row per member per lesson, however often it is touched', (int)db_row('SELECT COUNT(*) n FROM learn_state WHERE memberId = ? AND unitId = ?', ['NGG-CUR-M1', $uid])['n'] === 1);
+
+        // The figures are derived from completions, never stored.
+        $t = strtotime(attendance_today() . 'T12:00:00Z');
+        $mon = $t - ((int)gmdate('N', $t) - 1) * 86400;
+        $u = static fn($d, $mins = 20) => ['durationMins' => $mins, 'progress' => ['status' => 'completed', 'completedAt' => gmdate('Y-m-d', $d) . 'T10:00:00Z']];
+        $s = learn_stats([$u($mon), $u($mon - 7 * 86400), $u($mon - 14 * 86400, 40), $u($mon - 35 * 86400), ['durationMins' => 30, 'progress' => ['status' => 'started']]]);
+        chk('learn: three weeks in a row, the minutes of finished lessons only, and this week\'s count',
+            $s['streakWeeks'] === 3 && $s['minutes'] === 100 && $s['doneThisWeek'] === 1 && $s['done'] === 4);
+        $s = learn_stats([$u($mon - 7 * 86400), $u($mon - 14 * 86400)]);
+        chk('learn: a week not yet over does not break the run', $s['streakWeeks'] === 2 && $s['doneThisWeek'] === 0);
+        chk('learn: a gap does', learn_stats([$u($mon - 14 * 86400)])['streakWeeks'] === 0);
+
+        // Go deeper: a fetched read that has to be ABOUT the lesson, and vetted sources by course.
+        $unit = db_row('SELECT title, course FROM curriculum_units WHERE unitId = ?', [$uid]);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) {
+            $calls[] = $url;
+            if (strpos($url, '/search/title') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['pages' => [
+                ['key' => 'Banana', 'title' => 'Banana'], ['key' => 'Middle_C', 'title' => 'Middle C']]])];
+            if (strpos($url, 'Banana') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Banana', 'extract' => str_repeat('A yellow fruit. ', 10)])];
+            return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Middle C',
+                'extract' => 'Middle C is the C note near the middle of a piano keyboard. It is the fourth C key from the left on a standard 88-key piano.',
+                'content_urls' => ['desktop' => ['page' => 'https://simple.wikipedia.org/wiki/Middle_C']]])];
+        };
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is the article that shares a word with the lesson, never the first result', ($g['read']['title'] ?? '') === 'Middle C'
+            && !array_filter($calls, fn($c) => strpos($c, 'summary/Banana') !== false));
+        chk('learn: …with its source, its licence and a link back', ($g['read']['source'] ?? '') === 'Simple English Wikipedia'
+            && ($g['read']['licence'] ?? '') === 'CC BY-SA 4.0' && ($g['read']['url'] ?? '') === 'https://simple.wikipedia.org/wiki/Middle_C');
+        $hosts = array_map(fn($x) => parse_url($x['url'], PHP_URL_HOST), $g['sources'] ?? []);
+        chk('learn: a music lesson gets the vetted music sources, and a search on its topic', in_array('www.musictheory.net', $hosts, true) && in_array('www.khanacademy.org', $hosts, true));
+        $calls = [];
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is cached, so the next view asks Wikipedia nothing', $calls === []);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $GLOBALS['__learn_http'] = fn($url) => ['ok' => false, 'code' => 429, 'body' => ''];
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: Wikipedia refusing is not an error anybody sees: no read, and the sources still show', !empty($g['ok']) && $g['read'] === null && count($g['sources']) > 0);
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) { $calls[] = $url; return ['ok' => false, 'code' => 429, 'body' => '']; };
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: …and a miss is remembered for a day rather than asked on every view', $calls === []);
+        unset($GLOBALS['__learn_http']);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $gen = array_column(learn_curated('Swimming', 'Floating'), 'by');
+        chk('learn: a course with no list of its own gets the general one, never another course\'s', in_array('OpenStax (Rice University)', $gen, true) && !in_array('musictheory.net', $gen, true));
+    })();
+
     // A written answer with no AI waits for a person.
     $hp = db_row("SELECT unitId FROM curriculum_units WHERE title = 'Hand position'")['unitId'];
     $hc = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $hp])['unit']['checks'][0]['checkId'];

@@ -14,6 +14,8 @@
      · Back goes back, rather than closing an overlay.
      · The lesson is answered and completes, in the app, at the pass mark.
      · Signed out, /learn is still a real page that says what it is.
+     · Coming back: pick up, save, notes, Go deeper, next lesson, search,
+       and a lesson with no questions can still be finished.
 
    Run:  node tests/learn-app.test.js
    ========================================================================== */
@@ -163,6 +165,72 @@ function cleanup() {
     chk('…and the lesson asks how it went, which is never published',
       !!(await Q.$('.cur-fb-taps')) && (await Q.$$('.cur-fb-tap')).length === 3);
     await Q.context().close();
+
+    console.log('coming back, keeping, and going deeper');
+    /* Go deeper fetches from Wikipedia on the server. A test must not depend
+       on a third party answering, so the read is planted where the server
+       caches it — the same file a real fetch would leave behind. */
+    php(`foreach (['Finding middle C', 'Piano'] as $q) cache_put('learn-wiki-' . sha1(mb_strtolower($q)), ['title'=>'Middle C',
+          'extract'=>'Middle C is the C note near the middle of a piano keyboard. It is the fourth C key from the left on an 88-key piano.',
+          'url'=>'https://simple.wikipedia.org/wiki/Middle_C','source'=>'Simple English Wikipedia','licence'=>'CC BY-SA 4.0','licenceUrl'=>'https://creativecommons.org/licenses/by-sa/4.0/']);`);
+    const K = await open('/learn');
+    await K.waitForSelector('.lrn-pickup', { timeout: 20000 });
+    chk('This week leads with the lesson they opened and have not finished',
+      /Pick up where you left off/.test(await K.innerText('.lrn-pickup')) && /Finding middle C/.test(await K.innerText('.lrn-pickup')));
+    chk('…and with what their finished lessons add up to', /1\s*done this week/.test(await K.innerText('.lrn-figs')));
+    await K.click('.lrn-pickup');
+    await K.waitForSelector('.lrn-lesson-title', { timeout: 15000 });
+    chk('picking up opens that lesson, and says where it sits in the course', /Lesson 1 of 2/.test(await K.innerText('.lrn-lesson-head')));
+
+    await K.click('.lrn-save');
+    await K.waitForFunction(() => document.querySelector('.lrn-save').getAttribute('aria-pressed') === 'true');
+    chk('Save for later is a toggle that says it is on, and is kept',
+      php(`echo (int)(db_row("SELECT saved FROM learn_state WHERE memberId='NGG-LRN-M1' AND unitId='LRN-U1'")['saved'] ?? 0);`) === '1');
+    await K.fill('.lrn-textarea', 'Thumb on middle C, little finger on G.');
+    await K.click('.lrn-lesson-title');   // leaving the box saves it
+    await K.waitForFunction(() => /Saved\./.test(document.querySelector('.lrn-mynote').innerText), { timeout: 10000 });
+    chk('a note saves itself when they leave the box',
+      php(`echo (string)(db_row("SELECT note FROM learn_state WHERE memberId='NGG-LRN-M1' AND unitId='LRN-U1'")['note'] ?? '');`) === 'Thumb on middle C, little finger on G.');
+
+    await K.waitForSelector('.lrn-read', { timeout: 15000 });
+    const deeper = await K.innerText('.lrn-deeper');
+    chk('Go deeper gives a short read on the topic, naming its source and licence',
+      /Middle C is the C note/.test(deeper) && /Simple English Wikipedia/.test(deeper) && /CC BY-SA 4\.0/.test(deeper));
+    const srcs = await K.$$eval('.lrn-sources a', ns => ns.map(a => ({ h: a.href, t: a.target, r: a.rel })));
+    chk('…and vetted places to go further for this course, opening in a new tab (' + srcs.length + ')',
+      srcs.length >= 3 && srcs.some(s => /musictheory\.net/.test(s.h)) && srcs.every(s => s.t === '_blank' && /noopener/.test(s.r)));
+
+    chk('the next lesson is one press away', /The C major scale/.test(await K.innerText('.lrn-pager-a.is-next')));
+    await K.click('.lrn-pager-a.is-next');
+    await K.waitForFunction(() => location.pathname === '/learn/lesson/LRN-U2');
+    chk('…and moving on changes the address, so Back still works', /The C major scale/.test(await K.innerText('.lrn-lesson-title')));
+
+    await K.click('.lrn-rail-item:has-text("Notes")');
+    await K.waitForFunction(() => location.pathname === '/learn/notes');
+    await K.waitForSelector('.lrn-notecard', { timeout: 15000 });
+    const notes = await K.innerText('.lrn-main');
+    chk('Notes collects what they saved and what they wrote, in one place',
+      /Saved for later · 1/i.test(notes) && /Thumb on middle C/.test(notes));
+
+    await K.click('.lrn-rail-item:has-text("My courses")');
+    await K.waitForSelector('.lrn-search-box input', { timeout: 15000 });
+    await K.fill('.lrn-search-box input', 'scale');
+    await K.waitForFunction(() => /1 lesson matches/.test(document.querySelector('.lrn-search [role=status]').innerText));
+    chk('a lesson can be found by what it is about, with the count said aloud', /The C major scale/.test(await K.innerText('.lrn-search')));
+    await K.context().close();
+
+    /* A lesson with nothing to answer used to have no way to be finished. */
+    php(`db_insert('curriculum_units', ['unitId'=>'LRN-U3','course'=>'Piano','level'=>'Year 1 · Foundation','week'=>3,'position'=>1,'title'=>'Listening to a march','summary'=>'Just listen.','status'=>'published','passMark'=>50,'version'=>1,'objectives'=>json_encode(['Hear the beat']),'body'=>'Listen twice.','durationMins'=>15,'createdAt'=>now_iso(),'updatedAt'=>now_iso(),'publishedAt'=>now_iso()]);`);
+    const N = await open('/learn/lesson/LRN-U3');
+    await N.waitForSelector('.lrn-lesson', { timeout: 20000 });
+    const skip3 = await N.$('.lrn-lesson button:has-text("Skip"), .lrn-lesson button:has-text("skip")');
+    if (skip3) await skip3.click();
+    await N.waitForSelector('.lrn-markread button', { timeout: 15000 });
+    await N.click('.lrn-markread button');
+    await N.waitForFunction(() => /finished this lesson/.test(document.querySelector('.lrn-markread').innerText), { timeout: 15000 });
+    chk('a lesson with no questions can be marked done, and is',
+      php(`echo (string)db_row("SELECT status FROM curriculum_progress WHERE unitId='LRN-U3' AND memberId='NGG-LRN-M1'")['status'];`, ['bootstrap']) === 'completed');
+    await N.context().close();
 
     console.log('signed out');
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });

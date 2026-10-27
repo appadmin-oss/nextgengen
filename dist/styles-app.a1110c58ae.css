@@ -16649,6 +16649,70 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-why { margin: 0; padding: 11px 13px; font-size: 14.5px; line-height: 1.6;
   color: var(--lrn-ink-2); background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
 
+/* ── Coming back: the lesson to pick up, and what the weeks add up to ────── */
+.lrn-pickup { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 16px;
+  text-decoration: none; color: #fff; background: var(--lrn-accent); border-radius: var(--lrn-r); min-height: var(--lrn-tap); }
+.lrn-pickup > i:first-child { font-size: 34px; color: var(--lrn-gold); }
+.lrn-pickup > i:last-child { font-size: 20px; }
+.lrn-pickup > span { display: grid; gap: 2px; min-width: 0; }
+.lrn-pickup small { font-size: 12.5px; font-weight: 600; color: #d9deea; }
+.lrn-pickup b { font-size: 17px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.lrn-pickup b + span { font-size: 13px; color: #d9deea; }
+.lrn-figs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.lrn-figs li { display: grid; gap: 2px; padding: 12px 14px; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-figs b { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lrn-figs span { font-size: 12.5px; color: var(--lrn-ink-3); line-height: 1.35; }
+
+/* Visible to a screen reader only: the label a search box or a notes field
+   owes, where the surrounding heading already says it to everybody else. */
+.lrn-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.lrn-search { display: grid; gap: 8px; }
+.lrn-search-box { display: flex; align-items: center; gap: 9px; min-height: var(--lrn-tap); padding: 0 12px;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+.lrn-search-box:focus-within { border-color: var(--lrn-accent); }
+.lrn-search-box i { font-size: 18px; color: var(--lrn-ink-3); }
+.lrn-search-box input { flex: 1; min-width: 0; min-height: 42px; border: 0; outline: 0; background: transparent;
+  font: inherit; font-size: 15px; color: var(--lrn-ink); }
+
+/* ── In a lesson: keep it, note it, finish it, move on ───────────────────── */
+.lrn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lrn-save { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 13px; cursor: pointer;
+  border: 1px solid var(--lrn-line); border-radius: 99px; background: var(--lrn-s1); color: var(--lrn-ink-2);
+  font: inherit; font-size: 13.5px; font-weight: 600; }
+.lrn-save i { font-size: 17px; }
+.lrn-save.is-on { color: var(--lrn-accent); border-color: var(--lrn-accent); background: #eef1f7; }
+.lrn-textarea { width: 100%; min-height: 120px; padding: 11px 12px; resize: vertical; font: inherit; font-size: 15px; line-height: 1.55;
+  color: var(--lrn-ink); background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+.lrn-textarea:focus { border-color: var(--lrn-accent); outline: 0; }
+.lrn-markread { justify-items: start; }
+
+.lrn-read { margin: 0; display: grid; gap: 8px; padding: 14px 16px; background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
+.lrn-read figcaption { font-size: 15.5px; }
+.lrn-read blockquote { margin: 0; }
+.lrn-read blockquote p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--lrn-ink); }
+.lrn-read-src { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--lrn-ink-3); }
+.lrn-read-src a, .lrn-note a { color: var(--lrn-accent); }
+.lrn-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lrn-sources a { display: grid; gap: 2px; padding: 12px 14px; text-decoration: none; color: inherit;
+  border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); background: var(--lrn-s1); }
+.lrn-sources a:hover { border-color: var(--lrn-ink-3); }
+.lrn-src-t { font-size: 15px; font-weight: 650; color: var(--lrn-accent); }
+.lrn-src-by { font-size: 12.5px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-src-why { font-size: 13.5px; line-height: 1.5; color: var(--lrn-ink-2); }
+.lrn-wait.is-sm { margin: 10px 0; }
+
+.lrn-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lrn-pager-a { display: flex; align-items: center; gap: 10px; min-height: var(--lrn-tap); padding: 12px 14px; text-decoration: none;
+  color: inherit; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.lrn-pager-a:hover { border-color: var(--lrn-ink-3); }
+.lrn-pager-a > span { display: grid; gap: 2px; min-width: 0; }
+.lrn-pager-a small { font-size: 12px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-pager-a.is-next { justify-content: end; text-align: right; }
+
+.lrn-notecard-body { font-size: 14.5px; line-height: 1.55; color: var(--lrn-ink-2); white-space: pre-line;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
 /* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
 @container (min-width: 720px) {
   .lrn-shell { grid-template-areas: "top top" "rail main"; grid-template-columns: 216px 1fr; grid-template-rows: auto 1fr; }

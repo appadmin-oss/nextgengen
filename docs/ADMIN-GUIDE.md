@@ -1191,6 +1191,7 @@ inside the dashboard.
 | `/learn/plan/<subject>` | One subject's drill |
 | `/learn/review` | How the review works, and what they will be asked about |
 | `/learn/helper` | The study helper |
+| `/learn/notes` | **Notes** — the lessons they saved for later, and every note they wrote |
 
 **Every one of those is a real address.** A lesson can be bookmarked, sent to a
 mentor, or opened from a message, and the browser's Back button goes back. It
@@ -1201,6 +1202,30 @@ A lesson page carries, in this order: last session's review (which can always
 be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
+
+Around the lesson, so somebody coming back has somewhere to start:
+
+- **Pick up where you left off.** *This week* leads with the last lesson they
+  opened and have not finished, and three figures: weeks in a row with a lesson
+  finished, how many this week, and the time their finished lessons add up to.
+  The figures are worked out from their completions, never stored, so they
+  cannot disagree with the progress you see in the Control Room.
+- **Save for later** and **My notes** on every lesson. Notes are private to the
+  member: no staff screen, report or AI reads them. Both collect under *Notes*.
+- **Mark as done** on a lesson that has no questions, which before had no way
+  to be finished at all.
+- **Previous / Next** at the foot of a lesson, and *Lesson 2 of 8* at the top.
+- **Find a lesson** on *My courses*, across every course they are on.
+- **Go deeper.** A short read on the lesson's topic, fetched from Simple
+  English Wikipedia (English Wikipedia if it has nothing), shown with its
+  source and licence and only when the article's title shares a real word with
+  the lesson — then a short list of free, reputable places to learn more,
+  chosen by hand for each course (Khan Academy, OpenStax, CS50, MDN, Lichess,
+  musictheory.net, the WHO and the like: no ads in front of the first lesson,
+  nothing a child pays for). They open in a new tab. Reads are cached for a
+  month; if Wikipedia is down or busy, the read is simply left out and the list
+  still shows. To change the list for a course, a developer edits
+  `LEARN_SOURCES` in `api/_lib/domain/learn.php`.
 
 ### School: practising for their own exams (/learn/plan)
 

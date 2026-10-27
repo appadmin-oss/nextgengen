@@ -2205,7 +2205,10 @@ function curriculum_member_row(string $memberId): ?array {
 function member_curriculum_list(array $p): array {
     $m = curriculum_member_row((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
-    return ['ok' => true, 'track' => (string)$m['track']] + curriculum_for_member($m);
+    $c = curriculum_for_member($m);
+    // The Learn app's notes, saves, recently opened and figures (domain/learn.php), in the same read.
+    return ['ok' => true, 'track' => (string)$m['track']] + $c
+         + (function_exists('learn_state_for') ? ['learn' => learn_state_for($m, $c['units'])] : []);
 }
 
 function member_curriculum_unit(array $p): array {
@@ -2227,7 +2230,9 @@ function member_curriculum_unit(array $p): array {
        asked once a session, not once a Saturday. */
     $say = function_exists('member_lesson_feedback_mine')
         ? (member_lesson_feedback_mine(['memberId' => (string)$m['memberId'], 'unitId' => $id])['mine'] ?? null) : null;
+    if (function_exists('learn_touch')) learn_touch((string)$m['memberId'], $id);
     return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
+            'mine' => function_exists('learn_mine') ? learn_mine((string)$m['memberId'], $id) : null,
             'progress' => curriculum_progress_public($pr, $b),
             'review' => curriculum_opening_review($units, $id, (string)$m['memberId']),
             'feedback' => $say];

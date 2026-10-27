@@ -1003,6 +1003,10 @@
       curriculum:        () => request('/member/curriculum.php'),
       curriculumUnit:    (unitId) => request('/member/curriculum.php' + qs({ unit: unitId })),
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
+      // The Learn app: a private note on a lesson (empty clears it), and saving one for later.
+      learnNote:         (unitId, note) => request('/member/curriculum.php', { body: { action: 'note', unitId, note } }),
+      learnSave:         (unitId, saved) => request('/member/curriculum.php', { body: { action: 'save', unitId, saved: !!saved } }),
+      learnSources:      (unitId) => request('/member/curriculum.php' + qs({ view: 'sources', unit: unitId }), { timeout: 30000 }),
       curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
       /* Place a class in the curriculum: the list with suggested years, and one save for all. */

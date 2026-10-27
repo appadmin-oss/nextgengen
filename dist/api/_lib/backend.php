@@ -277,6 +277,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.curriculum.unit'   => 'member_curriculum_unit',
             'member.curriculum.submit' => 'member_curriculum_submit',
             'member.curriculum.ask'    => 'member_curriculum_ask',
+            'member.learn.note'        => 'member_learn_note',
+            'member.learn.save'        => 'member_learn_save',
+            'member.learn.sources'     => 'member_learn_sources',
             'member.testimonial.give'  => 'member_testimonial_give',
             'member.testimonial.mine'  => 'member_testimonial_mine',
             /* How today went — a tap, after every lesson, never published

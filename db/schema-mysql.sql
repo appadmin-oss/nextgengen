@@ -4362,3 +4362,20 @@ CREATE TABLE IF NOT EXISTS study_drills (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (187) ON DUPLICATE KEY UPDATE version = version;
+
+-- 188: the Learn app's note, save and last-opened per member per lesson (domain/learn.php).
+CREATE TABLE IF NOT EXISTS learn_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  unitId VARCHAR(40) NOT NULL,
+  note MEDIUMTEXT,
+  noteAt VARCHAR(32) NOT NULL DEFAULT '',
+  saved TINYINT NOT NULL DEFAULT 0,
+  savedAt VARCHAR(32) NOT NULL DEFAULT '',
+  openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  opens INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_learn_state (memberId, unitId),
+  KEY idx_learn_state_opened (memberId, openedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (188) ON DUPLICATE KEY UPDATE version = version;

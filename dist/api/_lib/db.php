@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 187;
+const NGG_SCHEMA_TARGET = 188;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5476,6 +5476,25 @@ function db_migrate(PDO $db): void {
                and left the table unindexed. */
             CREATE INDEX IF NOT EXISTS idx_drill_member ON study_drills(memberId, subject, startedAt);
             CREATE INDEX IF NOT EXISTS idx_drill_marked ON study_drills(memberId, markedAt);
+        ",
+        /* The Learn app's own record of a member and a lesson (domain/learn.php):
+           their private note on it, whether they saved it for later, and when
+           they last opened it — what "pick up where you left off" reads.
+           One row per member per lesson. Never read by staff. */
+        188 => "
+            CREATE TABLE IF NOT EXISTS learn_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              unitId TEXT NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              noteAt TEXT NOT NULL DEFAULT '',
+              saved INTEGER NOT NULL DEFAULT 0,
+              savedAt TEXT NOT NULL DEFAULT '',
+              openedAt TEXT NOT NULL DEFAULT '',
+              opens INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (memberId, unitId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_learn_state_opened ON learn_state(memberId, openedAt);
         ",
     ];
 

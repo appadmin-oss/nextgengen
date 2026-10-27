@@ -3541,3 +3541,27 @@ and child paths wired correctly, and these wrong. Each now has a test.
    not). Refused now, as for a child, unless they set it.
 7. The Control Room's mark wiped a note when marking a part done without one;
    it keeps it now, as the mentor path did.
+
+## 27 Oct 2026 — Learn: coming back, keeping, going deeper
+
+Asked: improve /learn and enrich it, from good sources.
+
+- **`learn_state`** (migration 188): one row per member per lesson — a private
+  note, *saved for later*, and when it was last opened. Merge policy
+  `MOVE_UNIQUE`. Every write is checked against the member's own lessons, so a
+  note cannot be kept on (or a title learned of) a lesson that is not theirs.
+- **The figures are derived, not stored** (`learn_stats`): a stored streak is
+  a second copy of `curriculum_progress` that drifts from it. A week not yet
+  over does not break the run.
+- **Go deeper** (`member.learn.sources`): a Wikipedia summary chosen by title
+  word overlap, never the first search hit (the first hit for a lesson title
+  is often about something else), with CC BY-SA attribution as the licence
+  requires; then a hand-checked list per course. Fetched server-side with the
+  User-Agent Wikimedia's API policy asks for, cached a month, a miss cached a
+  day so a rate limit is not hit again on every view. Every listed URL answered
+  when added; Canva and Adobe were dropped because they refuse non-browser
+  clients (403), which is also what a school proxy would see. The test seam is
+  `$GLOBALS['__learn_http']`; the browser suite plants the cache file instead.
+- A lesson with no questions can be **marked done** (`curriculum_submit` with
+  no answers completes at 100%). Before this, it could never be finished.
+- New: `/learn/notes`, search on *My courses*, Previous/Next, *Lesson N of M*.
