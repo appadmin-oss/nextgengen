@@ -42,6 +42,16 @@ let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
 // The boot splash fades out once the app is up; a picture is taken after it has gone.
 const settle = p => p.waitForFunction(() => { const b = document.getElementById('ngg-boot'); return !b || b.classList.contains('gone'); }, null, { timeout: 30000 }).then(() => p.waitForTimeout(700), () => {});
+/* WCAG 2.1 A/AA on one part of the page (axe-core, as tests/a11y.test.js): serious and critical only. */
+const AXE = path.join(ROOT, 'node_modules', 'axe-core', 'axe.min.js');
+async function axeOk(p, sel) {
+  if (!fs.existsSync(AXE)) { console.log('  (axe-core not installed: accessibility checks skipped)'); return true; }
+  if (!(await p.evaluate(() => !!window.axe))) await p.addScriptTag({ path: AXE });
+  const v = await p.evaluate(s => window.axe.run({ include: [[s]] }, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] })
+    .then(r => r.violations.filter(x => x.impact === 'serious' || x.impact === 'critical').map(x => x.id + ' × ' + x.nodes.length + ': ' + x.nodes.slice(0, 2).map(n => n.target.join(' ')).join(' | '))), sel);
+  if (v.length) console.error('    ' + v.join('\n    '));
+  return v.length === 0;
+}
 const shot = async (p, n, full = true) => { if (!SHOTS) return; await settle(p); await p.screenshot({ path: path.join(SHOTS, n + '.png'), fullPage: full }).catch(() => {}); };
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
@@ -80,6 +90,17 @@ function cleanup() {
       $f = wifi_feed(['gatewayId'=>$out[1][0],'key'=>$out[1][1],'since'=>0,'os'=>'FreeRADIUS 3.2.1']); wifi_feed(['gatewayId'=>$out[1][0],'key'=>$out[1][1],'since'=>$f['version']]);
       db_update('wifi_gateways', ['lastSeenAt'=>gmdate('Y-m-d\\\\TH:i:s\\\\Z', time() - 3 * 3600)], ['gatewayId'=>$out[1][0]]);
       $f = wifi_feed(['gatewayId'=>$out[3][0],'key'=>$out[3][1],'since'=>0,'os'=>'7.12','error'=>'fetch: certificate verify failed']);
+      db_insert('members', ['memberId'=>'NGG-WF-NADM','fullName'=>'Bola Centre Admin','email'=>'bola@afrovanguard.org.ng','type'=>'NGG','status'=>'active','role'=>'admin','centre'=>'Egbeda','capsExtra'=>json_encode(['network']),'createdAt'=>$now,'updatedAt'=>$now]);
+      // Thirty days of history, so the analytics have something to show.
+      for ($d = 1; $d <= 30; $d++) foreach ([[$out[0][0], 22], [$out[1][0], 14]] as [$gid, $base]) {
+        $peak = $base + (($d * 7) % 11) + (in_array((int)gmdate('N', time() - $d * 86400), [6], true) ? 18 : 0);
+        db_insert('wifi_gateway_daily', ['gatewayId'=>$gid, 'date'=>gmdate('Y-m-d', time() - $d * 86400), 'samples'=>500, 'hoursUp'=>$d % 9 === 0 ? 17 : 24, 'activePeak'=>$peak, 'activeSum'=>$peak * 300, 'activeSamples'=>500, 'cpuMax'=>40 + $d % 30]);
+      }
+      for ($h = 1; $h <= 13 * 24; $h++) { $t = time() - $h * 3600; $hr = (int)gmdate('G', $t) + 1; $sat = (int)gmdate('N', $t) === 6;
+        $a = $hr >= 8 && $hr <= 15 ? ($sat ? 30 : 6) + ($hr % 4) : 0; db_insert('wifi_gateway_stats', ['gatewayId'=>$out[0][0], 'hour'=>gmdate('Y-m-d\\TH', $t), 'samples'=>30, 'activeMax'=>$a, 'activeSum'=>$a * 30, 'activeSamples'=>30, 'cpuMax'=>35, 'memFreeMin'=>80]); }
+      foreach ([[9.4, 'Egbeda', 6], [4.1, 'Ikeja', 3], [12.2, 'Egbeda', 1]] as [$dl, $c, $ago]) db_insert('wifi_speed_tests', ['centre'=>$c, 'source'=>'device', 'downMbps'=>$dl, 'upMbps'=>$dl / 3, 'rttMs'=>60, 'byId'=>'${ADMIN}', 'note'=>'Main hall', 'at'=>gmdate('Y-m-d\\TH:i:s\\Z', time() - $ago * 86400)]);
+      $rg = admin_wifi_region_save(['requesterId'=>'${ADMIN}', 'name'=>'Lagos Mainland', 'code'=>'LM']);
+      admin_wifi_region_assign(['requesterId'=>'${ADMIN}', 'regionId'=>$rg['regionId'], 'centres'=>['Egbeda', 'Ikeja', 'Yaba']]);
       echo json_encode($out);`, ['bootstrap']));
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -163,19 +184,70 @@ function cleanup() {
     chk('…and is kept for the centre', /Main hall, test/.test(await P.innerText('body')));
     await shot(P, 'wifi-8-health');
 
-    console.log('Wi-Fi inside the Club portal');
+    if (process.env.WIFI_REF) { const R = await open(ADMIN, true, '/club-admin?s=centres'); await R.waitForTimeout(6000); await shot(R, 'ref-club-centres', false); const R2 = await open(ADMIN, true, '/club-admin?s=desks'); await R2.waitForTimeout(6000); await shot(R2, 'ref-club-desks', false); const R3 = await open(ADMIN, true, '/club-admin'); await R3.waitForTimeout(6000); await shot(R3, 'ref-club-home', false); }
+    console.log('Control Room → Wi-Fi → Analytics and Regions');
+    await P.goto(BASE + '/control/wifi/wifi-analytics', { waitUntil: 'domcontentloaded' });
+    await P.waitForFunction(() => /Most online at once/.test(document.body.innerText) && /Busiest centres/.test(document.body.innerText), null, { timeout: 60000 });
+    chk('the Control Room has Wi-Fi analytics too', /People online/.test(await P.innerText('body')) && /Regions now/.test(await P.innerText('body')));
+    await P.click('button:has-text("Last 7 days")');
+    await P.waitForFunction(() => /in the last 7 days/.test(document.body.innerText), null, { timeout: 30000 }).catch(() => {});
+    chk('…and its period changes', /in the last 7 days/.test(await P.innerText('body')));
+    await shot(P, 'wifi-cr-analytics');
+    await P.goto(BASE + '/control/wifi/wifi-regions', { waitUntil: 'domcontentloaded' });
+    await P.waitForFunction(() => /Lagos Mainland/.test(document.body.innerText), null, { timeout: 60000 });
+    chk('…and regions', /Lagos Mainland/.test(await P.innerText('body')) && /New region/.test(await P.innerText('body')));
+    await shot(P, 'wifi-cr-regions');
+
+    console.log('Wi-Fi inside the Club portal, in its own design');
     const C = await open(ADMIN, true, '/club-admin?s=wifi');
-    await C.waitForFunction(() => /Main hall router/.test(document.body.innerText), null, { timeout: 40000 }).catch(() => {});
-    const cb = await C.innerText('body');
-    chk('somebody holding network gets Wi-Fi inside the Club portal, not sent away', /\/club-admin/.test(C.url()) && /Main hall router/.test(cb) && /Speed & health/.test(cb) && /Who gets on/.test(cb));
-    await shot(C, 'wifi-9-club-portal');
-    await C.click('.cr-embed .cr-card:has-text("Main hall router")');
-    await C.waitForSelector('.cr-sheet', { timeout: 10000 }).catch(() => {});
-    chk('…with the same gateway drawer', /Rotate the key/.test(await C.innerText('.cr-sheet').catch(() => '')));
-    await shot(C, 'wifi-10-club-drawer', false);
+    await C.waitForSelector('.cw-stats', { timeout: 40000 });
+    await C.waitForFunction(() => /Most online at once/.test(document.body.innerText) && document.querySelector('.cw-chart svg'), null, { timeout: 60000 });
+    const ov = await C.innerText('.cw');
+    chk('the Club portal shows Wi-Fi in place, in the Club’s own design (no Control Room inside it)', /\/club-admin/.test(C.url()) && !(await C.$('.cr-app')) && /Most online at once/.test(ov));
+    chk('the overview has the analytics: online per day, busy hours, availability, line speed, regions', /People online/.test(ov) && /Busy hours/.test(ov) && /Gateways there/.test(ov) && /Line speed/.test(ov) && /Lagos Mainland/.test(ov));
+    chk('…and names what needs doing', /aren’t working|isn’t working/.test(ov) && /Busiest centres/.test(ov) && /Slowest lines/.test(ov));
+    const nav = await C.innerText('nav, aside').catch(() => '');
+    chk('Wi-Fi has its own sections in the Club sidebar', /Gateways/.test(await C.innerText('body')) && /Speed tests/.test(await C.innerText('body')) && /Regions/.test(await C.innerText('body')));
+    await shot(C, 'wifi-club-1-overview');
+    chk('the Club Wi-Fi overview passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw'));
+    await C.goto(BASE + '/club-admin?s=wifi-gateways', { waitUntil: 'domcontentloaded' });
+    await C.waitForSelector('.cw-table.is-rows tbody tr', { timeout: 40000 });
+    chk('Gateways is a server-paged table with search and filters', (await C.$$('.cw-table.is-rows tbody tr')).length === 4 && /1–4 of 4/.test(await C.innerText('.cw-pager')));
+    await C.selectOption('.cw-tools select[aria-label="Status"]', 'bad');
+    await C.waitForFunction(() => /of 2\b/.test((document.querySelector('.cw-pager') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    chk('…filtered on the server', /of 2\b/.test(await C.innerText('.cw-pager')));
+    await C.selectOption('.cw-tools select[aria-label="Status"]', '');
+    await C.waitForFunction(() => /of 4\b/.test((document.querySelector('.cw-pager') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    await shot(C, 'wifi-club-2-gateways');
+    chk('the gateways table passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw'));
+    await C.click('.cw-table.is-rows tbody tr:has-text("Main hall router")');
+    await C.waitForSelector('.cw-panel', { timeout: 10000 });
+    const pn = await C.innerText('.cw-panel');
+    chk('a gateway opens in a Club panel with its diagnosis and tools', /How it is/.test(pn) && /Rotate the key/.test(pn) && /Setup guide/.test(pn));
+    await shot(C, 'wifi-club-3-gateway', false);
+    chk('the gateway panel passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw-panel'));
+    await C.keyboard.press('Escape');
+    await C.goto(BASE + '/club-admin?s=wifi-regions', { waitUntil: 'domcontentloaded' });
+    await C.waitForSelector('.cw-tile', { timeout: 40000 });
+    chk('Regions shows each region with its health and leads', /Lagos Mainland/.test(await C.innerText('.cw')) && /3 centres/.test(await C.innerText('.cw')));
+    await shot(C, 'wifi-club-4-regions');
+    chk('the regions page passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw'));
+    await C.click('.cw-tile:has-text("Lagos Mainland")');
+    await C.waitForSelector('.cw-panel .cw-list li', { timeout: 10000 });
+    chk('a region opens with its centres', /Egbeda/.test(await C.innerText('.cw-panel')) && /Region speeds/.test(await C.innerText('.cw-panel')));
+    await shot(C, 'wifi-club-5-region', false);
+    await C.keyboard.press('Escape');
+    await C.goto(BASE + '/club-admin?s=wifi-speed', { waitUntil: 'domcontentloaded' });
+    await C.waitForSelector('.cw-test', { timeout: 40000 });
+    await shot(C, 'wifi-club-6-speed');
     const K = await open(CLUB, true, '/club-admin');
     await K.waitForFunction(() => /Roster/.test(document.body.innerText), null, { timeout: 30000 }).catch(() => {});
-    chk('a club coordinator without network does not', !/\bWi-Fi\b/.test(await K.innerText('body')));
+    chk('a club coordinator without network does not see Wi-Fi', !/\bSpeed tests\b/.test(await K.innerText('body')));
+    const N = await open('NGG-WF-NADM', true, '/club-admin?s=wifi-gateways');
+    await N.waitForSelector('.cw-table.is-rows tbody tr, .cw-empty', { timeout: 40000 });
+    const nb = await N.innerText('.cw');
+    chk('an NGG admin with network sees only their own centre', /Showing the centre you look after: Egbeda/.test(nb) && /Main hall router/.test(nb) && !/Front office hAP|UniFi via RADIUS/.test(nb));
+    await shot(N, 'wifi-club-7-own-centre');
 
     console.log('the member’s Me → Wi-Fi');
     const M = await open(MEMBER, false, '/dashboard/me', 420, 900);

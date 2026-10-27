@@ -363,7 +363,10 @@ function admin_wifi_analytics(array $p): array {
     $regionOf = [];
     foreach (db_all('SELECT centre, regionId FROM wifi_region_centres') as $x) $regionOf[(string)$x['centre']] = (string)$x['regionId'];
     $inView = fn($c) => wifi_scope_has($scope, $c) && ($fc === '' || $c === $fc) && ($fr === '' || ($regionOf[$c] ?? '') === $fr);
-    $gws = array_values(array_filter(db_all("SELECT gatewayId, centre, label, platform, createdAt FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL"), fn($r) => $inView((string)$r['centre'])));
+    $all = array_values(array_filter(db_all("SELECT gatewayId, centre, label, platform, createdAt, lastSeenAt FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL"), fn($r) => $inView((string)$r['centre'])));
+    // A gateway never set up has no hours to count; it is named apart (gatewaysNever), not counted as down.
+    $gws = array_values(array_filter($all, fn($r) => (string)$r['lastSeenAt'] !== ''));
+    $never = count($all) - count($gws);
     $ids = array_column($gws, 'gatewayId');
     $byId = array_column($gws, null, 'gatewayId');
     $from = gmdate('Y-m-d', time() - ($days - 1) * 86400);
@@ -447,7 +450,7 @@ function admin_wifi_analytics(array $p): array {
 
     $peakVals = array_column($series, 'peakOnline');
     $availVals = array_filter(array_column($series, 'availability'), fn($v) => $v !== null);
-    return ['ok' => true, 'days' => $days, 'scope' => ['all' => $scope === null], 'gateways' => $nGw,
+    return ['ok' => true, 'days' => $days, 'scope' => ['all' => $scope === null], 'gateways' => count($all), 'gatewaysNever' => $never,
         'summary' => [
             'peakOnline' => $peakVals ? max($peakVals) : 0,
             'avgAvailability' => $availVals ? round(array_sum($availVals) / count($availVals), 1) : null,

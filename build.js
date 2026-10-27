@@ -120,6 +120,7 @@ const ORDER = [
   'src/modules/member9/mp9-more.jsx',
   'src/modules/club3/cp3-view.jsx',
   'src/modules/club3/sd3-view.jsx',
+  'src/modules/club3/cp3-wifi.jsx',
   'src/modules/club3/cp3-meta.jsx',
   'src/modules/club3/cp3-directory.jsx',
   'src/modules/club3/cp3-app.jsx',

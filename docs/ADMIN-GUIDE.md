@@ -3312,3 +3312,20 @@ visits. NGG keeps no browsing record (see docs/POLICY.md, Wi-Fi).
 (an alumni mentor on Saturdays) can be set by hand from *Why can't somebody get
 on?* — by whoever looks after their record — with a reason. An override never
 undoes a suspension.
+
+### Wi-Fi in the Club portal, regions and analytics (added 2026-10-27)
+
+- **Who sees what.** You see the Wi-Fi of the centres you look after: your own
+  centre, the centres of a Wi-Fi region you lead, or — for a super admin —
+  every centre. A note at the top says which.
+- **Club portal → Wi-Fi** (for anybody holding `network`): **Overview** (who is
+  online per day, the busy hours, how much of the day gateways are there, line
+  speeds, each region's health, what needs you), **Gateways** (search and
+  filter every gateway; open one for its diagnosis and tools), **Regions**,
+  **Speed tests**, **Who gets on**, **Setup**. The Control Room's Wi-Fi page has
+  the same, including Analytics and Regions.
+- **Wi-Fi regions** group centres for their Wi-Fi. Somebody who sees every
+  centre makes them, puts centres in them and chooses their leads (staff who
+  hold `network`). A lead sees and looks after their region's centres.
+- **Speeds follow down**: the network's defaults, then a region's own, then a
+  centre's own. Set only what differs; "set here" switched off means "follow".

@@ -3679,3 +3679,45 @@ region in the schema today. Plan:
 op, with tests; (3) the server-side gateway list and the region roll-up;
 (4) settings inheritance; (5) load caching, measured, before more than a pilot
 region goes live.
+
+### Wi-Fi at scale: built (2026-10-27) — the Wi-Fi half of the plan above
+
+The owner's direction: build the Wi-Fi side now; **NGG-wide regions and
+centre management stay planned** (the "Regions first" part of the plan above
+is unchanged and still to do).
+
+- **Scope (`wifi_scope`, `wifi_gate`).** Every Wi-Fi op is limited on the way
+  in: a super admin sees every centre; a **Wi-Fi region lead** their regions'
+  centres; anybody else holding `network` the centres in their `centreScope`,
+  or — with none — **their own centre only**. The network's access table and
+  default speeds, and the shaping of regions, are for somebody who sees every
+  centre (`network_wide_only`).
+- **Wi-Fi regions** (`domain/wifi-regions.php`, migration 191): `wifi_regions`,
+  `wifi_region_centres` (one region per centre), `wifi_region_leads` (staff who
+  hold `network`). A Wi-Fi grouping only — `centres` is untouched. **When
+  NGG-wide regions are built, migrate these into them** (one region concept,
+  CLAUDE.md §11) and keep `wifi_region_of()` as the one place that resolves it.
+- **Speeds inherit** network → region → centre (`wifi_profile_overrides`, only
+  overrides stored; `wifi_settings($centre)` resolves and says where each value
+  came from). Each gateway's feed carries its centre's.
+- **Lists at 2,000 centres**: `admin.wifi.gateways` and `admin.wifi.centres` are
+  searched, faceted, sorted and paged on the server with true totals and
+  "select every match" ids; health is derived per gateway over the whole scope
+  before the page is cut.
+- **Load**: a centre's computed list is kept 60 s (`WIFI_LIST_TTL`, config
+  `wifi.list_ttl`), PINs sealed in the cache; a change made in Wi-Fi drops it
+  at once, a record change elsewhere reaches it within the minute.
+- **Analytics** (`admin.wifi.analytics`): every fetch is a heartbeat
+  (`wifi_gateway_daily`, kept 400 days; hourly rows 14), so availability is
+  measurable on every platform. People online per day (peak/average),
+  availability, line speed, the week's busy hours, busiest/slowest/least
+  available, health by region. Gateways never connected are counted apart.
+- **The Club portal's Wi-Fi is its own** (`src/modules/club3/cp3-wifi.jsx`,
+  `.cw-*` in the Club's design: Overview, Gateways, Regions, Speed tests, Who
+  gets on, Setup in the sidebar). The embedded Control Room (`CrEmbed`) was
+  removed: the owner found a Control Room inside the Club portal out of place.
+  The Control Room keeps its own Wi-Fi page (now with Analytics and Regions).
+  Both call the same ops; neither owns logic the other lacks.
+- Still open: alerts (a digest per region lead when a gateway is silent), bulk
+  acts per region (rotate keys, ask for line tests), the load measurement
+  before more than one pilot region.

@@ -574,3 +574,13 @@ UTC hour (`hour` = `YYYY-MM-DDTHH`) — `samples`, `activeMax`, `activeSum`,
 `cpuMax`, `memFreeMin`; kept 14 days. `wifi_speed_tests`: `centre`/`centreId`,
 `gatewayId` (blank for a device), `source` (`gateway` | `device`), `downMbps`,
 `upMbps`, `rttMs`, `byId`, `note`, `at`. No table holds who browsed what.
+
+## Wi-Fi regions and analytics (migration 191)
+
+`wifi_regions` (regionId `WR…`, name, code, note, removedAt) · `wifi_region_centres`
+(centre UNIQUE + centreId, regionId) · `wifi_region_leads` (regionId, memberId) ·
+`wifi_profile_overrides` (regionId | centre + centreId, profilesJson: only the
+fields set at that level) · `wifi_gateway_daily` (gatewayId, date, samples,
+hoursUp, activePeak, activeSum, activeSamples, cpuMax; 400 days) ·
+`wifi_gateway_stats.activeSamples` (so an hour's average counts only reports
+that carried a figure).

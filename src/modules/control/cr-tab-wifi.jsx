@@ -40,6 +40,7 @@ const crWfErr = (e, fallback) => {
 const crWfIcon = p => ({ mikrotik: "broadcast", openwrt: "share-network", radius: "shield-check", generic: "brackets-curly" })[p] || "wifi-high";
 const crWfName = g => g.label || g.centre;
 const crWfCtx = { current: null };
+const crWfDays = { current: 30 };   // the Analytics period, kept while the Control Room is open
 
 /* ── Gateways ─────────────────────────────────────────────────────────────── */
 
@@ -304,6 +305,70 @@ function crWfForms(d) {
   return { access, speeds };
 }
 
+/* ── Regions ──────────────────────────────────────────────────────────────── */
+
+function crWfRegionEdit(ctx, r) {
+  ctx.form({ title: r ? "Rename " + r.name : "New region", submit: r ? "Save" : "Make the region", busyLabel: "Saving…",
+    intro: "A Wi-Fi region groups centres for their Wi-Fi: who looks after them, their speeds, their health at a glance.",
+    values: r ? { name: r.name, code: r.code, note: r.note } : {},
+    fields: [{ id: "name", l: "Name", req: true, max: 120, ph: "e.g. Lagos West" }, { id: "code", l: "Short code", max: 8, ph: "e.g. LW" }, { id: "note", l: "Note", max: 255 }],
+    onSubmit: async v => { try { return await NGGApi.admin.wifi.regionSave({ regionId: r ? r.regionId : undefined, name: v.name, code: v.code, note: v.note }); }
+      catch (e) { if (e && e.data && e.data.error === "name_taken") return { fieldErrors: { name: "There is already a region with that name." } }; throw e; } },
+    done: v => { ctx.reload(); return (r ? "Saved · " : "Made · ") + v.name; } });
+}
+
+function crWfRegionOpen(ctx, r, shape) {
+  ctx.drawer({ title: r.name, sub: crPlural(r.centres, "centre") + " · " + crPlural(r.gateways, "gateway"), icon: "map-trifold",
+    stats: [["Working", crNum(r.working)], ["Not working", crNum(r.bad)], ["Online now", crNum(r.online)]],
+    fields: [["Short code", r.code || "—"], ["Leads", r.leads.map(l => l.name).join(", ") || "None yet"], ["Note", r.note || "—"]],
+    actions: [
+      { l: "Region speeds", primary: true, run: () => crWfSpeedsFor(ctx, { regionId: r.regionId }, r.name) },
+      shape ? { l: "Leads", run: async () => {
+        let o; try { o = await NGGApi.admin.wifi.leadOptions(); } catch (e) { ctx.toast(crWfErr(e, "Couldn’t load the staff."), null, true); return; }
+        ctx.form({ title: "Who leads " + r.name, submit: "Save leads", intro: "A lead sees this region’s centres in Wi-Fi and sets its speeds. Only staff holding the network capability can lead.",
+          values: { ids: r.leads.map(l => l.memberId) }, fields: [{ id: "ids", l: "Leads", type: "multi", opts: (o.staff || []).map(x => [x.memberId, x.name + " · " + x.role]) }],
+          onSubmit: async v => NGGApi.admin.wifi.regionLeads(r.regionId, v.ids || []), done: () => { ctx.reload(); return "Leads saved · " + r.name; } });
+      } } : null,
+      shape ? { l: "Rename", run: () => { ctx.closeDrawer(); crWfRegionEdit(ctx, r); } } : null,
+      shape ? { l: "Remove", run: async () => {
+        if (!(await ctx.confirm({ title: "Remove " + r.name + "?", danger: true, cta: "Remove the region", body: "Its centres stay as they are, in no region; the region’s own speeds and leads go. Gateways keep working." }))) return;
+        try { await NGGApi.admin.wifi.regionRemove(r.regionId); ctx.closeDrawer(); ctx.toast("Removed · " + r.name); ctx.reload(); } catch (e) { ctx.toast(crWfErr(e, "Couldn’t remove it."), null, true); }
+      } } : null,
+    ].filter(Boolean) });
+}
+
+async function crWfRegionAssign(ctx, regions) {
+  let c;
+  try { c = await NGGApi.admin.wifi.centres({ region: "_none", idsOnly: 1, pageSize: 1 }); } catch (e) { ctx.toast(crWfErr(e, "Couldn’t load the centres."), null, true); return; }
+  const free = c.all || [];
+  ctx.form({ title: "Put centres in a region", submit: "Put them there", busyLabel: "Moving…",
+    intro: free.length ? crPlural(free.length, "centre is", "centres are") + " in no region. Choose some, and the region they go in." : "Every centre is in a region. To move one, choose it from every centre.",
+    values: { region: regions[0].regionId, centres: [] },
+    fields: [{ id: "region", l: "Region", type: "select", req: true, opts: regions.map(r => [r.regionId, r.name]) }, { id: "centres", l: "Centres", type: "multi", opts: free.map(x => [x, x]) }],
+    onSubmit: async v => { if (!(v.centres || []).length) return { fieldErrors: { centres: "Choose at least one centre." } }; return NGGApi.admin.wifi.regionAssign(v.region, v.centres); },
+    done: (v, r) => { ctx.reload(); return crNum(r.applied) + " moved" + (r.refused ? " · " + crNum(r.refused) + " refused" : ""); } });
+}
+
+/* A region's or a centre's own speeds: only what is set here is kept here. */
+async function crWfSpeedsFor(ctx, where, name) {
+  let d;
+  try { d = await NGGApi.admin.wifi.profilesFor(where); } catch (e) { ctx.toast(crWfErr(e, "Couldn’t load the speeds."), null, true); return; }
+  const eff = d.effective || {}, own = d.own || {}, values = {}, fields = [];
+  const n = (lo, hi) => (x, v) => /^\d+$/.test(String(x).trim()) && +x >= lo && +x <= hi ? "" : "A whole number from " + lo + " to " + hi + ".";
+  Object.keys(eff).forEach(k => {
+    values[k + "|own"] = !!own[k]; values[k + "|down"] = String(eff[k].down); values[k + "|up"] = String(eff[k].up); values[k + "|devices"] = String(eff[k].devices);
+    const on = v => !!v[k + "|own"];
+    fields.push({ id: k + "|own", l: (CR_WF_PROFILE_WORDS[k] || k) + " — set here", type: "switch", help: own[k] ? "Set here." : "Follows " + ((d.from || {})[k] || "the network") + ": " + eff[k].down + "/" + eff[k].up + " Mbit/s, " + crPlural(eff[k].devices, "device") + "." });
+    fields.push({ id: k + "|down", l: "Download (Mbit/s)", type: "number", when: on, check: (x, v) => on(v) ? n(1, 1000)(x) : "" });
+    fields.push({ id: k + "|up", l: "Upload (Mbit/s)", type: "number", when: on, check: (x, v) => on(v) ? n(1, 1000)(x) : "" });
+    fields.push({ id: k + "|devices", l: "Devices at once", type: "number", when: on, check: (x, v) => on(v) ? n(1, 5)(x) : "" });
+  });
+  ctx.closeDrawer();
+  ctx.form({ title: "Speeds · " + name, submit: "Save speeds", busyLabel: "Saving…", intro: "Anything not set here follows " + (d.level === "centre" ? "the region, then the network" : "the network") + ".", values, fields,
+    onSubmit: async v => { const out = {}; Object.keys(eff).forEach(k => { out[k] = v[k + "|own"] ? { down: +v[k + "|down"], up: +v[k + "|up"], devices: +v[k + "|devices"] } : null; }); return NGGApi.admin.wifi.profilesSet(where, out); },
+    done: () => "Speeds saved · " + name });
+}
+
 /* ── Setup guides ─────────────────────────────────────────────────────────── */
 
 const CR_WF_CAN = [["profiles", "Speeds"], ["devices", "Devices"], ["kick", "Signs out"], ["remember", "Remembers"], ["filter", "Filtering"]];
@@ -394,6 +459,68 @@ Object.assign(CR_TAB_DEFS, {
           sub: "A MikroTik gateway also tests its own line every night, or when asked from its card. Device tests measure the line to NGG from where people actually sit." },
       ];
     },
+  },
+
+  /* Analytics (admin.wifi.analytics): the same numbers as the Club portal's
+     Wi-Fi overview, drawn with the Control Room's own blocks. Limited on the
+     server to the person's Wi-Fi scope. */
+  "wifi-analytics": {
+    skeleton: ["kpis", "table", "table"],
+    load: async () => {
+      const days = crWfDays.current;
+      const [a, r] = await Promise.all([NGGApi.admin.wifi.analytics({ days }), NGGApi.admin.wifi.regions().catch(() => ({ regions: [] }))]);
+      return { a, regions: r.regions || [], days };
+    },
+    actions: (d, ctx) => [7, 30, 90].map(n => ({ l: "Last " + n + " days", icon: n === d.days ? "check" : "calendar-blank", primary: n === d.days, run: () => { crWfDays.current = n; ctx.reload(); } })),
+    blocks: (d, ctx) => {
+      const a = d.a, s = a.summary;
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      const hours = [];
+      a.heatmap.forEach((row, di) => row.forEach((v, h) => { if (v > 0) hours.push([days[di] + " " + String(h).padStart(2, "0") + ":00", v]); }));
+      hours.sort((x, y) => y[1] - x[1]);
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Gateways", v: crNum(a.gateways), dn: a.gatewaysNever ? crNum(a.gatewaysNever) + " not connected yet" : "" },
+          { l: "Most online at once", v: crNum(s.peakOnline), dn: "in the last " + d.days + " days" },
+          { l: "Gateways there", v: s.avgAvailability == null ? "—" : s.avgAvailability + "%", dn: "of the hours, on average", tone: s.avgAvailability != null && s.avgAvailability < 90 ? "down" : "flat" },
+          { l: "Typical line", v: crWfMbps(s.medianLine), dn: s.slowCentres ? crPlural(s.slowCentres, "slow centre") : crPlural(s.tests, "test") },
+        ] },
+        { type: "columns", span: 6, title: "People online", sub: "The busiest moment each day, across the gateways in view", big: crNum(s.peakOnline), pct: false,
+          bars: a.series.map(x => ({ l: x.date.slice(8), v: x.peakOnline, tip: x.date + " · average " + x.avgOnline })) },
+        { type: "columns", span: 3, title: "Gateways there", sub: "Share of each day’s hours they fetched in", big: s.avgAvailability == null ? "—" : s.avgAvailability + "%", pct: true,
+          bars: a.series.map(x => ({ l: x.date.slice(8), v: x.availability == null ? 0 : Math.round(x.availability) })) },
+        { type: "bars", span: 3, title: "Busy hours", sub: "Most online, by weekday and hour (last 14 days)", rows: hours.slice(0, 8), empty: "The busy hours fill in as gateways report." },
+        { type: "bars", span: 2, title: "Busiest centres", rows: a.busiest.map(x => [x.centre, x.peak]), empty: "Nothing reported yet." },
+        { type: "table", span: 2, title: "Slowest lines", nosel: true, cols: ["Centre", { l: "Down", num: true }],
+          rows: a.slowest.map(x => ({ key: x.centre, cells: [{ k: "text", t: x.centre, s: crAgo(x.at) }, { k: "num", t: crWfMbps(x.downMbps), v: x.downMbps }] })), emptyText: "No tests yet." },
+        { type: "table", span: 2, title: "Least available", nosel: true, cols: ["Gateway", { l: "There", num: true }],
+          rows: a.leastAvailable.map(x => ({ key: x.gatewayId, cells: [{ k: "text", t: x.label, s: x.centre }, { k: "num", t: x.availability + "%", v: x.availability }] })), emptyText: "No gateways yet." },
+        a.regions.length ? { type: "table", span: 6, title: "Regions now", nosel: true,
+          cols: ["Region", { l: "Centres", num: true }, { l: "With Wi-Fi", num: true }, { l: "Working", num: true }, { l: "Need a look", num: true }, { l: "Not working", num: true }, { l: "Online now", num: true }],
+          rows: a.regions.map(r => ({ key: r.regionId || "_none", cells: [{ k: "strong", t: r.name }, { k: "num", t: crNum(r.centres), v: r.centres }, { k: "num", t: crNum(r.withWifi), v: r.withWifi }, { k: "num", t: crNum(r.working), v: r.working },
+            { k: "num", t: crNum(r.warn), v: r.warn }, { k: "num", t: crNum(r.bad), v: r.bad }, { k: "num", t: crNum(r.online), v: r.online }] })) } : null,
+        { type: "note", span: 6, icon: "eye-slash", text: "Hourly and daily summaries only: how many were online, how much of the day each gateway was there, and the line tests. Never who was online, and never what anybody visited." },
+      ].filter(Boolean);
+    },
+  },
+
+  /* Regions (admin.wifi.regions …): a Wi-Fi grouping of centres. */
+  "wifi-regions": {
+    skeleton: ["table"],
+    load: async () => NGGApi.admin.wifi.regions(),
+    actions: (d, ctx) => d.canShape ? [
+      { l: "New region", icon: "plus", primary: true, run: () => crWfRegionEdit(ctx, null) },
+      { l: "Put centres in a region", icon: "squares-four", disabled: !d.regions.length, why: "Make a region first.", run: () => crWfRegionAssign(ctx, d.regions) },
+    ] : [],
+    blocks: (d, ctx) => [
+      { type: "table", span: 6, title: "Regions", sub: d.canShape ? "Open one for its leads, speeds, name or removal" : "The regions you lead", nosel: true,
+        cols: ["Region", { l: "Centres", num: true }, { l: "With Wi-Fi", num: true }, "Health", { l: "Online now", num: true }, "Leads"],
+        rows: d.regions.map(r => ({ key: r.regionId, open: () => crWfRegionOpen(ctx, r, d.canShape), cells: [{ k: "strong", t: r.name, s: r.code }, { k: "num", t: crNum(r.centres), v: r.centres }, { k: "num", t: crNum(r.withWifi), v: r.withWifi },
+          r.bad ? { k: "status", t: crNum(r.bad) + " not working", tone: "bad" } : r.warn ? { k: "status", t: crNum(r.warn) + " need a look", tone: "warn" } : r.gateways ? { k: "status", t: "Working", tone: "ok" } : { k: "status", t: "No gateways", tone: "neutral" },
+          { k: "num", t: crNum(r.online), v: r.online }, { k: "text", t: r.leads.map(l => l.name).join(", ") || "None yet" }] })),
+        emptyText: d.canShape ? "No regions yet. A region groups centres for their Wi-Fi, with its own leads and speeds." : "You don’t lead a Wi-Fi region." },
+      d.canShape && d.unassigned.centres ? { type: "note", span: 6, icon: "info", text: crPlural(d.unassigned.centres, "centre is", "centres are") + " in no region.", act: d.regions.length ? { l: "Put them in one", run: () => crWfRegionAssign(ctx, d.regions) } : undefined } : null,
+    ].filter(Boolean),
   },
 
   "wifi-access": {
