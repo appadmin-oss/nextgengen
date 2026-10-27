@@ -15449,8 +15449,13 @@ button.m9x-ev-sum { cursor: pointer; }
 /* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
 @container (min-width: 720px) {
   .lrn-shell { grid-template-areas: "top top" "rail main"; grid-template-columns: 216px 1fr; grid-template-rows: auto 1fr; }
+  /* `min-height` is what carries the dividing rule the full height of the
+     page. Without `align-content: start` it also stretches the five rows to
+     fill it, which spread the nav down the whole screen and drew the active
+     item as a tall empty box. The rule runs; the items sit together. */
   .lrn-rail { position: sticky; top: 56px; align-self: start; display: grid; grid-auto-flow: row; grid-auto-columns: auto;
-    gap: 2px; padding: 14px 12px; border-top: 0; border-right: 1px solid var(--lrn-line); background: transparent; min-height: calc(100dvh - 56px); }
+    align-content: start; gap: 2px; padding: 14px 12px; border-top: 0; border-right: 1px solid var(--lrn-line);
+    background: transparent; min-height: calc(100dvh - 56px); }
   .lrn-rail-item { grid-auto-flow: column; justify-items: start; justify-content: start; align-items: center; gap: 11px;
     min-height: var(--lrn-tap); padding: 0 12px; border-radius: var(--lrn-r-sm); font-size: 14.5px; }
   .lrn-rail-item.is-on { background: var(--lrn-s1); box-shadow: 0 0 0 1px var(--lrn-line); }
