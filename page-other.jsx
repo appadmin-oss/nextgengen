@@ -488,7 +488,7 @@ function MentorApplySection() {
   };
 
   return (
-    <section id="mentor-apply" className="section" style={{background:"var(--navy-900)", color:"white"}}>
+    <section id="mentor-apply" className="section dark-surface" style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{maxWidth:760}}>
         <div style={{textAlign:"center", marginBottom:36}}>
           <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
@@ -823,7 +823,7 @@ function ContactPage({ setPage }) {
                   <b>CACENTRE Ayobo</b><br/>Alimosho · Lagos<br/>Saturdays · 09:00 – 13:00
                 </div>
               </div>
-              <div className="card" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
+              <div className="card dark-surface" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
                 <div className="eyebrow" style={{color:"var(--gold-400)"}}>LOOKING TO APPLY?</div>
                 <p style={{fontSize:14, color:"rgba(255,255,255,0.8)", margin:"12px 0 16px", lineHeight:1.5}}>
                   You don't need to email — start your application in about six minutes.
@@ -860,7 +860,7 @@ function DonateWidget() {
   };
   if (hidden) return null;
   return (
-    <div className="card" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
+    <div className="card dark-surface" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
       <div className="eyebrow" style={{ color: "var(--gold-400)" }}>SUPPORT THE MISSION</div>
       <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
       <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -997,7 +997,7 @@ function ProfileCommunityCTA({ token, name }) {
     catch (e) { setErr("Couldn't sign you in from this card."); setBusy(false); }
   };
   return (
-    <div className="card" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+    <div className="card dark-surface" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18 }}>Enter the Community</div>
         <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span role="alert" style={{ color: "#ffb3b3" }}>{err}</span>}</div>
@@ -1360,7 +1360,7 @@ function SummerProfilePage({ setPage }) {
 
           {/* Mentor notes — only notes an admin marked public reach this page. */}
           {(m.notes || []).length > 0 && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold-400)" }}>Mentor notes</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 18 }}>
                 {m.notes.map((n, i) => (
@@ -1376,7 +1376,7 @@ function SummerProfilePage({ setPage }) {
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
           {m.kind === "volunteer" && m.game && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
                 <div>
                   <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
@@ -1588,7 +1588,7 @@ function HandbookSummary() {
     ["Purpose Development", "Life vision aligned with Afrocentric impact."],
   ];
   return (
-    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+    <div className="card handbook-summary dark-surface" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
       </div>

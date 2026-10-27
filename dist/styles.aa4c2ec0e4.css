@@ -15,6 +15,11 @@
   --gold-500: #f5b026;   /* logo gold */
   --gold-400: #ffc34d;
   --gold-300: #ffd680;
+  /* The keyboard focus ring. Navy on the light pages (about 16:1 on cream);
+     re-pointed to lime inside every dark surface below. Gold was the ring
+     for years and measured 1.3–1.9:1 on cream — under the 3:1 a focus
+     indicator needs — and 1:1 on a gold button. */
+  --focus-ring: var(--navy-900);
   --gold-700: #7a5600;   /* dark gold — AA-safe as small text on cream/white */
 
   /* Eyebrow micro-label colour. Defaults to the AA-safe dark gold for light
@@ -264,7 +269,7 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 }
 .btn:hover { transform: translateY(-2px); }
 .btn:active { transform: translateY(1px); transition-duration: 0.05s; }
-.btn:focus-visible { outline: 3px solid rgba(245,176,38,0.5); outline-offset: 3px; }
+.btn:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 
 .btn-primary {
   background: var(--navy-900); color: white;
@@ -595,7 +600,9 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .newsletter-form:focus-within {
   border-color: var(--gold-500);
   background: rgba(255,255,255,0.08);
-  box-shadow: 0 0 0 3px rgba(245,176,38,0.22);
+  /* The field inside draws no ring of its own; the form is the ring. */
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .newsletter-form input {
   flex: 1;
@@ -967,7 +974,7 @@ body::before {
 /* ---- Focus rings ---- */
 .field input:focus, .field select:focus, .field textarea:focus,
 .nav-link:focus-visible, .chip:focus-visible {
-  outline: 3px solid rgba(245,176,38,0.5);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1045,15 +1052,34 @@ textarea:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible,
 [role="button"]:focus-visible {
-  outline: 3px solid var(--gold-500, #f5b026);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: 6px;
 }
-/* On dark surfaces, use a brighter ring for contrast. */
-.dark-surface a:focus-visible, .footer a:focus-visible, .footer button:focus-visible,
-.prefooter a:focus-visible, .prefooter button:focus-visible,
-.page-hero-dark a:focus-visible, .page-hero-dark button:focus-visible {
-  outline-color: var(--lime, #d0ff3a);
+/* The ring follows the element's own corners (outline does, in every current
+   browser). It used to set border-radius: 6px on whatever had focus, so a pill
+   button, a round icon button or a card changed shape when tabbed to. */
+/* Dark surfaces: lime, 15:1 on navy. Each of these paints navy (or a navy
+   gradient) behind its controls; a new dark section joins this list, or its
+   ring is navy on navy (tests/focus-ring.test.js measures it). */
+.dark-surface, .hero, .footer, .prefooter, .page-hero-dark, .marquee, .ab-sec-dark,
+.centre-hero-cta, .centre-stats, .centre-lead-card, .mcv-band, .stt-console, .centres-intro {
+  --focus-ring: var(--lime, #d0ff3a);
+}
+/* The public Community hero's member search: chrome here, not inline — an inline
+   outline: none hid its focus ring, and no stylesheet can correct an inline style. */
+/* The box is the control (styles-app.css "One focus ring for one field"): it takes the
+   pill's own shape and the site's ring, not a square 1px halo around a round field. */
+.cm-pub-search { position: relative; border-radius: 999px; }
+.cm-pub-search:focus-within { outline: 3px solid var(--focus-ring); outline-offset: 2px; box-shadow: none; }
+.cm-pub-search-in { width: 100%; font-family: inherit; font-size: 13px; padding: 9px 12px 9px 34px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.08); color: #fff; }
+.cm-pub-search-in::placeholder { color: rgba(255,255,255,0.7); }
+/* …but a light card sitting inside a dark section is a light surface again. */
+:is(.dark-surface, .hero, .page-hero-dark) .card:not(.card-dark):not(.dark-surface) { --focus-ring: var(--navy-900); }
+/* Inside a card that clips its overflow, a ring drawn outside the control is
+   cut off; draw it inside instead. */
+.faq-list button:focus-visible, .ab-disc-btn:focus-visible, .tt-app .tt-startrow:focus-visible, .cm-tab:focus-visible, .page-hero .chip:focus-visible {
+  outline-offset: -3px;
 }
 /* Never suppress the ring when a mouse-focus removes :focus-visible. */
 :focus:not(:focus-visible) { outline: none; }
@@ -1108,7 +1134,7 @@ summary:focus-visible,
   transition: background .14s, border-color .14s;
 }
 .a11y-nav-btn:hover, .a11y-nav-btn.is-open { background: rgba(12,20,50,0.06); border-color: rgba(12,20,50,0.34); }
-.a11y-nav-btn:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+.a11y-nav-btn:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .a11y-nav-dot { position: absolute; top: 1px; right: 1px; width: 9px; height: 9px; border-radius: 50%;
   background: #4a7a00; border: 2px solid var(--paper, #fbf7ed); }
 /* Anchored to the button rather than the viewport, so it opens where it was
@@ -1283,7 +1309,7 @@ summary:focus-visible,
   padding: 6px 8px 6px 18px; max-width: 620px;
   box-shadow: 0 1px 0 rgba(12,20,50,0.04);
 }
-.summer-search:focus-within { border-color: var(--navy-900); box-shadow: 0 0 0 1px var(--navy-900), 0 0 0 5px rgba(12,20,50,0.12); }
+.summer-search:focus-within { border-color: var(--navy-900); outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .summer-search-ic { font-size: 18px; color: var(--ink-500); flex: 0 0 auto; }
 .summer-search-in {
   flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 16px;
@@ -1318,7 +1344,7 @@ summary:focus-visible,
   color: var(--navy-900); text-decoration: underline; text-underline-offset: 2px;
 }
 .link-btn:hover { color: var(--coral); }
-.link-btn:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; border-radius: 3px; }
+.link-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Centre cards ──────────────────────────────────────────────────────── */
 .summer-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
@@ -1542,8 +1568,9 @@ a.member-card-hit:focus-visible { outline: 2px solid var(--navy-900); outline-of
   color: var(--ink-900);
 }
 .field input:focus, .field select:focus, .field textarea:focus {
-  outline: 2px solid var(--gold-500);
-  border-color: var(--gold-500);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--focus-ring);
 }
 
 /* mini-status pip */
@@ -6831,7 +6858,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 :where(.tt-app) :where(button, input, select, textarea) { font: inherit; color: inherit; }
 :where(.tt-app) button { cursor: pointer; }
 :where(.tt-app) button:disabled { cursor: default; }
-.tt-app :focus-visible { outline: 3px solid var(--tt-gold); outline-offset: 2px; }
+.tt-app :focus-visible { outline: 3px solid var(--tt-primary); outline-offset: 2px; }
 .tt-app h1, .tt-app h2 { margin: 0; }
 .tt-app .ph { line-height: 1; }
 .tt-grow { flex: 1; min-width: 0; }

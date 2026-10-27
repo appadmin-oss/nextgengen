@@ -47,7 +47,7 @@ function PromoBanner({ setPage }) {
     window.__navigate ? window.__navigate(p) : (setPage && setPage(p));
   };
   return (
-    <div style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
+    <div className="dark-surface" style={{ background: "var(--navy-900, #00225F)", color: "#fff", padding: "10px 16px", textAlign: "center", position: "relative", fontSize: 14 }}>
       <span>{promo.text}</span>
       {promo.ctaLabel && promo.ctaUrl ? <a href={/^https?:\/\//.test(promo.ctaUrl) ? promo.ctaUrl : "#"} onClick={go} style={{ color: "var(--gold-400, #F5B026)", fontWeight: 700, marginLeft: 12, textDecoration: "underline" }}>{promo.ctaLabel} →</a> : null}
       <button aria-label="Dismiss" onClick={dismiss} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
@@ -86,7 +86,7 @@ function Hero({ setPage }) {
   const gotwName = site.heroGotwName || "Zara · Voice of Influence";
 
   return (
-    <section style={{ background: "var(--grad-hero)", color: "#fff", position: "relative", overflow: "hidden" }}>
+    <section className="dark-surface" style={{ background: "var(--grad-hero)", color: "#fff", position: "relative", overflow: "hidden" }}>
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "var(--grad-hero-glow)" }}/>
       <div className="container" style={{ maxWidth: 1320, padding: "56px 28px 0", position: "relative" }}>
         <div className="home-hero-cols">
@@ -166,7 +166,7 @@ function StatBar() {
   ];
 
   return (
-    <section style={{background:"var(--navy-900)", color:"white"}}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{padding:"var(--rs-p-5, 64px 28px)"}}>
         <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-301, repeat(4, 1fr))", gap:0}} aria-busy={!stats}>
           {cells.map((c, i) => {
@@ -249,7 +249,7 @@ function ProgressionSystem({ setPage }) {
 
         {/* Active stage detail */}
         <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-8, 1.1fr 1fr)", gap:24, alignItems:"stretch"}}>
-          <div style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-9, 44px 48px)", borderRadius:24, position:"relative", overflow:"hidden"}}>
+          <div className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-9, 44px 48px)", borderRadius:24, position:"relative", overflow:"hidden"}}>
             <div style={{position:"absolute", top:-30, right:-20, fontFamily:"var(--font-display)", fontSize:"var(--rs-fsize-10, 280px)", fontWeight:800, color:"rgba(255,255,255,0.05)", lineHeight:1, letterSpacing:"-0.06em"}}>
               {stage.code}
             </div>
@@ -317,7 +317,7 @@ function FlagshipCallout({ setPage }) {
   const pct = Math.round((weekOf / totalWeeks) * 100);
 
   return (
-    <section style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-15, 104px 0px)", position:"relative", overflow:"hidden"}}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-15, 104px 0px)", position:"relative", overflow:"hidden"}}>
       {/* Atmospheric background */}
       <div style={{position:"absolute", top:0, right:0, width:"50%", height:"100%", opacity:0.35}}>
         <img src={scene("classroom", 1400)} alt="" style={{width:"100%", height:"100%", objectFit:"cover"}}/>
@@ -451,7 +451,7 @@ function TracksRibbon({ setPage }) {
 /* =========== Cinematic community collage =========== */
 function CommunityCollage() {
   return (
-    <section style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-20, 96px 0px)"}}>
+    <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-20, 96px 0px)"}}>
       <div className="container">
         <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end", marginBottom:48}}>
           <div>
@@ -1060,7 +1060,7 @@ function StatusPage({ setPage, previewConfig }) {
     <div className="page" data-screen-label="Live status">
       {banner.text ? <div style={{ background: banner.tone === "warn" ? "#7a2e2e" : banner.tone === "success" ? "#1c5138" : "#1c2a5e", color: "#fff", textAlign: "center", padding: "10px 16px", fontSize: 14, fontWeight: 600 }}>{banner.text}</div> : null}
 
-      <section style={{ background: "linear-gradient(158deg,#0c1432 0%,#16224e 58%,#1d2c63 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
+      <section className="dark-surface" style={{ background: "linear-gradient(158deg,#0c1432 0%,#16224e 58%,#1d2c63 100%)", color: "#fff", position: "relative", overflow: "hidden" }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(52% 42% at 90% 4%,rgba(245,176,38,0.22),transparent 62%),radial-gradient(44% 48% at 12% 96%,rgba(208,255,58,0.10),transparent 60%)" }}/>
         <div style={{ maxWidth: 1320, margin: "0 auto", padding: "30px 28px 0", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
@@ -1149,7 +1149,7 @@ function StatusPage({ setPage, previewConfig }) {
 
             <div className="reg-cols">
               {/* Headline: total signed up, against capacity when it is set. */}
-              <div style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "var(--rs-p-41, 26px 26px 24px)", display: "flex", flexDirection: "column" }}>
+              <div className="dark-surface" style={{ background: "linear-gradient(158deg,#0c1432 0%,#1d2c63 100%)", color: "#fff", borderRadius: 18, padding: "var(--rs-p-41, 26px 26px 24px)", display: "flex", flexDirection: "column" }}>
                 <span style={{ fontFamily: "'JetBrains Mono'", fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)" }}>Registered</span>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 12, margin: "10px 0 0" }}>
                   <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(46px,6vw,68px)", lineHeight: 0.84, letterSpacing: "-0.04em", color: accent, fontVariantNumeric: "tabular-nums" }}>{sFmt(ci(reg.total))}</span>
@@ -1521,7 +1521,7 @@ function StatusPage({ setPage, previewConfig }) {
             </div>
           </div>
         </section>
-        <section style={{ background: "linear-gradient(180deg,#0c1432,#16224e)", padding: "40px 0 48px" }}>
+        <section className="dark-surface" style={{ background: "linear-gradient(180deg,#0c1432,#16224e)", padding: "40px 0 48px" }}>
           <div style={{ maxWidth: 1160, margin: "0 auto", padding: "0 28px" }}>
             <div className="podium">
               {podium.map((p, i) => (
@@ -1558,7 +1558,7 @@ function StatusPage({ setPage, previewConfig }) {
         </section>
       </div>}
 
-      <section style={{ background: "#0c1432", color: "#fff", padding: "56px 0 60px" }}>
+      <section className="dark-surface" style={{ background: "#0c1432", color: "#fff", padding: "56px 0 60px" }}>
         <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 28px" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 13px", borderRadius: 999, background: "rgba(255,255,255,0.08)", fontFamily: "'JetBrains Mono'", fontSize: 11, letterSpacing: "0.1em" }}><span style={{ width: 7, height: 7, borderRadius: "50%", background: "#d0ff3a" }}/>TRANSPARENCY</span>
           <h2 style={{ fontFamily: "var(--rs-ffamily-39, Sora)", fontWeight: 800, fontSize: "clamp(28px,3.6vw,42px)", letterSpacing: "-0.02em", margin: "16px 0 12px" }}>{page.transparencyTitle || "Numbers, not names."}</h2>

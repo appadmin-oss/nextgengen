@@ -684,7 +684,7 @@ function ClubPage({ setPage }) {
               </div>
 
               {/* Live missions */}
-              <div className="card" style={{padding:22, background:"var(--navy-900)", color:"white"}}>
+              <div className="card dark-surface" style={{padding:22, background:"var(--navy-900)", color:"white"}}>
                 <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:12}}>
                   <span className="live-dot"/>
                   <div className="eyebrow" style={{color:"var(--lime)"}}>LIVE COHORT MISSION</div>
@@ -1089,20 +1089,20 @@ function CommunityPublic({ setPage, auth }) {
     <div className="page cm-page" data-screen-label="Community">
       <style>{"@keyframes ngg-panel-in{from{transform:translateX(100%)}to{transform:none}}@keyframes ngg-fade{from{opacity:0}to{opacity:1}}"}</style>
 
-      <section style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
+      <section className="dark-surface" style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(46% 42% at 90% 4%, rgba(245,176,38,0.22), transparent 62%)" }}/>
         <div className="container" style={{ maxWidth: 1320, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, letterSpacing: "0.14em", padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)", color: "#e8ffb0" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime,#d0ff3a)" }}/>{all.length ? all.length + " GENIUSES ON THE BOARD" : "THE MOVEMENT"}
             </span>
-            <div style={{ position: "relative", width: 260, maxWidth: "44vw" }}>
+            <div className="cm-pub-search" style={{ width: 260, maxWidth: "44vw" }}>
               {/* A placeholder is not a label: it disappears the moment anyone
                   types, and a screen reader announced this as an unnamed edit
                   field. Every input in the signed-in app already does this. */}
               <label className="sr-only" htmlFor="cm-pub-search">Search members by name or centre</label>
               <i className="ph ph-magnifying-glass" aria-hidden="true" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.72)", fontSize: 15 }}/>
-              <input id="cm-pub-search" type="search" value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
+              <input id="cm-pub-search" type="search" value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" className="cm-pub-search-in"/>
             </div>
           </div>
           <h1 className="display" style={{ fontWeight: 800, fontSize: "var(--rs-fsize-64, clamp(30px, 4.6vw, 48px))", letterSpacing: "-0.03em", lineHeight: "var(--rs-lheight-7, 1)", margin: "18px 0 10px" }}>The Genius community.</h1>
