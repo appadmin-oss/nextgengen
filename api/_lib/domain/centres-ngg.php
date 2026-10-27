@@ -119,6 +119,8 @@ const CENTRE_NAME_TABLES = [
     'v3_scores',
     'wifi_gateways',
     'wifi_speed_tests',
+    'wifi_region_centres',
+    'wifi_profile_overrides',
 ];
 
 /** centreId for a centre NAME, or '' when the name resolves to no centre.

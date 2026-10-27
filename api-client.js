@@ -1932,6 +1932,17 @@
         lookup: (q) => request('/admin/wifi.php' + qs({ view: 'lookup', q })),
         testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
         speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),
+        regions: () => request('/admin/wifi.php' + qs({ view: 'regions' })),
+        regionSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'regionSave' }, data) }),
+        regionRemove: (regionId) => request('/admin/wifi.php', { body: { action: 'regionRemove', regionId } }),
+        regionAssign: (regionId, centres) => request('/admin/wifi.php', { body: { action: 'regionAssign', regionId, centres } }),
+        regionLeads: (regionId, memberIds) => request('/admin/wifi.php', { body: { action: 'regionLeads', regionId, memberIds } }),
+        leadOptions: () => request('/admin/wifi.php' + qs({ view: 'leads' })),
+        profilesFor: (where) => request('/admin/wifi.php' + qs(Object.assign({ view: 'profiles' }, where))),
+        profilesSet: (where, profiles) => request('/admin/wifi.php', { body: Object.assign({ action: 'profiles', profiles }, where) }),
+        gateways: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'gateways' }, q || {}))),
+        centres: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'centres' }, q || {}))),
+        analytics: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'analytics' }, q || {}))),
         /* Measure this device's line to NGG: latency (the best of five tiny
            requests), download (growing until one takes ~2.5 s, so a fast line
            is not under-read), upload (2 MB of random bytes). Raw fetches, not

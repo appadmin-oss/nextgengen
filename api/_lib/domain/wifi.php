@@ -97,10 +97,84 @@ const WIFI_FULL_EVERY = 86400;          // a full list at least daily, whatever 
 const WIFI_STALE_AFTER = 3600;          // a gateway silent this long is a problem
 const WIFI_POLL = ['busy' => 60, 'warm' => 120, 'idle' => 300];   // seconds; the feed says which
 const WIFI_STAFF_ROLES_EXTRA = ['mentor', 'instructor'];
+const WIFI_LIST_TTL = 60;              // seconds a centre's computed list is kept (config: wifi.list_ttl)
+
+/* ── Who sees which centres' Wi-Fi ─────────────────────────────────────────
+   A super admin: every centre. A Wi-Fi region lead: their regions' centres.
+   Anybody else holding `network`: the centres in their centreScope, or — with
+   none — their own centre only. An NGG admin manages their centre's Wi-Fi,
+   never the whole network's. Returns null (every centre) or the names. */
+function wifi_scope(array $requester): ?array {
+    if (strtolower((string)($requester['role'] ?? '')) === 'super_admin') return null;
+    $names = admin_centre_names_in_scope($requester) ?? [];
+    foreach (db_all("SELECT rc.centre FROM wifi_region_leads l JOIN wifi_regions g ON g.regionId = l.regionId AND (g.removedAt = '' OR g.removedAt IS NULL)
+                     JOIN wifi_region_centres rc ON rc.regionId = l.regionId WHERE l.memberId = ?", [(string)$requester['memberId']]) as $r) $names[] = (string)$r['centre'];
+    if (!$names && (string)($requester['centre'] ?? '') !== '') $names[] = (string)$requester['centre'];
+    return array_values(array_unique($names));
+}
+function wifi_scope_has(?array $scope, string $centre): bool { return $scope === null || in_array($centre, $scope, true); }
+
+/** The `network` gate with the Wi-Fi scope attached ($g['scope']). */
+function wifi_gate(array $p): array {
+    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
+    $g['scope'] = wifi_scope($g['requester']);
+    return $g;
+}
+
+/** A gateway the requester may act on, or a refusal. */
+function wifi_gateway_for(array $g, string $id): array {
+    $r = wifi_gateway_live($id);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    if (!wifi_scope_has($g['scope'], (string)$r['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    return ['ok' => true, 'row' => $r];
+}
 
 /* ── Settings: the access table and the profiles ──────────────────────── */
 
-function wifi_settings(): array {
+/**
+ * The settings for a centre: the network's access table and profiles, with the
+ * profiles of the centre's Wi-Fi region laid over them, and the centre's own
+ * laid over that (wifi_profile_overrides). Only overrides are stored, so a
+ * change to the network's default reaches every centre that has not set its
+ * own. With no centre: the network's. The access table itself is the
+ * network's only — who gets Wi-Fi is one rule for the programme.
+ */
+function wifi_settings(?string $centre = null): array {
+    $memo = &$GLOBALS['__wifi_settings_memo'];
+    $k = $centre ?? '';
+    if (isset($memo[$k])) return $memo[$k];
+    $base = wifi_settings_base();
+    if ($centre === null || $centre === '') return $memo[$k] = $base;
+    $region = wifi_region_of($centre);
+    $layers = [];
+    if ($region !== '') $layers['region'] = db_row("SELECT profilesJson FROM wifi_profile_overrides WHERE regionId = ? AND centre = '' LIMIT 1", [$region]);
+    $layers['centre'] = db_row("SELECT profilesJson FROM wifi_profile_overrides WHERE regionId = '' AND centre = ? LIMIT 1", [$centre]);
+    $from = array_fill_keys(array_keys($base['profiles']), 'network');
+    foreach ($layers as $layer => $row) {
+        foreach ($row ? (json_decode((string)$row['profilesJson'], true) ?: []) : [] as $name => $v) {
+            if (!isset($base['profiles'][$name]) || !is_array($v)) continue;
+            $merged = $v + $base['profiles'][$name];
+            if (wifi_profile_check($merged) !== '') continue;
+            $base['profiles'][$name] = wifi_profile_norm($merged);
+            $from[$name] = $layer;
+        }
+    }
+    $base['profilesFrom'] = $from;
+    $base['regionId'] = $region;
+    return $memo[$k] = $base;
+}
+
+/** Forget this request's settings, after one is saved. */
+function wifi_settings_forget(): void { $GLOBALS['__wifi_settings_memo'] = []; }
+
+/** The centre's Wi-Fi region id, or ''. */
+function wifi_region_of(string $centre): string {
+    $r = db_row("SELECT rc.regionId FROM wifi_region_centres rc JOIN wifi_regions g ON g.regionId = rc.regionId AND (g.removedAt = '' OR g.removedAt IS NULL) WHERE rc.centre = ? LIMIT 1", [$centre]);
+    return $r ? (string)$r['regionId'] : '';
+}
+
+/** The network's own access table and profiles. */
+function wifi_settings_base(): array {
     $s = setting_get('wifi_access');
     $s = is_array($s) ? $s : [];
     $cases = WIFI_CASE_DEFAULTS;
@@ -261,7 +335,41 @@ function wifi_account_one(string $type, string $id, string $username): ?array {
  * population, policy and fees batched — never a query per person.
  */
 function wifi_centre_lines(string $centre, ?array $settings = null): array {
-    $cfg = $settings ?? wifi_settings();
+    $cfg = $settings ?? wifi_settings($centre);
+    /* At hundreds of centres, each gateway fetching every two minutes, this
+       list is the cost. It is kept for WIFI_LIST_TTL seconds per centre — the
+       PINs SEALED, never in the clear — and keyed on the settings, so a speed
+       change is not served stale. A change to one person's Wi-Fi made here
+       (an override, a new PIN) drops their centre's copy at once; a change to
+       a record elsewhere (a suspension) reaches the list within the TTL. */
+    $ttl = (int)($GLOBALS['CONFIG']['wifi']['list_ttl'] ?? WIFI_LIST_TTL);
+    $ckey = 'wifi-lines-' . md5($centre);
+    $stamp = md5(json_encode([$cfg['cases'], $cfg['feesRule'], $cfg['profiles']]));
+    $raw = $ttl > 0 ? cache_get($ckey, $ttl, $stamp) : null;
+    if (!is_array($raw)) {
+        $raw = wifi_centre_lines_raw($centre, $cfg);
+        if ($ttl > 0) cache_put($ckey, $raw, $stamp);
+    }
+    $lines = [];
+    $clock = wifi_local_clock();
+    foreach ($raw as $u => [$sealed, $profile]) {
+        /* Hours are kept here, for every platform: outside their profile's
+           window somebody is left off the list, so the next fetch signs them
+           out. (No gateway this supports keeps a daily window reliably itself.) */
+        if (!wifi_in_hours($cfg['profiles'][$profile]['hours'] ?? '', $clock)) continue;
+        $pin = wifi_pin_open((string)$sealed);
+        if ($pin === '') continue;
+        $lines[(string)$u] = ['pin' => $pin, 'profile' => $profile];
+    }
+    ksort($lines, SORT_STRING);
+    return $lines;
+}
+
+/** Drop a centre's kept list, so the next fetch recomputes it. */
+function wifi_lines_forget(string $centre): void { if ($centre !== '') cache_delete('wifi-lines-' . md5($centre)); }
+
+/** The centre's list before hours: username => [sealed PIN, profile]. */
+function wifi_centre_lines_raw(string $centre, array $cfg): array {
     $staffRoles = array_merge(staff_role_names(), WIFI_STAFF_ROLES_EXTRA);
     $ph = implode(',', array_fill(0, count($staffRoles), '?'));
     $members = db_all("SELECT memberId, displayId, role, status, type, centre FROM members
@@ -296,24 +404,16 @@ function wifi_centre_lines(string $centre, ?array $settings = null): array {
         if ($sub[2] !== '' && ($decide[$k])($existing[$k] ?? null)['access'] !== 'off') $need[] = $sub;
     }
     $accounts = wifi_accounts_ensure($need);
-    $lines = [];
-    $clock = wifi_local_clock();
+    $raw = [];
     foreach ($need as $sub) {
         $k = $sub[0] . '|' . $sub[1];
         $acc = $accounts[$k] ?? null;
         if (!$acc) continue;
         $d = ($decide[$k])($acc);
         if ($d['access'] === 'off' || $d['profile'] === '') continue;
-        /* Hours are kept here, for every platform: outside their profile's
-           window somebody is left off the list, so the next fetch signs them
-           out. (No gateway this supports keeps a daily window reliably itself.) */
-        if (!wifi_in_hours($cfg['profiles'][$d['profile']]['hours'] ?? '', $clock)) continue;
-        $pin = wifi_pin_open((string)$acc['pinSealed']);
-        if ($pin === '') continue;
-        $lines[(string)$acc['username']] = ['pin' => $pin, 'profile' => $d['profile']];
+        $raw[(string)$acc['username']] = [(string)$acc['pinSealed'], $d['profile']];
     }
-    ksort($lines, SORT_STRING);
-    return $lines;
+    return $raw;
 }
 
 /** The centre's local time as HH:MM — the same clock attendance uses. */
@@ -397,7 +497,7 @@ function wifi_feed(array $p): array {
         return ['ok' => false, 'error' => 'bad_key'];
     }
     $plat = WIFI_PLATFORMS[(string)$r['platform']] ?? WIFI_PLATFORMS['generic'];
-    $cfg = wifi_settings();
+    $cfg = wifi_settings((string)$r['centre']);
     $since = max(0, (int)($p['since'] ?? 0));
     $page = max(1, (int)($p['page'] ?? 1));
     $acked = json_decode((string)$r['ackedJson'], true) ?: [];
@@ -529,7 +629,7 @@ function wifi_feed_render(array $res, int $page = 1): array {
 
 function wifi_view_member(array $m, bool $withPin): array {
     $id = (string)$m['memberId'];
-    $cfg = wifi_settings();
+    $cfg = wifi_settings((string)($m['centre'] ?? ''));
     $username = wifi_username_for('member', $m);
     $existing = wifi_accounts_existing([['member', $id, $username]])['member|' . $id] ?? null;
     $policy = (function_exists('policy_states_for') ? policy_states_for([$id], 'member') : [])[$id] ?? null;
@@ -561,12 +661,21 @@ function wifi_view(?array $acc, array $d, string $centre, bool $withPin, string 
     ];
 }
 
+/** Drop the kept list of every centre this person is on: their own, or every centre for staff. */
+function wifi_subject_lists_forget(string $type, string $id): void {
+    $row = $type === 'summer' ? db_row('SELECT centre FROM summer_students WHERE studentId = ?', [$id]) : db_row('SELECT centre, role FROM members WHERE memberId = ?', [$id]);
+    if (!$row) return;
+    if ($type === 'member' && wifi_is_staff($row)) { foreach (db_all("SELECT DISTINCT centre FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL") as $c) wifi_lines_forget((string)$c['centre']); return; }
+    wifi_lines_forget((string)($row['centre'] ?? ''));
+}
+
 /** Reset a PIN, at most WIFI_PIN_RESETS_PER_DAY a day (for the member and the desk alike). */
 function wifi_pin_reset(array $acc, string $by, string $ip = ''): array {
     $today = gmdate('Y-m-d');
     $n = (string)$acc['pinResetDay'] === $today ? (int)$acc['pinResets'] : 0;
     if ($n >= WIFI_PIN_RESETS_PER_DAY) return ['ok' => false, 'error' => 'too_many_resets', 'message' => 'A Wi-Fi PIN can be changed ' . WIFI_PIN_RESETS_PER_DAY . ' times a day. Try again tomorrow.'];
     db_update('wifi_accounts', ['pinSealed' => wifi_pin_seal(wifi_pin_new()), 'pinSetAt' => now_iso(), 'pinResetDay' => $today, 'pinResets' => $n + 1, 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
+    wifi_subject_lists_forget((string)$acc['subjectType'], (string)$acc['subjectId']);
     audit('wifi.pin.reset', $by, (string)$acc['subjectType'] . ':' . (string)$acc['subjectId'], ['resetsToday' => $n + 1], $ip);
     return ['ok' => true];
 }
@@ -644,10 +753,12 @@ function admin_wifi_member_set(array $p): array {
         $why = substr(trim((string)$p['why']), 0, 255);
         db_update('wifi_accounts', ['override' => (string)$p['access'], 'overrideWhy' => $why, 'overrideBy' => $me, 'overrideAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
         audit('wifi.override', $me, $subject, ['access' => (string)$p['access'], 'why' => $why], $ip);
+        wifi_subject_lists_forget($g['type'], $g['id']);
     } else {
         if ((string)$acc['override'] === '') return ['ok' => true, 'unchanged' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
         db_update('wifi_accounts', ['override' => '', 'overrideWhy' => '', 'overrideBy' => $me, 'overrideAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$acc['id']]);
         audit('wifi.override.clear', $me, $subject, ['was' => (string)$acc['override']], $ip);
+        wifi_subject_lists_forget($g['type'], $g['id']);
     }
     return ['ok' => true, 'wifi' => wifi_view_subject($g['type'], $g['row'])];
 }
@@ -657,23 +768,25 @@ function admin_wifi_member_set(array $p): array {
    centres' equipment. Never bundled into Admin (CLAUDE.md §4). */
 
 function admin_wifi_overview(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $scope = $g['scope'];
     $s = wifi_settings();
     $cases = [];
     foreach ($s['cases'] as $k => $v) $cases[] = ['case' => $k, 'access' => $v, 'default' => WIFI_CASE_DEFAULTS[$k], 'locked' => in_array($k, WIFI_CASE_LOCKED, true), 'words' => WIFI_CASE_WORDS[$k]];
-    $rows = db_all("SELECT * FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL ORDER BY centre, label");
-    $centres = array_map(fn($c) => (string)$c['name'], db_all("SELECT name FROM centres WHERE status IS NULL OR status <> 'retired' ORDER BY name"));
+    $rows = array_values(array_filter(db_all("SELECT * FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL ORDER BY centre, label"), fn($r) => wifi_scope_has($scope, (string)$r['centre'])));
+    $centres = array_values(array_filter(array_map(fn($c) => (string)$c['name'], db_all("SELECT name FROM centres WHERE status IS NULL OR status <> 'retired' ORDER BY name")), fn($c) => wifi_scope_has($scope, $c)));
     $platforms = [];
     foreach (WIFI_PLATFORMS as $k => $v) $platforms[] = ['id' => $k, 'label' => $v['label'], 'can' => $v['can'], 'needs' => $v['needs'], 'delta' => $v['delta'], 'status' => $v['status'], 'pilot' => $v['pilot']];
     $bad = wifi_bad_key_counts();
     $hc = wifi_health_context($rows) + ['profiles' => $s['profiles']];
     $tests = array_map(fn($t) => ['centre' => (string)$t['centre'], 'source' => (string)$t['source'], 'downMbps' => (float)$t['downMbps'], 'upMbps' => (float)$t['upMbps'],
         'rttMs' => (int)$t['rttMs'], 'by' => (string)($t['byName'] ?? ''), 'note' => (string)$t['note'], 'at' => (string)$t['at']],
-        db_all("SELECT t.*, m.fullName byName FROM wifi_speed_tests t LEFT JOIN members m ON m.memberId = t.byId ORDER BY t.at DESC, t.id DESC LIMIT 40"));
+        array_slice(array_values(array_filter(db_all("SELECT t.*, m.fullName byName FROM wifi_speed_tests t LEFT JOIN members m ON m.memberId = t.byId ORDER BY t.at DESC, t.id DESC LIMIT 400"), fn($t) => wifi_scope_has($scope, (string)$t['centre']))), 0, 40));
     return ['ok' => true, 'cases' => $cases, 'feesRule' => $s['feesRule'], 'profiles' => $s['profiles'], 'profileDefaults' => WIFI_PROFILE_DEFAULTS,
             'slowMbps' => WIFI_SLOW_MBPS, 'speedTests' => $tests, 'speedBytesMax' => WIFI_SPEED_BYTES_MAX,
             'gateways' => array_map(fn($r) => wifi_gateway_out($r, $bad, $hc), $rows), 'centres' => $centres, 'platforms' => $platforms,
-            'feedUrl' => wifi_feed_url(), 'staleAfter' => WIFI_STALE_AFTER];
+            'feedUrl' => wifi_feed_url(), 'staleAfter' => WIFI_STALE_AFTER,
+            'scope' => ['all' => $scope === null, 'centres' => $scope === null ? null : count($scope), 'canNetwork' => $scope === null]];
 }
 
 /** The address a gateway fetches, from the deployment's own base URL. */
@@ -687,7 +800,9 @@ function wifi_feed_url(): string {
 }
 
 function admin_wifi_access_set(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    // The network's table and defaults are the network's: a centre or a region sets its own under Speeds for…
+    if ($g['scope'] !== null) return ['ok' => false, 'error' => 'network_wide_only', 'message' => 'Only somebody who looks after every centre changes the network’s table. Set your centre’s or region’s own speeds instead.'];
     $in = (array)($p['cases'] ?? []);
     $prof = (array)($p['profiles'] ?? []);
     // The whole payload is checked before anything is saved.
@@ -708,6 +823,7 @@ function admin_wifi_access_set(array $p): array {
     $fees = array_key_exists('feesRule', $p) ? to_bool($p['feesRule']) : $cur['feesRule'];
     $me = (string)$g['requester']['memberId'];
     setting_set('wifi_access', ['cases' => $cases, 'feesRule' => $fees, 'profiles' => $profiles], $me);
+    wifi_settings_forget();
     audit('wifi.access.set', $me, 'wifi_access', ['cases' => $in, 'profiles' => array_keys($prof), 'feesRule' => $fees], (string)($p['ip'] ?? ''));
     return admin_wifi_overview($p);
 }
@@ -828,13 +944,14 @@ function wifi_gateway_live(string $id): ?array {
 
 /** Create (no gatewayId) or edit {platform, centre, label}. A new gateway's key is returned once, here, and never again. */
 function admin_wifi_gateway_save(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
     $me = (string)$g['requester']['memberId'];
     $centre = trim((string)($p['centre'] ?? ''));
     $label = trim(mb_substr((string)($p['label'] ?? ''), 0, 120));
     $platform = (string)($p['platform'] ?? '');
     if (!isset(WIFI_PLATFORMS[$platform])) return ['ok' => false, 'error' => 'bad_platform'];
     if ($centre === '' || !db_row("SELECT id FROM centres WHERE name = ? AND (status IS NULL OR status <> 'retired') LIMIT 1", [$centre])) return ['ok' => false, 'error' => 'bad_centre'];
+    if (!wifi_scope_has($g['scope'], $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
     $gid = (string)($p['gatewayId'] ?? '');
     $ip = (string)($p['ip'] ?? '');
     if ($gid === '') {
@@ -846,8 +963,8 @@ function admin_wifi_gateway_save(array $p): array {
         audit('wifi.gateway.add', $me, $gid, ['centre' => $centre, 'platform' => $platform], $ip);
         return ['ok' => true, 'gateway' => wifi_gateway_out(wifi_gateway_live($gid)), 'key' => $key];
     }
-    $r = wifi_gateway_live($gid);
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $f = wifi_gateway_for($g, $gid); if (!$f['ok']) return $f;
+    $r = $f['row'];
     $patch = ['label' => $label !== '' ? $label : (string)$r['label'], 'centre' => $centre, 'platform' => $platform];
     // Moved to another centre or platform: its next fetch is a full list.
     if ($centre !== (string)$r['centre'] || $platform !== (string)$r['platform']) $patch += ['ackedJson' => '', 'pendingJson' => '', 'pendingVersion' => 0, 'lastFullAt' => ''];
@@ -857,9 +974,9 @@ function admin_wifi_gateway_save(array $p): array {
 }
 
 function admin_wifi_gateway_rotate(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
-    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row'];
     $key = wifi_key_new();
     db_update('wifi_gateways', ['keyHash' => hash('sha256', $key), 'keyTail' => substr($key, -4), 'keySetAt' => now_iso()], ['id' => (int)$r['id']]);
     audit('wifi.gateway.rotate', (string)$g['requester']['memberId'], (string)$r['gatewayId'], [], (string)($p['ip'] ?? ''));
@@ -867,9 +984,9 @@ function admin_wifi_gateway_rotate(array $p): array {
 }
 
 function admin_wifi_gateway_remove(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
-    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row'];
     db_update('wifi_gateways', ['removedAt' => now_iso(), 'keyHash' => ''], ['id' => (int)$r['id']]);
     audit('wifi.gateway.remove', (string)$g['requester']['memberId'], (string)$r['gatewayId'], ['centre' => (string)$r['centre']], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -881,9 +998,9 @@ function admin_wifi_gateway_remove(array $p): array {
  * PINs are masked — this is a diagnosis, not a way to read people's PINs.
  */
 function admin_wifi_gateway_preview(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
-    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row'];
     $lines = wifi_centre_lines((string)$r['centre']);
     $acked = json_decode((string)$r['ackedJson'], true) ?: [];
     $byProfile = [];
@@ -934,28 +1051,50 @@ function admin_wifi_lookup(array $p): array {
    memory), never per person and never what anybody browsed. A staff device at
    a centre can measure the line too, from the browser. */
 
-/** Record what a fetch reported; returns the latest snapshot, or null when it reported nothing. */
+/**
+ * Every fetch is a heartbeat: the hour and the day it came in are counted
+ * for the gateway, whatever it reports, so how much of the day a gateway was
+ * there can be read for every platform. What it reports of itself rides
+ * along. Hourly rows are kept 14 days; daily rows 400. Returns the latest
+ * snapshot of what it reported, or null when it reported nothing.
+ */
 function wifi_telemetry_record(array $r, array $p): ?array {
     $num = fn($k, $max) => isset($p[$k]) && is_numeric($p[$k]) ? max(0, min($max, (float)$p[$k])) : null;
     $act = $num('act', 100000); $cpu = $num('cpu', 100); $mem = $num('mem', 1000000); $up = $num('up', 1e9);
     $dl = $num('dl', 100000); $ul = $num('ul', 100000); $rtt = $num('rtt', 60000);
-    if ($act === null && $cpu === null && $mem === null && $up === null && $dl === null) return null;
     $gid = (string)$r['gatewayId'];
-    $hour = gmdate('Y-m-d\TH');
+    $hour = gmdate('Y-m-d\TH'); $date = gmdate('Y-m-d');
     $row = db_row('SELECT * FROM wifi_gateway_stats WHERE gatewayId = ? AND hour = ? LIMIT 1', [$gid, $hour]);
+    $newHour = !$row;
     if ($row) {
-        db_update('wifi_gateway_stats', ['samples' => (int)$row['samples'] + 1, 'activeMax' => max((int)$row['activeMax'], (int)$act), 'activeSum' => (int)$row['activeSum'] + (int)$act,
-            'cpuMax' => max((int)$row['cpuMax'], (int)$cpu), 'memFreeMin' => $mem === null ? (int)$row['memFreeMin'] : ((int)$row['memFreeMin'] > 0 ? min((int)$row['memFreeMin'], (int)$mem) : (int)$mem)], ['id' => (int)$row['id']]);
+        db_update('wifi_gateway_stats', ['samples' => (int)$row['samples'] + 1, 'activeMax' => max((int)$row['activeMax'], (int)$act),
+            'activeSum' => (int)$row['activeSum'] + (int)$act, 'activeSamples' => (int)$row['activeSamples'] + ($act === null ? 0 : 1),
+            'cpuMax' => max((int)$row['cpuMax'], (int)$cpu),
+            'memFreeMin' => $mem === null ? (int)$row['memFreeMin'] : ((int)$row['memFreeMin'] > 0 ? min((int)$row['memFreeMin'], (int)$mem) : (int)$mem)], ['id' => (int)$row['id']]);
     } else {
-        try { db_insert('wifi_gateway_stats', ['gatewayId' => $gid, 'hour' => $hour, 'samples' => 1, 'activeMax' => (int)$act, 'activeSum' => (int)$act, 'cpuMax' => (int)$cpu, 'memFreeMin' => (int)$mem]); }
-        catch (Throwable $e) { /* a concurrent fetch made the hour first */ }
+        try { db_insert('wifi_gateway_stats', ['gatewayId' => $gid, 'hour' => $hour, 'samples' => 1, 'activeMax' => (int)$act, 'activeSum' => (int)$act,
+            'activeSamples' => $act === null ? 0 : 1, 'cpuMax' => (int)$cpu, 'memFreeMin' => (int)$mem]); }
+        catch (Throwable $e) { $newHour = false; /* a concurrent fetch made the hour first */ }
+    }
+    $day = db_row('SELECT * FROM wifi_gateway_daily WHERE gatewayId = ? AND date = ? LIMIT 1', [$gid, $date]);
+    if ($day) {
+        db_update('wifi_gateway_daily', ['samples' => (int)$day['samples'] + 1, 'hoursUp' => (int)$day['hoursUp'] + ($newHour ? 1 : 0),
+            'activePeak' => max((int)$day['activePeak'], (int)$act), 'activeSum' => (int)$day['activeSum'] + (int)$act,
+            'activeSamples' => (int)$day['activeSamples'] + ($act === null ? 0 : 1), 'cpuMax' => max((int)$day['cpuMax'], (int)$cpu)], ['id' => (int)$day['id']]);
+    } else {
+        try { db_insert('wifi_gateway_daily', ['gatewayId' => $gid, 'date' => $date, 'samples' => 1, 'hoursUp' => 1, 'activePeak' => (int)$act,
+            'activeSum' => (int)$act, 'activeSamples' => $act === null ? 0 : 1, 'cpuMax' => (int)$cpu]); }
+        catch (Throwable $e) { /* a concurrent fetch made the day first */ }
     }
     if ($dl !== null && $dl > 0) {
         db_insert('wifi_speed_tests', ['centre' => (string)$r['centre'], 'gatewayId' => $gid, 'source' => 'gateway', 'downMbps' => round($dl, 2),
             'upMbps' => round((float)$ul, 2), 'rttMs' => (int)$rtt, 'byId' => '', 'note' => '', 'at' => now_iso()]);
     }
-    // Two weeks of hourly detail is plenty to see a pattern; older hours go.
-    if (random_int(1, 50) === 1) db_exec('DELETE FROM wifi_gateway_stats WHERE hour < ?', [gmdate('Y-m-d\TH', time() - 14 * 86400)]);
+    if (random_int(1, 50) === 1) {
+        db_exec('DELETE FROM wifi_gateway_stats WHERE hour < ?', [gmdate('Y-m-d\TH', time() - 14 * 86400)]);
+        db_exec('DELETE FROM wifi_gateway_daily WHERE date < ?', [gmdate('Y-m-d', time() - 400 * 86400)]);
+    }
+    if ($act === null && $cpu === null && $mem === null && $up === null && $dl === null) return null;
     // A fetch that reports some things keeps the last word on the rest.
     $prev = json_decode((string)($r['lastStatsJson'] ?? ''), true) ?: [];
     $keep = fn($v, $k) => $v === null ? ($prev[$k] ?? null) : (int)$v;
@@ -991,9 +1130,9 @@ function wifi_fair_share(?float $downMbps, int $peak, array $profiles): ?array {
 
 /** Ask a gateway to measure its line at its next fetch. */
 function admin_wifi_gateway_test(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
-    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row'];
     db_update('wifi_gateways', ['testAsked' => 1], ['id' => (int)$r['id']]);
     return ['ok' => true];
 }

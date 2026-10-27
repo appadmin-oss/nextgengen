@@ -14,6 +14,12 @@ if ($method === 'GET') {
     if ($view === 'member')       $res = gs_call('admin.wifi.member', ['requesterId' => $mid, 'subjectType' => $_GET['subjectType'] ?? 'member', 'subjectId' => $_GET['subjectId'] ?? '']);
     elseif ($view === 'preview')  $res = gs_call('admin.wifi.gateway.preview', ['requesterId' => $mid, 'gatewayId' => $_GET['gatewayId'] ?? '', 'q' => $_GET['q'] ?? '']);
     elseif ($view === 'lookup')   $res = gs_call('admin.wifi.lookup', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
+    elseif ($view === 'regions')  $res = gs_call('admin.wifi.regions', ['requesterId' => $mid]);
+    elseif ($view === 'leads')    $res = gs_call('admin.wifi.lead.options', ['requesterId' => $mid]);
+    elseif ($view === 'profiles') $res = gs_call('admin.wifi.profiles.get', ['requesterId' => $mid, 'regionId' => $_GET['regionId'] ?? '', 'centre' => $_GET['centre'] ?? '']);
+    elseif ($view === 'gateways') $res = gs_call('admin.wifi.gateways', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'platform', 'health', 'sort', 'dir', 'page', 'pageSize'])));
+    elseif ($view === 'centres')  $res = gs_call('admin.wifi.centres', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'setup', 'page', 'pageSize', 'idsOnly'])));
+    elseif ($view === 'analytics') $res = gs_call('admin.wifi.analytics', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['days', 'region', 'centre'])));
     elseif ($view === 'setup')    $res = gs_call('admin.wifi.gateway.setup', ['requesterId' => $mid, 'gatewayId' => $_GET['gatewayId'] ?? '']);
     else                          $res = gs_call('admin.wifi.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -26,6 +32,11 @@ if ($method === 'GET') {
         'member'  => 'admin.wifi.member.set',
         'test'    => 'admin.wifi.gateway.test',
         'speed'   => 'admin.wifi.speed.save',
+        'regionSave'   => 'admin.wifi.region.save',
+        'regionRemove' => 'admin.wifi.region.remove',
+        'regionAssign' => 'admin.wifi.region.assign',
+        'regionLeads'  => 'admin.wifi.region.leads',
+        'profiles'     => 'admin.wifi.profiles.set',
     ];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);

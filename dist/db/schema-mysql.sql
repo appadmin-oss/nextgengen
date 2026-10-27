@@ -4461,3 +4461,62 @@ CREATE TABLE IF NOT EXISTS wifi_speed_tests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (190) ON DUPLICATE KEY UPDATE version = version;
+
+-- 191: Wi-Fi regions (a Wi-Fi grouping of centres, not a change to centres),
+-- their leads, speed/hours overrides per region or centre, and daily rollups.
+CREATE TABLE IF NOT EXISTS wifi_regions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  code VARCHAR(16) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_centres (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL,
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  regionId VARCHAR(40) NOT NULL,
+  assignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  assignedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_rc_centre (centre),
+  KEY idx_wifi_rc_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_leads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  addedAt VARCHAR(32) NOT NULL DEFAULT '',
+  addedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_lead (regionId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  profilesJson TEXT,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_override (regionId, centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_gateway_daily (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  date VARCHAR(10) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  hoursUp INT NOT NULL DEFAULT 0,
+  activePeak INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  activeSamples INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_daily (gatewayId, date),
+  KEY idx_wifi_daily_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_wifi_stats_hour ON wifi_gateway_stats (hour);
+ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (191) ON DUPLICATE KEY UPDATE version = version;

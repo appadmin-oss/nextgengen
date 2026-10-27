@@ -23,9 +23,9 @@ declare(strict_types=1);
 const WIFI_KEY_PLACEHOLDER = 'PASTE-THE-KEY-HERE';
 
 function admin_wifi_gateway_setup(array $p): array {
-    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
-    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
-    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row'];
     $plat = WIFI_PLATFORMS[(string)$r['platform']] ?? WIFI_PLATFORMS['generic'];
     $url = wifi_feed_url();
     $fn = 'wifi_setup_' . (string)$r['platform'];
