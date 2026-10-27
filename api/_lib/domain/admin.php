@@ -267,8 +267,17 @@ function admin_member_consent(array $p): array {
     $sg = admin_member_scope_gate($g['requester'], $mid);
     if (!$sg['ok']) return $sg;
     $m = $sg['member'];
-    $r = consent_record($mid, (string)($p['type'] ?? ''), (string)($p['status'] ?? ''),
-                        (string)($p['method'] ?? ''), (string)($g['requester']['fullName'] ?? 'Staff'));
+    $type = (string)($p['type'] ?? '');
+    $actor = (string)($g['requester']['fullName'] ?? 'Staff');
+    /* A guardian's own decision (MEMBER_CONSENT_TYPES 'guardian'): the row
+       names the guardian who gave it. Staff are the witness, recorded as
+       recordedById, and are never written down as having consented. */
+    if (!empty(MEMBER_CONSENT_TYPES[$type]['guardian'])) {
+        $actor = trim((string)($p['guardianName'] ?? ''));
+        if (mb_strlen($actor) < 3) return ['ok' => false, 'error' => 'guardian_name_required'];
+    }
+    $r = consent_record($mid, $type, (string)($p['status'] ?? ''), (string)($p['method'] ?? ''), $actor,
+                        (string)($g['requester']['memberId'] ?? ''));
     if (empty($r['ok'])) return $r;
     audit('admin.member.consent', $g['requester']['memberId'], $mid,
           ['type' => (string)($p['type'] ?? ''), 'status' => (string)($p['status'] ?? ''),

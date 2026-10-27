@@ -2903,19 +2903,23 @@ const CONSENT_METHODS = ["Paper form", "Parent portal", "By phone", "In person",
 function MemberConsentEditor({ member }) {
   const [state, setState] = React.useState(member.consent || {});
   const [method, setMethod] = React.useState(CONSENT_METHODS[0]);
+  const [guardian, setGuardian] = React.useState("");
   const [busy, setBusy] = React.useState("");
 
-  const record = async (type, status) => {
+  /* `guardianOnly` rows record the guardian's own decision, so the ledger
+     names the guardian — never the staff member pressing the button. */
+  const record = async (type, status, guardianOnly) => {
+    if (guardianOnly && guardian.trim().length < 3) { toast.error("Enter the guardian's name first."); return; }
     setBusy(type + status);
     try {
-      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method);
+      const r = await NGGApi.admin.members.consent(member.memberId, type, status, method, guardianOnly ? guardian.trim() : undefined);
       setState(Object.assign({}, state, r.consent, { mayName: r.mayName }));
       toast.success(status === "granted" ? "Consent recorded." : "Refusal recorded.", "Saved");
     } catch (e) { toast.error(e.code || e.message); }
     finally { setBusy(""); }
   };
 
-  const row = (type, label, note) => {
+  const row = (type, label, note, guardianOnly) => {
     const cur = state[type];
     const st = cur && cur.status;
     return (
@@ -2937,9 +2941,9 @@ function MemberConsentEditor({ member }) {
         </div>
         <div style={{ display: "flex", gap: 6, flex: "none" }}>
           <button type="button" className={"btn btn-sm" + (st === "granted" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "granted")}>{busy === type + "granted" ? "…" : "Granted"}</button>
+            disabled={!!busy} onClick={() => record(type, "granted", guardianOnly)}>{busy === type + "granted" ? "…" : "Granted"}</button>
           <button type="button" className={"btn btn-sm" + (st === "declined" ? " btn-primary" : " btn-ghost")}
-            disabled={!!busy} onClick={() => record(type, "declined")}>{busy === type + "declined" ? "…" : "Declined"}</button>
+            disabled={!!busy} onClick={() => record(type, "declined", guardianOnly)}>{busy === type + "declined" ? "…" : "Declined"}</button>
         </div>
       </div>
     );
@@ -2960,6 +2964,12 @@ function MemberConsentEditor({ member }) {
       </label>
       {row("site_visibility", "Feature on our website", "Their first name and last initial may be shown.")}
       {row("media", "Photos & media", "Their photograph may be published — needs the one above as well.")}
+      <label className="admin-field">
+        <span>Guardian who gave it (for the NGV row)</span>
+        <input className="admin-input" value={guardian} onChange={e => setGuardian(e.target.value)} placeholder="The guardian's full name"/>
+      </label>
+      {row("ngv_transfer", "Share with NextGen Vanguard",
+           "Share my child's details with Afrovanguard's NextGen Vanguard. Needed before a member under 18 can be promoted to NGV.", true)}
     </div>
   );
 }
@@ -9748,7 +9758,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
       const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
       toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
       await load(); onChanged && onChanged();
-    } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
+    } catch (e) { toast.error(e.code === "guardian_consent_required" && e.detail ? e.detail : (e.code || e.message)); } finally { setBusy(false); }
   };
   const resendNgvId = async () => {
     setBusy(true);

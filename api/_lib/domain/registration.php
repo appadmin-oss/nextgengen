@@ -34,6 +34,16 @@ const CONSENT_TYPES = [
     'trips'         => ['p' => 2, 'label' => 'Off-site activities'],
     'comms'         => ['p' => 2, 'label' => 'Program updates by SMS/email'],
 ];
+/* Consents a MEMBER's ledger holds beyond the Summer form's. Kept out of
+ * CONSENT_TYPES on purpose: that list IS the Summer parent form, the desk and
+ * self-registration — every clause on it is put to every family and written as
+ * declined when left unticked. Sharing a child's details with Afrovanguard is
+ * asked of one member's guardian, when that member is put forward for NGV, so
+ * it lives here; consent_record() accepts both lists. `guardian` = the row's
+ * actor must be the guardian who decided, never the staff member recording it. */
+const MEMBER_CONSENT_TYPES = [
+    'ngv_transfer' => ['p' => 2, 'guardian' => true, 'label' => "Share my child's details with Afrovanguard's NextGen Vanguard"],
+];
 const FORM_FIELD_TYPES = ['text', 'longtext', 'email', 'phone', 'number', 'date', 'choice', 'multi', 'yesno', 'file', 'section', 'info'];
 /* The ages the programme takes. Named once because three places need to agree:
  * the date-of-birth validator, the record it writes, and the message a family
@@ -3507,15 +3517,15 @@ function consent_handle_for(string $subjectId): string {
  * how the decision was obtained and who recorded it is a checkbox, not
  * evidence, and this is the record the programme would have to stand behind.
  */
-function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName): array {
-    if (!isset(CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
+function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName, string $recordedById = ''): array {
+    if (!isset(CONSENT_TYPES[$type]) && !isset(MEMBER_CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
     if (!in_array($status, ['granted', 'declined'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $method = trim($method);
     if ($method === '') return ['ok' => false, 'error' => 'method_required'];
     db_insert('consents', [
         'studentId' => $subjectId, 'type' => $type, 'status' => $status,
         'method' => mb_substr($method, 0, 60), 'actorName' => mb_substr(trim($actorName), 0, 120),
-        'createdAt' => now_iso(),
+        'recordedById' => $recordedById, 'createdAt' => now_iso(),
     ]);
     return ['ok' => true];
 }

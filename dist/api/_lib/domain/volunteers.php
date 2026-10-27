@@ -810,6 +810,16 @@ function admin_member_promote_ngv(array $p): array {
     if (!$sg['ok']) return $sg;
     $m = $sg['member'];
     if ((string)($m['type'] ?? '') !== 'NGG') return ['ok' => false, 'error' => 'not_ngg'];
+    /* Promotion hands the child's details to Afrovanguard (ngv-portal.php), so
+       a minor — or anybody whose age we cannot tell — needs their guardian's
+       recorded consent first. Checked before the re-press branch too: that
+       path re-sends the same details. */
+    $gc = ngv_guardian_consent($m);
+    if ($gc['minor'] && $gc['guardianConsent']['status'] !== 'granted') {
+        return ['ok' => false, 'error' => 'guardian_consent_required',
+                'detail' => 'Under 18 (or no date of birth on file): record the guardian\'s consent to "' . MEMBER_CONSENT_TYPES[NGV_TRANSFER_CONSENT]['label']
+                          . '" under Publication consent on this member, then promote.'];
+    }
 
     // Already promoted? Keep the one record — re-activate + re-link, never mint
     // a second volunteer row for the same person.

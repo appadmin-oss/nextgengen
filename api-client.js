@@ -920,7 +920,7 @@
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was
         // obtained (paper form, phone, in person) and the server requires it.
-        consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
+        consent:       (memberId, type, status, method, guardianName) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method, guardianName } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
         // their volunteer record + ID card (idempotent).

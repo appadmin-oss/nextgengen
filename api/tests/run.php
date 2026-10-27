@@ -2417,8 +2417,10 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
     $ADM = 'NGG-2025-0099';
     db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-NGV-1'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-NGV-1','SUM-NGV-X')");
+    /* An adult: a minor's promotion needs a guardian's consent, which has its
+       own block (J1 below). */
     db_insert('members', ['memberId' => 'NGG-NGV-1', 'fullName' => 'Ngv One', 'email' => 'ngv1@example.com',
-        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => '2004-05-01',
         'joinDate' => gmdate('Y-m-d'), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 
     /* §20: a NEW promotion carries the evidence of formation it was made on.
@@ -22127,6 +22129,103 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
     db_exec("DELETE FROM member_promotions WHERE memberId = 'NGG-PORT-1'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+})();
+
+/* ── A child's details go to Afrovanguard only with their guardian's consent ──
+ * Promotion to NGV sends name, email, phone, birthday. Under 18 — or with no
+ * usable birthday — it needs a granted `ngv_transfer` consent in the ledger,
+ * recorded with the guardian's own name; the payload says so in `minor` and
+ * `guardianConsent`, the contract Afrovanguard enforces on intake. */
+(function () {
+    global $CONFIG;
+    $ADM = 'NGG-2025-0099';
+    $keep = $CONFIG['afrovanguard'] ?? [];
+    $kids = ['NGG-J1-KID', 'NGG-J1-ADULT', 'NGG-J1-NODOB', 'NGG-J1-OLDKID'];
+    $in = "('" . implode("','", $kids) . "')";
+    $clean = function () use ($in) {
+        db_exec("DELETE FROM qr_codes WHERE studentId IN (SELECT volunteerId FROM volunteers WHERE memberId IN $in)");
+        db_exec("DELETE FROM attendance WHERE studentId IN (SELECT volunteerId FROM volunteers WHERE memberId IN $in)");
+        db_exec("DELETE FROM volunteers WHERE memberId IN $in");
+        db_exec("DELETE FROM member_promotions WHERE memberId IN $in");
+        db_exec("DELETE FROM consents WHERE studentId IN $in");
+        db_exec("DELETE FROM members WHERE memberId IN $in");
+        db_exec("DELETE FROM deliveries WHERE integrationId = 'INT-AV-NGV'");
+        db_exec("DELETE FROM integrations WHERE integrationId = 'INT-AV-NGV'");
+    };
+    $clean();
+    $seventeen = gmdate('Y-m-d', strtotime('-17 years'));
+    foreach (['NGG-J1-KID' => $seventeen, 'NGG-J1-ADULT' => gmdate('Y-m-d', strtotime('-18 years -1 day')), 'NGG-J1-NODOB' => '', 'NGG-J1-OLDKID' => $seventeen] as $id => $dob) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'J1 ' . $id, 'email' => strtolower($id) . '@example.com', 'phone' => '0803000' . strlen($id),
+            'photoUrl' => 'https://img.example.org/' . $id . '.jpg', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'dob' => $dob, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $CONFIG['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'ngv_webhook_secret' => 'av-ngv-secret'];
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) { $calls[] = json_decode($body, true); return ['ok' => true, 'body' => '{"ok":true}']; };
+    $ev = 'Ran the junior chess ladder for a term and taught two newcomers the openings.';
+    $promote = fn($id) => backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => $id, 'sendId' => false, 'evidence' => $ev]);
+
+    chk('ngv consent: 17 is a minor, 18 is not, and a missing or garbled birthday counts as a minor',
+        ngv_is_minor($seventeen) && !ngv_is_minor(gmdate('Y-m-d', strtotime('-18 years -1 day'))) && ngv_is_minor('') && ngv_is_minor('not a date'));
+
+    $r = $promote('NGG-J1-KID');
+    chk('ngv consent: a minor with no guardian consent is not promoted, and staff are told to record it',
+        ($r['error'] ?? '') === 'guardian_consent_required' && str_contains((string)($r['detail'] ?? ''), 'consent')
+        && !db_row("SELECT id FROM volunteers WHERE memberId = 'NGG-J1-KID'") && !$calls);
+    chk('ngv consent: …nor anybody with no date of birth on file', ($promote('NGG-J1-NODOB')['error'] ?? '') === 'guardian_consent_required');
+
+    $rec = fn(array $x) => backend_dispatch('admin.members.consent', $x + ['requesterId' => $ADM, 'memberId' => 'NGG-J1-KID', 'type' => 'ngv_transfer', 'status' => 'granted', 'method' => 'Paper form']);
+    chk('ngv consent: the ledger takes the new type, but only with the guardian\'s own name', ($rec([])['error'] ?? '') === 'guardian_name_required');
+    $g = $rec(['guardianName' => 'Ngozi Okafor']);
+    $row = db_row("SELECT * FROM consents WHERE studentId = 'NGG-J1-KID' AND type = 'ngv_transfer' ORDER BY id DESC LIMIT 1");
+    chk('ngv consent: …recorded as the guardian\'s decision, with the method, staff kept as the witness only',
+        !empty($g['ok']) && ($g['consent']['ngv_transfer']['status'] ?? '') === 'granted'
+        && (string)$row['actorName'] === 'Ngozi Okafor' && (string)$row['method'] === 'Paper form' && (string)$row['recordedById'] === $ADM);
+    chk('ngv consent: a bulk run cannot record it — one name cannot stand for every family',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADM, 'action' => 'consent', 'consentType' => 'ngv_transfer', 'consentStatus' => 'granted', 'memberIds' => ['NGG-J1-KID']])['error'] ?? '') === 'consent_needs_guardian');
+    chk('ngv consent: the Summer forms do not grow the question (it is not a CONSENT_TYPES clause)', !isset(CONSENT_TYPES['ngv_transfer']));
+
+    $calls = [];
+    $r = $promote('NGG-J1-KID');
+    $d = $calls[0]['data'] ?? [];
+    chk('ngv consent: with the guardian\'s consent the minor is promoted and sent',
+        !empty($r['ok']) && ($r['ngvPortal'] ?? '') === 'delivered' && ($calls[0]['event'] ?? '') === 'private.ngv.account');
+    chk('ngv consent: the payload says minor=true and carries the grant: status, method, ISO time, guardian',
+        ($d['minor'] ?? null) === true && ($d['guardianConsent']['status'] ?? '') === 'granted' && ($d['guardianConsent']['method'] ?? '') === 'Paper form'
+        && ($d['guardianConsent']['by'] ?? '') === 'Ngozi Okafor' && (string)($d['guardianConsent']['at'] ?? '') === (string)$row['createdAt']
+        && (bool)preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string)($d['guardianConsent']['at'] ?? '')));
+
+    $calls = [];
+    $a = $promote('NGG-J1-ADULT');
+    $d = $calls[0]['data'] ?? [];
+    chk('ngv consent: an adult needs none, and says minor=false with guardianConsent n/a',
+        !empty($a['ok']) && ($d['minor'] ?? null) === false && ($d['guardianConsent'] ?? null) === ['status' => 'n/a', 'method' => '', 'at' => '', 'by' => '']);
+
+    // Promoted before this rule existed, no consent: never re-sent, and the feeds leave out how to reach them.
+    $oldVid = 'VOL-J1-OLD';
+    db_insert('volunteers', ['volunteerId' => $oldVid, 'memberId' => 'NGG-J1-OLDKID', 'fullName' => 'J1 Old Kid', 'email' => 'oldkid@example.com',
+        'phone' => '08030001111', 'photoUrl' => 'https://img.example.org/oldkid.jpg', 'role' => 'volunteer', 'programme' => 'ngg', 'status' => 'active',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_update('members', ['ngvVolunteerId' => $oldVid, 'ngvAt' => now_iso()], ['memberId' => 'NGG-J1-OLDKID']);
+    db_insert('attendance', ['studentId' => $oldVid, 'date' => gmdate('Y-m-d'), 'checkInAt' => now_iso(), 'method' => 'qr']);
+    $calls = [];
+    $old = db_row("SELECT * FROM members WHERE memberId = 'NGG-J1-OLDKID'");
+    chk('ngv consent: an earlier-promoted minor without consent is not re-sent by the sync either',
+        ngv_portal_announce($old, $oldVid)['status'] === 'consent_required' && !$calls);
+    $feed = []; $after = 0;
+    for ($i = 0; $i < 50; $i++) { $f = av_volunteer_feed(['after' => $after, 'limit' => 200]); foreach ($f['volunteers'] as $v) $feed[$v['volunteerId']] = $v; if ($f['done']) break; $after = (int)$f['next']; }
+    $kidVid = (string)(db_row("SELECT volunteerId FROM volunteers WHERE memberId = 'NGG-J1-KID'")['volunteerId'] ?? '');
+    chk('ngv consent: the volunteer feed omits a consent-less minor\'s photo, email and phone',
+        isset($feed[$oldVid]) && !array_key_exists('email', $feed[$oldVid]) && !array_key_exists('phone', $feed[$oldVid]) && !array_key_exists('photoUrl', $feed[$oldVid]));
+    chk('ngv consent: …and keeps them for a minor whose guardian consented',
+        ($feed[$kidVid]['email'] ?? '') === 'ngg-j1-kid@example.com' && array_key_exists('phone', $feed[$kidVid]) && array_key_exists('photoUrl', $feed[$kidVid]));
+    $ses = []; $after = 0;
+    for ($i = 0; $i < 50; $i++) { $f = av_volunteer_sessions(['after' => $after, 'limit' => 500]); foreach ($f['sessions'] as $x) $ses[$x['volunteerId']] = $x; if ($f['done']) break; $after = (int)$f['next']; }
+    chk('ngv consent: the sessions feed leaves out that minor\'s email too', isset($ses[$oldVid]) && !array_key_exists('email', $ses[$oldVid]));
+
+    unset($GLOBALS['__bus_http_mock']);
+    $CONFIG['afrovanguard'] = $keep;
+    $clean();
 })();
 
 /* ── NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ── */

@@ -120,6 +120,8 @@ function admin_members_bulk(array $p): array {
         if ($value['type'] === '' || !in_array($value['status'], ['granted', 'withdrawn'], true)) {
             return ['ok' => false, 'error' => 'bad_consent'];
         }
+        // A guardian's own decision names that guardian; one run cannot.
+        if (!empty(MEMBER_CONSENT_TYPES[$value['type']]['guardian'])) return ['ok' => false, 'error' => 'consent_needs_guardian'];
     } elseif ($action === 'remindersOff') {
         $value = !empty($p['off']) ? 1 : 0;
     }

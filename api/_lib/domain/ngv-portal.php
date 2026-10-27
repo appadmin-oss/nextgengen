@@ -46,6 +46,50 @@ function ngv_portal_integration(): string {
     return NGV_PORTAL_INTEGRATION;
 }
 
+/* ── A child's details leave NGG only with their guardian's consent ─────────
+ *
+ * Afrovanguard holds an intake with minor=true unless guardianConsent.status
+ * is 'granted' (docs/afrovanguard-sync.md has the contract). The consent is a
+ * row in the ordinary ledger (type ngv_transfer, recorded under Publication
+ * consent with the guardian's name); the latest row wins, so a withdrawal
+ * takes effect on the next read. */
+const NGV_TRANSFER_CONSENT = 'ngv_transfer';
+const NGV_ADULT_AGE = 18;
+
+/** Under 18 — or no usable date of birth, which is treated the same way. */
+function ngv_is_minor(string $dob): bool {
+    $dob = trim($dob);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}/', $dob)) return true;
+    $age = dob_age(substr($dob, 0, 10));
+    return $age < 0 || $age < NGV_ADULT_AGE;
+}
+
+/** The latest ngv_transfer decision for each member (memberId => row). One query. */
+function ngv_transfer_consents(array $memberIds): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $memberIds), fn($x) => $x !== '')));
+    if (!$ids) return [];
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $out = [];
+    foreach (db_all("SELECT studentId, status, method, actorName, createdAt FROM consents
+                     WHERE type = ? AND studentId IN ($in) ORDER BY id", array_merge([NGV_TRANSFER_CONSENT], $ids)) as $c) {
+        $out[(string)$c['studentId']] = $c;   // ordered by id: the last one wins
+    }
+    return $out;
+}
+
+/** `minor` and `guardianConsent` exactly as the promotion payload carries them. */
+function ngv_guardian_consent(array $m, ?array $latest = null): array {
+    if (!ngv_is_minor((string)($m['dob'] ?? ''))) {
+        return ['minor' => false, 'guardianConsent' => ['status' => 'n/a', 'method' => '', 'at' => '', 'by' => '']];
+    }
+    $c = $latest ?? (ngv_transfer_consents([(string)$m['memberId']])[(string)$m['memberId']] ?? null);
+    if (!$c || (string)$c['status'] !== 'granted') {
+        return ['minor' => true, 'guardianConsent' => ['status' => 'none', 'method' => '', 'at' => '', 'by' => '']];
+    }
+    return ['minor' => true, 'guardianConsent' => ['status' => 'granted', 'method' => (string)($c['method'] ?? ''),
+        'at' => (string)($c['createdAt'] ?? ''), 'by' => (string)($c['actorName'] ?? '')]];
+}
+
 /** What Afrovanguard needs to open the account — no guardian, no school, no notes. */
 function ngv_portal_payload(array $m, string $volunteerId): array {
     return [
@@ -54,7 +98,7 @@ function ngv_portal_payload(array $m, string $volunteerId): array {
         'centre' => (string)($m['centre'] ?? ''), 'dob' => (string)($m['dob'] ?? ''),
         'track' => (string)($m['track'] ?? ''), 'displayId' => (string)($m['displayId'] ?? ''),
         'volunteerId' => $volunteerId,
-    ];
+    ] + ngv_guardian_consent($m);
 }
 
 /**
@@ -67,7 +111,10 @@ function ngv_portal_payload(array $m, string $volunteerId): array {
 function ngv_portal_announce(array $m, string $volunteerId): array {
     $int = ngv_portal_integration();
     if ($int === '') return ['sent' => false, 'status' => 'not_configured'];
-    $eventId = event_emit(NGV_PORTAL_EVENT, ngv_portal_payload($m, $volunteerId));
+    $payload = ngv_portal_payload($m, $volunteerId);
+    // Never sent to be held: a minor without consent stays home (the sync too).
+    if ($payload['minor'] && $payload['guardianConsent']['status'] !== 'granted') return ['sent' => false, 'status' => 'consent_required'];
+    $eventId = event_emit(NGV_PORTAL_EVENT, $payload);
     if ($eventId === '') return ['sent' => false, 'status' => 'not_queued'];
     $d = db_row('SELECT * FROM deliveries WHERE eventId = ? AND integrationId = ? LIMIT 1', [$eventId, $int]);
     if (!$d) return ['sent' => false, 'status' => 'not_queued'];
@@ -126,14 +173,32 @@ function av_volunteer_is_ngg(array $v): bool {
     return volunteer_programme($v) === 'ngg';
 }
 
-function av_volunteer_row(array $v): array {
+/**
+ * Which promoted volunteers may have their contact details and photograph
+ * sent: memberId => bool. A promoted member who is a minor (or has no usable
+ * date of birth) without a granted ngv_transfer consent may not. Two queries
+ * for the page, never one per row.
+ */
+function av_volunteer_contact_ok(array $vols): array {
+    $mids = array_values(array_unique(array_filter(array_map(fn($v) => (string)($v['memberId'] ?? ''), $vols))));
+    if (!$mids) return [];
+    $in = implode(',', array_fill(0, count($mids), '?'));
+    $consents = ngv_transfer_consents($mids);
+    $out = [];
+    foreach (db_all("SELECT memberId, dob FROM members WHERE memberId IN ($in)", $mids) as $m) {
+        $out[(string)$m['memberId']] = ngv_guardian_consent($m, $consents[(string)$m['memberId']] ?? ['status' => ''])['guardianConsent']['status'] !== 'none';
+    }
+    return $out;
+}
+
+function av_volunteer_row(array $v, bool $contactOk = true): array {
     $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
     $photo = (string)($v['photoUrl'] ?? '');
     if ($photo !== '' && !preg_match('#^https?://#i', $photo)) $photo = $origin . '/' . ltrim($photo, '/');
     $tier = vol_tier_for((string)($v['role'] ?? ''));
     $ledger = volunteer_ledger((string)$v['volunteerId']);
     $game = (array)($ledger['game'] ?? []);
-    return [
+    $row = [
         'volunteerId' => (string)$v['volunteerId'], 'memberId' => (string)($v['memberId'] ?? ''),
         'name' => (string)($v['fullName'] ?? ''), 'email' => strtolower(trim((string)($v['email'] ?? ''))), 'phone' => (string)($v['phone'] ?? ''),
         'role' => (string)($v['role'] ?? ''), 'roleLabel' => (string)($tier['name'] ?? ''), 'centre' => (string)($v['centre'] ?? ''),
@@ -143,6 +208,8 @@ function av_volunteer_row(array $v): array {
         'certificates' => count((array)($ledger['certificates'] ?? [])),
         'points' => (int)($game['points'] ?? 0), 'level' => (string)($game['levelName'] ?? ($game['level']['name'] ?? '')),
     ];
+    if (!$contactOk) unset($row['email'], $row['phone'], $row['photoUrl']);
+    return $row;
 }
 
 /**
@@ -153,12 +220,13 @@ function av_volunteer_feed(array $in): array {
     $after = max(0, (int)($in['after'] ?? 0));
     $limit = max(1, min(200, (int)($in['limit'] ?? 100)));
     $rows = db_all('SELECT * FROM volunteers WHERE id > ? ORDER BY id LIMIT ' . $limit, [$after]);
+    $contactOk = av_volunteer_contact_ok($rows);
     $out = [];
     $last = $after;
     foreach ($rows as $v) {
         $last = (int)$v['id'];
         if (!av_volunteer_is_ngg($v)) continue;
-        $out[] = av_volunteer_row($v);
+        $out[] = av_volunteer_row($v, $contactOk[(string)($v['memberId'] ?? '')] ?? true);
     }
     return ['ok' => true, 'volunteers' => $out, 'next' => count($rows) === $limit ? $last : null, 'done' => count($rows) < $limit];
 }
@@ -181,9 +249,10 @@ function av_volunteer_feed(array $in): array {
 function av_volunteer_sessions(array $in): array {
     $after = max(0, (int)($in['after'] ?? 0));
     $limit = max(1, min(500, (int)($in['limit'] ?? 200)));
-    $rows = db_all("SELECT a.*, v.email AS vEmail, v.centre AS vCentre, v.role AS vRole, v.programme AS vProgramme
+    $rows = db_all("SELECT a.*, v.email AS vEmail, v.memberId AS memberId, v.centre AS vCentre, v.role AS vRole, v.programme AS vProgramme
                       FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId
                      WHERE a.id > ? AND v.programme = 'ngg' ORDER BY a.id LIMIT " . $limit, [$after]);
+    $contactOk = av_volunteer_contact_ok($rows);   // the same rule as the volunteer feed
     $std = volunteer_session_hours() * 60;
     $out = [];
     $last = $after;
@@ -209,6 +278,7 @@ function av_volunteer_sessions(array $in): array {
             'role' => (string)($r['vRole'] ?? ''), 'method' => (string)($r['method'] ?? ''),
         ];
         if (array_key_exists('updatedAt', $r)) $s['updatedAt'] = (string)($r['updatedAt'] ?? '');
+        if (!($contactOk[(string)($r['memberId'] ?? '')] ?? true)) unset($s['email']);
         $out[] = $s;
     }
     return ['ok' => true, 'sessions' => $out, 'next' => count($rows) === $limit ? $last : null, 'done' => count($rows) < $limit];
