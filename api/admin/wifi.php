@@ -24,6 +24,8 @@ if ($method === 'GET') {
         'rotate'  => 'admin.wifi.gateway.rotate',
         'remove'  => 'admin.wifi.gateway.remove',
         'member'  => 'admin.wifi.member.set',
+        'test'    => 'admin.wifi.gateway.test',
+        'speed'   => 'admin.wifi.speed.save',
     ];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);

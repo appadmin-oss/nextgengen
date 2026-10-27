@@ -186,8 +186,6 @@ class Cp3Portal extends React.Component {
   flushAll() { this.flushPending(); }
   fail(e, fallback) { this.toast(cp3Err(e, fallback)); }
   go(sec) {
-    // The Wi-Fi workspace lives in the Control Room; this door leads there.
-    if (sec === "wifi") { try { window.location.href = "/control/wifi"; } catch (e) {} return; }
     if (CP3_SECTION_IDS.indexOf(sec) === -1) sec = "home";
     this.flushPending();
     this.setState(s => ({ recentSec: [sec].concat(s.recentSec.filter(x => x !== sec)).slice(0, 4) }));
@@ -465,6 +463,7 @@ class Cp3Portal extends React.Component {
     const moreN = moreItems.filter(n => n[3]).reduce((a, n) => a + ((badge[n[0]] || [0])[0] || 0), 0);
     const nav = CP3_TABS.map(t => { const x = mk(t, t[0] === sec || (t[0] === "more" && !isTab)); if (t[0] === "more") Object.assign(x, { hasBadge: moreN > 0, badge: cap99(moreN), bb: "#f5b026", bf: "#2a1d00" }); return x; });
     const META = cp3Meta(isAdm); Object.keys(CP3_G).forEach(k => { META[k] = [CP3_G[k].title, CP3_G[k].desc]; });
+    META.wifi = ["Wi-Fi", "Each centre’s Wi-Fi: its gateway, how fast and busy the line is, who gets on, and how to set one up."];
     const SHORT = { home: "Dashboard", promote: "Promote", companion: "Check-ins", roster: "Roster" }; const stop = e => e.stopPropagation();
     const fmt = cp3Fmt;
     const centresAll = B.centres;
@@ -663,6 +662,9 @@ class Cp3Portal extends React.Component {
     const CEN = { act: "Open", cols: ["Centre", "Status", "Active members", "Attendance", "Centre lead", "No mentor", "Gate desk"], rows: out.centreRows.map((c, i) => ({ id: c.name, cells: [["p", c.name, c.meets], ["s", c.st, (CS[(SCs[i] || {}).id] || {}).tone || "ok"], ["n", c.members], ["n", c.pct + " · " + c.present], c.lead, ["n", c.unpaired], c.desk] })) };
     const gsrc = CP3_G[sec] && sec !== "tournaments" ? S.gData[sec === "desks" ? "desks" : sec] : null;
     const gdef = sec === "team" ? TEAM : sec === "centres" ? CEN : sec === "tournaments" ? null : CP3_G[sec] ? Object.assign({}, CP3_G[sec], { rows: (gsrc || {}).rows || [], note: (gsrc || {}).note || "" }) : null;
+    /* Wi-Fi is the Control Room's Wi-Fi page itself, hosted here in place
+       (CrEmbed): the same tabs and tools, never a second copy. */
+    if (sec === "wifi" && B.me.canNetwork && typeof CrEmbed === "function") out.mainSlotEnd = <CrEmbed page="wifi" caps={B.me.caps || []} me={B.me} phone={isPhone}/>;
     out.isGen = !!gdef; out.isMore = sec === "more"; out.phoneBack = isPhone && !isTab; out.goMore = () => this.go("more");
     const gLoading = !!CP3_G[sec] && sec !== "tournaments" && !gsrc && !S.gErr[sec];
     if (gdef) {

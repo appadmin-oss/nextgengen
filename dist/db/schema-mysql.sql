@@ -4429,3 +4429,35 @@ CREATE TABLE IF NOT EXISTS wifi_gateways (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (189) ON DUPLICATE KEY UPDATE version = version;
+
+-- 190: Wi-Fi diagnosis: what gateways report (hourly summaries, never browsing),
+-- and speed tests from a gateway or a staff device at a centre.
+ALTER TABLE wifi_gateways ADD COLUMN testAsked INT NOT NULL DEFAULT 0;
+ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT;
+CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  hour VARCHAR(13) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  activeMax INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  memFreeMin INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_stats (gatewayId, hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  gatewayId VARCHAR(40) NOT NULL DEFAULT '',
+  source VARCHAR(16) NOT NULL DEFAULT 'device',
+  downMbps DOUBLE NOT NULL DEFAULT 0,
+  upMbps DOUBLE NOT NULL DEFAULT 0,
+  rttMs INT NOT NULL DEFAULT 0,
+  byId VARCHAR(64) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_wifi_speed_centre (centre, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (190) ON DUPLICATE KEY UPDATE version = version;

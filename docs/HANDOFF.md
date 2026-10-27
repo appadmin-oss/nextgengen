@@ -3565,3 +3565,117 @@ Asked: improve /learn and enrich it, from good sources.
 - A lesson with no questions can be **marked done** (`curriculum_submit` with
   no answers completes at 100%). Before this, it could never be finished.
 - New: `/learn/notes`, search on *My courses*, Previous/Next, *Lesson N of M*.
+
+### Wi-Fi gateways: built (2026-10-27) — replaces the plan above
+
+The plan of 2026-10-23 ("PLANNED, not built: MikroTik Wi-Fi accounts…") was
+built with these changes, each for a reason found while building it:
+
+- **Not only MikroTik.** A centre's *gateway* has a platform: `mikrotik`,
+  `radius` (a FreeRADIUS bridge on a Raspberry Pi for UniFi, Omada, pfSense,
+  OPNsense…), `openwrt` (openNDS), or `generic` (JSON). `WIFI_PLATFORMS` in
+  `domain/wifi.php` says what each can do; the screens and the diagnosis read it.
+- **MikroTik uses the router's own hotspot users, not User Manager.** Verified
+  against the RouterOS 7 manual: hotspot user profiles carry `rate-limit`,
+  `shared-users`, `add-mac-cookie`/`mac-cookie-timeout`; removing somebody is
+  `/ip hotspot active remove`, `cookie remove`, `user remove`. User Manager
+  needs its own package, localhost RADIUS and accounting for the same result.
+- **`/tool fetch` cuts a reply at 64,512 bytes without an error**, so the text
+  feed pages (`WIFI_TEXT_PAGE_BYTES`) and every page ends `#end`; a script
+  applies nothing until it has every page.
+- **Hours are kept by NGG**: hotspot profiles have no time-of-day window, so
+  people outside their profile's hours are left off the list (`wifi_in_hours`)
+  and the next fetch signs them out; `next` is shortened to land on a boundary.
+- **No feed version is "bumped".** Each fetch computes the centre's list and
+  diffs it against what that gateway *confirmed* (`ackedJson`); the gateway
+  confirms by sending the version back as `since`. Nothing else in the codebase
+  had to learn about Wi-Fi to keep it right.
+- **Activity logging was dropped** (plan stage 4, the `wifi_activity` cap and
+  tables). NDPA 2023 s.31 needs guardian consent for processing a child's data
+  on that basis and s.28 a privacy impact assessment; filtering does not need
+  the record. Gateways report counts only (`wifi_gateway_stats`, hourly).
+- **Capability `network`**, never bundled into Admin (like `fees`/`journal`).
+  The person lookup is a read on any of people/summer/network; changing one
+  person's Wi-Fi stays with whoever owns their record (people / summer).
+- **The Club portal hosts the Control Room's Wi-Fi page in place** (`CrEmbed`
+  in `cr-shell.jsx`): the same tabs and blocks, with its own drawer, form,
+  confirm and toast layers. Not a second drawing; not a redirect.
+- **Diagnosis** (`wifi_gateway_diagnose`): never connected, silent, wrong-key
+  fetches (a warning while it still fetches), the gateway's own error put into
+  words, RouterOS too old, slow line, more promised than the line can give (fair
+  share from the measured line and the week's peak), CPU, memory, restarts.
+- **Speed**: profiles carry `burst` and `priority` (MikroTik rate-limit). Lines
+  are measured by staff devices (`/api/admin/wifi-speed.php`, timed in the
+  browser by `NGGApi.admin.wifi.speedTest`) and by MikroTik gateways nightly or
+  when asked (`/api/hooks/wifi-speed.php`, second-resolution: a guide).
+
+Status: every platform but `generic` is **pilot first** — the scripts follow
+the makers' manuals but cannot be run here. Pilot MikroTik at one centre. Still
+open from the plan: the owner's decisions (hours, fees rule, pilot centre,
+optional categories); day passes (`ngg-guest` exists as a profile only); a
+branded hotspot login page. Migrations 189–190. Tests: the Wi-Fi block in
+`api/tests/run.php`, `tests/wifi.test.js` (`npm run test:wifi`).
+
+### PLANNED, not built: Wi-Fi at 2,000 centres, in regions (owner, 2026-10-27)
+
+**The requirement.** NGG projects about **2,000 centres**, grouped in
+**regions**. An NGG admin manages Wi-Fi **for their own centre(s)**, never
+the whole network. What was built on 2026-10-27 assumes a handful of centres
+seen by one systems person, so it does not meet this yet:
+
+- the `network` gates in `domain/wifi.php` (overview, gateways, access table,
+  speed tests) ignore `centreScope`. Only the person lookup and the speed-test
+  save are scoped;
+- `admin_wifi_overview` returns every gateway, every centre and the latest 40
+  tests in one reply, and `wifi_health_context` reads every speed test from the
+  last 30 days. At 2,000 centres that is a list problem (CLAUDE.md §6: filter
+  above the page cap, page on the server);
+- the access table and the profiles are one global setting. A region may need
+  its own speeds (its lines differ), and a centre its own hours.
+
+**Regions first (a centre-management change, not a Wi-Fi one).** There is no
+region in the schema today. Plan:
+- a `regions` table (id, name, code, status) and `centres.regionId`, managed in
+  Members → Centres (People capability, like centres; CLAUDE.md §4 "ownership
+  follows the data");
+- staff scope gains regions: `centreScope` may name a region, and
+  `admin_centre_names_in_scope()` expands it to its centres. That is the one
+  place scope is resolved, so every scoped screen gets regions at once;
+- a **regional lead** role (scoped, like `centre_lead`) whose scope is a region;
+- the centre directory and every centre picker become server-side search with
+  region and status facets and paging, not a 2,000-row select.
+
+**Then Wi-Fi at scale.**
+- **Scope every Wi-Fi op by centre**, on the way in and per row
+  (`admin_centre_allowed`): a centre's admin holding `network` sees and acts on
+  their centre's gateways only; a regional lead their region's; a super admin
+  everything. Add/edit/rotate/remove refuse `out_of_scope`.
+- **The Gateways tab becomes a server-side list**: search, facets (region,
+  centre, platform, health), sort, paging and a true total, with
+  `admin.wifi.gateways` replacing the all-in-one overview. The overview keeps
+  only counts, by region (working / need a look / silent / not set up).
+- **Health by region**: a region roll-up (how many centres working, the
+  slowest lines, the busiest) and a drill-down to its centres. Silent gateways
+  are counted, never listed in full, above the page cap.
+- **Settings inherit**: network default → region → centre for the access
+  table, speeds, burst, priority and hours. Store only overrides
+  (`wifi_settings_overrides`: scopeType, scopeId, json), resolve in
+  `wifi_settings($centre)`, and show where each value comes from. The feed
+  already reads settings per gateway, so this is one change in one function.
+- **Speed tests** read per centre, paged. `wifi_health_context` takes the page's
+  gateway ids, never "everything from 30 days".
+- **Bulk acts** through the admin action layer (CLAUDE.md §6): rotate keys for
+  a region's gateways, ask for line tests, each capped, with the count read
+  before the confirm and one audit event per run.
+- **Load**: 2,000 gateways each fetching every 2–5 minutes is about 7–17
+  requests a second on shared hosting. Before rollout: cache each centre's
+  computed list for 60 s (keyed on the centre and the settings version), and
+  measure a fetch's cost. If it is too much, serve the feed from a small
+  separate host, or move the default poll to 5 minutes.
+- **Alerts**: one digest per region lead when a gateway is silent for an hour,
+  not one email per gateway.
+
+**Order.** (1) regions and region scope, with tests; (2) Wi-Fi scope on every
+op, with tests; (3) the server-side gateway list and the region roll-up;
+(4) settings inheritance; (5) load caching, measured, before more than a pilot
+region goes live.

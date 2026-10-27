@@ -32581,7 +32581,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi · the PIN is sealed at rest', strpos((string)db_row("SELECT pinSealed FROM wifi_accounts WHERE subjectId = 'NGG-WF-ACT'")['pinSealed'], $u501['pin']) === false);
     $txt = wifi_feed_render($f1)['body'];
     chk('wifi · the text feed has a header, the profiles, the users and an end marker', strpos($txt, '#ngg-wifi;v=1;full=1;') === 0 && strpos($txt, ';page=1;pages=1') !== false
-        && strpos($txt, "\np;ngg-limited;1;1;1;\n") !== false && strpos($txt, "\nu;026-501;" . $u501['pin'] . ";ngg-member;add\n") !== false && substr($txt, -5) === "#end\n");
+        && strpos($txt, "\np;ngg-limited;1;1;1;;0;8\n") !== false && strpos($txt, "\nu;026-501;" . $u501['pin'] . ";ngg-member;add\n") !== false && substr($txt, -5) === "#end\n");
 
     // Confirmed by sending the version back; then only what changed.
     $f2 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
@@ -32675,6 +32675,39 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         chk('wifi · a setup guide for ' . $pl, $sx['ok'] && strpos($sx['script'], $gg['gateway']['gatewayId']) !== false && strpos($sx['script'], '/api/hooks/wifi-feed.php') !== false);
         backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gg['gateway']['gatewayId']]);
     }
+    // Diagnosis: what a gateway reports, line tests, and a fair share.
+    $dg = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Diag']);
+    $dgid = $dg['gateway']['gatewayId']; $dk = $dg['key'];
+    $t0 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => 0, 'act' => '30', 'cpu' => '95', 'mem' => '12', 'up' => '600']);
+    $txt0 = wifi_feed_render($t0)['body'];
+    chk('wifi · the profile lines carry burst and priority', strpos($txt0, "\np;ngg-staff;25;10;2;;1;2\n") !== false && strpos($txt0, "\np;ngg-limited;1;1;1;;0;8\n") !== false);
+    chk('wifi · a gateway’s report is kept as an hourly summary, not per person', (int)db_row('SELECT activeMax FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['activeMax'] === 30
+        && (int)db_row('SELECT COUNT(*) c FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['c'] === 1);
+    backend_dispatch('admin.wifi.gateway.test', ['requesterId' => $A, 'gatewayId' => $dgid]);
+    $t1 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t0['version'], 'act' => '20']);
+    chk('wifi · a line test asked for rides the next reply', $t1['test'] === true && strpos(wifi_feed_render($t1)['body'], ';test=1;') !== false);
+    $t2 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t1['version'], 'dl' => '6.4']);
+    chk('wifi · a reported result is kept as the centre’s line speed and clears the ask', $t2['test'] === false
+        && (float)db_row("SELECT downMbps FROM wifi_speed_tests WHERE gatewayId = ? AND source = 'gateway'", [$dgid])['downMbps'] === 6.4);
+    $ov2 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    $dgo = array_values(array_filter($ov2['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0];
+    $titles = array_column($dgo['diagnosis'], 'title');
+    chk('wifi · busy and promised more than the line gives: the diagnosis says so, with a fair figure', in_array('More promised than the line can give', $titles, true)
+        && $dgo['fair']['peak'] === 30 && $dgo['fair']['suggestMember'] < 10);
+    chk('wifi · a hot CPU, low memory and a recent restart are all named', (bool)array_filter($titles, fn($t) => strpos($t, 'CPU reached 95%') !== false)
+        && (bool)array_filter($titles, fn($t) => strpos($t, 'Low on memory') !== false) && (bool)array_filter($titles, fn($t) => strpos($t, 'Restarted') === 0));
+    chk('wifi · a staff device’s speed test needs a real centre in scope, and a result',
+        (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => 'Nowhere', 'downMbps' => 5])['error'] ?? '') === 'bad_centre'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 0])['error'] ?? '') === 'bad_result'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => 'NGG-WF-LEAD', 'centre' => $C, 'downMbps' => 9])['error'] ?? '') === 'out_of_scope');
+    backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 3.2, 'upMbps' => 1.1, 'rttMs' => 80, 'note' => 'Hall, Saturday 10am']);
+    $ov3 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    chk('wifi · the newest test is the centre’s line, and a slow one is called slow', $ov3['speedTests'][0]['note'] === 'Hall, Saturday 10am' && $ov3['speedTests'][0]['by'] === 'Wifi NGG-WF-ADM'
+        && in_array('Slow line: 3.2 Mbit/s measured', array_column(array_values(array_filter($ov3['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0]['diagnosis'], 'title'), true));
+    $bp = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['priority' => 9]]]);
+    chk('wifi · priority is checked, and a partial change keeps the rest', ($bp['error'] ?? '') === 'bad_profile'
+        && backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['burst' => false]]])['profiles']['ngg-member']['down'] === 20);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $dgid]);
     $pv = backend_dispatch('admin.wifi.gateway.preview', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId'], 'q' => '026-50']);
     chk('wifi · the preview counts by profile and finds a person, without their PIN', $pv['byProfile']['ngg-member'] >= 1 && !isset($pv['matches'][0]['pin']) && count($pv['matches']) >= 1);
 })();

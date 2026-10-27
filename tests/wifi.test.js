@@ -120,7 +120,7 @@ function cleanup() {
     await P.click('.cr-card:has-text("Main hall router")');
     await P.waitForSelector('.cr-sheet', { timeout: 10000 });
     const dr = await P.innerText('.cr-sheet');
-    chk('a gateway opens with how it is and what it can do', /People on it/.test(dr) && /Working/.test(dr) && /Rotate the key/.test(dr) && /What it holds/.test(dr));
+    chk('a gateway opens with how it is and what it can do', /Online now/.test(dr) && /Working/.test(dr) && /Rotate the key/.test(dr) && /What it holds/.test(dr));
     await shot(P, 'wifi-2-gateway');
     await P.click('.cr-sheet button:has-text("Setup guide")');
     await P.waitForFunction(() => /ngg-wifi-sync/.test((document.querySelector('.cr-sheet') || {}).innerText || ''), null, { timeout: 10000 });
@@ -146,10 +146,33 @@ function cleanup() {
     chk('Setup guides compares the platforms, pilot status included', /Pilot first/i.test(await P.innerText('body')) && /OpenWrt with openNDS/.test(await P.innerText('body')));
     await shot(P, 'wifi-6-guides');
 
-    console.log('the Club portal’s door');
-    const C = await open(ADMIN, true, '/club-admin');
-    await C.waitForFunction(() => /Wi-Fi/.test(document.body.innerText), null, { timeout: 30000 }).catch(() => {});
-    chk('somebody holding network sees Wi-Fi in the Club portal', /Wi-Fi/.test(await C.innerText('body')));
+    console.log('Speed & health');
+    await P.goto(BASE + '/control/wifi/wifi-health', { waitUntil: 'domcontentloaded' });
+    await P.waitForFunction(() => /Each centre’s line/.test(document.body.innerText), null, { timeout: 30000 });
+    await P.click('button:has-text("Test this connection")');
+    await P.waitForSelector('[role="dialog"] select', { timeout: 10000 });
+    await P.selectOption('[role="dialog"] select', 'Egbeda');
+    await P.fill('[role="dialog"] input', 'Main hall, test');
+    await P.click('[role="dialog"] button[type="submit"]');
+    await P.waitForFunction(() => /down/.test((document.querySelector('.cr-sheet') || {}).innerText || '') && /Delay/.test((document.querySelector('.cr-sheet') || {}).innerText || ''), null, { timeout: 60000 });
+    const sp = await P.innerText('.cr-sheet');
+    chk('a speed test runs from the browser: download, upload and delay', /Download/.test(sp) && /Upload/.test(sp) && /\d+ ms/.test(sp));
+    await shot(P, 'wifi-7-speedtest');
+    await P.keyboard.press('Escape');
+    await P.waitForFunction(() => /Main hall, test/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    chk('…and is kept for the centre', /Main hall, test/.test(await P.innerText('body')));
+    await shot(P, 'wifi-8-health');
+
+    console.log('Wi-Fi inside the Club portal');
+    const C = await open(ADMIN, true, '/club-admin?s=wifi');
+    await C.waitForFunction(() => /Main hall router/.test(document.body.innerText), null, { timeout: 40000 }).catch(() => {});
+    const cb = await C.innerText('body');
+    chk('somebody holding network gets Wi-Fi inside the Club portal, not sent away', /\/club-admin/.test(C.url()) && /Main hall router/.test(cb) && /Speed & health/.test(cb) && /Who gets on/.test(cb));
+    await shot(C, 'wifi-9-club-portal');
+    await C.click('.cr-embed .cr-card:has-text("Main hall router")');
+    await C.waitForSelector('.cr-sheet', { timeout: 10000 }).catch(() => {});
+    chk('…with the same gateway drawer', /Rotate the key/.test(await C.innerText('.cr-sheet').catch(() => '')));
+    await shot(C, 'wifi-10-club-drawer', false);
     const K = await open(CLUB, true, '/club-admin');
     await K.waitForFunction(() => /Roster/.test(document.body.innerText), null, { timeout: 30000 }).catch(() => {});
     chk('a club coordinator without network does not', !/\bWi-Fi\b/.test(await K.innerText('body')));

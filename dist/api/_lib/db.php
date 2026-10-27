@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 189;
+const NGG_SCHEMA_TARGET = 190;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5539,6 +5539,35 @@ function db_migrate(PDO $db): void {
               removedAt TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_wifi_gateways_centre ON wifi_gateways(centre);
+        ",
+        190 => "
+            ALTER TABLE wifi_gateways ADD COLUMN testAsked INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              hour TEXT NOT NULL,
+              samples INTEGER NOT NULL DEFAULT 0,
+              activeMax INTEGER NOT NULL DEFAULT 0,
+              activeSum INTEGER NOT NULL DEFAULT 0,
+              cpuMax INTEGER NOT NULL DEFAULT 0,
+              memFreeMin INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (gatewayId, hour)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              gatewayId TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'device',
+              downMbps REAL NOT NULL DEFAULT 0,
+              upMbps REAL NOT NULL DEFAULT 0,
+              rttMs INTEGER NOT NULL DEFAULT 0,
+              byId TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_speed_centre ON wifi_speed_tests(centre, at);
         ",
     ];
 

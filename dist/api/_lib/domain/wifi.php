@@ -53,14 +53,19 @@ const WIFI_PLATFORMS = [
 ];
 
 const WIFI_PROFILES = ['ngg-member', 'ngg-staff', 'ngg-limited', 'ngg-summer', 'ngg-guest'];
-/* Speeds in Mbit/s, devices per person, and an optional daily window. */
+/* Speeds in Mbit/s, devices per person, an optional daily window, a short
+   burst (twice the speed for the first seconds, so pages open fast while a
+   long download still gets the steady rate), and a priority from 1 (first)
+   to 8 (last) for when the line is busy. */
 const WIFI_PROFILE_DEFAULTS = [
-    'ngg-member'  => ['down' => 10, 'up' => 5,  'devices' => 1, 'hours' => ''],
-    'ngg-staff'   => ['down' => 25, 'up' => 10, 'devices' => 2, 'hours' => ''],
-    'ngg-limited' => ['down' => 1,  'up' => 1,  'devices' => 1, 'hours' => ''],
-    'ngg-summer'  => ['down' => 5,  'up' => 2,  'devices' => 1, 'hours' => ''],
-    'ngg-guest'   => ['down' => 2,  'up' => 1,  'devices' => 1, 'hours' => ''],
+    'ngg-member'  => ['down' => 10, 'up' => 5,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 5],
+    'ngg-staff'   => ['down' => 25, 'up' => 10, 'devices' => 2, 'hours' => '', 'burst' => true,  'priority' => 2],
+    'ngg-limited' => ['down' => 1,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 8],
+    'ngg-summer'  => ['down' => 5,  'up' => 2,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 6],
+    'ngg-guest'   => ['down' => 2,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 7],
 ];
+const WIFI_SLOW_MBPS = 5;              // a line measured below this is called slow
+const WIFI_SPEED_BYTES_MAX = 25000000; // the most one speed-test download may ask for
 const WIFI_ACCESS = ['on', 'limited', 'off'];
 /* The cases of the access table, with their defaults. `blocked` is fixed:
    a suspended, evicted or inactive record is off, whatever the table says. */
@@ -104,19 +109,21 @@ function wifi_settings(): array {
     }
     $profiles = WIFI_PROFILE_DEFAULTS;
     foreach ((array)($s['profiles'] ?? []) as $k => $v) {
-        if (isset($profiles[$k]) && is_array($v) && wifi_profile_check($v) === '') $profiles[$k] = wifi_profile_norm($v);
+        if (isset($profiles[$k]) && is_array($v) && wifi_profile_check($v + $profiles[$k]) === '') $profiles[$k] = wifi_profile_norm($v + $profiles[$k]);
     }
     return ['cases' => $cases, 'feesRule' => !empty($s['feesRule']), 'profiles' => $profiles];
 }
 
 function wifi_profile_norm(array $v): array {
-    return ['down' => (int)$v['down'], 'up' => (int)$v['up'], 'devices' => (int)$v['devices'], 'hours' => trim((string)($v['hours'] ?? ''))];
+    return ['down' => (int)$v['down'], 'up' => (int)$v['up'], 'devices' => (int)$v['devices'], 'hours' => trim((string)($v['hours'] ?? '')),
+            'burst' => !empty($v['burst']), 'priority' => (int)($v['priority'] ?? 5)];
 }
 /** '' when the profile is usable, else what is wrong with it. */
 function wifi_profile_check(array $v): string {
     foreach (['down', 'up'] as $k) if (!isset($v[$k]) || !is_numeric($v[$k]) || (int)$v[$k] < 1 || (int)$v[$k] > 1000) return 'Speeds are whole Mbit/s from 1 to 1000.';
     if (!isset($v['devices']) || !is_numeric($v['devices']) || (int)$v['devices'] < 1 || (int)$v['devices'] > 5) return 'Devices is 1 to 5.';
     $h = trim((string)($v['hours'] ?? ''));
+    if (isset($v['priority']) && (!is_numeric($v['priority']) || (int)$v['priority'] < 1 || (int)$v['priority'] > 8)) return 'Priority is 1 (first) to 8 (last).';
     if ($h !== '' && (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/', $h, $m) || $m[1] . $m[2] >= $m[3] . $m[4])) return 'Hours are blank (all day) or like 08:00-18:00.';
     return '';
 }
@@ -405,7 +412,7 @@ function wifi_feed(array $p): array {
         $d = wifi_feed_diff($lines, $acked, !empty($pend['#full']), $cfg['profiles']);
         db_update('wifi_gateways', ['lastSeenAt' => now_iso()], ['id' => (int)$r['id']]);
         return $base + ['version' => (int)$r['pendingVersion'], 'full' => !empty($pend['#full']), 'changed' => $d['changed'], 'unchanged' => false,
-                        'next' => WIFI_POLL['busy'], 'users' => $d['users'], 'count' => count($lines)];
+                        'next' => WIFI_POLL['busy'], 'test' => false, 'users' => $d['users'], 'count' => count($lines)];
     }
     // The gateway confirms the list it was last handed by sending its version back.
     if ($since > 0 && $since === (int)$r['pendingVersion']) {
@@ -433,10 +440,15 @@ function wifi_feed(array $p): array {
               'lastError' => substr(preg_replace('/[\x00-\x1f]/', '', (string)($p['error'] ?? '')), 0, 255),
               'pendingJson' => $send ? json_encode((object)($full ? $cur + ['#full' => 1] : $cur)) : '', 'pendingVersion' => $send ? $version : 0];
     if ($full && !$unchanged) $patch['lastFullAt'] = now_iso();
+    $tele = wifi_telemetry_record($r, $p);
+    if ($tele) $patch['lastStatsJson'] = json_encode($tele);
+    // A speed test asked for from the Control Room rides the next reply; a reported result clears it.
+    $test = (int)($r['testAsked'] ?? 0) === 1;
+    if (isset($p['dl']) && is_numeric($p['dl'])) { $patch['testAsked'] = 0; $test = false; }
     if ($changed) $patch['lastChangeAt'] = now_iso();
     db_update('wifi_gateways', $patch, ['id' => (int)$r['id']]);
-    return $base + ['version' => $version, 'full' => $full, 'changed' => $changed, 'unchanged' => $unchanged, 'next' => $next,
-                    'users' => $users, 'count' => count($lines)];
+    return $base + ['version' => $version, 'full' => $full, 'changed' => $changed, 'unchanged' => $unchanged, 'next' => $test ? WIFI_POLL['busy'] : $next,
+                    'test' => $test, 'users' => $users, 'count' => count($lines)];
 }
 
 /** The lines to send: everybody (as adds) on a full list, else what differs from what the gateway confirmed. */
@@ -474,7 +486,7 @@ const WIFI_TEXT_PAGE_BYTES = 56000;
  */
 function wifi_feed_render(array $res, int $page = 1): array {
     if ($res['format'] === 'json') {
-        return ['type' => 'application/json', 'body' => json_encode(['version' => $res['version'], 'full' => $res['full'], 'next' => $res['next'],
+        return ['type' => 'application/json', 'body' => json_encode(['version' => $res['version'], 'full' => $res['full'], 'next' => $res['next'], 'test' => !empty($res['test']),
             'count' => $res['count'], 'profiles' => $res['profiles'], 'users' => $res['users']], JSON_UNESCAPED_SLASHES)];
     }
     if ($res['format'] === 'radius') {
@@ -500,7 +512,7 @@ function wifi_feed_render(array $res, int $page = 1): array {
         return ['type' => 'text/plain', 'body' => $t . "# end\n"];
     }
     $prof = '';
-    foreach ($res['profiles'] as $name => $pr) $prof .= 'p;' . $name . ';' . (int)$pr['down'] . ';' . (int)$pr['up'] . ';' . (int)$pr['devices'] . ';' . $pr['hours'] . "\n";
+    foreach ($res['profiles'] as $name => $pr) $prof .= 'p;' . $name . ';' . (int)$pr['down'] . ';' . (int)$pr['up'] . ';' . (int)$pr['devices'] . ';' . $pr['hours'] . ';' . (!empty($pr['burst']) ? 1 : 0) . ';' . (int)($pr['priority'] ?? 5) . "\n";
     $pages = [[]]; $size = 0;
     foreach ($res['users'] as $u) {
         $l = 'u;' . $u['username'] . ';' . $u['pin'] . ';' . $u['profile'] . ';' . $u['action'] . "\n";
@@ -509,7 +521,7 @@ function wifi_feed_render(array $res, int $page = 1): array {
     }
     $n = count($pages);
     $page = max(1, min($n, $page));
-    $t = '#ngg-wifi;v=' . $res['version'] . ';full=' . ($res['full'] ? 1 : 0) . ';count=' . $res['count'] . ';next=' . $res['next'] . ';page=' . $page . ';pages=' . $n . "\n";
+    $t = '#ngg-wifi;v=' . $res['version'] . ';full=' . ($res['full'] ? 1 : 0) . ';count=' . $res['count'] . ';next=' . $res['next'] . ';test=' . (!empty($res['test']) ? 1 : 0) . ';page=' . $page . ';pages=' . $n . "\n";
     return ['type' => 'text/plain', 'body' => $t . $prof . implode('', $pages[$page - 1]) . "#end\n"];
 }
 
@@ -654,8 +666,13 @@ function admin_wifi_overview(array $p): array {
     $platforms = [];
     foreach (WIFI_PLATFORMS as $k => $v) $platforms[] = ['id' => $k, 'label' => $v['label'], 'can' => $v['can'], 'needs' => $v['needs'], 'delta' => $v['delta'], 'status' => $v['status'], 'pilot' => $v['pilot']];
     $bad = wifi_bad_key_counts();
+    $hc = wifi_health_context($rows) + ['profiles' => $s['profiles']];
+    $tests = array_map(fn($t) => ['centre' => (string)$t['centre'], 'source' => (string)$t['source'], 'downMbps' => (float)$t['downMbps'], 'upMbps' => (float)$t['upMbps'],
+        'rttMs' => (int)$t['rttMs'], 'by' => (string)($t['byName'] ?? ''), 'note' => (string)$t['note'], 'at' => (string)$t['at']],
+        db_all("SELECT t.*, m.fullName byName FROM wifi_speed_tests t LEFT JOIN members m ON m.memberId = t.byId ORDER BY t.at DESC, t.id DESC LIMIT 40"));
     return ['ok' => true, 'cases' => $cases, 'feesRule' => $s['feesRule'], 'profiles' => $s['profiles'], 'profileDefaults' => WIFI_PROFILE_DEFAULTS,
-            'gateways' => array_map(fn($r) => wifi_gateway_out($r, $bad), $rows), 'centres' => $centres, 'platforms' => $platforms,
+            'slowMbps' => WIFI_SLOW_MBPS, 'speedTests' => $tests, 'speedBytesMax' => WIFI_SPEED_BYTES_MAX,
+            'gateways' => array_map(fn($r) => wifi_gateway_out($r, $bad, $hc), $rows), 'centres' => $centres, 'platforms' => $platforms,
             'feedUrl' => wifi_feed_url(), 'staleAfter' => WIFI_STALE_AFTER];
 }
 
@@ -681,13 +698,13 @@ function admin_wifi_access_set(array $p): array {
     }
     foreach ($prof as $k => $v) {
         if (!isset(WIFI_PROFILE_DEFAULTS[$k]) || !is_array($v)) return ['ok' => false, 'error' => 'bad_profile', 'profile' => (string)$k];
-        $why = wifi_profile_check($v);
+        $why = wifi_profile_check($v + (wifi_settings()['profiles'][$k] ?? []));
         if ($why !== '') return ['ok' => false, 'error' => 'bad_profile', 'profile' => (string)$k, 'message' => $why];
     }
     $cur = wifi_settings();
     $cases = array_merge($cur['cases'], $in);
     $profiles = $cur['profiles'];
-    foreach ($prof as $k => $v) $profiles[$k] = wifi_profile_norm($v);
+    foreach ($prof as $k => $v) $profiles[$k] = wifi_profile_norm($v + $profiles[$k]);
     $fees = array_key_exists('feesRule', $p) ? to_bool($p['feesRule']) : $cur['feesRule'];
     $me = (string)$g['requester']['memberId'];
     setting_set('wifi_access', ['cases' => $cases, 'feesRule' => $fees, 'profiles' => $profiles], $me);
@@ -708,7 +725,7 @@ function wifi_bad_key_counts(): array {
  * from what it reported, when it was last heard, and what its platform can do.
  * Worst first. Each: { tone: bad|warn|ok, title, fix }.
  */
-function wifi_gateway_diagnose(array $r, array $badKeys = []): array {
+function wifi_gateway_diagnose(array $r, array $badKeys = [], array $hc = []): array {
     $out = [];
     $seen = (string)$r['lastSeenAt'];
     $age = $seen === '' ? null : time() - (int)strtotime($seen);
@@ -732,6 +749,28 @@ function wifi_gateway_diagnose(array $r, array $badKeys = []): array {
         $v = (int)$m[1] * 100 + (int)$m[2];
         if ($v < 700) $out[] = ['tone' => 'bad', 'title' => 'RouterOS ' . $m[0] . ' is too old', 'fix' => 'Upgrade to RouterOS 7 (System → Packages → Check for updates), then run the setup again.'];
         elseif ($v < 719 && !$live) $out[] = ['tone' => 'warn', 'title' => 'RouterOS ' . $m[0] . ' needs NGG’s certificate imported', 'fix' => 'Before 7.19 a router does not trust public certificates on its own. Upgrade, or follow the certificate step in the setup guide.'];
+    }
+    // What it reported of itself, and the line it is on.
+    $stats = json_decode((string)($r['lastStatsJson'] ?? ''), true) ?: [];
+    $gid = (string)$r['gatewayId'];
+    $speed = $hc['speed'][(string)$r['centre']] ?? null;
+    $peak = (int)($hc['peak'][$gid] ?? 0);
+    $profiles = $hc['profiles'] ?? wifi_settings()['profiles'];
+    if ($speed && $speed['downMbps'] < WIFI_SLOW_MBPS) {
+        $out[] = ['tone' => 'warn', 'title' => 'Slow line: ' . $speed['downMbps'] . ' Mbit/s measured', 'fix' => 'Measured ' . wifi_ago(max(1, time() - (int)strtotime($speed['at']))) . ' ago. Below ' . WIFI_SLOW_MBPS . ' Mbit/s pages and lessons stall. Ask the provider, or test again away from busy hours to see if it is the line or the crowd.'];
+    }
+    $fair = wifi_fair_share($speed ? (float)$speed['downMbps'] : null, $peak, $profiles);
+    if ($fair && $fair['suggestMember'] < (int)$profiles['ngg-member']['down']) {
+        $out[] = ['tone' => 'warn', 'title' => 'More promised than the line can give', 'fix' => 'At the busiest hour this week ' . $peak . ' people shared ' . $fair['line'] . ' Mbit/s — about ' . $fair['each'] . ' each — while members may use up to ' . $profiles['ngg-member']['down'] . '. About ' . $fair['suggestMember'] . ' Mbit/s for members, with burst on, keeps it fair. Change it under Who gets on, or upgrade the line.'];
+    }
+    if (($hc['cpu'][$gid] ?? 0) >= 90) {
+        $out[] = ['tone' => 'warn', 'title' => 'Working hard: CPU reached ' . (int)$hc['cpu'][$gid] . '% today', 'fix' => 'A router at full CPU drops speed for everybody. Lower the number of people per gateway, turn off what it does not need, or use a bigger router for this centre.'];
+    }
+    if (isset($stats['memFree']) && $stats['memFree'] !== null && $stats['memFree'] > 0 && $stats['memFree'] < 16) {
+        $out[] = ['tone' => 'warn', 'title' => 'Low on memory: ' . $stats['memFree'] . ' MB free', 'fix' => 'Restart it out of hours; if it keeps happening, this router is too small for the centre.'];
+    }
+    if ($live && isset($stats['uptime']) && $stats['uptime'] !== null && $stats['uptime'] < 3600) {
+        $out[] = ['tone' => 'ok', 'title' => 'Restarted ' . wifi_ago(max(1, (int)$stats['uptime'])) . ' ago', 'fix' => 'If nobody restarted it, check its power supply: repeated restarts are usually power.'];
     }
     if ($live && !array_filter($out, fn($x) => $x['tone'] === 'bad')) {
         array_unshift($out, ['tone' => 'ok', 'title' => 'Working', 'fix' => 'Last fetched ' . wifi_ago($age) . ' ago.']);
@@ -759,9 +798,12 @@ function wifi_ago(int $s): string {
     return round($s / 86400) . ' days';
 }
 
-function wifi_gateway_out(array $r, array $badKeys = []): array {
+function wifi_gateway_out(array $r, array $badKeys = [], array $hc = []): array {
     $acked = json_decode((string)$r['ackedJson'], true) ?: [];
-    $diag = wifi_gateway_diagnose($r, $badKeys);
+    $diag = wifi_gateway_diagnose($r, $badKeys, $hc);
+    $stats = json_decode((string)($r['lastStatsJson'] ?? ''), true) ?: null;
+    $speed = $hc['speed'][(string)$r['centre']] ?? null;
+    $peak = (int)($hc['peak'][(string)$r['gatewayId']] ?? 0);
     $worst = in_array('bad', array_column($diag, 'tone'), true) ? 'bad' : (in_array('warn', array_column($diag, 'tone'), true) ? 'warn' : 'ok');
     return [
         'gatewayId' => (string)$r['gatewayId'], 'platform' => (string)$r['platform'],
@@ -773,6 +815,8 @@ function wifi_gateway_out(array $r, array $badKeys = []): array {
         'version' => (int)$r['lastVersion'], 'users' => count($acked), 'createdAt' => (string)$r['createdAt'],
         'health' => $worst, 'diagnosis' => $diag,
         'pilot' => (WIFI_PLATFORMS[(string)$r['platform']]['status'] ?? '') === 'pilot',
+        'stats' => $stats, 'speed' => $speed, 'peak7' => $peak, 'testAsked' => (int)($r['testAsked'] ?? 0) === 1,
+        'fair' => wifi_fair_share($speed ? (float)$speed['downMbps'] : null, $peak, $hc['profiles'] ?? wifi_settings()['profiles']),
     ];
 }
 
@@ -798,7 +842,7 @@ function admin_wifi_gateway_save(array $p): array {
         $key = wifi_key_new();
         db_insert('wifi_gateways', ['gatewayId' => $gid, 'platform' => $platform, 'centre' => $centre, 'label' => $label !== '' ? $label : $centre,
             'keyHash' => hash('sha256', $key), 'keyTail' => substr($key, -4), 'keySetAt' => now_iso(),
-            'ackedJson' => '', 'pendingJson' => '', 'createdAt' => now_iso(), 'createdBy' => $me]);
+            'ackedJson' => '', 'pendingJson' => '', 'lastStatsJson' => '', 'createdAt' => now_iso(), 'createdBy' => $me]);
         audit('wifi.gateway.add', $me, $gid, ['centre' => $centre, 'platform' => $platform], $ip);
         return ['ok' => true, 'gateway' => wifi_gateway_out(wifi_gateway_live($gid)), 'key' => $key];
     }
@@ -880,4 +924,114 @@ function admin_wifi_lookup(array $p): array {
     }
     unset($cfg);
     return ['ok' => true, 'results' => $out, 'q' => $q];
+}
+
+/* ── Diagnosis: what gateways report, and speed tests ─────────────────────
+   A gateway's fetch may carry what it can see of itself: people online now
+   (act), CPU % (cpu), free memory in MB (mem), uptime in seconds (up), and —
+   after a speed test — the measured line (dl/ul in Mbit/s, rtt in ms). It is
+   kept as HOURLY SUMMARIES per gateway (peak people, peak CPU, least free
+   memory), never per person and never what anybody browsed. A staff device at
+   a centre can measure the line too, from the browser. */
+
+/** Record what a fetch reported; returns the latest snapshot, or null when it reported nothing. */
+function wifi_telemetry_record(array $r, array $p): ?array {
+    $num = fn($k, $max) => isset($p[$k]) && is_numeric($p[$k]) ? max(0, min($max, (float)$p[$k])) : null;
+    $act = $num('act', 100000); $cpu = $num('cpu', 100); $mem = $num('mem', 1000000); $up = $num('up', 1e9);
+    $dl = $num('dl', 100000); $ul = $num('ul', 100000); $rtt = $num('rtt', 60000);
+    if ($act === null && $cpu === null && $mem === null && $up === null && $dl === null) return null;
+    $gid = (string)$r['gatewayId'];
+    $hour = gmdate('Y-m-d\TH');
+    $row = db_row('SELECT * FROM wifi_gateway_stats WHERE gatewayId = ? AND hour = ? LIMIT 1', [$gid, $hour]);
+    if ($row) {
+        db_update('wifi_gateway_stats', ['samples' => (int)$row['samples'] + 1, 'activeMax' => max((int)$row['activeMax'], (int)$act), 'activeSum' => (int)$row['activeSum'] + (int)$act,
+            'cpuMax' => max((int)$row['cpuMax'], (int)$cpu), 'memFreeMin' => $mem === null ? (int)$row['memFreeMin'] : ((int)$row['memFreeMin'] > 0 ? min((int)$row['memFreeMin'], (int)$mem) : (int)$mem)], ['id' => (int)$row['id']]);
+    } else {
+        try { db_insert('wifi_gateway_stats', ['gatewayId' => $gid, 'hour' => $hour, 'samples' => 1, 'activeMax' => (int)$act, 'activeSum' => (int)$act, 'cpuMax' => (int)$cpu, 'memFreeMin' => (int)$mem]); }
+        catch (Throwable $e) { /* a concurrent fetch made the hour first */ }
+    }
+    if ($dl !== null && $dl > 0) {
+        db_insert('wifi_speed_tests', ['centre' => (string)$r['centre'], 'gatewayId' => $gid, 'source' => 'gateway', 'downMbps' => round($dl, 2),
+            'upMbps' => round((float)$ul, 2), 'rttMs' => (int)$rtt, 'byId' => '', 'note' => '', 'at' => now_iso()]);
+    }
+    // Two weeks of hourly detail is plenty to see a pattern; older hours go.
+    if (random_int(1, 50) === 1) db_exec('DELETE FROM wifi_gateway_stats WHERE hour < ?', [gmdate('Y-m-d\TH', time() - 14 * 86400)]);
+    // A fetch that reports some things keeps the last word on the rest.
+    $prev = json_decode((string)($r['lastStatsJson'] ?? ''), true) ?: [];
+    $keep = fn($v, $k) => $v === null ? ($prev[$k] ?? null) : (int)$v;
+    return ['at' => now_iso(), 'active' => $keep($act, 'active'), 'cpu' => $keep($cpu, 'cpu'), 'memFree' => $keep($mem, 'memFree'),
+            'uptime' => $up === null ? (isset($prev['uptime'], $prev['at']) ? (int)$prev['uptime'] + max(0, time() - (int)strtotime((string)$prev['at'])) : null) : (int)$up];
+}
+
+/** For a list of gateways: their 7-day peak, their 24-hour peak CPU, and their centre's latest speed test — three grouped reads. */
+function wifi_health_context(array $rows): array {
+    $ids = array_map(fn($r) => (string)$r['gatewayId'], $rows);
+    $out = ['peak' => [], 'cpu' => [], 'speed' => [], 'hours' => []];
+    if ($ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT gatewayId, MAX(activeMax) p FROM wifi_gateway_stats WHERE gatewayId IN ($ph) AND hour >= ? GROUP BY gatewayId", array_merge($ids, [gmdate('Y-m-d\TH', time() - 7 * 86400)])) as $x) $out['peak'][(string)$x['gatewayId']] = (int)$x['p'];
+        foreach (db_all("SELECT gatewayId, MAX(cpuMax) c FROM wifi_gateway_stats WHERE gatewayId IN ($ph) AND hour >= ? GROUP BY gatewayId", array_merge($ids, [gmdate('Y-m-d\TH', time() - 86400)])) as $x) $out['cpu'][(string)$x['gatewayId']] = (int)$x['c'];
+    }
+    // The latest test per centre in the last 30 days.
+    foreach (db_all("SELECT * FROM wifi_speed_tests WHERE at >= ? ORDER BY at DESC, id DESC", [gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400)]) as $t) {
+        $c = (string)$t['centre'];
+        if (!isset($out['speed'][$c])) $out['speed'][$c] = ['downMbps' => (float)$t['downMbps'], 'upMbps' => (float)$t['upMbps'], 'rttMs' => (int)$t['rttMs'], 'source' => (string)$t['source'], 'at' => (string)$t['at']];
+    }
+    return $out;
+}
+
+/** What each person can expect at the busiest time, and a member speed that the line can actually give. */
+function wifi_fair_share(?float $downMbps, int $peak, array $profiles): ?array {
+    if (!$downMbps || $peak < 1) return null;
+    $each = $downMbps / $peak;
+    // Not everybody downloads at once: allowing about three times the even share keeps pages quick without promising what isn't there.
+    $suggest = max(1, min((int)$profiles['ngg-member']['down'], (int)floor($each * 3)));
+    return ['each' => round($each, 1), 'suggestMember' => $suggest, 'peak' => $peak, 'line' => $downMbps];
+}
+
+/** Ask a gateway to measure its line at its next fetch. */
+function admin_wifi_gateway_test(array $p): array {
+    $g = admin_cap_gate($p, 'network'); if (!$g['ok']) return $g;
+    $r = wifi_gateway_live((string)($p['gatewayId'] ?? ''));
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    db_update('wifi_gateways', ['testAsked' => 1], ['id' => (int)$r['id']]);
+    return ['ok' => true];
+}
+
+/**
+ * Save a speed test run from a staff device at a centre. Any staff member who
+ * may see the centre can record one — a measurement changes nothing — and it
+ * is kept with who ran it.
+ */
+function admin_wifi_speed_save(array $p): array {
+    $g = admin_cap_gate_any($p, ['network', 'people', 'club', 'summer']); if (!$g['ok']) return $g;
+    $centre = trim((string)($p['centre'] ?? ''));
+    if ($centre === '' || !db_row("SELECT id FROM centres WHERE name = ? LIMIT 1", [$centre])) return ['ok' => false, 'error' => 'bad_centre'];
+    if (!admin_centre_allowed($g['requester'], $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $num = fn($k, $max) => is_numeric($p[$k] ?? null) ? max(0, min($max, (float)$p[$k])) : -1;
+    $down = $num('downMbps', 100000); $up = $num('upMbps', 100000); $rtt = $num('rttMs', 60000);
+    if ($down <= 0) return ['ok' => false, 'error' => 'bad_result'];
+    db_insert('wifi_speed_tests', ['centre' => $centre, 'gatewayId' => '', 'source' => 'device', 'downMbps' => round($down, 2), 'upMbps' => round(max(0, $up), 2),
+        'rttMs' => (int)max(0, $rtt), 'byId' => (string)$g['requester']['memberId'], 'note' => mb_substr(trim((string)($p['note'] ?? '')), 0, 255), 'at' => now_iso()]);
+    return ['ok' => true];
+}
+
+/**
+ * Send $bytes of incompressible data for a speed test, straight to the
+ * client: no output buffer, no compression (a compressed test measures the
+ * compressor), never cached. A 64 KB random block repeats — longer than
+ * gzip's 32 KB window, so even a proxy that compresses cannot shrink it.
+ */
+function wifi_speed_stream(int $bytes): void {
+    $bytes = max(1, min(WIFI_SPEED_BYTES_MAX, $bytes));
+    if (function_exists('apache_setenv')) @apache_setenv('no-gzip', '1');
+    @ini_set('zlib.output_compression', '0');
+    while (ob_get_level() > 0) @ob_end_clean();
+    header('Content-Type: application/octet-stream');
+    header('Content-Encoding: identity');
+    header('Content-Length: ' . $bytes);
+    header('X-Accel-Buffering: no');
+    $block = random_bytes(65536);
+    for ($left = $bytes; $left > 0; $left -= 65536) { echo $left >= 65536 ? $block : substr($block, 0, $left); }
+    flush();
 }

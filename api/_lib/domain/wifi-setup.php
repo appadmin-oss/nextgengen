@@ -72,6 +72,10 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :if ([:typeof \$nggWifiErr] = "str") do={ :set err \$nggWifiErr }
 :local os [/system resource get version]
 :set os [:pick \$os 0 [:find (\$os . " ") " "]]
+# What the router reports of itself: people online, CPU, free memory (MB), uptime, and a measured line if it has one.
+:global nggWifiDl
+:local tele ("&act=" . [:len [/ip hotspot active find]] . "&cpu=" . [/system resource get cpu-load] . "&mem=" . ([/system resource get free-memory] / 1048576) . "&up=" . [:tonum [/system resource get uptime]])
+:if ([:typeof \$nggWifiDl] = "str" && [:len \$nggWifiDl] > 0) do={ :set tele (\$tele . "&dl=" . \$nggWifiDl) }
 :local body ""
 :local head ""
 :local page 1
@@ -79,7 +83,7 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :local ok true
 :while (\$ok && \$page <= \$pages) do={
   :do {
-    :local r [/tool fetch url=(\$base . "?since=" . \$since . "&os=" . \$os . "&page=" . \$page . "&error=" . \$err) http-header-field=("X-NGG-Gateway: " . \$gw . ",X-NGG-Key: " . \$key) check-certificate=yes output=user as-value]
+    :local r [/tool fetch url=(\$base . "?since=" . \$since . "&os=" . \$os . "&page=" . \$page . "&error=" . \$err . \$tele) http-header-field=("X-NGG-Gateway: " . \$gw . ",X-NGG-Key: " . \$key) check-certificate=yes output=user as-value]
     :local d (\$r->"data")
     :if ([:len \$d] >= 64512) do={ :set ok false; :set nggWifiErr "truncated" }
     :if (\$ok && [:typeof [:find \$d "#end"]] = "nil") do={ :set ok false; :set nggWifiErr "incomplete" }
@@ -113,7 +117,11 @@ function wifi_setup_mikrotik(array $r, string $url): array {
   }
   :local t (\$f->0)
   :if (\$t = "p") do={
+    # rate-limit is upload/download from the router's side; burst doubles it for 8 s, priority 1 goes first.
+    :local up [:tonum (\$f->3)]
+    :local dn [:tonum (\$f->2)]
     :local rl ((\$f->3) . "M/" . (\$f->2) . "M")
+    :if ((\$f->6) = "1") do={ :set rl (\$rl . " " . (\$up * 2) . "M/" . (\$dn * 2) . "M " . (\$up * 750) . "k/" . (\$dn * 750) . "k 8/8 " . (\$f->7)) } else={ :set rl (\$rl . " 0/0 0/0 0/0 " . (\$f->7)) }
     :local pid [/ip hotspot user profile find name=(\$f->1)]
     :if ([:len \$pid] = 0) do={ /ip hotspot user profile add name=(\$f->1) rate-limit=\$rl shared-users=(\$f->4) add-mac-cookie=yes mac-cookie-timeout=30d } else={ /ip hotspot user profile set \$pid rate-limit=\$rl shared-users=(\$f->4) add-mac-cookie=yes mac-cookie-timeout=30d }
   }
@@ -147,12 +155,28 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :local next [:tonum [\$hv \$head "next"]]
 :if ([:typeof \$next] = "num" && \$next >= 60) do={ /system scheduler set [find name="ngg-wifi"] interval=[:totime (\$next . "s")] }
 :set nggWifiErr ""
+:set nggWifiDl ""
+# A line test, when the Control Room asks for one (or the nightly schedule does): 8 MB from NGG, timed.
+:global nggWifiTestNow
+:if ([\$hv \$head "test"] = "1" || \$nggWifiTestNow = true) do={
+  :set nggWifiTestNow false
+  :do {
+    :local sr [/tool fetch url=([:pick \$base 0 [:find \$base "wifi-feed.php"]] . "wifi-speed.php?bytes=8000000") http-header-field=("X-NGG-Gateway: " . \$gw . ",X-NGG-Key: " . \$key) check-certificate=yes dst-path="ngg-speed.bin" as-value]
+    :local secs [:tonum (\$sr->"duration")]
+    :if (\$secs < 1) do={ :set secs 1 }
+    :local tenths (640 / \$secs)
+    :set nggWifiDl ((\$tenths / 10) . "." . (\$tenths % 10))
+    /file remove [find name="ngg-speed.bin"]
+  } on-error={ :log warning "NGG Wi-Fi: the line test could not run" }
+}
 :set nggWifiBusy false
 }
 
 # 4. Run it every 2 minutes (NGG asks for sooner or later as things change), and now.
 /system scheduler remove [find name="ngg-wifi"]
 /system scheduler add name="ngg-wifi" interval=2m start-time=startup on-event="/system script run ngg-wifi-sync" policy=read,write,test comment="ngg"
+/system scheduler remove [find name="ngg-wifi-test"]
+/system scheduler add name="ngg-wifi-test" interval=1d start-time=03:15:00 on-event=":global nggWifiTestNow true" policy=read,write,test comment="ngg"
 :global nggWifiBusy false
 /system script run ngg-wifi-sync
 
@@ -182,6 +206,7 @@ ROS;
             ['h' => '3. Paste the script', 'text' => "WinBox → New Terminal, paste the whole script, press Enter. It can be pasted again at any time — after rotating the key, or to repair the setup."],
             ['h' => '4. Members sign in', 'text' => "Members join the Wi-Fi and the sign-in page opens. They type their printed ID (e.g. 026-014) as the username and their Wi-Fi PIN, which the app shows under Me → Wi-Fi. Their device is remembered for 30 days.\nPhones that use a private (rotating) Wi-Fi address forget the sign-in when the address changes; set that network to use the phone’s own address."],
         ],
+        'diagnose' => "Each fetch also tells NGG how many people are online, the router’s CPU and free memory, and how long it has been up — as hourly summaries, never who visited what. Every night at 03:15, or when you press “Test the line” here, it downloads 8 MB from NGG and reports the speed (to the nearest second’s timing, so treat it as a guide).",
         'check' => "In the terminal:\n/system script run ngg-wifi-sync\n/ip hotspot user print count-only where comment=\"ngg\"\nThe count should match “People on it” here, and this gateway shows as Working within two minutes. /log print where message~\"NGG\" shows any problem.",
         'trouble' => "“fetch_failed”: the router cannot reach NGG — check its internet, DNS and clock.\n“certificate verify failed”: the clock is wrong, or RouterOS is older than 7.19 without the certificate imported (step 1).\n“truncated” or “incomplete”: a reply was cut short; nothing was applied and the router kept its users.\nA member can’t sign in: check them under “Who gets on” here first — it says why somebody is not on the list.",
     ];

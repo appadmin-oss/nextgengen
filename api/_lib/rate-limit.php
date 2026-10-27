@@ -51,6 +51,7 @@ function rate_limit_default(string $op): ?array {
         'upload.sign'        => ['max' => 30, 'window' => 60],    // mints a cloud upload signature
         'hook'               => ['max' => 120, 'window' => 60],   // inbound webhook bursts
         'wifi.feed'          => ['max' => 20, 'window' => 60],    // a router fetches every 5 minutes; a key guess is slowed
+        'wifi.speed'         => ['max' => 40, 'window' => 600],   // a speed test is a handful of downloads; slows anybody using it as a pipe
         'wifi.pin'           => ['max' => 6,  'window' => 600],   // a member's own PIN reset (3 a day is the domain's rule)
         'member.coach'       => ['max' => 20, 'window' => 600],   // each reply is a paid model call
         'member.chat'        => ['max' => 20, 'window' => 600],   // a child's messages to their mentor; each one notifies an adult

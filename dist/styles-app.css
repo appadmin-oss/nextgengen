@@ -8367,6 +8367,17 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-unsaved { position: sticky; bottom: 16px; margin-top: 20px; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 18px; background: var(--cr-ink); color: var(--cr-on-ink); border-radius: var(--cr-r-lg); box-shadow: var(--cr-sh-bar); z-index: 5; }
 .cr-unsaved > .ph { font-size: 16px; color: var(--cr-gold); }
 .cr-unsaved span { flex: 1; font-size: 14px; }
+/* CrEmbed (cr-shell.jsx): a Control Room page inside another portal. It takes
+   the host's flow and width; its layers cover the screen from a fixed overlay. */
+.cr-app.cr-embed { height: auto; overflow: visible; background: transparent; padding: 0 36px 48px; }
+.cr-app.cr-embed.is-phone { padding: 0 16px 32px; }
+.cr-embed-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--cr-line); }
+.cr-embed-head .cr-tabs { margin-top: 0; border-bottom: 0; }
+.cr-embed-acts { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; }
+.cr-embed-desc { margin: 12px 0 16px; color: var(--cr-muted); font-size: 14px; }
+.cr-app.cr-embed-layers { position: fixed; inset: 0; height: 100dvh; z-index: 90; background: transparent; pointer-events: none; overflow: visible; }
+.cr-app.cr-embed-layers > * { pointer-events: auto; }
+.cr-embed-unsaved { position: absolute; left: 50%; transform: translateX(-50%); bottom: 20px; width: min(560px, calc(100% - 32px)); margin: 0; }
 .cr-unsaved-discard { height: 34px; padding: 0 14px; border: 1px solid var(--cr-on-ink-line); border-radius: var(--cr-r); background: transparent; color: var(--cr-on-ink); font-size: 13.5px; font-weight: 500; }
 .cr-unsaved-save { height: 34px; padding: 0 14px; border: 0; border-radius: var(--cr-r); background: var(--cr-bg); color: var(--cr-ink); font-size: 13.5px; font-weight: 600; }
 
@@ -8741,6 +8752,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-sheet-head.is-form { padding: 16px 20px; }
 .cr-sheet-ini { width: 44px; height: 44px; border-radius: 50%; background: var(--cr-s3); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; flex: none; overflow: hidden; }
 .cr-sheet-ini img { width: 100%; height: 100%; object-fit: cover; }
+.cr-sheet-ini .ph { font-size: 20px; }
 .cr-sheet-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cr-sheet-title b { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 .cr-sheet-title span { font-size: 12.5px; color: var(--cr-muted-3); font-family: var(--cr-mono); }

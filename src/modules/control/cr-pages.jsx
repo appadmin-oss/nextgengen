@@ -129,6 +129,7 @@ const CR_PAGES = {
   /* The centres' Wi-Fi (cr-tab-wifi.jsx). The Club portal's Wi-Fi item opens it. */
   wifi: { label: "Wi-Fi", icon: "wifi-high", tabs: [
     { id: "wifi", label: "Gateways", desc: "Each centre’s Wi-Fi gateway: whether it is working, and what to do when it isn’t.", cap: "network" },
+    { id: "wifi-health", label: "Speed & health", desc: "How fast each centre’s line is, how busy it gets, and testing it from where people sit.", cap: "network" },
     { id: "wifi-access", label: "Who gets on", desc: "Wi-Fi follows people’s records. Why somebody can’t get on, who gets what, and how fast.", cap: "network" },
     { id: "wifi-guides", label: "Setup guides", desc: "Which gateway a centre can use, what each does, and how it fits together.", cap: "network" },
   ] },

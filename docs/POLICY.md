@@ -249,3 +249,20 @@ thresholds → Stricter than Summer School**:
 
 Member enforcement is switched on separately ("Enforce for NGG members"); none
 of this applies until it is.
+
+## Wi-Fi at the centres
+
+- Access follows the record: active members, staff, mentors and instructors are
+  on; the Dormant Track is limited; suspended, evicted and inactive records are
+  off; Summer School participants are on within their edition's dates. Graduates
+  are off unless set otherwise. Fees owing does not touch Wi-Fi unless that rule
+  is switched on. The table is in Control Room → Wi-Fi → Who gets on.
+- Each person signs in with their printed ID and a Wi-Fi PIN that is theirs
+  alone. Anything done on the Wi-Fi with it counts as them.
+- For under-18s the centres' Wi-Fi filters adult content and malware and forces
+  SafeSearch and YouTube Restricted, where the gateway supports it. Mobile data
+  and phone hotspots are outside it.
+- **No browsing record is kept.** Gateways report counts (people online, load),
+  never who visited what. Under the Nigeria Data Protection Act 2023 (s.31) a
+  record of where a child goes online would need their guardian's consent and a
+  privacy impact assessment (s.28) first, and filtering does not need one.

@@ -118,6 +118,7 @@ const CENTRE_NAME_TABLES = [
     'lesson_feedback',
     'v3_scores',
     'wifi_gateways',
+    'wifi_speed_tests',
 ];
 
 /** centreId for a centre NAME, or '' when the name resolves to no centre.

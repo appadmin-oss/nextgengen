@@ -52,7 +52,7 @@ async function crWfGuide(ctx, g, key) {
   const fill = t => key ? String(t || "").split("PASTE-THE-KEY-HERE").join(key) : String(t || "");
   const script = fill(s.script);
   ctx.drawer({
-    title: key ? "Set up " + crWfName(g) + " now" : "Setup guide · " + crWfName(g),
+    title: key ? "Set up " + crWfName(g) + " now" : "Setup guide · " + crWfName(g), icon: "book-open",
     sub: s.label + " · " + g.centre,
     sections: [
       key ? { h: "This gateway’s key — shown once", text: key + "\n\nIt is already in the script below. Afterwards only its last four characters are shown; if it is lost, rotate it and run the setup again." }
@@ -61,6 +61,7 @@ async function crWfGuide(ctx, g, key) {
       { h: "Before you start", text: s.needs },
       ...(s.steps || []).map(st => ({ h: st.h, text: fill(st.text) })),
       script ? { h: s.scriptName || "Script", text: script } : null,
+      s.diagnose ? { h: "What it tells NGG", text: s.diagnose } : null,
       s.check ? { h: "Check it worked", text: s.check } : null,
       s.trouble ? { h: "If it doesn’t work", text: s.trouble } : null,
     ].filter(Boolean),
@@ -122,7 +123,7 @@ async function crWfPreview(ctx, g) {
   try { r = await NGGApi.admin.wifi.preview(g.gatewayId, ""); }
   catch (e) { ctx.toast(crWfErr(e, "Couldn’t read its list."), null, true); return; }
   ctx.drawer({
-    title: "What " + crWfName(g) + " holds", sub: "Worked out now, from people’s records",
+    title: "What " + crWfName(g) + " holds", sub: "Worked out now, from people’s records", icon: "list-checks",
     stats: [["On the list", crNum(r.count)], ["Still to add", crNum(r.pendingAdds)], ["Still to remove", crNum(r.pendingRemoves)]],
     sections: [
       { h: "By profile", rows: Object.keys(r.byProfile || {}).map(k => [CR_WF_PROFILE_WORDS[k] || k, crNum(r.byProfile[k])]), empty: "Nobody has Wi-Fi at this centre right now." },
@@ -135,20 +136,65 @@ async function crWfPreview(ctx, g) {
 function crWfOpen(ctx, g) {
   const d = (crWfCtx.current && crWfCtx.current.data) || {};
   ctx.drawer({
-    title: crWfName(g), sub: g.platformLabel + " · " + g.centre + (g.pilot ? " · pilot" : ""),
-    stats: [["People on it", crNum(g.users)], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"], ["List version", crNum(g.version)]],
+    title: crWfName(g), sub: g.platformLabel + " · " + g.centre + (g.pilot ? " · pilot" : ""), icon: crWfIcon(g.platform),
+    stats: [["Online now", g.stats && g.stats.active != null ? crNum(g.stats.active) : "—"], ["Line", g.speed ? crWfMbps(g.speed.downMbps) : "Not measured"], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"]],
     sections: [
       { h: "How it is", rows: (g.diagnosis || []).map(x => [x.title, x.fix]), empty: "Nothing to report." },
-    ],
+      g.fair ? { h: "At the busiest hour this week", rows: [["People online at once", crNum(g.fair.peak)], ["Each could get", crWfMbps(g.fair.each)], ["A fair member speed", crWfMbps(g.fair.suggestMember) + " with burst on"]] } : null,
+      g.stats ? { h: "What it reported", rows: [["CPU", g.stats.cpu != null ? g.stats.cpu + "%" : "—"], ["Free memory", g.stats.memFree != null ? g.stats.memFree + " MB" : "—"], ["Up for", g.stats.uptime != null ? crWfDur(g.stats.uptime) : "—"], ["Reported", crAgo(g.stats.at)]] } : null,
+    ].filter(Boolean),
     fields: [["Centre", g.centre], ["Platform", g.platformLabel], ["Reported version", g.osVersion || "Not reported"], ["Key", "…" + g.keyTail + " · set " + crDate(g.keySetAt)],
       ["Last full list", g.lastFullAt ? crDate(g.lastFullAt, true) : "Not yet"], ["Last change sent", g.lastChangeAt ? crDate(g.lastChangeAt, true) : "None yet"], ["Added", crDate(g.createdAt)]],
     actions: [
       { l: "Setup guide", primary: !g.lastSeenAt, run: () => crWfGuide(ctx, g) },
       { l: "What it holds", primary: !!g.lastSeenAt, run: () => crWfPreview(ctx, g) },
+      g.platform === "mikrotik" ? { l: g.testAsked ? "Line test asked for" : "Test the line", disabled: !!g.testAsked, why: "It runs at the gateway’s next fetch, within a few minutes.", run: async () => {
+        try { await NGGApi.admin.wifi.testAtNextFetch(g.gatewayId); ctx.toast("Asked. " + crWfName(g) + " tests its line at its next fetch, within a few minutes."); ctx.closeDrawer(); ctx.reload(); }
+        catch (e) { ctx.toast(crWfErr(e, "Couldn’t ask for a test."), null, true); }
+      } } : null,
       { l: "Edit", run: () => crWfEdit(ctx, d, g) },
       { l: "Rotate the key", run: () => crWfRotate(ctx, g) },
       { l: "Remove", run: () => crWfRemove(ctx, g) },
+    ].filter(Boolean),
+  });
+}
+
+const crWfMbps = x => (x == null ? "—" : (Math.round(x * 10) / 10) + " Mbit/s");
+const crWfDur = s => s < 3600 ? Math.max(1, Math.round(s / 60)) + " min" : s < 172800 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " days";
+
+/* ── Speed & health ───────────────────────────────────────────────────────── */
+
+/* Measure the line from this device, at a centre, and keep the result. */
+function crWfSpeedTest(ctx, d) {
+  const centres = d.centres || [];
+  ctx.form({
+    title: "Test this connection", submit: "Start the test", busyLabel: "Testing… about 20 seconds",
+    intro: "Run it on the centre’s Wi-Fi, from where people sit. It measures this device’s line to NGG — the delay, download and upload — and keeps the result for the centre. It uses about 20 MB.",
+    values: { centre: centres[0] || "", note: "" },
+    fields: [
+      { id: "centre", l: "Which centre are you at?", type: "select", req: true, opts: centres.map(c => [c, c]) },
+      { id: "note", l: "Where and when", max: 200, ph: "e.g. Main hall, Saturday 10am, about 30 people on" },
     ],
+    onSubmit: async v => {
+      let r;
+      try { r = await NGGApi.admin.wifi.speedTest(); }
+      catch (e) { throw new Error(e && e.code === "rate_limited" ? "Too many tests in a few minutes. Try again in ten." : "The test couldn’t finish — is this device online? (" + ((e && (e.code || e.message)) || "no answer") + ")"); }
+      await NGGApi.admin.wifi.speedSave({ centre: v.centre, note: v.note, downMbps: r.downMbps, upMbps: r.upMbps, rttMs: r.rttMs });
+      return r;
+    },
+    done: (v, r) => {
+      ctx.reload();
+      const slow = r.downMbps < (d.slowMbps || 5);
+      setTimeout(() => ctx.drawer({
+        title: (slow ? "Slow: " : "") + crWfMbps(r.downMbps) + " down", sub: v.centre + (v.note ? " · " + v.note : ""), icon: "gauge",
+        stats: [["Download", crWfMbps(r.downMbps)], ["Upload", crWfMbps(r.upMbps)], ["Delay", r.rttMs + " ms"]],
+        sections: [{ h: "What it means", text: (slow ? "Below " + (d.slowMbps || 5) + " Mbit/s, lessons and videos stall. " : "")
+          + (r.rttMs > 300 ? "A delay over 300 ms makes pages feel slow even when the speed is fine — usually a busy or distant connection. " : "")
+          + "One test is a snapshot: test again at a busy and a quiet time to tell the line from the crowd. Kept under Speed & health." }],
+        actions: [{ l: "Test again", primary: true, run: () => { ctx.closeDrawer(); crWfSpeedTest(ctx, d); } }, { l: "Done", run: () => ctx.closeDrawer() }],
+      }), 50);
+      return "Saved · " + v.centre;
+    },
   });
 }
 
@@ -245,10 +291,12 @@ function crWfForms(d) {
         { id: k + "|up", l: "Upload (Mbit/s)", c: "input", type: "number", value: String(profiles[k].up), check: n(1, 1000) },
         { id: k + "|devices", l: "Devices at once", c: "input", type: "number", value: String(profiles[k].devices), check: n(1, 5) },
         { id: k + "|hours", l: "Hours", help: "Blank for all day. Kept by NGG: outside them, people are signed out at the next fetch.", c: "input", value: profiles[k].hours || "", check: hours },
+        { id: k + "|burst", l: "Fast page loads (burst)", help: "Twice the speed for the first few seconds, so pages open quickly; long downloads settle at the steady rate. MikroTik.", c: "toggle", value: !!profiles[k].burst },
+        { id: k + "|priority", l: "When the line is busy", c: "select", value: String(profiles[k].priority || 5), opts: [["1", "1 · first"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5 · middle"], ["6", "6"], ["7", "7"], ["8", "8 · last"]], help: "Who is served first when everybody wants the line at once. MikroTik." },
       ] })),
     save: async (patch, all) => {
       const out = { profiles: {} };
-      Object.keys(patch).forEach(id => { const k = id.split("|")[0]; out.profiles[k] = { down: +all[k + "|down"], up: +all[k + "|up"], devices: +all[k + "|devices"], hours: String(all[k + "|hours"] || "").trim() }; });
+      Object.keys(patch).forEach(id => { const k = id.split("|")[0]; out.profiles[k] = { down: +all[k + "|down"], up: +all[k + "|up"], devices: +all[k + "|devices"], hours: String(all[k + "|hours"] || "").trim(), burst: !!all[k + "|burst"], priority: +all[k + "|priority"] }; });
       try { await NGGApi.admin.wifi.accessSet(out); } catch (e) { throw new Error(crWfErr(e, "Couldn’t save.")); }
     },
     onSaved: () => crWfCtx.current && crWfCtx.current.reload(),
@@ -272,6 +320,7 @@ Object.assign(CR_TAB_DEFS, {
     load: crWfLoad,
     actions: (d, ctx) => [
       { l: "Add a gateway", icon: "plus", primary: true, disabled: !(d.centres || []).length, why: (d.centres || []).length ? "" : "Add a centre first (Members → Centres).", run: () => crWfEdit(ctx, d, null) },
+      { l: "Test this connection", icon: "gauge", run: () => crWfSpeedTest(ctx, d) },
       { l: "Why can’t somebody get on?", icon: "magnifying-glass", run: () => crWfLookup(ctx) },
     ],
     blocks: (d, ctx) => {
@@ -284,7 +333,7 @@ Object.assign(CR_TAB_DEFS, {
       const bare = (d.centres || []).filter(c => !byCentre[c]);
       const card = g => { const h = CR_WF_HEALTH[g.health] || CR_WF_HEALTH.warn;
         return { icon: crWfIcon(g.platform), title: crWfName(g), sub: g.platformLabel + (g.pilot ? " · pilot" : ""), tag: g.lastSeenAt ? h[0] : "Not connected yet", tone: g.lastSeenAt ? h[1] : "warn",
-          meta: [["People on it", crNum(g.users)], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"], ["Reported version", g.osVersion || "—"]],
+          meta: [["People on it", crNum(g.users) + (g.stats && g.stats.active != null ? " · " + crNum(g.stats.active) + " online" : "")], ["Line", g.speed ? crWfMbps(g.speed.downMbps) + " · " + crAgo(g.speed.at) : "Not measured"], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"], ["Reported version", g.osVersion || "—"]],
           onClick: () => crWfOpen(ctx, g) }; };
       return [
         { type: "kpis", span: 6, items: [
@@ -302,6 +351,48 @@ Object.assign(CR_TAB_DEFS, {
         { type: "note", span: 6, icon: "info", text: "Each gateway fetches its centre’s list from NGG every one to five minutes, with its own key. Somebody suspended is signed out at the next fetch; a gateway that can’t reach NGG keeps the people it already has.",
           sub: "Open a gateway for its health, what it holds, its setup guide and its key.", act: { l: "Setup guides", run: () => ctx.go("wifi", "wifi-guides") } },
       ].filter(Boolean);
+    },
+  },
+
+  "wifi-health": {
+    skeleton: ["kpis", "table", "table"],
+    load: crWfLoad,
+    actions: (d, ctx) => [
+      { l: "Test this connection", icon: "gauge", primary: true, disabled: !(d.centres || []).length, why: "Add a centre first.", run: () => crWfSpeedTest(ctx, d) },
+    ],
+    blocks: (d, ctx) => {
+      crWfCtx.current = ctx;
+      const gws = d.gateways || [], tests = d.speedTests || [];
+      const latest = {};
+      tests.forEach(t => { if (!latest[t.centre]) latest[t.centre] = t; });
+      const lines = Object.keys(latest).map(c => latest[c]);
+      const slowest = lines.slice().sort((a, b) => a.downMbps - b.downMbps)[0];
+      const busiest = gws.slice().sort((a, b) => (b.peak7 || 0) - (a.peak7 || 0))[0];
+      const peakOf = c => gws.filter(g => g.centre === c).reduce((n, g) => Math.max(n, g.peak7 || 0), 0);
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Slowest line", v: slowest ? crWfMbps(slowest.downMbps) : "—", dn: slowest ? slowest.centre : "No tests yet" },
+          { l: "Busiest this week", v: busiest && busiest.peak7 ? crNum(busiest.peak7) + " at once" : "—", dn: busiest && busiest.peak7 ? busiest.centre : "Gateways report this" },
+          { l: "Centres measured", v: crNum(lines.length) + " of " + crNum((d.centres || []).length), dn: "in the last 30 days" },
+          { l: "Online now", v: crNum(gws.reduce((n, g) => n + (g.stats && g.stats.active ? g.stats.active : 0), 0)), dn: "as the gateways last reported" },
+        ] },
+        { type: "table", span: 6, title: "Each centre’s line", sub: "The newest test, and what each person gets at the busiest hour this week", nosel: true,
+          cols: ["Centre", { l: "Down", num: true }, { l: "Up", num: true }, { l: "Delay", num: true }, { l: "Each, when busiest", num: true }, "Measured"],
+          rows: (d.centres || []).map(c => { const t = latest[c], pk = peakOf(c);
+            return { key: c, cells: [{ k: "strong", t: c, s: t ? (t.source === "gateway" ? "by its gateway" : "from a device" + (t.by ? ", " + t.by : "")) : "Not measured yet" },
+              t ? { k: "status", t: crWfMbps(t.downMbps), tone: t.downMbps < (d.slowMbps || 5) ? "bad" : "ok" } : { k: "text", t: "—" },
+              { k: "num", t: t ? crWfMbps(t.upMbps) : "—", v: t ? t.upMbps : 0 }, { k: "num", t: t && t.rttMs ? t.rttMs + " ms" : "—", v: t ? t.rttMs : 0 },
+              { k: "num", t: t && pk ? crWfMbps(t.downMbps / pk) + " · " + crNum(pk) + " people" : "—", v: t && pk ? t.downMbps / pk : 0 },
+              { k: "text", t: t ? crAgo(t.at) : "—", s: t && t.note ? t.note : "" }] }; }),
+          emptyText: "No centres yet." },
+        { type: "table", span: 6, title: "Every test", sub: "The latest 40", nosel: true,
+          cols: ["When", "Centre", "From", { l: "Down", num: true }, { l: "Up", num: true }, { l: "Delay", num: true }, { l: "Note", wrap: true }],
+          rows: tests.map((t, i) => ({ key: t.at + i, cells: [{ k: "text", t: crDate(t.at, true) }, { k: "text", t: t.centre }, { k: "text", t: t.source === "gateway" ? "Its gateway" : (t.by || "A device") },
+            { k: "num", t: crWfMbps(t.downMbps), v: t.downMbps }, { k: "num", t: crWfMbps(t.upMbps), v: t.upMbps }, { k: "num", t: t.rttMs ? t.rttMs + " ms" : "—", v: t.rttMs }, { k: "text", t: t.note || "" }] })),
+          filters: ["Centre", "From"], emptyText: "No tests yet. Run one from a device at a centre with Test this connection." },
+        { type: "note", span: 6, icon: "eye-slash", text: "Gateways report how many people are online, their CPU, memory and uptime — as hourly summaries. Never who is online, and never what anybody visits.",
+          sub: "A MikroTik gateway also tests its own line every night, or when asked from its card. Device tests measure the line to NGG from where people actually sit." },
+      ];
     },
   },
 

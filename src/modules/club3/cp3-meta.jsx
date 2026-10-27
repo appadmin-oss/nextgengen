@@ -17,8 +17,8 @@ const CP3_NAV = [
   ["Comms", [["announce", "Announcements", "megaphone", 1]]],
   ["Gate", [["desks", "Check-in desks", "scan", 1], ["rota", "Duty rota", "clock", 1]]],
   ["Team & centres", [["team", "Team", "identification-badge", 1], ["centres", "Centres", "map-pin", 1], ["volunteers", "Volunteers", "hand-heart", 0], ["staffact", "Staff activity", "activity", 0]]],
-  /* The centres' Wi-Fi is one workspace, in the Control Room (System → Wi-Fi);
-     this is a door to it for the systems people who hold `network`, not a copy. */
+  /* The centres' Wi-Fi, for the systems people who hold `network`: the Control
+     Room's Wi-Fi page, hosted here in place (CrEmbed), not a copy. */
   ["Systems", [["wifi", "Wi-Fi", "wifi-high", 0]]],
 ];
 const CP3_TABS = [["home", "Home", "squares-four"], ["roster", "Roster", "users"], ["timetable", "Timetable", "calendar-blank"], ["companion", "Check-ins", "heart"], ["more", "More", "dots-three-circle"]];

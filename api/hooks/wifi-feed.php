@@ -23,6 +23,9 @@ $res = gs_call('wifi.feed', [
     'error'     => substr((string)($_GET['error'] ?? ''), 0, 255),
     'full'      => !empty($_GET['full']),
     'page'      => max(1, (int)($_GET['page'] ?? 1)),
+    // What the gateway reports of itself (all optional): people online, CPU %, free MB, uptime s, and a measured line.
+    'act' => $_GET['act'] ?? null, 'cpu' => $_GET['cpu'] ?? null, 'mem' => $_GET['mem'] ?? null, 'up' => $_GET['up'] ?? null,
+    'dl' => $_GET['dl'] ?? null, 'ul' => $_GET['ul'] ?? null, 'rtt' => $_GET['rtt'] ?? null,
     'ip'        => client_ip(),
 ]);
 if (empty($res['ok'])) {
