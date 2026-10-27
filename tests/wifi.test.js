@@ -112,6 +112,8 @@ function cleanup() {
     chk('a suspended member is not on it', !/026-112/.test(f0.text));
     const fb = await feed(keys[0][0], 'nope');
     chk('a wrong key is a 401 with a word the router can log', fb.status === 401 && fb.text.trim() === '#error;bad_key');
+    const fl = JSON.parse(php(`echo json_encode(db_row('SELECT SUM(fetches) f, SUM(failed) x, MAX(msMax) m FROM wifi_feed_load'));`, ['bootstrap']));
+    chk('each fetch over HTTP is measured into the hour: its time, and whether it was refused', +fl.f >= 2 && +fl.x >= 1 && +fl.m > 0);
 
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
@@ -206,6 +208,8 @@ function cleanup() {
     chk('the Club portal shows Wi-Fi in place, in the Club’s own design (no Control Room inside it)', /\/club-admin/.test(C.url()) && !(await C.$('.cr-app')) && /Most online at once/.test(ov));
     chk('the overview has the analytics: online per day, busy hours, availability, line speed, regions', /People online/.test(ov) && /Busy hours/.test(ov) && /Gateways there/.test(ov) && /Line speed/.test(ov) && /Lagos Mainland/.test(ov));
     chk('…and names what needs doing', /aren’t working|isn’t working/.test(ov) && /Busiest centres/.test(ov) && /Slowest lines/.test(ov));
+    await C.waitForFunction(() => /Server load/.test(document.body.innerText), null, { timeout: 20000 }).catch(() => {});
+    chk('…and, for the Wi-Fi regions capability, what the feed costs this host and whether more regions can go live', /Server load/.test(await C.innerText('.cw')) && /Time per fetch/.test(await C.innerText('.cw')) && /Not measured yet|Within budget|Close to the budget|Over budget/.test(await C.innerText('.cw')));
     const nav = await C.innerText('nav, aside').catch(() => '');
     chk('Wi-Fi has its own sections in the Club sidebar', /Gateways/.test(await C.innerText('body')) && /Speed tests/.test(await C.innerText('body')) && /Regions/.test(await C.innerText('body')));
     await shot(C, 'wifi-club-1-overview');
@@ -236,6 +240,15 @@ function cleanup() {
     await C.waitForSelector('.cw-panel .cw-list li', { timeout: 10000 });
     chk('a region opens with its centres', /Egbeda/.test(await C.innerText('.cw-panel')) && /Region speeds/.test(await C.innerText('.cw-panel')));
     await shot(C, 'wifi-club-5-region', false);
+    php(`db_exec("UPDATE wifi_gateways SET testAsked = 0");`, ['bootstrap']);
+    await C.click('.cw-panel button:has-text("Line test, every gateway")');
+    await C.waitForSelector('.cw-ask', { timeout: 10000 });
+    const ask = await C.innerText('.cw-ask');
+    await C.click('.cw-ask button:has-text("Ask for")');
+    await C.waitForFunction(() => /asked/.test((document.querySelector('.cw-toast') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    const asked = +php(`echo db_row("SELECT COUNT(*) c FROM wifi_gateways w JOIN wifi_region_centres rc ON rc.centre = w.centre JOIN wifi_regions g ON g.regionId = rc.regionId WHERE g.name = 'Lagos Mainland' AND w.testAsked = 1 AND (w.removedAt = '' OR w.removedAt IS NULL)")['c'];`, ['bootstrap']);
+    chk('a whole region’s gateways are asked for a line test in one press, the count said before it is confirmed', /Ask \d+ gateways? in Lagos Mainland/.test(ask) && asked >= 1
+      && /asked/.test(await C.innerText('.cw-toast')) && +php(`echo db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'wifi.gateway.bulk'")['c'];`, ['bootstrap']) === 1);
     await C.keyboard.press('Escape');
     await C.goto(BASE + '/club-admin?s=wifi-speed', { waitUntil: 'domcontentloaded' });
     await C.waitForSelector('.cw-test', { timeout: 40000 });

@@ -20,6 +20,8 @@ if ($method === 'GET') {
     elseif ($view === 'gateways') $res = gs_call('admin.wifi.gateways', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'platform', 'health', 'sort', 'dir', 'page', 'pageSize'])));
     elseif ($view === 'centres')  $res = gs_call('admin.wifi.centres', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'setup', 'page', 'pageSize', 'idsOnly'])));
     elseif ($view === 'analytics') $res = gs_call('admin.wifi.analytics', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['days', 'region', 'centre'])));
+    elseif ($view === 'gatewayIds') $res = gs_call('admin.wifi.gateways.ids', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'platform', 'health'])));
+    elseif ($view === 'load')     $res = gs_call('admin.wifi.load', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['plan', 'poll'])));
     elseif ($view === 'setup')    $res = gs_call('admin.wifi.gateway.setup', ['requesterId' => $mid, 'gatewayId' => $_GET['gatewayId'] ?? '']);
     else                          $res = gs_call('admin.wifi.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -37,10 +39,13 @@ if ($method === 'GET') {
         'regionAssign' => 'admin.wifi.region.assign',
         'regionLeads'  => 'admin.wifi.region.leads',
         'profiles'     => 'admin.wifi.profiles.set',
+        // One op, two declared actions (test | rotate), over a selection or a region.
+        'bulk'         => 'admin.wifi.gateways.bulk',
     ];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);
-    $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()]));
+    // The bulk op's own verb travels as `do`; `action` is the route's.
+    $res = gs_call($map[$action], array_merge($b, ['requesterId' => $mid, 'ip' => client_ip()], $action === 'bulk' ? ['action' => (string)($b['do'] ?? '')] : []));
 } else {
     json_error('method_not_allowed', 405);
 }

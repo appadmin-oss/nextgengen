@@ -273,6 +273,14 @@ function cleanup() {
     await T.context().close();
     php(`db_exec("DELETE FROM testimonials"); db_exec("DELETE FROM consents");`, ['bootstrap']);
 
+    // One focus ring on a framed search field: the frame's, never a second on the bare input inside it.
+    const R = await open(1366, 768, '/control/members');
+    await R.waitForSelector('[role=search] input', { timeout: 30000 });
+    await R.focus('[role=search] input'); await R.keyboard.press('Shift+Tab'); await R.keyboard.press('Tab');
+    const ring = await R.$eval('[role=search] input', el => ({ focused: document.activeElement === el, inner: getComputedStyle(el).outlineStyle, frame: getComputedStyle(el.parentElement).boxShadow }));
+    chk('the members search draws one focus ring, on its frame, not a second on the input inside it', ring.focused && ring.inner === 'none' && ring.frame !== 'none');
+    await R.context().close();
+
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

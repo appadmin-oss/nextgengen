@@ -358,6 +358,12 @@ function member_request_create(array $p): array
     $kind = (string)($p['kind'] ?? '');
     if (!isset(MEMBER_REQUEST_KINDS[$kind])) return ['ok' => false, 'error' => 'unknown_kind'];
     if ($kind === 'feedback') return member_feedback_create($p);
+    /* A payment is confirmed by the parent who made it, from the family
+       account. From their own app a member asks their parent instead
+       (member_family_nudge): a child is not the one who knows the reference. */
+    if ($kind === 'payment' && !empty($p['fromMember'])) {
+        return ['ok' => false, 'error' => 'ask_parent', 'detail' => 'Your parent confirms a payment from their family account. Ask them from Money → Ask my parent.'];
+    }
 
     $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = ? AND status = 'open'",
                          [$id, $kind])['c'] ?? 0);

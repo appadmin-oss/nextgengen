@@ -510,7 +510,7 @@ function wifi_feed(array $p): array {
         if ((int)$r['pendingVersion'] === 0 || $since !== $lastVersion) return ['ok' => false, 'error' => 'start_again'];
         $lines = wifi_centre_lines((string)$r['centre'], $cfg);
         $d = wifi_feed_diff($lines, $acked, !empty($pend['#full']), $cfg['profiles']);
-        db_update('wifi_gateways', ['lastSeenAt' => now_iso()], ['id' => (int)$r['id']]);
+        db_update('wifi_gateways', ['lastSeenAt' => now_iso(), 'silentAlertAt' => ''], ['id' => (int)$r['id']]);
         return $base + ['version' => (int)$r['pendingVersion'], 'full' => !empty($pend['#full']), 'changed' => $d['changed'], 'unchanged' => false,
                         'next' => WIFI_POLL['busy'], 'test' => false, 'users' => $d['users'], 'count' => count($lines)];
     }
@@ -535,7 +535,8 @@ function wifi_feed(array $p): array {
     $next = $changed ? WIFI_POLL['busy'] : ($recent ? WIFI_POLL['warm'] : WIFI_POLL['idle']);
     $edge = wifi_secs_to_boundary($cfg['profiles']);
     if ($edge !== null && $edge + 5 < $next) $next = max(WIFI_POLL['busy'], $edge + 5);
-    $patch = ['lastSeenAt' => now_iso(), 'lastVersion' => $lastVersion, 'ackedJson' => json_encode((object)$acked),
+    // A fetch ends a silence: the next one is told again (wifi_silent_digest).
+    $patch = ['lastSeenAt' => now_iso(), 'silentAlertAt' => '', 'lastVersion' => $lastVersion, 'ackedJson' => json_encode((object)$acked),
               'osVersion' => substr(preg_replace('/[^\w .()\/-]/', '', (string)($p['os'] ?? $r['osVersion'])), 0, 64),
               'lastError' => substr(preg_replace('/[\x00-\x1f]/', '', (string)($p['error'] ?? '')), 0, 255),
               'pendingJson' => $send ? json_encode((object)($full ? $cur + ['#full' => 1] : $cur)) : '', 'pendingVersion' => $send ? $version : 0];

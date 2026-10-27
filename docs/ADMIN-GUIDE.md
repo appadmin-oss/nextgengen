@@ -1694,6 +1694,33 @@ the report for them (the child then checks the scores and writes the plan, as
 before); book one of the mentor's free times or ask the mentor a question; and
 tell the centre about an absence, appeal a charge or ask for a new ID card.
 
+**Money, from the parent's side (added 2026-10-27).** Payments are the parent's,
+not the child's:
+
+- **Pay ahead.** *Fees → Pay ahead* offers 1, 3, 6 or 12 months of the
+  commitment fee, each priced by NGG with what is owed today and any membership
+  renewal that falls in those months. It is one invoice (*NGG-ADV-…*), paid
+  online or by transfer like any other. **Nothing is charged early**: the
+  payment waits on the account as a credit and meets each month's charge on the
+  1st, so no reminder goes out while it lasts and the account shows *Paid ahead
+  to <month>*. A fee changed in the meantime is charged at its new price
+  against the same credit. Paying ahead waits until the joining invoice is paid.
+- **"I've paid".** A parent who paid by transfer or at the desk tells you from
+  *Fees → Paid by transfer or at the desk?* with the amount, the reference and
+  the date. It arrives in **Member requests** as *Payment made*, marked *From
+  their family account*, and moves no money until you approve it against the
+  statement — exactly as a member's claim used to.
+- **The child asks.** The member's app no longer has *I've made a payment*. On
+  their account screen there is one button, **Ask my parent**: every connected
+  parent gets a message in their family account and an email asking them to
+  pay, or — if they already paid — to say so with the reference. Once a day; a
+  child with no connected parent is told how to connect one. The parent sees it
+  at the top of *Today* until it is paid or confirmed.
+
+Today also now shows, under the child's account: quick actions (an absence,
+the mentor, paying ahead, a replacement card), what is coming up at the centre,
+and the lessons the child is on.
+
 **What a parent cannot change:** their own name and phone, who may collect the
 child, and the five consents are **read-only** in the family app. *Ask to
 change* sends a request to the desk (*Change family details*, *Change who can
@@ -1735,8 +1762,9 @@ refused), ask for **academic leave** (exams or a school programme, up to ten wee
 question, or ask for their details or the collectors to change. These arrive
 in **Member requests** marked *From their family account* (a question for the
 mentor also goes straight to the mentor), and your reply is emailed to the
-parent as well as the member. A parent cannot claim a payment — an
-offline payment needs a verified receipt, which is the member's path.
+parent as well as the member. A payment made by transfer or at the desk is
+claimed by the **parent** (*Payment made*, from their family account); a member
+can no longer claim one from their own app and asks their parent instead.
 
 Every family email is **always on** and cannot be switched off: every sign-in
 and sign-out, the Saturday plan and close, the Monday weekly summary, alerts
@@ -3324,8 +3352,29 @@ undoes a suspension.
   filter every gateway; open one for its diagnosis and tools), **Regions**,
   **Speed tests**, **Who gets on**, **Setup**. The Control Room's Wi-Fi page has
   the same, including Analytics and Regions.
-- **Wi-Fi regions** group centres for their Wi-Fi. Somebody who sees every
-  centre makes them, puts centres in them and chooses their leads (staff who
-  hold `network`). A lead sees and looks after their region's centres.
+- **Wi-Fi regions** group centres for their Wi-Fi. They are their own
+  capability, **Wi-Fi regions** (`wifi_regions`, the super admin's): an NGG
+  admin who holds `network` looks after their own centre's Wi-Fi but does not
+  see or manage regions. Whoever holds it makes regions, puts centres in them
+  and chooses their leads (staff who hold `network`). A lead sees and looks
+  after their region's centres.
+- **A whole region at once.** Open a region: *Line test, every gateway* asks
+  each of its gateways to measure its line at the next fetch; *New keys, every
+  gateway* rotates every key and lists the new ones once (copy them as CSV, then
+  run each router's setup again). The count is shown before you confirm, and if
+  the region's gateways changed meanwhile it is refused rather than done. Leads
+  can do this for their own region. *Gateways → Line test* does the same for
+  every gateway matching the filters.
+- **A gateway goes silent.** One that has not fetched for an hour is reported
+  once — one message and email per person listing all the silent gateways, never
+  one per gateway — to the region's leads; a centre with no region (or a region
+  with no lead) goes to the network staff who look after that centre, and failing
+  them to those who look after every centre. Its next fetch ends the silence, so
+  a later one is reported again.
+- **Server load.** Every fetch is timed. *Overview → Server load* (Wi-Fi regions
+  capability) shows the last 24 hours and what 2,000 gateways would cost this
+  host, with a verdict: *Within budget*, *Close to the budget* or *Over budget*.
+  **Do not put a second region live until it reads *Within budget*** after the
+  pilot region has run for a day.
 - **Speeds follow down**: the network's defaults, then a region's own, then a
   centre's own. Set only what differs; "set here" switched off means "follow".

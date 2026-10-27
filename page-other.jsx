@@ -1137,7 +1137,9 @@ function MembershipPayPage({ setPage }) {
           <div className="mpay-msg"><h1>We couldn’t load your invoice</h1><p>Check your connection and try again.</p><button className="btn btn-primary" onClick={load}>Try again</button></div>
         ) : (
           <>
-            <h1 className="mpay-title">{inv.purpose === "balance"
+            <h1 className="mpay-title">{inv.purpose === "advance"
+              ? (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is paid ahead." : "Pay ahead for " + (inv.firstName || "your child"))
+              : inv.purpose === "balance"
               ? (inv.status === "paid" ? "Thank you — " + (inv.firstName ? inv.firstName + "’s" : "the") + " account is paid." : "Pay " + (inv.firstName ? inv.firstName + "’s" : "the") + " account balance")
               : (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is fully enrolled." : "Complete " + (inv.firstName ? inv.firstName + "’s" : "your") + " membership")}</h1>
             <p className="mpay-sub">Invoice <span className="mpay-mono">{inv.invoiceId}</span>{inv.displayId ? <> · member <span className="mpay-mono">{inv.displayId}</span></> : null}{inv.centre ? " · " + inv.centre : ""}</p>
@@ -1154,7 +1156,7 @@ function MembershipPayPage({ setPage }) {
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
               </div>
             ) : inv.status === "void" ? (
-              <div className="mpay-msg"><p>{inv.purpose === "balance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
+              <div className="mpay-msg"><p>{inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
             ) : inv.pendingOffline ? (
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (
@@ -1171,7 +1173,8 @@ function MembershipPayPage({ setPage }) {
                 {!inv.paystack && !inv.bank && <p className="mpay-fine">Pay at your centre; you’ll get a receipt once it is recorded and checked.</p>}
               </div>
             )}
-            {inv.purpose !== "balance" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
+            {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
+            {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
           </>
         )}
       </div>

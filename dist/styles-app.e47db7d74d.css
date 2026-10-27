@@ -9097,9 +9097,12 @@ button.cr-list-row:hover { background: var(--cr-s1); }
   border-color: currentColor;
   box-shadow: 0 0 0 1px currentColor, 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
 }
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
+html:root :where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
   /* Beats the site-wide input:focus-visible safety ring (styles.css), which
-     otherwise draws a second ring on the bare input inside the box. */
+     otherwise draws a second ring on the bare input inside the box — and the
+     portals' scoped rings too (`.cr-app :focus-visible` is 0,2,0, which beat
+     the plain `input:focus-visible` here and put a ring inside the Control
+     Room's search box). `html:root` lifts this to 0,2,2 without !important. */
   outline: none;
 }
 
@@ -12118,6 +12121,11 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
 .m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
 .m9x-wifi .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-ask .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-ask-b { font: inherit; font-weight: 600; cursor: pointer; min-height: 44px; padding: 0 18px; border-radius: 12px; border: 0; background: #0b0b0c; color: #fff; margin-right: 12px; }
+.m9x-ask-b:disabled { cursor: progress; opacity: .6; }
+.m9x-ask-when { font-size: 13px; color: #4a4a50; }
+.m9x-ask-b:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
 .m9x-wifi-dl { margin: 0 0 12px; display: grid; gap: 8px; }
 .m9x-wifi-dl > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; }
 .m9x-wifi-dl dt { min-width: 84px; font-size: 13px; color: #4a4a50; }
@@ -16447,6 +16455,64 @@ button.m9x-ev-sum { cursor: pointer; }
 .sup-star { width: 44px; height: 44px; border: 0; border-radius: 10px; background: none; font-size: 24px; color: #6b6b72; cursor: pointer; display: grid; place-items: center; }
 .sup-star.is-on { color: #8a5a00; }
 .fp3x-support { margin-top: 18px; }
+
+/* ── Family Portal: below the design's page (fp3-app.jsx Fp3TodayMore / Fp3Ahead / Fp3Paid) ── */
+.fp3x-more { max-width: 780px; margin: 0 auto; padding: 4px 14px 32px; display: grid; gap: 16px; font: 400 15px/1.5 'Geist', system-ui, sans-serif; color: #0b0b0c; }
+@media (min-width: 640px) { .fp3x-more { padding-left: 32px; padding-right: 32px; } }
+.fp3x-card { background: #fff; border: 1px solid #e8e5dd; border-radius: 20px; padding: 18px 20px; display: grid; gap: 14px; }
+.fp3x-card.is-asked { border-color: #f3e3bb; background: #fffaf0; }
+.fp3x-card-h { display: flex; gap: 14px; align-items: flex-start; }
+.fp3x-card-h h2, .fp3x-h { margin: 0; font: 650 17px/1.3 'Geist', system-ui, sans-serif; }
+.fp3x-card-h p { margin: 4px 0 0; color: #48484e; }
+.fp3x-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.fp3x-meta { color: #5d5d63; font-size: 13.5px; }
+.fp3x-ic { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: #efede8; color: #3a3a40; font-size: 20px; }
+.fp3x-ic.is-ok { background: #e8f5ec; color: #17663a; }
+.fp3x-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.fp3x-opt { display: grid; gap: 2px; text-align: left; padding: 12px 14px; min-height: 44px; border-radius: 14px; border: 1px solid #d9d6cd; background: #fff; }
+.fp3x-opt b { font-weight: 650; }
+.fp3x-opt span { color: #5d5d63; font-size: 13.5px; }
+.fp3x-opt em { font: 600 15px 'Geist Mono', ui-monospace, monospace; font-style: normal; margin-top: 4px; }
+.fp3x-opt.is-on { background: #0b0b0c; border-color: #0b0b0c; color: #fff; }
+.fp3x-opt.is-on span { color: #d4d2cc; }
+.fp3x-lines { list-style: none; margin: 0; padding: 0; display: grid; }
+.fp3x-lines li { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid #f1efea; }
+.fp3x-lines li:first-child { border-top: 0; }
+.fp3x-lines li span { display: grid; }
+.fp3x-lines small { color: #5d5d63; font-size: 13px; }
+.fp3x-lines b { font: 600 15px 'Geist Mono', ui-monospace, monospace; white-space: nowrap; }
+.fp3x-lines .is-total { border-top: 1px solid #d9d6cd; font-weight: 650; }
+.fp3x-go { min-height: 48px; padding: 0 20px; border: 0; border-radius: 14px; background: #f5b026; color: #2a1d00; font: 650 16px 'Geist', system-ui, sans-serif; justify-self: start; }
+.fp3x-go:disabled { opacity: .6; cursor: progress; }
+.fp3x-ghost { min-height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid #d9d6cd; background: #fff; color: #0b0b0c; font: 600 15px 'Geist', system-ui, sans-serif; justify-self: start; }
+.fp3x-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.fp3x-fine { margin: 0; color: #5d5d63; font-size: 13.5px; }
+.fp3x-err { margin: 0; padding: 10px 14px; border-radius: 12px; background: #fdeaea; color: #a12a2a; }
+.fp3x-form { display: grid; gap: 12px; }
+.fp3x-form label { display: grid; gap: 6px; }
+.fp3x-form label span { font-weight: 600; font-size: 14px; }
+.fp3x-form input { min-height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid #c9c7bf; background: #fff; }
+.fp3x-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.fp3x-act { display: flex; gap: 12px; align-items: center; text-align: left; min-height: 64px; padding: 12px 14px; border-radius: 14px; border: 1px solid #e8e5dd; background: #faf9f6; }
+.fp3x-act:hover { background: #f3f1ec; }
+.fp3x-act > i { font-size: 22px; color: #3a3a40; }
+.fp3x-act span { display: grid; }
+.fp3x-act small { color: #5d5d63; font-size: 13px; }
+.fp3x-link { display: inline-flex; gap: 6px; align-items: center; min-height: 44px; border: 0; background: none; font-weight: 600; }
+.fp3x-evs { list-style: none; margin: 0; padding: 0; display: grid; }
+.fp3x-evs li { display: flex; gap: 14px; align-items: center; padding: 10px 0; border-top: 1px solid #f1efea; }
+.fp3x-evs li:first-child { border-top: 0; }
+.fp3x-evs li > span:nth-child(2) { display: grid; flex: 1; min-width: 0; }
+.fp3x-evs small { color: #5d5d63; font-size: 13px; }
+.fp3x-evs em { font-style: normal; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #efede8; color: #48484e; white-space: nowrap; }
+.fp3x-evs em.is-warn { background: #fdf2d8; color: #7a5600; }
+.fp3x-date { flex: 0 0 auto; width: 48px; text-align: center; border-radius: 12px; background: #0b0b0c; color: #fff; padding: 6px 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; display: grid; }
+.fp3x-date b { font-size: 18px; letter-spacing: 0; }
+.fp3x-empty { margin: 0; color: #5d5d63; }
+.fp3x-bar { height: 8px; border-radius: 999px; background: #efede8; overflow: hidden; }
+.fp3x-bar span { display: block; height: 100%; background: #22a05a; }
+.fp3x-skel-in { padding: 0; }
+.fp3x-skel.fp3x-skel-in span { height: 56px; width: 100%; }
 
 /* ── The public help centre (/support, HelpCentrePage) ── */
 .hc { background: #f6f4f0; color: #0b0b0c; min-height: 60vh; }

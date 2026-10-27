@@ -89,7 +89,7 @@ button,input,textarea,select{font:inherit;color:inherit}
     <div style="display:flex;align-items:center;gap:8px"><h2 id="acc-h" style="margin:0;font-size:16px;font-weight:600;flex:1">Account</h2><button onClick="{{ goMoney }}" style="height:44px;padding:0 4px;border:0;background:none;font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">Full statement<i class="ph ph-caret-right"></i></button></div>
     <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:160px"><span style="font-size:12.5px;color:#6b6b72">To pay now</span><span style="font-size:28px;font-weight:700;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:{{ acc.balFg }}">{{ balance }}</span><span style="align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:{{ acc.pillBg }};color:{{ acc.balFg }};font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px"><i class="{{ acc.pillIcon }}"></i>{{ acc.pill }}</span></div>
-      <sc-if value="{{ owes }}" hint-placeholder-val="{{ true }}"><button onClick="{{ openPaid }}" style="height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">I've made a payment</button></sc-if>
+      <sc-if value="{{ owes }}" hint-placeholder-val="{{ true }}"><button onClick="{{ openAsk }}" style="height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">Ask my parent</button></sc-if>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:#f0efea;border:1px solid #f0efea;border-radius:12px;overflow:hidden">
       <sc-for list="{{ acc.stats }}" as="a" hint-placeholder-count="4"><div style="background:#fff;padding:10px 12px;display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#6b6b72">{{ a.k }}</span><span style="font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums;color:{{ a.fg }}">{{ a.v }}</span><span style="font-size:12px;color:#6b6b72">{{ a.s }}</span></div></sc-for>
@@ -632,7 +632,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 
 <sc-if value="{{ onMoney }}" hint-placeholder-val="{{ false }}">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">To pay</span><span style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">{{ balance }}</span><span style="font-size:13px;color:#4a4a50">Membership, dues and any fines.</span><button onClick="{{ openPaid }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;align-self:flex-start;margin-top:6px">I've made a payment</button></section>
+    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">To pay</span><span style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">{{ balance }}</span><span style="font-size:13px;color:#4a4a50">Membership, dues and any fines.</span><button onClick="{{ openAsk }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;align-self:flex-start;margin-top:6px">Ask my parent</button></section>
     <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">Cost of your training</span><span style="font-size:24px;font-weight:700">{{ mou.cost }}</span><span style="font-size:13px;color:#4a4a50;line-height:1.45">{{ mou.note }}</span><span style="align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:#e9f6ec;color:#1d6b30;font-size:12px;font-weight:600;display:inline-flex;align-items:center;margin-top:4px">MOU done</span></section>
   </div>
   <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
@@ -1237,7 +1237,7 @@ class Component extends DCLogic {
       ["Add proof for a mission", "ph ph-camera", () => this.goTop("today")],
       ["Message my mentor", "ph ph-chat-circle-text", () => this.goTop("mentor")],
       ["Show my gate pass", "ph ph-qr-code", () => set({ pal: false, sheet: { k: "gate" } })],
-      ["I've made a payment", "ph ph-currency-ngn", () => set({ pal: false, scr: "records", rKind: "I've made a payment", rF: {} })],
+      ["Ask my parent to pay", "ph ph-hand-waving", () => set({ pal: false, scr: "money" })],
       ["Ask for a change of mentor", "ph ph-arrows-left-right", () => set({ pal: false, sheet: { k: "change" }, sText: "", sPick: null })],
       ["Tell us about something", "ph ph-lifebuoy", () => this.goTop("help")]
     ];
@@ -1314,7 +1314,7 @@ class Component extends DCLogic {
       };
     }
     out.finesList = D.fines.map(([d, t, a, st]) => ({ d, t, a: naira(a), st, fg: st === "Owed" ? "#b0361c" : "#6b6b72", strike: st === "Waived" ? "line-through" : "none" }));
-    out.openPaid = () => set({ scr: "records", rKind: "I've made a payment", rF: {} });
+    out.openAsk = () => set({ scr: "money" });
     out.printPdf = () => this.toast("Opening print view · save as PDF");
     // records
     const R = D.records;

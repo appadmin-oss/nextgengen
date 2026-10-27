@@ -17076,9 +17076,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             if (strpos($pair[1], 'fees') === false) continue;
             if (($allowed[$pair[1]] ?? '') !== $pair[2]) return false;
         }
-        // The route's one write is `pay`; it carries no amount, reference or status from the body.
+        /* The route's writes are `pay` and `nudge` (asking a parent); neither
+           carries an amount, reference or status from the body. */
         $route = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api/member/fees.php');
-        if ($route === '' || substr_count($route, 'gs_call(') !== 2 || !str_contains($route, 'gs_call(\'member.fees.pay\', [\'memberId\' => $s[\'mid\']])')) return false;
+        if ($route === '' || substr_count($route, 'gs_call(') !== 4 || !str_contains($route, 'gs_call(\'member.fees.pay\', [\'memberId\' => $s[\'mid\']])')) return false;
+        if (preg_match('/amount|reference|status/', implode('', array_filter(explode("\n", $route), static fn($l) => str_contains($l, 'gs_call('))))) return false;
+        $fam = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/family.php');
+        $nf = substr($fam, (int)strpos($fam, 'function member_family_nudge('));
+        if ($nf === '' || str_contains($nf, 'fees_post(') || str_contains($nf, 'membership_settle(')) return false;
         // And pay itself writes nothing to the ledger.
         $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/membership-pay.php');
         $fn = substr($src, (int)strpos($src, 'function membership_balance_invoice'));
@@ -25724,7 +25729,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $rq = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07', 'body' => 'Family wedding']);
     chk('family: a parent\'s absence notice lands in the desk\'s request queue', !empty($rq['ok']) && ($rq['request']['byFamily'] ?? false) === true
         && (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
-    chk('family: a parent cannot raise a payment claim', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment', 'amount' => 5000])['error'] ?? '') === 'unknown_kind');
+    chk('family: a parent\'s payment claim needs the amount', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment'])['error'] ?? '') === 'bad_amount');
     $list = backend_dispatch('admin.requests.list', ['requesterId' => 'NGG-FA-ADM', 'status' => 'open']);
     $row = array_values(array_filter($list['requests'] ?? [], fn($x) => $x['requestId'] === $rq['request']['requestId']))[0] ?? [];
     chk('family: …and the desk sees who raised it', ($row['raisedByName'] ?? '') === 'mum@example.com');
@@ -29983,6 +29988,103 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Paying ahead, and a child asking their parent ─────────────────────────────
+(function () {
+    $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'guardian_notices' => 'memberId', 'member_requests' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'ADV-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GDN-ADA%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    $hadSink = array_key_exists('__mail_sink', $GLOBALS); $prevSink = $GLOBALS['__mail_sink'] ?? null;
+    setting_set('fees', ['enabled' => true, 'membershipFee' => 12000, 'membershipEveryMonths' => 12, 'monthlyDues' => 2000, 'trainingFee' => 0, 'balanceCap' => 0] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    // Joined eleven months ago: this month's dues and the first year's membership accrue; the renewal falls a month from now.
+    $join = gmdate('Y-m-d', strtotime(gmdate('Y-m-15') . ' -11 months'));
+    db_insert('members', ['memberId' => 'ADV-1', 'fullName' => 'Ada Ahead', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'mum.adv@example.com', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'ADV-1'");
+    fees_accrue_member($m);
+    $owed = (int)fees_balance($m)['payable'];
+    $plan = membership_advance_plan($m);
+    $q3 = array_values(array_filter($plan['quotes'], fn($q) => $q['months'] === 3))[0] ?? null;
+    $renewDue = gmdate('Y-m-d', strtotime($join . ' +12 months'));
+    chk('ahead · the plan prices 1, 3, 6 and 12 months, each including what is owed today', count($plan['quotes']) === 4 && $owed > 0
+        && $q3 && $q3['items'][0]['label'] === 'Owed today' && $q3['items'][0]['amount'] === $owed);
+    chk('ahead · …and the renewal that falls inside the months chosen, priced once', $q3 && $q3['total'] === $owed + 3 * 2000 + 12000
+        && count(array_filter($q3['items'], fn($i) => $i['label'] === 'Membership renewal')) === 1
+        && gmdate('Y-m', strtotime($renewDue)) <= $q3['through']);
+    chk('ahead · a choice outside the four is refused', (membership_advance_invoice($m, 2, 'test')['error'] ?? '') === 'bad_months');
+
+    // A guardian pays ahead through their own link only.
+    db_insert('guardians', ['guardianId' => 'GDN-ADA0000001', 'email' => 'mum.adv@example.com', 'fullName' => 'Mum Ahead', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'GDN-ADA0000002', 'email' => 'other.adv@example.com', 'fullName' => 'Other', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'ADV-LINK', 'guardianId' => 'GDN-ADA0000001', 'memberId' => 'ADV-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    chk('ahead · another guardian cannot pay ahead through this link', (backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000002', 'linkId' => 'ADV-LINK', 'months' => 3])['error'] ?? '') === 'not_found');
+    $bal = backend_dispatch('member.fees.pay', ['memberId' => 'ADV-1']);
+    $a = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'months' => 3]);
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($a['invoiceId'] ?? '')]);
+    chk('ahead · the guardian gets one advance invoice, priced by the server, replacing the open balance invoice',
+        !empty($a['ok']) && $inv && $inv['purpose'] === 'advance' && (int)$inv['total'] === $q3['total']
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [(string)$bal['invoiceId']])['status'] === 'void');
+    $again = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'months' => 3]);
+    chk('ahead · asking again for the same months returns the same invoice', !empty($again['existed']) && $again['invoiceId'] === $inv['invoiceId']);
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $inv['payToken']]);
+    chk('ahead · the /pay page shows it as paying ahead', ($pub['invoice']['purpose'] ?? '') === 'advance');
+
+    $charges = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND direction = 'charge'")['c'];
+    $GLOBALS['__mail_sink'] = [];
+    $st = membership_settle($inv['invoiceId'], 'paystack', 'NGGM-ADVTEST', 'test');
+    $m = db_row("SELECT * FROM members WHERE memberId = 'ADV-1'");
+    $b = fees_balance($m);
+    chk('ahead · settling posts the payment only: no charge is made early, and nothing is owed today',
+        !empty($st['ok']) && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND direction = 'charge'")['c'] === $charges
+        && (int)$b['payable'] === 0 && (int)$b['realCredited'] - (int)$b['realCharged'] === $q3['total'] - $owed);
+    chk('ahead · …and the receipt says paid ahead', (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains($x['html'], 'is paid ahead')));
+    $plan2 = membership_advance_plan($m);
+    chk('ahead · the plan now says the month it is paid to, renewal included', $plan2['paidThrough'] === $q3['through'] && $plan2['credit'] === $q3['total'] - $owed);
+    $fv = family_fees_view($m);
+    chk('ahead · the family view carries the plan', ($fv['ahead']['paidThrough'] ?? '') === $q3['through'] && count($fv['ahead']['quotes'] ?? []) >= 1);
+    // The months arrive: the accrual charges them, and the credit meets each one.
+    $later = gmdate('Y-m-d', strtotime($q3['through'] . '-01'));
+    fees_accrue_member($m, null, $later);
+    chk('ahead · when the months arrive their charges land on the ledger and the credit covers them: nothing is owed',
+        (int)fees_balance($m, null, $later)['payable'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND kind = 'dues' AND periodKey = ?", [$q3['through']])['c'] === 1);
+
+    // ── A child asks; the parent confirms ──
+    chk('ask · a member can no longer record a payment from their own app',
+        (member_request_create(['memberId' => 'ADV-1', 'kind' => 'payment', 'amount' => 500, 'fromMember' => true])['error'] ?? '') === 'ask_parent');
+    chk('ask · there is nothing to ask a parent about when nothing is owed', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1'])['error'] ?? '') === 'nothing_owed');
+    fees_post('ADV-1', 'fine', 900, ['periodKey' => 'test:adv:fine', 'note' => 'Late', 'by' => 'test']);
+    $GLOBALS['__mail_sink'] = [];
+    $n1 = backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1']);
+    $note = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-ADA0000001' AND kind = 'nudge' ORDER BY id DESC LIMIT 1");
+    chk('ask · one ask reaches the parent — pay, or confirm a payment already made: a notice tied to the child, and an email',
+        !empty($n1['ok']) && $n1['parents'] === 1 && $note && $note['memberId'] === 'ADV-1' && $note['cat'] === 'alert'
+        && (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => $x['to'] === 'mum.adv@example.com' && str_contains($x['subject'], 'asks about their NGG fees') && str_contains($x['html'], 'already paid')));
+    chk('ask · once a day: a second press changes nothing and says so', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1'])['error'] ?? '') === 'too_soon');
+    $asks = backend_dispatch('member.family.nudges', ['memberId' => 'ADV-1']);
+    chk('ask · the member sees how many parents can be asked, and when they last asked', $asks['parents'] === 1 && !empty($asks['asked']['at']));
+    chk('ask · the family view shows the ask', !empty(family_fees_view($m)['asked']['at']));
+    $claim = backend_dispatch('family.request.create', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'kind' => 'payment', 'amount' => 900, 'reference' => 'TRF-ADV-1', 'paidAt' => gmdate('Y-m-d')]);
+    chk('ask · the parent confirms a transfer: a claim for the desk, marked as theirs, that moves no money on its own',
+        !empty($claim['ok']) && ($claim['request']['byFamily'] ?? false) === true && (int)$claim['request']['amount'] === 900
+        && (int)fees_balance($m)['payable'] === 900 && (family_fees_view($m)['claim']['reference'] ?? '') === 'TRF-ADV-1');
+    db_insert('members', ['memberId' => 'ADV-ALONE', 'fullName' => 'No Parent', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('ask · a member with no connected parent is told how to connect one', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-ALONE'])['error'] ?? '') === 'no_family');
+
+    // The mail sink makes send_mail succeed; later blocks depend on it failing as it does on this host.
+    if ($hadSink) $GLOBALS['__mail_sink'] = $prevSink; else unset($GLOBALS['__mail_sink']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
 // ── The Academy quiz: three attempts a module a day, across both portals ──────
 (function () {
     $now = now_iso();
@@ -32801,6 +32903,51 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi scale · a change made here drops the kept list at once', !isset(wifi_centre_lines($C)['026-503']));
     $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
     db_update('members', ['status' => 'active'], ['memberId' => 'NGG-WF-DOR']);
+
+    // ── Bulk acts per region; the silent-gateway digest; the feed's measured cost.
+    chk('wifi scale · bulk: an NGG admin without Wi-Fi regions cannot act on a whole region', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-NADM', 'action' => 'test', 'regionId' => $RID])['error'] ?? '') === 'forbidden');
+    chk('wifi scale · bulk: an unknown action is refused', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'reboot', 'regionId' => $RID])['error'] ?? '') === 'unknown_action');
+    chk('wifi scale · bulk: the count confirmed must still be the count', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'test', 'regionId' => $RID, 'expect' => 5])['error'] ?? '') === 'count_changed');
+    db_update('wifi_gateways', ['testAsked' => 1], ['gatewayId' => $gB['gateway']['gatewayId']]);
+    $bk = backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-RLEAD', 'action' => 'test', 'regionId' => $RID, 'expect' => 2]);
+    chk('wifi scale · bulk: a region lead asks every gateway in their region for a line test; one already asked is reported unchanged',
+        $bk['ok'] && $bk['ran'] === 2 && $bk['applied'] === 1 && $bk['unchanged'] === 1
+        && (int)db_row('SELECT testAsked FROM wifi_gateways WHERE gatewayId = ?', [$gT['gateway']['gatewayId']])['testAsked'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'wifi.gateway.bulk'")['c'] === 1);
+    $sel = backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-NADM', 'action' => 'rotate', 'gatewayIds' => [$gA['gateway']['gatewayId'], $gT['gateway']['gatewayId']]]);
+    $rs0 = array_column($sel['results'], null, 'gatewayId');
+    chk('wifi scale · bulk: keys are rotated per row, each new key shown once, and another centre’s gateway refused by name',
+        $sel['ok'] && $sel['applied'] === 1 && $sel['refused'] === 1 && ($rs0[$gT['gateway']['gatewayId']]['error'] ?? '') === 'out_of_scope'
+        && strlen($rs0[$gA['gateway']['gatewayId']]['key'] ?? '') >= 32
+        && db_row('SELECT keyHash FROM wifi_gateways WHERE gatewayId = ?', [$gA['gateway']['gatewayId']])['keyHash'] === hash('sha256', $rs0[$gA['gateway']['gatewayId']]['key']));
+    chk('wifi scale · bulk: a selection over the cap is refused, and the cap named', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'test', 'gatewayIds' => array_map(fn($i) => 'G' . $i, range(1, WIFI_BULK_MAX + 1))])['max'] ?? 0) === WIFI_BULK_MAX);
+    $ids = backend_dispatch('admin.wifi.gateways.ids', ['requesterId' => $A, 'region' => $RID]);
+    chk('wifi scale · "select all matching" gets the ids under the same filter in one request', $ids['total'] === 2 && count($ids['ids']) === 2);
+
+    $old = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600);
+    foreach ([$gA, $gT] as $x) db_update('wifi_gateways', ['lastSeenAt' => $old, 'silentAlertAt' => ''], ['gatewayId' => $x['gateway']['gatewayId']]);
+    db_update('wifi_gateways', ['lastSeenAt' => gmdate('Y-m-d\TH:i:s\Z'), 'silentAlertAt' => ''], ['gatewayId' => $gB['gateway']['gatewayId']]);
+    db_exec("DELETE FROM notifications WHERE kind = 'wifi'");
+    $dg1 = wifi_silent_digest();
+    $nt = fn($mid) => db_all("SELECT title, body FROM notifications WHERE memberId = ? AND kind = 'wifi'", [$mid]);
+    chk('wifi scale · a gateway silent for an hour goes to its region lead, one digest each, naming it',
+        $dg1['silent'] >= 2 && count($nt('NGG-WF-RLEAD')) === 1 && str_contains($nt('NGG-WF-RLEAD')[0]['body'], 'Scale T') && !str_contains($nt('NGG-WF-RLEAD')[0]['body'], 'Scale A'));
+    chk('wifi scale · …a centre with no region goes to the network staff whose scope names it', count($nt('NGG-WF-NADM')) === 1 && str_contains($nt('NGG-WF-NADM')[0]['body'], 'Scale A'));
+    chk('wifi scale · …a gateway fetching recently is not silent', !str_contains(implode(' ', array_column($nt('NGG-WF-RLEAD'), 'body')), 'Scale B'));
+    chk('wifi scale · the same silence is told once', wifi_silent_digest()['silent'] === 0);
+    backend_dispatch('wifi.feed', ['gatewayId' => $gA['gateway']['gatewayId'], 'key' => $rs0[$gA['gateway']['gatewayId']]['key'], 'since' => 0]);
+    chk('wifi scale · a fetch ends the silence, so a later one is told again', db_row('SELECT silentAlertAt FROM wifi_gateways WHERE gatewayId = ?', [$gA['gateway']['gatewayId']])['silentAlertAt'] === '');
+
+    db_exec('DELETE FROM wifi_feed_load');
+    chk('wifi scale · load: with too few fetches measured, the verdict says so', backend_dispatch('admin.wifi.load', ['requesterId' => $A])['plan']['verdict'] === 'unmeasured');
+    // 113 quick fetches and 7 slow: the slowest 5% sits in the 250–500ms bucket.
+    for ($i = 0; $i < 120; $i++) wifi_load_record($i < 113 ? 30 : 300, 2000, $i !== 0);
+    $ld = backend_dispatch('admin.wifi.load', ['requesterId' => $A, 'plan' => 1000, 'poll' => 300]);
+    chk('wifi scale · load: each fetch is measured into the hour, with its tail', $ld['measured']['fetches'] === 120 && $ld['measured']['failed'] === 1 && $ld['measured']['maxMs'] === 300
+        && $ld['measured']['p95Ms'] === 500 && abs($ld['measured']['avgMs'] - (113 * 30 + 7 * 300) / 120) < 0.2);
+    chk('wifi scale · load: projected at the planned size against the budget', abs($ld['plan']['rps'] - 1000 / 300) < 0.01 && $ld['plan']['verdict'] === 'fine'
+        && backend_dispatch('admin.wifi.load', ['requesterId' => $A, 'plan' => 20000, 'poll' => 60])['plan']['verdict'] === 'too_much');
+    chk('wifi scale · load: network-wide, so the Wi-Fi regions capability', (backend_dispatch('admin.wifi.load', ['requesterId' => 'NGG-WF-NADM'])['error'] ?? '') === 'forbidden');
 
     $rm = backend_dispatch('admin.wifi.region.remove', ['requesterId' => $A, 'regionId' => $RID]);
     chk('wifi scale · removing a region unassigns its centres and their region speeds, nothing else', $rm['unassigned'] === 2

@@ -46,6 +46,12 @@ function php(snippet, extra = []) {
   fs.writeFileSync(f, code);
   return execSync('php ' + JSON.stringify(f), { cwd: ROOT }).toString().trim();
 }
+// The same, through bootstrap: every domain loaded, so an op can be dispatched.
+function phpB(snippet) {
+  const f = path.join(TMP, `s${++_seq}.php`);
+  fs.writeFileSync(f, `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)}; require ${JSON.stringify(ROOT + '/api/_lib/bootstrap.php')}; db_conn();\n` + snippet);
+  return execSync('php ' + JSON.stringify(f), { cwd: ROOT }).toString().trim();
+}
 function loadChromium() {
   for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
     try { return require(m).chromium; } catch (_) {}
@@ -110,6 +116,8 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     const errs = [];
     const btn = (p, name) => p.locator('button', { hasText: name }).first();
     const bodyText = p => p.evaluate(() => document.body.innerText);
+    // The boot splash fades after mount; a screenshot taken under it shows the splash, not the page.
+    const settle = p => p.waitForFunction(() => { const b = document.getElementById('ngg-boot'); return !b || b.classList.contains('gone'); }, null, { timeout: 30000 }).then(() => p.waitForTimeout(700), () => {});
     const waitText = (p, re, t) => p.waitForFunction(r => new RegExp(r).test(document.body.innerText), re.source, { timeout: t || 20000 });
 
     /* ── Sign in with a code, on a phone ── */
@@ -164,6 +172,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
       return tabs.length === 5 && tabs.every(t => { const r = t.getBoundingClientRect(); return r.width >= 44 && r.height >= 44; });
     }));
     chk('every control on Today is at least 44px tall on a touch screen', await fp.evaluate(() => Array.from(document.querySelectorAll('.fp3-app main button:not([role=tab])')).filter(b => b.offsetParent).every(b => b.getBoundingClientRect().height >= 44)));
+    await settle(fp);
     await fp.screenshot({ path: path.join(SHOTS, 'family-today-phone.png') });
 
     /* ── URL is the state; one sub-tab in the DOM ── */
@@ -182,7 +191,8 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await waitText(fp, /will be away/, 40000);
     await btn(fp, 'Tell the centre Tobi will be away').click();
     await fp.waitForSelector('[role=dialog] input[type=date]');
-    chk('the absence sheet opens with focus inside it', await fp.evaluate(() => !!document.activeElement.closest('[role=dialog]')));
+    // Focus moves in as the sheet finishes opening (a 30ms tick), so wait for it rather than sampling once.
+    chk('the absence sheet opens with focus inside it', await fp.waitForFunction(() => !!(document.activeElement && document.activeElement.closest('[role=dialog]')), null, { timeout: 3000 }).then(() => true, () => false));
     await fp.fill('[role=dialog] input[type=date] >> nth=0', '2026-11-07');
     await fp.locator('[role=dialog] button', { hasText: 'Tell the centre' }).click();
     await waitText(fp, /Say why Tobi will be away/);
@@ -248,6 +258,67 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await fp.keyboard.press('Escape');
     chk('…and Escape closes it, giving focus back to the switcher', await fp.evaluate(() => !document.querySelector('[role=dialog]') && document.activeElement && document.activeElement.getAttribute('aria-haspopup') === 'dialog'));
 
+    /* ── Money: the child asks, the parent pays ahead or confirms a transfer ── */
+    phpB(`setting_set('fees', ['enabled' => true, 'membershipFee' => 12000, 'membershipEveryMonths' => 12, 'monthlyDues' => 2000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false] + fees_settings(), 'test');
+          setting_set('membership_pay', ['bankName' => 'Test Bank', 'accountName' => 'Afrovanguard NGG', 'accountNumber' => '0123456789'], 'test');
+          db_exec("UPDATE members SET joinDate = ? WHERE memberId IN ('NGG-FU-KID','NGG-FU-SIB')", [gmdate('Y-m-d', strtotime(gmdate('Y-m-15') . ' -3 months'))]);
+          foreach (['NGG-FU-KID', 'NGG-FU-SIB'] as $k) fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$k]));`);
+    const kidTok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-FU-KID'"), false);`, ['session']);
+    const kctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await kctx.addCookies([
+      { name: 'ngg_sess', value: kidTok, domain: '127.0.0.1', path: '/', httpOnly: true },
+      { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' },
+    ]);
+    const kp = await kctx.newPage();
+    kp.on('pageerror', e => errs.push('member: ' + String(e).slice(0, 200)));
+    await kp.goto(BASE + '/dashboard/account', { waitUntil: 'domcontentloaded' }); await waitForBoot(kp);
+    await kp.waitForSelector('.m9x-ask-b', { timeout: 40000 });
+    const kText = await bodyText(kp);
+    chk('the member\'s money screen has no "I\'ve made a payment"; one button asks their parent instead', !/I've made a payment/.test(kText) && await kp.locator('.m9x-ask-b').count() === 1);
+    await kp.locator('.m9x-ask-b').click();
+    await waitText(kp, /Sent to your parent|Asked /, 15000);
+    chk('…and pressing it puts a request in the parent\'s family inbox, tied to the child',
+      php(`echo db_row("SELECT COUNT(*) c FROM guardian_notices WHERE kind = 'nudge' AND memberId = 'NGG-FU-KID'")['c'];`) === '1');
+    await settle(kp);
+    await kp.screenshot({ path: path.join(SHOTS, 'member-ask-parent-phone.png') });
+    const raw = await kp.evaluate(() => NGGApi.member.raiseRequest({ kind: 'payment', amount: 500, reference: 'X' }).then(() => 'accepted', e => (e && (e.code || e.message)) || 'error'));
+    chk('…and the member route refuses a payment claim outright', raw === 'ask_parent');
+
+    const tobi = php(`echo db_row("SELECT linkId FROM guardian_wards WHERE memberId = 'NGG-FU-KID'")['linkId'];`);
+    await fp.goto(BASE + '/family?view=today&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /asked you to pay their fees/, 40000);
+    const t2 = await bodyText(fp);
+    chk('the parent\'s Today puts the child\'s ask in the to-do list', /Tobi asked you to pay their fees/.test(t2));
+    chk('…and Today is fuller: things to do for the child, what is coming, and their lessons', /For Tobi/.test(t2) && /Coming up/.test(t2) && /What Tobi is learning/.test(t2) && /Pay ahead/.test(t2));
+    await settle(fp);
+    await fp.screenshot({ path: path.join(SHOTS, 'family-today-fees-phone.png'), fullPage: true });
+
+    await fp.goto(BASE + '/family?view=fees&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Pay ahead/, 40000);
+    const opts = fp.locator('.fp3x-opts button');
+    chk('Fees offers paying 1, 3, 6 or 12 months ahead, each priced', await opts.count() === 4 && /₦/.test(await opts.first().innerText()));
+    await opts.nth(2).click();
+    chk('…choosing one marks it pressed', (await opts.nth(2).getAttribute('aria-pressed')) === 'true');
+    await settle(fp);
+    await fp.screenshot({ path: path.join(SHOTS, 'family-pay-ahead-phone.png'), fullPage: true });
+    const want = await fp.locator('.fp3x-lines .is-total b').innerText();
+    await fp.locator('.fp3x-go', { hasText: 'ahead' }).click();
+    await fp.waitForURL(/\/pay\//, { timeout: 20000 });
+    const inv = JSON.parse(php(`echo json_encode(db_row("SELECT purpose, total FROM membership_invoices WHERE memberId = 'NGG-FU-KID' AND status = 'open' ORDER BY id DESC LIMIT 1"));`));
+    chk('paying ahead opens an advance invoice for the figure on screen, priced by the server', inv && inv.purpose === 'advance' && want.replace(/\D/g, '') === String(inv.total));
+    await waitText(fp, /Pay ahead for Tobi/, 40000);
+    chk('…and the /pay page names it as paying ahead', true);
+
+    await fp.goto(BASE + '/family?view=fees&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await waitText(fp, /Paid by transfer or at the desk/, 40000);
+    await fp.locator('.fp3x-ghost', { hasText: 'I’ve paid' }).click();
+    await fp.fill('.fp3x-form input >> nth=0', '2000');
+    await fp.fill('.fp3x-form input >> nth=1', 'TRF-FU-7781');
+    await fp.locator('.fp3x-form button[type=submit]').click();
+    await waitText(fp, /Your payment is being checked/, 20000);
+    chk('the parent confirms a transfer: a claim for the desk, marked as theirs, and the page says it is being checked',
+      php(`echo json_encode(db_row("SELECT amount, reference, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID' AND kind = 'payment'"));`) === '{"amount":2000,"reference":"TRF-FU-7781","fam":1}');
+
     /* ── The emailed link, on another device ── */
     const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const lp = await lctx.newPage();
@@ -261,6 +332,7 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     await waitText(lp, /Your children · 2/, 40000);
     chk('the emailed link signs in, and on a desktop the children are in the sidebar', true);
     chk('…and is stripped from the address bar', !/fsignin/.test(lp.url()));
+    await settle(lp);
     await lp.screenshot({ path: path.join(SHOTS, 'family-desktop.png') });
 
     /* ── Sign out ── */

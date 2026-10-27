@@ -193,6 +193,7 @@ class Fp3Portal extends React.Component {
     const rs = [], W = { warn: ["#fdf2d8", "#7a5600"], bad: ["#fdeaea", "#a12a2a"], neutral: ["#efede8", "#48484e"] };
     if (x.status !== "active" || !x.loaded) return rs;
     x.conduct.fines.forEach(() => rs.push(["Fine to review", "ph ph-warning-circle", W.warn]));
+    fp3Asks(x).forEach(a => rs.push([a.badge, "ph ph-hand-waving", W.warn]));
     if ((this.curRes(x) || {}).status === "missing") rs.push(["Results due", "ph ph-upload-simple", W.bad]);
     if (this.planOpen(x)) rs.push(["Plan to sign", "ph ph-signature", W.warn]);
     this.inbox().filter(m => m.sign && !m.signed && m.ward === x.linkId).forEach(() => rs.push(["Report to sign", "ph ph-file-text", W.neutral]));
@@ -316,7 +317,13 @@ class Fp3Portal extends React.Component {
        A safeguarding worry is not a case: it goes straight to the lead by phone. */
     const supCase = Number(new URLSearchParams(window.location.search).get("case")) || 0;
     const supPhone = typeof CONTACT !== "undefined" ? CONTACT.phoneDisplay : "", supTel = typeof CONTACT !== "undefined" ? CONTACT.phone : "";
-    out.mainSlotEnd = sec === "account" ? <React.Fragment>
+    /* Below the design's own page: on Today, what a parent can do next and
+       what is coming; on Fees, paying ahead and telling the centre about a
+       payment made offline. */
+    const wl = active && loaded;
+    out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
+      : sec === "money" && wl && w.fees.enabled ? <div className="fp3x-more" key={w.linkId}><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></div>
+      : sec === "account" ? <React.Fragment>
       {typeof NggSupportDesk === "function" ? <div className="fp3x-support"><NggSupportDesk api={NGGApi.family.support} initialCase={supCase} source="family"
         safeguard={supPhone ? { text: "Call " + supPhone, onClick: () => { location.href = "tel:" + String(supTel || supPhone).replace(/[^+\d]/g, ""); } } : null}
         onCase={n => { try { const u = new URL(window.location.href); if (n) u.searchParams.set("case", n); else u.searchParams.delete("case"); window.history.replaceState({}, "", u.toString()); } catch (_) {} }}/></div> : null}
@@ -349,12 +356,13 @@ class Fp3Portal extends React.Component {
       wards.forEach(x => {
         if (x.status !== "active" || !x.loaded) return;
         x.conduct.fines.forEach(fn => todo.push(["ph ph-warning-circle", "A " + N(fn.amount) + " fine for " + x.member.first, fn.reason, "Review", () => this.go("money", { childId: x.linkId }), "warn"]));
+        fp3Asks(x).forEach(a => todo.push(["ph ph-hand-waving", a.h, a.s, a.cta, () => this.go("money", { childId: x.linkId }), "warn"]));
         const cr0 = this.curRes(x); if (cr0 && cr0.status === "missing") todo.push(["ph ph-upload-simple", x.member.first + "’s " + cr0.name + " results aren’t in yet", "Due " + cr0.due + ". Members upload their results every session, and the mentor builds the plan from them.", "See", () => this.go("progress", { childId: x.linkId, rsSession: "", sub: Object.assign({}, S.sub, { progress: "results" }) }), "warn"]);
         const po = this.planOpen(x); if (po) todo.push(["ph ph-signature", "Read and sign " + x.member.first + "’s session plan", "Built from the " + po.name + " results and checked by " + po.plan.reviewedBy + ".", "Read", () => this.go("progress", { childId: x.linkId, rsSession: po.id, sub: Object.assign({}, S.sub, { progress: "results" }) }), "neutral"]);
       });
       this.inbox().filter(mm => mm.sign && !mm.signed).forEach(mm => todo.push(["ph ph-file-text", "Sign: " + mm.h, "So the mentor knows home has seen it.", "Open", () => { this.readMsg(mm); openSheet("msg", { msgId: mm.id }); }, "neutral"]));
       unanswered.slice(0, 1).forEach(e => todo.push(["ph ph-calendar-star", "Can you come? " + e.title, e.date + " · " + e.time + ". Families are expected.", "Reply", () => this.go("attendance", { sub: Object.assign({}, S.sub, { attendance: "coming" }) }), "neutral"]));
-      const RANK = { "ph ph-warning-circle": 0, "ph ph-upload-simple": 1, "ph ph-signature": 2, "ph ph-file-text": 3, "ph ph-calendar-star": 4 };
+      const RANK = { "ph ph-hand-waving": 0, "ph ph-warning-circle": 0, "ph ph-upload-simple": 1, "ph ph-signature": 2, "ph ph-file-text": 3, "ph ph-calendar-star": 4 };
       todo.sort((a, b) => RANK[a[0]] - RANK[b[0]]);
       out.todoN = String(todo.length); out.todoMore = todo.length > 3; out.todoMoreL = S.todoAll ? "Show fewer" : "Show " + Math.min(5, todo.length - 3) + " more"; out.toggleTodo = () => this.setState(st => ({ todoAll: !st.todoAll }));
       out.todo = todo.slice(0, S.todoAll ? 8 : 3).map((x, ti) => ({ bt: ti ? "1px solid #f1efea" : "0", icon: x[0], h: x[1], s: x[2], cta: x[3], onClick: x[4], bg: x[5] === "warn" ? "#fffaf0" : "#fff", bd: x[5] === "warn" ? "#f3e3bb" : "#e8e5dd", ibg: x[5] === "warn" ? "#fdf2d8" : "#efede8", ifg: x[5] === "warn" ? "#7a5600" : "#3a3a40" }));
@@ -365,7 +373,9 @@ class Fp3Portal extends React.Component {
         out.ac = { h: first + "’s account", lab: !F.enabled ? "No fees" : F.joining ? "Joining invoice" : F.payable ? "To pay now" : "All paid", amount: N(F.payable),
           sub: !F.enabled ? "The centre hasn’t set up fees for " + first + "’s account." : F.payable ? (F.joining ? "Membership and the first month’s commitment fee, charged only for the Saturdays left." : fp3Owed(F.lines)) : "Thank you. Nothing is owed for " + first + ".",
           canPay: F.payable > 0 && !pend, payL: F.payOnline ? "Pay " + N(F.payable) : "How to pay", pay: () => F.payOnline ? openSheet("pay") : this.go("money", { bank: true }), pending: pend && F.payable > 0, pendingL: "Bank transfer being checked",
-          facts: [["Next charge", F.next[0] ? N(F.next[0].amount) : "—", F.next[0] ? F.next[0].when : "Nothing scheduled"], ["Training place", chip, "Covered by NGG, not a bill"]].concat(actv.length > 1 ? [["All your children", N(house), house ? "To pay across " + actv.length + " children" : "Nothing owed"]] : []).map(f => ({ l: f[0], v: f[1], s: f[2] })),
+          facts: [["Next charge", F.next[0] ? N(F.next[0].amount) : "—", F.next[0] ? F.next[0].when : "Nothing scheduled"]]
+            .concat(F.ahead && F.ahead.paidThrough ? [["Paid ahead", "to " + F.ahead.paidThroughL, N(F.ahead.credit) + " held on the account"]] : [])
+            .concat([["Training place", chip, "Covered by NGG, not a bill"]]).concat(actv.length > 1 ? [["All your children", N(house), house ? "To pay across " + actv.length + " children" : "Nothing owed"]] : []).map(f => ({ l: f[0], v: f[1], s: f[2] })),
           labBg: !F.enabled || !F.payable ? "#16301f" : "#3a2c0a", labFg: !F.enabled || !F.payable ? "#8fe0ad" : "#f8d98a",
           toFees: () => this.go("money") }; }
       const rc = this.curRes(w), sDelta = w.score ? tot(w.score.now) - tot(w.score.prev) : 0;
@@ -680,3 +690,135 @@ class Fp3Portal extends React.Component {
 }
 
 window.Fp3Portal = Fp3Portal;
+
+
+/* ── What a child asked of their parents (member_family_nudge) ─────────────
+   Only while it still applies: an ask to pay goes once nothing is owed, an
+   ask to confirm goes once the parent has told the centre. */
+function fp3Asks(x) {
+  const F = x.fees || {}, first = x.member.first;
+  if (!F.asked || F.claim || !(F.payable > 0 || F.joining)) return [];
+  return [{ badge: first + " asked about fees", h: first + " asked you to pay their fees", s: "Pay online here, by transfer, or ahead for the months to come. Already paid by transfer or at the desk? Press I’ve paid on Fees and give the reference.", cta: "Open Fees" }];
+}
+
+/** Fees → Pay ahead: months of the commitment fee (and any renewal among them), priced by the server. */
+function Fp3Ahead({ c, w }) {
+  const A = w.fees.ahead, qs = (A && A.quotes) || [], first = w.member.first, N = n => c.naira(n);
+  const [pick, setPick] = React.useState(() => (qs.find(q => q.months === 3) || qs[0] || {}).months || 0);
+  const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
+  if (!A) return null;
+  const q = qs.find(x => x.months === pick) || qs[0];
+  const go = () => {
+    if (!q || busy || !c.can()) return;
+    setBusy(true); setErr("");
+    NGGApi.family.act("fees.advance", { linkId: w.linkId, months: q.months })
+      .then(r => { if (r && r.payUrl) window.location.assign(r.payUrl); else { setBusy(false); setErr("The payment page couldn’t be opened. Try again."); } })
+      .catch(e => { setBusy(false); setErr(fp3Err(e)); });
+  };
+  return (
+    <section className="fp3x-card" aria-labelledby={"fp3x-ah-" + w.linkId}>
+      <div className="fp3x-card-h">
+        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-calendar-plus"/></span>
+        <div>
+          <h2 id={"fp3x-ah-" + w.linkId}>Pay ahead</h2>
+          <p>{A.paidThrough ? first + " is paid to the end of " + A.paidThroughL + ". " + N(A.credit) + " is held on the account." : "Pay several months of " + first + "’s commitment fee in one go, with any membership renewal that falls in them."}</p>
+        </div>
+      </div>
+      {q ? <React.Fragment>
+        <div className="fp3x-opts" role="group" aria-label="How many months ahead">
+          {qs.map(x => <button key={x.months} type="button" aria-pressed={x.months === q.months ? "true" : "false"} className={"fp3x-opt" + (x.months === q.months ? " is-on" : "")} onClick={() => setPick(x.months)}>
+            <b>{x.months} month{x.months === 1 ? "" : "s"}</b><span>to {x.throughL}</span><em>{N(x.total)}</em>
+          </button>)}
+        </div>
+        <ul className="fp3x-lines" aria-label="What this pays">
+          {q.items.map((it, i) => <li key={i}><span>{it.label}<small>{it.detail}</small></span><b>{it.amount < 0 ? "− " + N(-it.amount) : N(it.amount)}</b></li>)}
+          <li className="is-total"><span>Total</span><b>{N(q.total)}</b></li>
+        </ul>
+        {err && <p className="fp3x-err" role="alert">{err}</p>}
+        <button type="button" className="fp3x-go" onClick={go} disabled={busy}>{busy ? "Opening the invoice…" : "Pay " + N(q.total) + " ahead"}</button>
+        <p className="fp3x-fine">Nothing is charged early. The payment waits on {first}’s account and meets each month’s fee on the 1st, so no reminder comes while it lasts. Card, bank or USSD through Paystack, or by transfer.</p>
+      </React.Fragment> : <p className="fp3x-fine">Nothing to pay ahead right now.</p>}
+    </section>
+  );
+}
+
+/** Fees → I've paid: a parent tells the centre about a transfer or cash at the desk. The desk checks it against the statement. */
+function Fp3Paid({ c, w }) {
+  const F = w.fees, first = w.member.first, N = n => c.naira(n), asked = !!F.asked;
+  const [open, setOpen] = React.useState(false);
+  const [amount, setAmount] = React.useState(F.payable ? String(F.payable) : "");
+  const [ref, setRef] = React.useState(""), [when, setWhen] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [busy, setBusy] = React.useState(false), [err, setErr] = React.useState("");
+  if (F.claim) return (
+    <section className="fp3x-card" aria-label="Payment being checked">
+      <div className="fp3x-card-h"><span className="fp3x-ic is-ok" aria-hidden="true"><i className="ph ph-hourglass-medium"/></span>
+        <div><h2>Your payment is being checked</h2><p>{N(F.claim.amount)}{F.claim.reference ? " · ref " + F.claim.reference : ""}, told to the centre {F.claim.when}. The desk matches it to the bank statement and the receipt is emailed. Please don’t pay it twice.</p></div></div>
+    </section>
+  );
+  const send = e => {
+    e.preventDefault();
+    const amt = Math.round(Number(String(amount).replace(/[^\d.]/g, "")));
+    if (!(amt > 0)) return setErr("How much did you pay?");
+    if (ref.trim().length < 3) return setErr("Give the transfer reference or the receipt number, so the desk can find it.");
+    if (busy || !c.can()) return;
+    setBusy(true); setErr("");
+    NGGApi.family.act("request", { linkId: w.linkId, kind: "payment", amount: amt, reference: ref.trim(), paidAt: when })
+      .then(() => { setBusy(false); c.toast("Sent. The centre checks it against the statement and emails the receipt."); c.loadWard(w.linkId); })
+      .catch(er => { setBusy(false); setErr(fp3Err(er)); });
+  };
+  return (
+    <section className={"fp3x-card" + (asked ? " is-asked" : "")} aria-labelledby={"fp3x-pd-" + w.linkId}>
+      <div className="fp3x-card-h">
+        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-receipt"/></span>
+        <div>
+          <h2 id={"fp3x-pd-" + w.linkId}>Paid by transfer or at the desk?</h2>
+          <p>{asked ? first + " asked about their fees. If you have already paid, this is where you say so. " : ""}Tell the centre what you paid and the reference. Nothing changes on the account until the desk has matched it to the statement.</p>
+        </div>
+      </div>
+      {!open ? <button type="button" className="fp3x-ghost" aria-expanded="false" onClick={() => setOpen(true)}>I’ve paid</button> :
+      <form className="fp3x-form" onSubmit={send} noValidate>
+        <label><span>Amount paid (₦)</span><input inputMode="numeric" autoComplete="off" value={amount} onChange={e => { setAmount(e.target.value); setErr(""); }}/></label>
+        <label><span>Reference or receipt number</span><input autoComplete="off" value={ref} onChange={e => { setRef(e.target.value); setErr(""); }} placeholder="e.g. TRF 2026 10 27 1234"/></label>
+        <label><span>Date paid</span><input type="date" value={when} max={new Date().toISOString().slice(0, 10)} onChange={e => setWhen(e.target.value)}/></label>
+        {err && <p className="fp3x-err" role="alert">{err}</p>}
+        <div className="fp3x-row"><button type="submit" className="fp3x-go" disabled={busy}>{busy ? "Sending…" : "Tell the centre"}</button><button type="button" className="fp3x-ghost" onClick={() => { setOpen(false); setErr(""); }}>Cancel</button></div>
+      </form>}
+    </section>
+  );
+}
+
+/** Today, below the design's page: quick actions, what is coming, and this week's lessons. */
+function Fp3TodayMore({ c, w }) {
+  const S = c.state, first = w.member.first, F = w.fees, L = w.learning || {};
+  const acts = [
+    ["ph ph-calendar-blank", "Tell the centre about an absence", "Before or after; marked excused", () => c.openSheet("leave")],
+    w.member.hasMentor ? ["ph ph-chat-teardrop-text", "Ask " + w.member.mentor, "About growth, results or the plan", () => c.openSheet("mentor")] : null,
+    F.enabled && F.ahead && (F.ahead.quotes || []).length ? ["ph ph-calendar-plus", "Pay ahead", F.ahead.paidThrough ? "Paid to " + F.ahead.paidThroughL : "Months of fees in one go", () => c.go("money")] : null,
+    ["ph ph-identification-card", "Replacement ID card", "Lost, damaged or wrong name", () => c.openSheet("idcard")],
+  ].filter(Boolean);
+  const evs = S.events ? c.events().slice(0, 3) : null;
+  return (
+    <div className="fp3x-more">
+      <section className="fp3x-card" aria-labelledby="fp3x-qa">
+        <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
+        <div className="fp3x-acts">
+          {acts.map((a, i) => <button key={i} type="button" className="fp3x-act" onClick={a[3]}><i className={a[0]} aria-hidden="true"/><span><b>{a[1]}</b><small>{a[2]}</small></span></button>)}
+        </div>
+      </section>
+      <section className="fp3x-card" aria-labelledby="fp3x-cu">
+        <div className="fp3x-h-row"><h2 id="fp3x-cu" className="fp3x-h">Coming up</h2>
+          {evs && evs.length ? <button type="button" className="fp3x-link" onClick={() => c.go("attendance", { sub: Object.assign({}, S.sub, { attendance: "coming" }) })}>All<i className="ph ph-arrow-right" aria-hidden="true"/></button> : null}</div>
+        {S.eventsErr ? <div className="fp3x-state" role="alert"><p>{S.eventsErr}</p><button type="button" className="fp3x-retry" onClick={() => c.loadEvents()}>Try again</button></div>
+          : !evs ? <div className="fp3x-skel fp3x-skel-in" role="status" aria-label="Loading what’s coming up"><span/></div>
+          : !evs.length ? <p className="fp3x-empty">Nothing on the calendar yet. Events at {w.member.centre} show here as soon as they’re planned.</p>
+          : <ul className="fp3x-evs">{evs.map(e => <li key={e.id}><span className="fp3x-date" aria-hidden="true"><b>{e.dd}</b>{e.mm}</span><span><b>{e.title}</b><small>{[e.date, e.time, e.where].filter(Boolean).join(" · ")}</small></span>{e.expected ? <em>{S.rsvp[e.id] === "yes" ? "Coming" : S.rsvp[e.id] ? "Replied" : "Families expected"}</em> : null}</li>)}</ul>}
+      </section>
+      <section className="fp3x-card" aria-labelledby="fp3x-ln">
+        <div className="fp3x-h-row"><h2 id="fp3x-ln" className="fp3x-h">What {first} is learning</h2><span className="fp3x-meta">{L.completed || 0} of {L.total || 0} lessons done</span></div>
+        <div className="fp3x-bar" role="progressbar" aria-label={first + "’s lessons"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={L.pct || 0}><span style={{ width: (L.pct || 0) + "%" }}/></div>
+        {(L.next || []).length ? <ul className="fp3x-evs">{L.next.slice(0, 3).map((u, i) => <li key={i}><span className="fp3x-ic" aria-hidden="true"><i className="ph ph-book-open-text"/></span><span><b>{u.title}</b><small>{[u.course, u.due].filter(Boolean).join(" · ")}</small></span>{u.overdue ? <em className="is-warn">Overdue</em> : null}</li>)}</ul>
+          : <p className="fp3x-empty">{L.total ? "All caught up. New lessons appear here when the instructor sets them." : "Lessons appear here once " + first + "’s track has them."}</p>}
+      </section>
+    </div>
+  );
+}

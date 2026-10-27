@@ -4520,3 +4520,25 @@ CREATE INDEX idx_wifi_stats_hour ON wifi_gateway_stats (hour);
 ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INT NOT NULL DEFAULT 0;
 
 INSERT INTO schema_version (version) VALUES (191) ON DUPLICATE KEY UPDATE version = version;
+
+-- 192: Wi-Fi silence alerts and the feed's measured cost.
+ALTER TABLE wifi_gateways ADD COLUMN silentAlertAt VARCHAR(32) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS wifi_feed_load (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  hour VARCHAR(13) NOT NULL,
+  fetches INT NOT NULL DEFAULT 0,
+  failed INT NOT NULL DEFAULT 0,
+  msTotal BIGINT NOT NULL DEFAULT 0,
+  msMax INT NOT NULL DEFAULT 0,
+  bytesTotal BIGINT NOT NULL DEFAULT 0,
+  memMaxKb INT NOT NULL DEFAULT 0,
+  b25 INT NOT NULL DEFAULT 0,
+  b50 INT NOT NULL DEFAULT 0,
+  b100 INT NOT NULL DEFAULT 0,
+  b250 INT NOT NULL DEFAULT 0,
+  b500 INT NOT NULL DEFAULT 0,
+  bOver INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_feed_load_hour (hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (192) ON DUPLICATE KEY UPDATE version = version;

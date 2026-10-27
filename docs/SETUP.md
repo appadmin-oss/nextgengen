@@ -150,9 +150,9 @@ have their own addresses, so a member can be sent straight to one:
 
 | | |
 |---|---|
-| `/dashboard/account` | The statement: every line with a running total, and "I've made a payment" |
+| `/dashboard/account` | The statement: every line with a running total, and "Ask my parent" (the parent pays, or confirms a payment, from /family) |
 | `/dashboard/records` | Attendance, the rate (withheld if no term calendar is set), certificates |
-| `/dashboard/requests` | Payment claims, appeals, leave, replacement ID — and what the desk replied |
+| `/dashboard/requests` | Appeals, leave, replacement ID — and what the desk replied (payment claims come from the parent's family account) |
 
 What a member raises lands in **Control Room → People → Member requests**.
 Approving a payment claim posts it through the ordinary ledger path, so money

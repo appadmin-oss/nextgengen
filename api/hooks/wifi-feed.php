@@ -28,13 +28,18 @@ $res = gs_call('wifi.feed', [
     'dl' => $_GET['dl'] ?? null, 'ul' => $_GET['ul'] ?? null, 'rtt' => $_GET['rtt'] ?? null,
     'ip'        => client_ip(),
 ]);
+// What each fetch costs this host, from the request's start (wifi_load_record).
+$t0 = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
 if (empty($res['ok'])) {
     // Plain words a router log can show; the gateway keeps the users it has.
     http_response_code(($res['error'] ?? '') === 'bad_key' ? 401 : 400);
     header('Content-Type: text/plain; charset=utf-8');
-    echo '#error;' . preg_replace('/[^a-z_]/', '', (string)($res['error'] ?? 'failed')) . "\n";
+    $body = '#error;' . preg_replace('/[^a-z_]/', '', (string)($res['error'] ?? 'failed')) . "\n";
+    echo $body;
+    wifi_load_record((microtime(true) - $t0) * 1000, strlen($body), false);
     exit;
 }
 $out = wifi_feed_render($res, max(1, (int)($_GET['page'] ?? 1)));
 header('Content-Type: ' . $out['type'] . '; charset=utf-8');
 echo $out['body'];
+wifi_load_record((microtime(true) - $t0) * 1000, strlen($out['body']), true);

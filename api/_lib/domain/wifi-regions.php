@@ -308,6 +308,8 @@ function admin_wifi_gateways(array $p): array {
         $vb = $sort === 'health' ? $rank[$b['state']] : ($sort === 'online' ? (int)($b['stats']['active'] ?? 0) : ($sort === 'line' ? (float)($b['speed']['downMbps'] ?? 0) : $b[$sort]));
         return ($va <=> $vb) * $dir ?: strcmp($a['centre'] . $a['label'], $b['centre'] . $b['label']);
     });
+    // "Select all N matching": the ids under the same filter, in one request (admin.wifi.gateways.ids).
+    if (!empty($p['idsOnly'])) return ['ok' => true, 'ids' => array_column($list, 'gatewayId'), 'total' => count($list)];
     $size = max(1, min(WIFI_PAGE_MAX, (int)($p['pageSize'] ?? 25)));
     $page = max(1, (int)($p['page'] ?? 1));
     if (!$seesRegions) unset($facets['region']);
@@ -478,4 +480,183 @@ function wifi_median(array $xs): float {
     sort($xs); $n = count($xs);
     if (!$n) return 0.0;
     return round($n % 2 ? $xs[intdiv($n, 2)] : ($xs[$n / 2 - 1] + $xs[$n / 2]) / 2, 1);
+}
+
+
+/** admin.wifi.gateways.ids — every gateway id matching the list's filters, in scope. */
+function admin_wifi_gateways_ids(array $p): array { return admin_wifi_gateways(['idsOnly' => true] + $p); }
+
+/* ── Bulk acts on gateways ───────────────────────────────────────────────────
+ * One op, two declared actions (CLAUDE.md §6): `test` asks each gateway to
+ * measure its line at its next fetch; `rotate` gives each a new key, shown
+ * once, for the router's setup. Over a selection of gateway ids, or over a
+ * whole region (`regionId`: the Wi-Fi regions capability, or a lead of that
+ * region). The whole payload is checked before any write; capped and named;
+ * scope refused per row; `unchanged` reported apart (a test already asked);
+ * `expect` — the count the operator confirmed — must still be the count, so
+ * a list that grew underneath cannot change what was agreed; one audit event.
+ */
+const WIFI_BULK_MAX = 500;
+const WIFI_BULK_ACTIONS = ['test', 'rotate'];
+
+function admin_wifi_gateways_bulk(array $p): array {
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $action = (string)($p['action'] ?? '');
+    if (!in_array($action, WIFI_BULK_ACTIONS, true)) return ['ok' => false, 'error' => 'unknown_action'];
+    $by = (string)$g['requester']['memberId'];
+    $regionId = trim((string)($p['regionId'] ?? ''));
+    if ($regionId !== '') {
+        $reg = db_row("SELECT * FROM wifi_regions WHERE regionId = ? AND (removedAt = '' OR removedAt IS NULL) LIMIT 1", [$regionId]);
+        if (!$reg) return ['ok' => false, 'error' => 'not_found'];
+        $lead = (bool)db_row('SELECT 1 FROM wifi_region_leads WHERE regionId = ? AND memberId = ? LIMIT 1', [$regionId, $by]);
+        if (!$lead && !wifi_regions_allowed($g['requester'])) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:wifi_regions'];
+        $ids = array_column(db_all("SELECT w.gatewayId FROM wifi_gateways w JOIN wifi_region_centres rc ON rc.centre = w.centre
+                                    WHERE rc.regionId = ? AND (w.removedAt = '' OR w.removedAt IS NULL) ORDER BY w.centre, w.label", [$regionId]), 'gatewayId');
+    } else {
+        $ids = is_array($p['gatewayIds'] ?? null) ? array_values(array_unique(array_map('strval', $p['gatewayIds']))) : [];
+    }
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_selected'];
+    if (count($ids) > WIFI_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => WIFI_BULK_MAX, 'detail' => 'At most ' . WIFI_BULK_MAX . ' gateways at a time.'];
+    if (isset($p['expect']) && (int)$p['expect'] !== count($ids)) return ['ok' => false, 'error' => 'count_changed', 'count' => count($ids), 'detail' => 'The list changed: it is now ' . count($ids) . '. Check and confirm again.'];
+    // Validate every row before writing any.
+    $rows = []; $results = [];
+    foreach ($ids as $id) {
+        $f = wifi_gateway_for($g, $id);
+        if (!$f['ok']) { $results[$id] = ['gatewayId' => $id, 'ok' => false, 'error' => $f['error']]; continue; }
+        $rows[$id] = $f['row'];
+    }
+    $applied = 0; $unchanged = 0;
+    foreach ($rows as $id => $r) {
+        if ($action === 'test') {
+            if ((int)($r['testAsked'] ?? 0) === 1) { $results[$id] = ['gatewayId' => $id, 'ok' => true, 'unchanged' => true]; $unchanged++; continue; }
+            db_update('wifi_gateways', ['testAsked' => 1], ['id' => (int)$r['id']]);
+            $results[$id] = ['gatewayId' => $id, 'ok' => true];
+        } else {
+            $key = wifi_key_new();
+            db_update('wifi_gateways', ['keyHash' => hash('sha256', $key), 'keyTail' => substr($key, -4), 'keySetAt' => now_iso()], ['id' => (int)$r['id']]);
+            $results[$id] = ['gatewayId' => $id, 'ok' => true, 'key' => $key, 'label' => (string)$r['label'], 'centre' => (string)$r['centre']];
+        }
+        $applied++;
+    }
+    $refused = count($ids) - count($rows);
+    audit('wifi.gateway.bulk', $by, $regionId !== '' ? 'region:' . $regionId : 'selection', ['action' => $action, 'count' => count($ids), 'applied' => $applied,
+        'unchanged' => $unchanged, 'refused' => $refused, 'refusals' => array_values(array_filter($results, fn($x) => !$x['ok']))], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'action' => $action, 'ran' => count($ids), 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused,
+            'results' => array_map(fn($id) => $results[$id], $ids)];
+}
+
+/* ── A silent gateway is told to a person ────────────────────────────────────
+ * A gateway that has fetched before and has not for an hour is "silent": the
+ * centre's people may be locked out of the Wi-Fi, or kept on it after their
+ * access ended. Every fifteen minutes (web cron `wifi_silent`), each newly
+ * silent gateway goes into ONE digest per person — never one email per
+ * gateway — and is marked so the same silence is not told twice; its next
+ * fetch clears the mark (wifi_feed), so a second silence is told again.
+ *
+ * Who: the leads of the gateway's Wi-Fi region (who hold `network`). A centre
+ * with no region, or a region with no lead, goes to the network staff whose
+ * Wi-Fi scope names the centre; failing those, the network staff who see every
+ * centre. Somebody always hears.
+ */
+const WIFI_SILENT_AFTER = 3600;     // seconds without a fetch
+const WIFI_DIGEST_LINES = 40;       // gateways listed in one digest; the rest are counted
+
+function wifi_silent_digest(?int $now = null): array {
+    $now = $now ?? time();
+    $cut = gmdate('Y-m-d\TH:i:s\Z', $now - WIFI_SILENT_AFTER);
+    $rows = db_all("SELECT * FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND lastSeenAt <> '' AND lastSeenAt < ? AND silentAlertAt = '' ORDER BY centre, label", [$cut]);
+    if (!$rows) return ['ok' => true, 'silent' => 0, 'people' => 0];
+    $staff = staff_with_cap('network');
+    $byId = []; foreach ($staff as $m) $byId[(string)$m['memberId']] = $m;
+    $regionOf = []; foreach (db_all("SELECT rc.centre, rc.regionId FROM wifi_region_centres rc JOIN wifi_regions g ON g.regionId = rc.regionId AND (g.removedAt = '' OR g.removedAt IS NULL)") as $x) $regionOf[(string)$x['centre']] = (string)$x['regionId'];
+    $leads = []; foreach (db_all('SELECT regionId, memberId FROM wifi_region_leads') as $x) if (isset($byId[(string)$x['memberId']])) $leads[(string)$x['regionId']][] = (string)$x['memberId'];
+    $scopes = []; foreach ($staff as $m) $scopes[(string)$m['memberId']] = wifi_scope($m);
+    $to = [];
+    foreach ($rows as $r) {
+        $c = (string)$r['centre'];
+        $who = $leads[$regionOf[$c] ?? ''] ?? [];
+        if (!$who) foreach ($scopes as $mid => $sc) if ($sc !== null && in_array($c, $sc, true)) $who[] = $mid;
+        if (!$who) foreach ($scopes as $mid => $sc) if ($sc === null) $who[] = $mid;
+        foreach (array_unique($who) as $mid) $to[$mid][] = $r;
+    }
+    $people = 0;
+    foreach ($to as $mid => $list) {
+        $n = count($list);
+        $lines = array_map(fn($r) => '· ' . ((string)$r['label'] !== '' ? (string)$r['label'] : (string)$r['gatewayId']) . ' at ' . (string)$r['centre']
+            . ' — last heard ' . gmdate('j M, H:i', (int)strtotime((string)$r['lastSeenAt'])) . ' UTC', array_slice($list, 0, WIFI_DIGEST_LINES));
+        if ($n > WIFI_DIGEST_LINES) $lines[] = '…and ' . ($n - WIFI_DIGEST_LINES) . ' more.';
+        notify_people([$byId[$mid]], ['kind' => 'wifi', 'eyebrow' => 'NGG · Wi-Fi',
+            'title' => $n === 1 ? 'A Wi-Fi gateway has gone silent' : $n . ' Wi-Fi gateways have gone silent',
+            'intro' => ($n === 1 ? 'It has' : 'They have') . ' not fetched the list for over an hour. People may not be able to get on, or may stay on after their access ends.',
+            'body' => implode("\n", $lines) . "\n\nCheck the router has power and internet, then open it in Wi-Fi → Gateways: its diagnosis says what it last reported.",
+            'linkPage' => 'wifi', 'ctaPath' => '/club/wifi-gateways', 'ctaLabel' => 'Open Wi-Fi gateways →']);
+        $people++;
+    }
+    $stamp = gmdate('Y-m-d\TH:i:s\Z', $now);
+    foreach ($rows as $r) db_update('wifi_gateways', ['silentAlertAt' => $stamp], ['id' => (int)$r['id']]);
+    audit('wifi.silent.digest', 'system', 'wifi', ['gateways' => count($rows), 'people' => $people]);
+    return ['ok' => true, 'silent' => count($rows), 'people' => $people];
+}
+
+/* ── What the feed costs this host ───────────────────────────────────────────
+ * Measured, not guessed, before more than one pilot region goes live: every
+ * fetch adds its wall time (from the request's start, so bootstrap is in it),
+ * its bytes and its peak memory to the hour (wifi_feed_load, kept 30 days),
+ * with time buckets so a slow tail shows. admin.wifi.load turns that into
+ * requests a second today and, at the gateway count planned, a projection
+ * against a budget for shared hosting.
+ */
+const WIFI_LOAD_BUCKETS = [25 => 'b25', 50 => 'b50', 100 => 'b100', 250 => 'b250', 500 => 'b500'];
+const WIFI_LOAD_BUDGET = 0.25;      // busy-seconds per second the feed may use (a quarter of one worker)
+const WIFI_LOAD_PLAN_DEFAULT = 2000;
+const WIFI_LOAD_MIN_SAMPLE = 100;   // fetches before a verdict
+
+function wifi_load_record(float $ms, int $bytes, bool $ok, ?string $hour = null): void {
+    $hour = $hour ?? gmdate('Y-m-d\TH');
+    $ms = (int)round(max(0, $ms)); $kb = (int)ceil(memory_get_peak_usage() / 1024);
+    $col = 'bOver'; foreach (WIFI_LOAD_BUCKETS as $lim => $c) if ($ms < $lim) { $col = $c; break; }
+    $set = "fetches = fetches + 1, failed = failed + ?, msTotal = msTotal + ?, bytesTotal = bytesTotal + ?, $col = $col + 1,
+            msMax = CASE WHEN msMax < ? THEN ? ELSE msMax END, memMaxKb = CASE WHEN memMaxKb < ? THEN ? ELSE memMaxKb END";
+    $args = [$ok ? 0 : 1, $ms, $bytes, $ms, $ms, $kb, $kb, $hour];
+    try {
+        if (db_exec("UPDATE wifi_feed_load SET $set WHERE hour = ?", $args) > 0) return;
+        try { db_insert('wifi_feed_load', ['hour' => $hour, 'fetches' => 1, 'failed' => $ok ? 0 : 1, 'msTotal' => $ms, 'msMax' => $ms, 'bytesTotal' => $bytes, 'memMaxKb' => $kb, $col => 1]); }
+        catch (Throwable $e) { db_exec("UPDATE wifi_feed_load SET $set WHERE hour = ?", $args); /* a concurrent fetch made the hour first */ }
+        if (random_int(1, 200) === 1) db_exec('DELETE FROM wifi_feed_load WHERE hour < ?', [gmdate('Y-m-d\TH', time() - 30 * 86400)]);
+    } catch (Throwable $e) { /* measuring never breaks a fetch */ }
+}
+
+/** admin.wifi.load — the feed's measured cost, and what it would be at the planned size. Network-wide: the Wi-Fi regions capability. */
+function admin_wifi_load(array $p): array {
+    $g = wifi_network_gate($p); if (!$g['ok']) return $g;
+    $hours = db_all('SELECT * FROM wifi_feed_load WHERE hour >= ? ORDER BY hour', [gmdate('Y-m-d\TH', time() - 24 * 3600)]);
+    $t = ['fetches' => 0, 'failed' => 0, 'msTotal' => 0, 'msMax' => 0, 'bytesTotal' => 0, 'memMaxKb' => 0];
+    $b = array_fill_keys(array_merge(array_values(WIFI_LOAD_BUCKETS), ['bOver']), 0);
+    foreach ($hours as $h) {
+        foreach (['fetches', 'failed', 'msTotal', 'bytesTotal'] as $k) $t[$k] += (int)$h[$k];
+        $t['msMax'] = max($t['msMax'], (int)$h['msMax']); $t['memMaxKb'] = max($t['memMaxKb'], (int)$h['memMaxKb']);
+        foreach ($b as $k => $_) $b[$k] += (int)$h[$k];
+    }
+    $avg = $t['fetches'] ? $t['msTotal'] / $t['fetches'] : 0.0;
+    // p95 from the buckets: the upper edge of the bucket the 95th-percentile fetch falls in.
+    $p95 = 0; $acc = 0; $edges = array_flip(WIFI_LOAD_BUCKETS) + ['bOver' => max(500, $t['msMax'])];
+    foreach ($b as $k => $n) { $acc += $n; if ($t['fetches'] && $acc >= 0.95 * $t['fetches']) { $p95 = (int)$edges[$k]; break; } }
+    $gw = (int)(db_row("SELECT COUNT(*) c FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL")['c'] ?? 0);
+    $span = max(1, count($hours)) * 3600;
+    $plan = max(1, min(100000, (int)($p['plan'] ?? WIFI_LOAD_PLAN_DEFAULT)));
+    $poll = in_array((int)($p['poll'] ?? 0), array_values(WIFI_POLL), true) ? (int)$p['poll'] : WIFI_POLL['idle'];
+    $planRps = $plan / $poll;
+    $busy = $planRps * $avg / 1000;
+    $verdict = $t['fetches'] < WIFI_LOAD_MIN_SAMPLE ? 'unmeasured' : ($busy <= WIFI_LOAD_BUDGET ? 'fine' : ($busy <= 2 * WIFI_LOAD_BUDGET ? 'watch' : 'too_much'));
+    $regionsLive = (int)(db_row("SELECT COUNT(DISTINCT rc.regionId) c FROM wifi_gateways w JOIN wifi_region_centres rc ON rc.centre = w.centre WHERE (w.removedAt = '' OR w.removedAt IS NULL) AND w.lastSeenAt <> ''")['c'] ?? 0);
+    return ['ok' => true,
+        'hours' => array_map(fn($h) => ['hour' => (string)$h['hour'], 'fetches' => (int)$h['fetches'], 'avgMs' => (int)$h['fetches'] ? round((int)$h['msTotal'] / (int)$h['fetches'], 1) : 0, 'maxMs' => (int)$h['msMax']], $hours),
+        'measured' => ['fetches' => $t['fetches'], 'failed' => $t['failed'], 'avgMs' => round($avg, 1), 'p95Ms' => $p95, 'maxMs' => $t['msMax'],
+            'avgBytes' => $t['fetches'] ? (int)round($t['bytesTotal'] / $t['fetches']) : 0, 'memMaxKb' => $t['memMaxKb'], 'rps' => round($t['fetches'] / $span, 3), 'buckets' => $b],
+        'gateways' => $gw, 'regionsLive' => $regionsLive,
+        'plan' => ['gateways' => $plan, 'poll' => $poll, 'rps' => round($planRps, 2), 'busy' => round($busy, 3), 'budget' => WIFI_LOAD_BUDGET, 'verdict' => $verdict,
+            'advice' => ['unmeasured' => 'Not enough fetches yet to say. Let the pilot region run for a day first.',
+                'fine' => 'Within budget for shared hosting at this size. More regions can go live.',
+                'watch' => 'Close to the budget. Go live a region at a time and look again, or move the idle poll to five minutes.',
+                'too_much' => 'Over budget. Serve the feed from a small separate host, or lengthen the poll, before more regions go live.'][$verdict]]];
 }

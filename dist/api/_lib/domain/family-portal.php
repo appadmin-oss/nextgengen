@@ -117,6 +117,14 @@ function family_fees_view(array $m): ?array {
             'completes' => $start !== '' ? gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC +' . ($tm + $sm) . ' months')) : '',
             'paused' => (string)($t['creditPausedAt'] ?? '') !== ''],
         'bank' => $pay['bankName'] !== '' && $pay['accountNumber'] !== '' ? ['name' => $pay['accountName'], 'bank' => $pay['bankName'], 'account' => $pay['accountNumber']] : null,
+        /* Paying ahead: the credit already waiting, the month it reaches, and a
+           priced choice per number of months — priced here, never on the page.
+           None while the joining invoice is open: that comes first. */
+        'ahead' => !$inv && !empty($cfg['enabled']) && function_exists('membership_advance_plan') && member_is_ngg($m) ? membership_advance_plan($m) : null,
+        // What the child asked of their parents lately (member_family_nudge).
+        'asked' => function_exists('family_nudges_of') ? family_nudges_of($mid, 14) : null,
+        'claim' => ($c = db_row("SELECT amount, reference, createdAt FROM member_requests WHERE memberId = ? AND kind = 'payment' AND status = 'open' ORDER BY id DESC LIMIT 1", [$mid]))
+            ? ['amount' => (int)$c['amount'], 'reference' => (string)$c['reference'], 'at' => substr((string)$c['createdAt'], 0, 10)] : null,
     ];
 }
 

@@ -44,7 +44,7 @@ if ($method === 'GET') {
             'amount' => $b['amount'] ?? null, 'reference' => $b['reference'] ?? '',
             'proofUrl' => $b['proofUrl'] ?? '', 'paidAt' => $b['paidAt'] ?? '',
             'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
-            'refEntryId' => $b['refEntryId'] ?? '', 'ip' => client_ip()]);
+            'refEntryId' => $b['refEntryId'] ?? '', 'ip' => client_ip(), 'fromMember' => true]);
     }
 } else {
     json_error('method_not_allowed', 405);

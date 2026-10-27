@@ -3755,3 +3755,61 @@ is unchanged and still to do).
 - Still open: alerts (a digest per region lead when a gateway is silent), bulk
   acts per region (rotate keys, ask for line tests), the load measurement
   before more than one pilot region.
+
+## Parents pay; children ask (2026-10-27)
+
+The owner: parents should be able to pay in advance for membership and dues,
+their dashboard felt empty, and a child should not record "I've made a payment"
+but nudge a parent to pay or to confirm they paid — with one button, not two.
+
+- **Paying ahead** is an invoice of a new purpose, `advance`
+  (`membership_advance_invoice`). Settling posts only the payment: the charges
+  arrive on their own dates through the accrual and meet the credit. Pre-posting
+  the months was rejected: it would charge a fee at today's price for a month
+  that may be priced differently, and a parent who paid "three months" would
+  see three charges and no balance. `membership_advance_plan` walks the
+  upcoming charges in date order and spends the credit on them, so "paid ahead
+  to March" is what the accrual will do, renewal included. Quotes (1/3/6/12
+  months) are priced by the server; the page sends only the number of months.
+  A new advance or balance invoice voids the other's open one, so a family
+  never holds two links for overlapping money.
+- **A payment claim moved from the member to the parent.** The member route
+  passes `fromMember` and `member_request_create` refuses `payment` with
+  `ask_parent`; the family route accepts it (FAMILY_REQUEST_KINDS). This
+  reverses "a parent cannot claim a payment" — the old reason (a verified
+  receipt is the member's path) no longer holds once the member has no path.
+  The desk's check is unchanged: a claim moves no money until approved.
+- **Ask my parent** (`member_family_nudge`): one ask, to every active parent, a
+  `guardian_notices` row (kind `nudge`, tied to the child) and an email; once a
+  day by the notice's unique key. It is refused when nothing is owed.
+- **The family Today** gained quick actions, Coming up and the child's
+  lessons, below the compiled design (`mainSlotEnd`), and the child's ask in
+  the to-do list. Fees gained Pay ahead and "Paid by transfer or at the desk?".
+- The member app's two buttons were recompiled from the design
+  (`member-portal-v9.dc.html`: `openAsk`); the compile was checked to be
+  byte-identical before the edit.
+
+## Wi-Fi: the three open items (2026-10-27)
+
+- **Silent gateways** (`wifi_silent_digest`, web cron `wifi_silent`, every 15
+  minutes): one digest per person, region leads first, then the staff whose
+  Wi-Fi scope names the centre, then those who see every centre. Told once per
+  silence (`silentAlertAt`, cleared by the next fetch).
+- **Bulk acts** (`admin.wifi.gateways.bulk`, actions `test` | `rotate`, over a
+  selection or a region): capped at `WIFI_BULK_MAX` 500, validated before any
+  write, scope refused per row, `unchanged` for a test already asked, `expect`
+  must equal the count, one audit event. A region needs the Wi-Fi regions
+  capability or to be its lead. Rotated keys are returned once, as a list to
+  copy. `admin.wifi.gateways.ids` gives "all N matching".
+- **Load** (`wifi_load_record` from the feed route, `admin.wifi.load`): wall
+  time from the request's start, bytes, peak memory and time buckets per hour.
+  The projection is gateways ÷ poll × average time against a budget of a
+  quarter of one worker (`WIFI_LOAD_BUDGET`); fewer than 100 fetches reads
+  "not measured". This is the gate the plan named: a second region goes live
+  only once it reads *Within budget*.
+- Router scripts stay **pilot first** on real hardware; nothing here changes
+  that.
+- Also: the members search box drew a second focus ring on its input
+  (`.cr-app :focus-visible`, 0,2,0, beat the exemption's 0,1,1). The exemption
+  is `html:root …` now (0,2,2); `tests/control-room.test.js` checks one ring.
+

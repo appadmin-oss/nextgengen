@@ -206,6 +206,8 @@ function web_cron_run(): void {
                 // Cloudinary usage: read every six hours, alert as it climbs, pause uploads when full.
                 // Lessons set their own homework when their week begins (assignments.php), every six hours.
                 if (web_cron_due('assign_auto', web_cron_cfg('assign_auto', 21600)) && function_exists('assignment_auto_issue')) web_cron_guard('assign_auto', fn() => assignment_auto_issue());
+                // A Wi-Fi gateway silent for an hour: one digest per region lead (wifi-regions.php).
+                if (web_cron_due('wifi_silent', web_cron_cfg('wifi_silent', 900)) && function_exists('wifi_silent_digest')) web_cron_guard('wifi_silent', fn() => wifi_silent_digest());
                 // Club announcements an admin scheduled: sent when their time comes (domain/club-portal.php).
                 if (web_cron_due('club_ann', web_cron_cfg('club_ann', 600)) && function_exists('cp_ann_due_tick')) web_cron_guard('club_ann', fn() => cp_ann_due_tick());
                 // Bucket files nothing uses any more (a week old): deleted, daily (media-objects.php).

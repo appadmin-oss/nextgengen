@@ -77,6 +77,9 @@ function fp3Note(t) {
     .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, d => fp3Long(d)).replace(/^Policy fine — /, "Fine: ");
 }
 
+/** "2027-01" → "January 2027". */
+function fp3Month(mk) { const d = new Date(String(mk) + "-01T12:00:00Z"); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }); }
+
 /** What the amount owed is made of, in one line a parent reads at a glance: "Commitment fees for 22 months, membership and a fine". */
 function fp3Owed(lines) {
   const n = { dues: 0, membership: 0, fine: 0, other: 0 };
@@ -146,7 +149,9 @@ function fp3Ward(link, d, today) {
       entries: fees3.entries.map((e, i) => ({ id: e.id || "E" + i, when: fp3Date(e.date), month: e.month, kind: e.kind, note: fp3Note(e.note), amount: e.amount, dir: e.dir, void: e.void })),
       programme: Object.assign({}, fees3.programme, { serviceStarts: fp3Long(fees3.programme.serviceStarts), completes: fp3Long(fees3.programme.completes) }),
       terms: fees3.terms, bank: fees3.bank,
-    } : { enabled: false, payable: 0, outstanding: 0, lines: [], next: [], entries: [], joining: null, programme: { phase: "starting" }, terms: {}, bank: null },
+      ahead: fees3.ahead ? Object.assign({}, fees3.ahead, { paidThroughL: fees3.ahead.paidThrough ? fp3Month(fees3.ahead.paidThrough) : "" }) : null,
+      asked: fees3.asked || null, claim: fees3.claim ? Object.assign({}, fees3.claim, { when: fp3Date(fees3.claim.at) }) : null,
+    } : { enabled: false, payable: 0, outstanding: 0, lines: [], next: [], entries: [], joining: null, programme: { phase: "starting" }, terms: {}, bank: null, ahead: null, asked: null, claim: null },
     learning: { completed: L.completed || 0, total: L.total || 0, pct: L.pct || 0, overdue: L.overdue || 0,
       next: (L.next || []).slice(0, 4).map(u => ({ title: u.title, course: u.course || (m.track || "Lessons"), week: u.week, due: u.dueDate ? "due " + fp3Date(u.dueDate) : "no due date", overdue: u.overdueDays > 0, status: u.status })) },
     companion: comp ? { rating: comp.rating || "none", summary: comp.summary || "", by: "NGG companion", period: comp.period || "" } : { rating: "none", summary: "", by: "", period: "" },

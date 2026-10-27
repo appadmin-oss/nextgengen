@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 191;
+const NGG_SCHEMA_TARGET = 192;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5622,6 +5622,29 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_wifi_daily_date ON wifi_gateway_daily(date);
             CREATE INDEX IF NOT EXISTS idx_wifi_stats_hour ON wifi_gateway_stats(hour);
             ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INTEGER NOT NULL DEFAULT 0;
+        ",
+        /* Wi-Fi: a silent gateway is told to its region lead once per silence
+           (silentAlertAt, cleared by its next fetch), and what the feed costs
+           this host is measured per hour before more than one pilot region
+           goes live (wifi_feed_load; time buckets in milliseconds). */
+        192 => "
+            ALTER TABLE wifi_gateways ADD COLUMN silentAlertAt TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS wifi_feed_load (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              hour TEXT NOT NULL UNIQUE,
+              fetches INTEGER NOT NULL DEFAULT 0,
+              failed INTEGER NOT NULL DEFAULT 0,
+              msTotal INTEGER NOT NULL DEFAULT 0,
+              msMax INTEGER NOT NULL DEFAULT 0,
+              bytesTotal INTEGER NOT NULL DEFAULT 0,
+              memMaxKb INTEGER NOT NULL DEFAULT 0,
+              b25 INTEGER NOT NULL DEFAULT 0,
+              b50 INTEGER NOT NULL DEFAULT 0,
+              b100 INTEGER NOT NULL DEFAULT 0,
+              b250 INTEGER NOT NULL DEFAULT 0,
+              b500 INTEGER NOT NULL DEFAULT 0,
+              bOver INTEGER NOT NULL DEFAULT 0
+            );
         ",
     ];
 

@@ -24,6 +24,10 @@ const CR_WF_PROFILE_WORDS = {
 };
 const CR_WF_HEALTH = { ok: ["Working", "ok"], warn: ["Needs a look", "warn"], bad: ["Not working", "bad"] };
 const CR_WF_ERR = {
+  out_of_scope: "That gateway is at a centre you don’t look after.",
+  count_changed: "The list changed while you were deciding. Look again and confirm.",
+  too_many: "That is more than can be done in one go.",
+  nothing_selected: "Choose at least one gateway.",
   bad_platform: "Choose what the gateway is.",
   bad_centre: "Choose a centre that is in use.",
   bad_profile: "Check the speeds, devices and hours.",
@@ -109,6 +113,38 @@ async function crWfRotate(ctx, g) {
   if (!ok) return;
   try { const r = await NGGApi.admin.wifi.gatewayRotate(g.gatewayId); ctx.closeDrawer(); ctx.reload(); crWfGuide(ctx, r.gateway, r.key); }
   catch (e) { ctx.toast(crWfErr(e, "Couldn’t rotate the key."), null, true); }
+}
+
+/* One bulk act over gateways (admin.wifi.gateways.bulk): `test` asks each for
+   a line test at its next fetch; `rotate` gives each a new key, listed once.
+   The count is read before the confirm and sent back as `expect`, so a list
+   that changed underneath is refused rather than acted on. */
+async function crWfBulk(ctx, verb, target, count, what) {
+  if (!count) { ctx.toast("There are no gateways " + what + ".", null, true); return; }
+  const rot = verb === "rotate";
+  const ok = await ctx.confirm(rot
+    ? { title: "New keys for " + crPlural(count, "gateway") + " " + what + "?", danger: true, cta: "Rotate " + crPlural(count, "key"),
+        body: "Every old key stops working at once. Until each router’s setup is run again with its new key, it keeps the people it has but gets no changes. The new keys are shown once, next." }
+    : { title: "Ask " + crPlural(count, "gateway") + " " + what + " for a line test?", cta: "Ask for " + crPlural(count, "test"),
+        body: "Each measures its internet line at its next fetch, within five minutes, and the result appears under Speed & health." });
+  if (!ok) return;
+  let r;
+  try { r = await NGGApi.admin.wifi.bulk(verb, target, count); }
+  catch (e) { ctx.toast(crWfErr(e, "Couldn’t do that."), null, true); ctx.reload(); return; }
+  const failed = (r.results || []).filter(x => !x.ok);
+  const said = crNum(r.applied) + (rot ? " rotated" : " asked") + (r.unchanged ? " · " + crNum(r.unchanged) + " already asked" : "") + (r.refused ? " · " + crNum(r.refused) + " refused" : "");
+  ctx.reload();
+  if (!rot) { ctx.toast(said, null, !!r.refused); return; }
+  const keyed = (r.results || []).filter(x => x.key);
+  const csv = "gateway,label,centre,key\n" + keyed.map(x => [x.gatewayId, x.label, x.centre, x.key].map(v => '"' + String(v || "").replace(/"/g, '""') + '"').join(",")).join("\n");
+  ctx.drawer({ title: "The new keys", sub: said + " · shown once", icon: "key",
+    sections: [
+      { h: "Paste each into its router’s setup", rows: keyed.map(x => [crWfName(x) + " · " + x.centre, x.key]), empty: "No key was changed." },
+      failed.length ? { h: "Refused", rows: failed.map(x => [x.gatewayId, crWfErr({ code: x.error }, x.error)]) } : null,
+      { h: "Keep them safe", text: "Anybody with a key can read that centre’s list. Copy them now: once this closes they can’t be shown again, only rotated." },
+    ].filter(Boolean),
+    actions: [{ l: "Copy all as CSV", primary: true, run: () => { try { navigator.clipboard.writeText(csv); ctx.toast("Copied " + crPlural(keyed.length, "key")); } catch (_) { ctx.toast("Couldn’t copy. Select and copy them instead.", null, true); } } },
+      { l: "Done", run: () => ctx.closeDrawer() }] });
 }
 
 async function crWfRemove(ctx, g) {
@@ -323,6 +359,8 @@ function crWfRegionOpen(ctx, r, shape) {
     fields: [["Short code", r.code || "—"], ["Leads", r.leads.map(l => l.name).join(", ") || "None yet"], ["Note", r.note || "—"]],
     actions: [
       { l: "Region speeds", primary: true, run: () => crWfSpeedsFor(ctx, { regionId: r.regionId }, r.name) },
+      { l: "Line test, every gateway", run: () => { ctx.closeDrawer(); crWfBulk(ctx, "test", { regionId: r.regionId }, r.gateways, "in " + r.name); } },
+      { l: "New keys, every gateway", run: () => { ctx.closeDrawer(); crWfBulk(ctx, "rotate", { regionId: r.regionId }, r.gateways, "in " + r.name); } },
       shape ? { l: "Leads", run: async () => {
         let o; try { o = await NGGApi.admin.wifi.leadOptions(); } catch (e) { ctx.toast(crWfErr(e, "Couldn’t load the staff."), null, true); return; }
         ctx.form({ title: "Who leads " + r.name, submit: "Save leads", intro: "A lead sees this region’s centres in Wi-Fi and sets its speeds. Only staff holding the network capability can lead.",
@@ -369,6 +407,23 @@ async function crWfSpeedsFor(ctx, where, name) {
     done: () => "Speeds saved · " + name });
 }
 
+/* What the feed costs this host (admin.wifi.load): measured per fetch, and
+   projected at the planned size, before more than one pilot region goes live. */
+const CR_WF_LOAD_WORDS = { unmeasured: ["Not measured yet", "warn"], fine: ["Within budget", "ok"], watch: ["Close to the budget", "warn"], too_much: ["Over budget", "bad"] };
+function crWfLoadBlocks(L) {
+  const m = L.measured, p = L.plan, w = CR_WF_LOAD_WORDS[p.verdict] || CR_WF_LOAD_WORDS.unmeasured;
+  return [
+    { type: "note", span: 6, icon: w[1] === "ok" ? "gauge" : "warning-circle", text: "Server load · " + w[0] + ". " + p.advice,
+      sub: "What gateways’ fetches cost this host over the last 24 hours, and at " + crNum(p.gateways) + " gateways fetching every " + Math.round(p.poll / 60) + " minutes. "
+        + crPlural(L.regionsLive, "region has", "regions have") + " gateways connected now." },
+    { type: "kpis", span: 6, items: [
+      { l: "Fetches, last 24 hours", v: crNum(m.fetches), dn: m.rps + " a second · " + crNum(m.failed) + " refused" },
+      { l: "Time per fetch", v: m.fetches ? m.avgMs + " ms" : "—", dn: m.fetches ? "95% under " + m.p95Ms + " ms · slowest " + m.maxMs + " ms" : "nothing measured yet" },
+      { l: "At the planned size", v: p.rps + " a second", dn: Math.round(p.busy * 100) + "% of one worker · budget " + Math.round(p.budget * 100) + "%", tone: p.verdict === "too_much" ? "down" : "flat" },
+    ] },
+  ];
+}
+
 /* ── Setup guides ─────────────────────────────────────────────────────────── */
 
 const CR_WF_CAN = [["profiles", "Speeds"], ["devices", "Devices"], ["kick", "Signs out"], ["remember", "Remembers"], ["filter", "Filtering"]];
@@ -387,6 +442,8 @@ Object.assign(CR_TAB_DEFS, {
       { l: "Add a gateway", icon: "plus", primary: true, disabled: !(d.centres || []).length, why: (d.centres || []).length ? "" : "Add a centre first (Members → Centres).", run: () => crWfEdit(ctx, d, null) },
       { l: "Test this connection", icon: "gauge", run: () => crWfSpeedTest(ctx, d) },
       { l: "Why can’t somebody get on?", icon: "magnifying-glass", run: () => crWfLookup(ctx) },
+      { l: "Line test, every gateway", icon: "pulse", disabled: !(d.gateways || []).length, why: "No gateways yet.",
+        run: () => { const ids = (d.gateways || []).map(g => g.gatewayId); crWfBulk(ctx, "test", { gatewayIds: ids }, ids.length, "you look after"); } },
     ],
     blocks: (d, ctx) => {
       crWfCtx.current = ctx;
@@ -468,8 +525,9 @@ Object.assign(CR_TAB_DEFS, {
     skeleton: ["kpis", "table", "table"],
     load: async () => {
       const days = crWfDays.current;
-      const [a, r] = await Promise.all([NGGApi.admin.wifi.analytics({ days }), NGGApi.admin.wifi.regions().catch(() => ({ regions: [] }))]);
-      return { a, regions: r.regions || [], days };
+      // The server-load reading is network-wide (the Wi-Fi regions capability); anybody else simply has none.
+      const [a, r, load] = await Promise.all([NGGApi.admin.wifi.analytics({ days }), NGGApi.admin.wifi.regions().catch(() => ({ regions: [] })), NGGApi.admin.wifi.load().catch(() => null)]);
+      return { a, regions: r.regions || [], days, load };
     },
     actions: (d, ctx) => [7, 30, 90].map(n => ({ l: "Last " + n + " days", icon: n === d.days ? "check" : "calendar-blank", primary: n === d.days, run: () => { crWfDays.current = n; ctx.reload(); } })),
     blocks: (d, ctx) => {
@@ -499,6 +557,7 @@ Object.assign(CR_TAB_DEFS, {
           cols: ["Region", { l: "Centres", num: true }, { l: "With Wi-Fi", num: true }, { l: "Working", num: true }, { l: "Need a look", num: true }, { l: "Not working", num: true }, { l: "Online now", num: true }],
           rows: a.regions.map(r => ({ key: r.regionId || "_none", cells: [{ k: "strong", t: r.name }, { k: "num", t: crNum(r.centres), v: r.centres }, { k: "num", t: crNum(r.withWifi), v: r.withWifi }, { k: "num", t: crNum(r.working), v: r.working },
             { k: "num", t: crNum(r.warn), v: r.warn }, { k: "num", t: crNum(r.bad), v: r.bad }, { k: "num", t: crNum(r.online), v: r.online }] })) } : null,
+        ...(d.load ? crWfLoadBlocks(d.load) : []),
         { type: "note", span: 6, icon: "eye-slash", text: "Hourly and daily summaries only: how many were online, how much of the day each gateway was there, and the line tests. Never who was online, and never what anybody visited." },
       ].filter(Boolean);
     },

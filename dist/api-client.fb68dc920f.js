@@ -1056,6 +1056,10 @@
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
       feesPay:      () => request('/member/fees.php', { body: { action: 'pay' } }),
+      /* Asking a parent: how many can be asked and when they last were; then
+         ask them to pay, or to confirm a payment they already made. */
+      familyAsks:   () => request('/member/fees.php?view=family'),
+      askParent:    () => request('/member/fees.php', { body: { action: 'nudge' } }),
       // The centre's Wi-Fi: sign-in name, PIN, why access is limited or off; a new PIN (3 a day).
       wifi:         () => request('/member/wifi.php'),
       wifiReset:    () => request('/member/wifi.php', { body: { action: 'reset' } }),
@@ -1943,6 +1947,12 @@
         gateways: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'gateways' }, q || {}))),
         centres: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'centres' }, q || {}))),
         analytics: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'analytics' }, q || {}))),
+        gatewayIds: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'gatewayIds' }, q || {}))),
+        /* One action (test | rotate) over gateway ids, or over a region
+           ({ regionId }). `expect` is the count the operator confirmed. PARTIAL
+           by design: read `results` per row, not only `ok`. */
+        bulk: (verb, target, expect) => request('/admin/wifi.php', { body: Object.assign({ action: 'bulk', do: verb, expect }, target), timeout: 120000 }),
+        load: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'load' }, q || {}))),
         /* Measure this device's line to NGG: latency (the best of five tiny
            requests), download (growing until one takes ~2.5 s, so a fast line
            is not under-read), upload (2 MB of random bytes). Raw fetches, not

@@ -15,7 +15,9 @@ switch ($action) {
     case 'ward.notify': $res = gs_call('family.ward.notify', $base + ['linkId' => $b['linkId'] ?? '', 'notify' => is_array($b['notify'] ?? null) ? $b['notify'] : []]); break;
     case 'request':     $res = gs_call('family.request.create', $base + ['linkId' => $b['linkId'] ?? '', 'kind' => $b['kind'] ?? '', 'subject' => $b['subject'] ?? '',
                                                           'body' => $b['body'] ?? '', 'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
-                                                          'refEntryId' => $b['refEntryId'] ?? '', 'proofUrl' => (string)($b['proofUrl'] ?? '')]); break;
+                                                          'refEntryId' => $b['refEntryId'] ?? '', 'proofUrl' => (string)($b['proofUrl'] ?? ''),
+                                                          'amount' => $b['amount'] ?? null, 'reference' => (string)($b['reference'] ?? ''), 'paidAt' => (string)($b['paidAt'] ?? '')]); break;
+    case 'fees.advance': $res = gs_call('family.fees.advance', $base + ['linkId' => $b['linkId'] ?? '', 'months' => (int)($b['months'] ?? 0)]); break;
     case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;
     case 'report.sign': $res = gs_call('family.report.sign', $base + ['id' => (string)($b['id'] ?? '')]); break;

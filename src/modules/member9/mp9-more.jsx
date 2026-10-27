@@ -204,7 +204,9 @@ Object.assign(Mp9Portal.prototype, {
       mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG. This is not something you are asked to pay.", status: "Active" },
       finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
-      openPaid: () => this.go("records", { rKind: "I've made a payment", rF: {} }),
+      /* A member does not record payments: their parent does, from the family
+         account. "Ask my parent" opens the panel below the money screen. */
+      openAsk: () => this.state.scr === "money" ? mp9FocusAsk() : this.go("money", { askFocus: true }),
     };
   },
   recordsVals() {
@@ -213,12 +215,12 @@ Object.assign(Mp9Portal.prototype, {
       .map(x => ({ ...x, fg: x.st === "Present" ? "#1d6b30" : x.st === "Late" ? "#7a5600" : "#b0361c" }));
     const ex = q.excuses;   // two excused absences a session (POLICY §1.1); the server refuses a third
     const away = "I'll be away" + (ex ? " · " + ex.left + " of " + ex.max + " absences left" : "");
-    const KINDS = [["I've made a payment", "payment", ["How much", "Transfer reference, if you have one", "When you paid (YYYY-MM-DD)"]], ["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
+    const KINDS = [["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
       ["Academic leave (exams or a school programme)", "academic", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD)", "What it’s for, and the school"]],
       ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]], ["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]];
     const K = KINDS.find(k => k[0] === s.rKind);
     const f = s.rF || {};
-    const rOk = !!K && (K[1] === "payment" ? Number(f[K[2][0]]) > 0 : K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
+    const rOk = !!K && (K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
     const ST = { open: ["Waiting for a reply", "#7a5600"], approved: ["Approved", "#1d6b30"], declined: ["Declined", "#b0361c"], withdrawn: ["Withdrawn", "#6b6b72"] };
     const list = (q.requests || []).map(x => { const st = x.kind === "feedback" && x.status === "approved" ? ["Thanked", "#1d6b30"] : ST[x.status] || [x.status, "#4a4a50"];
       return { t: x.subject || x.kindLabel, key: x.requestId, gone: x.status === "withdrawn", hasReply: !!x.decision, reply: x.decision || "", canWithdraw: x.status === "open", sFg: st[1], sText: st[0], when: mp9Date(x.createdAt),
@@ -231,7 +233,7 @@ Object.assign(Mp9Portal.prototype, {
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
-        const body = K[1] === "payment" ? { kind: "payment", amount: Number(v(0)), reference: v(1), paidAt: v(2), body: "" } : (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
+        const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
           : { kind: K[1], subject: f.subject || "", body: v(0) };
         NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
@@ -719,10 +721,10 @@ Object.assign(Mp9Portal.prototype, {
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
     const actions = [["Write in my journal", "ph ph-pencil-simple-line", () => { location.href = "/journal/"; }], ["Upload my school results", "ph ph-exam", () => this.go("results")], ["Add proof for a mission", "ph ph-camera", () => this.go("sat")],
-      ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["I've made a payment", "ph ph-currency-ngn", () => this.go("records", { rKind: "I've made a payment", rF: {} })],
+      ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["Ask my parent to pay", "ph ph-hand-waving", () => this.go("money", { askFocus: true })],
       ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Share an idea or tell us what to improve", "ph ph-lightbulb", () => this.openSheet({ k: "idea" })], ["Change my password", "ph ph-key", () => this.openSheet({ k: "password" })], ["Sign out", "ph ph-sign-out", () => nggPortalSignOut(this.props.onSignOut)], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
       simple ? ["Switch to the full view", "ph ph-squares-four", () => this.setView("full")] : ["Switch to the simple view", "ph ph-hand-pointing", () => this.setView("simple")]]
-      .filter(a => !(simple && /payment/.test(a[0])));
+      .filter(a => !(simple && /parent to pay/.test(a[0])));
     const q = s.palQ.trim().toLowerCase();
     const items = flat.map(x => ({ t: x.label, k: "Go to", icon: x.icon, run: () => this.go(x.id) })).concat(actions.map(([t2, icon, run]) => ({ t: t2, k: "Do", icon, run }))).filter(x => !q || x.t.toLowerCase().includes(q));
     const pi = Math.min(s.palI, Math.max(0, items.length - 1));
@@ -945,6 +947,7 @@ Object.assign(Mp9Portal.prototype, {
         safeguard={{ text: "Tell " + this.sgInfo().name + " instead", onClick: () => this.go("help") }}
         onCase={n => { try { history.replaceState(history.state, "", "/dashboard/support" + (n ? "?case=" + n : "")); } catch (_) {} }}/></div>;
     }
+    if (s.scr === "money") return <div className="m9x-slot"><Mp9AskParent toast={t => this.toast(t)} focus={!!s.askFocus} onFocused={() => this.setState({ askFocus: false })}/></div>;
     if (s.scr === "learn" && typeof CurStudyHelper === "function" && ((this.dd("cur") || {}).units || []).length)
       return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")
@@ -1059,6 +1062,38 @@ function Mp9Wifi({ toast }) {
         <p className="m9x-wifi-note">Your PIN is only for the Wi-Fi. Never tell anyone else your PIN — anything done on the Wi-Fi with it counts as you.</p>
         <button type="button" className="m9x-wifi-new" onClick={reset} disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Making a new PIN…" : "Get a new PIN"}</button>
         <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + " left today"}</span>
+      </>}
+  </section>;
+}
+
+/* ── Ask my parent ─────────────────────────────────────────────────────────
+   A member asks; the parent acts in the family account (member_family_nudge).
+   Once a kind a day, to every connected parent. A child with no connected
+   parent is told how to connect them, not shown a button that cannot act. */
+function mp9FocusAsk() { const el = document.getElementById("m9x-ask-h"); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); } }
+function Mp9AskParent({ toast, focus, onFocused }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const load = () => { setErr(""); NGGApi.member.familyAsks().then(setD).catch(e => setErr(mp9Err(e))); };
+  React.useEffect(load, []);
+  React.useEffect(() => { if (focus && d) { mp9FocusAsk(); onFocused(); } }, [focus, d]);
+  const ask = () => {
+    if (busy) return;
+    setBusy(true);
+    NGGApi.member.askParent()
+      .then(r => { toast(r.parents === 1 ? "Sent to your parent." : "Sent to your " + r.parents + " parents."); load(); })
+      .catch(e => toast((e && e.detail) || mp9Err(e)))
+      .finally(() => setBusy(false));
+  };
+  const a = d && d.asked;
+  return <section className="m9x-view m9x-ask" aria-labelledby="m9x-ask-h">
+    <h2 id="m9x-ask-h" className="m9x-view-h" tabIndex={-1}><i className="ph ph-hand-waving" aria-hidden="true"/> Ask my parent</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err}</span><button type="button" onClick={load}>Try again</button></div>
+      : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : !d.parents ? <p className="m9x-view-p">No parent is connected to your account yet. Give them the family code on your Me page, so they can connect at <b>/family</b> and pay from there.</p>
+      : <>
+        <p className="m9x-view-p">Your parent pays from their family account, or confirms a payment they already made. Ask them here, and they get a message and an email.</p>
+        <button type="button" className="m9x-ask-b" onClick={ask} disabled={busy}>{busy ? "Sending…" : "Ask my parent"}</button>
+        {a ? <span className="m9x-ask-when" role="status">{a.seen ? "They’ve seen it." : "Asked " + mp9Date(a.at, { day: "numeric", month: "short" }) + "."}</span> : null}
       </>}
   </section>;
 }

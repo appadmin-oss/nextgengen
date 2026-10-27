@@ -608,6 +608,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.wifi.profiles.get'     => 'admin_wifi_profiles_get',
             'admin.wifi.profiles.set'     => 'admin_wifi_profiles_set',
             'admin.wifi.gateways'         => 'admin_wifi_gateways',
+            'admin.wifi.gateways.ids'     => 'admin_wifi_gateways_ids',
+            'admin.wifi.gateways.bulk'    => 'admin_wifi_gateways_bulk',
+            'admin.wifi.load'             => 'admin_wifi_load',
             'admin.wifi.centres'          => 'admin_wifi_centres',
             'admin.wifi.analytics'        => 'admin_wifi_analytics',
             'admin.wifi.member'           => 'admin_wifi_member',
@@ -787,6 +790,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.media.accountMove'     => 'admin_media_account_move',
             'admin.media.accountCheck'    => 'admin_media_account_check',
             'family.fees.pay'             => 'family_fees_pay',
+            'family.fees.advance'         => 'family_fees_advance',
+            'member.family.nudge'         => 'member_family_nudge',
+            'member.family.nudges'        => 'member_family_nudges',
             /* Self-service. Every one of these takes its memberId from the
                SESSION, never the body — see member-self.php. */
             'member.statement'            => 'member_statement',

@@ -584,3 +584,14 @@ fields set at that level) · `wifi_gateway_daily` (gatewayId, date, samples,
 hoursUp, activePeak, activeSum, activeSamples, cpuMax; 400 days) ·
 `wifi_gateway_stats.activeSamples` (so an hour's average counts only reports
 that carried a figure).
+
+## Wi-Fi silence alerts and feed load (migration 192)
+
+`wifi_gateways.silentAlertAt` (when its silence was last told; cleared by its
+next fetch) · `wifi_feed_load` (hour UNIQUE `YYYY-MM-DDTHH`, fetches, failed,
+msTotal, msMax, bytesTotal, memMaxKb, and fetch-time buckets b25 / b50 / b100 /
+b250 / b500 / bOver in milliseconds; 30 days).
+
+Paying ahead needs no table: `membership_invoices.purpose` takes `advance`
+(invoiceId `NGG-ADV-…`), and its payment is an ordinary `payment` credit on
+`member_ledger`. A child's ask is a `guardian_notices` row of kind `nudge`.

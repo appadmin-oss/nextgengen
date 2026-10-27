@@ -47,6 +47,7 @@ const CW_ERR = {
   too_many_resets: "That PIN has been changed three times today. Try again tomorrow.", reason_required: "Say why, so the next person to look knows.",
   own_account: "Somebody else changes your own Wi-Fi.", too_many: "That is more than one press can do. Choose fewer.", rate_limited: "Too many tests in a few minutes. Try again in ten.",
 };
+const CW_BULK_ERR = { out_of_scope: "At a centre you don’t look after", not_found: "Removed since" };
 const cwErr = (e, fb) => { const d = (e && e.data) || {}; return d.message || CW_ERR[d.error || (e && e.code)] || fb; };
 const cwN = n => (n == null ? "—" : Number(n).toLocaleString("en-GB"));
 const cwMbps = x => (x == null ? "—" : (Math.round(x * 10) / 10) + " Mbit/s");
@@ -258,6 +259,9 @@ function CwOverview({ ctx }) {
   };
   React.useEffect(load, [days, region, ctx.bump]);
   React.useEffect(() => { if (base.scope.regions) NGGApi.admin.wifi.regions().then(r => setRegions(r.regions || []), () => {}); }, [ctx.bump]);
+  // The feed's measured cost: network-wide, so only for the Wi-Fi regions capability.
+  const [ld, setLd] = React.useState(null);
+  React.useEffect(() => { if (base.scope.regions) NGGApi.admin.wifi.load().then(setLd, () => setLd(null)); }, [ctx.bump]);
   const s = a && a.summary;
   return <>
     <div className="cw-bar">
@@ -299,9 +303,25 @@ function CwOverview({ ctx }) {
         <CwCard title="Slowest lines" sub="Their latest test" flush>{a.slowest.length ? <ol className="cw-rank">{a.slowest.map(x => <li key={x.centre}><span>{x.centre}</span><b className={x.downMbps < base.slowMbps ? "is-bad" : ""}>{cwMbps(x.downMbps)}</b></li>)}</ol> : <CwEmpty>No tests yet.</CwEmpty>}</CwCard>
         <CwCard title="Least available" sub="Share of hours each gateway was there" flush>{a.leastAvailable.length ? <ol className="cw-rank">{a.leastAvailable.map(x => <li key={x.gatewayId}><span>{x.label} · {x.centre}</span><b className={x.availability < 90 ? "is-bad" : ""}>{cwPct(x.availability)}</b></li>)}</ol> : <CwEmpty>No gateways yet.</CwEmpty>}</CwCard>
       </div>
+      {ld ? <CwLoad L={ld}/> : null}
       <p className="cw-foot"><i className="ph ph-eye-slash" aria-hidden="true"/>Gateways report counts — how many are online, their load — as hourly summaries. Never who is online, and never what anybody visits.</p>
     </>}
   </>;
+}
+
+/* What the feed costs this host (admin.wifi.load), measured per fetch and
+   projected at the planned size, before more than one pilot region goes live. */
+const CW_LOAD = { unmeasured: ["Not measured yet", "warn"], fine: ["Within budget", "ok"], watch: ["Close to the budget", "warn"], too_much: ["Over budget", "bad"] };
+function CwLoad({ L }) {
+  const m = L.measured, p = L.plan, w = CW_LOAD[p.verdict] || CW_LOAD.unmeasured;
+  return <CwCard title="Server load" sub={"What gateways’ fetches cost this host, last 24 hours · at " + cwN(p.gateways) + " gateways fetching every " + Math.round(p.poll / 60) + " minutes"} right={<CwPill tone={w[1]} t={w[0]}/>}>
+    <div className="cw-stats">
+      <CwStat l="Fetches" v={cwN(m.fetches)} s={m.rps + " a second · " + cwN(m.failed) + " refused"}/>
+      <CwStat l="Time per fetch" v={m.fetches ? m.avgMs + " ms" : "—"} s={m.fetches ? "95% under " + m.p95Ms + " ms · slowest " + m.maxMs + " ms" : "nothing measured yet"}/>
+      <CwStat l="At the planned size" v={p.rps + "/s"} s={Math.round(p.busy * 100) + "% of one worker · budget " + Math.round(p.budget * 100) + "%"} tone={p.verdict === "too_much" ? "bad" : p.verdict === "watch" ? "warn" : ""}/>
+    </div>
+    <p className="cw-p">{p.advice} {cwN(L.regionsLive)} {L.regionsLive === 1 ? "region has" : "regions have"} gateways connected now.</p>
+  </CwCard>;
 }
 
 /* Gateways: the paged list, and one gateway's panel. */
@@ -316,7 +336,13 @@ function CwGateways({ ctx }) {
   const c = (o, k) => o[k] ? " (" + cwN(o[k]) + ")" : "";
   const reset = fn => v => { fn(v); setPage(1); };
   return <>
-    <div className="cw-bar"><div className="cw-bar-l"/><div className="cw-bar-r"><CwBtn primary icon="plus" onClick={() => cwGatewayForm(ctx, null)}>Add a gateway</CwBtn></div></div>
+    <div className="cw-bar"><div className="cw-bar-l"/><div className="cw-bar-r">
+      {d && d.total ? <CwBtn icon="pulse" onClick={async () => {
+        // Every gateway matching the filters, read now — not only the page drawn.
+        let ids; try { ids = await NGGApi.admin.wifi.gatewayIds({ q, region, platform, health }); } catch (e) { ctx.ui.toast(cwErr(e, "Couldn’t read the list."), true); return; }
+        cwBulk(ctx, "test", { gatewayIds: ids.ids }, ids.total, q || region || platform || health ? "matching" : "you look after");
+      }}>{"Line test · " + (q || region || platform || health ? "all " + cwN(d.total) + " matching" : "every gateway")}</CwBtn> : null}
+      <CwBtn primary icon="plus" onClick={() => cwGatewayForm(ctx, null)}>Add a gateway</CwBtn></div></div>
     <CwCard flush>
       <div className="cw-tools">
         <CwSearch value={q} onChange={reset(setQ)} ph="Search gateways and centres"/>
@@ -432,12 +458,45 @@ function CwRegions({ ctx }) {
   </>;
 }
 
+/* One bulk act over gateways (admin.wifi.gateways.bulk): `test` asks each for
+   a line test at its next fetch; `rotate` gives each a new key, listed once.
+   The count is read before the confirm and sent back as `expect`. */
+async function cwBulk(ctx, verb, target, count, what) {
+  const { ui } = ctx, rot = verb === "rotate";
+  if (!count) { ui.toast("There are no gateways " + what + ".", true); return; }
+  const g = count === 1 ? "gateway" : "gateways";
+  const ok = await ui.confirm(rot
+    ? { title: "New keys for " + cwN(count) + " " + g + " " + what + "?", danger: true, cta: "Rotate " + cwN(count) + (count === 1 ? " key" : " keys"),
+        body: "Every old key stops working at once. Until each router’s setup is run again with its new key, it keeps the people it has but gets no changes. The new keys are shown once, next." }
+    : { title: "Ask " + cwN(count) + " " + g + " " + what + " for a line test?", cta: "Ask for " + cwN(count) + (count === 1 ? " test" : " tests"),
+        body: "Each measures its internet line at its next fetch, within five minutes, and the result appears under Speed tests." });
+  if (!ok) return;
+  let r;
+  try { r = await NGGApi.admin.wifi.bulk(verb, target, count); } catch (e) { ui.toast(cwErr(e, "Couldn’t do that."), true); ctx.reload(); return; }
+  const said = cwN(r.applied) + (rot ? " rotated" : " asked") + (r.unchanged ? " · " + cwN(r.unchanged) + " already asked" : "") + (r.refused ? " · " + cwN(r.refused) + " refused" : "");
+  ctx.reload();
+  if (!rot) { ui.toast(said, !!r.refused); return; }
+  const keyed = (r.results || []).filter(x => x.key), failed = (r.results || []).filter(x => !x.ok);
+  const csv = "gateway,label,centre,key\n" + keyed.map(x => [x.gatewayId, x.label, x.centre, x.key].map(v => '"' + String(v || "").replace(/"/g, '""') + '"').join(",")).join("\n");
+  const copy = () => { try { navigator.clipboard.writeText(csv); ui.toast("Copied " + cwN(keyed.length) + (keyed.length === 1 ? " key" : " keys")); } catch (_) { ui.toast("Couldn’t reach the clipboard. Select the keys and copy them.", true); } };
+  ui.panel({ title: "The new keys", sub: said + " · shown once", icon: "key",
+    body: <>
+      <div className="cw-key"><b>Paste each into its router’s setup</b><p>Anybody with a key can read that centre’s list. Copy them now: once this closes they can’t be shown again, only rotated.</p></div>
+      <div className="cw-tablewrap"><table className="cw-table"><thead><tr><th scope="col">Gateway</th><th scope="col">Centre</th><th scope="col">New key</th></tr></thead>
+        <tbody>{keyed.map(x => <tr key={x.gatewayId}><td><b>{x.label || x.gatewayId}</b></td><td>{x.centre}</td><td><code>{x.key}</code></td></tr>)}</tbody></table></div>
+      {failed.length ? <><h3 className="cw-h3">Refused</h3><ul className="cw-p">{failed.map(x => <li key={x.gatewayId}>{x.gatewayId} — {CW_BULK_ERR[x.error] || x.error}</li>)}</ul></> : null}
+    </>,
+    actions: [<CwBtn key="c" primary icon="copy" onClick={copy}>Copy all as CSV</CwBtn>, <CwBtn key="d" onClick={() => ui.closePanel()}>Done</CwBtn>] });
+}
+
 function cwRegionPanel(ctx, r, shape, edit) {
   const { ui } = ctx;
   ui.panel({ title: r.name, sub: cwN(r.centres) + " centres · " + cwN(r.gateways) + " gateways", icon: "map-trifold",
     body: <CwRegionBody ctx={ctx} r={r}/>,
     actions: [
       <CwBtn key="s" primary icon="sliders-horizontal" onClick={() => cwSpeedsForm(ctx, { regionId: r.regionId }, r.name)}>Region speeds</CwBtn>,
+      <CwBtn key="t" icon="pulse" onClick={() => { ui.closePanel(); cwBulk(ctx, "test", { regionId: r.regionId }, r.gateways, "in " + r.name); }}>Line test, every gateway</CwBtn>,
+      <CwBtn key="k" icon="key" onClick={() => { ui.closePanel(); cwBulk(ctx, "rotate", { regionId: r.regionId }, r.gateways, "in " + r.name); }}>New keys, every gateway</CwBtn>,
       shape ? <CwBtn key="l" icon="user-gear" onClick={() => cwLeadsForm(ctx, r)}>Leads</CwBtn> : null,
       shape ? <CwBtn key="e" icon="pencil-simple" onClick={() => edit(r)}>Rename</CwBtn> : null,
       shape ? <CwBtn key="x" danger icon="trash" onClick={async () => { if (!(await ui.confirm({ title: "Remove " + r.name + "?", danger: true, cta: "Remove the region", body: "Its " + r.centres + " centres stay as they are, in no region; the region’s own speeds and leads go. Gateways keep working." }))) return;
