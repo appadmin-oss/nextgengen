@@ -8447,7 +8447,12 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-note-text > span:first-child { font-size: 14px; line-height: 1.45; color: var(--cr-text); text-wrap: pretty; }
 .cr-note.is-quote .cr-note-text > span:first-child { font-size: 18px; }
 .cr-note-sub { font-size: 12.5px; color: var(--cr-muted-3); }
-.cr-note-act { align-self: flex-start; margin-top: 4px; }
+/* A note's action is a real tap target — the one control in the block, and
+   often the way out of an empty or failed state. `is-sm` draws it at 30px,
+   which is under this codebase's 44px floor (CLAUDE.md §9); the sweep never
+   caught it because these notes only appear in states its fixture does not
+   reach. Height only: the small type is what makes it read as secondary. */
+.cr-note-act { align-self: flex-start; margin-top: 4px; min-height: 44px; }
 
 .cr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .cr-card { border: 1px solid var(--cr-line); border-radius: var(--cr-r-lg); padding: 16px 18px; background: var(--cr-bg); display: flex; flex-direction: column; gap: 12px; text-align: left; color: var(--cr-ink); }
