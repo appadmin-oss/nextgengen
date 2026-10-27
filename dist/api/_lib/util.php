@@ -267,6 +267,33 @@ function normalize_image_url($url): string {
 
 // ── Audit + notifications + settings ────────────────────────────────────────
 
+/* ── What the audit log keeps, and for how long — the one rule ─────────────
+ *
+ * It used to be cut to the newest 5,000 rows, and a sign-in request writes a
+ * row for anybody who types any identifier — so a few thousand junk requests
+ * flushed out who suspended whom, who changed a fee, who recorded a consent.
+ *
+ * Now nothing is pruned by count. Everything is kept indefinitely EXCEPT the
+ * high-volume sign-in noise named below, which is dropped once it is older
+ * than AUDIT_NOISE_RETAIN_DAYS. The list is exact names, not prefixes, so an
+ * event added later is kept until somebody decides otherwise here. Lockouts,
+ * new-device alerts, password changes, 2FA and every staff, money and consent
+ * event are not on it. */
+const AUDIT_NOISE_RETAIN_DAYS = 180;
+const AUDIT_NOISE_EVENTS = [
+    'login.request', 'login.mail_fail', 'login.success', 'login.pw.success', 'login.pw.fail', 'login.pw.locked',
+    'login.pw.suspended', 'login.fail.unknown', 'login.fail.bad_token', 'login.fail.expired', 'login.fail.replay',
+    'login.fail.suspended', 'login.otp.blocked_admin', 'logout', 'community.login',
+    'password.reset.request', 'password.reset.request.noop', 'password.reset.mail_fail', 'password.reset.fail.bad_token',
+];
+
+/** Apply the rule above. Returns how many rows went. Called by both maintenance paths. */
+function audit_prune(?int $now = null): int {
+    $cut = gmdate('Y-m-d\TH:i:s\Z', ($now ?? time()) - AUDIT_NOISE_RETAIN_DAYS * 86400);
+    $in = implode(',', array_fill(0, count(AUDIT_NOISE_EVENTS), '?'));
+    return db_exec("DELETE FROM audit_log WHERE event IN ($in) AND at < ?", array_merge(AUDIT_NOISE_EVENTS, [$cut]));
+}
+
 function audit(string $event, ?string $actorId, string $subject = '', array $meta = [], string $ip = ''): void {
     try {
         db_insert('audit_log', [

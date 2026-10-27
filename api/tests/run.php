@@ -1229,6 +1229,40 @@ chk('reset request for an unknown account still looks ok (no oracle)', !empty(ba
     db_exec("DELETE FROM members WHERE memberId IN $in");
 })();
 
+/* ── The audit log cannot be flushed with junk sign-in requests ──
+ * It was cut to the newest 5,000 rows, so 5,000 requests for any identifier
+ * erased the record of who did what. Only sign-in noise past its age goes. */
+(function () {
+    $old = gmdate('Y-m-d\TH:i:s\Z', time() - (AUDIT_NOISE_RETAIN_DAYS + 5) * 86400);
+    $recent = gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400);
+    $row = fn($ev, $at) => db_insert('audit_log', ['at' => $at, 'actorId' => 'system', 'event' => $ev, 'subject' => 'AUDIT-PRUNE-T', 'ip' => '', 'meta' => '']);
+    db_exec("DELETE FROM audit_log WHERE subject = 'AUDIT-PRUNE-T'");
+    $row('admin.members.bulk', $old);          // staff action
+    $row('admin.member.consent', $old);        // consent
+    $row('fees.payment', $old);                // money
+    $row('login.lockout', $old);               // security, not noise
+    $row('login.fail.unknown', $old);          // noise, old
+    $row('login.request', $old);               // noise, old
+    $row('login.request', $recent);            // noise, recent
+    // The flood: far more junk than the old 5,000-row cap, all of it fresh.
+    for ($i = 0; $i < 13; $i++) db_exec("INSERT INTO audit_log (at, actorId, event, subject, ip, meta) SELECT ?, 'system', 'login.fail.unknown', 'AUDIT-PRUNE-T', '', '' FROM audit_log WHERE subject = 'AUDIT-PRUNE-T' AND event = 'login.fail.unknown'", [$recent]);
+    chk('audit retention: the flood is bigger than the old cap', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE subject = 'AUDIT-PRUNE-T'")['c'] > 5000);
+    web_cron_maintenance();
+    $has = fn($ev, $at) => (bool)db_row("SELECT id FROM audit_log WHERE subject = 'AUDIT-PRUNE-T' AND event = ? AND at = ? LIMIT 1", [$ev, $at]);
+    chk('audit retention: staff, consent, money and lockout events outlive any flood of sign-in requests',
+        $has('admin.members.bulk', $old) && $has('admin.member.consent', $old) && $has('fees.payment', $old) && $has('login.lockout', $old));
+    chk('audit retention: sign-in noise older than the stated age is pruned',
+        !$has('login.fail.unknown', $old) && !$has('login.request', $old));
+    chk('audit retention: …and recent sign-in noise is kept until it is that old', $has('login.request', $recent)
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE subject = 'AUDIT-PRUNE-T' AND event = 'login.fail.unknown' AND at = ?", [$recent])['c'] > 5000);
+    chk('audit retention: no event outside the named noise list is ever pruned by age', (function () use ($old) {
+        db_insert('audit_log', ['at' => $old, 'actorId' => 'system', 'event' => 'some.future.event', 'subject' => 'AUDIT-PRUNE-T', 'ip' => '', 'meta' => '']);
+        audit_prune();
+        return (bool)db_row("SELECT id FROM audit_log WHERE subject = 'AUDIT-PRUNE-T' AND event = 'some.future.event' LIMIT 1");
+    })());
+    db_exec("DELETE FROM audit_log WHERE subject = 'AUDIT-PRUNE-T'");
+})();
+
 // ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──
 chk('mail_mode is php_mail with nothing configured', mail_mode() === 'php_mail');
 $GLOBALS['CONFIG']['apps_script_url'] = 'https://script.google.com/macros/s/x/exec';

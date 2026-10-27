@@ -304,7 +304,9 @@ Short-lived login challenges. Apps Script GCs expired rows daily.
 
 ## Tab: `AuditLog`
 
-Rolling log, capped to last ~5000 rows by Apps Script (oldest deleted).
+Kept indefinitely. Only high-volume sign-in noise (the exact event names in
+`AUDIT_NOISE_EVENTS`, `api/_lib/util.php`) is pruned, once older than
+`AUDIT_NOISE_RETAIN_DAYS` (180). There is no row-count cap.
 
 | Column     | Notes                                                                  |
 |------------|------------------------------------------------------------------------|
