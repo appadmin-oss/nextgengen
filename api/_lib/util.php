@@ -445,7 +445,7 @@ function notify_people(array $members, array $n): int {
  * grant them per person (capsExtra).
  */
 const ADMIN_ROLES = [
-    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding', 'support'],
+    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding', 'support', 'network'],
                        'summary' => 'Everything, including settings, roles and access. Keep to two or three people.'],
     'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum', 'support'],
                        'summary' => 'Runs the programme day to day: both programmes, members, the door, content and the inbox. No money, settings or roles.'],
@@ -475,6 +475,7 @@ const ADMIN_CAPS = [
     'safeguarding' => 'Safeguarding cases: reading reports about young people and recording what was done',
     'audit'      => 'Monitoring & evaluation and the audit trail (read only)',
     'settings'   => 'Site settings, integrations, diagnostics and donations',
+    'network'    => 'The centres\' Wi-Fi: gateways, their keys and setup, the access table and profiles (systems people only)',
     'rbac'       => 'Staff roles, extra capabilities and centre scope',
 ];
 function admin_role_caps($role): array {

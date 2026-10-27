@@ -172,6 +172,13 @@ function project_write(array $p, array $reach, array $o): array {
 
     $raw = is_array($p['people'] ?? null) ? array_values($p['people']) : [];
     if (!$raw) return ['ok' => false, 'error' => 'choose_people'];
+    /* Somebody already on the project stays on it however the setter's reach
+       has moved since — a child who went inactive or changed centre must not
+       stop the lead finishing, cancelling or regrouping the project. Reach
+       decides who may be ADDED, never who may stay. */
+    $pid0 = trim((string)($p['projectId'] ?? ''));
+    $onIt = [];
+    if ($pid0 !== '') foreach (db_all('SELECT kind, personId FROM project_people WHERE projectId = ?', [$pid0]) as $r) $onIt[$r['kind'] . ':' . $r['personId']] = true;
     if (count($raw) > PROJECT_MAX_PEOPLE) return ['ok' => false, 'error' => 'too_many', 'max' => PROJECT_MAX_PEOPLE];
     $want = []; $refused = []; $groups = [];
     foreach ($raw as $x) {
@@ -179,7 +186,7 @@ function project_write(array $p, array $reach, array $o): array {
         $kind = (string)($x['kind'] ?? ''); $id = trim((string)($x['id'] ?? ''));
         $grp = mb_substr(trim((string)preg_replace('/\s+/u', ' ', (string)($x['group'] ?? ''))), 0, 40);
         if (!in_array($kind, PROJECT_KINDS, true) || $id === '') return ['ok' => false, 'error' => 'bad_person'];
-        if (!isset($reach[$kind][$id])) { $refused[] = ['kind' => $kind, 'id' => $id, 'reason' => $kind === 'mentor' ? 'not_in_team' : 'out_of_reach']; continue; }
+        if (!isset($reach[$kind][$id]) && !isset($onIt[$kind . ':' . $id])) { $refused[] = ['kind' => $kind, 'id' => $id, 'reason' => $kind === 'mentor' ? 'not_in_team' : 'out_of_reach']; continue; }
         $want[$kind . ':' . $id] = ['kind' => $kind, 'id' => $id, 'group' => $grp];
         if ($grp !== '') $groups[$grp] = true;
     }
@@ -187,6 +194,20 @@ function project_write(array $p, array $reach, array $o): array {
     if ($refused) return ['ok' => false, 'error' => 'not_yours_to_assign', 'refused' => $refused,
         'detail' => implode(', ', array_map(static fn($r) => $r['id'] . ' (' . $r['reason'] . ')', $refused))];
     if (count($groups) > PROJECT_MAX_GROUPS) return ['ok' => false, 'error' => 'too_many_groups', 'max' => PROJECT_MAX_GROUPS];
+    /* No child reaches a mentor whose safeguarding screening is not recorded
+       (this file's own rule, and the caseload's). A project with children on
+       it shows each mentor the children's names, so an unscreened mentor may
+       be on a mentors-only project and nowhere else. */
+    $mIds = array_values(array_map(static fn($w) => $w['id'], array_filter($want, static fn($w) => $w['kind'] === 'mentor')));
+    if ($mIds && array_filter($want, static fn($w) => $w['kind'] === 'member')) {
+        $unscreened = [];
+        foreach (db_all('SELECT * FROM mentors WHERE mentorId IN (' . implode(',', array_fill(0, count($mIds), '?')) . ')', $mIds) as $mr) {
+            $ok = function_exists('ms_clearance') ? (bool)ms_clearance($mr)['screened'] : trim((string)($mr['checkedAt'] ?? '')) !== '';
+            if (!$ok) $unscreened[] = (string)($mr['fullName'] ?? $mr['mentorId']);
+        }
+        if ($unscreened) return ['ok' => false, 'error' => 'not_screened', 'names' => $unscreened,
+            'detail' => implode(', ', $unscreened) . (count($unscreened) === 1 ? ' has' : ' have') . ' no safeguarding screening recorded, so cannot be on a project with children.'];
+    }
 
     $pid = trim((string)($p['projectId'] ?? ''));
     $now = now_iso(); $me = (string)$o['me'];
@@ -247,6 +268,7 @@ function member_mp_project_mark(array $p): array {
     if (!$creator && !$self) return ['ok' => false, 'error' => 'forbidden'];
     // Excusing a part is the lead's call, not the mentor's about themselves.
     if ($self && $status === 'excused' && !$creator) return ['ok' => false, 'error' => 'ask_your_lead'];
+    if (!$creator && $pr['status'] === 'closed') return ['ok' => false, 'error' => 'project_closed'];
     if (!db_row('SELECT 1 FROM project_people WHERE projectId = ? AND kind = ? AND personId = ?', [$pid, $kind, $who])) return ['ok' => false, 'error' => 'not_on_project'];
     $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 500);
     $row = ['status' => $status, 'doneAt' => $status === 'done' ? now_iso() : ''];
@@ -260,14 +282,15 @@ function member_mp_project_mark(array $p): array {
 function mp_projects_month(string $mentorId, string $month, string $today): array {
     if ($mentorId === '') return ['assigned' => 0, 'done' => 0, 'overdue' => 0, 'next' => ''];
     // This month's projects, any running now, and any older one still open and unfinished: an old debt is still owed.
-    $rows = db_all("SELECT pr.dueOn, pp.status FROM project_people pp JOIN projects pr ON pr.projectId = pp.projectId
+    $rows = db_all("SELECT pr.dueOn, pr.status prStatus, pp.status FROM project_people pp JOIN projects pr ON pr.projectId = pp.projectId
                     WHERE pp.kind = 'mentor' AND pp.personId = ? AND pp.status <> 'excused' AND pr.status <> 'cancelled'
                       AND (substr(pr.dueOn, 1, 7) = ? OR (pr.dueOn < ? AND pp.status = 'assigned' AND pr.status = 'open')
                            OR (pr.startOn <= ? AND pr.dueOn > ? AND pr.status = 'open'))", [$mentorId, $month, $month . '-01', $today, $today]);
     $done = count(array_filter($rows, static fn($r) => $r['status'] === 'done'));
-    $over = count(array_filter($rows, static fn($r) => $r['status'] === 'assigned' && $r['dueOn'] < $today));
+    // A finished project is not overdue, whatever was left unticked on it.
+    $over = count(array_filter($rows, static fn($r) => $r['status'] === 'assigned' && $r['prStatus'] === 'open' && $r['dueOn'] < $today));
     $next = '';
-    foreach ($rows as $r) if ($r['status'] === 'assigned' && $r['dueOn'] >= $today && ($next === '' || $r['dueOn'] < $next)) $next = (string)$r['dueOn'];
+    foreach ($rows as $r) if ($r['status'] === 'assigned' && $r['prStatus'] === 'open' && $r['dueOn'] >= $today && ($next === '' || $r['dueOn'] < $next)) $next = (string)$r['dueOn'];
     return ['assigned' => count($rows), 'done' => $done, 'overdue' => $over, 'next' => $next];
 }
 
@@ -429,8 +452,10 @@ function admin_project_mark(array $p): array {
     $pr = db_row('SELECT * FROM projects WHERE projectId = ? LIMIT 1', [$pid]);
     if (!$pr || $pr['status'] === 'cancelled' || !admin_project_in_scope($g['requester'], $pr)) return ['ok' => false, 'error' => 'not_found'];
     if (!db_row('SELECT 1 FROM project_people WHERE projectId = ? AND kind = ? AND personId = ?', [$pid, $kind, $who])) return ['ok' => false, 'error' => 'not_on_project'];
-    db_update('project_people', ['status' => $status, 'doneAt' => $status === 'done' ? now_iso() : '', 'note' => mb_substr(trim((string)($p['note'] ?? '')), 0, 500)],
-        ['projectId' => $pid, 'kind' => $kind, 'personId' => $who]);
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 500);
+    $row = ['status' => $status, 'doneAt' => $status === 'done' ? now_iso() : ''];
+    if ($note !== '' || $status !== 'done') $row['note'] = $note;   // as the mentor path: a bare "done" keeps what they wrote
+    db_update('project_people', $row, ['projectId' => $pid, 'kind' => $kind, 'personId' => $who]);
     audit('project.mark', (string)$g['requester']['memberId'], $pid, ['kind' => $kind, 'personId' => $who, 'status' => $status, 'by' => 'control-room'], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

@@ -456,13 +456,14 @@ class Cp3Portal extends React.Component {
     const mk = (n, on) => { const b = badge[n[0]]; return { label: n[1], short: n[1], icon: "ph ph-" + n[2], current: on ? "page" : undefined, bg: on ? "#ebebe9" : "transparent", fw: on ? 600 : 400, ic: on ? "#0b0b0c" : "#5d5d63", pc: on ? "#0b0b0c" : "#6b6b72", pbg: on ? "#f1f1ef" : "transparent", hasBadge: !!(b && b[0]), badge: b ? cap99(b[0]) : 0, bb: b ? b[1] : "", bf: b ? b[2] : "", onClick: () => this.go(n[0]) }; };
     /* Hide what this account cannot use rather than show a door that 403s:
        curriculum edits need `curriculum`, the gate needs `checkin`. */
-    const canSee = id => !((id === "desks" || id === "rota") && !B.me.canCheckin);
+    const canSee = id => !((id === "desks" || id === "rota") && !B.me.canCheckin) && !(id === "wifi" && !B.me.canNetwork);
     const NAVG = CP3_NAV.map(g => [g[0], g[1].filter(n => canSee(n[0]))]).filter(g => g[1].length);
     const navGroups = NAVG.map(g => ({ h: g[0] || "", hasH: !!g[0], items: g[1].map(n => mk(n, n[0] === sec)) }));
     const moreItems = NAVG.reduce((a, g) => a.concat(g[1]), []).filter(n => !CP3_TABS.some(t => t[0] === n[0]));
     const moreN = moreItems.filter(n => n[3]).reduce((a, n) => a + ((badge[n[0]] || [0])[0] || 0), 0);
     const nav = CP3_TABS.map(t => { const x = mk(t, t[0] === sec || (t[0] === "more" && !isTab)); if (t[0] === "more") Object.assign(x, { hasBadge: moreN > 0, badge: cap99(moreN), bb: "#f5b026", bf: "#2a1d00" }); return x; });
     const META = cp3Meta(isAdm); Object.keys(CP3_G).forEach(k => { META[k] = [CP3_G[k].title, CP3_G[k].desc]; });
+    META.wifi = ["Wi-Fi", "Each centre’s Wi-Fi: its gateway, how fast and busy the line is, who gets on, and how to set one up."];
     const SHORT = { home: "Dashboard", promote: "Promote", companion: "Check-ins", roster: "Roster" }; const stop = e => e.stopPropagation();
     const fmt = cp3Fmt;
     const centresAll = B.centres;
@@ -661,6 +662,9 @@ class Cp3Portal extends React.Component {
     const CEN = { act: "Open", cols: ["Centre", "Status", "Active members", "Attendance", "Centre lead", "No mentor", "Gate desk"], rows: out.centreRows.map((c, i) => ({ id: c.name, cells: [["p", c.name, c.meets], ["s", c.st, (CS[(SCs[i] || {}).id] || {}).tone || "ok"], ["n", c.members], ["n", c.pct + " · " + c.present], c.lead, ["n", c.unpaired], c.desk] })) };
     const gsrc = CP3_G[sec] && sec !== "tournaments" ? S.gData[sec === "desks" ? "desks" : sec] : null;
     const gdef = sec === "team" ? TEAM : sec === "centres" ? CEN : sec === "tournaments" ? null : CP3_G[sec] ? Object.assign({}, CP3_G[sec], { rows: (gsrc || {}).rows || [], note: (gsrc || {}).note || "" }) : null;
+    /* Wi-Fi is the Control Room's Wi-Fi page itself, hosted here in place
+       (CrEmbed): the same tabs and tools, never a second copy. */
+    if (sec === "wifi" && B.me.canNetwork && typeof CrEmbed === "function") out.mainSlotEnd = <CrEmbed page="wifi" caps={B.me.caps || []} me={B.me} phone={isPhone}/>;
     out.isGen = !!gdef; out.isMore = sec === "more"; out.phoneBack = isPhone && !isTab; out.goMore = () => this.go("more");
     const gLoading = !!CP3_G[sec] && sec !== "tournaments" && !gsrc && !S.gErr[sec];
     if (gdef) {

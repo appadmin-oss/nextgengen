@@ -4,7 +4,7 @@
  *   GET               their lessons, with progress
  *   GET ?unit=ID      one lesson (starts it)
  *   GET ?view=staff   an instructor's or mentor's view; &memberId= one member's
- *   POST action=submit | ask | mark | year | material | lesson   (multipart `file` → an instructor's upload)
+ *   POST action=submit | ask | mark | year | material | lesson | note | save   (multipart `file` → an instructor's upload)
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
@@ -24,6 +24,9 @@ if ($method === 'GET') {
         $res = gs_call('member.testimonial.mine', ['memberId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'placement') {
         $res = gs_call('staff.curriculum.placement', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? '')]);
+    } elseif (($_GET['view'] ?? '') === 'sources') {
+        // Go deeper: a fetched read on the lesson's topic and vetted free sources (domain/learn.php).
+        $res = gs_call('member.learn.sources', ['memberId' => $mid, 'unitId' => (string)($_GET['unit'] ?? '')]);
     } elseif (isset($_GET['unit'])) {
         $res = gs_call('member.curriculum.unit', ['memberId' => $mid, 'unitId' => (string)$_GET['unit']]);
     } else {
@@ -37,7 +40,12 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
-    if ($action === 'submit') {
+    if ($action === 'note') {
+        // A private note on one of their own lessons (domain/learn.php); empty clears it.
+        $res = gs_call('member.learn.note', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'note' => (string)($b['note'] ?? '')]);
+    } elseif ($action === 'save') {
+        $res = gs_call('member.learn.save', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'saved' => !empty($b['saved'])]);
+    } elseif ($action === 'submit') {
         $res = gs_call('member.curriculum.submit', ['memberId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''),
             'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []]);
     } elseif ($action === 'mark') {

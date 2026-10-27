@@ -4362,3 +4362,161 @@ CREATE TABLE IF NOT EXISTS study_drills (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (187) ON DUPLICATE KEY UPDATE version = version;
+
+-- 188: the Learn app's note, save and last-opened per member per lesson (domain/learn.php).
+CREATE TABLE IF NOT EXISTS learn_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  unitId VARCHAR(40) NOT NULL,
+  note MEDIUMTEXT,
+  noteAt VARCHAR(32) NOT NULL DEFAULT '',
+  saved TINYINT NOT NULL DEFAULT 0,
+  savedAt VARCHAR(32) NOT NULL DEFAULT '',
+  openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  opens INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_learn_state (memberId, unitId),
+  KEY idx_learn_state_opened (memberId, openedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (188) ON DUPLICATE KEY UPDATE version = version;
+
+-- 189: Wi-Fi accounts and the centres' gateways (any platform) (domain/wifi.php). Access is
+-- derived (wifi_access_for), never stored; the PIN is sealed, not hashed,
+-- because the router must be handed it.
+CREATE TABLE IF NOT EXISTS wifi_accounts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  username VARCHAR(64) NOT NULL,
+  pinSealed VARCHAR(255) NOT NULL DEFAULT '',
+  pinSetAt VARCHAR(32) NOT NULL DEFAULT '',
+  pinResetDay VARCHAR(10) NOT NULL DEFAULT '',
+  pinResets INT NOT NULL DEFAULT 0,
+  override VARCHAR(16) NOT NULL DEFAULT '',
+  overrideWhy VARCHAR(255) NOT NULL DEFAULT '',
+  overrideBy VARCHAR(64) NOT NULL DEFAULT '',
+  overrideAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_subject (subjectType, subjectId),
+  UNIQUE KEY uq_wifi_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS wifi_gateways (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  platform VARCHAR(16) NOT NULL DEFAULT 'mikrotik',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  label VARCHAR(120) NOT NULL DEFAULT '',
+  keyHash VARCHAR(64) NOT NULL DEFAULT '',
+  keyTail VARCHAR(8) NOT NULL DEFAULT '',
+  keySetAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastSeenAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastFullAt VARCHAR(32) NOT NULL DEFAULT '',
+  osVersion VARCHAR(64) NOT NULL DEFAULT '',
+  lastError VARCHAR(255) NOT NULL DEFAULT '',
+  lastVersion INT NOT NULL DEFAULT 0,
+  lastChangeAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackedJson MEDIUMTEXT,
+  pendingJson MEDIUMTEXT,
+  pendingVersion INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_gateway (gatewayId),
+  KEY idx_wifi_gateways_centre (centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (189) ON DUPLICATE KEY UPDATE version = version;
+
+-- 190: Wi-Fi diagnosis: what gateways report (hourly summaries, never browsing),
+-- and speed tests from a gateway or a staff device at a centre.
+ALTER TABLE wifi_gateways ADD COLUMN testAsked INT NOT NULL DEFAULT 0;
+ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT;
+CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  hour VARCHAR(13) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  activeMax INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  memFreeMin INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_stats (gatewayId, hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  gatewayId VARCHAR(40) NOT NULL DEFAULT '',
+  source VARCHAR(16) NOT NULL DEFAULT 'device',
+  downMbps DOUBLE NOT NULL DEFAULT 0,
+  upMbps DOUBLE NOT NULL DEFAULT 0,
+  rttMs INT NOT NULL DEFAULT 0,
+  byId VARCHAR(64) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_wifi_speed_centre (centre, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (190) ON DUPLICATE KEY UPDATE version = version;
+
+-- 191: Wi-Fi regions (a Wi-Fi grouping of centres, not a change to centres),
+-- their leads, speed/hours overrides per region or centre, and daily rollups.
+CREATE TABLE IF NOT EXISTS wifi_regions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  code VARCHAR(16) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_centres (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL,
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  regionId VARCHAR(40) NOT NULL,
+  assignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  assignedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_rc_centre (centre),
+  KEY idx_wifi_rc_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_leads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  addedAt VARCHAR(32) NOT NULL DEFAULT '',
+  addedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_lead (regionId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  profilesJson TEXT,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_override (regionId, centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_gateway_daily (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  date VARCHAR(10) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  hoursUp INT NOT NULL DEFAULT 0,
+  activePeak INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  activeSamples INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_daily (gatewayId, date),
+  KEY idx_wifi_daily_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_wifi_stats_hour ON wifi_gateway_stats (hour);
+ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (191) ON DUPLICATE KEY UPDATE version = version;

@@ -236,6 +236,13 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     chk('…and sets a child’s part from the project’s drawer', await until(A, () => true, null, 500) && (await (async () => { for (let i = 0; i < 40; i++) { const st = q(`(string)(db_row("SELECT pp.status FROM project_people pp JOIN projects pr ON pr.projectId = pp.projectId WHERE pr.title = 'Open day at the centre' AND pp.personId = 'NGG-PJ-K1'")['status'] ?? '')`); if (st === 'done') return true; await A.waitForTimeout(250); } return false; })()));
     chk('no page errors (Control Room)', A.errs.length === 0);
     if (A.errs.length) console.log(A.errs.slice(0, 6));
+
+    console.log('a child leaves; the lead can still finish the project');
+    php(`db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-PJ-K3'"); echo 'ok';`);
+    await L.click('.mpj-card:has-text("Clean-up day") button:has-text("Mark finished")');
+    chk('“Mark finished” works when somebody on it has since left', await until(L, () => /Project marked finished/.test(document.body.innerText)));
+    chk('…and it is finished', q(`db_row("SELECT status FROM projects WHERE title = 'Clean-up day'")['status']`) === 'closed');
+
     chk('no page errors', L.errs.length + K.errs.length + M.errs.length === 0);
     if (L.errs.length + K.errs.length + M.errs.length) console.log(L.errs.concat(K.errs, M.errs).slice(0, 6));
   } catch (e) {

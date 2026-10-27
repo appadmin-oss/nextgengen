@@ -316,8 +316,10 @@ function member_merge_policy(): array {
         'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
         'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
         'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child
-        'notification_state'     => 'MOVE_UNIQUE',
-        'support_cases'          => 'MOVE',           // the cases about a child follow the surviving record    // read/dismissed marks; the survivor's own marks stand
+        'notification_state'     => 'MOVE_UNIQUE',    // read/dismissed marks; the survivor's own marks stand
+        'support_cases'          => 'MOVE',           // the cases about a child follow the surviving record
+        'learn_state'            => 'MOVE_UNIQUE',    // notes and saves per lesson; the survivor's own stand
+        'wifi_region_leads'      => 'MOVE_UNIQUE',    // leading a Wi-Fi region follows the surviving staff record
         'circle_confirmations'   => 'MOVE',
         'circle_remarks'         => 'MOVE',
         'post_comments'          => 'MOVE',

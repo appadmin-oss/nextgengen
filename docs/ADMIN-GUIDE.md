@@ -1191,6 +1191,7 @@ inside the dashboard.
 | `/learn/plan/<subject>` | One subject's drill |
 | `/learn/review` | How the review works, and what they will be asked about |
 | `/learn/helper` | The study helper |
+| `/learn/notes` | **Notes** — the lessons they saved for later, and every note they wrote |
 
 **Every one of those is a real address.** A lesson can be bookmarked, sent to a
 mentor, or opened from a message, and the browser's Back button goes back. It
@@ -1201,6 +1202,30 @@ A lesson page carries, in this order: last session's review (which can always
 be skipped — being away is not a reason to be shut out of this week), what
 they'll learn, the lesson itself with **Read it to me** and a speed control,
 next session's questions, and *How did that go?* at the end.
+
+Around the lesson, so somebody coming back has somewhere to start:
+
+- **Pick up where you left off.** *This week* leads with the last lesson they
+  opened and have not finished, and three figures: weeks in a row with a lesson
+  finished, how many this week, and the time their finished lessons add up to.
+  The figures are worked out from their completions, never stored, so they
+  cannot disagree with the progress you see in the Control Room.
+- **Save for later** and **My notes** on every lesson. Notes are private to the
+  member: no staff screen, report or AI reads them. Both collect under *Notes*.
+- **Mark as done** on a lesson that has no questions, which before had no way
+  to be finished at all.
+- **Previous / Next** at the foot of a lesson, and *Lesson 2 of 8* at the top.
+- **Find a lesson** on *My courses*, across every course they are on.
+- **Go deeper.** A short read on the lesson's topic, fetched from Simple
+  English Wikipedia (English Wikipedia if it has nothing), shown with its
+  source and licence and only when the article's title shares a real word with
+  the lesson — then a short list of free, reputable places to learn more,
+  chosen by hand for each course (Khan Academy, OpenStax, CS50, MDN, Lichess,
+  musictheory.net, the WHO and the like: no ads in front of the first lesson,
+  nothing a child pays for). They open in a new tab. Reads are cached for a
+  month; if Wikipedia is down or busy, the read is simply left out and the list
+  still shows. To change the list for a course, a developer edits
+  `LEARN_SOURCES` in `api/_lib/domain/learn.php`.
 
 ### School: practising for their own exams (/learn/plan)
 
@@ -1888,8 +1913,17 @@ anyone's part — done, not done yet, or *excused* (an excused part is not
 counted). Taking someone off keeps them on the record if they had finished.
 The commitment *Support NGGC projects and activities* on My role counts the
 mentor's projects this month ("1 of 2 done · next finishes 20 Oct"), and turns
-into a to-do when a part is past its finish date. Saving and marking wait for
+into a to-do when a part is past its finish date — only while the project is
+open; a finished project is never "past its date". Saving and marking wait for
 the Academy, as the portal's other saves do.
+
+A mentor with no safeguarding screening recorded can be on a mentors-only
+project, but is refused (by name) on one with children, because everyone on
+it sees the children's names. Somebody already on a project who has since left
+— gone inactive, moved centre — stays on it until you take them off, so it can
+still be edited, finished or cancelled; they just cannot be *added* to a new
+one. Once a project is finished, only the person who set it (or the Control
+Room) can change a part.
 
 **Projects in the Control Room.** **Mentorship › Projects** shows every project
 at the centres in your scope — the ones leads and mentors set in the mentor
@@ -3213,3 +3247,68 @@ Open the person in **Mentors & volunteers → Volunteers**, then go to the "Also
 - **A mentor as well:** tick it to add them to the mentor roster. Their role stays Instructor, and both the Instructor and Mentor portals open for them. Pair their mentees in Mentors & volunteers → Pairings. Untick it to take them off the mentor roster.
 - **Skip the online Academy** (instructors): tick it when they trained in person or need no training. Their portal stops asking for the modules. The waiver is recorded with the date and who granted it. You cannot set it on your own record.
 - **For a mentor's Academy,** use Mentors & volunteers → Pairings → the mentor → Academy "Completed in person".
+
+## Wi-Fi at the centres (Control Room → Wi-Fi, and the Club portal → Wi-Fi)
+
+Who can use it: anybody given the **network** capability (Access & roles) —
+the people who look after the centres' equipment. Super admins have it. Admins
+do not, unless it is given to them. In the Club portal it is under **Systems →
+Wi-Fi** and opens right there, the same screens as in the Control Room.
+
+**How it works.** Each centre has a *gateway* — its router or Wi-Fi controller.
+Every one to five minutes it fetches its centre's list from NGG with its own
+key. Members sign in with their **printed ID** (e.g. `026-014`) and a 6-digit
+**Wi-Fi PIN**, which they see in the app under **Me → Wi-Fi**. Nobody is added
+or removed by hand: Wi-Fi follows the record. Suspend somebody and they are
+signed out at the gateway's next fetch.
+
+**The four tabs.**
+- **Gateways** — each centre, its gateway, and whether it is working. What needs
+  a look is listed first, in words, with what to do. Open a gateway for what it
+  reported, what it holds, its setup guide, a line test, its key and removal.
+- **Speed & health** — each centre's line speed and, at the busiest hour this
+  week, about how much each person gets. **Test this connection** measures the
+  line from your own device: run it on the centre's Wi-Fi, from where people
+  sit. Every test is kept with who ran it and your note.
+- **Who gets on** — the access table (on / limited / off for each kind of
+  record), whether fees owing limits Wi-Fi, and each profile's speed, devices,
+  hours, *fast page loads* (burst) and priority. Edit in place, then **Save
+  changes**. **Why can't somebody get on?** looks a person up and says why.
+- **Setup guides** — which gateway a centre can use and what each can do.
+
+**Adding a gateway.** Add a gateway → choose what it is and its centre. Its
+**key is shown once**, in its setup guide, already inside the script. Follow
+the guide on the gateway. It shows as *Working* after its first fetch. Lost the
+key? **Rotate the key** and run the setup again with the new one.
+
+| Gateway | Status | Notes |
+|---|---|---|
+| MikroTik (RouterOS 7) | Pilot first | The fullest: speeds, burst, priority, devices, sign-out, 30-day remember, filtering, line tests |
+| RADIUS bridge (UniFi, Omada, pfSense, OPNsense) | Pilot first | A Raspberry Pi at the centre. Removal bites at the next sign-in (within a minute on pfSense with re-authentication on) |
+| OpenWrt with openNDS | Pilot first | The PIN sign-in page must be proven on one router |
+| Anything else (JSON feed) | Ready | For your own script or controller |
+
+"Pilot first" means: set it up at **one** centre and watch it for a week before
+the others. The scripts follow each maker's manual, but no router can be tested
+from NGG's own systems.
+
+**What the warnings mean.**
+
+| It says | What to do |
+|---|---|
+| Not connected yet | Run its setup guide on the gateway |
+| Silent for 3 hours | Check its power and internet. It keeps the people it had; nobody new gets on and nobody suspended is removed until it fetches again |
+| N fetches with the wrong key | After a rotation, run the setup again. If you didn't rotate it, rotate it now |
+| The gateway reported a problem | Read the message; certificate problems are usually the router's clock |
+| Slow line | Below 5 Mbit/s. Ask the provider; test at a quiet time to tell the line from the crowd |
+| More promised than the line can give | Members are allowed more than the line can share at busy times. Lower the member speed to the figure shown (keep burst on), or upgrade the line |
+| Working hard / Low on memory | The router is too small for the centre, or needs a restart out of hours |
+
+**Privacy.** Gateways tell NGG how many people are online, their CPU, memory
+and uptime, as hourly summaries. Never who is online and never what anybody
+visits. NGG keeps no browsing record (see docs/POLICY.md, Wi-Fi).
+
+**Overrides.** Someone who should have Wi-Fi but whose record says otherwise
+(an alumni mentor on Saturdays) can be set by hand from *Why can't somebody get
+on?* — by whoever looks after their record — with a reason. An override never
+undoes a suspension.

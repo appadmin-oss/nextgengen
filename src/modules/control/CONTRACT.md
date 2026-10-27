@@ -75,7 +75,7 @@ themselves (§3). Never set widths.
   (say why in a comment). Use the `cr-` classes; no new hex; chrome in CSS, not inline.
 
 ## Drawer spec
-`{ title, sub, name?, photo?, stats: [[k, v]] (3), fields: [[k, v]], sections: [{ h, rows | text | list, empty }], actions: [{ l, primary?, run, disabled?, why? }] }`
+`{ title, sub, name?, photo?, icon? (instead of initials, for a drawer that is not about a person), stats: [[k, v]] (3), fields: [[k, v]], sections: [{ h, rows | text | list, empty }], actions: [{ l, primary?, run, disabled?, why? }] }`
 
 ## Form spec
 `{ title, intro?, submit, busyLabel?, values: {…}, fields: [field], onSubmit: async values => (throw → stays open with the error | return { fieldErrors }), done: "toast" | (values, result) => "toast" }`

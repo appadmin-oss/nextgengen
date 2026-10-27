@@ -3514,6 +3514,172 @@ of `member_mp_project_save`, so the portal and the Control Room share one set of
 rules; only the reach differs (`admin_project_reach`). Tests: PHP "control room:
 …" (7); tests/projects.test.js drives the tab.
 
+## Projects: audited end to end, six defects fixed, the Control Room screen built (27 Oct 2026)
+
+A read-through of `domain/projects.php` against every caller found the mentor
+and child paths wired correctly, and these wrong. Each now has a test.
+
+1. **There was no Control Room screen** when the audit ran. The other session
+   built *Mentorship › Projects* (`ms-projects` in cr-tab-mentorship.jsx) at
+   the same time; this session's duplicate was dropped at the merge, so there
+   is one screen and one set of `NGGApi.admin.projects` wrappers.
+2. **Every Control Room save would have failed** as `bad_status`:
+   `api/admin/projects.php` cast a missing `status` to `''`, and the domain
+   defaults only an absent one. The PHP tests called the op directly and never
+   saw the route. It forwards only the keys sent now.
+3. **A lead could not finish, cancel or edit a project once anyone on it had
+   left their reach** (inactive, moved centre), because every person was
+   re-checked against today's reach. Reach now decides who may be added, not
+   who may stay; the mentor portal's Edit form lists such people so they can be
+   taken off.
+4. **An unscreened mentor could be grouped with children** and see their full
+   names, contrary to the file's own rule. Refused now (`not_screened`, by
+   name) on any project with children; a mentors-only project is allowed.
+5. **My role could warn "past the finish date" for a finished project** for the
+   rest of the month. Only an open project counts as overdue.
+6. **A mentor could change their part on a closed project** (a child could
+   not). Refused now, as for a child, unless they set it.
+7. The Control Room's mark wiped a note when marking a part done without one;
+   it keeps it now, as the mentor path did.
+
+## 27 Oct 2026 — Learn: coming back, keeping, going deeper
+
+Asked: improve /learn and enrich it, from good sources.
+
+- **`learn_state`** (migration 188): one row per member per lesson — a private
+  note, *saved for later*, and when it was last opened. Merge policy
+  `MOVE_UNIQUE`. Every write is checked against the member's own lessons, so a
+  note cannot be kept on (or a title learned of) a lesson that is not theirs.
+- **The figures are derived, not stored** (`learn_stats`): a stored streak is
+  a second copy of `curriculum_progress` that drifts from it. A week not yet
+  over does not break the run.
+- **Go deeper** (`member.learn.sources`): a Wikipedia summary chosen by title
+  word overlap, never the first search hit (the first hit for a lesson title
+  is often about something else), with CC BY-SA attribution as the licence
+  requires; then a hand-checked list per course. Fetched server-side with the
+  User-Agent Wikimedia's API policy asks for, cached a month, a miss cached a
+  day so a rate limit is not hit again on every view. Every listed URL answered
+  when added; Canva and Adobe were dropped because they refuse non-browser
+  clients (403), which is also what a school proxy would see. The test seam is
+  `$GLOBALS['__learn_http']`; the browser suite plants the cache file instead.
+- A lesson with no questions can be **marked done** (`curriculum_submit` with
+  no answers completes at 100%). Before this, it could never be finished.
+- New: `/learn/notes`, search on *My courses*, Previous/Next, *Lesson N of M*.
+
+### Wi-Fi gateways: built (2026-10-27) — replaces the plan above
+
+The plan of 2026-10-23 ("PLANNED, not built: MikroTik Wi-Fi accounts…") was
+built with these changes, each for a reason found while building it:
+
+- **Not only MikroTik.** A centre's *gateway* has a platform: `mikrotik`,
+  `radius` (a FreeRADIUS bridge on a Raspberry Pi for UniFi, Omada, pfSense,
+  OPNsense…), `openwrt` (openNDS), or `generic` (JSON). `WIFI_PLATFORMS` in
+  `domain/wifi.php` says what each can do; the screens and the diagnosis read it.
+- **MikroTik uses the router's own hotspot users, not User Manager.** Verified
+  against the RouterOS 7 manual: hotspot user profiles carry `rate-limit`,
+  `shared-users`, `add-mac-cookie`/`mac-cookie-timeout`; removing somebody is
+  `/ip hotspot active remove`, `cookie remove`, `user remove`. User Manager
+  needs its own package, localhost RADIUS and accounting for the same result.
+- **`/tool fetch` cuts a reply at 64,512 bytes without an error**, so the text
+  feed pages (`WIFI_TEXT_PAGE_BYTES`) and every page ends `#end`; a script
+  applies nothing until it has every page.
+- **Hours are kept by NGG**: hotspot profiles have no time-of-day window, so
+  people outside their profile's hours are left off the list (`wifi_in_hours`)
+  and the next fetch signs them out; `next` is shortened to land on a boundary.
+- **No feed version is "bumped".** Each fetch computes the centre's list and
+  diffs it against what that gateway *confirmed* (`ackedJson`); the gateway
+  confirms by sending the version back as `since`. Nothing else in the codebase
+  had to learn about Wi-Fi to keep it right.
+- **Activity logging was dropped** (plan stage 4, the `wifi_activity` cap and
+  tables). NDPA 2023 s.31 needs guardian consent for processing a child's data
+  on that basis and s.28 a privacy impact assessment; filtering does not need
+  the record. Gateways report counts only (`wifi_gateway_stats`, hourly).
+- **Capability `network`**, never bundled into Admin (like `fees`/`journal`).
+  The person lookup is a read on any of people/summer/network; changing one
+  person's Wi-Fi stays with whoever owns their record (people / summer).
+- **The Club portal hosts the Control Room's Wi-Fi page in place** (`CrEmbed`
+  in `cr-shell.jsx`): the same tabs and blocks, with its own drawer, form,
+  confirm and toast layers. Not a second drawing; not a redirect.
+- **Diagnosis** (`wifi_gateway_diagnose`): never connected, silent, wrong-key
+  fetches (a warning while it still fetches), the gateway's own error put into
+  words, RouterOS too old, slow line, more promised than the line can give (fair
+  share from the measured line and the week's peak), CPU, memory, restarts.
+- **Speed**: profiles carry `burst` and `priority` (MikroTik rate-limit). Lines
+  are measured by staff devices (`/api/admin/wifi-speed.php`, timed in the
+  browser by `NGGApi.admin.wifi.speedTest`) and by MikroTik gateways nightly or
+  when asked (`/api/hooks/wifi-speed.php`, second-resolution: a guide).
+
+Status: every platform but `generic` is **pilot first** — the scripts follow
+the makers' manuals but cannot be run here. Pilot MikroTik at one centre. Still
+open from the plan: the owner's decisions (hours, fees rule, pilot centre,
+optional categories); day passes (`ngg-guest` exists as a profile only); a
+branded hotspot login page. Migrations 189–190. Tests: the Wi-Fi block in
+`api/tests/run.php`, `tests/wifi.test.js` (`npm run test:wifi`).
+
+### PLANNED, not built: Wi-Fi at 2,000 centres, in regions (owner, 2026-10-27)
+
+**The requirement.** NGG projects about **2,000 centres**, grouped in
+**regions**. An NGG admin manages Wi-Fi **for their own centre(s)**, never
+the whole network. What was built on 2026-10-27 assumes a handful of centres
+seen by one systems person, so it does not meet this yet:
+
+- the `network` gates in `domain/wifi.php` (overview, gateways, access table,
+  speed tests) ignore `centreScope`. Only the person lookup and the speed-test
+  save are scoped;
+- `admin_wifi_overview` returns every gateway, every centre and the latest 40
+  tests in one reply, and `wifi_health_context` reads every speed test from the
+  last 30 days. At 2,000 centres that is a list problem (CLAUDE.md §6: filter
+  above the page cap, page on the server);
+- the access table and the profiles are one global setting. A region may need
+  its own speeds (its lines differ), and a centre its own hours.
+
+**Regions first (a centre-management change, not a Wi-Fi one).** There is no
+region in the schema today. Plan:
+- a `regions` table (id, name, code, status) and `centres.regionId`, managed in
+  Members → Centres (People capability, like centres; CLAUDE.md §4 "ownership
+  follows the data");
+- staff scope gains regions: `centreScope` may name a region, and
+  `admin_centre_names_in_scope()` expands it to its centres. That is the one
+  place scope is resolved, so every scoped screen gets regions at once;
+- a **regional lead** role (scoped, like `centre_lead`) whose scope is a region;
+- the centre directory and every centre picker become server-side search with
+  region and status facets and paging, not a 2,000-row select.
+
+**Then Wi-Fi at scale.**
+- **Scope every Wi-Fi op by centre**, on the way in and per row
+  (`admin_centre_allowed`): a centre's admin holding `network` sees and acts on
+  their centre's gateways only; a regional lead their region's; a super admin
+  everything. Add/edit/rotate/remove refuse `out_of_scope`.
+- **The Gateways tab becomes a server-side list**: search, facets (region,
+  centre, platform, health), sort, paging and a true total, with
+  `admin.wifi.gateways` replacing the all-in-one overview. The overview keeps
+  only counts, by region (working / need a look / silent / not set up).
+- **Health by region**: a region roll-up (how many centres working, the
+  slowest lines, the busiest) and a drill-down to its centres. Silent gateways
+  are counted, never listed in full, above the page cap.
+- **Settings inherit**: network default → region → centre for the access
+  table, speeds, burst, priority and hours. Store only overrides
+  (`wifi_settings_overrides`: scopeType, scopeId, json), resolve in
+  `wifi_settings($centre)`, and show where each value comes from. The feed
+  already reads settings per gateway, so this is one change in one function.
+- **Speed tests** read per centre, paged. `wifi_health_context` takes the page's
+  gateway ids, never "everything from 30 days".
+- **Bulk acts** through the admin action layer (CLAUDE.md §6): rotate keys for
+  a region's gateways, ask for line tests, each capped, with the count read
+  before the confirm and one audit event per run.
+- **Load**: 2,000 gateways each fetching every 2–5 minutes is about 7–17
+  requests a second on shared hosting. Before rollout: cache each centre's
+  computed list for 60 s (keyed on the centre and the settings version), and
+  measure a fetch's cost. If it is too much, serve the feed from a small
+  separate host, or move the default poll to 5 minutes.
+- **Alerts**: one digest per region lead when a gateway is silent for an hour,
+  not one email per gateway.
+
+**Order.** (1) regions and region scope, with tests; (2) Wi-Fi scope on every
+op, with tests; (3) the server-side gateway list and the region roll-up;
+(4) settings inheritance; (5) load caching, measured, before more than a pilot
+region goes live.
+
 ## Focus rings on the public site (2026-10-27)
 
 The owner reported a focus-ring problem. Measured with a keyboard walk of 16

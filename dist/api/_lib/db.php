@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 187;
+const NGG_SCHEMA_TARGET = 191;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5476,6 +5476,152 @@ function db_migrate(PDO $db): void {
                and left the table unindexed. */
             CREATE INDEX IF NOT EXISTS idx_drill_member ON study_drills(memberId, subject, startedAt);
             CREATE INDEX IF NOT EXISTS idx_drill_marked ON study_drills(memberId, markedAt);
+        ",
+        /* The Learn app's own record of a member and a lesson (domain/learn.php):
+           their private note on it, whether they saved it for later, and when
+           they last opened it — what "pick up where you left off" reads.
+           One row per member per lesson. Never read by staff. */
+        188 => "
+            CREATE TABLE IF NOT EXISTS learn_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              unitId TEXT NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              noteAt TEXT NOT NULL DEFAULT '',
+              saved INTEGER NOT NULL DEFAULT 0,
+              savedAt TEXT NOT NULL DEFAULT '',
+              openedAt TEXT NOT NULL DEFAULT '',
+              opens INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (memberId, unitId)
+            );
+            CREATE INDEX IF NOT EXISTS idx_learn_state_opened ON learn_state(memberId, openedAt);
+        ",
+        189 => "
+            CREATE TABLE IF NOT EXISTS wifi_accounts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              username TEXT NOT NULL,
+              pinSealed TEXT NOT NULL DEFAULT '',
+              pinSetAt TEXT NOT NULL DEFAULT '',
+              pinResetDay TEXT NOT NULL DEFAULT '',
+              pinResets INTEGER NOT NULL DEFAULT 0,
+              override TEXT NOT NULL DEFAULT '',
+              overrideWhy TEXT NOT NULL DEFAULT '',
+              overrideBy TEXT NOT NULL DEFAULT '',
+              overrideAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (subjectType, subjectId),
+              UNIQUE (username)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_gateways (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL UNIQUE,
+              platform TEXT NOT NULL DEFAULT 'mikrotik',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              label TEXT NOT NULL DEFAULT '',
+              keyHash TEXT NOT NULL DEFAULT '',
+              keyTail TEXT NOT NULL DEFAULT '',
+              keySetAt TEXT NOT NULL DEFAULT '',
+              lastSeenAt TEXT NOT NULL DEFAULT '',
+              lastFullAt TEXT NOT NULL DEFAULT '',
+              osVersion TEXT NOT NULL DEFAULT '',
+              lastError TEXT NOT NULL DEFAULT '',
+              lastVersion INTEGER NOT NULL DEFAULT 0,
+              lastChangeAt TEXT NOT NULL DEFAULT '',
+              ackedJson TEXT NOT NULL DEFAULT '',
+              pendingJson TEXT NOT NULL DEFAULT '',
+              pendingVersion INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              removedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_gateways_centre ON wifi_gateways(centre);
+        ",
+        190 => "
+            ALTER TABLE wifi_gateways ADD COLUMN testAsked INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT NOT NULL DEFAULT '';
+            CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              hour TEXT NOT NULL,
+              samples INTEGER NOT NULL DEFAULT 0,
+              activeMax INTEGER NOT NULL DEFAULT 0,
+              activeSum INTEGER NOT NULL DEFAULT 0,
+              cpuMax INTEGER NOT NULL DEFAULT 0,
+              memFreeMin INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (gatewayId, hour)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              gatewayId TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'device',
+              downMbps REAL NOT NULL DEFAULT 0,
+              upMbps REAL NOT NULL DEFAULT 0,
+              rttMs INTEGER NOT NULL DEFAULT 0,
+              byId TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_speed_centre ON wifi_speed_tests(centre, at);
+        ",
+        191 => "
+            CREATE TABLE IF NOT EXISTS wifi_regions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL UNIQUE,
+              name TEXT NOT NULL DEFAULT '',
+              code TEXT NOT NULL DEFAULT '',
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              removedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS wifi_region_centres (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              centre TEXT NOT NULL UNIQUE,
+              centreId TEXT NOT NULL DEFAULT '',
+              regionId TEXT NOT NULL,
+              assignedAt TEXT NOT NULL DEFAULT '',
+              assignedBy TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_rc_region ON wifi_region_centres(regionId);
+            CREATE TABLE IF NOT EXISTS wifi_region_leads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              addedAt TEXT NOT NULL DEFAULT '',
+              addedBy TEXT NOT NULL DEFAULT '',
+              UNIQUE (regionId, memberId)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              regionId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              profilesJson TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              updatedBy TEXT NOT NULL DEFAULT '',
+              UNIQUE (regionId, centre)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_gateway_daily (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              date TEXT NOT NULL,
+              samples INTEGER NOT NULL DEFAULT 0,
+              hoursUp INTEGER NOT NULL DEFAULT 0,
+              activePeak INTEGER NOT NULL DEFAULT 0,
+              activeSum INTEGER NOT NULL DEFAULT 0,
+              activeSamples INTEGER NOT NULL DEFAULT 0,
+              cpuMax INTEGER NOT NULL DEFAULT 0,
+              UNIQUE (gatewayId, date)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_daily_date ON wifi_gateway_daily(date);
+            CREATE INDEX IF NOT EXISTS idx_wifi_stats_hour ON wifi_gateway_stats(hour);
+            ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INTEGER NOT NULL DEFAULT 0;
         ",
     ];
 

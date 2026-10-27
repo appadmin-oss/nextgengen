@@ -24877,6 +24877,79 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('member: …and the multiple-choice points were still awarded',
         (int)$right['progress']['score'] === 2 && (int)$right['progress']['maxScore'] === 5);
 
+    // The Learn app's own record: picked up, kept, noted (domain/learn.php).
+    (function () use ($uid) {
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'] ?? [];
+        chk('learn: opening a lesson is what "pick up where you left off" reads', ($L['recent'][0]['unitId'] ?? '') === $uid);
+        $n = backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => "  Thumb under on F.\r\nPractise slowly.  "]);
+        chk('learn: a note is kept, trimmed, with its time', !empty($n['ok']) && $n['note'] === "Thumb under on F.\nPractise slowly." && $n['noteAt'] !== '');
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: …and comes back on the list read and on the lesson', ($L['notes'][0]['note'] ?? '') === $n['note']
+            && backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid])['mine']['note'] === $n['note']);
+        chk('learn: a note over the limit is refused and names it', (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => str_repeat('a', LEARN_NOTE_MAX + 1)])['error'] ?? '') === 'too_long');
+        $guitar = (string)(db_row("SELECT unitId FROM curriculum_units WHERE course = 'Guitar' LIMIT 1")['unitId'] ?? 'none');
+        chk('learn: nobody keeps a note on, or saves, a lesson that is not theirs',
+            (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'note' => 'x'])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'saved' => true])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar])['error'] ?? '') === 'not_found');
+        chk('learn: …nor on anybody else\'s list', empty(backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['learn']['notes']));
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => true]);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: a lesson saved for later is on the saved list, and its note survives the save', ($L['saved'][0]['unitId'] ?? '') === $uid && ($L['notes'][0]['note'] ?? '') === $n['note']);
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => false]);
+        backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => '   ']);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: unsaving and an empty note take it off both lists', $L['saved'] === [] && $L['notes'] === []);
+        chk('learn: one row per member per lesson, however often it is touched', (int)db_row('SELECT COUNT(*) n FROM learn_state WHERE memberId = ? AND unitId = ?', ['NGG-CUR-M1', $uid])['n'] === 1);
+
+        // The figures are derived from completions, never stored.
+        $t = strtotime(attendance_today() . 'T12:00:00Z');
+        $mon = $t - ((int)gmdate('N', $t) - 1) * 86400;
+        $u = static fn($d, $mins = 20) => ['durationMins' => $mins, 'progress' => ['status' => 'completed', 'completedAt' => gmdate('Y-m-d', $d) . 'T10:00:00Z']];
+        $s = learn_stats([$u($mon), $u($mon - 7 * 86400), $u($mon - 14 * 86400, 40), $u($mon - 35 * 86400), ['durationMins' => 30, 'progress' => ['status' => 'started']]]);
+        chk('learn: three weeks in a row, the minutes of finished lessons only, and this week\'s count',
+            $s['streakWeeks'] === 3 && $s['minutes'] === 100 && $s['doneThisWeek'] === 1 && $s['done'] === 4);
+        $s = learn_stats([$u($mon - 7 * 86400), $u($mon - 14 * 86400)]);
+        chk('learn: a week not yet over does not break the run', $s['streakWeeks'] === 2 && $s['doneThisWeek'] === 0);
+        chk('learn: a gap does', learn_stats([$u($mon - 14 * 86400)])['streakWeeks'] === 0);
+
+        // Go deeper: a fetched read that has to be ABOUT the lesson, and vetted sources by course.
+        $unit = db_row('SELECT title, course FROM curriculum_units WHERE unitId = ?', [$uid]);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) {
+            $calls[] = $url;
+            if (strpos($url, '/search/title') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['pages' => [
+                ['key' => 'Banana', 'title' => 'Banana'], ['key' => 'Middle_C', 'title' => 'Middle C']]])];
+            if (strpos($url, 'Banana') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Banana', 'extract' => str_repeat('A yellow fruit. ', 10)])];
+            return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Middle C',
+                'extract' => 'Middle C is the C note near the middle of a piano keyboard. It is the fourth C key from the left on a standard 88-key piano.',
+                'content_urls' => ['desktop' => ['page' => 'https://simple.wikipedia.org/wiki/Middle_C']]])];
+        };
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is the article that shares a word with the lesson, never the first result', ($g['read']['title'] ?? '') === 'Middle C'
+            && !array_filter($calls, fn($c) => strpos($c, 'summary/Banana') !== false));
+        chk('learn: …with its source, its licence and a link back', ($g['read']['source'] ?? '') === 'Simple English Wikipedia'
+            && ($g['read']['licence'] ?? '') === 'CC BY-SA 4.0' && ($g['read']['url'] ?? '') === 'https://simple.wikipedia.org/wiki/Middle_C');
+        $hosts = array_map(fn($x) => parse_url($x['url'], PHP_URL_HOST), $g['sources'] ?? []);
+        chk('learn: a music lesson gets the vetted music sources, and a search on its topic', in_array('www.musictheory.net', $hosts, true) && in_array('www.khanacademy.org', $hosts, true));
+        $calls = [];
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is cached, so the next view asks Wikipedia nothing', $calls === []);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $GLOBALS['__learn_http'] = fn($url) => ['ok' => false, 'code' => 429, 'body' => ''];
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: Wikipedia refusing is not an error anybody sees: no read, and the sources still show', !empty($g['ok']) && $g['read'] === null && count($g['sources']) > 0);
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) { $calls[] = $url; return ['ok' => false, 'code' => 429, 'body' => '']; };
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: …and a miss is remembered for a day rather than asked on every view', $calls === []);
+        unset($GLOBALS['__learn_http']);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $gen = array_column(learn_curated('Swimming', 'Floating'), 'by');
+        chk('learn: a course with no list of its own gets the general one, never another course\'s', in_array('OpenStax (Rice University)', $gen, true) && !in_array('musictheory.net', $gen, true));
+    })();
+
     // A written answer with no AI waits for a person.
     $hp = db_row("SELECT unitId FROM curriculum_units WHERE title = 'Hand position'")['unitId'];
     $hc = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $hp])['unit']['checks'][0]['checkId'];
@@ -28309,6 +28382,34 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && !empty(backend_dispatch('admin.project.save', ['projectId' => $APID, 'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]] + $aBase)['ok'])
         && db_row('SELECT status FROM projects WHERE projectId = ?', [$APID])['status'] === 'closed'
         && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.mark' AND subject = ?", [$APID])['c'] === 1);
+
+    /* The audit's findings, each pinned (docs/HANDOFF.md, 27 Oct 2026). */
+    db_insert('mentors', ['mentorId' => 'MEN-UNSC', 'fullName' => 'Una Unscreened', 'email' => 'una@mp.example', 'status' => 'active', 'centre' => 'Portalville', 'programme' => 'ngg',
+        'memberId' => '', 'checkedAt' => '', 'maxMentees' => 8, 'joinedAt' => '2025-01-01', 'rank' => 'mentor', 'kind' => '', 'leadId' => '', 'createdAt' => now_iso()]);
+    $uns = backend_dispatch('admin.project.save', $aBase + ['people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: an unscreened mentor is refused on a project with children, by name', ($uns['error'] ?? '') === 'not_screened' && ($uns['names'] ?? []) === ['Una Unscreened']);
+    chk('projects: …and may be on a mentors-only project', !empty(backend_dispatch('admin.project.save', $aBase + ['title' => 'Mentor planning', 'people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC']]])['ok']));
+    $mon = substr($T, 0, 7);
+    $over0 = mp_projects_month('MEN-MP1', $mon, $T)['overdue'];
+    $past = gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 2 * 86400);
+    $op = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'centre' => 'Portalville', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    $OPID = (string)($op['projectId'] ?? '');
+    chk('projects: an open project past its date is overdue on the mentor’s My role', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0 + 1);
+    // NGG-MPK7 leaves the programme; finishing the project must not be blocked by them.
+    db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-MPK7'");
+    $fin = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'projectId' => $OPID, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: somebody already on a project who has left your reach does not stop you finishing it', !empty($fin['ok']));
+    chk('projects: a mentor cannot change their part on a finished project (as a child cannot)',
+        (backend_dispatch('member.mentor.project.mark', $p('NGG-MP1', ['projectId' => $OPID, 'status' => 'done']))['error'] ?? '') === 'project_closed');
+    chk('projects: …but they still cannot be ADDED to another', (backend_dispatch('admin.project.save', $aBase + ['title' => 'Another', 'people' => [['kind' => 'member', 'id' => 'NGG-MPK7']]])['error'] ?? '') === 'not_yours_to_assign');
+    db_exec("UPDATE members SET status = 'active' WHERE memberId = 'NGG-MPK7'");
+    chk('projects: a finished project is never overdue on My role, whatever was left unticked', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done', 'note' => 'Painted the sign']);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done']);
+    chk('projects: marking a part done again without a note keeps what they wrote', db_row("SELECT note FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK7'", [$OPID])['note'] === 'Painted the sign');
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-UNSC'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-PRJ-SCO'");
 
     /* Supervision written up by the lead (member_mp_supervision_record): it closes the booking,
@@ -32413,6 +32514,296 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $cf = backend_dispatch('admin.support.case', ['requesterId' => $A, 'caseNo' => $c2['caseNo'] - 1])['context'] ?? [];
     chk('support · a fees case shows what is owed to somebody holding fees', in_array('To pay now', array_column($cf, 0), true));
     chk('support · the help answers are found by what is typed', in_array('signin', array_column(backend_dispatch('support.suggest', ['q' => 'cannot sign in password'])['articles'], 'id'), true));
+})();
+
+/* ── Wi-Fi: the access table, the gateways' feed, PINs and keys (domain/wifi.php) ── */
+(function () {
+    // Each test below changes a record and fetches at once: the 60-second list cache is tested on its own further down.
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    $now = now_iso();
+    $C = 'Wifi Test Centre';
+    db_insert('centres', ['centreId' => 'CEN-WIFI', 'name' => $C, 'code' => 'WF', 'status' => 'active']);
+    db_insert('centres', ['centreId' => 'CEN-WIFI-2', 'name' => 'Wifi Other Centre', 'code' => 'WO', 'status' => 'active']);
+    $mem = function (string $id, array $x) use ($now, $C) {
+        db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Wifi ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now], $x));
+    };
+    $mem('NGG-WF-ADM', ['role' => 'super_admin', 'centre' => 'Wifi Other Centre', 'displayId' => '026-900']);
+    $mem('NGG-WF-ADMIN', ['role' => 'admin', 'centre' => 'Wifi Other Centre']);
+    $mem('NGG-WF-ACT', ['displayId' => '026-501']);
+    $mem('NGG-WF-SUS', ['displayId' => '026-502', 'status' => 'suspended']);
+    $mem('NGG-WF-DOR', ['displayId' => '026-503']);
+    $mem('NGG-WF-GRD', ['displayId' => '026-504', 'status' => 'graduated-ngg']);
+    $mem('NGG-WF-SANC', ['displayId' => '026-505']);
+    $mem('NGG-WF-FAR', ['displayId' => '026-506', 'centre' => 'Wifi Other Centre']);
+    $mem('NGG-WF-MEN', ['displayId' => '026-507', 'role' => 'mentor']);
+    db_insert('sanctions', ['personId' => 'NGG-WF-DOR', 'personType' => 'member', 'kind' => 'dormant', 'status' => 'active', 'issuedAt' => $now]);
+    db_insert('sanctions', ['personId' => 'NGG-WF-SANC', 'personType' => 'member', 'kind' => 'suspension', 'status' => 'active', 'issuedAt' => $now, 'endsAt' => '']);
+    $today = attendance_today();
+    db_insert('summer_cohorts', ['cohortId' => 'WF-LIVE', 'name' => 'Wifi live', 'status' => 'active', 'startDate' => gmdate('Y-m-d', strtotime($today . ' -3 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +20 days')), 'createdAt' => $now]);
+    db_insert('summer_cohorts', ['cohortId' => 'WF-OLD', 'name' => 'Wifi old', 'status' => 'closed', 'startDate' => '2024-07-01', 'endDate' => '2024-08-01', 'createdAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SS-WF-1', 'cohortId' => 'WF-LIVE', 'fullName' => 'Live Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'WF-26-001']);
+    db_insert('summer_students', ['studentId' => 'SS-WF-2', 'cohortId' => 'WF-OLD', 'fullName' => 'Old Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'WF-24-001']);
+
+    $A = 'NGG-WF-ADM';
+    // The access table
+    $acc = fn($id) => wifi_access_for(db_row('SELECT * FROM members WHERE memberId = ?', [$id]), ['policy' => policy_states_for([$id], 'member')[$id] ?? null]);
+    chk('wifi · an active member is on, as a member', $acc('NGG-WF-ACT')['access'] === 'on' && $acc('NGG-WF-ACT')['profile'] === 'ngg-member');
+    chk('wifi · a suspended record is off', $acc('NGG-WF-SUS')['access'] === 'off' && $acc('NGG-WF-SUS')['case'] === 'blocked');
+    chk('wifi · a conduct suspension is off too', $acc('NGG-WF-SANC')['case'] === 'blocked');
+    chk('wifi · the Dormant Track is limited', $acc('NGG-WF-DOR')['profile'] === 'ngg-limited');
+    chk('wifi · a graduate is off by default', $acc('NGG-WF-GRD')['access'] === 'off');
+    chk('wifi · staff and mentors take the staff profile', $acc('NGG-WF-ADM')['profile'] === 'ngg-staff' && $acc('NGG-WF-MEN')['profile'] === 'ngg-staff');
+
+    // Gateways are the network capability, never Admin's.
+    chk('wifi · an admin without network cannot see the gateways', (backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-ADMIN'])['error'] ?? '') === 'forbidden');
+    chk('wifi · network is not bundled into Admin', !in_array('network', admin_role_caps('admin'), true) && in_array('network', admin_role_caps('super_admin'), true));
+    chk('wifi · a gateway needs a known platform and a real centre',
+        (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'cisco-ios', 'centre' => $C])['error'] ?? '') === 'bad_platform'
+        && (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => 'Nowhere'])['error'] ?? '') === 'bad_centre');
+    $sv = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Main router']);
+    $gid = $sv['gateway']['gatewayId'] ?? ''; $key = $sv['key'] ?? '';
+    chk('wifi · a new gateway gets an id and a key, shown once', preg_match('/^G[0-9a-f]{8}$/', $gid) === 1 && strlen($key) === 40
+        && !isset(backend_dispatch('admin.wifi.overview', ['requesterId' => $A])['gateways'][0]['key']));
+    chk('wifi · the key is stored hashed, never as itself', db_row('SELECT keyHash FROM wifi_gateways WHERE gatewayId = ?', [$gid])['keyHash'] === hash('sha256', $key));
+    chk('wifi · a gateway not yet heard from says what to do', ($sv['gateway']['diagnosis'][0]['title'] ?? '') === 'Not connected yet');
+
+    // The feed
+    chk('wifi · a wrong key is refused, and counted against the gateway', (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => str_repeat('0', 40)])['error'] ?? '') === 'bad_key'
+        && (wifi_bad_key_counts()[$gid] ?? 0) === 1);
+    $f1 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'os' => '7.14.3']);
+    $names = array_column($f1['users'], 'username');
+    chk('wifi · first contact is a full list', $f1['ok'] && $f1['full'] === true && $f1['version'] === 1);
+    chk('wifi · the list holds the centre’s members with access, by printed ID', in_array('026-501', $names, true) && in_array('026-503', $names, true));
+    chk('wifi · nobody suspended, graduated or at another centre is on it', !array_intersect(['026-502', '026-504', '026-505', '026-506'], $names));
+    chk('wifi · staff are on every centre’s list', in_array('026-900', $names, true) && in_array('026-507', $names, true));
+    chk('wifi · a participant is on within their edition’s dates, and not after', in_array('WF-26-001', $names, true) && !in_array('WF-24-001', $names, true));
+    $u501 = array_values(array_filter($f1['users'], fn($u) => $u['username'] === '026-501'))[0];
+    chk('wifi · each line carries a 6-digit PIN and its profile', preg_match('/^\d{6}$/', $u501['pin']) === 1 && $u501['profile'] === 'ngg-member');
+    chk('wifi · the PIN is sealed at rest', strpos((string)db_row("SELECT pinSealed FROM wifi_accounts WHERE subjectId = 'NGG-WF-ACT'")['pinSealed'], $u501['pin']) === false);
+    $txt = wifi_feed_render($f1)['body'];
+    chk('wifi · the text feed has a header, the profiles, the users and an end marker', strpos($txt, '#ngg-wifi;v=1;full=1;') === 0 && strpos($txt, ';page=1;pages=1') !== false
+        && strpos($txt, "\np;ngg-limited;1;1;1;;0;8\n") !== false && strpos($txt, "\nu;026-501;" . $u501['pin'] . ";ngg-member;add\n") !== false && substr($txt, -5) === "#end\n");
+
+    // Confirmed by sending the version back; then only what changed.
+    $f2 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · nothing changed: nothing sent, the version holds, and it asks again later', $f2['full'] === false && $f2['users'] === [] && $f2['version'] === 1 && $f2['next'] >= WIFI_POLL['warm']);
+    db_update('members', ['status' => 'suspended', 'updatedAt' => now_iso()], ['memberId' => 'NGG-WF-ACT']);
+    $f3 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · a suspension reaches the gateway as a remove, with no Wi-Fi step', $f3['full'] === false && $f3['users'] === [['username' => '026-501', 'pin' => '', 'profile' => '', 'action' => 'remove']]
+        && $f3['version'] === 2 && $f3['next'] === WIFI_POLL['busy']);
+    $f3b = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · a change the gateway failed to apply is handed out again', $f3b['users'] === $f3['users'] && $f3b['version'] === 3);
+    $v = $f3b['version'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => $v]);
+    db_update('members', ['status' => 'active', 'updatedAt' => now_iso()], ['memberId' => 'NGG-WF-ACT']);
+    // A window that holds whatever the time of the run (hours themselves are tested further down, against the clock).
+    $set = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['down' => 20, 'up' => 5, 'devices' => 1, 'hours' => '00:00-23:59']]]);
+    chk('wifi · a profile is saved and checked', $set['ok'] && $set['profiles']['ngg-member']['down'] === 20
+        && (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['down' => 20, 'up' => 5, 'devices' => 1, 'hours' => '18:00-08:00']]])['error'] ?? '') === 'bad_profile');
+    $f4 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => $v]);
+    $acts = array_column($f4['users'], 'action', 'username');
+    chk('wifi · a reinstated member is added back, and a speed change re-sends every member line', ($acts['026-501'] ?? '') === 'add' && ($acts['026-503'] ?? '') === '' && ($acts['WF-26-001'] ?? '') === '');
+    chk('wifi · the blocked case cannot be switched on', (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['blocked' => 'on']])['error'] ?? '') === 'case_locked');
+
+    // Big lists are paged under RouterOS's 64,512-byte fetch limit, and every page is the same version.
+    $big = ['format' => 'text', 'version' => 9, 'full' => true, 'count' => 3000, 'next' => 60, 'profiles' => WIFI_PROFILE_DEFAULTS,
+            'users' => array_map(fn($i) => ['username' => sprintf('026-%04d', $i), 'pin' => '123456', 'profile' => 'ngg-member', 'action' => 'add'], range(1, 3000))];
+    $p1 = wifi_feed_render($big, 1)['body']; preg_match('/;pages=(\d+)/', $p1, $pm);
+    $all = 0; for ($i = 1; $i <= (int)$pm[1]; $i++) { $b = wifi_feed_render($big, $i)['body']; $all += substr_count($b, "\nu;"); $okLen = ($okLen ?? true) && strlen($b) < 64512 && substr($b, -5) === "#end\n"; }
+    chk('wifi · a big list is paged under 64,512 bytes, every page ending #end, nobody lost', (int)$pm[1] > 1 && $okLen && $all === 3000);
+    // Hours are kept by NGG: outside the window, people are left off.
+    chk('wifi · hours: inside and outside a window', wifi_in_hours('08:00-18:00', '09:30') && !wifi_in_hours('08:00-18:00', '18:00') && wifi_in_hours('', '03:00'));
+    $set2 = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => wifi_local_clock(time() - 7200) . '-' . wifi_local_clock(time() - 3600)]]]);
+    $hl = wifi_centre_lines($C);
+    chk('wifi · somebody outside their profile’s hours is not on the list', !isset($hl['WF-26-001']) && isset($hl['026-503']));
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => '']]]);
+
+    // Other platforms
+    $rad = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'radius', 'centre' => $C]);
+    $fr = backend_dispatch('wifi.feed', ['gatewayId' => $rad['gateway']['gatewayId'], 'key' => $rad['key'], 'since' => 0]);
+    $rb = wifi_feed_render($fr)['body'];
+    chk('wifi · a RADIUS bridge gets a FreeRADIUS users file with speeds in bits', $fr['format'] === 'radius' && strpos($rb, '026-501 Cleartext-Password := "') !== false
+        && strpos($rb, 'WISPr-Bandwidth-Max-Down = 20000000') !== false && strpos($rb, 'Session-Timeout = ') !== false);
+    $fr2 = backend_dispatch('wifi.feed', ['gatewayId' => $rad['gateway']['gatewayId'], 'key' => $rad['key'], 'since' => $fr['version']]);
+    chk('wifi · a RADIUS bridge always gets the whole file, marked unchanged when nothing moved', $fr2['full'] === true && strpos(wifi_feed_render($fr2)['body'], '# unchanged') !== false);
+    $gen = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'generic', 'centre' => $C]);
+    $fj = json_decode(wifi_feed_render(backend_dispatch('wifi.feed', ['gatewayId' => $gen['gateway']['gatewayId'], 'key' => $gen['key']]))['body'], true);
+    chk('wifi · the generic feed is JSON with profiles and users', isset($fj['profiles']['ngg-staff'], $fj['users'][0]['username']));
+
+    // Keys
+    $rot = backend_dispatch('admin.wifi.gateway.rotate', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('wifi · a rotated key stops the old one at once', ($rot['key'] ?? '') !== $key && (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key])['error'] ?? '') === 'bad_key'
+        && !empty(backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $rot['key'], 'since' => 0])['ok']));
+    $ov = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    $g1 = array_values(array_filter($ov['gateways'], fn($g) => $g['gatewayId'] === $gid))[0];
+    chk('wifi · wrong-key fetches are shown, as a warning while the gateway still fetches', (bool)array_filter($g1['diagnosis'], fn($d) => strpos($d['title'], 'wrong key') !== false && $d['tone'] === 'warn')
+        && $g1['health'] === 'warn');
+    $old = wifi_gateway_diagnose(['gatewayId' => 'G00000000', 'platform' => 'mikrotik', 'lastSeenAt' => now_iso(), 'lastError' => '', 'osVersion' => '6.49.10']);
+    chk('wifi · RouterOS 6 is called too old', in_array('RouterOS 6.49 is too old', array_column($old, 'title'), true));
+    $cert = wifi_gateway_diagnose(['gatewayId' => 'G00000000', 'platform' => 'mikrotik', 'lastSeenAt' => now_iso(), 'lastError' => 'certificate verify failed', 'osVersion' => '7.18']);
+    chk('wifi · a gateway’s own error is put in words with the fix', strpos($cert[count($cert) - 1]['fix'], 'clock') !== false);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('wifi · a removed gateway can no longer fetch', (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $rot['key']])['error'] ?? '') === 'bad_key');
+
+    // The member's own Wi-Fi, and the desk's
+    $me = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WF-ACT'])['wifi'];
+    chk('wifi · a member sees their name, PIN, limits and that their centre has Wi-Fi', $me['username'] === '026-501' && preg_match('/^\d{6}$/', $me['pin']) === 1
+        && $me['limits']['down'] === 20 && $me['centreHasWifi'] === true && $me['resetsLeft'] === 3);
+    $r1 = backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']);
+    backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']); backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']);
+    chk('wifi · a new PIN, three times a day and no more', ($r1['wifi']['pin'] ?? '') !== $me['pin'] && (backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT'])['error'] ?? '') === 'too_many_resets');
+    $sus = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WF-SUS'])['wifi'];
+    chk('wifi · somebody without access is told why, and shown no PIN', $sus['access'] === 'off' && $sus['pin'] === '' && $sus['why'] !== '');
+    chk('wifi · an override needs a reason', (backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'on'])['error'] ?? '') === 'reason_required');
+    $o = backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'on', 'why' => 'Alumni mentor on Saturdays']);
+    chk('wifi · an override turns a graduate on, and says who and why', $o['wifi']['access'] === 'on' && $o['wifi']['override']['by'] === $A);
+    $os = backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-SUS', 'op' => 'override', 'access' => 'on', 'why' => 'try']);
+    chk('wifi · an override never undoes a suspension', $os['wifi']['access'] === 'off');
+    chk('wifi · an operator cannot override their own Wi-Fi', (backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => $A, 'op' => 'clear'])['error'] ?? '') === 'own_account');
+    $mem('NGG-WF-LEAD', ['role' => 'centre_lead', 'centre' => 'Wifi Other Centre', 'centreScope' => json_encode(['CEN-WIFI-2'])]);
+    chk('wifi · a scoped lead cannot see Wi-Fi for another centre’s member', (backend_dispatch('admin.wifi.member', ['requesterId' => 'NGG-WF-LEAD', 'subjectType' => 'member', 'subjectId' => 'NGG-WF-ACT'])['error'] ?? '') === 'out_of_scope');
+    chk('wifi · a participant’s Wi-Fi is Summer School’s, not People’s', (backend_dispatch('admin.wifi.member', ['requesterId' => 'NGG-WF-LEAD', 'subjectType' => 'summer', 'subjectId' => 'SS-WF-1'])['error'] ?? '') === 'forbidden');
+    $lk = backend_dispatch('admin.wifi.lookup', ['requesterId' => $A, 'q' => '026-50']);
+    $lkr = array_column($lk['results'], null, 'subjectId');
+    chk('wifi · the lookup finds people by printed ID and says why, never with a PIN', isset($lkr['NGG-WF-SUS'], $lkr['NGG-WF-DOR']) && $lkr['NGG-WF-SUS']['access'] === 'off'
+        && $lkr['NGG-WF-DOR']['access'] === 'limited' && $lkr['NGG-WF-DOR']['pin'] === '');
+    chk('wifi · the lookup is centre-scoped per row', array_column(backend_dispatch('admin.wifi.lookup', ['requesterId' => 'NGG-WF-LEAD', 'q' => '026-50'])['results'], 'subjectId') === ['NGG-WF-FAR']);
+    $su = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId']]);
+    chk('wifi · a setup guide comes with its script, the gateway’s id in it and the key left out', $su['ok'] && strpos($su['script'], $rad['gateway']['gatewayId']) !== false
+        && strpos($su['script'], WIFI_KEY_PLACEHOLDER) !== false && strpos($su['script'], $rad['key']) === false && count($su['steps']) >= 4 && $su['pilot'] !== '');
+    foreach (['mikrotik', 'openwrt', 'generic'] as $pl) {
+        $gg = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => $pl, 'centre' => $C]);
+        $sx = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gg['gateway']['gatewayId']]);
+        chk('wifi · a setup guide for ' . $pl, $sx['ok'] && strpos($sx['script'], $gg['gateway']['gatewayId']) !== false && strpos($sx['script'], '/api/hooks/wifi-feed.php') !== false);
+        backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gg['gateway']['gatewayId']]);
+    }
+    // Diagnosis: what a gateway reports, line tests, and a fair share.
+    $dg = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Diag']);
+    $dgid = $dg['gateway']['gatewayId']; $dk = $dg['key'];
+    $t0 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => 0, 'act' => '30', 'cpu' => '95', 'mem' => '12', 'up' => '600']);
+    $txt0 = wifi_feed_render($t0)['body'];
+    chk('wifi · the profile lines carry burst and priority', strpos($txt0, "\np;ngg-staff;25;10;2;;1;2\n") !== false && strpos($txt0, "\np;ngg-limited;1;1;1;;0;8\n") !== false);
+    chk('wifi · a gateway’s report is kept as an hourly summary, not per person', (int)db_row('SELECT activeMax FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['activeMax'] === 30
+        && (int)db_row('SELECT COUNT(*) c FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['c'] === 1);
+    backend_dispatch('admin.wifi.gateway.test', ['requesterId' => $A, 'gatewayId' => $dgid]);
+    $t1 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t0['version'], 'act' => '20']);
+    chk('wifi · a line test asked for rides the next reply', $t1['test'] === true && strpos(wifi_feed_render($t1)['body'], ';test=1;') !== false);
+    $t2 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t1['version'], 'dl' => '6.4']);
+    chk('wifi · a reported result is kept as the centre’s line speed and clears the ask', $t2['test'] === false
+        && (float)db_row("SELECT downMbps FROM wifi_speed_tests WHERE gatewayId = ? AND source = 'gateway'", [$dgid])['downMbps'] === 6.4);
+    $ov2 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    $dgo = array_values(array_filter($ov2['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0];
+    $titles = array_column($dgo['diagnosis'], 'title');
+    chk('wifi · busy and promised more than the line gives: the diagnosis says so, with a fair figure', in_array('More promised than the line can give', $titles, true)
+        && $dgo['fair']['peak'] === 30 && $dgo['fair']['suggestMember'] < 10);
+    chk('wifi · a hot CPU, low memory and a recent restart are all named', (bool)array_filter($titles, fn($t) => strpos($t, 'CPU reached 95%') !== false)
+        && (bool)array_filter($titles, fn($t) => strpos($t, 'Low on memory') !== false) && (bool)array_filter($titles, fn($t) => strpos($t, 'Restarted') === 0));
+    chk('wifi · a staff device’s speed test needs a real centre in scope, and a result',
+        (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => 'Nowhere', 'downMbps' => 5])['error'] ?? '') === 'bad_centre'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 0])['error'] ?? '') === 'bad_result'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => 'NGG-WF-LEAD', 'centre' => $C, 'downMbps' => 9])['error'] ?? '') === 'out_of_scope');
+    backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 3.2, 'upMbps' => 1.1, 'rttMs' => 80, 'note' => 'Hall, Saturday 10am']);
+    $ov3 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    chk('wifi · the newest test is the centre’s line, and a slow one is called slow', $ov3['speedTests'][0]['note'] === 'Hall, Saturday 10am' && $ov3['speedTests'][0]['by'] === 'Wifi NGG-WF-ADM'
+        && in_array('Slow line: 3.2 Mbit/s measured', array_column(array_values(array_filter($ov3['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0]['diagnosis'], 'title'), true));
+    $bp = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['priority' => 9]]]);
+    chk('wifi · priority is checked, and a partial change keeps the rest', ($bp['error'] ?? '') === 'bad_profile'
+        && backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['burst' => false]]])['profiles']['ngg-member']['down'] === 20);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $dgid]);
+    // ── At scale: scope per centre, Wi-Fi regions, speeds that inherit, paged lists, analytics, the list cache.
+    db_insert('centres', ['centreId' => 'CEN-WIFI-3', 'name' => 'Wifi Third Centre', 'code' => 'WT', 'status' => 'active']);
+    $mem('NGG-WF-NADM', ['role' => 'admin', 'centre' => $C, 'capsExtra' => json_encode(['network'])]);
+    $mem('NGG-WF-RLEAD', ['role' => 'admin', 'centre' => 'Wifi Third Centre', 'capsExtra' => json_encode(['network'])]);
+    $gA = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Scale A']);
+    $gB = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'radius', 'centre' => 'Wifi Other Centre', 'label' => 'Scale B']);
+    $gT = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'generic', 'centre' => 'Wifi Third Centre', 'label' => 'Scale T']);
+    chk('wifi scale · an NGG admin with network sees only their own centre’s gateways', in_array('NGG-WF-NADM', [], true) || (function () use ($C) {
+        $o = backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-NADM']);
+        return $o['ok'] && array_unique(array_column($o['gateways'], 'centre')) === [$C] && $o['centres'] === [$C] && $o['scope']['all'] === false;
+    })());
+    chk('wifi scale · …and cannot add, rotate or see another centre’s',
+        (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => 'NGG-WF-NADM', 'platform' => 'mikrotik', 'centre' => 'Wifi Other Centre'])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.wifi.gateway.rotate', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope');
+    chk('wifi scale · the network’s table is changed only by somebody who sees every centre', (backend_dispatch('admin.wifi.access.set', ['requesterId' => 'NGG-WF-NADM', 'cases' => ['graduated' => 'on']])['error'] ?? '') === 'network_wide_only');
+    chk('wifi scale · regions are shaped network-wide only', (backend_dispatch('admin.wifi.region.save', ['requesterId' => 'NGG-WF-NADM', 'name' => 'South'])['error'] ?? '') === 'network_wide_only');
+
+    $rs = backend_dispatch('admin.wifi.region.save', ['requesterId' => $A, 'name' => 'Lagos West', 'code' => 'lw-1']);
+    $RID = $rs['regionId'];
+    chk('wifi scale · a region is made, its code tidied, its name kept unique', $rs['ok'] && db_row('SELECT code FROM wifi_regions WHERE regionId = ?', [$RID])['code'] === 'LW1'
+        && (backend_dispatch('admin.wifi.region.save', ['requesterId' => $A, 'name' => 'lagos west'])['error'] ?? '') === 'name_taken');
+    $as = backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => ['Wifi Other Centre', 'Wifi Third Centre', 'Nowhere Centre']]);
+    chk('wifi scale · centres go into a region with a verdict each', $as['applied'] === 2 && $as['refused'] === 1
+        && backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => ['Wifi Third Centre']])['unchanged'] === 1);
+    chk('wifi scale · a region assignment is capped and says so', (backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => array_map(fn($i) => 'C' . $i, range(1, WIFI_ASSIGN_MAX + 1))])['error'] ?? '') === 'too_many');
+    chk('wifi scale · a lead must hold network', (backend_dispatch('admin.wifi.region.leads', ['requesterId' => $A, 'regionId' => $RID, 'memberIds' => ['NGG-WF-ACT']])['error'] ?? '') === 'not_network');
+    backend_dispatch('admin.wifi.region.leads', ['requesterId' => $A, 'regionId' => $RID, 'memberIds' => ['NGG-WF-RLEAD']]);
+    $lo = backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-RLEAD']);
+    sort($lo['centres']);
+    chk('wifi scale · a region lead sees every centre in their region, and nothing outside it', $lo['centres'] === ['Wifi Other Centre', 'Wifi Third Centre']
+        && !in_array($C, array_column($lo['gateways'], 'centre'), true));
+    $rg = backend_dispatch('admin.wifi.regions', ['requesterId' => $A]);
+    $r1 = array_values(array_filter($rg['regions'], fn($r) => $r['regionId'] === $RID))[0];
+    chk('wifi scale · a region rolls up its centres and gateways', $r1['centres'] === 2 && $r1['gateways'] === 2 && $r1['leads'][0]['memberId'] === 'NGG-WF-RLEAD' && $rg['canShape'] === true);
+
+    // Speeds inherit: network → region → centre, and the feed carries the centre's.
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]]);
+    $pf = backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre']);
+    chk('wifi scale · a region lead sets the region’s speed and its centres inherit it, saying from where', $pf['effective']['ngg-member']['down'] === 4 && $pf['from']['ngg-member'] === 'region'
+        && $pf['effective']['ngg-staff']['down'] === WIFI_PROFILE_DEFAULTS['ngg-staff']['down'] && $pf['from']['ngg-staff'] === 'network');
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => ['down' => 3, 'hours' => '']]]);
+    $tf = backend_dispatch('wifi.feed', ['gatewayId' => $gT['gateway']['gatewayId'], 'key' => $gT['key'], 'since' => 0]);
+    chk('wifi scale · a centre’s own speed wins, and its gateway is sent it', $tf['profiles']['ngg-member']['down'] === 3 && $tf['profiles']['ngg-member']['up'] === wifi_settings()['profiles']['ngg-member']['up']);
+    chk('wifi scale · a region’s speed is set by its lead or a network-wide person only', (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-NADM', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 9]]])['error'] ?? '') === 'out_of_scope');
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => $A, 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => null]]);
+    chk('wifi scale · clearing a centre’s own speed goes back to the region’s', backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre'])['effective']['ngg-member']['down'] === 4);
+
+    // The paged gateway list.
+    $pl = backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'region' => $RID, 'pageSize' => 1, 'sort' => 'nonsense']);
+    chk('wifi scale · the gateway list is filtered on the server with a true total, paged, and an unknown sort falls back', $pl['ok'] && $pl['total'] === 2 && count($pl['gateways']) === 1
+        && ($pl['facets']['region'][$RID] ?? 0) === 2 && ($pl['facets']['region']['_none'] ?? 0) >= 1);
+    chk('wifi scale · search and health filter the whole list, not the page', backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'q' => 'scale t'])['total'] === 1
+        && backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'health' => 'never', 'region' => $RID])['total'] === 1);
+    $cl = backend_dispatch('admin.wifi.centres', ['requesterId' => $A, 'region' => '_none', 'idsOnly' => 1]);
+    chk('wifi scale · the centre list finds centres in no region, with every id for “select all”', in_array($C, $cl['all'], true) && !in_array('Wifi Third Centre', $cl['all'], true));
+
+    // Analytics from the heartbeats.
+    foreach ([12, 30, 18] as $act) backend_dispatch('wifi.feed', ['gatewayId' => $gA['gateway']['gatewayId'], 'key' => $gA['key'], 'since' => 0, 'act' => (string)$act, 'cpu' => '40']);
+    db_insert('wifi_gateway_daily', ['gatewayId' => $gA['gateway']['gatewayId'], 'date' => gmdate('Y-m-d', time() - 86400), 'samples' => 300, 'hoursUp' => 12, 'activePeak' => 44, 'activeSum' => 2000, 'activeSamples' => 100, 'cpuMax' => 70]);
+    $an = backend_dispatch('admin.wifi.analytics', ['requesterId' => $A, 'days' => 7, 'centre' => $C]);
+    $yday = array_values(array_filter($an['series'], fn($x) => $x['date'] === gmdate('Y-m-d', time() - 86400)))[0];
+    chk('wifi scale · analytics: people online per day, from the daily summaries', $an['ok'] && count($an['series']) === 7 && $yday['peakOnline'] === 44 && $yday['avgOnline'] === 20.0);
+    chk('wifi scale · analytics: how much of the day gateways were there', $yday['availability'] !== null && $yday['availability'] > 0 && $yday['availability'] <= 100);
+    chk('wifi scale · analytics: the week’s busy hours, and the busiest centres', count($an['heatmap']) === 7 && count($an['heatmap'][0]) === 24 && $an['busiest'][0]['centre'] === $C);
+    chk('wifi scale · analytics are scoped: a centre’s admin gets only their centre', array_unique(array_column(backend_dispatch('admin.wifi.analytics', ['requesterId' => 'NGG-WF-NADM', 'days' => 7])['leastAvailable'], 'centre')) === [$C]);
+    chk('wifi scale · a fetch with nothing to report still counts as the gateway being there', (function () use ($gT) {
+        backend_dispatch('wifi.feed', ['gatewayId' => $gT['gateway']['gatewayId'], 'key' => $gT['key'], 'since' => 0]);
+        return (int)db_row('SELECT hoursUp FROM wifi_gateway_daily WHERE gatewayId = ? AND date = ?', [$gT['gateway']['gatewayId'], gmdate('Y-m-d')])['hoursUp'] === 1;
+    })());
+
+    // The 60-second list cache: sealed, served, and dropped by a change made here.
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 60;
+    wifi_lines_forget($C);
+    $c1 = wifi_centre_lines($C);
+    $raw = (string)@file_get_contents(cache_path('wifi-lines-' . md5($C)));
+    $anyPin = $c1 ? reset($c1)['pin'] : 'x';
+    chk('wifi scale · a centre’s list is kept with the PINs sealed, never in the clear', $raw !== '' && strpos($raw, '"' . $anyPin . '"') === false && strpos($raw, 'v1:') !== false);
+    db_update('members', ['status' => 'suspended'], ['memberId' => 'NGG-WF-DOR']);
+    chk('wifi scale · within the minute the kept list is served', isset(wifi_centre_lines($C)['026-503']));
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-DOR', 'op' => 'clear']);
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'off', 'why' => 'cache test']);
+    chk('wifi scale · a change made here drops the kept list at once', !isset(wifi_centre_lines($C)['026-503']));
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    db_update('members', ['status' => 'active'], ['memberId' => 'NGG-WF-DOR']);
+
+    $rm = backend_dispatch('admin.wifi.region.remove', ['requesterId' => $A, 'regionId' => $RID]);
+    chk('wifi scale · removing a region unassigns its centres and their region speeds, nothing else', $rm['unassigned'] === 2
+        && backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre'])['effective']['ngg-member']['down'] === wifi_settings()['profiles']['ngg-member']['down']
+        && (bool)wifi_gateway_live($gT['gateway']['gatewayId']));
+    foreach ([$gA, $gB, $gT] as $x) backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $x['gateway']['gatewayId']]);
+    $pv = backend_dispatch('admin.wifi.gateway.preview', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId'], 'q' => '026-50']);
+    chk('wifi · the preview counts by profile and finds a person, without their PIN', $pv['byProfile']['ngg-member'] >= 1 && !isset($pv['matches'][0]['pin']) && count($pv['matches']) >= 1);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

@@ -8366,6 +8366,17 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-unsaved { position: sticky; bottom: 16px; margin-top: 20px; display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 18px; background: var(--cr-ink); color: var(--cr-on-ink); border-radius: var(--cr-r-lg); box-shadow: var(--cr-sh-bar); z-index: 5; }
 .cr-unsaved > .ph { font-size: 16px; color: var(--cr-gold); }
 .cr-unsaved span { flex: 1; font-size: 14px; }
+/* CrEmbed (cr-shell.jsx): a Control Room page inside another portal. It takes
+   the host's flow and width; its layers cover the screen from a fixed overlay. */
+.cr-app.cr-embed { height: auto; overflow: visible; background: transparent; padding: 0 36px 48px; }
+.cr-app.cr-embed.is-phone { padding: 0 16px 32px; }
+.cr-embed-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--cr-line); }
+.cr-embed-head .cr-tabs { margin-top: 0; border-bottom: 0; }
+.cr-embed-acts { display: flex; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; }
+.cr-embed-desc { margin: 12px 0 16px; color: var(--cr-muted); font-size: 14px; }
+.cr-app.cr-embed-layers { position: fixed; inset: 0; height: 100dvh; z-index: 90; background: transparent; pointer-events: none; overflow: visible; }
+.cr-app.cr-embed-layers > * { pointer-events: auto; }
+.cr-embed-unsaved { position: absolute; left: 50%; transform: translateX(-50%); bottom: 20px; width: min(560px, calc(100% - 32px)); margin: 0; }
 .cr-unsaved-discard { height: 34px; padding: 0 14px; border: 1px solid var(--cr-on-ink-line); border-radius: var(--cr-r); background: transparent; color: var(--cr-on-ink); font-size: 13.5px; font-weight: 500; }
 .cr-unsaved-save { height: 34px; padding: 0 14px; border: 0; border-radius: var(--cr-r); background: var(--cr-bg); color: var(--cr-ink); font-size: 13.5px; font-weight: 600; }
 
@@ -8740,6 +8751,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-sheet-head.is-form { padding: 16px 20px; }
 .cr-sheet-ini { width: 44px; height: 44px; border-radius: 50%; background: var(--cr-s3); display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; flex: none; overflow: hidden; }
 .cr-sheet-ini img { width: 100%; height: 100%; object-fit: cover; }
+.cr-sheet-ini .ph { font-size: 20px; }
 .cr-sheet-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cr-sheet-title b { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 .cr-sheet-title span { font-size: 12.5px; color: var(--cr-muted-3); font-family: var(--cr-mono); }
@@ -12116,6 +12128,19 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-view-opt span { font-size: 13px; color: #4a4a50; }
 .m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
 .m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-wifi .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-wifi-dl { margin: 0 0 12px; display: grid; gap: 8px; }
+.m9x-wifi-dl > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; }
+.m9x-wifi-dl dt { min-width: 84px; font-size: 13px; color: #4a4a50; }
+.m9x-wifi-dl dd { margin: 0; font-size: 15px; color: #0b0b0c; }
+.m9x-wifi-v { display: flex; align-items: center; gap: 6px; font-family: var(--mono, ui-monospace, monospace); font-size: 17px; letter-spacing: .04em; }
+.m9x-wifi-b { font: inherit; cursor: pointer; min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #0b0b0c; }
+.m9x-wifi-b:hover { background: #efeee9; }
+.m9x-wifi-b:focus-visible, .m9x-wifi-new:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-wifi-note { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: #4a4a50; }
+.m9x-wifi-new { font: inherit; cursor: pointer; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #0b0b0c; background: #fff; color: #0b0b0c; font-weight: 600; margin-right: 10px; }
+.m9x-wifi-new:disabled { cursor: not-allowed; border-color: #c9c8c2; color: #6b6b72; }
+.m9x-wifi-left { font-size: 13px; color: #4a4a50; }
 
 /* Instructor portal: the assignment desk sits in the page's column, not under the sidebar's edge. */
 .ip6-asd { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 0 40px 56px; }
@@ -16647,6 +16672,70 @@ button.m9x-ev-sum { cursor: pointer; }
 .lrn-opt.is-wrong { border-color: var(--lrn-late); background: #fdf1f0; }
 .lrn-why { margin: 0; padding: 11px 13px; font-size: 14.5px; line-height: 1.6;
   color: var(--lrn-ink-2); background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
+
+/* ── Coming back: the lesson to pick up, and what the weeks add up to ────── */
+.lrn-pickup { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px; padding: 16px;
+  text-decoration: none; color: #fff; background: var(--lrn-accent); border-radius: var(--lrn-r); min-height: var(--lrn-tap); }
+.lrn-pickup > i:first-child { font-size: 34px; color: var(--lrn-gold); }
+.lrn-pickup > i:last-child { font-size: 20px; }
+.lrn-pickup > span { display: grid; gap: 2px; min-width: 0; }
+.lrn-pickup small { font-size: 12.5px; font-weight: 600; color: #d9deea; }
+.lrn-pickup b { font-size: 17px; font-weight: 650; line-height: 1.3; letter-spacing: -0.01em; }
+.lrn-pickup b + span { font-size: 13px; color: #d9deea; }
+.lrn-figs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.lrn-figs li { display: grid; gap: 2px; padding: 12px 14px; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); }
+.lrn-figs b { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.lrn-figs span { font-size: 12.5px; color: var(--lrn-ink-3); line-height: 1.35; }
+
+/* Visible to a screen reader only: the label a search box or a notes field
+   owes, where the surrounding heading already says it to everybody else. */
+.lrn-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.lrn-search { display: grid; gap: 8px; }
+.lrn-search-box { display: flex; align-items: center; gap: 9px; min-height: var(--lrn-tap); padding: 0 12px;
+  background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+.lrn-search-box:focus-within { border-color: var(--lrn-accent); }
+.lrn-search-box i { font-size: 18px; color: var(--lrn-ink-3); }
+.lrn-search-box input { flex: 1; min-width: 0; min-height: 42px; border: 0; outline: 0; background: transparent;
+  font: inherit; font-size: 15px; color: var(--lrn-ink); }
+
+/* ── In a lesson: keep it, note it, finish it, move on ───────────────────── */
+.lrn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lrn-save { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 13px; cursor: pointer;
+  border: 1px solid var(--lrn-line); border-radius: 99px; background: var(--lrn-s1); color: var(--lrn-ink-2);
+  font: inherit; font-size: 13.5px; font-weight: 600; }
+.lrn-save i { font-size: 17px; }
+.lrn-save.is-on { color: var(--lrn-accent); border-color: var(--lrn-accent); background: #eef1f7; }
+.lrn-textarea { width: 100%; min-height: 120px; padding: 11px 12px; resize: vertical; font: inherit; font-size: 15px; line-height: 1.55;
+  color: var(--lrn-ink); background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); }
+.lrn-textarea:focus { border-color: var(--lrn-accent); outline: 0; }
+.lrn-markread { justify-items: start; }
+
+.lrn-read { margin: 0; display: grid; gap: 8px; padding: 14px 16px; background: var(--lrn-s2); border-radius: var(--lrn-r-sm); }
+.lrn-read figcaption { font-size: 15.5px; }
+.lrn-read blockquote { margin: 0; }
+.lrn-read blockquote p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--lrn-ink); }
+.lrn-read-src { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--lrn-ink-3); }
+.lrn-read-src a, .lrn-note a { color: var(--lrn-accent); }
+.lrn-sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lrn-sources a { display: grid; gap: 2px; padding: 12px 14px; text-decoration: none; color: inherit;
+  border: 1px solid var(--lrn-line); border-radius: var(--lrn-r-sm); background: var(--lrn-s1); }
+.lrn-sources a:hover { border-color: var(--lrn-ink-3); }
+.lrn-src-t { font-size: 15px; font-weight: 650; color: var(--lrn-accent); }
+.lrn-src-by { font-size: 12.5px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-src-why { font-size: 13.5px; line-height: 1.5; color: var(--lrn-ink-2); }
+.lrn-wait.is-sm { margin: 10px 0; }
+
+.lrn-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lrn-pager-a { display: flex; align-items: center; gap: 10px; min-height: var(--lrn-tap); padding: 12px 14px; text-decoration: none;
+  color: inherit; background: var(--lrn-s1); border: 1px solid var(--lrn-line); border-radius: var(--lrn-r); font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.lrn-pager-a:hover { border-color: var(--lrn-ink-3); }
+.lrn-pager-a > span { display: grid; gap: 2px; min-width: 0; }
+.lrn-pager-a small { font-size: 12px; font-weight: 600; color: var(--lrn-ink-3); }
+.lrn-pager-a.is-next { justify-content: end; text-align: right; }
+
+.lrn-notecard-body { font-size: 14.5px; line-height: 1.55; color: var(--lrn-ink-2); white-space: pre-line;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* ── Wider than a phone: a rail, and room to breathe ─────────────────────── */
 @container (min-width: 720px) {

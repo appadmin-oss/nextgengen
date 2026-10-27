@@ -1003,6 +1003,10 @@
       curriculum:        () => request('/member/curriculum.php'),
       curriculumUnit:    (unitId) => request('/member/curriculum.php' + qs({ unit: unitId })),
       curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
+      // The Learn app: a private note on a lesson (empty clears it), and saving one for later.
+      learnNote:         (unitId, note) => request('/member/curriculum.php', { body: { action: 'note', unitId, note } }),
+      learnSave:         (unitId, saved) => request('/member/curriculum.php', { body: { action: 'save', unitId, saved: !!saved } }),
+      learnSources:      (unitId) => request('/member/curriculum.php' + qs({ view: 'sources', unit: unitId }), { timeout: 30000 }),
       curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
       curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
       /* Place a class in the curriculum: the list with suggested years, and one save for all. */
@@ -1052,6 +1056,9 @@
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
       feesPay:      () => request('/member/fees.php', { body: { action: 'pay' } }),
+      // The centre's Wi-Fi: sign-in name, PIN, why access is limited or off; a new PIN (3 a day).
+      wifi:         () => request('/member/wifi.php'),
+      wifiReset:    () => request('/member/wifi.php', { body: { action: 'reset' } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -1911,6 +1918,67 @@
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
         reject:   (paymentId, reason) => request('/admin/membership.php', { body: { action: 'reject', paymentId, reason } }),
         evidenceUrl: (paymentId) => BASE + '/admin/membership.php' + qs({ view: 'evidence', paymentId }),
+      },
+      /* The centres' Wi-Fi (domain/wifi.php): gateways of any platform, the
+         access table and profiles (network), and one person's Wi-Fi (people/summer). */
+      wifi: {
+        overview: () => request('/admin/wifi.php'),
+        accessSet: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'access' }, data) }),
+        gatewaySave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'save' }, data) }),
+        gatewayRotate: (gatewayId) => request('/admin/wifi.php', { body: { action: 'rotate', gatewayId } }),
+        gatewayRemove: (gatewayId) => request('/admin/wifi.php', { body: { action: 'remove', gatewayId } }),
+        preview: (gatewayId, q) => request('/admin/wifi.php' + qs({ view: 'preview', gatewayId, q })),
+        setup: (gatewayId) => request('/admin/wifi.php' + qs({ view: 'setup', gatewayId })),
+        lookup: (q) => request('/admin/wifi.php' + qs({ view: 'lookup', q })),
+        testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
+        speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),
+        regions: () => request('/admin/wifi.php' + qs({ view: 'regions' })),
+        regionSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'regionSave' }, data) }),
+        regionRemove: (regionId) => request('/admin/wifi.php', { body: { action: 'regionRemove', regionId } }),
+        regionAssign: (regionId, centres) => request('/admin/wifi.php', { body: { action: 'regionAssign', regionId, centres } }),
+        regionLeads: (regionId, memberIds) => request('/admin/wifi.php', { body: { action: 'regionLeads', regionId, memberIds } }),
+        leadOptions: () => request('/admin/wifi.php' + qs({ view: 'leads' })),
+        profilesFor: (where) => request('/admin/wifi.php' + qs(Object.assign({ view: 'profiles' }, where))),
+        profilesSet: (where, profiles) => request('/admin/wifi.php', { body: Object.assign({ action: 'profiles', profiles }, where) }),
+        gateways: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'gateways' }, q || {}))),
+        centres: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'centres' }, q || {}))),
+        analytics: (q) => request('/admin/wifi.php' + qs(Object.assign({ view: 'analytics' }, q || {}))),
+        /* Measure this device's line to NGG: latency (the best of five tiny
+           requests), download (growing until one takes ~2.5 s, so a fast line
+           is not under-read), upload (2 MB of random bytes). Raw fetches, not
+           request(): the bodies are bytes, and the timing must be the transfer
+           alone. onStep(words) reports progress. Returns { downMbps, upMbps, rttMs }. */
+        speedTest: async (onStep) => {
+          const url = BASE + '/admin/wifi-speed.php';
+          const step = t => { try { onStep && onStep(t); } catch (_) {} };
+          const get = async (bytes) => {
+            const t0 = performance.now();
+            const r = await fetch(url + '?bytes=' + bytes + '&r=' + Math.random().toString(36).slice(2), { credentials: 'same-origin', cache: 'no-store' });
+            if (!r.ok) { const e = new Error(r.status === 429 ? 'rate_limited' : 'http_' + r.status); e.code = e.message; throw e; }
+            const b = await r.arrayBuffer();
+            return { ms: performance.now() - t0, n: b.byteLength };
+          };
+          step('Measuring the delay…');
+          let rtt = Infinity;
+          for (let i = 0; i < 4; i++) rtt = Math.min(rtt, (await get(1)).ms);
+          step('Measuring download…');
+          let size = 1000000, d;
+          for (;;) { d = await get(size); if (d.ms > 2500 || size >= 16000000) break; size *= 4; }
+          const downMbps = d.n * 8 / Math.max(0.05, (d.ms - rtt) / 1000) / 1e6;
+          step('Measuring upload…');
+          const block = new Uint8Array(65536);
+          (window.crypto || window.msCrypto).getRandomValues(block);
+          const blob = new Blob(new Array(32).fill(block), { type: 'application/octet-stream' });
+          if (!getCookie('ngg_csrf')) await mintCsrf();
+          const t0 = performance.now();
+          const r = await fetch(url, { method: 'POST', body: blob, credentials: 'same-origin', cache: 'no-store', headers: { 'X-NGG-CSRF': getCookie('ngg_csrf') || '' } });
+          const ms = performance.now() - t0;
+          const upMbps = r.ok ? blob.size * 8 / Math.max(0.05, (ms - rtt) / 1000) / 1e6 : 0;
+          const round = x => Math.round(x * 10) / 10;
+          return { downMbps: round(downMbps), upMbps: round(upMbps), rttMs: Math.round(rtt) };
+        },
+        member: (subjectType, subjectId) => request('/admin/wifi.php' + qs({ view: 'member', subjectType, subjectId })),
+        memberSet: (subjectType, subjectId, op, extra) => request('/admin/wifi.php', { body: Object.assign({ action: 'member', subjectType, subjectId, op }, extra || {}) }),
       },
       fees: {
         settings:    () => request('/admin/fees.php'),

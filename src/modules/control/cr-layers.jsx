@@ -43,7 +43,7 @@ function CrDrawer({ d, phone, onClose }) {
     <div ref={ref} className="cr-pfull" role="dialog" aria-modal="true" aria-label={d.title}>
       <div className="cr-pfull-head"><button type="button" className="cr-p44" aria-label="Back" onClick={onClose}><CrIcon n="caret-left"/></button><b>{d.title}</b></div>
       <div className="cr-pfull-body">
-        <div className="cr-pfull-who"><CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/><span>{d.sub}</span></div>
+        <div className="cr-pfull-who">{d.icon ? <span className="cr-sheet-ini" aria-hidden="true"><CrIcon n={d.icon}/></span> : <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>}<span>{d.sub}</span></div>
         {d.stats && d.stats.length > 0 && <div className="cr-pstats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
         {d.fields && d.fields.length > 0 && <div className="cr-pbox cr-pfields">{d.fields.map((f, i) => <div key={i}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div>}
         {sections.map((s, i) => crDrawerSec(s, i, true))}
@@ -55,7 +55,7 @@ function CrDrawer({ d, phone, onClose }) {
     <div className="cr-layer cr-scrim" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <aside ref={ref} className="cr-sheet" role="dialog" aria-modal="true" aria-label={d.title}>
         <div className="cr-sheet-head">
-          <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>
+          {d.icon ? <span className="cr-sheet-ini" aria-hidden="true"><CrIcon n={d.icon}/></span> : <CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/>}
           <div className="cr-sheet-title"><b>{d.title}</b>{d.sub && <span>{d.sub}</span>}</div>
           <button type="button" className="cr-sheet-x" aria-label="Close" onClick={onClose}><CrIcon n="x"/></button>
         </div>

@@ -20,6 +20,7 @@
      /learn/course/<slug>        One course, week by week
      /learn/lesson/<unitId>      A lesson, full screen
      /learn/review               The review — last session's questions
+     /learn/notes                My notes, and the lessons I saved for later
      /learn/helper               The study helper
 
    Every one of them is real: refresh it, bookmark it, send it to a mentor.
@@ -44,6 +45,7 @@ const LRN_NAV = [
   { id: "courses", path: "/learn/courses", label: "My courses", icon: "ph ph-books" },
   { id: "plan",    path: "/learn/plan",    label: "School",     icon: "ph ph-exam" },
   { id: "review",  path: "/learn/review",  label: "Review",     icon: "ph ph-target" },
+  { id: "notes",   path: "/learn/notes",   label: "Notes",      icon: "ph ph-note-pencil" },
   { id: "helper",  path: "/learn/helper",  label: "Helper",     icon: "ph ph-sparkle" },
 ];
 
@@ -60,6 +62,7 @@ function lrnRoute() {
   if (a === "courses") return { view: "courses" };
   if (a === "plan") return b ? { view: "drill", itemId: decodeURIComponent(b) } : { view: "plan" };
   if (a === "review") return { view: "review" };
+  if (a === "notes") return { view: "notes" };
   if (a === "helper") return { view: "helper" };
   if (a === "course") return { view: "course", slug: decodeURIComponent(b || "") };
   if (a === "lesson") return { view: "lesson", unitId: decodeURIComponent(b || "") };
@@ -188,8 +191,29 @@ function LearnWeek({ d, plan, onRetry }) {
   const lowest = open.length ? Math.min.apply(null, open.filter(u => !u.progress).map(u => u.week).concat([99])) : 99;
   const next = open.filter(u => !u.progress && u.week === lowest);
   const done = units.length - open.length;
+  /* Where they were: the last lesson they opened that is not finished. The
+     address is real, so this is the same lesson on the phone and the laptop. */
+  const L = d.learn || {};
+  const byId = {}; units.forEach(u => { byId[u.unitId] = u; });
+  const pick = (L.recent || []).map(r => byId[r.unitId]).find(u => u && (!u.progress || u.progress.status !== "completed"));
+  const st = L.stats || null;
   return (
     <div className="lrn-stack">
+      {pick && (
+        <a className="lrn-pickup" href={"/learn/lesson/" + encodeURIComponent(pick.unitId)}
+           onClick={e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/lesson/" + encodeURIComponent(pick.unitId)); }}>
+          <i className="ph-fill ph-play-circle" aria-hidden="true"/>
+          <span><small>Pick up where you left off</small><b>{pick.title}</b><span>{pick.course || "Whole Club"}{pick.path ? " · " + pick.path.code : ""}</span></span>
+          <i className="ph ph-arrow-right" aria-hidden="true"/>
+        </a>
+      )}
+      {st && st.done > 0 && (
+        <ul className="lrn-figs" aria-label="Your learning so far">
+          <li><b>{st.streakWeeks}</b><span>{st.streakWeeks === 1 ? "week" : "weeks"} in a row</span></li>
+          <li><b>{st.doneThisWeek}</b><span>done this week</span></li>
+          <li><b>{st.minutes >= 120 ? Math.round(st.minutes / 60) : st.minutes}</b><span>{st.minutes >= 120 ? "hours" : "minutes"} of lessons</span></li>
+        </ul>
+      )}
       <section className="lrn-prog" aria-label="Your progress">
         <div>
           <p className="lrn-prog-n">{done} of {units.length} lessons done</p>
@@ -260,6 +284,25 @@ function LearnGroup({ title, units, tone }) {
   );
 }
 
+/* Find a lesson across every course: its title, its summary, its course. The
+   lessons are already here, so the search is instant and works offline. */
+function LearnSearch({ units }) {
+  const [q, setQ] = React.useState("");
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = words.length ? units.filter(u => { const hay = (u.title + " " + (u.summary || "") + " " + (u.course || "")).toLowerCase(); return words.every(w => hay.includes(w)); }) : [];
+  return (
+    <section className="lrn-search" role="search" aria-label="Find a lesson">
+      <label className="lrn-search-box">
+        <i className="ph ph-magnifying-glass" aria-hidden="true"/>
+        <span className="lrn-sr">Find a lesson</span>
+        <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a lesson in any course"/>
+      </label>
+      <p className="lrn-note" role="status" aria-live="polite">{words.length ? (hits.length ? hits.length + (hits.length === 1 ? " lesson matches." : " lessons match.") : "No lesson matches “" + q.trim() + "”.") : ""}</p>
+      {hits.length > 0 && <ul className="lrn-list">{hits.slice(0, 30).map(u => <LearnLessonCard key={u.unitId} u={u} showCourse/>)}</ul>}
+    </section>
+  );
+}
+
 /* ── My courses ──────────────────────────────────────────────────────────── */
 function LearnCourses({ d }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your courses"/>;
@@ -273,6 +316,7 @@ function LearnCourses({ d }) {
   );
   return (
     <div className="lrn-stack">
+      <LearnSearch units={units}/>
       <ul className="lrn-shelf">
         {names.map(c => {
           const us = by[c];
@@ -329,7 +373,89 @@ function LearnCourse({ d, slug }) {
 }
 
 /* ── A lesson, full screen ───────────────────────────────────────────────── */
-function LearnLesson({ unitId, onDone }) {
+/* Go deeper: a short read fetched from Wikipedia on the lesson's topic, and
+   vetted free sources for the course (domain/learn.php). Its own request, its
+   own silence: a source that does not answer never costs anybody the lesson. */
+function LearnDeeper({ unitId }) {
+  const [d, setD] = React.useState(null);
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let live = true; setD(null); setFailed(false);
+    NGGApi.member.learnSources(unitId).then(r => { if (live) setD(r); }).catch(() => { if (live) setFailed(true); });
+    return () => { live = false; };
+  }, [unitId]);
+  if (failed || (d && !d.read && !(d.sources || []).length)) return null;
+  return (
+    <section className="lrn-sec lrn-deeper" aria-labelledby="lrn-deeper-h">
+      <h2 className="lrn-sec-h" id="lrn-deeper-h">Go deeper</h2>
+      {!d ? <div className="lrn-wait is-sm" role="status" aria-label="Finding good sources"/> : (
+        <>
+          {d.read && (
+            <figure className="lrn-read">
+              <figcaption><b>{d.read.title}</b></figcaption>
+              <blockquote cite={d.read.url}><p>{d.read.extract}</p></blockquote>
+              <p className="lrn-read-src">
+                From <a href={d.read.url} target="_blank" rel="noopener">{d.read.source}</a>, shared under{" "}
+                <a href={d.read.licenceUrl} target="_blank" rel="noopener license">{d.read.licence}</a>. Anybody can edit it, so check what matters.
+              </p>
+            </figure>
+          )}
+          {(d.sources || []).length > 0 && (
+            <>
+              <p className="lrn-note">Free places to learn more, chosen for this course. They open in a new tab.</p>
+              <ul className="lrn-sources">
+                {d.sources.map(x => (
+                  <li key={x.url}>
+                    <a href={x.url} target="_blank" rel="noopener">
+                      <span className="lrn-src-t">{x.title}</span>
+                      <span className="lrn-src-by">{x.by}</span>
+                      <span className="lrn-src-why">{x.why}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/* Their own note on the lesson, saved to their account — on any device, and
+   never shown to staff. Saved when they leave the box and with the button. */
+function LearnNote({ unitId, mine, onSaved }) {
+  const [v, setV] = React.useState((mine && mine.note) || "");
+  const [saved, setSaved] = React.useState((mine && mine.note) || "");
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  React.useEffect(() => { const n = (mine && mine.note) || ""; setV(n); setSaved(n); setMsg(""); }, [unitId]);
+  const dirty = v.trim() !== saved.trim();
+  const save = async () => {
+    if (!dirty || busy) return;
+    setBusy(true); setMsg("");
+    try { const r = await NGGApi.member.learnNote(unitId, v); setSaved(r.note); setMsg(r.note ? "Saved." : "Note cleared."); onSaved && onSaved(); }
+    catch (e) { setMsg(humanizeError(e.code, "Couldn’t save your note. It is still here — try again.")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="lrn-sec lrn-mynote" aria-labelledby="lrn-note-h">
+      <h2 className="lrn-sec-h" id="lrn-note-h">My notes</h2>
+      <p className="lrn-note">Only you can see these. They are kept with your account, on every device.</p>
+      <label className="lrn-sr" htmlFor={"lrn-note-" + unitId}>My notes on this lesson</label>
+      <textarea id={"lrn-note-" + unitId} className="lrn-textarea" rows={5} maxLength={4000} value={v}
+                placeholder="What clicked, what to ask about, what to try at home…" onChange={e => setV(e.target.value)} onBlur={save}/>
+      <div className="lrn-row">
+        <button type="button" className="lrn-btn is-ghost" disabled={!dirty || busy} onClick={save}>{busy ? "Saving…" : "Save note"}</button>
+        <span className="lrn-note" role="status" aria-live="polite">{msg}</span>
+      </div>
+    </section>
+  );
+}
+
+function LearnLesson({ unitId, onDone, units }) {
+  const [saved, setSaved] = React.useState(false);
+  const [marking, setMarking] = React.useState(false);
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [answers, setAnswers] = React.useState({});
@@ -338,7 +464,7 @@ function LearnLesson({ unitId, onDone }) {
   const [started, setStarted] = React.useState(false);
   const load = React.useCallback(() => {
     setErr(""); setD(null);
-    return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setAnswers({}); setResult(null); setStarted(false); })
+    return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setAnswers({}); setResult(null); setStarted(false); setSaved(!!(r.mine && r.mine.saved)); })
       .catch(e => setErr(e.code || e.message || "failed"));
   }, [unitId]);
   React.useEffect(() => { load(); window.scrollTo(0, 0); }, [load]);
@@ -371,6 +497,26 @@ function LearnLesson({ unitId, onDone }) {
     finally { setBusy(false); }
   };
   const back = u.course ? "/learn/course/" + lrnSlug(u.course) : "/learn";
+  /* Where this lesson sits in its course, and the ones either side — so
+     finishing one leads to the next instead of back to a list. */
+  const course = (units || []).filter(x => (x.course || "") === (u.course || "")).sort((a, b) => a.week - b.week || a.position - b.position);
+  const at = course.findIndex(x => x.unitId === unitId);
+  const prev = at > 0 ? course[at - 1] : null, next = at >= 0 && at < course.length - 1 ? course[at + 1] : null;
+  const toggleSave = async () => {
+    const on = !saved; setSaved(on);
+    try { await NGGApi.member.learnSave(unitId, on); toast.info(on ? "Saved for later. It is in Notes." : "Taken off your saved lessons.", u.title); if (onDone) onDone(); }
+    catch (e) { setSaved(!on); toast.error(humanizeError(e.code, "Couldn’t save it.")); }
+  };
+  /* A lesson with no questions has nothing to submit, so it could never be
+     finished from here. Submitting no answers completes it (the server's
+     own rule: nothing to mark is full marks). */
+  const markRead = async () => {
+    setMarking(true);
+    try { const r = await NGGApi.member.curriculumSubmit(unitId, {}); setResult(r); toast.success("Done. On to the next one.", u.title); if (onDone) onDone(); }
+    catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setMarking(false); }
+  };
+  const go = x => e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/lesson/" + encodeURIComponent(x.unitId)); };
   return (
     <article className="lrn-lesson">
       <a className="lrn-back" href={back} onClick={e => { e.preventDefault(); lrnGo(back); }}>
@@ -380,7 +526,13 @@ function LearnLesson({ unitId, onDone }) {
         <p className="lrn-lesson-eyebrow">{(u.path ? u.path.label : "Week " + u.week)} · {(u.course || "Whole Club")}</p>
         <h1 className="lrn-lesson-title">{u.title}</h1>
         {u.summary && <p className="lrn-lesson-sum">{u.summary}</p>}
-        <span className={"lrn-card-chip " + st.tone}>{st.label}</span>
+        <div className="lrn-row">
+          <span className={"lrn-card-chip " + st.tone}>{st.label}</span>
+          {at >= 0 && <span className="lrn-note">Lesson {at + 1} of {course.length}{u.durationMins ? " · about " + u.durationMins + " minutes" : ""}</span>}
+          <button type="button" className={"lrn-save" + (saved ? " is-on" : "")} aria-pressed={saved} onClick={toggleSave}>
+            <i className={saved ? "ph-fill ph-bookmark-simple" : "ph ph-bookmark-simple"} aria-hidden="true"/>{saved ? "Saved" : "Save for later"}
+          </button>
+        </div>
         {p && p.stale && <p className="lrn-note">This lesson's questions have changed since you sat them — your earlier score was on the older ones.</p>}
       </header>
 
@@ -432,9 +584,30 @@ function LearnLesson({ unitId, onDone }) {
         </form>
       )}
 
+      {opened && u.checks.length === 0 && (
+        <section className="lrn-sec lrn-markread">
+          {p && p.status === "completed"
+            ? <p className="lrn-result"><i className="ph-fill ph-check-circle" aria-hidden="true"/> You have finished this lesson.</p>
+            : <><p className="lrn-note">This lesson has no questions. When you have worked through it, mark it done.</p>
+                <button type="button" className="lrn-btn" disabled={marking} onClick={markRead}>{marking ? "Saving…" : "Mark as done"}</button></>}
+        </section>
+      )}
+
+      {opened && <LearnNote unitId={unitId} mine={d.mine} onSaved={onDone}/>}
+      {opened && <LearnDeeper unitId={unitId}/>}
+
       {/* Last, after the work, because that is when somebody knows how it
           went. Never a gate on any of it. */}
       {opened && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={() => {}}/>}
+
+      {(prev || next) && (
+        <nav className="lrn-pager" aria-label="Lessons in this course">
+          {prev ? <a href={"/learn/lesson/" + encodeURIComponent(prev.unitId)} onClick={go(prev)} className="lrn-pager-a">
+            <i className="ph ph-arrow-left" aria-hidden="true"/><span><small>Previous</small>{prev.title}</span></a> : <span/>}
+          {next ? <a href={"/learn/lesson/" + encodeURIComponent(next.unitId)} onClick={go(next)} className="lrn-pager-a is-next">
+            <span><small>Next</small>{next.title}</span><i className="ph ph-arrow-right" aria-hidden="true"/></a> : <span/>}
+        </nav>
+      )}
     </article>
   );
 }
@@ -681,6 +854,44 @@ function LearnDrill({ itemId, onChanged }) {
   );
 }
 
+/* ── Notes: what they wrote, and what they saved for later ───────────────── */
+function LearnNotes({ d }) {
+  if (!d) return <div className="lrn-wait" role="status" aria-label="Loading your notes"/>;
+  const L = d.learn || {}, byId = {};
+  (d.units || []).forEach(u => { byId[u.unitId] = u; });
+  const saved = (L.saved || []).map(x => byId[x.unitId]).filter(Boolean);
+  const notes = (L.notes || []).filter(x => byId[x.unitId]);
+  if (!saved.length && !notes.length) return (
+    <div className="lrn-empty">
+      <i className="ph ph-note-pencil" aria-hidden="true"/>
+      <h2>No notes or saved lessons yet.</h2>
+      <p>In any lesson, write in <b>My notes</b> or press <b>Save for later</b>. They collect here, on every device you sign in on. Only you can see them.</p>
+    </div>
+  );
+  const open = id => e => { if (e.metaKey || e.ctrlKey) return; e.preventDefault(); lrnGo("/learn/lesson/" + encodeURIComponent(id)); };
+  return (
+    <div className="lrn-stack">
+      {saved.length > 0 && <LearnGroup title={"Saved for later · " + saved.length} units={saved}/>}
+      {notes.length > 0 && (
+        <section className="lrn-group" aria-label="My notes">
+          <h2 className="lrn-group-h">My notes · {notes.length}</h2>
+          <ul className="lrn-list">
+            {notes.map(n => { const u = byId[n.unitId]; return (
+              <li key={n.unitId}>
+                <a className="lrn-card lrn-notecard" href={"/learn/lesson/" + encodeURIComponent(n.unitId)} onClick={open(n.unitId)}>
+                  <span className="lrn-card-top"><span className="lrn-card-course">{u.course || "Whole Club"}</span>
+                    {n.at && <span className="lrn-note">{fmtDayMonth(n.at)}</span>}</span>
+                  <span className="lrn-card-title">{u.title}</span>
+                  <span className="lrn-notecard-body">{n.note}</span>
+                </a>
+              </li>); })}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 /* ── The review: last session's questions, on their own ──────────────────── */
 function LearnReview({ d }) {
   if (!d) return <div className="lrn-wait" role="status" aria-label="Loading"/>;
@@ -798,7 +1009,8 @@ function LearnApp() {
       <main className="lrn-main">
         {err && err !== "not_ngg_member" && view !== "lesson"
           ? <ErrorState title="Couldn't load your lessons" code={err} onRetry={load}/>
-          : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load}/>
+          : view === "lesson" ? <LearnLesson unitId={route.unitId} onDone={load} units={(d && d.units) || []}/>
+          : view === "notes" ? <LearnNotes d={d}/>
           : view === "courses" ? <LearnCourses d={d}/>
           : view === "course" ? <LearnCourse d={d} slug={route.slug}/>
           : view === "plan" ? <LearnPlan d={plan} onRetry={loadPlan}/>

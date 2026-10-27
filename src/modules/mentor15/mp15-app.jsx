@@ -1291,7 +1291,7 @@ function Mp15Projects({ act, today }) {
   const key = (k, id) => k + ':' + id;
   const run = (action, body, ok) => { setBusy(true); return act(action, body, ok).then(r => { setBusy(false); if (r) load(); return r; }); };
   const edit = p => setForm({ projectId: p.projectId, title: p.title, detail: p.detail || '', startOn: p.startOn, dueOn: p.dueOn, q: '', newGroup: '',
-    groups: Array.from(new Set(p.people.map(x => x.group).filter(Boolean))), sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])) });
+    groups: Array.from(new Set(p.people.map(x => x.group).filter(Boolean))), sel: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.group || ''])), names: Object.fromEntries(p.people.map(x => [key(x.kind, x.id), x.name])) });
   const save = (status, from) => {
     const f = from || F;
     const people = Object.keys(f.sel).map(k => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), group: f.sel[k] }; });
@@ -1317,6 +1317,11 @@ function Mp15Projects({ act, today }) {
     const pick = (list, kind) => list.filter(x => !q || x.name.toLowerCase().includes(q) || F.sel[key(kind, x.id)] !== undefined);
     const kids = pick(d.children, 'member').sort((a, b) => (b.mentee - a.mentee) || a.name.localeCompare(b.name));
     const mentors = pick(d.mentors, 'mentor');
+    /* Somebody already on the project who has since left your reach (gone
+       inactive, moved centre, left the caseload) stays chosen — the server
+       keeps them — so they are listed here, where they can be taken off. */
+    const reachable = new Set(d.children.map(x => key('member', x.id)).concat(d.mentors.map(x => key('mentor', x.id))));
+    const outside = Object.keys(F.sel).filter(k => !reachable.has(k)).map(k => { const i = k.indexOf(':'); return { kind: k.slice(0, i), id: k.slice(i + 1), name: (F.names || {})[k] || k.slice(i + 1) }; });
     const n = Object.keys(F.sel).length;
     const toggle = k => { const s = Object.assign({}, F.sel); if (s[k] !== undefined) delete s[k]; else s[k] = ''; setF({ sel: s }); };
     const row = (x, kind, tag) => { const k = key(kind, x.id), on = F.sel[k] !== undefined; return (
@@ -1343,6 +1348,7 @@ function Mp15Projects({ act, today }) {
           </fieldset>
           <fieldset className="mpj-who"><legend>Who is on it <small aria-live="polite">{n} chosen · {d.max.people} at most</small></legend>
             <div className="mpj-search" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input type="search" aria-label="Find a person" placeholder="Find a person" value={F.q} onChange={e => setF({ q: e.target.value })} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); /* Enter here finds; it must not submit (and publish) the project around it */ }}/></div>
+            {outside.length > 0 && <><h5>Already on it, no longer in your reach</h5><ul className="mpj-list">{outside.map(x => row(x, x.kind, 'Can stay or come off'))}</ul></>}
             {mentors.length > 0 && <><h5>Mentors</h5><ul className="mpj-list">{mentors.map(x => row(x, 'mentor'))}</ul></>}
             <h5>Children</h5>
             {kids.length ? <ul className="mpj-list">{kids.map(x => row(x, 'member', x.mentee ? 'Your mentee' : ''))}</ul> : <p className="grw-note">{q ? 'Nobody called “' + F.q.trim() + '”.' : 'No children you can assign yet.'}</p>}

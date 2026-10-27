@@ -550,3 +550,27 @@ One row per AI call (`api/_lib/ai.php` `ai_log_usage`): `at`, `month` (`YYYY-MM`
 `mentor_messages.mediaJson` (migration 171) — a voice note on a chat message: `journal_media_clean`'s shape, audio only, one clip. `journal.mediaJson` now accepts `type: audio` (it was coerced to image) and site paths under `/api/public|member/` as well as https URLs.
 
 `mentor_supports` (migration 172) — supporting mentors: memberId, mentorId, focus, endsOn (YYYY-MM-DD, '' = until ended), status active|ended, startedAt, endedAt, createdBy. The primary stays in `mentor_assignments`. Merge policy: MOVE.
+
+## `wifi_accounts`, `wifi_gateways` (migration 189)
+
+`wifi_accounts`: one per person with Wi-Fi — `subjectType` (`member` |
+`summer`), `subjectId`, `username` (the printed ID; unique), `pinSealed`
+(AES-256-GCM, not a hash: the gateway is handed it), `pinSetAt`,
+`pinResetDay`/`pinResets` (three a day), and an `override` (`on` | `limited` |
+`off`) with `overrideWhy`/`overrideBy`/`overrideAt`. Access itself is never
+stored: `wifi_access_for()` derives it from the record.
+
+`wifi_gateways`: `gatewayId` (`G` + 8 hex), `platform` (`mikrotik` | `radius` |
+`openwrt` | `generic`), `centre`/`centreId`, `label`, `keyHash` (sha256)/
+`keyTail`/`keySetAt`, `lastSeenAt`, `lastFullAt`, `lastChangeAt`, `osVersion`,
+`lastError`, `lastVersion` + `ackedJson` (what the gateway confirmed) +
+`pendingJson`/`pendingVersion` (what it was last handed), `removedAt`.
+
+## `wifi_gateway_stats`, `wifi_speed_tests` (migration 190)
+
+`wifi_gateways` gains `testAsked` and `lastStatsJson` (the latest report:
+active, cpu, memFree, uptime). `wifi_gateway_stats`: one row per gateway per
+UTC hour (`hour` = `YYYY-MM-DDTHH`) — `samples`, `activeMax`, `activeSum`,
+`cpuMax`, `memFreeMin`; kept 14 days. `wifi_speed_tests`: `centre`/`centreId`,
+`gatewayId` (blank for a device), `source` (`gateway` | `device`), `downMbps`,
+`upMbps`, `rttMs`, `byId`, `note`, `at`. No table holds who browsed what.

@@ -13,7 +13,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
     $act = (string)($b['action'] ?? '');
     $args = ['requesterId' => $s['mid'], 'ip' => client_ip()];
     if ($act === 'save') {
-        foreach (['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'centre'] as $k) $args[$k] = (string)($b[$k] ?? '');
+        /* Only the keys that were sent: casting a missing `status` to '' made
+           every new project from the Control Room fail as bad_status, since
+           the domain defaults a status only when it is absent. */
+        foreach (['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'centre'] as $k) if (array_key_exists($k, $b)) $args[$k] = (string)$b[$k];
         $args['people'] = is_array($b['people'] ?? null) ? $b['people'] : [];
         $res = gs_call('admin.project.save', $args);
     } elseif ($act === 'mark') {
