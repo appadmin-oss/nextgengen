@@ -536,7 +536,7 @@ function ProfilePage({ setPage }) {
         Sample profile · illustrative layout, not a real member
       </div>
       {/* Profile header */}
-      <section style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
+      <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"56px 0 88px", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"linear-gradient(135deg, rgba(245,176,38,0.18), transparent 50%), radial-gradient(circle at 20% 80%, rgba(208,255,58,0.12), transparent 60%)"}}/>
         <div className="container" style={{position:"relative"}}>
           <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:24, fontSize:13, color:"rgba(255,255,255,0.6)"}}>

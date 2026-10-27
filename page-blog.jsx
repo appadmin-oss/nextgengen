@@ -142,7 +142,7 @@ function BlogPage({ setPage }) {
       </section>
 
       {/* Newsletter strip */}
-      <section style={{background:"var(--navy-900)", color:"white", padding:"72px 0"}}>
+      <section className="dark-surface" style={{background:"var(--navy-900)", color:"white", padding:"72px 0"}}>
         <div className="container">
           <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"center"}}>
             <div>
@@ -169,7 +169,7 @@ function BlogArticle({ post, setPage, onBack, onOpen }) {
   return (
     <div className="page" data-screen-label="Blog Article">
       {/* Hero cover */}
-      <section style={{position:"relative", height:"var(--rs-height-102, 560px)", overflow:"hidden", background:"var(--navy-900)"}}>
+      <section className="dark-surface" style={{position:"relative", height:"var(--rs-height-102, 560px)", overflow:"hidden", background:"var(--navy-900)"}}>
         <img src={blogCover(post.cover, 2000, 1200)} alt="" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", opacity:0.65}}/>
         <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0.5) 0%, rgba(12,20,50,0.85) 100%)"}}/>
         <div className="container" style={{position:"relative", height:"100%", display:"flex", flexDirection:"column", justifyContent:"end", paddingBottom:48, color:"white"}}>

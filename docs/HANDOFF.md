@@ -3680,6 +3680,40 @@ op, with tests; (3) the server-side gateway list and the region roll-up;
 (4) settings inheritance; (5) load caching, measured, before more than a pilot
 region goes live.
 
+## Focus rings on the public site (2026-10-27)
+
+The owner reported a focus-ring problem. Measured with a keyboard walk of 16
+public pages (761 Tab stops), 728 had one:
+- **Contrast.** The ring was gold — `rgba(245,176,38,.5–.6)` in most rules,
+  solid `--gold-500` in the safety net — which is 1.3–1.9:1 on cream and 1:1 on
+  a gold button. A focus indicator needs 3:1 (WCAG 1.4.11).
+- **Shape.** Two global rules (styles.css and an older duplicate in
+  styles-app.css) set `border-radius: 6px` on whatever had focus, so pills,
+  round buttons and cards changed shape when tabbed to.
+- **Clipping.** Accordion rows inside `overflow: hidden` cards (Parents FAQ,
+  About, Timetable start rows, Community tabs, Blog hero chips) lost the ring.
+- **Containers.** The newsletter field and the Summer School search drew no
+  ring of their own and their container's was faint.
+
+Now there is one token, `--focus-ring` (styles.css `:root`): navy on light
+surfaces, lime inside dark ones (`.dark-surface, .hero, .footer, .prefooter,
+.page-hero-dark, .marquee, …`; a light `.card` inside a dark section goes back
+to navy). Every public-site ring uses it; the global rules no longer touch
+`border-radius` (outline follows the element's own corners). Navy sections
+that were only an inline style now carry `className="dark-surface"` (home,
+about/anchor, blog, club community hero, other pages). Clipped controls use an
+inset ring (`outline-offset: -3px`). The public Community search had its chrome
+— and `outline: none` — in an inline style; it is `.cm-pub-search` /
+`.cm-pub-search-in` now, and the box takes the ring ("one ring for one field"). The sticky top bar no longer covers a focused
+control: `html:has(.topnav) { scroll-padding-top: 96px }` (WCAG 2.4.11). The Design Studio, a dark room, re-points
+the token to its gold.
+
+`tests/focus-ring.test.js` (in test:all, `npm run test:focus`) walks the main
+pages and fails on a stop with no ring, a ring under 3:1 against what is behind
+it, a shape change, or a clipped or covered ring. A new dark section that
+forgets `dark-surface` fails there as navy-on-navy.
+
+
 ### Wi-Fi at scale: built (2026-10-27) — the Wi-Fi half of the plan above
 
 The owner's direction: build the Wi-Fi side now; **NGG-wide regions and
