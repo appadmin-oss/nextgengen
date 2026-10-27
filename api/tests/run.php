@@ -31948,5 +31948,59 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PRV-%'");
 })();
 
+
+/* ── A model id in a config file is a pin nobody revisits ────────────────── */
+(function () {
+    $save = $GLOBALS['CONFIG']['ai'] ?? null;
+
+    /* Blank, or absent, or whitespace: all three mean "whatever this release
+       considers current". Only `??` used to do this, which caught the absent
+       case alone — and a deployment that copied config.example.php has the key
+       PRESENT, so it stayed on a model a generation behind for as long as the
+       file sat there. */
+    chk('ai models: a blank model means this release\'s current default, not an empty model',
+        ai_model_for('anthropic', '') === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_for('anthropic', null) === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_for('anthropic', '   ') === AI_DEFAULT_MODEL['anthropic']);
+    chk('ai models: …and a model that IS set is still honoured, so a pin stays a pin',
+        ai_model_for('anthropic', 'claude-haiku-4-5-20251001') === 'claude-haiku-4-5-20251001');
+    /* Gemini falls out unchanged: its default IS '', which already means
+       "ask Google for the best model this key can use". */
+    chk('ai models: gemini keeps its blank, which means "ask Google"',
+        ai_model_for('gemini', '') === '' && AI_DEFAULT_MODEL['gemini'] === '');
+
+    $GLOBALS['CONFIG']['ai'] = ['provider' => 'anthropic', 'anthropic_api_key' => 'test-key', 'anthropic_model' => ''];
+    $cands = ai_default_candidates();
+    chk('ai models: a configured key with a blank model resolves through to the call',
+        count($cands) === 1 && $cands[0]['model'] === AI_DEFAULT_MODEL['anthropic'] && $cands[0]['model'] !== '');
+
+    $GLOBALS['CONFIG']['ai'] = ['profiles' => ['marking' => ['provider' => 'anthropic', 'api_key' => 'k', 'model' => '']]];
+    $chain = ai_profile_chain('marking');
+    chk('ai models: a profile with a blank model resolves too, and stays capable enough to mark',
+        !empty($chain) && $chain[0]['model'] === AI_DEFAULT_MODEL['anthropic']
+        && ai_model_is_capable($chain[0]['model']));
+
+    /* The example config must not re-state what ai.php already decides. Two
+       lists of defaults is the drift CLAUDE.md §11 names, and here the drift
+       cost real money: the pinned small model priced ten times the current
+       one per token. */
+    $ex = file_get_contents(__DIR__ . '/../config.example.php');
+    chk('ai models: the shipped example pins no model at all',
+        preg_match("/'model'\s*=>\s*'[^']/", $ex) !== 1
+        && preg_match("/_model'\s*=>\s*'[^']/", $ex) !== 1);
+
+    /* The claim the comment in config.example.php makes, checked rather than
+       asserted: the generation it used to pin really is the dearer one. */
+    $oldP = ai_price_for(['provider' => 'anthropic', 'model' => 'claude-haiku-4-5-20251001', 'tier' => 'paid']);
+    $newP = ai_price_for(['provider' => 'anthropic', 'model' => AI_DEFAULT_MODEL['anthropic'], 'tier' => 'paid']);
+    chk('ai models: every model the example used to pin is priced in the table (no "unknown, assume dear")',
+        $oldP !== AI_PRICE_UNKNOWN_PAID && $newP !== AI_PRICE_UNKNOWN_PAID);
+    $small = ai_price_for(['provider' => 'anthropic', 'model' => 'claude-haiku-5', 'tier' => 'paid']);
+    chk('ai models: …and the small model it pinned costs about ten times the current one',
+        $oldP[0] >= $small[0] * 9 && $oldP[1] >= $small[1] * 9);
+
+    if ($save === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $save;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

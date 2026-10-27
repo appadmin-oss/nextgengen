@@ -173,22 +173,38 @@ return [
         // Default profile (legacy flat block — used when a purpose below has
         // no key of its own):
         'provider'       => 'groq',                    // preference: see the list below
+
+        // ─────────────────────────────────────────────────────────────────
+        // LEAVE EVERY '…_model' BLANK UNLESS YOU MEAN TO PIN ONE.
+        //
+        // Blank means "whatever this release of NGG considers current for
+        // that provider" (AI_DEFAULT_MODEL in api/_lib/ai.php), so upgrading
+        // the code upgrades the models with it. A model id written in here
+        // is a PIN, and a pin is what nobody ever comes back to: a config
+        // copied once went on calling a model a generation behind for a year
+        // — and, by ai.php's own price table, paying about ten times per
+        // token what the current small model costs.
+        //
+        // Pin one only to hold a deployment steady on purpose (a model you
+        // have tested against, or one your account is approved for), and put
+        // a date beside it so the next person knows it was deliberate.
+        // ─────────────────────────────────────────────────────────────────
         'groq_api_key'   => '',                        // leave empty to disable
-        'groq_model'     => 'llama-3.1-8b-instant',
+        'groq_model'     => '',
         'gemini_api_key' => '',                        // leave empty to disable
         'gemini_model'   => '',                        // blank: the best model the key can use (asked of Google)
         // Paid providers. Anything not set is simply skipped, and every
         // provider listed here is a fallback for every other — one exhausted
         // key degrades speed, not capability.
         'anthropic_api_key'  => '',
-        'anthropic_model'    => 'claude-haiku-4-5-20251001',
+        'anthropic_model'    => '',
         'openai_api_key'     => '',                    // https://platform.openai.com/api-keys
-        'openai_model'       => 'gpt-4.1-mini',        // or gpt-4.1, gpt-5-mini, o4-mini…
+        'openai_model'       => '',
         // OpenRouter is the "and everything else": one key reaches hundreds of
         // models from every major lab, so trying a different one is a config
         // line rather than a deploy. Model ids look like 'vendor/model'.
         'openrouter_api_key' => '',
-        'openrouter_model'   => 'meta-llama/llama-3.1-8b-instruct',
+        'openrouter_model'   => '',
 
         // More providers, all speaking the same OpenAI-shaped request, so
         // they are one branch in ai.php rather than one each. Set a key and
@@ -196,15 +212,15 @@ return [
         // skipped. The four marked FREE TIER have one that does not expire
         // into a card, which is what a programme on shared hosting needs.
         'cerebras_api_key'   => '',   // FREE TIER — https://cloud.cerebras.ai  (fastest of these by a distance)
-        'cerebras_model'     => 'llama3.1-8b',
+        'cerebras_model'     => '',
         'mistral_api_key'    => '',   // FREE TIER — https://console.mistral.ai
-        'mistral_model'      => 'mistral-small-latest',
+        'mistral_model'      => '',
         'together_api_key'   => '',   // FREE TIER — https://api.together.xyz
-        'together_model'     => 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        'together_model'     => '',
         'github_api_key'     => '',   // FREE TIER — a GitHub PAT; https://github.com/marketplace/models
-        'github_model'       => 'gpt-4o-mini',
+        'github_model'       => '',
         'deepseek_api_key'   => '',   // paid, inexpensive — https://platform.deepseek.com
-        'deepseek_model'     => 'deepseek-chat',
+        'deepseek_model'     => '',
         // Anything else that speaks the OpenAI chat-completions shape: a
         // self-hosted llama.cpp or Ollama, a university's endpoint, a model
         // gateway. No key is required, because many of these want none.
@@ -221,16 +237,16 @@ return [
             // code). CAPABLE MODELS ONLY: small/fast tiers (Haiku, Flash,
             // Mini, Lite, anything under 30B) are refused for this profile,
             // and with none left an instructor marks instead.
-            'marking'    => ['provider' => 'anthropic', 'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929',
-                             'fallback' => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'anthropic/claude-sonnet-4.5']],
+            'marking'    => ['provider' => 'anthropic', 'api_key' => '', 'model' => '',
+                             'fallback' => ['provider' => 'openrouter', 'api_key' => '', 'model' => '']],
             // Reflection Coach — best free conversational quality.
             'coach'      => ['provider' => 'gemini', 'api_key' => '', 'model' => ''],
             // Behaviour classification — high volume, fast, strict JSON.
-            'behaviour'  => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            'behaviour'  => ['provider' => 'groq', 'api_key' => '', 'model' => ''],
             // Digests / attendance & registration analysis.
             'analysis'   => ['provider' => 'gemini', 'api_key' => '', 'model' => ''],
             // Cheap pre-screen of free text before storage.
-            'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
+            'moderation' => ['provider' => 'groq', 'api_key' => '', 'model' => ''],
 
             /* Level 7 · the analyst panel (Analytics → "What a panel of
              * analysts makes of this").
@@ -250,12 +266,19 @@ return [
              * The payload is counts, rates and confidence intervals, and a
              * second pass refuses the whole run rather than send a name, an id,
              * a contact or a date of birth.
+             *
+             * Five different labs below, and no model pinned: the panel's
+             * whole value is that the lenses do not share a mind, and two
+             * lenses on one provider's default model would be the same mind
+             * twice. DeepSeek and Together are reached directly rather than
+             * through OpenRouter, so a programme paying for them is not also
+             * paying a proxy margin.
              */
-            'insight_mechanism' => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-haiku-4-5-20251001'],
-            'insight_action'    => ['provider' => 'gemini',     'api_key' => '', 'model' => ''],
-            'insight_risk'      => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'deepseek/deepseek-chat'],
-            'insight_equity'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.3-70b-versatile'],
-            'insight_synth'     => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
+            'insight_mechanism' => ['provider' => 'cerebras',  'api_key' => '', 'model' => ''],
+            'insight_action'    => ['provider' => 'gemini',    'api_key' => '', 'model' => ''],
+            'insight_risk'      => ['provider' => 'deepseek',  'api_key' => '', 'model' => ''],
+            'insight_equity'    => ['provider' => 'together',  'api_key' => '', 'model' => ''],
+            'insight_synth'     => ['provider' => 'anthropic', 'api_key' => '', 'model' => ''],
             /* Level 7b · the analyst chat.
              *
              * 'insight_router' only decides which lenses a question needs, so it
@@ -267,8 +290,8 @@ return [
              * and is the one place worth a capable model: it has to hold a
              * disagreement between two analysts without tidying it away, which
              * is exactly what a small model does. */
-            'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
-            'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
+            'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => ''],
+            'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => ''],
         ],
     ],
 
