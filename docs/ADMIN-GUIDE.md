@@ -1180,12 +1180,26 @@ worked out from the date each time it is read, so it can never be out of date.
 
 #### Setting it up
 
-1. Add each awarding body, with its website and whether it charges.
+**Start with the button, not a blank screen.** *Add the bodies our curriculum
+points at* fills the registry from our own lesson links — freeCodeCamp, Cisco
+NetAcad, Elements of AI, Google, NBTE, Trinity College London and ABRSM, each
+already attached to the courses that point at it. Four of those routes are
+**free**. Nothing is guessed: every line comes from a material link one of our
+lessons already carries, which is the same thing we have been telling learners
+to go and do.
+
+It is safe to press again at any time. It only ever adds what is missing and
+never touches an entry you have edited.
+
+Then:
+
+1. Check each body and add anything the list missed.
 2. Add what it awards. **Attach the courses that lead to it** — this is the
    step that makes the route appear for members; an award with no course
    attached is in the registry but reaches nobody.
-3. Fees and grade names change every year. Put this year's in the award's cost
-   note rather than trusting what is written here.
+3. **Fees, grade names and exam dates are left blank on purpose.** They change
+   every year and differ by country, and a stale price in front of a family is
+   worse than no price. Put this year's in the award's cost note.
 
 #### Things that will refuse, and why
 

@@ -28,6 +28,7 @@ if ($method === 'GET') {
     elseif ($a === 'credential') $res = gs_call('admin.providers.credential.set', $base + ['memberId' => (string)($b['memberId'] ?? ''),
         'data' => (array)($b['data'] ?? [])]);
     elseif ($a === 'credentialClear') $res = gs_call('admin.providers.credential.clear', $base + ['credId' => (string)($b['credId'] ?? '')]);
+    elseif ($a === 'seed') $res = gs_call('admin.providers.seed', $base);
     else $res = ['ok' => false, 'error' => 'unknown_action'];
 }
 if (empty($res['ok'])) json_send($res + ['ok' => false], ($res['error'] ?? '') === 'forbidden' ? 403 : 400);

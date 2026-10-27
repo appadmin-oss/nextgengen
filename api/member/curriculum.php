@@ -18,6 +18,10 @@ if ($method === 'GET') {
             : gs_call('staff.curriculum', ['requesterId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'study') {
         $res = gs_call('member.study.plan', ['memberId' => $mid]);
+    } elseif (($_GET['view'] ?? '') === 'boot') {
+        /* Everything the Learn app's first screen needs, in one request
+           instead of three (domain/providers.php). */
+        $res = gs_call('member.learn.boot', ['memberId' => $mid]);
     } elseif (($_GET['view'] ?? '') === 'providers') {
         /* Where their own courses lead: the recognised credentials at the end
            of the work, and the ones they already hold (domain/providers.php). */

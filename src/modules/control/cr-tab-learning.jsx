@@ -246,6 +246,17 @@ function crCurBulk(ctx, status, verb) {
   };
 }
 
+/* One press fills the registry from the curriculum's own material links
+   (domain/providers.php). Idempotent, so it is safe to press again after
+   editing — it only ever adds what is missing. */
+async function crPrvSeed(ctx) {
+  try {
+    const r = await NGGApi.admin.providers.seed();
+    ctx.toast(r.message || "Added.");
+    await ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t add them."), null, true); }
+}
+
 Object.assign(CR_TAB_DEFS, {
   /* HOW LESSONS LAND (domain/lesson-feedback.php).
      A child taps one of three words after every lesson. This is the only
@@ -288,6 +299,7 @@ Object.assign(CR_TAB_DEFS, {
       return out;
     },
   },
+
   /* WHERE COURSES LEAD (domain/providers.php).
      The curriculum has always named its routes out, in lesson prose and
      loose links. This is the question that prose could never answer: what
@@ -309,7 +321,7 @@ Object.assign(CR_TAB_DEFS, {
         + crNum(t.registered || 0) + " entered, " + crNum(t.aiming || 0) + " working towards"
         + (top ? "; most held: " + top.title + " (" + top.earned + ")" : "");
     },
-    blocks: (d) => {
+    blocks: (d, ctx) => {
       const b = d.board || {}, t = b.totals || {}, rows = b.awards || [];
       const out = [{ type: "kpis", span: 6, items: [
         { l: "Credentials held", v: crNum(t.earned || 0), dn: "awarded by bodies outside NGG" },
@@ -318,8 +330,13 @@ Object.assign(CR_TAB_DEFS, {
         { l: "Working towards one", v: crNum(t.aiming || 0), dn: "members' own aims" },
       ] }];
       if (!d.providers.length) {
+        /* The empty state does the work rather than describing it. Every body
+           in the starter list is read from our own curriculum's links, so
+           this is not a guess about what we teach — it is what we already
+           told learners to go and do. */
         out.push({ type: "note", icon: "certificate", text: "No awarding bodies yet.",
-          sub: "The curriculum already points at freeCodeCamp, Trinity College London, Cisco NetAcad, Google and NBTE. Add each body here with what it awards and which courses lead to it, and members see the route at the end of their course." });
+          sub: "Our curriculum already points learners at freeCodeCamp, Cisco NetAcad, Elements of AI, Google, NBTE, Trinity College London and ABRSM — in the lesson links. Start from those and edit, rather than typing them in. Fees and grades are left blank on purpose: they change every year.",
+          act: d.canEdit ? { l: "Add the bodies our curriculum points at", run: () => crPrvSeed(ctx) } : null });
         return out;
       }
       if (!rows.length) {

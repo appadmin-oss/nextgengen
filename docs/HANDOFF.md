@@ -3352,3 +3352,46 @@ Two bugs worth naming, both mine, both caught by tests rather than review:
 `centre` NAME must also have a `centreId` column, because `db_insert` mirrors
 one into the other — the insert fails on the missing column, and the failure
 surfaces as every later assertion in the block going wrong at once.
+
+### The starter registry, and why it is read from our own lessons
+
+A registry that ships empty is a feature nobody turns on. But this data goes
+in front of children — a certificate we tell a child to aim for had better
+exist — so none of it is remembered or guessed. `prv_seed_data()` is read out
+of `api/_lib/seeds/curriculum-*.json`: the bodies, the award names, which of
+our courses lead to each, and whether it is free are all taken from material
+links our own lessons already carry. A test checks the part that actually
+matters, which is not "it inserted rows" but **every course the starter
+registry names is a course we actually teach**, against the bundled
+curriculum.
+
+What it deliberately does not carry is fees, grade names and exam dates.
+Those change yearly and by country, and a stale price in front of a family is
+worse than none. Seeding is explicit (`admin.providers.seed`), never
+automatic, and idempotent by name — a body already there keeps every edit the
+programme made to it, and only missing awards are added.
+
+### The Learn app boots in one request, not three
+
+Lessons, the school plan and where-the-work-leads were three separate calls to
+the same route file: three HTTP round trips, three PHP bootstraps and three
+session verifications before a child on a phone sees a lesson. On shared
+hosting over a mobile connection that is the slowest part of opening the app,
+and none of it is work.
+
+`member.learn.boot` returns all three. What it must not do is couple their
+failures — school results and the registry each had their own silence on
+purpose — so each part is caught and comes back `null` rather than taking the
+lessons down with it. The lessons are the exception: if those fail there is
+nothing to draw, which the caller already handles.
+
+`tests/learn-app.test.js` counts the requests the screen makes for its own
+data and fails if it is not exactly one, so this cannot quietly go back to
+three the next time a panel needs something.
+
+**`null` must mean something.** `LearnAwards` returned nothing both when a
+course genuinely has no route and when the load failed — the silent empty that
+hides an outage (CLAUDE.md §9). An empty registry comes back as a real answer
+with empty lists, so `null` means only "failed", and that case now says so and
+offers the retry. Quietly, at the bottom of a course page: nothing there
+blocks the work.

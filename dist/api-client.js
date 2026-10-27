@@ -944,6 +944,10 @@
       studyPlan:         () => request('/member/curriculum.php' + qs({ view: 'study' })),
       studyStart:        (itemId, topic, exam) => request('/member/curriculum.php', { body: { action: 'drill', itemId, topic: topic || '', exam: exam || '' }, timeout: 60000 }),
       studyMark:         (drillId, answers) => request('/member/curriculum.php', { body: { action: 'drill', drillId, answers } }),
+      /* Everything the Learn app's first screen needs, in ONE request:
+         lessons, the school plan and where the courses lead. Three separate
+         calls meant three PHP bootstraps before a child saw a lesson. */
+      learnBoot:         () => request('/member/curriculum.php' + qs({ view: 'boot' })),
       /* Where their courses lead: the recognised credentials at the end of
          the work, and the ones they already hold. */
       providersMine:     () => request('/member/curriculum.php' + qs({ view: 'providers' })),
@@ -1479,6 +1483,7 @@
         awardRemove:   (awardId, o) => request('/admin/providers.php', { body: Object.assign({ action: 'awardDelete', awardId }, o || {}) }),
         credentialSet: (memberId, data) => request('/admin/providers.php', { body: { action: 'credential', memberId, data } }),
         credentialClear: (credId) => request('/admin/providers.php', { body: { action: 'credentialClear', credId } }),
+        seed:          () => request('/admin/providers.php', { body: { action: 'seed' } }),
       },
       curriculum: {
         // The Club's own course list (not Summer School's academy catalogue).

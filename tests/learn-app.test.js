@@ -94,11 +94,12 @@ function cleanup() {
     browser = await chromium.launch(d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-LRN-M1'"), false);`, ['session']);
     const errs = [];
-    const open = async (at, w) => {
+    const open = async (at, w, watch) => {
       const ctx = await browser.newContext({ viewport: { width: w || 1280, height: 900 } });
       await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true },
                             { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
       const p = await ctx.newPage();
+      if (watch) watch(p);
       p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
       p.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource|\[BABEL\]/.test(m.text())) errs.push('console: ' + m.text().slice(0, 200)); });
       await p.goto(BASE + at, { waitUntil: 'domcontentloaded' });
@@ -112,9 +113,22 @@ function cleanup() {
     };
 
     console.log('the app has a place of its own');
-    const P = await open('/learn');
+    /* The first screen must cost ONE request. It asked for lessons, school
+       and where-the-work-leads separately, which is three PHP bootstraps and
+       three round trips before a child on a phone sees a lesson — on shared
+       hosting that is the slowest part of opening the app. */
+    const bootCalls = [];
+    const P = await open('/learn', null, p => p.on('request', r => {
+      const u = new URL(r.url());
+      /* Only the Learn app's OWN data. The page boots a session like every
+         other page; the claim here is about the three calls this screen used
+         to make for itself. */
+      if (u.pathname === '/api/member/curriculum.php') bootCalls.push('view=' + (u.searchParams.get('view') || ''));
+    }));
     await P.waitForSelector('.lrn-card', { timeout: 60000 });
     chk('/learn opens This week, with the lesson to start', /Finding middle C/.test(await P.innerText('.lrn-main')));
+    chk('…in ONE request, not one per thing the screen shows (was three) — got ' + JSON.stringify(bootCalls),
+      bootCalls.length === 1 && bootCalls[0] === 'view=boot');
     /* Pin the promise — every area of the app is reachable from its own rail —
        rather than a count, which goes stale the moment an area is added. */
     const rail = (await P.$$eval('.lrn-rail-item', ns => ns.map(n => n.innerText.trim()))).join('|');

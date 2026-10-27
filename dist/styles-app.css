@@ -15328,6 +15328,8 @@ button.m9x-ev-sum { cursor: pointer; }
   border-radius: 14px; background: #f3faf4; border: 1px solid #cfe6d5; }
 .lrn-earned i { font-size: 22px; color: var(--lrn-ok); flex: none; }
 .lrn-earned p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--lrn-ink-2); }
+.lrn-note-retry { font: inherit; font-weight: 650; color: var(--lrn-accent); background: none;
+  border: 0; padding: 0; cursor: pointer; text-decoration: underline; min-height: 44px; }
 .lrn-award { display: grid; gap: 5px; padding: 14px 16px; border: 1px solid var(--lrn-line);
   border-radius: 14px; background: var(--lrn-s1); }
 .lrn-award.is-held { border-left: 4px solid var(--lrn-ok); }

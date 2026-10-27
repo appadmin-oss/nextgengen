@@ -647,3 +647,163 @@ function admin_provider_member(array $p): array {
     }
     return ['ok' => true, 'credentials' => $out, 'states' => PRV_STATE_LABEL];
 }
+
+/* ── The bodies this programme's own curriculum already points at ────────── */
+
+/**
+ * A starting registry, so the screen is not empty on day one.
+ *
+ * EVERY LINE HERE IS TRACEABLE TO THE CURRICULUM IN THIS REPOSITORY. The
+ * bodies, the award names, which of our courses lead to each, and whether it
+ * is free are all read from the material links our own lessons already carry
+ * (api/_lib/seeds/curriculum-*.json) — nothing is remembered, guessed or
+ * looked up. That matters because this data goes in front of children: a
+ * certificate we told a child to aim for had better exist.
+ *
+ * What it deliberately does NOT carry is fees, grade names and exam dates.
+ * Those change every year and differ by country, and a stale price in front
+ * of a family is worse than no price. The coordinator adds this year's.
+ *
+ * Seeding is an explicit act (`admin.providers.seed`), never automatic, and
+ * it is idempotent: a body or an award that is already there is left exactly
+ * as the programme has edited it.
+ */
+function prv_seed_data(): array {
+    return [
+        ['name' => 'freeCodeCamp', 'url' => 'https://www.freecodecamp.org/', 'free' => 1, 'country' => '',
+         'notes' => 'Free certifications, done online at the learner\'s own pace.',
+         'awards' => [
+            ['title' => 'Full Stack Developer certification', 'kind' => 'certificate', 'free' => 1,
+             'courses' => ['Coding', 'Software Development', 'Technology & Applied Engineering'],
+             'examNote' => 'Each certification needs its projects finished before the exam. freeCodeCamp awards several — add the others your courses lead to.'],
+         ]],
+        ['name' => 'Cisco Networking Academy', 'url' => 'https://www.netacad.com/', 'free' => 1, 'country' => '',
+         'notes' => 'Free courses that carry a certificate and a Credly badge.',
+         'awards' => [
+            ['title' => 'Introduction to Cybersecurity', 'kind' => 'certificate', 'free' => 1,
+             'courses' => ['Cybersecurity', 'Technology & Applied Engineering'],
+             'examNote' => 'Free, with a certificate and a Credly badge.'],
+         ]],
+        ['name' => 'Elements of AI', 'url' => 'https://www.elementsofai.com/', 'free' => 1, 'country' => 'Finland',
+         'notes' => 'University of Helsinki. Free, with a certificate.',
+         'awards' => [
+            ['title' => 'Elements of AI', 'kind' => 'certificate', 'free' => 1,
+             'courses' => ['Artificial Intelligence', 'Social Media']],
+         ]],
+        ['name' => 'Google', 'url' => 'https://grow.google/', 'free' => 0, 'country' => '',
+         'notes' => 'Digital Garage and Applied Digital Skills are free; the Career Certificates are paid.',
+         'awards' => [
+            ['title' => 'Digital Garage — Fundamentals of Digital Marketing', 'kind' => 'certificate', 'free' => 1,
+             'courses' => ['Media & Content Strategy', 'Business Strategy, Operations & Administration']],
+            ['title' => 'Applied Digital Skills', 'kind' => 'certificate', 'free' => 1,
+             'courses' => ['Digital Content Creation', 'Social Media', 'Visual Storytelling']],
+            ['title' => 'Google UX Design Certificate', 'kind' => 'certificate', 'free' => 0,
+             'courses' => ['Tech Product Design'], 'examNote' => 'The professional route after this course.'],
+            ['title' => 'Google Project Management Certificate', 'kind' => 'certificate', 'free' => 0,
+             'courses' => ['Business Strategy, Operations & Administration', 'Product Management'],
+             'examNote' => 'The professional route after this course.'],
+         ]],
+        ['name' => 'NBTE', 'url' => 'https://nbte.gov.ng/', 'free' => 0, 'country' => 'Nigeria',
+         'notes' => 'National Board for Technical Education — the recognised Nigerian route for the making trades.',
+         'awards' => [
+            ['title' => 'National Skills Qualification', 'kind' => 'qualification', 'free' => 0,
+             'courses' => ['Adire', 'Catering', 'Crafts', 'Creative & Performing Arts']],
+         ]],
+        ['name' => 'Trinity College London', 'url' => 'https://www.trinitycollege.com/', 'free' => 0, 'country' => 'United Kingdom',
+         'notes' => 'Graded music and drama exams, with exam centres in Nigeria.',
+         'awards' => [
+            ['title' => 'Graded Examination in Drama & Speech', 'kind' => 'graded_exam', 'free' => 0,
+             'courses' => ['Acting', 'Creative & Performing Arts', 'Stagecraft'],
+             'examNote' => 'Exam centres in Lagos, Abuja and Port Harcourt.'],
+            ['title' => 'Classical & Jazz graded music exam', 'kind' => 'graded_exam', 'free' => 0,
+             'courses' => ['Drums', 'Saxophone', 'Violin', 'Vocal Training'],
+             'examNote' => 'Exam centres in Lagos, Abuja and Port Harcourt.'],
+         ]],
+        ['name' => 'ABRSM', 'url' => 'https://www.abrsm.org/', 'free' => 0, 'country' => 'United Kingdom',
+         'notes' => 'The alternative graded music route.',
+         'awards' => [
+            ['title' => 'Graded Music Exam', 'kind' => 'graded_exam', 'free' => 0,
+             'courses' => ['Saxophone', 'Violin', 'Vocal Training']],
+         ]],
+    ];
+}
+
+/**
+ * admin.providers.seed — fill the registry from the curriculum's own links.
+ *
+ * Idempotent by name: a body already in the registry keeps every edit the
+ * programme has made to it, and only its MISSING awards are added. Pressing
+ * it twice does nothing the first press did not.
+ */
+function admin_providers_seed(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $now = now_iso();
+    $added = ['providers' => 0, 'awards' => 0]; $kept = ['providers' => 0, 'awards' => 0];
+
+    foreach (prv_seed_data() as $i => $b) {
+        $slug = prv_slug((string)$b['name']);
+        $row = db_row('SELECT * FROM providers WHERE slug = ? LIMIT 1', [$slug]);
+        if ($row) {
+            $kept['providers']++;
+            $pid = (string)$row['providerId'];
+        } else {
+            $pid = 'PRV-' . strtoupper(rand_hex(5));
+            db_insert('providers', ['providerId' => $pid, 'name' => (string)$b['name'], 'slug' => $slug,
+                'country' => (string)$b['country'], 'url' => prv_url((string)$b['url']),
+                'free' => (int)$b['free'], 'costNote' => '', 'notes' => (string)$b['notes'],
+                'status' => 'active', 'position' => $i, 'createdAt' => $now, 'updatedAt' => $now]);
+            $added['providers']++;
+        }
+        foreach ((array)$b['awards'] as $j => $a) {
+            $have = db_row('SELECT awardId FROM provider_awards WHERE providerId = ? AND lower(title) = ? LIMIT 1',
+                [$pid, mb_strtolower((string)$a['title'])]);
+            if ($have) { $kept['awards']++; continue; }
+            db_insert('provider_awards', ['awardId' => 'PAW-' . strtoupper(rand_hex(5)), 'providerId' => $pid,
+                'title' => (string)$a['title'], 'kind' => (string)$a['kind'], 'level' => '',
+                'courses' => json_encode(array_values((array)$a['courses']), JSON_UNESCAPED_SLASHES),
+                'url' => '', 'examNote' => (string)($a['examNote'] ?? ''), 'costNote' => '',
+                'free' => (int)$a['free'], 'validMonths' => 0, 'status' => 'active', 'position' => $j,
+                'createdAt' => $now, 'updatedAt' => $now]);
+            $added['awards']++;
+        }
+    }
+    audit('providers.seed', $by, '', $added + ['kept' => $kept], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'added' => $added, 'kept' => $kept,
+        'message' => $added['providers'] + $added['awards'] === 0
+            ? 'Everything in the starter list is already here. Nothing was changed.'
+            : 'Added ' . $added['providers'] . ' ' . ($added['providers'] === 1 ? 'body' : 'bodies')
+              . ' and ' . $added['awards'] . ' ' . ($added['awards'] === 1 ? 'award' : 'awards')
+              . '. Fees, grades and exam dates are not filled in — they change every year, so add this year\'s yourself.'];
+}
+
+/**
+ * member.learn.boot — everything the Learn app needs to draw its first
+ * screen, in ONE request.
+ *
+ * The shell was asking for three things separately, which is three HTTP round
+ * trips, three PHP bootstraps and three session verifications before a child
+ * on a phone sees a lesson. On shared hosting over a mobile connection that
+ * is the slowest part of opening the app, and none of it is work: it is the
+ * same route file, three times.
+ *
+ * What it must NOT do is couple their failures. School results and the
+ * provider registry each had their own silence on purpose — a programme that
+ * has set up neither must still get its lessons — so each part is caught
+ * here and comes back null rather than taking the whole screen down with it.
+ * The lessons are the exception: if those fail, the app has nothing to draw
+ * and says so, which is what the caller already handles.
+ */
+function member_learn_boot(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $cur = member_curriculum_list(['memberId' => $mid]);
+    if (empty($cur['ok'])) return $cur;                 // no lessons: the app's own error state
+
+    $soft = static function (callable $fn) {
+        try { $r = $fn(); return !empty($r['ok']) ? $r : null; }
+        catch (\Throwable $e) { return null; }          // never costs anybody their lessons
+    };
+    return ['ok' => true, 'curriculum' => $cur,
+        'plan' => $soft(static fn() => function_exists('member_study_plan') ? member_study_plan(['memberId' => $mid]) : null),
+        'awards' => $soft(static fn() => member_providers_mine(['memberId' => $mid]))];
+}

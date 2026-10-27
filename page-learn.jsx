@@ -333,7 +333,7 @@ function LearnCourse({ d, slug, aw, onAim }) {
           <ul className="lrn-list">{w.units.map(u => <LearnLessonCard key={u.unitId} u={u}/>)}</ul>
         </section>
       ))}
-      <LearnAwards aw={aw} course={name} onAim={onAim}/>
+      <LearnAwards aw={aw} course={name} onAim={onAim} onRetry={onAim}/>
     </div>
   );
 }
@@ -382,9 +382,22 @@ function LearnAward({ a, onAim, busy }) {
 }
 
 /** The routes out of ONE course, plus anything they already hold from it. */
-function LearnAwards({ aw, course, onAim }) {
+function LearnAwards({ aw, course, onAim, onRetry }) {
   const [busy, setBusy] = React.useState("");
-  if (!aw) return null;
+  /* `aw` is null only when the load FAILED — an empty registry still comes
+     back as a real answer with empty lists. Saying nothing in both cases is
+     the silent empty that hides an outage (CLAUDE.md §9), so a failure says
+     so and offers the retry. It stays quiet and small: this is the bottom of
+     a course page, not the lesson, and nothing here blocks the work. */
+  if (!aw) return onRetry ? (
+    <section className="lrn-group" aria-label="Where this leads">
+      <h3 className="lrn-group-h">Where this leads</h3>
+      <p className="lrn-note" role="status">
+        Couldn't load where this course leads.{" "}
+        <button type="button" className="lrn-note-retry" onClick={onRetry}>Try again</button>
+      </p>
+    </section>
+  ) : null;
   const mine = (aw.held || []).filter(a => !course || (a.fromCourses || []).indexOf(course) >= 0);
   const open = (aw.routes || []).filter(a => !course || (a.fromCourses || []).indexOf(course) >= 0);
   if (!mine.length && !open.length) return null;
@@ -828,19 +841,22 @@ function LearnApp() {
   const [plan, setPlan] = React.useState(null);
   const [aw, setAw] = React.useState(null);
   const [err, setErr] = React.useState("");
+  /* ONE request for the first screen. "This week" means lessons, school and
+     where the work leads, so asking for them separately was three HTTP round
+     trips and three PHP bootstraps before a child on a phone saw anything.
+     The server still keeps their failures apart: school and awards come back
+     null rather than taking the lessons down with them. */
   const load = React.useCallback(() => {
     setErr("");
-    return NGGApi.member.curriculum().then(setD).catch(e => setErr(e.code || e.message || "failed"));
+    return NGGApi.member.learnBoot()
+      .then(b => { setD(b.curriculum || null); setPlan(b.plan || null); setAw(b.awards || null); })
+      .catch(e => setErr(e.code || e.message || "failed"));
   }, []);
-  /* The school plan is loaded HERE, beside the curriculum, because "this
-     week" means both kinds of work. Its own request and its own silence:
-     school results not being set up must never cost anybody their lessons. */
+  /* After an action, only the part that moved is refetched — marking a drill
+     does not need the lessons again. */
   const loadPlan = React.useCallback(() => NGGApi.member.studyPlan().then(setPlan).catch(() => setPlan(null)), []);
-  /* Where the work leads. Its own request and its own silence too: an empty
-     registry, or a deployment that has not filled one in, must cost nobody
-     their lessons. */
   const loadAwards = React.useCallback(() => NGGApi.member.providersMine().then(setAw).catch(() => setAw(null)), []);
-  React.useEffect(() => { load(); loadPlan(); loadAwards(); }, [load, loadPlan, loadAwards]);
+  React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => {
     const sync = () => { setRoute(lrnRoute()); window.scrollTo(0, 0); };
     window.addEventListener("popstate", sync);

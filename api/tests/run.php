@@ -31828,12 +31828,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         (backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => ['name' => '  ']])['error'] ?? '') === 'name_required');
 
     $p1 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
-        'name' => 'Trinity College London', 'country' => 'United Kingdom',
+        'name' => 'Testwood Examinations Board', 'country' => 'United Kingdom',
         'url' => 'https://www.trinitycollege.com/', 'free' => false, 'costNote' => 'Entry fee per grade']]);
     $p2 = backend_dispatch('admin.providers.save', ['requesterId' => $A, 'data' => [
-        'name' => 'freeCodeCamp', 'url' => 'https://www.freecodecamp.org/', 'free' => true]]);
+        'name' => 'Testwood Free Academy', 'url' => 'https://www.freecodecamp.org/', 'free' => true]]);
     chk('providers: a body is added and reads back', !empty($p1['ok']) && !empty($p2['ok'])
-        && ($p1['provider']['slug'] ?? '') === 'trinity-college-london' && ($p2['provider']['free'] ?? false) === true);
+        && ($p1['provider']['slug'] ?? '') === 'testwood-examinations-board' && ($p2['provider']['free'] ?? false) === true);
     $P1 = (string)$p1['providerId']; $P2 = (string)$p2['providerId'];
 
     chk('providers: a url that is not http(s) is dropped rather than stored',
@@ -31848,7 +31848,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         'courses' => ['Practical Coding'], 'free' => true]]);
     chk('providers: an award is added under its body, its courses deduped and trimmed',
         !empty($a1['ok']) && ($a1['award']['courses'] ?? []) === ['Piano', 'Guitar']
-        && ($a1['award']['provider'] ?? '') === 'Trinity College London');
+        && ($a1['award']['provider'] ?? '') === 'Testwood Examinations Board');
     $AW1 = (string)$a1['awardId']; $AW2 = (string)$a2['awardId'];
 
     chk('providers: an award must name a body that exists',
@@ -31934,7 +31934,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $one = backend_dispatch('admin.providers.member', ['requesterId' => $A, 'memberId' => 'NGG-PRV-M1']);
     chk('providers: one member\'s credentials read back with the body that awarded them',
         !empty($one['ok']) && count($one['credentials']) === 2
-        && in_array('Trinity College London', array_map(static fn($c) => $c['provider'], $one['credentials']), true));
+        && in_array('Testwood Examinations Board', array_map(static fn($c) => $c['provider'], $one['credentials']), true));
 
     /* An award nobody holds goes; one people hold does not. */
     chk('providers: an award people hold is not deleted silently',
@@ -31942,6 +31942,39 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('providers: an award nobody holds is deleted',
         !empty(backend_dispatch('admin.providers.award.delete', ['requesterId' => $A, 'awardId' => $AW2])['deleted']));
 
+    /* The starter registry. Every line of it is supposed to be traceable to
+       a material link in this repository's own curriculum — so the test that
+       matters is not "it inserted rows" but "the courses it names are real
+       courses, and pressing it twice changes nothing". */
+    $seed = backend_dispatch('admin.providers.seed', ['requesterId' => $A]);
+    chk('providers: the starter registry seeds the bodies our own curriculum points at',
+        !empty($seed['ok']) && (int)$seed['added']['providers'] >= 7 && (int)$seed['added']['awards'] >= 9);
+    chk('providers: …including the free routes, marked free',
+        (int)(db_row("SELECT COUNT(*) c FROM providers WHERE free = 1 AND status = 'active'")['c'] ?? 0) >= 3
+        && (int)(db_row("SELECT COUNT(*) c FROM provider_awards WHERE free = 1")['c'] ?? 0) >= 5);
+
+    /* A certificate we tell a child to aim for has to exist, and a route that
+       names a course nobody teaches reaches nobody. Both are checked against
+       the bundled curriculum rather than trusted. */
+    $known = [];
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units") as $r) $known[mb_strtolower((string)$r['course'])] = true;
+    $orphans = [];
+    foreach (prv_seed_data() as $b) foreach ($b['awards'] as $a) foreach ($a['courses'] as $c) {
+        if ($known && !isset($known[mb_strtolower($c)])) $orphans[$c] = true;
+    }
+    chk('providers: every course the starter registry names is a course we actually teach'
+        . ($orphans ? ' — ' . implode(', ', array_slice(array_keys($orphans), 0, 4)) : ''),
+        !$orphans);
+    chk('providers: every seeded body has a real https address and at least one award',
+        !array_filter(prv_seed_data(), static fn($b) => !preg_match('~^https://~', (string)$b['url']) || !$b['awards']));
+
+    $again = backend_dispatch('admin.providers.seed', ['requesterId' => $A]);
+    chk('providers: seeding twice adds nothing and keeps every edit the programme made',
+        !empty($again['ok']) && (int)$again['added']['providers'] === 0 && (int)$again['added']['awards'] === 0
+        && (int)$again['kept']['providers'] >= 7);
+
+    db_exec("DELETE FROM provider_awards WHERE providerId IN (SELECT providerId FROM providers WHERE slug IN ('freecodecamp','cisco-networking-academy','elements-of-ai','google','nbte','trinity-college-london','abrsm'))");
+    db_exec("DELETE FROM providers WHERE slug IN ('freecodecamp','cisco-networking-academy','elements-of-ai','google','nbte','trinity-college-london','abrsm')");
     db_exec("DELETE FROM member_credentials WHERE memberId LIKE 'NGG-PRV-%'");
     db_exec("DELETE FROM provider_awards WHERE providerId IN ('$P1', '$P2')");
     db_exec("DELETE FROM providers WHERE providerId IN ('$P1', '$P2')");
