@@ -127,6 +127,15 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 | **Centres** | The centre directory. Add, edit, retire. |
 | **ID cards** | The print log, one person's card history, and the doors into both studios. |
 
+**The Analyst** (the sparkle panel beside any Control Room page) answers about
+the figures on screen. It reads totals, never names, so when the figures don't
+answer a question it says what it can read instead of going quiet. Ask it for
+**an export of members** ("send me the members grouped by their divisions") and
+it downloads a CSV straight from the roster — every member you can see (your
+centres only, and only with the People permission), grouped by division,
+centre, level, status or programme, or in name order. The names never go to the
+AI.
+
 **AI: who answers, and what it costs.** Nobody picks an AI provider; each
 feature is routed by the kind of work it is. *Everyday work* — screening posts,
 classifying observations, photo checks, Anchor Journal coaching, summaries, the
@@ -1891,13 +1900,17 @@ still be edited, finished or cancelled; they just cannot be *added* to a new
 one. Once a project is finished, only the person who set it (or the Control
 Room) can change a part.
 
-**In the Control Room:** *Mentorship → Projects* lists every project at your
-centres, open ones first, with how many are finishing within a week, how many
-are past their date and how many parts are done. *New project* sets one at a
-centre for its active mentors and children; open a project to see each group
-and person, mark a part done or not done, edit it, mark it finished or cancel
-it. Groups are made in the Mentor Portal and kept as they are when a project
-is edited here.
+**Projects in the Control Room.** **Mentorship › Projects** shows every project
+at the centres in your scope — the ones leads and mentors set in the mentor
+portal and the ones set here — with how many are open, finishing this week and
+past their finish date, and each project's groups, progress and countdown.
+**New project** (People permission) picks a centre, then its mentors and
+children (or *every child at the centre*), the dates and the groups: name the
+groups ("Red, Blue") and everyone is shared out across them, mentors first, one
+to a group. Open a project to see each group, **Set part** for anyone (done, not
+done yet, excused), **Edit**, **Mark finished**, **Reopen** or **Cancel
+project**. The rules are the mentor portal's own: a finished part is never
+removed, at most 200 people and 20 groups, a year at most.
 
 **Supervision, written up.** In **Mentors**, *Book supervision* books the
 Tuesday after STS; the button then reads *Write up supervision* and the row
@@ -2757,6 +2770,27 @@ Asking for a code for a staff account looks like any other request, but no
 code is sent: that inbox gets a note saying staff sign in with a password.
 Signing out only works from the app's own button, not from a link or an
 image somebody posts.
+
+### One email on several accounts
+
+Brothers and sisters on a parent's address, a family inbox: one email can be on
+several member accounts, and that is fine. The member editor, a member changing
+their own email and the roster import all accept it (the import notes "shares
+its email with N other members" on the row).
+
+- **A code or link** is emailed **once** to the address, naming who is on it
+  ("Tobi and Femi"). After it is typed or tapped, the screen asks **Who's
+  signing in?** with each account's name, card number and centre, and opens
+  the one chosen. Nobody is signed in before the choice, and the choice is good
+  for ten minutes, once. Escape or Cancel signs nobody in.
+- **A password** says whose it is: one child's own password opens that child
+  straight away. If the same password was set on several of the accounts, the
+  same question lists those.
+- **Forgot your password?** sends one email with a **Set {name}'s password**
+  link for each account.
+- A suspended account is never offered, and neither is a staff account that
+  signs in by password only (staff keep using their password).
+- Each child can always sign in with their own Member ID or card number.
 
 ### Who signs in where
 

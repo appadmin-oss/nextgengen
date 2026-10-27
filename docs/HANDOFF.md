@@ -3467,20 +3467,66 @@ screens the portal had left out. The tables are migration 182's; no migration.
   audit event with delivered / failed / no-contact.
 - The incidents badge is now centre-scoped like every other badge.
 
+## Shared emails, the Analyst's empty answers, projects for admins (2026-10-26)
+
+Three things the owner reported.
+
+**One email, several member accounts** (siblings on a parent's address). Sign-in
+looked members up with `… OR lower(email) = ? LIMIT 1`, so the address always
+opened the same child and the others never could; the editor refused a shared
+email for that reason. Now (auth.php):
+- `auth_email_accounts()` lists the accounts an email may open (not suspended,
+  merged or deleted; never a password-only staff account). Two or more make the
+  address *shared*.
+- A code or link for a shared address is ONE challenge keyed by
+  `auth_shared_key($email)` (`@shared:` + a hash), with the accounts in
+  `auth_sessions.pickIds` (migration 183). Verifying it returns
+  `{pick, pickToken}` instead of a session; `auth/pick.php` (`auth.pick`) opens
+  the chosen account within `AUTH_PICK_MINUTES` (10), once, re-checking it is
+  still on the address and not suspended.
+- A password on a shared address is tried against each account
+  (`auth_login_shared`): one match signs in, several offer a pick of those,
+  none counts one failure against the address (`auth.pwshared`).
+- A reset to a shared address sends one link per account (`auth_reset_shared`).
+- The picker is in `api-client.js` (`authPickDialog`, under `auth.verify` and
+  `auth.login`), so the site, the journal, the portals and the timetable all
+  get it. CSS `.ngg-pick*` in styles.css and journal/app.css.
+- Shared emails are allowed again in `admin_member_validate` and the member's
+  own email change; the import notes them.
+- Tests: PHP "shared email: …" (16); `tests/shared-email.test.js` (10, in
+  test:all).
+
+**The Analyst said "No answer came back"** for "send me an export of the
+members grouped by their divisions". It reads aggregates only; every lens
+returned no points, compose returned `''`, and the server called that success.
+`insight_chat_ask` now always answers (the lenses' points when composing
+failed, what it can read when nothing was found, or that the service did not
+answer); `CrAsk` falls back to the claims too. A request for a member export
+is recognised in the browser (`crAskExportIntent`) and done through
+`admin.members.list` (People, centre-scoped, capped 5000), grouped by
+division/centre/level/status/programme — names never reach the AI.
+
+**Admins could not see or run projects.** `admin.projects`,
+`admin.projects.people`, `admin.project.save`, `admin.project.mark` (People,
+centre-scoped by the project's centre) and the tab **Mentorship › Projects**
+(`ms-projects`, cr-tab-mentorship.jsx). The save is `project_write`, pulled out
+of `member_mp_project_save`, so the portal and the Control Room share one set of
+rules; only the reach differs (`admin_project_reach`). Tests: PHP "control room:
+…" (7); tests/projects.test.js drives the tab.
+
 ## Projects: audited end to end, six defects fixed, the Control Room screen built (27 Oct 2026)
 
 A read-through of `domain/projects.php` against every caller found the mentor
 and child paths wired correctly, and these wrong. Each now has a test.
 
-1. **There was no Control Room screen**, though the domain's comment said
-   admins "now see every project… set one". The ops and the route existed; no
-   client called them. `cr-tab-projects.jsx` is *Mentorship → Projects*, over
-   new `NGGApi.admin.projects` wrappers.
+1. **There was no Control Room screen** when the audit ran. The other session
+   built *Mentorship › Projects* (`ms-projects` in cr-tab-mentorship.jsx) at
+   the same time; this session's duplicate was dropped at the merge, so there
+   is one screen and one set of `NGGApi.admin.projects` wrappers.
 2. **Every Control Room save would have failed** as `bad_status`:
    `api/admin/projects.php` cast a missing `status` to `''`, and the domain
    defaults only an absent one. The PHP tests called the op directly and never
-   saw the route. It forwards only the keys sent now; `tests/projects.test.js`
-   sets a project through the real route.
+   saw the route. It forwards only the keys sent now.
 3. **A lead could not finish, cancel or edit a project once anyone on it had
    left their reach** (inactive, moved centre), because every person was
    re-checked against today's reach. Reach now decides who may be added, not

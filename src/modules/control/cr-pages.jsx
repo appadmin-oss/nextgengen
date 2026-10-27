@@ -73,10 +73,10 @@ const CR_PAGES = {
     { id: "ms-rel", label: "Relationships", desc: "Every live match, its phase and its health.", cap: "people" },
     { id: "ms-checkins", label: "Check-ins", desc: "The cadence every match carries, and what is overdue.", cap: "people" },
     { id: "ms-interventions", label: "Interventions", desc: "Every flag becomes a plan with an owner and a review date.", cap: "people" },
+    { id: "ms-projects", label: "Projects", desc: "Projects and activities set for mentors and children: who is on each, in which group, and the countdown to the finish.", cap: "people" },
     { id: "ms-safeguarding", label: "Safeguarding", desc: "Concerns reported about young people. Visible only to safeguarding roles.", cap: "safeguarding" },
     { id: "ms-mentors", label: "Mentors", desc: "From application to first match: screening, the Academy, the Commitment Policy and each pod.", cap: "people" },
     { id: "ms-impact", label: "Impact", desc: "Six measures against fixed targets.", cap: "people" },
-    { id: "ms-projects", label: "Projects", desc: "Projects and activities set for mentors and children, each with a finish date everyone on it sees counting down.", cap: "people" },
   ] },
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
