@@ -257,7 +257,7 @@ function CwOverview({ ctx }) {
     NGGApi.admin.wifi.gateways({ health: "bad", region, pageSize: 6 }).then(r => setAttention(r), () => setAttention(null));
   };
   React.useEffect(load, [days, region, ctx.bump]);
-  React.useEffect(() => { NGGApi.admin.wifi.regions().then(r => setRegions(r.regions || []), () => {}); }, [ctx.bump]);
+  React.useEffect(() => { if (base.scope.regions) NGGApi.admin.wifi.regions().then(r => setRegions(r.regions || []), () => {}); }, [ctx.bump]);
   const s = a && a.summary;
   return <>
     <div className="cw-bar">
@@ -311,7 +311,7 @@ function CwGateways({ ctx }) {
   const size = 25;
   const load = () => { setErr(null); NGGApi.admin.wifi.gateways({ q, region, platform, health, page, pageSize: size }).then(setD, setErr); };
   React.useEffect(() => { const t = setTimeout(load, 220); return () => clearTimeout(t); }, [q, region, platform, health, page, ctx.bump]);
-  React.useEffect(() => { NGGApi.admin.wifi.regions().then(r => setRegions(r.regions || []), () => {}); }, [ctx.bump]);
+  React.useEffect(() => { if (ctx.base.scope.regions) NGGApi.admin.wifi.regions().then(r => setRegions(r.regions || []), () => {}); }, [ctx.bump]);
   const f = (d && d.facets) || { region: {}, platform: {}, health: {} };
   const c = (o, k) => o[k] ? " (" + cwN(o[k]) + ")" : "";
   const reset = fn => v => { fn(v); setPage(1); };
@@ -329,7 +329,7 @@ function CwGateways({ ctx }) {
           <thead><tr><th scope="col">Gateway</th><th scope="col">Centre</th><th scope="col">Status</th><th scope="col">People</th><th scope="col">Line</th><th scope="col">Last fetch</th><th scope="col"><span className="cw-sr">Open</span></th></tr></thead>
           <tbody>{d.gateways.map(g => { const st = CW_STATE[g.state] || CW_STATE.warn; return <tr key={g.gatewayId} onClick={() => cwGatewayPanel(ctx, g)}>
             <td><span className="cw-cell"><i className={"ph ph-" + cwIcon(g.platform)} aria-hidden="true"/><span><b>{g.label}</b><small>{g.platformLabel.replace(/ \(.*/, "")}{g.pilot ? " · pilot" : ""}</small></span></span></td>
-            <td><b className="cw-w">{g.centre}</b><small>{g.region || "No region"}</small></td>
+            <td><b className="cw-w">{g.centre}</b>{ctx.base.scope.regions ? <small>{g.region || "No region"}</small> : null}</td>
             <td><CwPill tone={st[1]} t={st[0]}/></td>
             <td>{cwN(g.users)}{g.stats && g.stats.active != null ? <small>{cwN(g.stats.active)} online</small> : null}</td>
             <td>{g.speed ? <span className={g.speed.downMbps < ctx.base.slowMbps ? "cw-bad" : ""}>{cwMbps(g.speed.downMbps)}</span> : "—"}</td>
@@ -345,7 +345,7 @@ function cwGatewayPanel(ctx, g) {
   const { ui } = ctx;
   const st = CW_STATE[g.state || (g.lastSeenAt ? g.health : "never")] || CW_STATE.warn;
   const run = async (fn, ok, fb) => { try { await fn(); ui.toast(ok); ctx.reload(); ui.closePanel(); } catch (e) { ui.toast(cwErr(e, fb), true); } };
-  ui.panel({ title: g.label, sub: g.platformLabel + " · " + g.centre + (g.region ? " · " + g.region : ""), icon: cwIcon(g.platform),
+  ui.panel({ title: g.label, sub: g.platformLabel + " · " + g.centre + (g.region && ctx.base.scope.regions ? " · " + g.region : ""), icon: cwIcon(g.platform),
     body: <>
       <div className="cw-stats is-3"><CwStat l="Status" v={<CwPill tone={st[1]} t={st[0]}/>}/><CwStat l="Online now" v={g.stats && g.stats.active != null ? cwN(g.stats.active) : "—"} s={cwN(g.users) + " on its list"}/><CwStat l="Line" v={g.speed ? cwMbps(g.speed.downMbps) : "—"} s={g.speed ? cwAgo(g.speed.at) : "Not measured"}/></div>
       <h3 className="cw-h3">How it is</h3>

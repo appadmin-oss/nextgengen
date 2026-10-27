@@ -24,8 +24,13 @@ const WIFI_LEADS_MAX = 20;
 
 /* ── Regions ─────────────────────────────────────────────────────────────── */
 
+/* Regions are the `wifi_regions` capability: super admins, and anybody it is
+   granted to by name. An NGG admin holding `network` looks after their own
+   centre's Wi-Fi and never sees, shapes or sets a region. */
+function wifi_regions_allowed(array $requester): bool { return in_array('wifi_regions', member_effective_caps($requester), true); }
 function wifi_network_gate(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
+    if (!wifi_regions_allowed($g['requester'])) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:wifi_regions'];
     if ($g['scope'] !== null) return ['ok' => false, 'error' => 'network_wide_only', 'message' => 'Regions are shaped by somebody who looks after every centre.'];
     return $g;
 }
@@ -33,6 +38,7 @@ function wifi_network_gate(array $p): array {
 /** The regions the requester may see, each with its roll-up. One read per table, grouped. */
 function admin_wifi_regions(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
+    if (!wifi_regions_allowed($g['requester'])) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:wifi_regions'];
     $scope = $g['scope'];
     $regions = db_all("SELECT * FROM wifi_regions WHERE removedAt = '' OR removedAt IS NULL ORDER BY name");
     $centresBy = [];
@@ -233,9 +239,9 @@ function wifi_override_target(array $g, array $p): array {
         if (!wifi_scope_has($g['scope'], $centre)) return ['ok' => false, 'error' => 'out_of_scope'];
         return ['ok' => true, 'centre' => $centre, 'regionId' => ''];
     }
+    // A region's speeds are a region's: the wifi_regions capability only.
+    if (!wifi_regions_allowed($g['requester'])) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:wifi_regions'];
     if ($rid === '' || !db_row("SELECT id FROM wifi_regions WHERE regionId = ? AND (removedAt = '' OR removedAt IS NULL)", [$rid])) return ['ok' => false, 'error' => 'not_found'];
-    // A region's speeds: somebody who sees every centre, or one of its leads.
-    if ($g['scope'] !== null && !db_row('SELECT id FROM wifi_region_leads WHERE regionId = ? AND memberId = ?', [$rid, (string)$g['requester']['memberId']])) return ['ok' => false, 'error' => 'out_of_scope'];
     return ['ok' => true, 'centre' => '', 'regionId' => $rid];
 }
 
@@ -271,6 +277,8 @@ function admin_wifi_gateways(array $p): array {
     foreach (db_all('SELECT rc.centre, rc.regionId, g.name FROM wifi_region_centres rc JOIN wifi_regions g ON g.regionId = rc.regionId AND (g.removedAt = \'\' OR g.removedAt IS NULL)') as $x) $region[(string)$x['centre']] = [(string)$x['regionId'], (string)$x['name']];
     $bad = wifi_bad_key_counts();
     $hc = wifi_health_context($rows) + ['profiles' => wifi_settings()['profiles']];
+    $seesRegions = wifi_regions_allowed($g['requester']);
+    if (!$seesRegions) { $region = []; $p['region'] = ''; }
     $all = array_map(function ($r) use ($bad, $hc, $region) {
         $o = wifi_gateway_out($r, $bad, $hc);
         $o['regionId'] = $region[$o['centre']][0] ?? ''; $o['region'] = $region[$o['centre']][1] ?? '';
@@ -302,7 +310,8 @@ function admin_wifi_gateways(array $p): array {
     });
     $size = max(1, min(WIFI_PAGE_MAX, (int)($p['pageSize'] ?? 25)));
     $page = max(1, (int)($p['page'] ?? 1));
-    return ['ok' => true, 'total' => count($list), 'page' => $page, 'pageSize' => $size, 'facets' => $facets,
+    if (!$seesRegions) unset($facets['region']);
+    return ['ok' => true, 'total' => count($list), 'page' => $page, 'pageSize' => $size, 'facets' => $facets, 'regions' => $seesRegions,
             'gateways' => array_slice($list, ($page - 1) * $size, $size)];
 }
 
@@ -316,6 +325,7 @@ function admin_wifi_centres(array $p): array {
     $scope = $g['scope'];
     $region = [];
     foreach (db_all('SELECT rc.centre, rc.regionId, g.name FROM wifi_region_centres rc JOIN wifi_regions g ON g.regionId = rc.regionId AND (g.removedAt = \'\' OR g.removedAt IS NULL)') as $x) $region[(string)$x['centre']] = [(string)$x['regionId'], (string)$x['name']];
+    if (!wifi_regions_allowed($g['requester'])) { $region = []; $p['region'] = ''; }
     $gw = wifi_gateway_rollup();
     $q = mb_strtolower(trim((string)($p['q'] ?? '')));
     $fr = (string)($p['region'] ?? ''); $fs = (string)($p['setup'] ?? '');
@@ -359,7 +369,8 @@ function admin_wifi_analytics(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
     $scope = $g['scope'];
     $days = in_array((int)($p['days'] ?? 30), [7, 30, 90], true) ? (int)$p['days'] : 30;
-    $fr = (string)($p['region'] ?? ''); $fc = (string)($p['centre'] ?? '');
+    $seesRegions = wifi_regions_allowed($g['requester']);
+    $fr = $seesRegions ? (string)($p['region'] ?? '') : ''; $fc = (string)($p['centre'] ?? '');
     $regionOf = [];
     foreach (db_all('SELECT centre, regionId FROM wifi_region_centres') as $x) $regionOf[(string)$x['centre']] = (string)$x['regionId'];
     $inView = fn($c) => wifi_scope_has($scope, $c) && ($fc === '' || $c === $fc) && ($fr === '' || ($regionOf[$c] ?? '') === $fr);
@@ -447,6 +458,7 @@ function admin_wifi_analytics(array $p): array {
     }
     $none = array_values(array_filter(array_keys($roll), fn($c) => !isset($regionOf[$c]) && $inView($c)));
     if ($none) $regions[] = ['regionId' => '', 'name' => 'Not in a region', 'centres' => count($none)] + wifi_rollup_sum($roll, $none);
+    if (!$seesRegions) $regions = [];
 
     $peakVals = array_column($series, 'peakOnline');
     $availVals = array_filter(array_column($series, 'availability'), fn($v) => $v !== null);

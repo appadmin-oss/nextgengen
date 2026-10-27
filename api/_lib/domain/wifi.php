@@ -786,7 +786,8 @@ function admin_wifi_overview(array $p): array {
             'slowMbps' => WIFI_SLOW_MBPS, 'speedTests' => $tests, 'speedBytesMax' => WIFI_SPEED_BYTES_MAX,
             'gateways' => array_map(fn($r) => wifi_gateway_out($r, $bad, $hc), $rows), 'centres' => $centres, 'platforms' => $platforms,
             'feedUrl' => wifi_feed_url(), 'staleAfter' => WIFI_STALE_AFTER,
-            'scope' => ['all' => $scope === null, 'centres' => $scope === null ? null : count($scope), 'canNetwork' => $scope === null]];
+            'scope' => ['all' => $scope === null, 'centres' => $scope === null ? null : count($scope), 'canNetwork' => $scope === null,
+                        'regions' => function_exists('wifi_regions_allowed') && wifi_regions_allowed($g['requester'])]];
 }
 
 /** The address a gateway fetches, from the deployment's own base URL. */

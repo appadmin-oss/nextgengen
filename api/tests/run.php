@@ -32727,7 +32727,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (backend_dispatch('admin.wifi.gateway.rotate', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope'
         && (backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope');
     chk('wifi scale · the network’s table is changed only by somebody who sees every centre', (backend_dispatch('admin.wifi.access.set', ['requesterId' => 'NGG-WF-NADM', 'cases' => ['graduated' => 'on']])['error'] ?? '') === 'network_wide_only');
-    chk('wifi scale · regions are shaped network-wide only', (backend_dispatch('admin.wifi.region.save', ['requesterId' => 'NGG-WF-NADM', 'name' => 'South'])['error'] ?? '') === 'network_wide_only');
+    chk('wifi scale · regions are shaped only with wifi_regions', (backend_dispatch('admin.wifi.region.save', ['requesterId' => 'NGG-WF-NADM', 'name' => 'South'])['error'] ?? '') === 'forbidden');
 
     $rs = backend_dispatch('admin.wifi.region.save', ['requesterId' => $A, 'name' => 'Lagos West', 'code' => 'lw-1']);
     $RID = $rs['regionId'];
@@ -32748,14 +32748,19 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi scale · a region rolls up its centres and gateways', $r1['centres'] === 2 && $r1['gateways'] === 2 && $r1['leads'][0]['memberId'] === 'NGG-WF-RLEAD' && $rg['canShape'] === true);
 
     // Speeds inherit: network → region → centre, and the feed carries the centre's.
-    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]]);
+    chk('wifi scale · an NGG admin never sees or sets a region (wifi_regions is not theirs)', (backend_dispatch('admin.wifi.regions', ['requesterId' => 'NGG-WF-NADM'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]])['error'] ?? '') === 'forbidden'
+        && !in_array('wifi_regions', admin_role_caps('admin'), true) && in_array('wifi_regions', admin_role_caps('super_admin'), true));
+    chk('wifi scale · …and region names stay out of an NGG admin’s lists', !isset(backend_dispatch('admin.wifi.gateways', ['requesterId' => 'NGG-WF-RLEAD'])['facets']['region'])
+        && array_unique(array_column(backend_dispatch('admin.wifi.gateways', ['requesterId' => 'NGG-WF-RLEAD'])['gateways'], 'region')) === ['']);
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => $A, 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]]);
     $pf = backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre']);
-    chk('wifi scale · a region lead sets the region’s speed and its centres inherit it, saying from where', $pf['effective']['ngg-member']['down'] === 4 && $pf['from']['ngg-member'] === 'region'
+    chk('wifi scale · a region’s speed is set and its centres inherit it, saying from where', $pf['effective']['ngg-member']['down'] === 4 && $pf['from']['ngg-member'] === 'region'
         && $pf['effective']['ngg-staff']['down'] === WIFI_PROFILE_DEFAULTS['ngg-staff']['down'] && $pf['from']['ngg-staff'] === 'network');
     backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => ['down' => 3, 'hours' => '']]]);
     $tf = backend_dispatch('wifi.feed', ['gatewayId' => $gT['gateway']['gatewayId'], 'key' => $gT['key'], 'since' => 0]);
     chk('wifi scale · a centre’s own speed wins, and its gateway is sent it', $tf['profiles']['ngg-member']['down'] === 3 && $tf['profiles']['ngg-member']['up'] === wifi_settings()['profiles']['ngg-member']['up']);
-    chk('wifi scale · a region’s speed is set by its lead or a network-wide person only', (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-NADM', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 9]]])['error'] ?? '') === 'out_of_scope');
+    chk('wifi scale · a region’s speed is set only with wifi_regions', (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-NADM', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 9]]])['error'] ?? '') === 'forbidden');
     backend_dispatch('admin.wifi.profiles.set', ['requesterId' => $A, 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => null]]);
     chk('wifi scale · clearing a centre’s own speed goes back to the region’s', backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre'])['effective']['ngg-member']['down'] === 4);
 
