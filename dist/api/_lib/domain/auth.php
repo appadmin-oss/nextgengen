@@ -21,7 +21,8 @@ const AUTH_LOCK_MINUTES = 15;     // …buys this long a lock
 function auth_locked(array $m): bool {
     return !empty($m['lockedUntil']) && strtotime((string)$m['lockedUntil']) > time();
 }
-function auth_fail_bump(array $m, string $ip): void {
+/** Count one failure against the account; returns the consecutive count it reached. */
+function auth_fail_bump(array $m, string $ip): int {
     $n = (int)($m['failedLogins'] ?? 0) + 1;
     $upd = ['failedLogins' => $n, 'updatedAt' => now_iso()];
     if ($n >= AUTH_LOCK_AFTER) {
@@ -30,6 +31,7 @@ function auth_fail_bump(array $m, string $ip): void {
         audit('login.lockout', $m['memberId'], (string)$m['memberId'], ['minutes' => AUTH_LOCK_MINUTES], $ip);
     }
     db_update('members', $upd, ['id' => $m['id']]);
+    return $n;
 }
 function auth_fail_reset(array $m): void {
     db_update('members', ['failedLogins' => 0, 'lockedUntil' => '', 'lastLoginAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => $m['id']]);
@@ -240,6 +242,39 @@ function auth_verify(array $p): array {
     return ['ok' => true, 'member' => public_member($member)];
 }
 
+/* ── Reset codes: one live code per member, five misses and it is gone ──────
+ *
+ * A reset code is six digits and was looked up by memberId + code with nothing
+ * counting the misses, so it could be walked. Now every miss counts twice: on
+ * the account (auth_fail_bump — the same lockout password and sign-in-code
+ * guessing hit) and on the live code itself (`attempts`). Five misses retire
+ * the member's live codes; issuing a new code retires the old one, so there is
+ * never more than one to aim at. Welcome LINKS carry no code (see
+ * auth_welcome_link) and are untouched by all of this. */
+const AUTH_RESET_MAX_MISSES = 5;
+
+/** Expire every live reset code for a member. Returns how many were retired. */
+function auth_reset_codes_retire(string $memberId): int {
+    $now = now_iso();
+    return db_exec("UPDATE auth_sessions SET expiresAt = ? WHERE memberId = ? AND purpose = 'reset' AND otp <> ''
+                    AND (verifiedAt = '' OR verifiedAt IS NULL) AND expiresAt > ?",
+                   [gmdate('Y-m-d\TH:i:s\Z', time() - 1), $memberId, $now]);
+}
+
+/** A wrong reset code for this member: count it, and retire the codes at the limit. */
+function auth_reset_miss(array $m, string $ip): void {
+    $mid = (string)$m['memberId'];
+    auth_fail_bump($m, $ip);
+    $now = now_iso();
+    $live = "memberId = ? AND purpose = 'reset' AND otp <> '' AND (verifiedAt = '' OR verifiedAt IS NULL) AND expiresAt > ?";
+    db_exec("UPDATE auth_sessions SET attempts = COALESCE(attempts, 0) + 1 WHERE $live", [$mid, $now]);
+    $worst = (int)(db_row("SELECT MAX(attempts) a FROM auth_sessions WHERE $live", [$mid, $now])['a'] ?? 0);
+    if ($worst >= AUTH_RESET_MAX_MISSES) {
+        $n = auth_reset_codes_retire($mid);
+        audit('password.reset.codes_retired', $mid, $mid, ['codes' => $n, 'misses' => $worst], $ip);
+    }
+}
+
 /**
  * Self-service password reset — step 1. Emails a link + 6-digit code so a
  * member can set a password WITHOUT already being signed in (the only other
@@ -260,6 +295,8 @@ function auth_reset_request(array $p): array {
         return ['ok' => true, 'masked' => $masked, 'delivery' => true];
     }
 
+    // One live code per member: this one replaces whatever was sent before.
+    auth_reset_codes_retire((string)$member['memberId']);
     $token = rand_hex(32);
     $otp = new_otp();
     $now = time();
@@ -298,6 +335,10 @@ function auth_reset_request(array $p): array {
  * link is emailed to a guardian who may hand it over that evening, or at the
  * weekend. Seven days.
  *
+ * The link is the whole credential: the email never shows a code, so the
+ * challenge carries none (otp ''). A six-digit code that lived for seven days
+ * and was sent to nobody was only ever useful to somebody guessing it.
+ *
  * Why this exists at all: the apply form collects one email address and it is
  * the guardian's, so a converted member signs in with a code sent to their
  * parent's inbox, every single time. One password, set once, ends that.
@@ -309,7 +350,7 @@ function auth_welcome_link(string $memberId, int $days = 7): string {
     $now = time();
     db_insert('auth_sessions', [
         'token' => $token, 'memberId' => (string)$m['memberId'], 'email' => (string)$m['email'],
-        'otp' => new_otp(), 'attempts' => 0, 'purpose' => 'reset',
+        'otp' => '', 'attempts' => 0, 'purpose' => 'reset',
         'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
         'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + max(1, $days) * 86400),
         'verifiedAt' => '', 'ip' => '', 'userAgent' => 'welcome',
@@ -341,13 +382,23 @@ function auth_reset_confirm(array $p): array {
         return ['ok' => false, 'error' => 'no_credentials'];
     }
 
-    if (!$ch) { audit('password.reset.fail.bad_token', $memberId ?: null, '', [], $ip); return ['ok' => false, 'error' => 'invalid']; }
-    if (strtotime((string)$ch['expiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
-    if (!empty($ch['verifiedAt'])) return ['ok' => false, 'error' => 'already_used'];
-    if ((int)$ch['attempts'] >= 5) return ['ok' => false, 'error' => 'too_many_attempts'];
-
+    if (!$ch) {
+        // A wrong code for a real member counts against them (see auth_reset_miss).
+        $m = $memberId !== '' ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
+        if ($m) {
+            if (auth_locked($m)) return ['ok' => false, 'error' => 'account_locked'];
+            auth_reset_miss($m, $ip);
+        }
+        audit('password.reset.fail.bad_token', $memberId ?: null, '', [], $ip);
+        return ['ok' => false, 'error' => 'invalid'];
+    }
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if (auth_locked($member)) return ['ok' => false, 'error' => 'account_locked'];
+    // Before expiry: a code retired for misses says so, even when guessed right.
+    if ((int)$ch['attempts'] >= AUTH_RESET_MAX_MISSES) return ['ok' => false, 'error' => 'too_many_attempts'];
+    if (strtotime((string)$ch['expiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
+    if (!empty($ch['verifiedAt'])) return ['ok' => false, 'error' => 'already_used'];
     if ((string)$member['status'] === 'suspended') return ['ok' => false, 'error' => 'account_suspended'];
 
     db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);

@@ -1108,6 +1108,63 @@ chk('reset challenge is single-use (consumed code no longer matches)', backend_d
 chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
 chk('reset request for an unknown account still looks ok (no oracle)', !empty(backend_dispatch('auth.resetRequest', ['identifier' => 'ghost-nobody@example.com'])['ok']));
 
+/* ── Reset codes cannot be walked ──
+ * Six digits looked up by memberId + code, with nothing counting misses, is a
+ * code anyone can walk. Misses now count on the code and on the account; five
+ * retire the code; a new code retires the old; a locked account is refused;
+ * the welcome LINK carries no code at all and survives the guessing. */
+(function () {
+    db_exec("DELETE FROM auth_sessions WHERE memberId IN ('NGG-2025-0771','NGG-2025-0772')");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-2025-0771','NGG-2025-0772')");
+    foreach (['NGG-2025-0771' => 'walk1@example.com', 'NGG-2025-0772' => 'walk2@example.com'] as $id => $em) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Walk Target', 'email' => $em, 'type' => 'NGG', 'status' => 'active',
+            'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $code = fn($id) => db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND purpose = 'reset' ORDER BY id DESC LIMIT 1", [$id]);
+    $wrong = fn($otp) => str_pad((string)(((int)$otp + 1) % 1000000), 6, '0', STR_PAD_LEFT);
+    $confirm = fn($id, $otp) => backend_dispatch('auth.resetConfirm', ['memberId' => $id, 'otp' => $otp, 'password' => 'walkedpass12'])['error'] ?? 'ok';
+
+    backend_dispatch('auth.resetRequest', ['identifier' => 'walk1@example.com']);
+    $first = $code('NGG-2025-0771');
+    backend_dispatch('auth.resetRequest', ['identifier' => 'walk1@example.com']);
+    $second = $code('NGG-2025-0771');
+    chk('reset codes: a new code retires the one before it — one live code per member',
+        $first['otp'] !== $second['otp'] ? $confirm('NGG-2025-0771', $first['otp']) === 'expired' : true);
+
+    for ($i = 0; $i < AUTH_RESET_MAX_MISSES; $i++) $confirm('NGG-2025-0771', $wrong($second['otp']));
+    chk('reset codes: every miss is counted on the live code',
+        (int)db_row('SELECT attempts FROM auth_sessions WHERE id = ?', [$second['id']])['attempts'] === AUTH_RESET_MAX_MISSES);
+    chk('reset codes: five misses retire the code — the right code is refused afterwards',
+        $confirm('NGG-2025-0771', $second['otp']) === 'too_many_attempts'
+        && empty(db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-2025-0771'")['passwordHash']));
+    chk('reset codes: the misses count on the account too (the sign-in lockout)',
+        (int)db_row("SELECT failedLogins FROM members WHERE memberId = 'NGG-2025-0771'")['failedLogins'] >= AUTH_RESET_MAX_MISSES);
+
+    // Keep going with fresh codes: the account locks, and a locked account is refused even the right code.
+    for ($i = 0; $i < AUTH_LOCK_AFTER; $i++) {
+        if (auth_locked(db_row("SELECT * FROM members WHERE memberId = 'NGG-2025-0771'"))) break;
+        backend_dispatch('auth.resetRequest', ['identifier' => 'walk1@example.com']);
+        $confirm('NGG-2025-0771', $wrong($code('NGG-2025-0771')['otp']));
+    }
+    backend_dispatch('auth.resetRequest', ['identifier' => 'walk1@example.com']);
+    chk('reset codes: a locked account is refused, even with the right code',
+        auth_locked(db_row("SELECT * FROM members WHERE memberId = 'NGG-2025-0771'"))
+        && $confirm('NGG-2025-0771', $code('NGG-2025-0771')['otp']) === 'account_locked');
+
+    // The welcome link: no code to guess, and guessing at the member does not kill it.
+    $link = auth_welcome_link('NGG-2025-0772');
+    $w = $code('NGG-2025-0772');
+    chk('welcome link: carries no code, so there is nothing to guess for seven days', $w && (string)$w['otp'] === '');
+    for ($i = 0; $i < AUTH_RESET_MAX_MISSES; $i++) $confirm('NGG-2025-0772', '123456');
+    db_update('members', ['failedLogins' => 0, 'lockedUntil' => ''], ['memberId' => 'NGG-2025-0772']);
+    $wr = backend_dispatch('auth.resetConfirm', ['token' => (string)$w['token'], 'password' => 'welcomepass12']);
+    chk('welcome link: still works after somebody guessed codes at the account',
+        strpos($link, '/?reset=') !== false && !empty($wr['ok']));
+
+    db_exec("DELETE FROM auth_sessions WHERE memberId IN ('NGG-2025-0771','NGG-2025-0772')");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-2025-0771','NGG-2025-0772')");
+})();
+
 // ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──
 chk('mail_mode is php_mail with nothing configured', mail_mode() === 'php_mail');
 $GLOBALS['CONFIG']['apps_script_url'] = 'https://script.google.com/macros/s/x/exec';
