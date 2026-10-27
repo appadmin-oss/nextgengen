@@ -12117,6 +12117,19 @@ button.m9x-ev-sum { cursor: pointer; }
 .m9x-view-opt span { font-size: 13px; color: #4a4a50; }
 .m9x-view-opt.is-on { border-color: #0b0b0c; background: #fff; box-shadow: 0 0 0 1px #0b0b0c; }
 .m9x-view-opt:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-wifi .m9x-view-h { display: flex; align-items: center; gap: 8px; }
+.m9x-wifi-dl { margin: 0 0 12px; display: grid; gap: 8px; }
+.m9x-wifi-dl > div { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: #fafaf8; border: 1px solid #ecebe6; }
+.m9x-wifi-dl dt { min-width: 84px; font-size: 13px; color: #4a4a50; }
+.m9x-wifi-dl dd { margin: 0; font-size: 15px; color: #0b0b0c; }
+.m9x-wifi-v { display: flex; align-items: center; gap: 6px; font-family: var(--mono, ui-monospace, monospace); font-size: 17px; letter-spacing: .04em; }
+.m9x-wifi-b { font: inherit; cursor: pointer; min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: #0b0b0c; }
+.m9x-wifi-b:hover { background: #efeee9; }
+.m9x-wifi-b:focus-visible, .m9x-wifi-new:focus-visible { outline: 3px solid #0b0b0c; outline-offset: 2px; }
+.m9x-wifi-note { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: #4a4a50; }
+.m9x-wifi-new { font: inherit; cursor: pointer; min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #0b0b0c; background: #fff; color: #0b0b0c; font-weight: 600; margin-right: 10px; }
+.m9x-wifi-new:disabled { cursor: not-allowed; border-color: #c9c8c2; color: #6b6b72; }
+.m9x-wifi-left { font-size: 13px; color: #4a4a50; }
 
 /* Instructor portal: the assignment desk sits in the page's column, not under the sidebar's edge. */
 .ip6-asd { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 0 40px 56px; }

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 188;
+const NGG_SCHEMA_TARGET = 189;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5495,6 +5495,50 @@ function db_migrate(PDO $db): void {
               UNIQUE (memberId, unitId)
             );
             CREATE INDEX IF NOT EXISTS idx_learn_state_opened ON learn_state(memberId, openedAt);
+        ",
+        189 => "
+            CREATE TABLE IF NOT EXISTS wifi_accounts (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              username TEXT NOT NULL,
+              pinSealed TEXT NOT NULL DEFAULT '',
+              pinSetAt TEXT NOT NULL DEFAULT '',
+              pinResetDay TEXT NOT NULL DEFAULT '',
+              pinResets INTEGER NOT NULL DEFAULT 0,
+              override TEXT NOT NULL DEFAULT '',
+              overrideWhy TEXT NOT NULL DEFAULT '',
+              overrideBy TEXT NOT NULL DEFAULT '',
+              overrideAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (subjectType, subjectId),
+              UNIQUE (username)
+            );
+            CREATE TABLE IF NOT EXISTS wifi_gateways (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL UNIQUE,
+              platform TEXT NOT NULL DEFAULT 'mikrotik',
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              label TEXT NOT NULL DEFAULT '',
+              keyHash TEXT NOT NULL DEFAULT '',
+              keyTail TEXT NOT NULL DEFAULT '',
+              keySetAt TEXT NOT NULL DEFAULT '',
+              lastSeenAt TEXT NOT NULL DEFAULT '',
+              lastFullAt TEXT NOT NULL DEFAULT '',
+              osVersion TEXT NOT NULL DEFAULT '',
+              lastError TEXT NOT NULL DEFAULT '',
+              lastVersion INTEGER NOT NULL DEFAULT 0,
+              lastChangeAt TEXT NOT NULL DEFAULT '',
+              ackedJson TEXT NOT NULL DEFAULT '',
+              pendingJson TEXT NOT NULL DEFAULT '',
+              pendingVersion INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              createdBy TEXT NOT NULL DEFAULT '',
+              removedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_gateways_centre ON wifi_gateways(centre);
         ",
     ];
 

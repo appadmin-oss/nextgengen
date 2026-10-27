@@ -4379,3 +4379,53 @@ CREATE TABLE IF NOT EXISTS learn_state (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (188) ON DUPLICATE KEY UPDATE version = version;
+
+-- 189: Wi-Fi accounts and the centres' gateways (any platform) (domain/wifi.php). Access is
+-- derived (wifi_access_for), never stored; the PIN is sealed, not hashed,
+-- because the router must be handed it.
+CREATE TABLE IF NOT EXISTS wifi_accounts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  username VARCHAR(64) NOT NULL,
+  pinSealed VARCHAR(255) NOT NULL DEFAULT '',
+  pinSetAt VARCHAR(32) NOT NULL DEFAULT '',
+  pinResetDay VARCHAR(10) NOT NULL DEFAULT '',
+  pinResets INT NOT NULL DEFAULT 0,
+  override VARCHAR(16) NOT NULL DEFAULT '',
+  overrideWhy VARCHAR(255) NOT NULL DEFAULT '',
+  overrideBy VARCHAR(64) NOT NULL DEFAULT '',
+  overrideAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_subject (subjectType, subjectId),
+  UNIQUE KEY uq_wifi_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS wifi_gateways (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  platform VARCHAR(16) NOT NULL DEFAULT 'mikrotik',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  label VARCHAR(120) NOT NULL DEFAULT '',
+  keyHash VARCHAR(64) NOT NULL DEFAULT '',
+  keyTail VARCHAR(8) NOT NULL DEFAULT '',
+  keySetAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastSeenAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastFullAt VARCHAR(32) NOT NULL DEFAULT '',
+  osVersion VARCHAR(64) NOT NULL DEFAULT '',
+  lastError VARCHAR(255) NOT NULL DEFAULT '',
+  lastVersion INT NOT NULL DEFAULT 0,
+  lastChangeAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackedJson MEDIUMTEXT,
+  pendingJson MEDIUMTEXT,
+  pendingVersion INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_gateway (gatewayId),
+  KEY idx_wifi_gateways_centre (centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (189) ON DUPLICATE KEY UPDATE version = version;

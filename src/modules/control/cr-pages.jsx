@@ -16,7 +16,7 @@ const CR_GROUPS = [
   { h: "People", items: ["members", "mentors", "mentorship", "money"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
-  { h: "System", items: ["settings"] },
+  { h: "System", items: ["settings", "wifi"] },
 ];
 
 /* cap: null = any staff · "x" = that capability · ["x","y"] = any of them. */
@@ -125,6 +125,12 @@ const CR_PAGES = {
   comms: { label: "Announcements", icon: "megaphone", tabs: [
     { id: "broadcast", label: "Send", desc: "Reach members and parents by app, SMS and email.", cap: "content" },
     { id: "newsletter", label: "Newsletter", desc: "The monthly email to subscribers.", cap: "inbox" },
+  ] },
+  /* The centres' Wi-Fi (cr-tab-wifi.jsx). The Club portal's Wi-Fi item opens it. */
+  wifi: { label: "Wi-Fi", icon: "wifi-high", tabs: [
+    { id: "wifi", label: "Gateways", desc: "Each centre’s Wi-Fi gateway: whether it is working, and what to do when it isn’t.", cap: "network" },
+    { id: "wifi-access", label: "Who gets on", desc: "Wi-Fi follows people’s records. Why somebody can’t get on, who gets what, and how fast.", cap: "network" },
+    { id: "wifi-guides", label: "Setup guides", desc: "Which gateway a centre can use, what each does, and how it fits together.", cap: "network" },
   ] },
   settings: { label: "Settings", icon: "gear", tabs: [
     { id: "settings", label: "General", desc: "Sign-ups, messages, staff sign-in and the homepage banner.", cap: "settings" },

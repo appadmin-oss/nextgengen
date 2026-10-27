@@ -117,6 +117,7 @@ const CENTRE_NAME_TABLES = [
     'testimonials',
     'lesson_feedback',
     'v3_scores',
+    'wifi_gateways',
 ];
 
 /** centreId for a centre NAME, or '' when the name resolves to no centre.

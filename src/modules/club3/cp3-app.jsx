@@ -186,6 +186,8 @@ class Cp3Portal extends React.Component {
   flushAll() { this.flushPending(); }
   fail(e, fallback) { this.toast(cp3Err(e, fallback)); }
   go(sec) {
+    // The Wi-Fi workspace lives in the Control Room; this door leads there.
+    if (sec === "wifi") { try { window.location.href = "/control/wifi"; } catch (e) {} return; }
     if (CP3_SECTION_IDS.indexOf(sec) === -1) sec = "home";
     this.flushPending();
     this.setState(s => ({ recentSec: [sec].concat(s.recentSec.filter(x => x !== sec)).slice(0, 4) }));
@@ -456,7 +458,7 @@ class Cp3Portal extends React.Component {
     const mk = (n, on) => { const b = badge[n[0]]; return { label: n[1], short: n[1], icon: "ph ph-" + n[2], current: on ? "page" : undefined, bg: on ? "#ebebe9" : "transparent", fw: on ? 600 : 400, ic: on ? "#0b0b0c" : "#5d5d63", pc: on ? "#0b0b0c" : "#6b6b72", pbg: on ? "#f1f1ef" : "transparent", hasBadge: !!(b && b[0]), badge: b ? cap99(b[0]) : 0, bb: b ? b[1] : "", bf: b ? b[2] : "", onClick: () => this.go(n[0]) }; };
     /* Hide what this account cannot use rather than show a door that 403s:
        curriculum edits need `curriculum`, the gate needs `checkin`. */
-    const canSee = id => !((id === "desks" || id === "rota") && !B.me.canCheckin);
+    const canSee = id => !((id === "desks" || id === "rota") && !B.me.canCheckin) && !(id === "wifi" && !B.me.canNetwork);
     const NAVG = CP3_NAV.map(g => [g[0], g[1].filter(n => canSee(n[0]))]).filter(g => g[1].length);
     const navGroups = NAVG.map(g => ({ h: g[0] || "", hasH: !!g[0], items: g[1].map(n => mk(n, n[0] === sec)) }));
     const moreItems = NAVG.reduce((a, g) => a.concat(g[1]), []).filter(n => !CP3_TABS.some(t => t[0] === n[0]));

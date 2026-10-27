@@ -80,6 +80,7 @@ const ORDER = [
   'src/modules/control/cr-tab-learning.jsx',
   'src/modules/control/cr-tab-publishing.jsx',
   'src/modules/control/cr-tab-system.jsx',
+  'src/modules/control/cr-tab-wifi.jsx',
   'src/modules/control/cr-tab-support.jsx',
   'src/modules/control/cr-tab-analytics.jsx',
   'src/modules/control/cr-tab-mentors.jsx',

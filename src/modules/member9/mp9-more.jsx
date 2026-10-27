@@ -932,7 +932,7 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? this.viewSwitch() : null;
+    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
@@ -1023,6 +1023,46 @@ function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morni
    criterion on the growth scale, the strength their mentor saw and one next
    step. The ratings and the mentor's staff note never reach this screen. */
 const MP9_EVAL_TONE = { "Not yet": "is-0", "Emerging": "is-1", "Demonstrated": "is-2", "Strong": "is-3" };
+/* Me → Wi-Fi (domain/wifi.php): the member's sign-in name and Wi-Fi PIN for
+   their centre, and in plain words why access is limited or off. The PIN is
+   hidden until asked for — this screen is shown on phones in a room full of
+   people. Three new PINs a day; loading, an honest error with a retry, and
+   the state where the centre has no Wi-Fi yet are all said. */
+function Mp9Wifi({ toast }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [show, setShow] = React.useState(false), [busy, setBusy] = React.useState(false);
+  const load = () => { setErr(""); NGGApi.member.wifi().then(r => setD(r.wifi || null)).catch(e => setErr((e && (e.code || e.message)) || "error")); };
+  React.useEffect(load, []);
+  const reset = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.member.wifiReset(); setD(r.wifi); setShow(true); toast("New Wi-Fi PIN ready. Devices signed in with the old one stay signed in until they leave."); }
+    catch (e) { toast((e && e.data && e.data.message) || "Couldn’t change your PIN. Try again later."); }
+    finally { setBusy(false); }
+  };
+  const copy = t => { try { navigator.clipboard.writeText(t); toast("Copied"); } catch (_) { toast("Couldn’t copy. Write it down instead."); } };
+  const on = d && d.access !== "off";
+  const lim = d && d.limits;
+  return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
+    <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your Wi-Fi details couldn’t load ({err}).</span><button type="button" onClick={load}>Try again</button></div>
+      : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : !on ? <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>
+      : <>
+        {!d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. These details will work as soon as it is.</p>
+          : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use these.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
+        <dl className="m9x-wifi-dl">
+          <div><dt>Username</dt><dd className="m9x-wifi-v">{d.username}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.username)} aria-label="Copy your Wi-Fi username"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
+          <div><dt>PIN</dt><dd className="m9x-wifi-v">{show ? d.pin : "••••••"}
+            <button type="button" className="m9x-wifi-b" onClick={() => setShow(x => !x)} aria-pressed={show ? "true" : "false"} aria-label={show ? "Hide your PIN" : "Show your PIN"}><i className={"ph " + (show ? "ph-eye-slash" : "ph-eye")} aria-hidden="true"/></button>
+            {show ? <button type="button" className="m9x-wifi-b" onClick={() => copy(d.pin)} aria-label="Copy your PIN"><i className="ph ph-copy" aria-hidden="true"/></button> : null}</dd></div>
+          {lim ? <div><dt>Speed</dt><dd>Up to {lim.down} Mbit/s · {lim.devices === 1 ? "one device" : lim.devices + " devices"} at a time{lim.hours ? " · " + lim.hours.replace("-", "–") : ""}</dd></div> : null}
+        </dl>
+        <p className="m9x-wifi-note">Your PIN is only for the Wi-Fi. Never tell anyone else your PIN — anything done on the Wi-Fi with it counts as you.</p>
+        <button type="button" className="m9x-wifi-new" onClick={reset} disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Making a new PIN…" : "Get a new PIN"}</button>
+        <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + " left today"}</span>
+      </>}
+  </section>;
+}
+
 function Mp9Evals({ data, err, busy, retry, latestOnly, mentor }) {
   const list = (data && data.evals) || [];
   const [open, setOpen] = React.useState(0);

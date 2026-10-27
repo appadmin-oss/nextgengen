@@ -588,6 +588,17 @@ function backend_dispatch(string $op, array $args = []): array {
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
             'hooks.attendance'            => 'hooks_attendance',
+            'wifi.feed'                   => 'wifi_feed',
+            'admin.wifi.overview'         => 'admin_wifi_overview',
+            'admin.wifi.access.set'       => 'admin_wifi_access_set',
+            'admin.wifi.gateway.save'     => 'admin_wifi_gateway_save',
+            'admin.wifi.gateway.rotate'   => 'admin_wifi_gateway_rotate',
+            'admin.wifi.gateway.remove'   => 'admin_wifi_gateway_remove',
+            'admin.wifi.gateway.preview'  => 'admin_wifi_gateway_preview',
+            'admin.wifi.gateway.setup'    => 'admin_wifi_gateway_setup',
+            'admin.wifi.lookup'           => 'admin_wifi_lookup',
+            'admin.wifi.member'           => 'admin_wifi_member',
+            'admin.wifi.member.set'       => 'admin_wifi_member_set',
             'hooks.gate.resolve'          => 'hooks_gate_resolve',
             'hooks.gate.search'           => 'hooks_gate_search',
             'admin.behaviour.log'         => 'admin_behaviour_log',
@@ -737,6 +748,8 @@ function backend_dispatch(string $op, array $args = []): array {
             /* A member's own obligations, read-only. There is deliberately no
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
+            'member.wifi.get'             => 'member_wifi_get',
+            'member.wifi.reset'           => 'member_wifi_reset',
             'member.fees.pay'             => 'member_fees_pay',
             'admin.media.usage'           => 'admin_media_usage',
             'admin.media.account'         => 'admin_media_account',

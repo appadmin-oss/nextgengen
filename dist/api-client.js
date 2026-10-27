@@ -1056,6 +1056,9 @@
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
       feesPay:      () => request('/member/fees.php', { body: { action: 'pay' } }),
+      // The centre's Wi-Fi: sign-in name, PIN, why access is limited or off; a new PIN (3 a day).
+      wifi:         () => request('/member/wifi.php'),
+      wifiReset:    () => request('/member/wifi.php', { body: { action: 'reset' } }),
       /* Self-service. No memberId travels in any of these — the server reads it
          from the session, which is what keeps them from being an enumeration
          endpoint over children. */
@@ -1915,6 +1918,20 @@
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
         reject:   (paymentId, reason) => request('/admin/membership.php', { body: { action: 'reject', paymentId, reason } }),
         evidenceUrl: (paymentId) => BASE + '/admin/membership.php' + qs({ view: 'evidence', paymentId }),
+      },
+      /* The centres' Wi-Fi (domain/wifi.php): gateways of any platform, the
+         access table and profiles (network), and one person's Wi-Fi (people/summer). */
+      wifi: {
+        overview: () => request('/admin/wifi.php'),
+        accessSet: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'access' }, data) }),
+        gatewaySave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'save' }, data) }),
+        gatewayRotate: (gatewayId) => request('/admin/wifi.php', { body: { action: 'rotate', gatewayId } }),
+        gatewayRemove: (gatewayId) => request('/admin/wifi.php', { body: { action: 'remove', gatewayId } }),
+        preview: (gatewayId, q) => request('/admin/wifi.php' + qs({ view: 'preview', gatewayId, q })),
+        setup: (gatewayId) => request('/admin/wifi.php' + qs({ view: 'setup', gatewayId })),
+        lookup: (q) => request('/admin/wifi.php' + qs({ view: 'lookup', q })),
+        member: (subjectType, subjectId) => request('/admin/wifi.php' + qs({ view: 'member', subjectType, subjectId })),
+        memberSet: (subjectType, subjectId, op, extra) => request('/admin/wifi.php', { body: Object.assign({ action: 'member', subjectType, subjectId, op }, extra || {}) }),
       },
       fees: {
         settings:    () => request('/admin/fees.php'),
