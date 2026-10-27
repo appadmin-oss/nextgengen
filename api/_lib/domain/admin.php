@@ -10,6 +10,9 @@ function admin_gate(array $p): array {
     $requester = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['requesterId'] ?? '')]);
     if (!$requester) return ['ok' => false, 'error' => 'no_requester'];
     if (!is_admin_role($requester['role'])) return ['ok' => false, 'error' => 'forbidden'];
+    // Read live, so a staff account suspended or deactivated mid-session stops here.
+    $st = strtolower((string)($requester['status'] ?? ''));
+    if (in_array($st, ['suspended', 'inactive', 'deleted'], true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'account_' . $st];
     return ['ok' => true, 'requester' => $requester];
 }
 
@@ -634,12 +637,19 @@ function admin_members_upsert(array $p): array {
         $patch = db_pick($data, $cols);
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
+        // Suspended, deactivated or re-roled: every session they hold was issued
+        // on the old standing, so it ends now rather than when the cookie does.
+        $roleChanged = $newRole !== null && $newRole !== strtolower((string)$existing['role']);
+        $lockedOut = $newStat !== null && $newStat !== strtolower((string)$existing['status'])
+            && in_array($newStat, MEMBER_BULK_LOCKOUT_STATUSES, true);
+        $revoked = ($roleChanged || $lockedOut) ? member_sessions_revoke_all($memberId) : 0;
         // Newly promoted to a staff tier → send an invite/onboarding email.
         $wasStaff = is_admin_role((string)$existing['role']);
         if ($newRole !== null && !$wasStaff && in_array($newRole, ['editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) {
             staff_invite_email($memberId, $newRole);
         }
-        audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
+        audit('admin.member.update', $g['requester']['memberId'], $memberId,
+              ['keys' => array_keys($patch)] + ($revoked ? ['sessionsRevoked' => $revoked] : []), (string)($p['ip'] ?? ''));
         event_emit('member.updated', ['memberId' => $memberId] + (db_row('SELECT memberId, fullName, email, phone, type, status, role, centre, track, cohort, school, parentName, parentEmail, parentPhone FROM members WHERE memberId = ?', [$memberId]) ?: []));
         return ['ok' => true, 'memberId' => $memberId];
     }

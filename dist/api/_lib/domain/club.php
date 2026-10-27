@@ -168,7 +168,7 @@ function admin_club_members_bulk(array $p): array {
     $scopeNames = admin_centre_names_in_scope($me);
     $col = $action === 'status' ? 'status' : 'centre';
     $now = now_iso();
-    $results = []; $applied = 0; $refused = 0;
+    $results = []; $applied = 0; $refused = 0; $revoked = 0;
     foreach ($ids as $mid) {
         $m = db_row('SELECT memberId, fullName, role, status, centre, type FROM members WHERE memberId = ? LIMIT 1', [$mid]);
         if (!$m) { $results[] = ['id' => $mid, 'ok' => false, 'error' => 'not_found']; $refused++; continue; }
@@ -186,11 +186,13 @@ function admin_club_members_bulk(array $p): array {
             $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue;
         }
         db_update('members', [$col => $value, 'updatedAt' => $now], ['memberId' => $mid]);
+        if ($col === 'status' && in_array($value, MEMBER_BULK_LOCKOUT_STATUSES, true)) $revoked += member_sessions_revoke_all($mid);
         $results[] = ['id' => $mid, 'name' => $name, 'ok' => true];
         $applied++;
     }
     audit('admin.club.members.bulk', (string)$me['memberId'], $action,
-        ['requested' => count($ids), 'applied' => $applied, 'refused' => $refused, 'value' => $value], (string)($p['ip'] ?? ''));
+        ['requested' => count($ids), 'applied' => $applied, 'refused' => $refused, 'value' => $value]
+        + ($revoked ? ['sessionsRevoked' => $revoked] : []), (string)($p['ip'] ?? ''));
     return ['ok' => true, 'action' => $action, 'applied' => $applied, 'refused' => $refused,
             'requested' => count($ids), 'results' => $results];
 }

@@ -250,10 +250,52 @@ function session_touch(?array $s = null): void {
     } catch (Throwable $e) { /* a heartbeat is never worth failing a request over */ }
 }
 
+/* The member a session speaks for, as the database has them NOW.
+ *
+ * The cookie carries the status and role it was issued with, and a signed
+ * cookie cannot be recalled — so a member suspended, deactivated or demoted
+ * after signing in kept the standing the cookie remembered. One indexed
+ * single-row read per request settles it; cached for the rest of the request
+ * (admin_gate reads the full row separately, as it always has). */
+function session_member_now(string $mid, bool $fresh = false): ?array {
+    $cache = &$GLOBALS['__session_member_now'];
+    if (!is_array($cache)) $cache = [];
+    if ($fresh || !array_key_exists($mid, $cache)) {
+        $cache[$mid] = db_row('SELECT status, role FROM members WHERE memberId = ? LIMIT 1', [$mid]) ?: null;
+    }
+    return $cache[$mid];
+}
+function session_member_forget(string $mid): void { unset($GLOBALS['__session_member_now'][$mid]); }
+
+/**
+ * Hold a member session to the member's current standing. Returns the session
+ * with `status` and `role` replaced by the database's, or an error and the
+ * HTTP status to refuse with. Kiosk and card-holder sessions are not member
+ * accounts and pass through untouched (their authority is the gate / card).
+ *
+ * @return array{session: array, error: string, http: int}
+ */
+function session_standing(array $s): array {
+    if (!empty($s['kiosk']) || isset($s['stu'])) return ['session' => $s, 'error' => '', 'http' => 200];
+    $mid = (string)($s['mid'] ?? '');
+    $m = $mid !== '' ? session_member_now($mid) : null;
+    if (!$m || (string)$m['status'] === 'deleted') return ['session' => $s, 'error' => 'unauthorized', 'http' => 401];
+    if ((string)$m['status'] === 'suspended') return ['session' => $s, 'error' => 'suspended', 'http' => 403];
+    $s['status'] = (string)$m['status'];
+    $s['role'] = (string)($m['role'] ?? 'member');
+    return ['session' => $s, 'error' => '', 'http' => 200];
+}
+
 function require_session(): array {
     $s = session_read();
     if (!$s) json_error('unauthorized', 401);
     if (($s['status'] ?? '') === 'suspended') json_error('suspended', 403);
+    $st = session_standing($s);
+    if ($st['error'] !== '') {
+        if ($st['http'] === 401) session_clear();
+        json_error($st['error'], $st['http']);
+    }
+    $s = $st['session'];
     // Server-side revocation: a remotely revoked device dies here even though
     // its cookie signature is still valid. Missing row (pruned) stays valid —
     // the cookie's HMAC + expiry remain the base authority.

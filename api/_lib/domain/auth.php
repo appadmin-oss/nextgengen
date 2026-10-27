@@ -229,7 +229,12 @@ function auth_verify(array $p): array {
     db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);
 
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
-    if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if (!$member || (string)$member['status'] === 'deleted') return ['ok' => false, 'error' => 'member_gone'];
+    // A code issued before a suspension is not a way back in.
+    if ((string)$member['status'] === 'suspended') {
+        audit('login.fail.suspended', $member['memberId'], (string)$member['memberId'], [], $ip);
+        return ['ok' => false, 'error' => 'suspended'];
+    }
     // Admins must complete sign-in with their password, never an emailed code or
     // magic link — enforced here too so a stale/crafted challenge can't bypass it.
     if (auth_password_only($member)) {
@@ -393,7 +398,7 @@ function auth_reset_confirm(array $p): array {
         return ['ok' => false, 'error' => 'invalid'];
     }
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
-    if (!$member) return ['ok' => false, 'error' => 'member_gone'];
+    if (!$member || (string)$member['status'] === 'deleted') return ['ok' => false, 'error' => 'member_gone'];
     if (auth_locked($member)) return ['ok' => false, 'error' => 'account_locked'];
     // Before expiry: a code retired for misses says so, even when guessed right.
     if ((int)$ch['attempts'] >= AUTH_RESET_MAX_MISSES) return ['ok' => false, 'error' => 'too_many_attempts'];
@@ -449,6 +454,24 @@ function member_sessions_revoke(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('security.sessions.revoke', $mid, $target, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'revoked' => 1];
+}
+
+/**
+ * Sign a member out everywhere — every live row in the device register.
+ *
+ * Called when staff change what a session was issued on: a suspension, a
+ * deactivation, a role change. The cookie is signed and stateless, so without
+ * this a suspended member kept working until the cookie expired (thirty days
+ * for "stay signed in"). require_session() also re-reads the member's status
+ * and role on every request, which covers cookies with no register row.
+ * Returns how many sessions were revoked; the caller audits it, once per run.
+ */
+function member_sessions_revoke_all(string $memberId): int {
+    if ($memberId === '') return 0;
+    $n = db_exec("UPDATE device_sessions SET revokedAt = ? WHERE memberId = ? AND (revokedAt IS NULL OR revokedAt = '')",
+                 [now_iso(), $memberId]);
+    if (function_exists('session_member_forget')) session_member_forget($memberId);
+    return $n;
 }
 
 function auth_me(array $p): array {

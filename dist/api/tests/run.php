@@ -1165,6 +1165,70 @@ chk('reset request for an unknown account still looks ok (no oracle)', !empty(ba
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-2025-0771','NGG-2025-0772')");
 })();
 
+/* ── A suspension reaches the sessions already open ──
+ * The cookie remembers the status and role it was issued with. Suspending,
+ * deactivating or re-roling somebody now revokes every session in the device
+ * register, and every request is held to the member's CURRENT row — which also
+ * covers a cookie with no register row to revoke. */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $ids = ['NGG-2025-0781', 'NGG-2025-0782', 'NGG-2025-0783', 'NGG-2025-0784'];
+    $in = "('" . implode("','", $ids) . "')";
+    db_exec("DELETE FROM device_sessions WHERE memberId IN $in");
+    db_exec("DELETE FROM auth_sessions WHERE memberId IN $in");
+    db_exec("DELETE FROM members WHERE memberId IN $in");
+    foreach ($ids as $i => $id) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Standing ' . $i, 'email' => "standing$i@example.com", 'type' => 'NGG',
+            'status' => 'active', 'role' => $i === 2 ? 'admin' : 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        foreach (['a', 'b'] as $k) db_insert('device_sessions', ['sid' => "sid-$id-$k", 'memberId' => $id, 'createdAt' => now_iso(), 'lastSeenAt' => now_iso()]);
+    }
+    $live = fn($id) => (int)db_row("SELECT COUNT(*) c FROM device_sessions WHERE memberId = ? AND (revokedAt IS NULL OR revokedAt = '')", [$id])['c'];
+    $cookie = fn($id, $role = 'member') => ['mid' => $id, 'role' => $role, 'type' => 'NGG', 'status' => 'active', 'adminOk' => $role !== 'member', 'sid' => "sid-$id-a"];
+
+    chk('standing: an active member\'s session passes, unchanged in substance',
+        session_standing($cookie('NGG-2025-0781'))['error'] === '' && $live('NGG-2025-0781') === 2);
+
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-2025-0781', 'status' => 'suspended']]);
+    chk('standing: suspending a member revokes every session they hold', !empty($r['ok']) && $live('NGG-2025-0781') === 0);
+    chk('standing: …and a cookie still saying "active" is refused on its next request',
+        session_standing($cookie('NGG-2025-0781'))['error'] === 'suspended' && session_standing($cookie('NGG-2025-0781'))['http'] === 403);
+    chk('standing: the editor\'s audit line says sessions were revoked',
+        str_contains((string)(db_row("SELECT meta FROM audit_log WHERE event = 'admin.member.update' AND subject = 'NGG-2025-0781' ORDER BY id DESC LIMIT 1")['meta'] ?? ''), 'sessionsRevoked'));
+
+    $b = backend_dispatch('admin.members.bulk', ['requesterId' => $SU, 'action' => 'status', 'status' => 'inactive', 'memberIds' => ['NGG-2025-0782']]);
+    chk('standing: a bulk deactivation revokes sessions too, counted in the run\'s one audit line',
+        ($b['applied'] ?? 0) === 1 && $live('NGG-2025-0782') === 0
+        && str_contains((string)(db_row("SELECT meta FROM audit_log WHERE event = 'admin.members.bulk' ORDER BY id DESC LIMIT 1")['meta'] ?? ''), '"sessionsRevoked":2'));
+
+    $d = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-2025-0783', 'role' => 'member']]);
+    $st = session_standing($cookie('NGG-2025-0783', 'admin'));
+    chk('standing: a role change revokes sessions, and an old admin cookie now carries the role the database holds',
+        !empty($d['ok']) && $live('NGG-2025-0783') === 0 && $st['error'] === '' && $st['session']['role'] === 'member'
+        && !is_admin_role($st['session']['role']));
+
+    db_update('members', ['role' => 'admin', 'status' => 'suspended'], ['memberId' => 'NGG-2025-0783']);
+    chk('standing: the admin gate re-reads the requester — suspended staff are refused',
+        (backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0783'])['detail'] ?? '') === 'account_suspended');
+
+    chk('standing: an unknown or erased member\'s cookie is not a session',
+        session_standing($cookie('NGG-NO-SUCH-MEMBER'))['http'] === 401);
+    chk('standing: kiosk and card-holder sessions are not member accounts and pass through',
+        session_standing(['mid' => 'kiosk:G1', 'role' => 'kiosk', 'kiosk' => true])['error'] === ''
+        && session_standing(['mid' => 'STU-1', 'role' => 'student', 'stu' => 'STU-1'])['error'] === '');
+
+    // A sign-in code issued before the suspension is not a way back in.
+    backend_dispatch('auth.request', ['identifier' => 'standing3@example.com']);
+    $ch = db_row("SELECT otp FROM auth_sessions WHERE memberId = 'NGG-2025-0784' ORDER BY id DESC LIMIT 1");
+    db_update('members', ['status' => 'suspended'], ['memberId' => 'NGG-2025-0784']);
+    chk('standing: login-code verification refuses a suspended member',
+        $ch && (backend_dispatch('auth.verify', ['memberId' => 'NGG-2025-0784', 'otp' => (string)$ch['otp']])['error'] ?? '') === 'suspended');
+
+    unset($GLOBALS['__session_member_now']);
+    db_exec("DELETE FROM device_sessions WHERE memberId IN $in");
+    db_exec("DELETE FROM auth_sessions WHERE memberId IN $in");
+    db_exec("DELETE FROM members WHERE memberId IN $in");
+})();
+
 // ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──
 chk('mail_mode is php_mail with nothing configured', mail_mode() === 'php_mail');
 $GLOBALS['CONFIG']['apps_script_url'] = 'https://script.google.com/macros/s/x/exec';

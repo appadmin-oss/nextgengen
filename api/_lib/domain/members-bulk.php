@@ -126,7 +126,7 @@ function admin_members_bulk(array $p): array {
 
     $scopeNames = admin_centre_names_in_scope($me);
     $now = now_iso();
-    $results = []; $applied = 0; $refused = 0;
+    $results = []; $applied = 0; $refused = 0; $revoked = 0;
 
     foreach ($ids as $mid) {
         $m = db_row('SELECT memberId, fullName, role, status, centre, type FROM members WHERE memberId = ? LIMIT 1', [$mid]);
@@ -169,6 +169,10 @@ function admin_members_bulk(array $p): array {
                     $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue;
                 }
                 db_update('members', [$col => $value, 'updatedAt' => $now], ['memberId' => $mid]);
+                // Out of circulation means signed out, not "until the cookie expires".
+                if ($action === 'status' && in_array((string)$value, MEMBER_BULK_LOCKOUT_STATUSES, true)) {
+                    $revoked += member_sessions_revoke_all($mid);
+                }
             }
             $results[] = ['id' => $mid, 'name' => $name, 'ok' => true];
             $applied++;
@@ -181,7 +185,7 @@ function admin_members_bulk(array $p): array {
     audit('admin.members.bulk', (string)$me['memberId'], $action, [
         'requested' => count($ids), 'applied' => $applied, 'refused' => $refused,
         'value' => is_array($value) ? $value : (string)$value,
-    ], (string)($p['ip'] ?? ''));
+    ] + ($revoked ? ['sessionsRevoked' => $revoked] : []), (string)($p['ip'] ?? ''));
 
     return ['ok' => true, 'action' => $action, 'applied' => $applied, 'refused' => $refused,
             'requested' => count($ids), 'results' => $results];
