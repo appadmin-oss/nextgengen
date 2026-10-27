@@ -1854,6 +1854,19 @@
         consent:      (studentId) => request('/admin/summer.php' + qs({ view: 'consent', studentId })),
         absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
         importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),
+        /* Summer School Portal v3 (domain/summer-portal.php). `part` names the
+           screen — boot | today | people | register | child | consent | cards |
+           desk — and `opts` its filters, which the server allow-lists. */
+        portal:       (part, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'portal', part: part || 'boot' }, opts || {}))),
+        search:       (q) => request('/admin/summer.php' + qs({ view: 'search', q })),
+        recent:       () => request('/admin/summer.php' + qs({ view: 'recent' })),
+        // A code, a printed ID or a name in; the one check-in/out op runs on the child's card.
+        desk:         (q, mode, earlyReason) => request('/admin/summer.php', { body: { action: 'desk', q, mode: mode || 'in', earlyReason: earlyReason || '' } }),
+        alertAbsent:  (defer, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: '', cohortId: cohortId || '', defer: defer || 0 } }),
+        graduatesInvoice: (memberIds, startDate, defer) => request('/admin/summer.php', { body: { action: 'graduatesInvoice', memberIds, startDate: startDate || '', defer: defer || 0 }, timeout: 180000 }),
+        // A parked act (`pendingId`): cancel it inside its Undo window, or commit it now.
+        pendingCancel: (pendingId) => request('/admin/summer.php', { body: { action: 'pendingCancel', pendingId } }),
+        pendingFlush:  (pendingId) => request('/admin/summer.php', { body: { action: 'pendingFlush', pendingId } }),
       },
       /* Member obligations — membership fee, monthly dues, training fee.
          A LEDGER: `payment` RECORDS money somebody already handed over by cash
@@ -1947,13 +1960,17 @@
            what this screen has always shown; pass 'all' for every status. */
         members:    (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'members' },
                       typeof opts === 'string' ? { q: opts } : (opts || {})))),
-        promote:    (studentId, centre) => request('/admin/club.php', { body: { action: 'promote', studentId, centre: centre || '' } }),
+        /* `defer` (seconds) parks the move for an Undo window (domain/pending.php):
+           the reply is `{ deferred, pendingId }` and nothing has happened yet. */
+        promote:    (studentId, centre, defer) => request('/admin/club.php', { body: { action: 'promote', studentId, centre: centre || '', defer: defer || 0 } }),
+        // Into NGG: the edition's graduates by stage (domain/summer-portal.php).
+        graduates:  (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'graduates' }, opts || {}))),
         // The NGG centres to offer for one participant, nearest first (domain/centres-ngg.php).
         promoteOptions: (studentId) => request('/admin/club.php' + qs({ view: 'promoteOptions', studentId }), { timeout: 60000 }),
         /* Bulk, and PARTIAL: read `results` for the per-row verdicts, not just
            `ok`. Each promotion goes through the single promote path, so the
            bulk cannot drift from it. */
-        promoteBulk: (studentIds, centres) => request('/admin/club.php', { body: { action: 'promoteBulk', studentIds, centres: centres || {} }, timeout: 180000 }),
+        promoteBulk: (studentIds, centres, defer) => request('/admin/club.php', { body: { action: 'promoteBulk', studentIds, centres: centres || {}, defer: defer || 0 }, timeout: 180000 }),
         bulk:       (op, memberIds, payload) => request('/admin/club.php', {
                       body: Object.assign({ action: 'bulk', op, memberIds }, payload || {}), timeout: 120000 }),
       },

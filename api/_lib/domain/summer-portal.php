@@ -217,7 +217,11 @@ function admin_summer_portal(array $p): array {
     $out['centres'] = array_values(array_unique(array_filter(array_column($roster, 'centre'))));
     sort($out['centres']);
     $out['me'] = ['name' => (string)($req['fullName'] ?? ''), 'id' => (string)$req['memberId']];
+    $out['rules'] = ss3_rules();
 
+    if ($view === 'consent')  return $out + ss3_view_consent($roster, $groups);
+    if ($view === 'cards')    return $out + ss3_view_cards($p, $req, $roster, $ed);
+    if ($view === 'desk')     return $out + ss3_view_desk($roster, $groups, $ed, $today);
     if ($view === 'today')    return $out + ss3_view_today($roster, $groups, $days, $ed, $today);
     if ($view === 'people')   return $out + ss3_view_people($p, $roster, $groups);
     if ($view === 'register') return $out + ss3_view_register($p, $roster, $groups, $days, $ed, $today);
@@ -262,7 +266,7 @@ function ss3_view_today(array $roster, array $groups, array $days, array $ed, st
             'counts' => ['stopped' => $count('stopped'), 'risk' => $count('risk'), 'nogroup' => $count('nogroup'),
                          'unverified' => $count('unverified'), 'consent' => $count('consent')],
             'stoppedNames' => array_slice(array_map(static fn($r) => $r['name'], array_values(array_filter($roster, static fn($r) => $r['stopped']))), 0, 6),
-            'watch' => array_slice($watch, 0, 4)];
+            'watch' => array_slice($watch, 0, 4), 'groupStats' => $watch];
 }
 
 /** People: a server-filtered, faceted, paged roster. Unknown filters fall back, never error. */
@@ -607,4 +611,158 @@ function admin_summer_graduates_invoice(array $p): array {
     }
     audit('summer.graduates.invoice', (string)$g['requester']['memberId'], '', ['requested' => count($ids), 'sent' => $sent, 'existed' => $existed, 'refused' => $refused], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'sent' => $sent, 'existed' => $existed, 'refused' => $refused, 'requested' => count($ids), 'results' => $results];
+}
+
+
+/* ── Door rules, consent, cards and the desk ─────────────────────────────────
+ *
+ * The figures the desk works to, read from the attendance settings rather than
+ * typed into a screen: "doors 09:00, 10 minutes' grace" on the portal is the
+ * same 09:00 the check-in op grades lateness against. */
+function ss3_rules(): array {
+    $a = attendance_settings();
+    $now = attendance_minutes_at();
+    return ['student' => (string)($a['resumptionByType']['student'] ?? $a['resumptionByType']['default'] ?? ''),
+            'volunteer' => (string)($a['resumptionByType']['volunteer'] ?? $a['resumptionByType']['default'] ?? ''),
+            'grace' => (int)$a['graceMinutes'], 'closeStudent' => attendance_close_time('student'),
+            'closeVolunteer' => attendance_close_time('volunteer'),
+            'now' => sprintf('%02d:%02d', intdiv($now, 60), $now % 60)];
+}
+
+/** Every consent type across the edition's active children, and who is missing a required one. */
+function ss3_view_consent(array $roster, array $groups): array {
+    $active = array_values(array_filter($roster, static fn($r) => $r['status'] === 'active'));
+    $ids = array_column($active, 'id');
+    $last = [];
+    foreach (array_chunk($ids, 400) as $ch) {
+        foreach (db_all('SELECT studentId, type, status FROM consents WHERE studentId IN (' . implode(',', array_fill(0, count($ch), '?')) . ') ORDER BY id', $ch) as $c) {
+            // Append-only: the last row for a type is the current answer.
+            $last[(string)$c['studentId']][(string)$c['type']] = (string)$c['status'];
+        }
+    }
+    $types = [];
+    foreach (CONSENT_TYPES as $t => $meta) {
+        $g = 0; $r = 0; $u = 0;
+        foreach ($ids as $id) { $v = $last[$id][$t] ?? ''; if ($v === 'granted') $g++; elseif ($v !== '') $r++; else $u++; }
+        $types[] = ['type' => $t, 'label' => (string)$meta['label'], 'rule' => $meta['p'] === 0 ? 'required' : (!empty($meta['mustAnswer']) ? 'answer' : 'optional'),
+                    'granted' => $g, 'declined' => $r, 'unanswered' => $u];
+    }
+    $required = array_keys(array_filter(CONSENT_TYPES, static fn($m) => $m['p'] === 0));
+    $answer = array_keys(array_filter(CONSENT_TYPES, static fn($m) => !empty($m['mustAnswer'])));
+    $missing = []; $unanswered = 0; $complete = 0;
+    foreach ($active as $r) {
+        $have = $last[$r['id']] ?? [];
+        $miss = array_values(array_filter($required, static fn($t) => ($have[$t] ?? '') !== 'granted'));
+        $open = array_values(array_filter($answer, static fn($t) => ($have[$t] ?? '') === ''));
+        if ($open) $unanswered++;
+        if (!$miss && !$open) $complete++;
+        if ($miss) $missing[] = ss3_public_row($r, $groups) + ['missing' => $miss, 'missingLabel' => (string)CONSENT_TYPES[$miss[0]]['label']];
+    }
+    return ['types' => $types, 'missing' => array_slice($missing, 0, 200), 'missingTotal' => count($missing),
+            'unansweredTotal' => $unanswered, 'completeTotal' => $complete, 'activeTotal' => count($active)];
+}
+
+/** Card stock by batch, children confirmed with no card, and one card looked up by its code. */
+function ss3_view_cards(array $p, array $req, array $roster, array $ed): array {
+    $batches = [];
+    foreach (db_all("SELECT batch, MIN(createdAt) minted, COUNT(*) total,
+                            SUM(CASE WHEN status = 'blank' THEN 1 ELSE 0 END) blank,
+                            SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) assigned,
+                            SUM(CASE WHEN status = 'void' THEN 1 ELSE 0 END) void
+                     FROM qr_codes WHERE cohortId = ? GROUP BY batch ORDER BY MIN(id) DESC LIMIT 60", [(string)$ed['cohortId']]) as $b) {
+        $batches[] = ['id' => (string)$b['batch'], 'minted' => substr((string)$b['minted'], 0, 10), 'total' => (int)$b['total'],
+                      'blank' => (int)$b['blank'], 'assigned' => (int)$b['assigned'], 'void' => (int)$b['void']];
+    }
+    $noCard = count(array_filter($roster, static fn($r) => ss3_is_live($r) && $r['token'] === ''));
+    $hit = null;
+    $code = strtoupper(trim((string)($p['q'] ?? '')));
+    if ($code !== '') {
+        $qr = db_row('SELECT token, batch, status, studentId FROM qr_codes WHERE UPPER(token) = ? LIMIT 1', [$code]);
+        if ($qr) {
+            $s = (string)$qr['studentId'] !== '' ? db_row('SELECT studentId, fullName, displayId, centre FROM summer_students WHERE studentId = ? LIMIT 1', [(string)$qr['studentId']]) : null;
+            // A card bound to a child outside the requester's centres is not theirs to see or void.
+            if (!$s || admin_centre_allowed($req, (string)($s['centre'] ?? ''))) {
+                $hit = ['token' => (string)$qr['token'], 'batch' => (string)$qr['batch'], 'status' => (string)$qr['status'],
+                        'name' => $s ? (string)$s['fullName'] : '', 'displayId' => $s ? (string)($s['displayId'] ?? '') : '',
+                        'centre' => $s ? (string)($s['centre'] ?? '') : ''];
+            }
+        }
+    }
+    $sum = static fn($k) => array_sum(array_column($batches, $k));
+    return ['batches' => $batches, 'cardCounts' => ['blank' => $sum('blank'), 'assigned' => $sum('assigned'), 'void' => $sum('void'), 'noCard' => $noCard],
+            'lowAt' => SS3_CARD_LOW, 'card' => $hit, 'cardAsked' => $code !== ''];
+}
+
+/** Today at the desk: the latest scans, and how many each centre has taken. */
+function ss3_view_desk(array $roster, array $groups, array $ed, string $today): array {
+    $byId = [];
+    foreach ($roster as $r) $byId[$r['id']] = $r;
+    $feed = [];
+    foreach (db_all('SELECT studentId, status, lateMinutes, checkInAt, checkOutAt FROM attendance WHERE cohortId = ? AND date = ? ORDER BY COALESCE(NULLIF(checkOutAt, \'\'), checkInAt) DESC LIMIT 40', [(string)$ed['cohortId'], $today]) as $a) {
+        $r = $byId[(string)$a['studentId']] ?? null;
+        if (!$r) continue;   // out of scope, or not a participant (a volunteer's badge)
+        $out = (string)($a['checkOutAt'] ?? '') !== '';
+        $feed[] = ['id' => $r['id'], 'name' => $r['name'], 'group' => ($groups[$r['groupId']]['name'] ?? '') ?: $r['centre'],
+                   'st' => $out ? 'out' : ((string)$a['status'] === 'late' ? 'late' : 'in'), 'late' => (int)($a['lateMinutes'] ?? 0),
+                   't' => ss3_local_hm($out ? (string)$a['checkOutAt'] : (string)$a['checkInAt'])];
+        if (count($feed) >= 10) break;
+    }
+    $centres = [];
+    foreach ($roster as $r) {
+        if (!in_array($r['today'], ['in', 'late', 'out'], true)) continue;
+        $k = $r['centre'] ?: '(no centre)';
+        $centres[$k] = $centres[$k] ?? ['name' => $k, 'scans' => 0, 'last' => ''];
+        $centres[$k]['scans']++;
+        if ($r['inAt'] > $centres[$k]['last']) $centres[$k]['last'] = $r['inAt'];
+    }
+    ksort($centres);
+    return ['feed' => $feed, 'deskCentres' => array_values($centres)];
+}
+
+/** An ISO UTC stamp as the programme's local HH:MM. */
+function ss3_local_hm(string $iso): string {
+    $t = strtotime($iso);
+    if (!$t) return '';
+    $m = attendance_minutes_at($t);
+    return sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
+}
+
+/**
+ * admin.summer.desk — the portal's check-in desk. Takes what a coordinator
+ * has in hand (a card's code, a printed ID, or a name) and runs the ONE
+ * check-in or check-out op on the child's card, so lateness, the season's
+ * dates, conduct holds and the closing time are all decided where they are
+ * for the kiosk. The card's token never leaves the server.
+ */
+function admin_summer_desk(array $p): array {
+    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $req = $g['requester'];
+    $mode = (string)($p['mode'] ?? 'in') === 'out' ? 'out' : 'in';
+    $q = trim(mb_substr((string)($p['q'] ?? ''), 0, 80));
+    if ($q === '') return ['ok' => false, 'error' => 'nothing_entered'];
+    $ed = ss3_edition(trim((string)($p['editionId'] ?? '')));
+    if (!$ed) return ['ok' => false, 'error' => 'no_edition'];
+    $args = [(string)$ed['cohortId']];
+    $scope = ss3_scope_sql(admin_centre_names_in_scope($req), 'centre', $args);
+    $s = null;
+    $qr = db_row('SELECT token, studentId, status FROM qr_codes WHERE UPPER(token) = ? LIMIT 1', [strtoupper($q)]);
+    if ($qr && (string)$qr['studentId'] !== '') $s = db_row("SELECT * FROM summer_students WHERE studentId = ? AND cohortId = ?$scope LIMIT 1", array_merge([(string)$qr['studentId']], $args));
+    if (!$s) $s = db_row("SELECT * FROM summer_students WHERE (UPPER(displayId) = ? OR studentId = ?) AND cohortId = ?$scope LIMIT 1", array_merge([strtoupper($q), $q], $args));
+    if (!$s && mb_strlen($q) >= 3) {
+        [$tSql, $tArgs] = sql_text_search($q, ['fullName']);
+        $hits = $tSql !== '' ? db_all("SELECT * FROM summer_students WHERE ($tSql) AND cohortId = ?$scope AND status = 'active' LIMIT 4", array_merge($tArgs, $args)) : [];
+        if (count($hits) > 1) return ['ok' => false, 'error' => 'ambiguous', 'names' => array_map(static fn($h) => (string)$h['fullName'] . ((string)($h['displayId'] ?? '') !== '' ? ' (' . $h['displayId'] . ')' : ''), array_slice($hits, 0, 3))];
+        $s = $hits[0] ?? null;
+    }
+    if (!$s) return ['ok' => false, 'error' => 'card_not_found'];
+    $who = ['id' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'status' => (string)$s['status'], 'reg' => (string)($s['regStatus'] ?? 'verified')];
+    if ($who['reg'] !== 'verified') return ['ok' => false, 'error' => 'not_verified', 'child' => $who];
+    if ($who['status'] !== 'active') return ['ok' => false, 'error' => 'not_active', 'child' => $who];
+    $card = db_row("SELECT token FROM qr_codes WHERE studentId = ? AND status = 'assigned' ORDER BY id DESC LIMIT 1", [$who['id']]);
+    $token = $card ? (string)$card['token'] : (string)($s['token'] ?? '');
+    if ($token === '') return ['ok' => false, 'error' => 'no_card', 'child' => $who];
+    $call = ['requesterId' => $p['requesterId'] ?? '', 'token' => $token, 'method' => 'manual', 'device' => 'summer-portal', 'ip' => $p['ip'] ?? ''];
+    $res = $mode === 'in' ? summer_checkin($call) : summer_checkout($call + ['earlyReason' => (string)($p['earlyReason'] ?? '')]);
+    unset($res['student']);
+    return $res + ['child' => $who, 'mode' => $mode, 'at' => sprintf('%02d:%02d', intdiv(attendance_minutes_at(), 60), attendance_minutes_at() % 60)];
 }

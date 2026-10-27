@@ -440,6 +440,7 @@ function backend_dispatch(string $op, array $args = []): array {
                wait out an undo window (domain/pending.php). */
             'admin.summer.portal'         => 'admin_summer_portal',
             'admin.summer.search'         => 'admin_summer_search',
+            'admin.summer.desk'           => 'admin_summer_desk',
             'admin.summer.recent'         => 'admin_summer_recent',
             'admin.summer.graduates'      => 'admin_summer_graduates',
             'admin.summer.graduates.invoice' => 'admin_summer_graduates_invoice',

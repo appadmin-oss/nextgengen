@@ -122,6 +122,8 @@ const ORDER = [
   'src/modules/club3/cp3-meta.jsx',
   'src/modules/club3/cp3-directory.jsx',
   'src/modules/club3/cp3-app.jsx',
+  'src/modules/summer3/ss3-view.jsx',
+  'src/modules/summer3/ss3-app.jsx',
   'src/modules/community3/cm3-view.jsx',
   'src/modules/community3/cm3-app.jsx',
   'src/modules/family3/fp3-view.jsx',

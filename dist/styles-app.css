@@ -13100,6 +13100,25 @@ button.m9x-ev-sum { cursor: pointer; }
 @keyframes cp3x-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cp3x-spin { animation: none; } }
 
+/* Summer School portal v3 (src/modules/summer3/ss3-app.jsx): the controller's
+   own chrome — the boot card, a screen's loading/error note, and the phone
+   height fix the Club portal needed for the same reason. */
+.ss3x { height: 100vh; height: 100dvh; }
+.ss3x .ss3-81b3bd7 { height: 100vh; height: 100dvh; }
+.ss3x[data-busy="true"] { cursor: progress; }
+.ss3x-boot { display: grid; place-items: center; padding: 24px; background: #fafaf9; font-family: 'Geist', system-ui, sans-serif; color: #0b0b0c; }
+.ss3x-bootcard { max-width: 420px; text-align: center; display: grid; gap: 12px; justify-items: center; }
+.ss3x-bootcard h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.ss3x-bootcard p { margin: 0; font-size: 14px; color: #5d5d63; line-height: 1.5; }
+.ss3x-btn { height: 36px; padding: 0 14px; border: 0; border-radius: 10px; background: #0b0b0c; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.ss3x-btn:focus-visible { outline: 2px solid #0b0b0c; outline-offset: 2px; }
+@media (pointer: coarse) { .ss3x-btn { height: 44px; } }
+.ss3x-spin { display: inline-block; vertical-align: middle; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #ececea; border-top-color: #0b0b0c; animation: cp3x-spin .8s linear infinite; }
+.ss3x-bootcard .ss3x-spin { width: 22px; height: 22px; }
+@media (prefers-reduced-motion: reduce) { .ss3x-spin { animation: none; } }
+.ss3x-note { margin: 16px clamp(14px, 3vw, 32px) 0; padding: 12px 16px; border: 1px solid #ececea; border-radius: 12px; background: #fafaf9; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; color: #3a3a40; }
+.ss3x-note.is-bad { border-color: #f3c7c2; background: #fdf1ef; color: #a12a2a; }
+
 /* @generated dc-compile:cm3 begin — from community-v3.dc.html; do not edit, re-run tools/dc-compile.js */
 .cm3-e375159{height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--dc-padding, unset);font-family:'Geist',system-ui,sans-serif;color:#0b0b0c;font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased}
 .cm3-de4d1ca{width:var(--dc-width, unset);height:var(--dc-height, unset);max-width:100%;max-height:100%;border-radius:var(--dc-border-radius, unset);box-shadow:var(--dc-box-shadow, unset);overflow:hidden;display:flex;background:#f4f4f2;position:relative}

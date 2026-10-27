@@ -1,0 +1,16 @@
+{
+  "// what": "The Summer School Portal v3 design's sample copy, and the value that replaces it. See tools/dc-compile.js.",
+  "<span title=\"Ada Obi · Coordinator\"": "<span title=\"{{ meName }}\"",
+  "font-size:11.5px; font-weight:600;\">AO</span><sc-if value=\"{{ showMe }}\">Ada Obi · Coordinator</sc-if>": "font-size:11.5px; font-weight:600;\">{{ meIni }}</span><sc-if value=\"{{ showMe }}\">{{ meName }}</sc-if>",
+  "Reading 17 days of the register…": "Reading the register…",
+  "All 12 groups<i": "{{ groupsL }}<i",
+  "Last 17 days</span>": "{{ stripL }}</span>",
+  "Blank cards at each desk": "Blank cards by batch",
+  "Walk-ins need one. Below 15 a desk turns amber.": "Walk-ins need one. A batch with fewer than {{ lowAt }} left turns amber.",
+  "href=\"Club Portal v3.dc.html\"": "href=\"/club-admin\"",
+  ">Desks</h2>": ">Scans by centre</h2>",
+  "An offline desk keeps its scans and grades each one at the time the card was shown, not when it uploads.": "A desk that goes offline keeps its scans and grades each one at the time the card was shown, not when it uploads.",
+  ">Hold the card up to the camera</span>": ">Scan or type the card’s code</span>",
+  "Works offline. Scans upload when the desk reconnects.": "A handheld scanner types into the box below. For a desk with a camera that keeps working offline, open a check-in desk link.",
+  "The guardian gets an email to confirm. The card works at the desk once they do, or as soon as a paper form is signed.": "{{ walkNote }}"
+}

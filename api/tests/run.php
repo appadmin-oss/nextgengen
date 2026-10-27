@@ -32159,6 +32159,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('ss3 · and Into NGG moves them to the promoted stage', $gr2['counts']['promoted'] === 1 && ($gr2['rows'][0]['memberId'] ?? '') === $pr['memberId']);
     chk('ss3 · a bulk invoice with nobody selected is refused', (backend_dispatch('admin.summer.graduates.invoice', ['requesterId' => $A, 'memberIds' => []])['error'] ?? '') !== '');
 
+    // The door rules, consent, cards and desk screens read from the same roster.
+    $boot2 = $q(['view' => 'boot']);
+    chk('ss3 · boot carries the door rules the desk grades by', preg_match('/^\d{2}:\d{2}$/', (string)($boot2['rules']['student'] ?? '')) === 1 && is_int($boot2['rules']['grace']));
+    $con = $q(['view' => 'consent']);
+    chk('ss3 · consent lists every consent type', !empty($con['ok']) && count($con['types']) === count(CONSENT_TYPES));
+    chk('ss3 · consent’s missing count agrees with the badge', $con['missingTotal'] === $boot2['badges']['consent'] && count($con['missing']) === $con['missingTotal']);
+    $cards = $q(['view' => 'cards', 'q' => 'nothing-like-this']);
+    chk('ss3 · confirmed children with no card are counted', !empty($cards['ok']) && $cards['cardCounts']['noCard'] === 0 && $cards['card'] === null && $cards['cardAsked'] === true);
+    db_insert('qr_codes', ['token' => 'SS3QR-AAAA', 'batch' => 'B-SS3', 'cohortId' => $ed, 'status' => 'assigned', 'studentId' => 'SS3-K-002', 'assignedName' => 'Bolu Stopped', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    $hit = $q(['view' => 'cards', 'q' => 'ss3qr-aaaa']);
+    chk('ss3 · a card is found by its code, whatever its case', ($hit['card']['name'] ?? '') === 'Bolu Stopped' && ($hit['batches'][0]['id'] ?? '') === 'B-SS3');
+    $hitS = backend_dispatch('admin.summer.portal', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'view' => 'cards', 'q' => 'SS3QR-AAAA']);
+    chk('ss3 · a scoped coordinator cannot look up another centre’s card', array_key_exists('card', $hitS) && $hitS['card'] === null);
+    chk('ss3 · the desk screen reads', !empty($q(['view' => 'desk'])['ok']));
+    $desk = fn(array $a) => backend_dispatch('admin.summer.desk', array_merge(['requesterId' => $A, 'editionId' => $ed, 'mode' => 'in'], $a));
+    chk('ss3 · the desk says when nothing matches', ($desk(['q' => 'Nobody Here At All'])['error'] ?? '') === 'card_not_found');
+    chk('ss3 · the desk refuses an unconfirmed child by printed ID', ($desk(['q' => 'S3-26-003'])['error'] ?? '') === 'not_verified');
+    chk('ss3 · the desk refuses a child who is no longer active', ($desk(['q' => 'S3-26-004'])['error'] ?? '') === 'not_active');
+    $byCard = $desk(['q' => 'ss3qr-aaaa']);
+    chk('ss3 · a card code reaches the one check-in op, for that child', ($byCard['child']['id'] ?? '') === 'SS3-K-002' && array_key_exists('ok', $byCard));
+    chk('ss3 · a scoped coordinator’s desk cannot reach another centre’s child', (backend_dispatch('admin.summer.desk', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'q' => 'ss3qr-aaaa'])['error'] ?? '') === 'card_not_found');
+    $sa = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-SS3-SCOPED', 'cohortId' => $ed, 'defer' => 8]);
+    chk('ss3 · a scoped coordinator’s bulk alert counts only their centres', !empty($sa['deferred']) && $sa['absent'] === 0);
+    backend_dispatch('admin.pending.cancel', ['requesterId' => 'NGG-SS3-SCOPED', 'pendingId' => $sa['pendingId']]);
+    chk('ss3 · and cannot alert one child in another centre', (backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-SS3-SCOPED', 'cohortId' => $ed, 'studentId' => 'SS3-K-002'])['error'] ?? '') === 'out_of_scope');
+
     setting_set('programme', is_array($progWas) ? $progWas : [], $A);
 })();
 

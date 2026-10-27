@@ -600,6 +600,43 @@ cards say.
 **Summer School → Summer School.** One workspace, fifteen panels, grouped by
 what you are actually doing.
 
+### The Summer School portal (`/summer-admin`)
+
+The coordinator's screen for the season, on a phone or a desk. It opens on
+**Today**: who is in, who came late, who has not come, and a **Needs you** list
+with the children who could slip through first (came then stopped, missing a
+required consent), then the things worth a call this week. Every number on it
+opens the list it counts — "1 came, then stopped" opens exactly that child.
+
+The screens are **Today, Participants, Registrations, Groups, Register,
+Check-in desk, Consent, Cards & QR, Editions & certificates** and **Into NGG**.
+The season's settings, sign-up links, imports and history stay in the Control
+Room (below). Incidents and guardian messages are not in the portal yet.
+
+- **Find a child or jump anywhere:** press **/** or **Ctrl K** (⌘K on a Mac)
+  and type a name, a printed ID, or the last four digits of a card. With
+  nothing typed it shows the children you opened last.
+- **Shortcuts:** **g** then **t** Today, **d** desk, **r** register,
+  **p** participants, **n** Into NGG; **?** lists them; **Esc** closes the
+  top panel. Shortcuts do nothing while you are typing in a box.
+- **Undo really undoes.** Alerting every absent child's guardian, moving
+  children into NGG and sending joining invoices wait **8 seconds** before
+  anything happens. Press **Undo** (or **z**) inside that time and nothing is
+  sent. If you close the tab during the 8 seconds, the act still goes through
+  shortly afterwards — it is held on the server, not in your browser.
+- **Check-in desk** takes a card's code, a printed ID or a name and checks the
+  child in or out with the same rules as the door: lateness from the door time
+  and grace minutes (Control Room → Settings → Attendance), the season's dates,
+  and conduct holds. Letting a child go before sign-out time asks for a
+  reason, which is recorded. For a desk with a camera that keeps working
+  offline, use a check-in desk link instead.
+- **Into NGG** lists children who finished with 70% attendance or more. "No
+  NGG centre to offer" means no active centre runs NGG — add or map one in
+  **Control Room → Centres** first. "Fees are off" means no joining invoice
+  can be sent until fees are switched on in **Control Room → Fees**.
+- A coordinator scoped to some centres sees, counts, searches and alerts only
+  those centres' children, everywhere in the portal.
+
 ### Structure — what the season *is*
 
 - **Editions & groups** — the important one. See below.

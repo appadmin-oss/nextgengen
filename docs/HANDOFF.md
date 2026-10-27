@@ -3402,3 +3402,43 @@ behaviour, one suite.
 that change: those runs had collided on `api/config.php`, which every node E2E
 suite writes and refuses to start beside. **They cannot be run concurrently** —
 run one at a time they are 66/0 and 4/0, and always were.
+
+## Summer School portal v3 on live data (27 Oct 2026)
+
+`/summer-admin` now mounts `Ss3Portal` (`src/modules/summer3/ss3-app.jsx`), the
+v3 design compiled (`ss3-view.jsx`, sample copy rebound by `ss3-subs.json`) and
+driven by `domain/summer-portal.php`. The older `AdminSummer` workspace is
+unchanged and still lives in the Control Room, where the season's settings,
+links and imports are administered.
+
+What changed, and why:
+
+- **Only screens with a backend are offered.** Timetable, Demo Day, pickup,
+  volunteers, incidents and messages are in the design but have no data here
+  yet; they are left out of the nav, palette and shortcuts rather than drawn on
+  the design's sample data. Incidents and messages are the next piece of work.
+- **"Right now" on Today is the door rules**, not a day plan: doors, grace,
+  the programme day and sign-out, read from `attendance_settings()` and sent
+  as `rules` at boot (`ss3_rules()`), so the portal's 09:00 is the 09:00 the
+  check-in op grades lateness against.
+- **New reads:** `part=consent` (per-type answers and who is missing a required
+  one), `part=cards` (stock by batch, confirmed children with no card, one card
+  looked up by code, centre-scoped), `part=desk` (latest scans, scans by
+  centre). **New op:** `admin.summer.desk` takes a code, printed ID or name and
+  runs the one `summer_checkin`/`summer_checkout` on the child's card — the
+  card's token never reaches the browser.
+- **The bulk absence alert was not centre-scoped**, and counted children whose
+  registration was not confirmed. A scoped coordinator pressing "alert all"
+  emailed every centre's guardians while the button showed their own count. It
+  is scoped now, and a single child's alert refuses `out_of_scope`.
+- **Undo is the server's.** Moving children into NGG, sending joining invoices
+  and the bulk alert are parked by `pending.php` for 8 seconds; Undo cancels
+  them there, and a closed tab does not lose or double them.
+- Copy the design promised and this portal cannot keep was rebound: the
+  desk's "hold the card up to the camera… works offline" (it has neither),
+  "Blank cards at each desk" (cards have no desk; stock is per batch), and
+  "₦0" when fees are off (it read as joining being free).
+
+`tests/summer-portal-v3.test.js` (`npm run test:ss3`, in `test:all`) drives it
+end to end; `api/tests/run.php` holds the new reads, the desk op and the scoped
+alert.

@@ -5560,9 +5560,12 @@ function PortalGate({ cap, brand, setPage, children, bare }) {
 }
 
 function SummerAdminPortal({ setPage }) {
-  return <PortalGate cap="summer" setPage={setPage}
+  /* The Summer School portal v3 (src/modules/summer3/). The older AdminSummer
+     panels stay in the Control Room, which is where the season's settings,
+     gates and imports are administered. */
+  return <PortalGate cap="summer" setPage={setPage} bare
     brand={{ key: "summer", label: "Summer School", eyebrow: "SUMMER SCHOOL · STAFF PORTAL", icon: "☀" }}>
-    <AdminSummer/>
+    {({ signOut }) => <Ss3Portal setPage={setPage} signOut={signOut}/>}
   </PortalGate>;
 }
 
