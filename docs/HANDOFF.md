@@ -3704,7 +3704,8 @@ that were only an inline style now carry `className="dark-surface"` (home,
 about/anchor, blog, club community hero, other pages). Clipped controls use an
 inset ring (`outline-offset: -3px`). The public Community search had its chrome
 — and `outline: none` — in an inline style; it is `.cm-pub-search` /
-`.cm-pub-search-in` now, and the box takes the ring ("one ring for one field"). The Design Studio, a dark room, re-points
+`.cm-pub-search-in` now, and the box takes the ring ("one ring for one field"). The sticky top bar no longer covers a focused
+control: `html:has(.topnav) { scroll-padding-top: 96px }` (WCAG 2.4.11). The Design Studio, a dark room, re-points
 the token to its gold.
 
 `tests/focus-ring.test.js` (in test:all, `npm run test:focus`) walks the main

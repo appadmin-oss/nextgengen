@@ -1081,6 +1081,9 @@ summary:focus-visible,
 .faq-list button:focus-visible, .ab-disc-btn:focus-visible, .tt-app .tt-startrow:focus-visible, .cm-tab:focus-visible, .page-hero .chip:focus-visible {
   outline-offset: -3px;
 }
+/* The sticky top bar must not cover what has focus (WCAG 2.4.11): when Tab
+   scrolls a control into view, it lands below the bar, not under it. */
+html:has(.topnav) { scroll-padding-top: 96px; }
 /* Never suppress the ring when a mouse-focus removes :focus-visible. */
 :focus:not(:focus-visible) { outline: none; }
 
