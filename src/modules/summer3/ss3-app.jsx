@@ -21,22 +21,25 @@
      · The section is in the URL (/summer-admin?s=…), so a refresh or a shared
        link opens the same screen.
 
-   Sections with no backend yet (timetable, Demo Day, pickup, volunteers,
-   incidents, messages) are not offered at all, rather than drawn on sample
-   data — a screen that cannot act does not appear.
+   Sections with no backend yet (timetable, Demo Day, pickup, volunteers) are
+   not offered at all, rather than drawn on sample data — a screen that cannot
+   act does not appear.
    ========================================================================== */
 
 const SS3_UNDO_S = 8;
-const SS3_SECTIONS = ["today", "participants", "registrations", "groups", "register", "desk", "consent", "cards", "editions", "tongg", "more"];
+const SS3_SECTIONS = ["today", "participants", "registrations", "groups", "register", "desk", "incidents", "consent", "messages", "cards", "editions", "tongg", "more"];
 const SS3_NAV = [
   [null, [["today", "Today", "sun-horizon"]]],
   ["Children", [["participants", "Participants", "users"], ["registrations", "Registrations", "envelope-simple-open"], ["groups", "Groups", "squares-four"]]],
   ["Attendance", [["register", "Register", "list-checks"], ["desk", "Check-in desk", "scan"]]],
-  ["Safety", [["consent", "Consent", "shield-check"]]],
+  ["Safety", [["incidents", "Incidents", "first-aid-kit"], ["consent", "Consent", "shield-check"]]],
+  ["Families", [["messages", "Messages", "chat-circle-text"]]],
   ["Season", [["cards", "Cards & QR", "qr-code"], ["editions", "Editions & certificates", "certificate"], ["tongg", "Into NGG", "arrow-fat-lines-right"]]],
 ];
 const SS3_TABS = [["today", "Today", "sun-horizon"], ["desk", "Desk", "scan"], ["register", "Register", "list-checks"], ["participants", "Children", "users"], ["more", "More", "dots-three-circle"]];
-const SS3_GO = { t: "today", d: "desk", r: "register", p: "participants", n: "tongg" };
+const SS3_GO = { t: "today", d: "desk", r: "register", p: "participants", i: "incidents", m: "messages", n: "tongg" };
+const SS3_INC_SEV = { low: ["Low", "neutral"], med: ["Medium", "warn"], high: ["High", "bad"] };
+const SS3_CH = [["email", "Email"], ["sms", "SMS"], ["both", "SMS + email"]];
 const SS3_T = { ok: ["#e8f5ec", "#17663a", "#22a05a"], warn: ["#fdf2d8", "#7a5600", "#e0a100"], bad: ["#fdeaea", "#a12a2a", "#d94141"], neutral: ["#f0f0ef", "#48484e", "#9a9aa0"], ink: ["#0b0b0c", "#fff", "#0b0b0c"] };
 const SS3_TONES = ["#f3d9a4", "#bcd9c3", "#d9dcf0", "#ead6ef", "#cfe3d3", "#d4e6ea", "#f0dccb", "#f0d4d4", "#e3dccf"];
 const SS3_VIEWS = [["all", "Everyone"], ["in", "In today"], ["absent", "Not in"], ["stopped", "Stopped coming"], ["risk", "Under 50%"], ["nogroup", "No group"], ["unverified", "Not confirmed"], ["consent", "Consent missing"]];
@@ -81,6 +84,7 @@ class Ss3Portal extends React.Component {
       data: {}, err: {}, busy: false,
       pview: "all", pq: "", f: {}, page: 0,
       day: "", rf: "absent",
+      incForm: false, incDraft: {}, incKind: "all", msgTpl: "", msgAud: "absent", msgCh: "email", msgDetails: "",
       regTab: "parent_pending", resent: {},
       ngTab: "ready", ngQ: "", ngPage: 0, ngSel: {}, ngC: {}, ngStart: 0,
       deskMode: "in", deskQ: "", deskRes: null,
@@ -169,6 +173,8 @@ class Ss3Portal extends React.Component {
     else if (sec === "consent") this.load("consent", P("consent"));
     else if (sec === "cards") this.load("cards", P("cards", { q: S.cardQ.trim() }));
     else if (sec === "desk") this.load("desk", P("desk"));
+    else if (sec === "incidents") this.load("incidents", P("incidents"));
+    else if (sec === "messages") this.load("messages", P("messages"));
     else if (sec === "registrations") this.load("regs", NGGApi.admin.registration.list({ status: S.regTab, pageSize: 50 }));
     else if (sec === "editions") this.load("editions", this.S().editions());
     else if (sec === "tongg") this.load("grads", NGGApi.admin.club.graduates({ stage: S.ngTab, q: S.ngQ.trim(), page: S.ngPage }));
@@ -259,6 +265,7 @@ class Ss3Portal extends React.Component {
     const sec = S.sec, ed = B.edition, bd = B.badges || {}, rules = B.rules || {};
     const caps = B.caps || [];
     const badge = {
+      incidents: [bd.incidents, T.bad[2], "#fff"],
       participants: [bd.stopped, T.bad[2], "#fff"], registrations: [bd.regOpen, "#f5b026", "#2a1d00"],
       groups: [bd.noGroup, "#f5b026", "#2a1d00"], consent: [bd.consent, T.bad[2], "#fff"], cards: [bd.cardsLow ? 1 : 0, "#f5b026", "#2a1d00"],
     };
@@ -276,6 +283,8 @@ class Ss3Portal extends React.Component {
       groups: ["Groups", "A class within the season: one centre, one track, one lead, its own seats."],
       register: ["Register", "One day, by name: who came in, who came late, and who didn’t come."],
       desk: ["Check-in desk", "Check a child in or out by card code, printed ID or name. Lateness is graded by the same rules as the kiosk."],
+      incidents: ["Incidents", "First aid, health, behaviour, pickups and lost items. A safeguarding report goes straight to the safeguarding lead, who alone sees it."],
+      messages: ["Messages", "Send guardians an email or text from a template. Every send shows how many it reached."],
       consent: ["Consent", "What each guardian agreed to. Some consents must be given, some must only be answered."],
       cards: ["Cards & QR", "Cards are printed blank before anyone enrols. A card is linked to a child when they enrol."],
       editions: ["Editions & certificates", "A season from start to end: close it, issue certificates, archive it, and pass graduates on to the Club."],
@@ -294,19 +303,21 @@ class Ss3Portal extends React.Component {
       moreItems: moreList.map(n => mk(n, false)),
       deskWarn: false, toDesk: () => this.go("desk"),
       isToday: sec === "today", isPeople: sec === "participants", isRegs: sec === "registrations", isGroups: sec === "groups", isReg: sec === "register",
-      isDesk: sec === "desk", isConsent: sec === "consent", isCards: sec === "cards", isEd: sec === "editions", isNgg: sec === "tongg", isMore: sec === "more",
+      isDesk: sec === "desk", isInc: sec === "incidents", isMsg: sec === "messages", isConsent: sec === "consent", isCards: sec === "cards", isEd: sec === "editions", isNgg: sec === "tongg", isMore: sec === "more",
       hasAct: false, stop: e => e.stopPropagation(), hasToast: !!S.toast, toast: S.toast, hasUndo: S.toastUndo, undoS: String(S.undoLeft), doUndo: () => this.doUndo(),
       toastB: narrow ? "84px" : "24px",
       openPal: () => this.openPal(), showSearchL: !phone, kbdL: /Mac|iPhone|iPad/.test(navigator.platform || "") ? "⌘K" : "Ctrl K",
       hasHelp: S.help, closeHelp: () => this.setState({ help: false }),
-      keys: [["Search or jump to", "⌘K  or  /"], ["Today", "g  t"], ["Check-in desk", "g  d"], ["Register", "g  r"], ["Participants", "g  p"], ["Into NGG", "g  n"], ["Undo the last bulk action", "z"], ["Close a panel", "Esc"], ["This list", "?"]].map(k => ({ l: k[0], k: k[1] })),
+      keys: [["Search or jump to", "⌘K  or  /"], ["Today", "g  t"], ["Check-in desk", "g  d"], ["Register", "g  r"], ["Participants", "g  p"], ["Incidents", "g  i"], ["Messages", "g  m"], ["Into NGG", "g  n"], ["Undo the last bulk action", "z"], ["Close a panel", "Esc"], ["This list", "?"]].map(k => ({ l: k[0], k: k[1] })),
       groupsL: "All " + f((B.groups || []).length) + " groups", stripL: "Recent programme days", lowAt: String((S.data.cards && S.data.cards.lowAt) || 15),
     };
-    const act2 = { registrations: ["Enrol a walk-in", "ph ph-user-plus", () => this.setState({ modal: "walk", walk: {}, mRes: null })], cards: ["Mint a batch", "ph ph-plus", () => this.setState({ modal: "mint", mRes: null })] }[sec];
+    const act2 = { registrations: ["Enrol a walk-in", "ph ph-user-plus", () => this.setState({ modal: "walk", walk: {}, mRes: null })],
+      participants: ["Enrol a walk-in", "ph ph-user-plus", () => this.setState({ modal: "walk", walk: {}, mRes: null })],
+      incidents: ["Log an incident", "ph ph-plus", () => this.openIncForm()], cards: ["Mint a batch", "ph ph-plus", () => this.setState({ modal: "mint", mRes: null })] }[sec];
     if (act2) Object.assign(out, { hasAct: true, actL: act2[0], actIcon: act2[1], actClick: act2[2] });
 
     /* The screen's own loading and error states, in the slot above the page. */
-    const key = { today: "today", participants: "people", register: "register", consent: "consent", cards: "cards", desk: "desk", registrations: "regs", editions: "editions", tongg: "grads", groups: "today" }[sec];
+    const key = { incidents: "incidents", messages: "messages", today: "today", participants: "people", register: "register", consent: "consent", cards: "cards", desk: "desk", registrations: "regs", editions: "editions", tongg: "grads", groups: "today" }[sec];
     const e = key && S.err[key], d = key ? S.data[key] : null;
     if (!ed && sec !== "editions" && sec !== "more") {
       out.mainSlot = <div className="ss3x-note" role="status"><b>No Summer School edition yet.</b> <span>Create one in Editions, then come back here.</span> <button type="button" className="ss3x-btn" onClick={() => this.go("editions")}>Open Editions</button></div>;
@@ -360,7 +371,7 @@ class Ss3Portal extends React.Component {
     if (C.unverified) needs.push([C.unverified, "Registrations not confirmed", "Guardian hasn’t clicked the email link", "warn", () => this.go("registrations")]);
     if (C.nogroup) needs.push([C.nogroup, "Children with no group", "No lead is counting them", "warn", () => this.go("groups")]);
     if (bd.cardsLow) needs.push([bd.blank, "Blank cards left in stock", "Walk-ins will be turned away when they run out", "warn", () => this.go("cards")]);
-    if (bd.incidents) needs.push([bd.incidents, "Incident, guardian not told yet", "Recorded in the Control Room", "bad", () => this.go("today")]);
+    if (bd.incidents) needs.push([bd.incidents, "Incident, guardian not told yet", "Tell them before pick-up", "bad", () => this.go("incidents")]);
     out.needs = needs.length ? needs.map(r => ({ n: f(r[0]), l: r[1], s: r[2], bg: T[r[3]][0], fg: T[r[3]][1], onClick: r[4] }))
       : [{ n: "0", l: "Nothing needs you right now", s: "Every child is accounted for, confirmed, grouped and consented.", bg: T.ok[0], fg: T.ok[1], onClick: () => this.go("participants") }];
     const ser = d.series || [];
@@ -548,6 +559,80 @@ class Ss3Portal extends React.Component {
     out.feed = (d.feed || []).map(s => ({ t: s.t, name: s.name, sub: s.group, st: s.st === "late" ? "Late " + s.late + "m" : SC[s.st][0], bg: SC[s.st][1][0], fg: SC[s.st][1][1] }));
   }
 
+  openIncForm() { this.setState({ incForm: true, incDraft: { kind: "First aid", sev: "low" } }); }
+
+  vals_incidents(out, d) {
+    const S = this.state, T = SS3_T, f = ss3Fmt;
+    const all = d.incidents || [], k = d.incKpis || {}, kinds = d.kinds || [];
+    out.incTabs = ["all"].concat(kinds).map(kd => { const on = S.incKind === kd; const n = kd === "all" ? all.length : (d.incKinds || {})[kd] || 0;
+      return { l: kd === "all" ? "All" : kd, n: f(n), bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#3a3a40", bd: on ? "#0b0b0c" : "#e2e2df", sel: on ? "true" : "false", onClick: () => this.setState({ incKind: kd }) }; });
+    out.incKpis = [["Open", k.open], ["Guardian not told", k.untold], ["This week", k.week], ["Safeguarding open", k.safeOpen]].map(x => ({ l: x[0], v: f(x[1] || 0) }));
+    const act = (fn, done) => this.setState({ busy: true }, () => fn().then(r => { this.setState({ busy: false }); this.toast(done(r)); this.loadFor("incidents"); this.refreshBadges(); })
+      .catch(e => { this.setState({ busy: false }); this.fail(e); }));
+    out.incs = all.filter(x => S.incKind === "all" || x.kind === S.incKind).map(x => {
+      const sv = SS3_INC_SEV[x.sev] || SS3_INC_SEV.low, told = !!x.toldAt, open = x.status === "open";
+      const when = x.createdAt ? (x.createdAt.slice(0, 10) === S.boot.today ? "Today, " : ss3Day(x.createdAt) + ", ") + x.createdAt.slice(11, 16) : "";
+      return { id: x.id, kind: x.kind, sev: sv[0], sbg: T[sv[1]][0], sfg: T[sv[1]][1], lock: x.restricted, child: x.child, centre: x.centre, when, by: x.by || "staff", note: x.note,
+        stL: open ? "Open" : "Closed", stc: open ? "#0b0b0c" : "#6b6b72", tc: open ? "#22a05a" : "#9a9aa0",
+        toldL: x.restricted ? "The safeguarding lead decides who is told" : told ? "Guardian told · " + x.toldBy : "Guardian not told yet",
+        notTold: !x.restricted && !told && !!x.studentId,
+        tell: () => act(() => this.S().incidentTell(x.id), r => "Told by " + (r.channels || []).join(" and ") + "."),
+        canClose: open && !x.restricted, close: () => act(() => this.S().incidentClose(x.id), () => x.id + " closed.") };
+    });
+    if (!out.incs.length) out.incs = [{ id: "", kind: S.incKind === "all" ? "Nothing logged" : "No " + S.incKind.toLowerCase() + " incidents", sev: "", child: "Nothing has been logged this season", centre: "", when: "", by: "", note: "Log one with the button above when something happens.", stL: "", toldL: "", notTold: false, canClose: false, lock: false }];
+    const dr = S.incDraft || {};
+    out.incForm = S.incForm; out.incChild = dr.child || ""; out.incNote = dr.note || ""; out.incK = dr.kind || "First aid"; out.incSev = dr.sev || "low";
+    const cs = d.incCentres || [];
+    out.incCentre = dr.centre || cs[0] || "";
+    const setD = key => e => { const v = e.target.value; this.setState(s => ({ incDraft: Object.assign({}, s.incDraft, { [key]: v }) })); };
+    out.onIncChild = setD("child"); out.onIncNote = setD("note"); out.onIncK = setD("kind"); out.onIncSev = setD("sev"); out.onIncCentre = setD("centre");
+    out.incKindOpts = kinds.map(x => ({ v: x, l: x })); out.centreOpts = cs.map(c => ({ v: c, l: c }));
+    out.isSafe = out.incK === "Safeguarding";
+    out.incCancel = () => this.setState({ incForm: false, incDraft: {} });
+    out.incSave = () => {
+      if (S.busy) return;
+      this.setState({ busy: true });
+      this.S().incidentSave({ editionId: S.boot.edition.id, child: out.incChild, kind: out.incK, sev: out.incSev, centre: out.incCentre, note: out.incNote }).then(r => {
+        this.setState({ busy: false, incForm: false, incDraft: {} });
+        this.toast(r.restricted ? "Sent to " + (r.officerName || "the safeguarding lead") + " as case " + r.caseNo + ". Only they can see the details."
+          : r.incidentId + " logged" + (r.linked ? " for " + r.childName + "." : ". " + r.childName + " isn’t on the roster, so there is no guardian to tell from here."));
+        this.loadFor("incidents"); this.refreshBadges();
+      }).catch(e => { this.setState({ busy: false }); this.fail(e); });
+    };
+  }
+
+  vals_messages(out, d) {
+    const S = this.state, f = ss3Fmt, tpls = d.templates || [], auds = d.audiences || [];
+    const tpl = tpls.find(t => t.id === S.msgTpl) || tpls[0] || { id: "", title: "", body: "" };
+    const aud = auds.find(a => a.id === S.msgAud) || auds[0] || { id: "", label: "", n: 0 };
+    out.tpls = tpls.map(t => { const on = t.id === tpl.id; return { l: t.title, bg: on ? "#0b0b0c" : "#fff", fg: on ? "#fff" : "#3a3a40", bd: on ? "#0b0b0c" : "#e2e2df", sel: on ? "true" : "false", onClick: () => this.setState({ msgTpl: t.id }) }; });
+    out.audOpts = auds.map(a => ({ v: a.id, l: a.label + " (" + f(a.n) + ")" })); out.msgAud = aud.id; out.onAud = e => this.setState({ msgAud: e.target.value });
+    const smsOn = !!d.smsOn, ch = smsOn ? S.msgCh : "email";
+    out.chOpts = SS3_CH.map(c => { const on = ch === c[0]; return { l: c[1], bg: on ? "#fff" : "transparent", fw: on ? 600 : 500, sel: on ? "true" : "false",
+      onClick: () => (c[0] !== "email" && !smsOn) ? this.toast("Text messages aren’t set up. Email still works.") : this.setState({ msgCh: c[0] }) }; });
+    out.needDetails = !!tpl.needsDetails; out.detailsL = "What to say"; out.detailsPh = tpl.id === "change" ? "e.g. the yard is closed after rain, so play is indoors" : "One or two sentences";
+    out.msgDetails = S.msgDetails; out.onDetails = e => this.setState({ msgDetails: e.target.value });
+    const R = d.rules || {}, details = S.msgDetails.trim() || (tpl.needsDetails ? "…" : "");
+    out.previewWho = "a guardian";
+    out.preview = String(tpl.body || "").replace("{guardian}", "Mrs Bakare").replace("{child}", "Ayomide").replace("{centre}", (S.boot.centres || [])[0] || "your centre").replace("{time}", R.closeStudent || "").replace("{details}", details);
+    const segs = Math.max(1, Math.ceil(out.preview.length / 160));
+    out.chars = out.preview.length + " characters" + (ch !== "email" ? " · " + segs + " SMS each" : "");
+    out.cost = ch === "email" ? "Email is free." : "Texts are charged by your SMS provider: about " + f(aud.n * segs) + " SMS.";
+    out.sendL = aud.n ? "Send to " + f(aud.n) + " guardian" + (aud.n === 1 ? "" : "s") : "Nobody in that group";
+    out.send = () => {
+      if (!aud.n) return this.toast("Nobody in that group right now.");
+      if (tpl.needsDetails && S.msgDetails.trim().length < 3) return this.toast("Say what to tell them first.");
+      this.parked("Sending to " + f(aud.n) + " guardians…", defer => this.S().messageSend({ editionId: S.boot.edition.id, template: tpl.id, audience: aud.id, channel: ch, details: S.msgDetails.trim() }, defer),
+        r => { if (!r || r.ok === false) return this.fail(r); this.toast(f(r.delivered) + " of " + f(r.recipients) + " reached" + (r.failed ? ", " + f(r.failed) + " failed" : "") + (r.noContact ? ", " + f(r.noContact) + " had no contact for that channel" : "") + ".");
+          this.setState({ msgDetails: "" }); this.loadFor("messages"); });
+    };
+    const AL = {}; auds.forEach(a => { AL[a.id] = a.label; });
+    out.sent = (d.sent || []).map(m => ({ title: m.title, to: AL[m.audience] || m.audience, when: m.at ? (m.at.slice(0, 10) === S.boot.today ? "Today, " : ss3Day(m.at) + ", ") + m.at.slice(11, 16) : "",
+      ch: (SS3_CH.find(c => c[0] === m.channel) || ["", m.channel])[1], by: m.by, n: f(m.recipients) + " families",
+      delivered: f(m.delivered) + " reached" + (m.failed ? " · " + f(m.failed) + " not" : ""), dPct: (m.recipients ? Math.round(m.delivered / m.recipients * 100) : 0) + "%", hasRead: false, hasRep: false }));
+  }
+  refreshBadges() { this.S().portal("boot").then(b => this.setState(s => ({ boot: Object.assign({}, s.boot, { badges: b.badges }) }))).catch(() => {}); }
+
   vals_consent(out, d) {
     const S = this.state, T = SS3_T, f = ss3Fmt;
     out.conRows = (d.types || []).map(c => {
@@ -683,7 +768,8 @@ class Ss3Portal extends React.Component {
     const flatNav = SS3_NAV.reduce((a, g) => a.concat(g[1]), []);
     const kids = q.length >= 2 ? S.palKids : (q ? [] : S.recent);
     const pages = flatNav.filter(n => !q || n[1].toLowerCase().includes(q) || n[0].includes(q)).slice(0, q ? 5 : 6);
-    const ACTS = [["Enrol a walk-in", "user-plus", () => this.go("registrations", { modal: "walk", walk: {}, mRes: null })], ["Open the check-in desk", "scan", () => this.go("desk")], ["Mint a batch of cards", "qr-code", () => this.go("cards", { modal: "mint", mRes: null })]];
+    const ACTS = [["Enrol a walk-in", "user-plus", () => this.go("registrations", { modal: "walk", walk: {}, mRes: null })], ["Send guardians a message", "paper-plane-tilt", () => this.go("messages")],
+      ["Record an incident", "first-aid-kit", () => this.go("incidents", { incForm: true, incDraft: {} })], ["Open the check-in desk", "scan", () => this.go("desk")], ["Mint a batch of cards", "qr-code", () => this.go("cards", { modal: "mint", mRes: null })]];
     const acts = ACTS.filter(a => !q || a[0].toLowerCase().includes(q)).slice(0, 4);
     const G = [];
     if (kids.length) G.push([q ? "Children" : "Recent children", kids.map(p => { const pill = ss3Pill(p.today); return { l: p.name, sub: [p.displayId, p.centre, p.group || "No group"].filter(Boolean).join(" · "), ini: ss3Ini(p.name), tone: ss3Tone(p.id), rad: "50%", hasIni: true, hasIcon: false,

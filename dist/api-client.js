@@ -1867,6 +1867,12 @@
         // A parked act (`pendingId`): cancel it inside its Undo window, or commit it now.
         pendingCancel: (pendingId) => request('/admin/summer.php', { body: { action: 'pendingCancel', pendingId } }),
         pendingFlush:  (pendingId) => request('/admin/summer.php', { body: { action: 'pendingFlush', pendingId } }),
+        // Incidents: a Safeguarding one is filed as a case for the lead (domain/summer-incidents.php).
+        incidentSave:  (data) => request('/admin/summer.php', { body: Object.assign({ action: 'incidentSave' }, data || {}) }),
+        incidentTell:  (incidentId) => request('/admin/summer.php', { body: { action: 'incidentTell', incidentId } }),
+        incidentClose: (incidentId) => request('/admin/summer.php', { body: { action: 'incidentClose', incidentId } }),
+        // A template to an audience, parked for its undo window when `defer` is set.
+        messageSend:   (data, defer) => request('/admin/summer.php', { body: Object.assign({ action: 'messageSend', defer: defer || 0 }, data || {}), timeout: 180000 }),
       },
       /* Member obligations — membership fee, monthly dues, training fee.
          A LEDGER: `payment` RECORDS money somebody already handed over by cash

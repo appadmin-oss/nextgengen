@@ -34,6 +34,7 @@ const PENDING_OPS = [
     'admin.club.promote.bulk',
     'admin.summer.absence.alert',
     'admin.summer.graduates.invoice',
+    'admin.summer.message.send',
 ];
 
 /**

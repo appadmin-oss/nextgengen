@@ -79,6 +79,10 @@ if ($method === 'GET') {
         'pendingCancel' => 'admin.pending.cancel',
         'pendingFlush' => 'admin.pending.flush',
         'desk'         => 'admin.summer.desk',
+        'incidentSave' => 'admin.summer.incident.save',
+        'incidentTell' => 'admin.summer.incident.tell',
+        'incidentClose'=> 'admin.summer.incident.close',
+        'messageSend'  => 'admin.summer.message.send',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     // Never let the client set kiosk-only control flags: `gateAuthorized` skips

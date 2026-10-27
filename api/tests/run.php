@@ -32185,6 +32185,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     backend_dispatch('admin.pending.cancel', ['requesterId' => 'NGG-SS3-SCOPED', 'pendingId' => $sa['pendingId']]);
     chk('ss3 · and cannot alert one child in another centre', (backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-SS3-SCOPED', 'cohortId' => $ed, 'studentId' => 'SS3-K-002'])['error'] ?? '') === 'out_of_scope');
 
+    // Incidents: logged, told for real, closed; a Safeguarding one becomes a case.
+    $inc = fn(array $a) => backend_dispatch('admin.summer.incident.save', array_merge(['requesterId' => $A, 'editionId' => $ed, 'kind' => 'First aid', 'sev' => 'low', 'note' => 'Grazed knee, cleaned and plastered.'], $a));
+    chk('ss3 · an incident needs what happened', ($inc(['child' => 'Adaora Steady', 'note' => ''])['error'] ?? '') === 'note_required');
+    chk('ss3 · an incident needs a real kind', ($inc(['child' => 'Adaora Steady', 'kind' => 'Mystery'])['error'] ?? '') === 'bad_kind');
+    $i1 = $inc(['child' => 'adaora steady']);
+    chk('ss3 · an incident links the child from the roster, whatever the case of the name', !empty($i1['ok']) && $i1['linked'] === true && $i1['childName'] === 'Adaora Steady');
+    chk('ss3 · the untold incident is a badge', ($q(['view' => 'boot'])['badges']['incidents'] ?? -1) === 1);
+    chk('ss3 · a scoped coordinator cannot log one in another centre', ($inc(['requesterId' => 'NGG-SS3-SCOPED', 'child' => 'Adaora Steady'])['error'] ?? '') === 'out_of_scope');
+    chk('ss3 · nor tell or close another centre’s incident', (backend_dispatch('admin.summer.incident.close', ['requesterId' => 'NGG-SS3-SCOPED', 'incidentId' => $i1['incidentId']])['error'] ?? '') === 'not_found');
+    $tell = backend_dispatch('admin.summer.incident.tell', ['requesterId' => $A, 'incidentId' => $i1['incidentId']]);
+    $told = db_row('SELECT toldAt FROM summer_incidents WHERE incidentId = ?', [$i1['incidentId']])['toldAt'];
+    chk('ss3 · telling the guardian is recorded only when a message went', (!empty($tell['ok']) && $told !== '') || (($tell['error'] ?? '') === 'not_delivered' && $told === ''));
+    chk('ss3 · closing an incident closes it', !empty(backend_dispatch('admin.summer.incident.close', ['requesterId' => $A, 'incidentId' => $i1['incidentId']])['ok'])
+        && db_row('SELECT status FROM summer_incidents WHERE incidentId = ?', [$i1['incidentId']])['status'] === 'closed');
+    $cases0 = (int)db_row('SELECT COUNT(*) c FROM safeguarding_cases')['c'];
+    $sg = $inc(['child' => 'Bolu Stopped', 'kind' => 'Safeguarding', 'note' => 'Said something worrying about home at break.']);
+    chk('ss3 · a safeguarding incident is filed as a case in the safeguarding queue', !empty($sg['ok']) && $sg['restricted'] === true && (int)db_row('SELECT COUNT(*) c FROM safeguarding_cases')['c'] === $cases0 + 1
+        && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sg['caseNo']])['subjectName'] === 'Bolu Stopped');
+    $row = db_row('SELECT childName, note, studentId FROM summer_incidents WHERE incidentId = ?', [$sg['incidentId']]);
+    chk('ss3 · and the incident row keeps no child or details', $row['childName'] === '' && $row['studentId'] === '' && !str_contains($row['note'], 'worrying'));
+    $iv = $q(['view' => 'incidents']);
+    $sgv = array_values(array_filter($iv['incidents'], fn($x) => $x['id'] === $sg['incidentId']))[0] ?? [];
+    chk('ss3 · the portal shows it as restricted', ($sgv['child'] ?? '') === 'Restricted' && !empty($sgv['restricted']) && $iv['incKpis']['safeOpen'] === 1);
+    chk('ss3 · the lead decides who is told, not the portal', (backend_dispatch('admin.summer.incident.tell', ['requesterId' => $A, 'incidentId' => $sg['incidentId']])['error'] ?? '') === 'lead_decides');
+    chk('ss3 · a safeguarding incident never counts as a guardian not told', ($q(['view' => 'boot'])['badges']['incidents'] ?? -1) === 0);
+
+    // Messages: an audience from the roster, parked, then recorded once.
+    $mv = $q(['view' => 'messages']);
+    $absN = array_values(array_filter($mv['audiences'], fn($a) => $a['id'] === 'all'))[0]['n'] ?? -1;
+    chk('ss3 · every message audience is counted from the roster', !empty($mv['ok']) && $absN === 3 && count($mv['templates']) >= 2);
+    $ms = fn(array $a) => backend_dispatch('admin.summer.message.send', array_merge(['requesterId' => $A, 'editionId' => $ed, 'template' => 'note', 'audience' => 'all', 'channel' => 'email', 'details' => 'Bring a water bottle tomorrow.'], $a));
+    chk('ss3 · a template that needs details refuses without them', ($ms(['details' => ''])['error'] ?? '') === 'details_required');
+    chk('ss3 · texts are refused when SMS is not set up', function_exists('sms_enabled') && sms_enabled() ? true : ($ms(['channel' => 'sms'])['error'] ?? '') === 'sms_off');
+    $pm = $ms(['defer' => 8]);
+    chk('ss3 · a send is parked for its undo window', !empty($pm['deferred']) && $pm['n'] === 3 && !db_row('SELECT id FROM summer_messages WHERE cohortId = ?', [$ed]));
+    db_exec("UPDATE pending_actions SET commitAt = ? WHERE pendingId = ?", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 5), $pm['pendingId']]);
+    $fm = backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $pm['pendingId']]);
+    $sent = db_row('SELECT * FROM summer_messages WHERE cohortId = ?', [$ed]);
+    chk('ss3 · when it commits the send is one row, with what reached and what did not', ($fm['status'] ?? '') === 'committed' && $sent && (int)$sent['recipients'] === 3
+        && (int)$sent['delivered'] + (int)$sent['failed'] === 3);
+    chk('ss3 · and one audit event', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.message.send'")['c'] === 1);
+
     setting_set('programme', is_array($progWas) ? $progWas : [], $A);
 })();
 

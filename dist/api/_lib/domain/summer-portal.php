@@ -172,7 +172,7 @@ function ss3_groups(array $ed, array $req): array {
 }
 
 /** The figures every screen's nav badges show — computed from the one roster. */
-function ss3_badges(array $roster, array $ed): array {
+function ss3_badges(array $roster, array $ed, ?array $req = null): array {
     $b = ['stopped' => 0, 'regOpen' => 0, 'noGroup' => 0, 'consent' => 0, 'incidents' => 0, 'cardsLow' => 0, 'blank' => 0];
     foreach ($roster as $r) {
         if ($r['stopped']) $b['stopped']++;
@@ -180,7 +180,9 @@ function ss3_badges(array $roster, array $ed): array {
         if (ss3_in_view($r, 'nogroup')) $b['noGroup']++;
         if (ss3_in_view($r, 'consent')) $b['consent']++;
     }
-    $b['incidents'] = (int)(db_row("SELECT COUNT(*) c FROM summer_incidents WHERE cohortId = ? AND status = 'open' AND toldAt = ''", [(string)$ed['cohortId']])['c'] ?? 0);
+    $ia = [(string)$ed['cohortId']];
+    $isc = $req ? ss3_scope_sql(admin_centre_names_in_scope($req), 'centre', $ia) : '';
+    $b['incidents'] = (int)(db_row("SELECT COUNT(*) c FROM summer_incidents WHERE cohortId = ? AND status = 'open' AND toldAt = '' AND kind != 'Safeguarding'$isc", $ia)['c'] ?? 0);
     $b['blank'] = (int)(db_row("SELECT COUNT(*) c FROM qr_codes WHERE status = 'blank'")['c'] ?? 0);
     $b['cardsLow'] = $b['blank'] < SS3_CARD_LOW ? 1 : 0;
     return $b;
@@ -212,7 +214,7 @@ function admin_summer_portal(array $p): array {
         'dayN' => count($days['sofar']), 'days' => count($days['all']), 'basis' => $days['basis'], 'isDay' => $days['isDay'],
     ];
     $out = ['ok' => true, 'edition' => $edition] + $base;
-    $out['badges'] = ss3_badges($roster, $ed);
+    $out['badges'] = ss3_badges($roster, $ed, $req);
     $out['groups'] = array_values($groups);
     $out['centres'] = array_values(array_unique(array_filter(array_column($roster, 'centre'))));
     sort($out['centres']);
@@ -222,6 +224,8 @@ function admin_summer_portal(array $p): array {
     if ($view === 'consent')  return $out + ss3_view_consent($roster, $groups);
     if ($view === 'cards')    return $out + ss3_view_cards($p, $req, $roster, $ed);
     if ($view === 'desk')     return $out + ss3_view_desk($roster, $groups, $ed, $today);
+    if ($view === 'incidents') return $out + ss3_view_incidents($req, $ed, $roster);
+    if ($view === 'messages') return $out + ss3_view_messages($roster, $ed);
     if ($view === 'today')    return $out + ss3_view_today($roster, $groups, $days, $ed, $today);
     if ($view === 'people')   return $out + ss3_view_people($p, $roster, $groups);
     if ($view === 'register') return $out + ss3_view_register($p, $roster, $groups, $days, $ed, $today);

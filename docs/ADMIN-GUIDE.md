@@ -609,18 +609,36 @@ required consent), then the things worth a call this week. Every number on it
 opens the list it counts — "1 came, then stopped" opens exactly that child.
 
 The screens are **Today, Participants, Registrations, Groups, Register,
-Check-in desk, Consent, Cards & QR, Editions & certificates** and **Into NGG**.
-The season's settings, sign-up links, imports and history stay in the Control
-Room (below). Incidents and guardian messages are not in the portal yet.
+Check-in desk, Incidents, Consent, Messages, Cards & QR, Editions &
+certificates** and **Into NGG**. The season's settings, sign-up links, imports
+and history stay in the Control Room (below).
+
+- **Incidents** — first aid, health, behaviour, pickup, lost items. Type the
+  child's name or printed ID; a name that matches two children is refused and
+  you are shown their IDs. **Tell guardian** sends an email and a text where the
+  family has them, and is only marked told when one actually went — it never
+  includes your note, which may name other children. If nothing could be sent
+  you are given the guardian's number to call.
+  **Safeguarding** is different on purpose: saving it files a case in the
+  safeguarding queue (Control Room → People → Mentorship → Safeguarding) and
+  emails the centre's safeguarding officer. The portal then shows only
+  "Restricted" and the case number — not the child, not the details — and it
+  cannot tell the family or close it. The lead decides both.
+- **Messages** — pick a template, who it goes to (not in today, stopped
+  coming, under 50%, not yet confirmed, or everyone), and email, SMS or both.
+  The preview shows the message as a family reads it. Sending waits 8 seconds
+  so it can be undone, at most 500 families go in one send, and the Sent list
+  shows how many each one reached. SMS is offered only once text messages are
+  set up; the "Pickup reminder" appears only when a sign-out time is set.
 
 - **Find a child or jump anywhere:** press **/** or **Ctrl K** (⌘K on a Mac)
   and type a name, a printed ID, or the last four digits of a card. With
   nothing typed it shows the children you opened last.
 - **Shortcuts:** **g** then **t** Today, **d** desk, **r** register,
-  **p** participants, **n** Into NGG; **?** lists them; **Esc** closes the
+  **p** participants, **i** incidents, **m** messages, **n** Into NGG; **?** lists them; **Esc** closes the
   top panel. Shortcuts do nothing while you are typing in a box.
-- **Undo really undoes.** Alerting every absent child's guardian, moving
-  children into NGG and sending joining invoices wait **8 seconds** before
+- **Undo really undoes.** Alerting every absent child's guardian, sending a
+  message, moving children into NGG and sending joining invoices wait **8 seconds** before
   anything happens. Press **Undo** (or **z**) inside that time and nothing is
   sent. If you close the tab during the 8 seconds, the act still goes through
   shortly afterwards — it is held on the server, not in your browser.

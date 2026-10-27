@@ -192,6 +192,47 @@ const text = (pg) => pg.evaluate(() => document.body.innerText);
     await pg.waitForFunction(() => !document.getElementById('m-h'), null, { timeout: 5000 });
     chk('Cancel voids nothing', q(`db_row("SELECT status FROM qr_codes WHERE token = 'SS3E-SS3E-002'")['status']`) === 'assigned');
 
+    // ── Incidents: logged, told, and a safeguarding one goes to the lead ──
+    await pg.evaluate(() => document.activeElement && document.activeElement.blur());
+    await pg.keyboard.press('g'); await pg.keyboard.press('i');
+    await pg.waitForFunction(() => /Guardian not told/.test(document.body.innerText), null, { timeout: 15000 });
+    chk('g i opens Incidents', /[?&]s=incidents/.test(pg.url()));
+    await pg.click('button:has-text("Log an incident")');
+    await pg.waitForSelector('#in-f', { timeout: 5000 });
+    await pg.fill('input[placeholder="Full name"]', 'Chidi Absent');
+    await pg.fill('textarea[placeholder^="Facts only"]', 'Grazed knee in the yard at break. Cleaned and plastered.');
+    await pg.click('button:has-text("Save incident")');
+    await pg.waitForFunction(() => /logged for Chidi Absent/.test(document.body.innerText), null, { timeout: 10000 });
+    chk('an incident is logged against the child on the roster', q(`(int)db_row("SELECT COUNT(*) c FROM summer_incidents WHERE studentId = 'SS3E-003'")['c']`) === 1);
+    chk('it shows as guardian not told, with the button to tell them', /Guardian not told yet/.test(await text(pg)) && !!(await pg.$('button:has-text("Tell guardian")')));
+    await pg.click('button:has-text("Log an incident")');
+    await pg.waitForSelector('#in-f', { timeout: 5000 });
+    await pg.fill('input[placeholder="Full name"]', 'Bolu Stopped');
+    await pg.selectOption('#in-f ~ * select, section[aria-labelledby="in-f"] select >> nth=0', 'Safeguarding');
+    await pg.waitForFunction(() => /straight to the safeguarding lead/.test(document.body.innerText), null, { timeout: 5000 });
+    chk('choosing Safeguarding says where it goes before it is saved', true);
+    await pg.fill('textarea[placeholder^="Facts only"]', 'Said something worrying about home at break.');
+    await pg.click('button:has-text("Save incident")');
+    await pg.waitForFunction(() => /as case C-/.test(document.body.innerText), null, { timeout: 10000 });
+    t = await text(pg);
+    chk('a safeguarding incident becomes a case the portal cannot read', /Restricted/.test(t) && !/worrying about home/.test(t)
+      && q(`(int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectName = 'Bolu Stopped'")['c']`) === 1);
+
+    // ── Messages: a template to an audience, parked, then sent and recorded ──
+    await pg.evaluate(() => document.activeElement && document.activeElement.blur());
+    await pg.keyboard.press('g'); await pg.keyboard.press('m');
+    await pg.waitForSelector('#ms-c', { timeout: 15000 });
+    await pg.click('button[aria-pressed]:has-text("A note from Summer School")');
+    await pg.selectOption('section[aria-labelledby="ms-c"] select', 'all');
+    await pg.fill('input[placeholder="One or two sentences"]', 'Bring a water bottle tomorrow');
+    await pg.waitForFunction(() => /Bring a water bottle tomorrow/.test(document.body.innerText) && /Send to 3 guardians/.test(document.body.innerText), null, { timeout: 5000 });
+    chk('the preview fills the template, and the button names who it reaches', !/Mrs Adeyemi/.test(await text(pg)));
+    await pg.click('button:has-text("Send to 3 guardians")');
+    await pg.waitForFunction(() => /Undo · \d+s/.test(document.body.innerText), null, { timeout: 8000 });
+    chk('a send waits out its undo window: nothing recorded yet', !q(`db_row("SELECT id FROM summer_messages")`));
+    await pg.waitForFunction(() => /of 3 reached/.test(document.body.innerText), null, { timeout: 20000 });
+    chk('then it goes, and the Sent list records it once', q(`(int)db_row("SELECT COUNT(*) c FROM summer_messages")['c']`) === 1 && /families/.test(await text(pg)));
+
     // ── Into NGG: a graduate moves once the undo window closes ──
     await pg.keyboard.press('g'); await pg.keyboard.press('n');
     await pg.waitForFunction(() => /Adaora Steady/.test(document.body.innerText) && /Move to NGG/.test(document.body.innerText), null, { timeout: 15000 });

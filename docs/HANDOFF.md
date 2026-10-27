@@ -3442,3 +3442,27 @@ What changed, and why:
 `tests/summer-portal-v3.test.js` (`npm run test:ss3`, in `test:all`) drives it
 end to end; `api/tests/run.php` holds the new reads, the desk op and the scoped
 alert.
+
+## Summer School portal v3: incidents and messages (27 Oct 2026)
+
+`domain/summer-incidents.php` (new, in the bootstrap list) backs the two
+screens the portal had left out. The tables are migration 182's; no migration.
+
+- **A Safeguarding incident is a safeguarding case**, filed through
+  `sg_case_open()` — extracted from `sg_report()` so a mentor's report, a
+  child's own and a Summer School incident open a case the same way, with the
+  same officer routing, email and daily cap. The incident row keeps only the
+  case number: no child, no details, so the portal, the child's drawer and the
+  incident list cannot show what only the lead may read. Tell and close are
+  refused (`lead_decides`), and it never counts as "guardian not told".
+- **Told means a message left.** `incident.tell` sends email and/or SMS, never
+  the staff note, and stamps `toldAt` only if one went; otherwise it returns
+  `not_delivered` with the number to call.
+- **Messages** come from one server-side template list (`SS3_MSG_TEMPLATES`);
+  a template whose placeholder cannot be filled truthfully is not offered (the
+  pickup time needs a sign-out time; Demo Day was dropped — there is no Demo
+  Day data). Audiences are `ss3_in_view()` over the scoped roster, so the
+  count on the button is the count sent. A send is parked by `pending.php`,
+  capped at `SS3_MSG_MAX` (500), recorded as one `summer_messages` row and one
+  audit event with delivered / failed / no-contact.
+- The incidents badge is now centre-scoped like every other badge.
