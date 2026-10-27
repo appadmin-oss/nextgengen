@@ -932,7 +932,9 @@ function admin_member_demote_ngv(array $p): array {
     $doneVid = $vid !== '' ? $vid : (string)($v['volunteerId'] ?? '');
     audit('member.demote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $doneVid], (string)($p['ip'] ?? ''));
     event_emit('member.demoted.ngv', ['memberId' => $memberId, 'volunteerId' => $doneVid]);
-    return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid];
+    /* And no longer a vanguard on Afrovanguard either. */
+    $portal = ngv_portal_revoke($memberId, $doneVid, 'demoted');
+    return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid, 'ngvPortal' => $portal['status']];
 }
 
 /** Deliver the digital ID — email always; SMS when the admin has it on. */

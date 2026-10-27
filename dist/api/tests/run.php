@@ -22228,6 +22228,99 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $clean();
 })();
 
+/* ── No longer a vanguard here ⇒ not one on Afrovanguard either ──
+ * Afrovanguard already handles `private.ngv.revoked` (integrations/ngg.php →
+ * NgvIntake::revoke, which reads data.nggMemberId). NGG never sent it: a child
+ * demoted, erased, or whose guardian withdrew the share stayed a vanguard there. */
+(function () {
+    global $CONFIG;
+    $ADM = 'NGG-2025-0099';
+    $keep = $CONFIG['afrovanguard'] ?? [];
+    $ids = ['NGG-J2-DEM', 'NGG-J2-ERA', 'NGG-J2-KID', 'NGG-J2-ADU', 'NGG-J2-OLD'];
+    $in = "('" . implode("','", $ids) . "')";
+    $clean = function () use ($in) {
+        db_exec("DELETE FROM qr_codes WHERE studentId IN (SELECT volunteerId FROM volunteers WHERE memberId IN $in)");
+        db_exec("DELETE FROM volunteers WHERE memberId IN $in");
+        db_exec("DELETE FROM member_promotions WHERE memberId IN $in");
+        db_exec("DELETE FROM consents WHERE studentId IN $in");
+        db_exec("DELETE FROM members WHERE memberId IN $in");
+        db_exec("DELETE FROM deliveries WHERE integrationId IN ('INT-AV-NGV','INT-J2-ALL')");
+        db_exec("DELETE FROM integrations WHERE integrationId IN ('INT-AV-NGV','INT-J2-ALL')");
+    };
+    $clean();
+    $adult = gmdate('Y-m-d', strtotime('-25 years')); $kid = gmdate('Y-m-d', strtotime('-15 years'));
+    foreach (['NGG-J2-DEM' => $adult, 'NGG-J2-ERA' => $adult, 'NGG-J2-KID' => $kid, 'NGG-J2-ADU' => $adult, 'NGG-J2-OLD' => $adult] as $id => $dob) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'J2 ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active',
+            'role' => 'member', 'centre' => 'Egbeda', 'dob' => $dob, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    db_insert('integrations', ['integrationId' => 'INT-J2-ALL', 'kind' => 'gchat', 'name' => 'Room', 'config' => '{"url":"https://chat.googleapis.com/x"}',
+        'events' => '["*"]', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    // A destination made before revocations existed, subscribed to promotions only.
+    db_insert('integrations', ['integrationId' => 'INT-AV-NGV', 'kind' => 'webhook', 'name' => 'Afrovanguard — NGV accounts', 'config' => '{}',
+        'events' => json_encode(['private.ngv.account']), 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $CONFIG['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'ngv_webhook_secret' => 'av-ngv-secret'];
+    $sent = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$sent) { $sent[] = json_decode($body, true); return ['ok' => true, 'body' => '{"ok":true,"status":"revoked"}']; };
+    $revokes = function () use (&$sent) { return array_values(array_filter($sent, fn($b) => ($b['event'] ?? '') === 'private.ngv.revoked')); };
+    $ev = 'Kept the Saturday register for a term and ran the newcomers\' first session.';
+
+    ngv_portal_integration();
+    chk('ngv revoke: the Afrovanguard destination is subscribed to it (an older one is brought up to date)',
+        in_array('private.ngv.revoked', json_decode((string)db_row("SELECT events FROM integrations WHERE integrationId = 'INT-AV-NGV'")['events'], true), true));
+    chk('ngv revoke: …and it is private: a room subscribed to everything never gets it',
+        !bus_subscribed('["*"]', 'private.ngv.revoked') && bus_subscribed(db_row("SELECT events FROM integrations WHERE integrationId = 'INT-AV-NGV'")['events'], 'private.ngv.revoked'));
+
+    backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-DEM', 'sendId' => false, 'evidence' => $ev]);
+    $vid = (string)db_row("SELECT ngvVolunteerId v FROM members WHERE memberId = 'NGG-J2-DEM'")['v'];
+    $sent = [];
+    $d = backend_dispatch('admin.members.demoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-DEM']);
+    $r = $revokes()[0] ?? [];
+    chk('ngv revoke: demoting sends it at once, with the nggMemberId Afrovanguard\'s revoke() reads',
+        !empty($d['demoted']) && ($d['ngvPortal'] ?? '') === 'delivered' && count($revokes()) === 1
+        && ($r['data']['nggMemberId'] ?? '') === 'NGG-J2-DEM' && ($r['data']['volunteerId'] ?? '') === $vid && ($r['data']['reason'] ?? '') === 'demoted');
+    chk('ngv revoke: …carrying nothing personal', !isset($r['data']['email']) && !isset($r['data']['name']) && !isset($r['data']['dob']));
+    chk('ngv revoke: …and not to the room', !db_row("SELECT d.id FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-J2-ALL' AND o.kind = 'private.ngv.revoked'"));
+
+    backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-ERA', 'sendId' => false, 'evidence' => $ev]);
+    $sent = [];
+    $e = backend_dispatch('admin.members.delete', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-ERA']);
+    chk('ngv revoke: erasing a member who was an NGV sends it, reason erased',
+        !empty($e['ok']) && (($revokes()[0]['data']['nggMemberId'] ?? '') === 'NGG-J2-ERA') && (($revokes()[0]['data']['reason'] ?? '') === 'erased'));
+    $sent = [];
+    backend_dispatch('admin.members.delete', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-OLD']);
+    chk('ngv revoke: …but erasing somebody who never was one sends nothing', !$revokes());
+
+    $grant = fn($st) => backend_dispatch('admin.members.consent', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-KID', 'type' => 'ngv_transfer',
+        'status' => $st, 'method' => 'By phone', 'guardianName' => 'Bisi Guardian']);
+    $grant('granted');
+    backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-KID', 'sendId' => false, 'evidence' => $ev]);
+    $sent = [];
+    $grant('declined');
+    chk('ngv revoke: a guardian withdrawing the share for a child already sent sends it, reason consent_withdrawn',
+        (($revokes()[0]['data']['nggMemberId'] ?? '') === 'NGG-J2-KID') && (($revokes()[0]['data']['reason'] ?? '') === 'consent_withdrawn'));
+
+    backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-ADU', 'sendId' => false, 'evidence' => $ev]);
+    $sent = [];
+    backend_dispatch('admin.members.consent', ['requesterId' => $ADM, 'memberId' => 'NGG-J2-ADU', 'type' => 'ngv_transfer',
+        'status' => 'declined', 'method' => 'By phone', 'guardianName' => 'Not Needed']);
+    chk('ngv revoke: an adult never needed that consent, so recording it declined revokes nothing', !$revokes());
+
+    // Backfill: somebody demoted before revocations were sent at all.
+    db_update('volunteers', ['status' => 'inactive'], ['memberId' => 'NGG-J2-ADU']);
+    db_update('members', ['ngvVolunteerId' => '', 'ngvAt' => ''], ['memberId' => 'NGG-J2-ADU']);
+    $sent = [];
+    $sync = backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM]);
+    $by = []; foreach ($revokes() as $x) $by[$x['data']['nggMemberId']] = $x['data']['reason'];
+    chk('ngv revoke: the "send NGVs" sync also revokes everybody who stopped being one — the backfill',
+        !empty($sync['ok']) && ($by['NGG-J2-ADU'] ?? '') === 'demoted' && ($by['NGG-J2-DEM'] ?? '') === 'demoted'
+        && ($by['NGG-J2-ERA'] ?? '') === 'erased' && ($by['NGG-J2-KID'] ?? '') === 'consent_withdrawn'
+        && !isset($by['NGG-J2-OLD']) && (int)$sync['revoked'] >= 4);
+
+    unset($GLOBALS['__bus_http_mock']);
+    $CONFIG['afrovanguard'] = $keep;
+    $clean();
+})();
+
 /* ── NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ── */
 (function () {
     db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'");

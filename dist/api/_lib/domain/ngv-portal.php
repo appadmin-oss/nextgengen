@@ -24,6 +24,10 @@ declare(strict_types=1);
  */
 
 const NGV_PORTAL_EVENT = 'private.ngv.account';
+/* The other direction: no longer a vanguard (demoted, erased, or the guardian
+   withdrew ngv_transfer). Afrovanguard's NgvIntake::revoke() withdraws them
+   there and voids the card; it needs only nggMemberId. */
+const NGV_REVOKED_EVENT = 'private.ngv.revoked';
 const NGV_PORTAL_INTEGRATION = 'INT-AV-NGV';
 
 /** The Afrovanguard destination, created or brought up to date from config. '' when not configured. */
@@ -35,7 +39,7 @@ function ngv_portal_integration(): string {
     $url = trim((string)($av['ngv_webhook_url'] ?? ''))
         ?: rtrim((string)($av['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/integrations/ngg.php';
     $config = json_encode(['url' => $url, 'secret' => $secret], JSON_UNESCAPED_SLASHES);
-    $events = json_encode([NGV_PORTAL_EVENT]);
+    $events = json_encode([NGV_PORTAL_EVENT, NGV_REVOKED_EVENT]);
     $row = db_row('SELECT * FROM integrations WHERE integrationId = ? LIMIT 1', [NGV_PORTAL_INTEGRATION]);
     if (!$row) {
         db_insert('integrations', ['integrationId' => NGV_PORTAL_INTEGRATION, 'kind' => 'webhook', 'name' => 'Afrovanguard — NGV accounts',
@@ -109,12 +113,18 @@ function ngv_portal_payload(array $m, string $volunteerId): array {
  * @return array{sent:bool, status:string}
  */
 function ngv_portal_announce(array $m, string $volunteerId): array {
-    $int = ngv_portal_integration();
-    if ($int === '') return ['sent' => false, 'status' => 'not_configured'];
+    if (ngv_portal_integration() === '') return ['sent' => false, 'status' => 'not_configured'];
     $payload = ngv_portal_payload($m, $volunteerId);
     // Never sent to be held: a minor without consent stays home (the sync too).
     if ($payload['minor'] && $payload['guardianConsent']['status'] !== 'granted') return ['sent' => false, 'status' => 'consent_required'];
-    $eventId = event_emit(NGV_PORTAL_EVENT, $payload);
+    return ngv_portal_send(NGV_PORTAL_EVENT, $payload);
+}
+
+/** Emit on the bus and try the Afrovanguard delivery at once; the dispatcher retries. */
+function ngv_portal_send(string $event, array $payload): array {
+    $int = ngv_portal_integration();
+    if ($int === '') return ['sent' => false, 'status' => 'not_configured'];
+    $eventId = event_emit($event, $payload);
     if ($eventId === '') return ['sent' => false, 'status' => 'not_queued'];
     $d = db_row('SELECT * FROM deliveries WHERE eventId = ? AND integrationId = ? LIMIT 1', [$eventId, $int]);
     if (!$d) return ['sent' => false, 'status' => 'not_queued'];
@@ -123,9 +133,60 @@ function ngv_portal_announce(array $m, string $volunteerId): array {
 }
 
 /**
+ * Tell Afrovanguard somebody is no longer a vanguard. `reason` is one of
+ * demoted | erased | consent_withdrawn — Afrovanguard acts on nggMemberId
+ * alone, the rest is for its log. Nothing personal travels with it.
+ */
+function ngv_portal_revoke(string $memberId, string $volunteerId, string $reason): array {
+    return ngv_portal_send(NGV_REVOKED_EVENT, ['nggMemberId' => $memberId, 'volunteerId' => $volunteerId,
+                                               'reason' => $reason, 'at' => now_iso()]);
+}
+
+/**
+ * Members who were ever put forward for NGV and are not vanguards any more,
+ * with why: erased, demoted, or a guardian's ngv_transfer withdrawn (a minor
+ * whose latest row is not a grant). Bounded; scoped like the roster.
+ *
+ * A minor promoted before the consent rule with NO ngv_transfer row at all is
+ * not here: nobody withdrew anything, so they are held, never re-sent (see
+ * ngv_portal_announce), and whether to revoke them is a decision for staff.
+ */
+function ngv_portal_revocations(?array $scope): array {
+    $sql = "SELECT m.memberId, m.status, m.dob, COALESCE(m.ngvVolunteerId, '') AS nvid,
+                   (SELECT v.volunteerId FROM volunteers v WHERE v.memberId = m.memberId ORDER BY v.id DESC LIMIT 1) AS vid
+              FROM members m
+             WHERE (EXISTS (SELECT 1 FROM volunteers v WHERE v.memberId = m.memberId)
+                    OR EXISTS (SELECT 1 FROM member_promotions p WHERE p.memberId = m.memberId))";
+    $args = [];
+    if ($scope !== null) {
+        if (!$scope) return [];
+        $sql .= ' AND m.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
+        $args = $scope;
+    }
+    $rows = db_all($sql . ' ORDER BY m.id LIMIT 500', $args);
+    $consents = ngv_transfer_consents(array_column($rows, 'memberId'));
+    $out = [];
+    foreach ($rows as $m) {
+        $mid = (string)$m['memberId'];
+        $vid = (string)($m['nvid'] ?: ($m['vid'] ?? ''));
+        if ((string)$m['status'] === 'deleted') $why = 'erased';
+        elseif ((string)$m['nvid'] === '') $why = 'demoted';
+        elseif (ngv_is_minor((string)($m['dob'] ?? '')) && isset($consents[$mid]) && (string)$consents[$mid]['status'] !== 'granted') $why = 'consent_withdrawn';
+        else continue;
+        $out[] = ['memberId' => $mid, 'volunteerId' => $vid, 'reason' => $why];
+    }
+    return $out;
+}
+
+/**
  * Everybody already promoted, announced again — for the vanguards promoted
  * before this existed. Afrovanguard is idempotent by NGG member id, so a
  * second run creates nothing twice. Scoped admins reach their own centres.
+ *
+ * And the other half: everybody who stopped being a vanguard (demoted,
+ * erased, consent withdrawn) is revoked again, which is also the backfill for
+ * the ones who stopped before NGG sent revocations at all. Afrovanguard's
+ * revoke is idempotent too.
  */
 function admin_members_ngv_portal_sync(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -139,13 +200,20 @@ function admin_members_ngv_portal_sync(array $p): array {
         $sql .= ' AND m.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
         $args = $scope;
     }
-    $n = 0; $ok = 0;
+    $n = 0; $ok = 0; $held = 0;
     foreach (db_all($sql . ' ORDER BY m.ngvAt ASC LIMIT 500', $args) as $m) {
         $r = ngv_portal_announce($m, (string)$m['vid']);
+        if ($r['status'] === 'consent_required') { $held++; continue; }
         $n++; if ($r['sent']) $ok++;
     }
-    audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '', ['announced' => $n, 'delivered' => $ok], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'announced' => $n, 'delivered' => $ok];
+    $revoked = 0;
+    foreach (ngv_portal_revocations($scope) as $x) {
+        ngv_portal_revoke($x['memberId'], $x['volunteerId'], $x['reason']);
+        $revoked++;
+    }
+    audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '',
+          ['announced' => $n, 'delivered' => $ok, 'heldForConsent' => $held, 'revoked' => $revoked], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'announced' => $n, 'delivered' => $ok, 'heldForConsent' => $held, 'revoked' => $revoked];
 }
 
 /* ══ NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ═══════════

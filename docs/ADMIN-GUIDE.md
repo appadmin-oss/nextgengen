@@ -222,6 +222,9 @@ holds even if a stale page is left open.
 | Suspended | Out of circulation, expected back |
 | Inactive | Out of circulation |
 
+Setting **Suspended** or **Inactive**, or changing somebody's role, signs
+them out on every device at once. A suspended account cannot sign back in.
+
 ### Acting on one member
 
 Open the **Actions ▾** menu at the end of the row. You get exactly the same
@@ -665,6 +668,7 @@ they all behave the same way. Worth knowing once:
 | A card's QR will not scan | Flagged at publish time if the modules are too small | Fix the QR size in the Design Studio and republish |
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
+| "Guardian consent required" on **Promote to NGV** | The member is under 18, or has no date of birth on file. Promotion shares their details with Afrovanguard | Record the guardian's decision under **Publication consent → Share with NextGen Vanguard**, with the guardian's name and how it was given. Then promote |
 
 ---
 

@@ -282,6 +282,13 @@ function admin_member_consent(array $p): array {
     audit('admin.member.consent', $g['requester']['memberId'], $mid,
           ['type' => (string)($p['type'] ?? ''), 'status' => (string)($p['status'] ?? ''),
            'method' => (string)($p['method'] ?? '')], (string)($p['ip'] ?? ''));
+    /* A guardian withdrawing the NGV share for a child already sent there:
+       Afrovanguard withdraws them too. Adults never needed it, so theirs
+       changes nothing. */
+    if ($type === NGV_TRANSFER_CONSENT && (string)($p['status'] ?? '') !== 'granted'
+        && (string)($m['ngvVolunteerId'] ?? '') !== '' && ngv_is_minor((string)($m['dob'] ?? ''))) {
+        ngv_portal_revoke($mid, (string)$m['ngvVolunteerId'], 'consent_withdrawn');
+    }
     return ['ok' => true, 'consent' => consent_state($mid), 'mayName' => consent_may_publish($mid)['mayName']];
 }
 
