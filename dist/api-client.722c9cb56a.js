@@ -1541,6 +1541,14 @@
         get:  (caseNo) => request('/admin/safeguarding.php' + qs({ caseNo })),
         note: (caseNo, note, status) => request('/admin/safeguarding.php', { body: { caseNo, note: note || '', status: status || '' } }),
       },
+      /* Mentorship › Projects (domain/projects.php): every project in the
+         requester's centres, who may be put on one at a centre, and the writes. */
+      projects: {
+        list:   (centre) => request('/admin/projects.php' + qs({ centre: centre || '' })),
+        people: (centre) => request('/admin/projects.php' + qs({ view: 'people', centre })),
+        save:   (data) => request('/admin/projects.php', { body: Object.assign({ action: 'save' }, data) }),
+        mark:   (data) => request('/admin/projects.php', { body: Object.assign({ action: 'mark' }, data) }),
+      },
       mentorship: {
         overview: () => request('/admin/mentorship.php?view=overview'),
         roster:   (sessionId) => request('/admin/mentorship.php' + qs({ view: 'roster', sessionId })),

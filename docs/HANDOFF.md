@@ -3466,3 +3466,51 @@ screens the portal had left out. The tables are migration 182's; no migration.
   capped at `SS3_MSG_MAX` (500), recorded as one `summer_messages` row and one
   audit event with delivered / failed / no-contact.
 - The incidents badge is now centre-scoped like every other badge.
+
+## Shared emails, the Analyst's empty answers, projects for admins (2026-10-26)
+
+Three things the owner reported.
+
+**One email, several member accounts** (siblings on a parent's address). Sign-in
+looked members up with `… OR lower(email) = ? LIMIT 1`, so the address always
+opened the same child and the others never could; the editor refused a shared
+email for that reason. Now (auth.php):
+- `auth_email_accounts()` lists the accounts an email may open (not suspended,
+  merged or deleted; never a password-only staff account). Two or more make the
+  address *shared*.
+- A code or link for a shared address is ONE challenge keyed by
+  `auth_shared_key($email)` (`@shared:` + a hash), with the accounts in
+  `auth_sessions.pickIds` (migration 183). Verifying it returns
+  `{pick, pickToken}` instead of a session; `auth/pick.php` (`auth.pick`) opens
+  the chosen account within `AUTH_PICK_MINUTES` (10), once, re-checking it is
+  still on the address and not suspended.
+- A password on a shared address is tried against each account
+  (`auth_login_shared`): one match signs in, several offer a pick of those,
+  none counts one failure against the address (`auth.pwshared`).
+- A reset to a shared address sends one link per account (`auth_reset_shared`).
+- The picker is in `api-client.js` (`authPickDialog`, under `auth.verify` and
+  `auth.login`), so the site, the journal, the portals and the timetable all
+  get it. CSS `.ngg-pick*` in styles.css and journal/app.css.
+- Shared emails are allowed again in `admin_member_validate` and the member's
+  own email change; the import notes them.
+- Tests: PHP "shared email: …" (16); `tests/shared-email.test.js` (10, in
+  test:all).
+
+**The Analyst said "No answer came back"** for "send me an export of the
+members grouped by their divisions". It reads aggregates only; every lens
+returned no points, compose returned `''`, and the server called that success.
+`insight_chat_ask` now always answers (the lenses' points when composing
+failed, what it can read when nothing was found, or that the service did not
+answer); `CrAsk` falls back to the claims too. A request for a member export
+is recognised in the browser (`crAskExportIntent`) and done through
+`admin.members.list` (People, centre-scoped, capped 5000), grouped by
+division/centre/level/status/programme — names never reach the AI.
+
+**Admins could not see or run projects.** `admin.projects`,
+`admin.projects.people`, `admin.project.save`, `admin.project.mark` (People,
+centre-scoped by the project's centre) and the tab **Mentorship › Projects**
+(`ms-projects`, cr-tab-mentorship.jsx). The save is `project_write`, pulled out
+of `member_mp_project_save`, so the portal and the Control Room share one set of
+rules; only the reach differs (`admin_project_reach`). Tests: PHP "control room:
+…" (7); tests/projects.test.js drives the tab.
+
