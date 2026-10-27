@@ -84,6 +84,7 @@ const ORDER = [
   'src/modules/control/cr-tab-analytics.jsx',
   'src/modules/control/cr-tab-mentors.jsx',
   'src/modules/control/cr-tab-mentorship.jsx',
+  'src/modules/control/cr-tab-projects.jsx',
   'src/modules/control/cr-tab-comms.jsx',
   'src/modules/control/cr-shell.jsx',
   'src/modules/control/cr-gate.jsx',

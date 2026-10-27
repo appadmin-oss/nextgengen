@@ -2101,6 +2101,14 @@
       /* A club admin's sensitive actions wait here for a second admin
          (domain/approvals.php). `list` is the queue — a club admin sees their
          own requests; `decide` approves (runs it, as the requester) or rejects. */
+      /* Control Room › Mentorship › Projects (domain/projects.php, gate `people`,
+         centre-scoped). `save` without a projectId sets a new one at `centre`. */
+      projects: {
+        list:   (centre) => request('/admin/projects.php' + qs({ centre: centre || '' })),
+        people: (centre) => request('/admin/projects.php' + qs({ view: 'people', centre })),
+        save:   (data) => request('/admin/projects.php', { body: Object.assign({ action: 'save' }, data || {}) }),
+        mark:   (projectId, kind, personId, status, note) => request('/admin/projects.php', { body: { action: 'mark', projectId, kind, personId, status, note: note || '' } }),
+      },
       approvals: {
         list:     (status) => request('/admin/approvals.php' + qs({ status: status || 'pending' })),
         decide:   (approvalId, decision, reason) => request('/admin/approvals.php', { body: { action: 'decide', approvalId, decision, reason: reason || '' } }),

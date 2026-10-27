@@ -3466,3 +3466,32 @@ screens the portal had left out. The tables are migration 182's; no migration.
   capped at `SS3_MSG_MAX` (500), recorded as one `summer_messages` row and one
   audit event with delivered / failed / no-contact.
 - The incidents badge is now centre-scoped like every other badge.
+
+## Projects: audited end to end, six defects fixed, the Control Room screen built (27 Oct 2026)
+
+A read-through of `domain/projects.php` against every caller found the mentor
+and child paths wired correctly, and these wrong. Each now has a test.
+
+1. **There was no Control Room screen**, though the domain's comment said
+   admins "now see every project… set one". The ops and the route existed; no
+   client called them. `cr-tab-projects.jsx` is *Mentorship → Projects*, over
+   new `NGGApi.admin.projects` wrappers.
+2. **Every Control Room save would have failed** as `bad_status`:
+   `api/admin/projects.php` cast a missing `status` to `''`, and the domain
+   defaults only an absent one. The PHP tests called the op directly and never
+   saw the route. It forwards only the keys sent now; `tests/projects.test.js`
+   sets a project through the real route.
+3. **A lead could not finish, cancel or edit a project once anyone on it had
+   left their reach** (inactive, moved centre), because every person was
+   re-checked against today's reach. Reach now decides who may be added, not
+   who may stay; the mentor portal's Edit form lists such people so they can be
+   taken off.
+4. **An unscreened mentor could be grouped with children** and see their full
+   names, contrary to the file's own rule. Refused now (`not_screened`, by
+   name) on any project with children; a mentors-only project is allowed.
+5. **My role could warn "past the finish date" for a finished project** for the
+   rest of the month. Only an open project counts as overdue.
+6. **A mentor could change their part on a closed project** (a child could
+   not). Refused now, as for a child, unless they set it.
+7. The Control Room's mark wiped a note when marking a part done without one;
+   it keeps it now, as the mentor path did.

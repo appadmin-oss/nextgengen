@@ -1879,8 +1879,25 @@ anyone's part — done, not done yet, or *excused* (an excused part is not
 counted). Taking someone off keeps them on the record if they had finished.
 The commitment *Support NGGC projects and activities* on My role counts the
 mentor's projects this month ("1 of 2 done · next finishes 20 Oct"), and turns
-into a to-do when a part is past its finish date. Saving and marking wait for
+into a to-do when a part is past its finish date — only while the project is
+open; a finished project is never "past its date". Saving and marking wait for
 the Academy, as the portal's other saves do.
+
+A mentor with no safeguarding screening recorded can be on a mentors-only
+project, but is refused (by name) on one with children, because everyone on
+it sees the children's names. Somebody already on a project who has since left
+— gone inactive, moved centre — stays on it until you take them off, so it can
+still be edited, finished or cancelled; they just cannot be *added* to a new
+one. Once a project is finished, only the person who set it (or the Control
+Room) can change a part.
+
+**In the Control Room:** *Mentorship → Projects* lists every project at your
+centres, open ones first, with how many are finishing within a week, how many
+are past their date and how many parts are done. *New project* sets one at a
+centre for its active mentors and children; open a project to see each group
+and person, mark a part done or not done, edit it, mark it finished or cancel
+it. Groups are made in the Mentor Portal and kept as they are when a project
+is edited here.
 
 **Supervision, written up.** In **Mentors**, *Book supervision* books the
 Tuesday after STS; the button then reads *Write up supervision* and the row

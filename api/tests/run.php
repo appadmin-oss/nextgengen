@@ -28309,6 +28309,34 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && !empty(backend_dispatch('admin.project.save', ['projectId' => $APID, 'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]] + $aBase)['ok'])
         && db_row('SELECT status FROM projects WHERE projectId = ?', [$APID])['status'] === 'closed'
         && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.mark' AND subject = ?", [$APID])['c'] === 1);
+
+    /* The audit's findings, each pinned (docs/HANDOFF.md, 27 Oct 2026). */
+    db_insert('mentors', ['mentorId' => 'MEN-UNSC', 'fullName' => 'Una Unscreened', 'email' => 'una@mp.example', 'status' => 'active', 'centre' => 'Portalville', 'programme' => 'ngg',
+        'memberId' => '', 'checkedAt' => '', 'maxMentees' => 8, 'joinedAt' => '2025-01-01', 'rank' => 'mentor', 'kind' => '', 'leadId' => '', 'createdAt' => now_iso()]);
+    $uns = backend_dispatch('admin.project.save', $aBase + ['people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: an unscreened mentor is refused on a project with children, by name', ($uns['error'] ?? '') === 'not_screened' && ($uns['names'] ?? []) === ['Una Unscreened']);
+    chk('projects: …and may be on a mentors-only project', !empty(backend_dispatch('admin.project.save', $aBase + ['title' => 'Mentor planning', 'people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC']]])['ok']));
+    $mon = substr($T, 0, 7);
+    $over0 = mp_projects_month('MEN-MP1', $mon, $T)['overdue'];
+    $past = gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 2 * 86400);
+    $op = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'centre' => 'Portalville', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    $OPID = (string)($op['projectId'] ?? '');
+    chk('projects: an open project past its date is overdue on the mentor’s My role', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0 + 1);
+    // NGG-MPK7 leaves the programme; finishing the project must not be blocked by them.
+    db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-MPK7'");
+    $fin = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'projectId' => $OPID, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: somebody already on a project who has left your reach does not stop you finishing it', !empty($fin['ok']));
+    chk('projects: a mentor cannot change their part on a finished project (as a child cannot)',
+        (backend_dispatch('member.mentor.project.mark', $p('NGG-MP1', ['projectId' => $OPID, 'status' => 'done']))['error'] ?? '') === 'project_closed');
+    chk('projects: …but they still cannot be ADDED to another', (backend_dispatch('admin.project.save', $aBase + ['title' => 'Another', 'people' => [['kind' => 'member', 'id' => 'NGG-MPK7']]])['error'] ?? '') === 'not_yours_to_assign');
+    db_exec("UPDATE members SET status = 'active' WHERE memberId = 'NGG-MPK7'");
+    chk('projects: a finished project is never overdue on My role, whatever was left unticked', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done', 'note' => 'Painted the sign']);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done']);
+    chk('projects: marking a part done again without a note keeps what they wrote', db_row("SELECT note FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK7'", [$OPID])['note'] === 'Painted the sign');
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-UNSC'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-PRJ-SCO'");
 
     /* Supervision written up by the lead (member_mp_supervision_record): it closes the booking,
