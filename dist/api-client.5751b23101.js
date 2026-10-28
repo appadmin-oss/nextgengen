@@ -1507,6 +1507,12 @@
       overview:     () => request('/admin/overview.php'),
       engagement:   (opts) => request('/admin/engagement.php' + qs(opts || {})),
       engagementTrends: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'trends' }, opts || {}))),
+      courses: {
+        placement: (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'placement' }, o || {}))),
+        ids:       (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'placement', ids: 1 }, o || {}))),
+        health:    (o) => request('/admin/courses.php' + qs(Object.assign({ view: 'health' }, o || {}))),
+        set:       (action, memberIds, extra) => request('/admin/courses.php', { body: Object.assign({ action, memberIds }, extra || {}) }),
+      },
       engagementPortal: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'portal' }, opts || {}))),
       /* Whether the community is a community: reply rate, distinct voices,
          reach, return rate, answer speed, and the posts nobody answered. */

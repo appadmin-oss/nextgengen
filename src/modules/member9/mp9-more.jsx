@@ -66,7 +66,7 @@ Object.assign(Mp9Portal.prototype, {
        the courses chosen for the member, never a guess from the track's words. */
     const tt = this.dd("tt") || {};
     const myCourses = (tt.courses || []).filter(Boolean), myL = myCourses.map(c => c.toLowerCase());
-    const division = { name: tt.division || "Your division", course: myCourses.join(", ") || "No course chosen yet: ask your centre", instructor: "Your instructor", room: me.centre + " centre",
+    const division = { name: tt.division || "Your division", course: myCourses.length ? myCourses.join(", ") + (tt.coursesConfirmed === false ? " · not confirmed yet" : "") : "No course chosen yet: ask your centre", instructor: "Your instructor", room: me.centre + " centre",
       chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
     const slots = (tt.slots || []);
     const byDay = {};

@@ -3007,3 +3007,50 @@ Root cause of the course faults (Tech child with a media course, "tech · Tech",
 Open decisions for the owner:
 - Do Media Lab and Practical Coding join the catalogue (Media, Technology), or do their lessons move under existing courses?
 - Until confirmed, do children see their proposed courses marked unconfirmed (recommended), or nothing?
+
+## Courses as a stored fact: placement and course health (2026-10-28)
+
+The structural fix proposed on 2026-10-24, built. Owner's decisions:
+- Children see their proposed courses marked "not confirmed yet" until staff confirm.
+- Media Lab and Practical Coding stay as courses inside their divisions (no lesson moved).
+
+### Data (migration 178, `members`)
+- `coursesProposed`: the record's suggestion, for an unplaced member.
+- `coursesReason`: why ({from, dropped}).
+- `coursesFlag`:
+  - `other_division`: the card names another division;
+  - `whole_division`: a division word gave every course;
+  - `no_match`: nothing names a course.
+- `coursesInputs`: a hash of track, disciplines, division and the course list.
+- `coursesConfirmedAt` / `coursesConfirmedBy`.
+- `members.courses` stays THE placement. Courses chosen before this existed count as placed.
+
+### One rule, every reader
+- `curriculum_member_courses_infer()` is the only inference. It proposes only real courses (catalogue, division lists, unit courses, course channels), never a division's word. Interests stay inside the track's division; anything else is `dropped` and flagged.
+- `members_courses_backfill()` stores a proposal whenever the inputs change. `db_write_gen()` (a counter every write moves) keeps it to one pass per change, never one per row.
+- `member_course_sql()` and `member_takes_any()` read the STORED proposal, so SQL class lists agree with the PHP lesson and channel lists. `tests/course-placement.test.js` and the PHP suite pin "lessons and class lists agree".
+- `curriculum_course_ctx_shared()` reuses one course context per request until a write, so per-child lookups in lists are not N+1.
+
+### Ops (`domain/course-placement.php`, `api/admin/courses.php`)
+- `admin.courses.placement`: lists by status (flagged/unplaced/none/placed/all), with counts, search and paging; `ids=1` gives select-all. Scoped; cap `people`.
+- `admin.courses.set`: `confirm` / `set` / `add` / `remove`.
+  - Validated before any write; catalogue spelling; cap 500.
+  - Per-row verdicts: `out_of_scope`, `not_a_member`, `nothing_proposed`, `unchanged`.
+  - One audit event per run.
+- `admin.courses.health`: every course with children placed and proposed, instructors, published lessons (own, and under its parts), class times and channel. Gaps are named with what to do. It calls `community_ensure_channels()` first.
+
+### Control Room (native blocks, not v1 panels)
+- Members → **Courses** (`CR_TAB_DEFS.courses` in `cr-tab-members.jsx`): KPIs, a flagged note, and a server table with a "Show" filter and bulk Confirm / Add / Remove / Set (select all matching). The row drawer has Confirm, Change courses and Open their record.
+- Learning → **Course health** (`cr-tab-learning.jsx`): KPIs, then every course, failing first. The drawer lists the gaps, with buttons to Curriculum, Volunteers, Timetable or Courses.
+- The first build of these used v1 panels (`crPanel`); the owner flagged them as the old interface, and they were rebuilt as native tabs.
+- `.cr-tbl td.cr-c-wrap`: the wrap class never applied, because `.cr-tbl td { white-space: nowrap }` outranked it. Every "wrap" column in the Control Room now wraps.
+
+### Member portal
+The course card says "· not confirmed yet" while a child is unplaced (`member_timetable.coursesConfirmed`).
+
+### Also
+- The id-studio tamper check could pick the token's own last character (about 1 run in 64); fixed.
+
+### Tests
+- PHP 5290/0.
+- `course-placement.test.js` 7/0 (added to `test:all`, script `test:cplace`).

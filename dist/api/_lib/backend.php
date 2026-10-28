@@ -358,6 +358,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.mentor.application.convert' => 'admin_mentor_application_convert',
             'admin.mentor.promote'    => 'admin_mentor_promote',
             'admin.volunteers.academy' => 'admin_volunteer_academy',
+            'admin.courses.placement'  => 'admin_courses_placement',
+            'admin.courses.set'        => 'admin_courses_set',
+            'admin.courses.health'     => 'admin_courses_health',
             'admin.mentor.demote'     => 'admin_mentor_demote',
             'admin.mentor.candidates' => 'admin_mentor_candidates',
             // Mentorship workspace — Anchor Pods (domain/mentorship-pods.php)

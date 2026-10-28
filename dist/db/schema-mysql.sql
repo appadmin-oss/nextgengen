@@ -4063,3 +4063,13 @@ INSERT INTO schema_version (version) VALUES (176) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE volunteers ADD COLUMN academyClearedAt VARCHAR(32) NOT NULL DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN academyClearedBy VARCHAR(64) NOT NULL DEFAULT '';
 INSERT INTO schema_version (version) VALUES (177) ON DUPLICATE KEY UPDATE version = version;
+
+-- 178: a member's courses as a stored fact (proposal, why, flag, inputs, confirmation)
+ALTER TABLE members ADD COLUMN coursesProposed TEXT NULL;
+ALTER TABLE members ADD COLUMN coursesFlag VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN coursesReason TEXT NULL;
+ALTER TABLE members ADD COLUMN coursesInputs VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN coursesConfirmedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE members ADD COLUMN coursesConfirmedBy VARCHAR(64) NOT NULL DEFAULT '';
+CREATE INDEX idx_members_courses_flag ON members (coursesFlag);
+INSERT INTO schema_version (version) VALUES (178) ON DUPLICATE KEY UPDATE version = version;

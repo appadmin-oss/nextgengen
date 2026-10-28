@@ -25984,7 +25984,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         && preg_match('#/reshoot\?t=(PL\.[^"&<\s]+)#', $mailTo['mum-nopic@example.org']['html'], $lm) && ids_photo_link_verify(rawurldecode($lm[1])) === ['member', 'NGG-IDS-NOPIC']);
     chk('id studio: the link opens the photo page for exactly that person, and a tampered or expired one does not',
         (reshoot_context(['t' => rawurldecode($lm[1])])['student']['name'] ?? '') === 'Pat Nophoto' && (reshoot_context(['t' => rawurldecode($lm[1])])['card'] ?? '') === 'NGG ID card'
-        && (reshoot_context(['t' => substr(rawurldecode($lm[1]), 0, -1) . 'x'])['error'] ?? '') === 'link_invalid'
+        && (reshoot_context(['t' => substr(rawurldecode($lm[1]), 0, -1) . (substr(rawurldecode($lm[1]), -1) === 'x' ? 'y' : 'x')])['error'] ?? '') === 'link_invalid'
         && ids_photo_link_verify(ids_photo_link_token('member', 'NGG-IDS-NOPIC', time() - 1)) === null && ids_photo_link_verify(ids_photo_link_token('admin', 'X')) === null);
     $sumN = db_all("SELECT memberId FROM notifications WHERE title = 'Photo request sent to 1 person'");
     chk('id studio: the admins who own that card get ONE summary when it has gone — never the operator who pressed', count($sumN) >= 1
@@ -30818,6 +30818,48 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('tech member: "My course" is the chosen one, and the division is its division, not a stale placement', ($tt['courses'] ?? null) === ['Coding'] && stripos((string)($tt['division'] ?? ''), 'Technology') !== false);
     $card = member_card_public(db_row("SELECT * FROM members WHERE memberId = 'NGG-TM-1'"), true);
     chk('tech member: the card names the Technology division for a "Tech" track', stripos((string)$card['division'], 'Technology') !== false);
+})();
+
+/* ── Courses are a stored fact: proposed, placed by staff, the same everywhere ── */
+(function () {
+    $prevCat = setting_get('club_catalogue'); setting_set('club_catalogue', club_catalogue_default(), 'test');
+    $now = now_iso(); $A = 'NGG-2025-0099';
+    $mk = fn($id, $track, $dis = '', $centre = 'Placeville') => db_insert('members', ['memberId' => $id, 'fullName' => $id . ' Kid', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => $centre, 'track' => $track, 'disciplines' => $dis, 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk('PL-TECH', 'Tech', 'Media'); $mk('PL-PIANO', 'Piano'); $mk('PL-NONE', 'Something odd'); $mk('PL-CODE', 'Coding');
+    members_courses_backfill();
+    $row = fn($id) => db_row("SELECT * FROM members WHERE memberId = ?", [$id]);
+    $st = member_courses_state($row('PL-TECH'));
+    chk('placement: an unplaced Tech child is proposed Technology courses, flagged because their card also says Media', $st['status'] === 'unplaced' && in_array('Coding', $st['courses'], true)
+        && !in_array('Graphic Design', $st['courses'], true) && $st['flag'] === 'other_division' && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
+    chk('placement: "Piano" proposes Musical Instruments; nothing recognisable proposes nothing, flagged', in_array('Musical Instruments', member_courses_state($row('PL-PIANO'))['courses'], true)
+        && member_courses_state($row('PL-NONE'))['status'] === 'none' && member_courses_state($row('PL-NONE'))['flag'] === 'no_match');
+    // The same courses for every reader: the PHP list and the SQL used by class lists.
+    [$cs, $ca] = member_course_sql('Coding');
+    $sqlIds = array_column(db_all("SELECT memberId FROM members WHERE centre = 'Placeville' AND $cs", $ca), 'memberId');
+    $phpIds = array_values(array_filter(['PL-TECH', 'PL-PIANO', 'PL-NONE', 'PL-CODE'], fn($id) => in_array('coding', array_map('mb_strtolower', curriculum_member_courses($row($id))), true)));
+    sort($sqlIds); sort($phpIds);
+    chk('placement: lessons and class lists agree on who takes Coding (one rule, not two)', $sqlIds === $phpIds && in_array('PL-TECH', $sqlIds, true));
+    // A changed record is re-proposed.
+    db_update('members', ['track' => 'Coding', 'disciplines' => ''], ['memberId' => 'PL-NONE']); members_courses_backfill();
+    chk('placement: when the record changes, the proposal follows', member_courses_state($row('PL-NONE'))['courses'] === ['Coding']);
+    $l = admin_courses_placement(['requesterId' => $A, 'status' => 'flagged', 'centre' => 'Placeville']);
+    chk('placement list: flagged children are listed with their proposal and counts by status', !empty($l['ok']) && in_array('PL-TECH', array_column($l['rows'], 'memberId'), true) && $l['counts']['unplaced'] >= 3);
+    $c = admin_courses_set(['requesterId' => $A, 'action' => 'confirm', 'memberIds' => ['PL-TECH', 'PL-PIANO', 'NOPE']]);
+    chk('placement: confirming makes the proposal their courses, with per-row verdicts', $c['applied'] === 2 && $c['refused'] === 1 && member_courses_state($row('PL-TECH'))['status'] === 'placed'
+        && (string)$row('PL-TECH')['coursesConfirmedBy'] === $A);
+    $c2 = admin_courses_set(['requesterId' => $A, 'action' => 'add', 'course' => 'graphic design', 'memberIds' => ['PL-TECH']]);
+    chk('placement: staff can give a child a second division on purpose (catalogue spelling)', $c2['applied'] === 1 && in_array('Graphic Design', member_courses_of($row('PL-TECH')), true));
+    chk('placement: confirming a placed child again is unchanged; an unknown course is refused before anything is written',
+        admin_courses_set(['requesterId' => $A, 'action' => 'confirm', 'memberIds' => ['PL-TECH']])['unchanged'] === 1
+        && (admin_courses_set(['requesterId' => $A, 'action' => 'set', 'courses' => ['Basket weaving'], 'memberIds' => ['PL-CODE']])['error'] ?? '') === 'unknown_course');
+    chk('placement: more than the cap is refused and named', (admin_courses_set(['requesterId' => $A, 'action' => 'confirm', 'memberIds' => array_map(fn($i) => "X$i", range(1, 501))])['max'] ?? 0) === 500);
+    chk('placement: someone without the people trust is refused', !empty(admin_courses_placement(['requesterId' => 'PL-CODE'])['error']));
+    $h = admin_courses_health(['requesterId' => $A, 'centre' => 'Placeville']);
+    $mi = array_values(array_filter($h['courses'] ?? [], fn($x) => $x['course'] === 'Musical Instruments'))[0] ?? [];
+    chk('course health: a course with children names what is missing (lessons, instructor, class time)', !empty($h['ok']) && $mi['placed'] === 1
+        && in_array('no_instructor', array_column($mi['gaps'], 'code'), true) && in_array('no_class_time', array_column($mi['gaps'], 'code'), true));
+    if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
 /* ── A Tech member's interests never bring another division's courses ── */

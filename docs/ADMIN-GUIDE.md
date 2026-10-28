@@ -2905,3 +2905,13 @@ Open the person in **Mentors & volunteers → Volunteers**, then go to the "Also
 - **A mentor as well:** tick it to add them to the mentor roster. Their role stays Instructor, and both the Instructor and Mentor portals open for them. Pair their mentees in Mentors & volunteers → Pairings. Untick it to take them off the mentor roster.
 - **Skip the online Academy** (instructors): tick it when they trained in person or need no training. Their portal stops asking for the modules. The waiver is recorded with the date and who granted it. You cannot set it on your own record.
 - **For a mentor's Academy,** use Mentors & volunteers → Pairings → the mentor → Academy "Completed in person".
+
+## Courses: placing every child (Members → Courses) and Course health (Learning)
+
+A child's courses decide their lessons, Community channels, timetable and which instructors' classes they are in. They are now set **once, here**, and every portal reads the same list.
+
+- **Proposed:** for a child nobody has placed, their record proposes courses, from the track and the interests on the card, within one division. The child sees them marked "not confirmed yet".
+- **Needs a look:** the proposal needs a person to decide. Examples: their card names another division (a Tech child whose card also says Media), a division word gave a whole division, or nothing names a course. Open the child to see why.
+- **Confirm proposed:** select children, then Confirm. Their proposal becomes their courses.
+- **Add / Remove / Set courses:** choose from the course list. To place a child in two divisions on purpose, do it here.
+- **Course health** (Learning) lists every course: the children in it, its instructors, lessons, class times and channel. A course failing children comes first. Open one to see what is missing and go straight to where it is fixed.

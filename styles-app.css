@@ -8699,7 +8699,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 .cr-c-text { display: flex; flex-direction: column; }
 .cr-c-text span:first-child { color: var(--cr-text); }
 .cr-c-text span + span { font-size: 12px; color: var(--cr-muted-3); }
-.cr-c-wrap { white-space: normal; max-width: 360px; }
+.cr-tbl td.cr-c-wrap { white-space: normal; max-width: 360px; min-width: 160px; }
 .cr-tempty { padding: 36px; text-align: center; color: var(--cr-muted-3); font-size: 13.5px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .cr-tempty .cr-btn { height: 32px; padding: 0 12px; border-radius: 9px; font-size: 13px; }
 /* A server table's refresh that failed: said above the rows it still shows, the toolbar kept. */
@@ -14350,3 +14350,4 @@ button.m9x-ev-sum { cursor: pointer; }
 .vol-role-row input { margin-top: 3px; width: 18px; height: 18px; flex: none; }
 .vol-role-row span { display: grid; gap: 2px; }
 .vol-role-row small { color: var(--ink-400, #5f6874); font-size: 13px; }
+

@@ -1020,7 +1020,11 @@ function member_courses_clean($raw): array {
 function member_course_sql(string $course, string $a = ''): array {
     $json = json_encode($course, JSON_UNESCAPED_UNICODE);
     $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string)$json) . '%';
-    return ["(COALESCE({$a}courses,'') LIKE ? ESCAPE '!' OR (COALESCE({$a}courses,'') = '' AND lower({$a}track) = lower(?)))", [$like, $course]];
+    // The stored proposal speaks for a member nobody has placed yet, so every
+    // SQL reader agrees with the PHP one (curriculum_member_courses).
+    if (function_exists('members_courses_backfill')) members_courses_backfill();
+    return ["(COALESCE({$a}courses,'') LIKE ? ESCAPE '!' OR (COALESCE({$a}courses,'') IN ('', '[]') AND (COALESCE({$a}coursesProposed,'') LIKE ? ESCAPE '!'"
+          . " OR lower({$a}track) = lower(?))))", [$like, $like, $course]];
 }
 
 /**
@@ -1032,11 +1036,17 @@ function member_course_sql(string $course, string $a = ''): array {
  */
 function member_takes_any(array $m, array $courses): bool {
     if (!$courses) return false;
-    if (!array_key_exists('courses', $m) && ($id = (string)($m['memberId'] ?? '')) !== '') {
-        static $cache = [];
-        $m['courses'] = $cache[$id] ??= (string)(db_row('SELECT courses FROM members WHERE memberId = ? LIMIT 1', [$id])['courses'] ?? '');
+    if (function_exists('members_courses_backfill')) members_courses_backfill();
+    if ((!array_key_exists('courses', $m) || !array_key_exists('coursesProposed', $m)) && ($id = (string)($m['memberId'] ?? '')) !== '') {
+        $row = db_row('SELECT courses, coursesProposed, track FROM members WHERE memberId = ? LIMIT 1', [$id]);
+        if ($row) $m = $row + $m;
     }
-    $mine = array_map(fn($c) => mb_strtolower(trim((string)$c)), member_courses_of($m) ?: [(string)($m['track'] ?? '')]);
+    // The same courses every other reader sees: chosen, else the stored
+    // proposal; a Summer participant (no member row) keeps their track.
+    $prop = json_decode((string)($m['coursesProposed'] ?? ''), true);
+    $mine = array_map(fn($c) => mb_strtolower(trim((string)$c)), member_courses_of($m) ?: (is_array($prop) && $prop ? $prop : [(string)($m['track'] ?? '')]));
+    // Unplaced, the track itself still answers (an older record's course may be the track's word).
+    if (!member_courses_of($m) && trim((string)($m['track'] ?? '')) !== '') $mine[] = mb_strtolower(trim((string)$m['track']));
     foreach ($courses as $c) if (in_array(mb_strtolower(trim((string)$c)), $mine, true)) return true;
     return false;
 }
@@ -1177,29 +1187,66 @@ function curriculum_division_courses(string $divId, array &$ctx): array {
  * member who takes anything takes Chess too.
  */
 function curriculum_member_courses(array $m, ?array &$ctx = null): array {
-    if ($ctx === null) $ctx = curriculum_course_ctx();
+    if ($ctx === null) $ctx = curriculum_course_ctx_shared();
     $out = member_courses_of($m);
-    if (!$out) {
-        $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? '');
-        $out = array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track));
-        /* The interests on the card add courses only inside the track's own
-           division. A Tech member who also ticked "Media" was given the whole
-           Media division (Media Lab included) beside their Technology courses. */
-        $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
-        if ($trackDiv === '' && trim((string)($m['division'] ?? '')) !== '' && function_exists('nggc_division') && nggc_division((string)$m['division'])) $trackDiv = (string)nggc_division((string)$m['division'])['id'];
-        $fromDis = array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis));
-        if ($trackDiv !== '' && trim($track) !== '') {
-            $mine = array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess']));
-            $fromDis = array_filter($fromDis, static fn($c) => in_array(mb_strtolower((string)$c), $mine, true));
-        }
-        $out = array_merge($out, $fromDis);
-        if (!$out && trim((string)($m['division'] ?? '')) !== '') $out = curriculum_division_courses((string)$m['division'], $ctx);
-    }
+    if (!$out) $out = curriculum_member_courses_infer($m, $ctx)['courses'];
     $seen = []; $uniq = [];
     foreach ($out as $c) { $k = mb_strtolower(trim((string)$c)); if ($k !== '' && !isset($seen[$k])) { $seen[$k] = 1; $uniq[] = (string)$c; } }
     $out = $uniq;
     if ($out && !isset($seen['chess'])) $out[] = 'Chess';
     return $out;
+}
+
+/**
+ * The courses a record SUGGESTS, for a member nobody has placed yet: what the
+ * track names (a course, an instrument, or a division's courses), plus the
+ * card's interests inside that same division; the stored division when the
+ * track names nothing. Never a second division from the interests: those are
+ * reported in `dropped` and flagged for staff to decide (course-placement.php).
+ * Returns {courses, from, dropped, flag}. Deterministic in its inputs, so the
+ * stored proposal (members.coursesProposed) and a live call always agree.
+ */
+/** One course context per request until something is written: callers in a loop share it. */
+function curriculum_course_ctx_shared(): array {
+    static $ctx = null, $gen = -1;
+    if ($ctx === null || $gen !== db_write_gen()) { $ctx = curriculum_course_ctx(); $gen = db_write_gen(); }
+    return $ctx;
+}
+
+function curriculum_member_courses_infer(array $m, ?array &$ctx = null): array {
+    if ($ctx === null) $ctx = curriculum_course_ctx_shared();
+    $track = (string)($m['track'] ?? ''); $dis = (string)($m['disciplines'] ?? ''); $div = trim((string)($m['division'] ?? ''));
+    $out = array_merge(member_courses_from_text($track, $ctx)[0], member_text_words($track));
+    $from = $out ? 'track' : '';
+    $trackDiv = function_exists('nggc_division_for_track') ? nggc_division_for_track($track) : '';
+    if ($trackDiv === '' && $div !== '' && function_exists('nggc_division') && nggc_division($div)) $trackDiv = (string)nggc_division($div)['id'];
+    $fromDis = array_merge(member_courses_from_text($dis, $ctx)[0], member_text_words($dis));
+    $dropped = [];
+    if ($trackDiv !== '' && trim($track) !== '') {
+        $mine = array_map('mb_strtolower', array_merge(curriculum_division_courses($trackDiv, $ctx), ['Chess']));
+        foreach ($fromDis as $c) if (!in_array(mb_strtolower((string)$c), $mine, true)) $dropped[] = (string)$c;
+        $fromDis = array_values(array_filter($fromDis, static fn($c) => in_array(mb_strtolower((string)$c), $mine, true)));
+    }
+    if ($fromDis) { $out = array_merge($out, $fromDis); $from = $from ?: 'interests'; }
+    if (!$out && $div !== '') { $out = curriculum_division_courses($div, $ctx); $from = $out ? 'division' : ''; }
+    // Only courses that exist are proposed: a division's word ("Tech") or a
+    // stray one ("Piano", once Musical Instruments is in) names no class.
+    // Read once per context, never per member: class lists call this for every child.
+    if (!isset($ctx['known'])) {
+        $known = ['chess' => 'Chess'];
+        foreach (curriculum_courses() as $c) $known[mb_strtolower($c)] = $c;
+        if (function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) foreach ($dv['courses'] as $c) $known[mb_strtolower($c)] ??= $c;
+        // …and a course the Community has a channel for (channels are made from courses).
+        foreach (db_all("SELECT name FROM community_channels WHERE kind = 'course'") as $r) $known[mb_strtolower((string)$r['name'])] ??= (string)$r['name'];
+        $ctx['known'] = $known;
+    }
+    $known = $ctx['known'];
+    $real = static function (array $list) use ($known): array {
+        $o = []; foreach ($list as $c) { $k = mb_strtolower(trim((string)$c)); if (isset($known[$k]) && !in_array($known[$k], $o, true)) $o[] = $known[$k]; } return $o;
+    };
+    $clean = $real($out); $dropped = $real($dropped);
+    $flag = !$clean ? 'no_match' : ($dropped ? 'other_division' : ($from === 'division' || ($from === 'track' && count($clean) > 3) ? 'whole_division' : ''));
+    return ['courses' => $clean, 'from' => $from, 'dropped' => array_values(array_unique($dropped)), 'flag' => $flag];
 }
 
 /* ── A three-year programme that adapts to the member ───────────────────────

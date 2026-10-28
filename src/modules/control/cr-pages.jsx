@@ -42,6 +42,7 @@ const CR_PAGES = {
   ] },
   members: { label: "Members", icon: "users", tabs: [
     { id: "members", label: "Roster", desc: "Everyone in NGG, NGV and Afrovanguard.", cap: "people" },
+    { id: "courses", label: "Courses", desc: "Every child’s courses: confirm what their record proposes, or choose. Every portal reads what is placed here.", cap: "people" },
     { id: "quality", label: "Data quality", desc: "Gaps and duplicates that break ID cards, reminders and reports.", cap: "people" },
     { id: "families", label: "Families", desc: "Parent and guardian accounts connected to members.", cap: "people" },
     { id: "centres", label: "Centres", desc: "Where NGG meets.", cap: "people" },
@@ -90,6 +91,7 @@ const CR_PAGES = {
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
     { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },
     { id: "curriculum", label: "Curriculum", desc: "The four divisions. Chess is compulsory in all of them.", cap: "curriculum" },
+    { id: "course-health", label: "Course health", desc: "Whether each course can be taught: children, instructors, lessons, class times, a channel, and what is missing.", cap: ["curriculum", "club", "people"] },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },
     { id: "assignments", label: "Assignments", desc: "Coursework submitted for grading.", cap: "content" },

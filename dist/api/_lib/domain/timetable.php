@@ -249,7 +249,7 @@ function tt_for_centre(string $centreName, bool $withInstructor, string|array $m
 
 /** member.timetable — the member's own centre, their course marked. */
 function member_timetable(array $p): array {
-    $m = db_row('SELECT memberId, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    $m = db_row('SELECT memberId, centre, track, courses, disciplines, division, coursesConfirmedAt FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : [(string)($m['track'] ?? '')];
     $tt = tt_for_centre((string)($m['centre'] ?? ''), true, $courses);
@@ -273,7 +273,9 @@ function member_timetable(array $p): array {
         }
     }
     $div = $divId !== '' && function_exists('nggc_division') ? nggc_division($divId) : null;
-    return ['ok' => true, 'course' => (string)($main[0] ?? ''), 'courses' => $main, 'division' => $div ? (string)$div['name'] : ''] + $tt;
+    // Proposed courses are shown, and said to be proposed until staff confirm them (course-placement.php).
+    $placed = member_courses_of($m) !== [];
+    return ['ok' => true, 'course' => (string)($main[0] ?? ''), 'courses' => $main, 'coursesConfirmed' => $placed, 'division' => $div ? (string)$div['name'] : ''] + $tt;
 }
 
 /**

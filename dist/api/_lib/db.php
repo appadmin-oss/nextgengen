@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 177;
+const NGG_SCHEMA_TARGET = 178;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5135,6 +5135,18 @@ function db_migrate(PDO $db): void {
             ALTER TABLE volunteers ADD COLUMN academyClearedAt TEXT NOT NULL DEFAULT '';
             ALTER TABLE volunteers ADD COLUMN academyClearedBy TEXT NOT NULL DEFAULT '';
         ",
+        /* A member's courses as a stored fact (course-placement.php): the
+           proposal for an unplaced member, why, whether a person should look,
+           what it was computed from, and who confirmed the placement. */
+        178 => "
+            ALTER TABLE members ADD COLUMN coursesProposed TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesFlag TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesReason TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesInputs TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesConfirmedAt TEXT NOT NULL DEFAULT '';
+            ALTER TABLE members ADD COLUMN coursesConfirmedBy TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_courses_flag ON members(coursesFlag);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -5175,7 +5187,14 @@ function db_migrate(PDO $db): void {
 
 // ── Query helpers ────────────────────────────────────────────────────────
 
+/* A counter every write moves. A derived value computed in a read-only
+   request (a member's courses, the course list) can be reused until it moves,
+   so a list never rebuilds it per row. */
+function db_write_gen(): int { return (int)($GLOBALS['__db_wgen'] ?? 0); }
+function db_wrote(): void { $GLOBALS['__db_wgen'] = (int)($GLOBALS['__db_wgen'] ?? 0) + 1; }
+
 function db_insert(string $table, array $data): int {
+    db_wrote();
     $cols = array_keys($data);
     $ph = array_fill(0, count($cols), '?');
     $sql = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
@@ -5184,6 +5203,7 @@ function db_insert(string $table, array $data): int {
 }
 
 function db_update(string $table, array $data, array $where): int {
+    db_wrote();
     $set = []; $vals = [];
     foreach ($data as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
     $wh = []; foreach ($where as $k => $v) { $wh[] = "$k = ?"; $vals[] = $v; }
@@ -5195,6 +5215,7 @@ function db_update(string $table, array $data, array $where): int {
 
 /** Cross-driver insert-or-update. $conflict = unique/PK column(s). */
 function db_upsert(string $table, array $insert, array $conflict, array $update): void {
+    db_wrote();
     $cols = array_keys($insert);
     $ph = implode(',', array_fill(0, count($cols), '?'));
     $vals = array_values($insert);
@@ -5236,7 +5257,7 @@ function db_all(string $sql, array $params = []): array {
 }
 
 function db_exec(string $sql, array $params = []): int {
-    db_tick();
+    db_tick(); db_wrote();
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->rowCount();

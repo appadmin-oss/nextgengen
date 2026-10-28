@@ -583,3 +583,52 @@ function crFormationEdit(ctx, b) {
     done: () => null,
   });
 }
+
+/* ── Course health (learning/course-health) ────────────────────────────────
+   Whether each course can actually be taught (admin.courses.health): the
+   children placed in it and those only proposed, instructors, published
+   lessons, class times, a channel; a course failing children first, each gap
+   with what to do and where. */
+const CR_CH_GO = { no_lessons: ["Write lessons", "learning", "curriculum"], no_instructor: ["Give it an instructor", "mentors", "volunteers"],
+  no_class_time: ["Put it on the timetable", "learning", "timetable"], unconfirmed: ["Confirm placements", "members", "courses"] };
+function crChOpen(ctx, c) {
+  ctx.drawer({
+    title: c.course, sub: c.division,
+    stats: [["Children", crNum(c.placed) + (c.proposed ? " + " + crNum(c.proposed) + " proposed" : "")], ["Instructors", crNum(c.instructors)], ["Lessons", crNum(c.lessons) + (c.lessonsFromParts ? " (+" + crNum(c.lessonsFromParts) + " under its parts)" : "")]],
+    fields: [["Class times", crNum(c.classTimes)], ["Channel", c.channel ? "Yes" : "None yet"]],
+    sections: [{ h: "What is missing", text: (c.gaps || []).map(g => "• " + g.say).join("\n"), empty: "Nothing: it can be taught." }],
+    actions: (c.gaps || []).map(g => CR_CH_GO[g.code]).filter(Boolean).map((a, i) => ({ l: a[0], primary: i === 0, run: () => { ctx.closeDrawer(); ctx.go(a[1], a[2]); } })),
+  });
+}
+Object.assign(CR_TAB_DEFS, {
+  "course-health": {
+    skeleton: ["kpis", "table"],
+    load: async () => NGGApi.admin.courses.health({}),
+    blocks: (d, ctx) => {
+      const sm = d.summary || {}, rows = d.courses || [];
+      const state = c => c.placed + c.proposed === 0 ? ["No children", "neutral"] : c.gaps.some(g => g.code !== "unconfirmed") ? ["Missing something", "bad"] : c.proposed ? ["Unconfirmed", "warn"] : ["Can be taught", "ok"];
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Courses with children", v: crNum(sm.withChildren || 0) },
+          { l: "Missing something they need", v: crNum(sm.failing || 0), tone: sm.failing ? "down" : "flat" },
+          { l: "Courses in all", v: crNum(sm.courses || 0) },
+        ] },
+        sm.failing ? { type: "note", span: 6, icon: "warning-circle", tone: "warn", text: crPlural(sm.failing, "course") + " with children cannot be fully taught yet.", sub: "Open one to see what is missing and go straight to where it is fixed." } : null,
+        { type: "table", span: 6, title: "Every course", sub: "A course failing children is listed first.",
+          cols: ["Course", "#Children", "#Instructors", "#Lessons", "#Class times", "Channel", { l: "What is missing", wrap: true }, "State"],
+          rows: rows.map(c => { const st = state(c); return { key: c.course, open: () => crChOpen(ctx, c), cells: [
+            { k: "strong", t: c.course, s: c.division },
+            { k: "num", t: crNum(c.placed) + (c.proposed ? " +" + crNum(c.proposed) : ""), v: c.placed + c.proposed },
+            { k: "num", t: crNum(c.instructors), v: c.instructors },
+            { k: "num", t: crNum(c.lessons) + (c.lessonsFromParts ? " +" + crNum(c.lessonsFromParts) : ""), v: c.lessons + c.lessonsFromParts },
+            { k: "num", t: crNum(c.classTimes), v: c.classTimes },
+            { k: "text", t: c.channel ? "Yes" : "—" },
+            { k: "text", t: c.gaps.map(g => g.say.split(".")[0]).join(" · ") || "Nothing" },
+            { k: "status", t: st[0], tone: st[1] },
+          ] }; }),
+          search: "Search courses", filters: ["State"],
+          emptyText: "No courses yet. Add them in Divisions & courses." },
+      ].filter(Boolean);
+    },
+  },
+});

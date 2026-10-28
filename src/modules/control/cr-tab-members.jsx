@@ -1279,3 +1279,115 @@ Object.assign(CR_TAB_DEFS, {
   idcards: crPanel(() => <AdminIdCards/>),
   accounts: crPanel(() => <AdminAccounts/>),
 });
+
+/* ── Courses (members/courses) ─────────────────────────────────────────────
+   A child's courses are a stored fact (domain/course-placement.php). The
+   record PROPOSES them; staff confirm or choose here; lessons, channels, the
+   timetable and every class list read the result. Unconfirmed, the child
+   sees the proposal marked "not confirmed yet". */
+const CR_CP_STATUS = [["flagged", "Needs a look"], ["unplaced", "Proposed"], ["none", "No courses"], ["placed", "Placed"], ["all", "Everyone"]];
+const CR_CP_TONE = { placed: ["Placed", "ok"], unplaced: ["Proposed", "warn"], none: ["No courses", "bad"] };
+function crCpWhy(r) {
+  if (r.flag === "other_division") return "Their card also names " + (r.dropped || []).slice(0, 3).join(", ") + ((r.dropped || []).length > 3 ? "…" : "") + ", another division. Add it only if they really take both."
+    + ((r.courses || []).length > 3 ? " The proposal is a whole division: keep only the courses they take." : "");
+  if (r.flag === "whole_division") return "A whole division was proposed from “" + (r.track || "their record") + "”. Keep only the courses they take.";
+  if (r.flag === "no_match") return "Nothing on their record names a course. Choose theirs.";
+  if (r.status === "unplaced") return "From their " + (r.from === "interests" ? "interests" : r.from === "division" ? "division" : "track") + ".";
+  return r.confirmedAt ? "Placed " + crDate(r.confirmedAt) + "." : "Chosen on their record.";
+}
+const crCpAll = d => (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => a.indexOf(c) < 0)), []);
+function crCpOpts(d) { return (d.catalogue || []).reduce((a, x) => a.concat(x.courses.filter(c => !a.some(o => o[0] === c)).map(c => [c, c + " · " + x.division])), []); }
+async function crCpRun(ctx, action, keys, extra, verb) {
+  const r = await NGGApi.admin.courses.set(action, keys, extra);
+  const s = crBulkSummary(r, verb);
+  ctx.toast(s.text, null, s.bad);
+  ctx.reload();   // the counts above the table move too
+  return r;
+}
+function crCpConfirm(ctx, keys) {
+  return ctx.confirm({ title: "Confirm " + crPlural(keys.length, "placement") + "?", body: "Their proposed courses become their courses. Lessons, channels, the timetable and class lists follow at once.", cta: "Confirm " + crPlural(keys.length, "placement") })
+    .then(ok => ok ? crCpRun(ctx, "confirm", keys, {}, "placed") : false);
+}
+function crCpForm(ctx, mode, keys, initial) {
+  const d = ctx.data || {}, n = keys.length;
+  const multi = mode === "set";
+  ctx.form({
+    title: (mode === "add" ? "Add a course" : mode === "remove" ? "Remove a course" : "Set courses") + " · " + crPlural(n, "child", "children"),
+    submit: multi ? "Save courses" : mode === "add" ? "Add" : "Remove", busyLabel: "Saving…",
+    intro: multi ? "Exactly these courses. A child in two divisions is placed in both on purpose here." : "Applies to the " + crPlural(n, "child", "children") + " selected now; the rest of their courses stay.",
+    values: multi ? { courses: initial || [] } : { course: "" },
+    fields: [multi ? { id: "courses", l: "Courses", type: "multi", req: true, opts: crCpOpts(d) } : { id: "course", l: "Course", type: "select", req: true, opts: crCpOpts(d) }],
+    onSubmit: v => crCpRun(ctx, mode, keys, multi ? { courses: v.courses } : { course: v.course }, mode === "remove" ? "updated" : "placed"),
+    done: null,
+  });
+}
+function crCpOpen(ctx, r) {
+  const st = CR_CP_TONE[r.status] || ["—", "neutral"];
+  ctx.drawer({
+    title: r.fullName, sub: (r.displayId || r.memberId) + " · " + (r.centre || "No centre"),
+    stats: [["Placement", st[0]], ["Courses", String((r.courses || []).length)]],
+    fields: [["Track", r.track || "—"], ["Interests on their card", r.interests || "—"], ["Courses", (r.courses || []).join(", ") || "None"]],
+    sections: [{ h: "Why", text: crCpWhy(r) }],
+    actions: [
+      r.status !== "placed" && (r.courses || []).length ? { l: "Confirm these courses", primary: true, run: () => { ctx.closeDrawer(); crCpConfirm(ctx, [r.memberId]); } } : null,
+      { l: "Change courses", primary: r.status === "placed" || !(r.courses || []).length, run: () => { ctx.closeDrawer(); crCpForm(ctx, "set", [r.memberId], r.courses || []); } },
+      { l: "Open their record", run: () => { ctx.closeDrawer(); ctx.go("members", "members", r.memberId); } },
+    ].filter(Boolean),
+  });
+}
+/* The table's server is made once per load; it reads the LIVE tab context
+   (reload, drawer, form) through this ref, as the roster does. */
+const crCpCtx = { current: null };
+function crCpServer() {
+  return {
+    sortKeys: {},
+    fetch: async ({ q, filters, page, pageSize }) => {
+      const r = await NGGApi.admin.courses.placement({ status: filters.status || "all", q: q || "", page, pageSize });
+      return { total: r.total || 0, rows: (r.rows || []).map(x => {
+        const st = CR_CP_TONE[x.status] || ["—", "neutral"];
+        return { key: x.memberId, open: () => crCpOpen(crCpCtx.current, x), cells: [
+          { k: "person", t: x.fullName, s: [x.displayId || x.memberId, x.centre].filter(Boolean).join(" · ") },
+          { k: "text", t: x.track || "—", s: x.interests ? "Interests: " + x.interests : "" },
+          { k: "text", t: (x.courses || []).join(", ") || "None" },
+          { k: "text", t: crCpWhy(x) },
+          { k: "status", t: st[0], tone: x.flag && x.status !== "placed" ? "bad" : st[1] },
+        ] };
+      }) };
+    },
+  };
+}
+Object.assign(CR_TAB_DEFS, {
+  courses: {
+    skeleton: ["kpis", "table"],
+    load: async ctx => {
+      const r = await NGGApi.admin.courses.placement({ status: "flagged", pageSize: 1 });
+      return { counts: r.counts || {}, catalogue: r.catalogue || [], max: r.max || 500, server: crCpServer() };
+    },
+    blocks: (d, ctx) => {
+      crCpCtx.current = ctx;
+      const c = d.counts;
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Needs a look", v: crNum(c.flagged || 0), tone: c.flagged ? "down" : "flat" },
+          { l: "Proposed, not confirmed", v: crNum(c.unplaced || 0), tone: c.unplaced ? "down" : "flat" },
+          { l: "No courses", v: crNum(c.none || 0), tone: c.none ? "down" : "flat" },
+          { l: "Placed", v: crNum(c.placed || 0) },
+        ] },
+        c.flagged ? { type: "note", span: 6, icon: "warning-circle", tone: "warn", text: crPlural(c.flagged, "child", "children") + (c.flagged === 1 ? " needs" : " need") + " a person to decide.", sub: "Their record names another division, a whole division, or no course at all. Open one to see why, then confirm or choose." }
+          : c.unplaced ? { type: "note", span: 6, icon: "check-circle", text: "Every proposal is clear.", sub: "Select the proposed children and confirm them: their courses then stop saying “not confirmed yet”." } : null,
+        { type: "table", span: 6, title: "Children and their courses", sub: "Lessons, channels, the timetable and class lists all read what is placed here.", server: d.server,
+          search: "Name or ID", cols: ["Child", { l: "On their record", wrap: true }, { l: "Courses", wrap: true }, { l: "Why", wrap: true }, "Placement"],
+          filtersInit: { status: c.flagged ? "flagged" : c.unplaced ? "unplaced" : "all" },
+          filters: [{ id: "status", l: "Show", opts: CR_CP_STATUS.map(s => ({ v: s[0], l: s[1], n: s[0] === "all" ? undefined : c[s[0]] })) }],
+          bulk: [
+            { l: "Confirm proposed", max: d.max, run: keys => crCpConfirm(ctx, keys) },
+            { l: "Add a course", max: d.max, run: keys => { crCpForm(ctx, "add", keys); return false; } },
+            { l: "Remove a course", max: d.max, run: keys => { crCpForm(ctx, "remove", keys); return false; } },
+            { l: "Set courses", max: d.max, run: keys => { crCpForm(ctx, "set", keys, []); return false; } },
+          ],
+          selectAllMatching: async ({ q, filters }) => (await NGGApi.admin.courses.ids({ status: filters.status || "all", q: q || "" })).ids || [],
+          emptyText: "Nobody here. Change “Show” to see the others." },
+      ].filter(Boolean);
+    },
+  },
+});
