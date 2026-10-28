@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 194;
+const NGG_SCHEMA_TARGET = 195;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5686,6 +5686,12 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_wifi_usess_seen ON wifi_usage_sessions(seenAt);
             ALTER TABLE wifi_gateways ADD COLUMN usageAt TEXT NOT NULL DEFAULT '';
         ",
+        /* A centre's router that now runs from CACENTRE (domain/wifi-cacentre.php):
+           NGG stops calling it silent, its members' PINs come from CACENTRE at
+           once, and an old script still asking NGG is told it has moved. */
+        195 => "
+            ALTER TABLE wifi_gateways ADD COLUMN movedAt TEXT NOT NULL DEFAULT '';
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -5748,10 +5754,17 @@ function db_centre_mirror(string $table, array $data): array {
     return $data;
 }
 
+/* A column whose name MySQL reserves (`signal`, on lesson_feedback) is a syntax
+   error there unquoted, while SQLite takes it either way — so it was only ever
+   found on MySQL. Backticks quote it on both drivers. Only listed names are
+   quoted, so every other statement stays exactly as it was. */
+const DB_RESERVED_COLUMNS = ['signal'];
+function db_ident(string $col): string { return in_array(strtolower($col), DB_RESERVED_COLUMNS, true) ? '`' . $col . '`' : $col; }
+
 function db_insert(string $table, array $data): int {
     $data = db_centre_mirror($table, $data);
     if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
-    $cols = array_keys($data);
+    $cols = array_map('db_ident', array_keys($data));
     $ph = array_fill(0, count($cols), '?');
     $sql = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . implode(',', $ph) . ')';
     db_conn()->prepare($sql)->execute(array_values($data));
@@ -5762,8 +5775,8 @@ function db_update(string $table, array $data, array $where): int {
     $data = db_centre_mirror($table, $data);
     if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
     $set = []; $vals = [];
-    foreach ($data as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
-    $wh = []; foreach ($where as $k => $v) { $wh[] = "$k = ?"; $vals[] = $v; }
+    foreach ($data as $k => $v) { $set[] = db_ident($k) . ' = ?'; $vals[] = $v; }
+    $wh = []; foreach ($where as $k => $v) { $wh[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $sql = 'UPDATE ' . $table . ' SET ' . implode(',', $set) . ' WHERE ' . implode(' AND ', $wh);
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($vals);
@@ -5775,10 +5788,10 @@ function db_upsert(string $table, array $insert, array $conflict, array $update)
     $insert = db_centre_mirror($table, $insert);
     $update = db_centre_mirror($table, $update);
     if ($table === 'centres' && function_exists('centre_id_cache_clear')) centre_id_cache_clear();
-    $cols = array_keys($insert);
+    $cols = array_map('db_ident', array_keys($insert));
     $ph = implode(',', array_fill(0, count($cols), '?'));
     $vals = array_values($insert);
-    $set = []; foreach ($update as $k => $v) { $set[] = "$k = ?"; $vals[] = $v; }
+    $set = []; foreach ($update as $k => $v) { $set[] = db_ident($k) . ' = ?'; $vals[] = $v; }
     $head = 'INSERT INTO ' . $table . ' (' . implode(',', $cols) . ') VALUES (' . $ph . ') ';
     if (db_driver() === 'mysql') {
         $sql = $head . 'ON DUPLICATE KEY UPDATE ' . implode(', ', $set);

@@ -245,7 +245,7 @@ function admin_wifi_usage(array $p): array {
     $page = max(1, (int)($p['page'] ?? 1));
     $size = in_array((int)($p['pageSize'] ?? 0), [50, 100, 500], true) ? (int)$p['pageSize'] : WIFI_USAGE_PAGE;
     $over = count(array_filter($rows, fn($r) => $r['over'] !== ''));
-    $counting = array_values(array_filter(db_all("SELECT gatewayId, centre, platform, usageAt FROM wifi_gateways WHERE removedAt = '' OR removedAt IS NULL"), fn($r) => wifi_scope_has($scope, (string)$r['centre'])));
+    $counting = array_values(array_filter(db_all("SELECT gatewayId, centre, platform, usageAt FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND (movedAt = '' OR movedAt IS NULL)"), fn($r) => wifi_scope_has($scope, (string)$r['centre'])));
     return ['ok' => true, 'period' => $period, 'from' => $from, 'to' => $today, 'centre' => $centre, 'sort' => $sort,
             'centres' => $centres, 'bytes' => array_sum(array_column($centres, 'bytes')), 'over' => $over,
             'total' => count($rows), 'page' => $page, 'pageSize' => $size, 'people' => array_slice($rows, ($page - 1) * $size, $size),

@@ -131,7 +131,8 @@ function wifi_setup_mikrotik(array $r, string $url, string $key = ''): array {
   :do {
     :local r [/tool fetch url=(\$base . "?since=" . \$since . "&os=" . \$os . "&page=" . \$page . "&error=" . \$err . \$tele) http-header-field=("X-NGG-Gateway: " . \$gw . ",X-NGG-Key: " . \$key) check-certificate=yes output=user as-value]
     :local d (\$r->"data")
-    :if ([:len \$d] >= 64512) do={ :set ok false; :set nggWifiErr "truncated" }
+    :if ([:pick \$d 0 7] = "#error;") do={ :set ok false; :set nggWifiErr [:pick \$d 7 [:find \$d "\\n"]] }
+    :if (\$ok && [:len \$d] >= 64512) do={ :set ok false; :set nggWifiErr "truncated" }
     :if (\$ok && [:typeof [:find \$d "#end"]] = "nil") do={ :set ok false; :set nggWifiErr "incomplete" }
     :if (\$ok) do={
       :local nl [:find \$d "\\n"]
@@ -285,7 +286,8 @@ ROS;
             ['“certificate verify failed” or “SSL” in the error', 'The clock is wrong, or RouterOS is older than 7.19. Fix either (step 2), then step 4 again.'],
             ['“ambiguous value of interface”', 'That came from pasting the old long script. The one-line install (step 4) doesn’t have this problem: run it, it replaces everything the old paste left.'],
             ['Lines like {{{... with nothing after them', 'The terminal cut a long paste short. Don’t paste long scripts: use step 4’s one line.'],
-            ['“the key is wrong or was rotated”', 'Press Rotate the key on this gateway in NGG and run the new step 4 line. Each wrong-key attempt is counted on the gateway’s card.'],
+            ['“the key is wrong or was rotated”, or “NGG Wi-Fi: bad_key” in the log', 'Press Rotate the key on this gateway in NGG and run the new step 4 line. Each wrong-key attempt is counted on the gateway’s card.'],
+            ['“NGG Wi-Fi: moved_to_cacentre” in the log', 'This router was marked as running from CACENTRE, but NGG’s script is still on it. Paste CACENTRE’s one line for it (CACENTRE → Wi-Fi → Sites & routers); it removes NGG’s script. It keeps its people meanwhile.'],
             ['One member can’t sign in', 'Look them up under “Why can’t somebody get on?”: it says whether they are on the list, and why not.'],
             ['To see the router’s own messages', 'Run: /log print where message~"NGG"'],
         ],
@@ -469,7 +471,7 @@ function wifi_setup_generic(array $r, string $url): array {
         ],
         'reports' => 'Whatever you send: the list is confirmed by the version you send back, and data used by the usage report. Never which sites anybody visits.',
         'trouble' => [
-            ['401 with “#error;bad_key”', 'The key is wrong or was rotated. Each wrong-key request is counted on this gateway’s card.'],
+            ['“#error;bad_key” (401)', 'The key is wrong or was rotated. Each wrong-key request is counted on this gateway’s card.'],
             ['A full list every time', 'You are sending an older since than the version you were last handed. Send the version from the reply you applied.'],
         ],
     ];

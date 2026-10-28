@@ -44,6 +44,7 @@ if ($method === 'GET') {
         // One op, two declared actions (test | rotate), over a selection or a region.
         'bulk'         => 'admin.wifi.gateways.bulk',
         'cacentrePush' => 'admin.wifi.cacentre.push',
+        'moved'        => 'admin.wifi.gateway.moved',
     ];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);

@@ -137,7 +137,8 @@ function wifi_cac_gate(array $p): array {
 function admin_wifi_cac_status(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
     $last = setting_get(WIFI_CAC_LAST);
-    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base(), 'every' => WIFI_CAC_EVERY,
+    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base(), 'routersUrl' => dirpush_base() . '/admin/wifi.php', 'every' => WIFI_CAC_EVERY,
+            'sites' => (object)array_filter(array_map(fn($c) => strtolower(trim((string)$c['code'])), array_column(db_all('SELECT name, code FROM centres'), null, 'name'))),
             'canSend' => $g['scope'] === null, 'last' => is_array($last) ? $last : null];
 }
 
@@ -155,14 +156,15 @@ function admin_wifi_cac_push(array $p): array {
  * while no NGG gateway is still serving where they sign in (their centre; any
  * centre, for staff) — yes. That second half is the move: a centre whose
  * router still fetches from NGG keeps showing NGG's PIN, because that is the
- * PIN that router knows. Re-pointing the router flips it within a day.
+ * PIN that router knows. Marking the router moved (admin.wifi.gateway.moved)
+ * flips it at once; a router simply re-pointed flips it within a day.
  */
 function wifi_cac_serves(string $centre, bool $staff): bool {
     if (!wifi_cac_ready()) return false;
     $since = gmdate('Y-m-d\TH:i:s', time() - WIFI_CAC_ROUTER_FRESH);
     $live = $staff
-        ? db_row("SELECT 1 x FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$since])
-        : db_row("SELECT 1 x FROM wifi_gateways WHERE centre = ? AND (removedAt = '' OR removedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$centre, $since]);
+        ? db_row("SELECT 1 x FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND (movedAt = '' OR movedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$since])
+        : db_row("SELECT 1 x FROM wifi_gateways WHERE centre = ? AND (removedAt = '' OR removedAt IS NULL) AND (movedAt = '' OR movedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$centre, $since]);
     return !$live;
 }
 
@@ -202,5 +204,32 @@ function wifi_cac_member_view(array $m, string $op = 'show'): array {
         'override' => null, 'resetsLeft' => (int)($c['resetsLeft'] ?? 0), 'centre' => (string)($m['centre'] ?? ''), 'centreHasWifi' => !empty($c['hasRouter']),
         'usage' => $u ? ['today' => (int)$u['today'], 'month' => (int)$u['month'], 'dayMb' => (int)$u['dayMb'], 'monthMb' => (int)$u['monthMb'], 'over' => (string)($u['over'] ?? ''), 'days' => []] : null,
         'source' => 'cacentre'];
+}
+
+/* ── Moving a centre's router to CACENTRE ─────────────────────────────── */
+
+/**
+ * admin.wifi.gateway.moved {gatewayId, undo?} — this router now runs from
+ * CACENTRE (its one line there removes NGG's script). NGG stops watching it,
+ * its centre's members see CACENTRE's PIN at once, and if NGG's script is in
+ * fact still on it, its fetch is answered "moved" and it keeps its people.
+ * Undo puts it back on NGG with a full list at its next fetch.
+ */
+function admin_wifi_gateway_moved(array $p): array {
+    $g = wifi_gate($p); if (!$g['ok']) return $g;
+    $f = wifi_gateway_for($g, (string)($p['gatewayId'] ?? '')); if (!$f['ok']) return $f;
+    $r = $f['row']; $undo = !empty($p['undo']);
+    if (!$undo && !wifi_cac_ready()) return ['ok' => false, 'error' => 'cacentre_not_connected', 'message' => 'NGG isn’t connected to CACENTRE yet, so there is nowhere for this router to move to.'];
+    if ($undo === ((string)($r['movedAt'] ?? '') === '')) return ['ok' => true, 'unchanged' => true, 'gateway' => wifi_gateway_out($r)];
+    db_update('wifi_gateways', $undo ? ['movedAt' => '', 'ackedJson' => '', 'pendingJson' => '', 'pendingVersion' => 0, 'lastFullAt' => '', 'silentAlertAt' => '']
+                                    : ['movedAt' => now_iso()], ['id' => (int)$r['id']]);
+    audit($undo ? 'wifi.gateway.back' : 'wifi.gateway.moved', (string)$g['requester']['memberId'], (string)$r['gatewayId'], ['centre' => (string)$r['centre']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'gateway' => wifi_gateway_out(wifi_gateway_live((string)$r['gatewayId']))];
+}
+
+/** Where a router is added and moved to at CACENTRE, and the site code its centre goes under there. */
+function wifi_cac_site_code(string $centre): string {
+    $c = db_row('SELECT code FROM centres WHERE name = ? LIMIT 1', [$centre]);
+    return strtolower(trim((string)($c['code'] ?? '')));
 }
 

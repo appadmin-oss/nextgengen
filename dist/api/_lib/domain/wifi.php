@@ -515,6 +515,10 @@ function wifi_feed(array $p): array {
         audit('wifi.feed.bad_key', null, substr(preg_replace('/[^\w]/', '', (string)($p['gatewayId'] ?? '')), 0, 16), [], (string)($p['ip'] ?? ''));
         return ['ok' => false, 'error' => 'bad_key'];
     }
+    /* Moved to CACENTRE: a router still running NGG's script is told so and
+       keeps the people it has — never an empty list, which would sign everybody
+       out of a router that had not actually been moved. */
+    if ((string)($r['movedAt'] ?? '') !== '') return ['ok' => false, 'error' => 'moved_to_cacentre'];
     $plat = WIFI_PLATFORMS[(string)$r['platform']] ?? WIFI_PLATFORMS['generic'];
     $cfg = wifi_settings((string)$r['centre']);
     $since = max(0, (int)($p['since'] ?? 0));
@@ -889,6 +893,10 @@ function wifi_gateway_diagnose(array $r, array $badKeys = [], array $hc = []): a
     $plat = (string)$r['platform'];
     $bad = (int)($badKeys[(string)$r['gatewayId']] ?? 0);
     $live = $age !== null && $age <= WIFI_STALE_AFTER;
+    if ((string)($r['movedAt'] ?? '') !== '') {
+        // Not NGG's to watch any more: CACENTRE runs it, and says how it is.
+        return [['tone' => 'ok', 'title' => 'Runs from CACENTRE', 'fix' => 'Moved ' . wifi_ago(max(1, time() - (int)strtotime((string)$r['movedAt']))) . ' ago. CACENTRE sends it its list and watches it now; its members get their PIN from CACENTRE.']];
+    }
     if ($age === null) {
         $out[] = ['tone' => 'warn', 'title' => 'Not connected yet', 'fix' => 'Open its setup guide and run the steps on the gateway. It shows as working after its first fetch.'];
     } elseif (!$live) {
@@ -968,6 +976,7 @@ function wifi_gateway_out(array $r, array $badKeys = [], array $hc = []): array 
         'centre' => (string)$r['centre'], 'label' => (string)$r['label'],
         'keyTail' => (string)$r['keyTail'], 'keySetAt' => (string)$r['keySetAt'],
         'lastSeenAt' => (string)$r['lastSeenAt'], 'lastFullAt' => (string)$r['lastFullAt'], 'lastChangeAt' => (string)$r['lastChangeAt'],
+        'movedAt' => (string)($r['movedAt'] ?? ''),
         'osVersion' => (string)$r['osVersion'], 'lastError' => (string)$r['lastError'],
         'version' => (int)$r['lastVersion'], 'users' => count($acked), 'createdAt' => (string)$r['createdAt'],
         'health' => $worst, 'diagnosis' => $diag,

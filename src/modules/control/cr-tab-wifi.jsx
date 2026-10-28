@@ -125,6 +125,37 @@ function crWfEdit(ctx, d, g, centre) {
   });
 }
 
+/* Moving a router to CACENTRE, which runs the Wi-Fi (domain/wifi-cacentre.php).
+   Shown only once NGG is connected: the steps, then one press here to say it
+   is done. Marked moved, NGG stops watching it and its centre's members see
+   CACENTRE's PIN at once; "Back to NGG" undoes it with a full list. */
+function crWfCacMoveSteps(c, g) {
+  if (!c || !c.configured || g.movedAt) return null;
+  const code = (c.sites || {})[g.centre] || "";
+  return { h: "Moving it to CACENTRE", rows: [
+    ["1 · At CACENTRE", "Admin → Wi-Fi → Sites & routers. Add a site with the code " + (code ? "“" + code + "”" : "of this centre’s card code, in small letters") + " if it isn’t there, then Add a router for it."],
+    ["2 · On this router", "Paste the one line CACENTRE shows. It removes NGG’s script and users and installs CACENTRE’s; nobody is cut off for more than a minute."],
+    ["3 · Here", "Press “It now runs from CACENTRE”. NGG stops watching it, and members at " + g.centre + " see CACENTRE’s PIN in the app at once."],
+  ] };
+}
+function crWfCacMoveAct(ctx, c, g) {
+  if (!c || !c.configured) return null;
+  if (g.movedAt) return { l: "Back to NGG", run: async () => {
+    const ok = await ctx.confirm({ title: "Put " + crWfName(g) + " back on NGG?", cta: "Back to NGG",
+      body: "Only if NGG’s setup is on the router again. NGG sends it a full list at its next fetch, and members at " + g.centre + " see NGG’s PIN again." });
+    if (!ok) return;
+    try { await NGGApi.admin.wifi.gatewayMoved(g.gatewayId, true); ctx.toast(crWfName(g) + " is back on NGG."); ctx.closeDrawer(); ctx.reload(); }
+    catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
+  } };
+  return { l: "It now runs from CACENTRE", run: async () => {
+    const ok = await ctx.confirm({ title: crWfName(g) + " runs from CACENTRE now?", cta: "It runs from CACENTRE",
+      body: "Press this once CACENTRE’s one line has been pasted on the router. NGG stops watching it, and members at " + g.centre + " see CACENTRE’s PIN in the app from now on. If NGG’s script is in fact still on it, it keeps its people and logs that it has moved." });
+    if (!ok) return;
+    try { await NGGApi.admin.wifi.gatewayMoved(g.gatewayId, false); ctx.toast(crWfName(g) + " runs from CACENTRE now."); ctx.closeDrawer(); ctx.reload(); }
+    catch (e) { ctx.toast(crWfErr(e, "Couldn’t change it."), null, true); }
+  } };
+}
+
 async function crWfRotate(ctx, g) {
   const ok = await ctx.confirm({ title: "Rotate the key for " + crWfName(g) + "?", danger: true, cta: "Rotate the key",
     body: "The old key stops working at once. Until the setup is run again with the new key, the gateway keeps the people it already has but gets no changes — nobody new can sign in and nobody suspended is removed." });
@@ -195,6 +226,7 @@ function crWfOpen(ctx, g) {
     stats: [["Online now", g.stats && g.stats.active != null ? crNum(g.stats.active) : "—"], ["Line", g.speed ? crWfMbps(g.speed.downMbps) : "Not measured"], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"]],
     sections: [
       { h: "How it is", rows: (g.diagnosis || []).map(x => [x.title, x.fix]), empty: "Nothing to report." },
+      crWfCacMoveSteps(d.cacentre, g),
       g.fair ? { h: "At the busiest hour this week", rows: [["People online at once", crNum(g.fair.peak)], ["Each could get", crWfMbps(g.fair.each)], ["A fair member speed", crWfMbps(g.fair.suggestMember) + " with burst on"]] } : null,
       g.stats ? { h: "What it reported", rows: [["CPU", g.stats.cpu != null ? g.stats.cpu + "%" : "—"], ["Free memory", g.stats.memFree != null ? g.stats.memFree + " MB" : "—"], ["Up for", g.stats.uptime != null ? crWfDur(g.stats.uptime) : "—"], ["Reported", crAgo(g.stats.at)]] } : null,
     ].filter(Boolean),
@@ -207,6 +239,7 @@ function crWfOpen(ctx, g) {
         try { await NGGApi.admin.wifi.testAtNextFetch(g.gatewayId); ctx.toast("Asked. " + crWfName(g) + " tests its line at its next fetch, within a few minutes."); ctx.closeDrawer(); ctx.reload(); }
         catch (e) { ctx.toast(crWfErr(e, "Couldn’t ask for a test."), null, true); }
       } } : null,
+      crWfCacMoveAct(ctx, d.cacentre, g),
       { l: "Edit", run: () => crWfEdit(ctx, d, g) },
       { l: "Rotate the key", run: () => crWfRotate(ctx, g) },
       { l: "Remove", run: () => crWfRemove(ctx, g) },
@@ -505,7 +538,11 @@ Object.assign(CR_TAB_DEFS, {
     skeleton: ["kpis", "cards", "cards"],
     load: crWfLoad,
     actions: (d, ctx) => [
-      { l: "Add a gateway", icon: "plus", primary: true, disabled: !(d.centres || []).length, why: (d.centres || []).length ? "" : "Add a centre first (Members → Centres).", run: () => crWfEdit(ctx, d, null) },
+      /* Once NGG is connected, CACENTRE runs the Wi-Fi: new routers are added
+         there, so there is one place a router is set up, not two. */
+      d.cacentre && d.cacentre.configured
+        ? { l: "Add a router at CACENTRE", icon: "arrow-square-out", primary: true, run: () => window.open(d.cacentre.routersUrl, "_blank", "noopener") }
+        : { l: "Add a gateway", icon: "plus", primary: true, disabled: !(d.centres || []).length, why: (d.centres || []).length ? "" : "Add a centre first (Members → Centres).", run: () => crWfEdit(ctx, d, null) },
       { l: "Test this connection", icon: "gauge", run: () => crWfSpeedTest(ctx, d) },
       { l: "Why can’t somebody get on?", icon: "magnifying-glass", run: () => crWfLookup(ctx) },
       { l: "Line test, every gateway", icon: "pulse", disabled: !(d.gateways || []).length, why: "No gateways yet.",
@@ -520,7 +557,7 @@ Object.assign(CR_TAB_DEFS, {
       gws.forEach(g => { (byCentre[g.centre] = byCentre[g.centre] || []).push(g); });
       const bare = (d.centres || []).filter(c => !byCentre[c]);
       const card = g => { const h = CR_WF_HEALTH[g.health] || CR_WF_HEALTH.warn;
-        return { icon: crWfIcon(g.platform), title: crWfName(g), sub: g.platformLabel + (g.pilot ? " · pilot" : ""), tag: g.lastSeenAt ? h[0] : "Not connected yet", tone: g.lastSeenAt ? h[1] : "warn",
+        return { icon: crWfIcon(g.platform), title: crWfName(g), sub: g.platformLabel + (g.pilot ? " · pilot" : ""), tag: g.movedAt ? "Runs from CACENTRE" : g.lastSeenAt ? h[0] : "Not connected yet", tone: g.movedAt ? "neutral" : g.lastSeenAt ? h[1] : "warn",
           meta: [["People on it", crNum(g.users) + (g.stats && g.stats.active != null ? " · " + crNum(g.stats.active) + " online" : "")], ["Line", g.speed ? crWfMbps(g.speed.downMbps) + " · " + crAgo(g.speed.at) : "Not measured"], ["Last fetch", g.lastSeenAt ? crAgo(g.lastSeenAt) : "Never"], ["Reported version", g.osVersion || "—"]],
           onClick: () => crWfOpen(ctx, g) }; };
       return [
@@ -533,8 +570,10 @@ Object.assign(CR_TAB_DEFS, {
         bad.length + warn.length ? { type: "attention", span: 6, title: "Needs a look", empty: "",
           rows: bad.concat(warn).map(g => { const x = (g.diagnosis || []).find(y => y.tone !== "ok") || {}; return { n: 1, l: crWfName(g) + " · " + x.title, s: x.fix, tone: g.health === "bad" ? "bad" : "warn", onClick: () => crWfOpen(ctx, g) }; }) } : null,
         { type: "cards", span: 6, title: "Centres", sub: "Each centre and its gateway", empty: "No centres yet. Add them under Members → Centres.",
-          cards: (d.centres || []).map(c => byCentre[c] ? null : { icon: "wifi-slash", title: c, sub: "No gateway yet. Members here see “Wi-Fi isn’t set up at your centre yet”. Open to add one.", tag: "Not set up", tone: "neutral",
-            onClick: () => crWfEdit(ctx, d, null, c) })
+          cards: (d.centres || []).map(c => byCentre[c] ? null : { icon: "wifi-slash", title: c, tag: "Not set up", tone: "neutral",
+            sub: d.cacentre && d.cacentre.configured ? "No router yet. Routers are added at CACENTRE now, under the site code “" + ((d.cacentre.sites || {})[c] || "") + "”. Open to go there."
+              : "No gateway yet. Members here see “Wi-Fi isn’t set up at your centre yet”. Open to add one.",
+            onClick: () => (d.cacentre && d.cacentre.configured ? window.open(d.cacentre.routersUrl, "_blank", "noopener") : crWfEdit(ctx, d, null, c)) })
             .filter(Boolean).concat([].concat(...Object.keys(byCentre).sort().map(c => byCentre[c].map(card)))) },
         crWfCacBlock(ctx, d.cacentre),
         { type: "note", span: 6, icon: "info", text: "Each gateway fetches its centre’s list from NGG every one to five minutes, with its own key. Somebody suspended is signed out at the next fetch; a gateway that can’t reach NGG keeps the people it already has.",

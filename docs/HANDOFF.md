@@ -4088,3 +4088,39 @@ pins both ends, and the studio's browser test opens the real dialog.
 The Design Studio's "NGG member ID — front" preset (an inset 470 × 370 photo)
 is left alone. It is a separate starting design, not the card the studio
 prints.
+
+## Moving NGG's routers to CACENTRE; refusals RouterOS can read; `signal` on MySQL (2026-10-28)
+
+**The move.** Migration 195 adds `wifi_gateways.movedAt`.
+`admin.wifi.gateway.moved {gatewayId, undo}` is refused until NGG is connected
+(`cacentre_not_connected`). A moved router:
+- is answered `#error;moved_to_cacentre` by the feed, never an empty list, which
+  would sign everybody out of a router that hadn't really moved;
+- gets one diagnosis line, *Runs from CACENTRE*;
+- is left out of the silent digest and of the data-used "counting" list;
+- no longer holds its centre on NGG's PINs (`wifi_cac_serves`), so members flip
+  to CACENTRE's PIN at once.
+
+Undo clears the acked state, so the next fetch is a full list. Once connected,
+the Control Room's primary action is *Add a router at CACENTRE*, so there is one
+place a router is set up. The router's sheet lists the three steps with the
+centre's site code.
+
+**Refusals.** RouterOS's `/tool fetch` keeps no body from a 4xx. The feed now
+answers a MikroTik (by User-Agent) with 200 and its `#error;` line, and NGG's
+and CACENTRE's scripts read that line and log it (`bad_key`,
+`moved_to_cacentre`) instead of `incomplete` or `fetch_failed`. Other platforms
+keep their status codes. CACENTRE has the same fix (`wifi_router_refusal()`).
+
+**MySQL.** Running the suite on MySQL (MariaDB 10.11) for migration 195 found
+that `lesson_feedback.signal` is a reserved word there. The table could not be
+created and every read was a syntax error, on every MySQL deployment since
+lesson feedback shipped. SQLite accepts the name unquoted, which is why the
+SQLite suite never saw it. The fix:
+- the mirror quotes the column;
+- the two raw queries quote it;
+- `db_insert`, `db_update` and `db_upsert` quote names on
+  `DB_RESERVED_COLUMNS` through `db_ident()`, so every other statement is
+  unchanged.
+
+Result: MySQL suite 5860 passed, 0 failed.

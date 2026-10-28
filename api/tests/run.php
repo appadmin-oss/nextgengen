@@ -24580,11 +24580,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             (member_lesson_feedback_give(['memberId' => 'NGG-CUR-M1', 'unitId' => 'U-MADE-UP', 'signal' => 'got'])['error'] ?? '') === 'not_found');
         chk('feedback: only the three answers are answers', ($fb('NGG-CUR-M1', 'brilliant')['error'] ?? '') === 'bad_signal');
         chk('feedback: one tap is enough, and the words are optional', !empty($fb('NGG-CUR-M1', 'lost')['ok'])
-            && (string)db_row("SELECT signal FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'lost');
+            && (string)db_row("SELECT `signal` FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'lost');
         chk('feedback: one per member per lesson — tapping again corrects it, it does not add one',
             !empty($fb('NGG-CUR-M1', 'got', 'I got it in the end')['ok'])
             && (int)db_row("SELECT COUNT(*) c FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit])['c'] === 1
-            && (string)db_row("SELECT signal FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'got');
+            && (string)db_row("SELECT `signal` FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'got');
         /* Two more who actually TAKE Piano — NGG-CUR-M2 is a guitarist, so
            this lesson is not theirs and the tap would rightly be refused. */
         foreach (['NGG-CUR-P1', 'NGG-CUR-P2'] as $pid) {
@@ -33160,6 +33160,30 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi→cacentre · the status says whether it is set up, and that a super admin may send', !empty($st['ok']) && $st['configured'] === false && $st['canSend'] === true);
     chk('wifi→cacentre · an admin without network sees neither', (backend_dispatch('admin.wifi.cacentre', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden'
         && (backend_dispatch('admin.wifi.cacentre.push', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden');
+    // Moving a router to CACENTRE.
+    $sv = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => 'NGG-CP-SA', 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Moving router']);
+    $mg = $sv['gateway']['gatewayId']; $mk = $sv['key'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0]);
+    chk('wifi→cacentre · a router can’t be marked moved before NGG is connected', (backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg])['error'] ?? '') === 'cacentre_not_connected');
+    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    chk('wifi→cacentre · while it still fetches from NGG, its members keep NGG’s PIN', !wifi_cac_serves($C, false));
+    $mv = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg]);
+    chk('wifi→cacentre · marked moved, its members see CACENTRE’s PIN at once, not a day later', !empty($mv['ok']) && $mv['gateway']['movedAt'] !== '' && wifi_cac_serves($C, false));
+    chk('wifi→cacentre · NGG stops watching it: one line, “Runs from CACENTRE”', count($mv['gateway']['diagnosis']) === 1 && $mv['gateway']['diagnosis'][0]['title'] === 'Runs from CACENTRE' && $mv['gateway']['health'] === 'ok');
+    chk('wifi→cacentre · if NGG’s script is still on it, it is told it moved — never sent an empty list', (backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0])['error'] ?? '') === 'moved_to_cacentre');
+    db_exec("UPDATE wifi_gateways SET lastSeenAt = ? WHERE gatewayId = ?", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 6 * 3600), $mg]);
+    $dg = wifi_silent_digest();
+    chk('wifi→cacentre · a moved router going quiet is not reported silent', !in_array($mg, array_column(db_all("SELECT gatewayId FROM wifi_gateways WHERE silentAlertAt <> ''"), 'gatewayId'), true));
+    $bk = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true]);
+    $f2 = backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 1]);
+    chk('wifi→cacentre · back to NGG: it is fed again, with a full list', !empty($bk['ok']) && $bk['gateway']['movedAt'] === '' && !empty($f2['ok']) && !empty($f2['full']));
+    chk('wifi→cacentre · marking it twice changes nothing', !empty(backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true])['unchanged']));
+    db_exec("DELETE FROM wifi_gateways WHERE gatewayId = ?", [$mg]);
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    $hook = (string)file_get_contents(__DIR__ . '/../hooks/wifi-feed.php');
+    $set = (string)file_get_contents(__DIR__ . '/../_lib/domain/wifi-setup.php');
+    chk('wifi · a MikroTik is refused with 200, which RouterOS keeps (it drops a 4xx body); others keep the status', str_contains($hook, "\$ros ? 200 :"));
+    chk('wifi · …and NGG’s script logs the reason (bad_key, moved_to_cacentre), not “incomplete”', str_contains($set, ':if ([:pick \\$d 0 7] = "#error;") do={ :set ok false; :set nggWifiErr'));
     db_exec("DELETE FROM wifi_accounts WHERE subjectId = 'NGG-CP-OVR'");
     db_exec("DELETE FROM summer_students WHERE studentId = 'SS-CP-1'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'CP-LIVE'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CP-%' OR memberId = 'SUM-CP-1'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-CACP'");

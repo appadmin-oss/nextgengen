@@ -564,7 +564,8 @@ const WIFI_DIGEST_LINES = 40;       // gateways listed in one digest; the rest a
 function wifi_silent_digest(?int $now = null): array {
     $now = $now ?? time();
     $cut = gmdate('Y-m-d\TH:i:s\Z', $now - WIFI_SILENT_AFTER);
-    $rows = db_all("SELECT * FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND lastSeenAt <> '' AND lastSeenAt < ? AND silentAlertAt = '' ORDER BY centre, label", [$cut]);
+    // A router that runs from CACENTRE stops fetching from NGG by design: never "silent".
+    $rows = db_all("SELECT * FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND (movedAt = '' OR movedAt IS NULL) AND lastSeenAt <> '' AND lastSeenAt < ? AND silentAlertAt = '' ORDER BY centre, label", [$cut]);
     if (!$rows) return ['ok' => true, 'silent' => 0, 'people' => 0];
     $staff = staff_with_cap('network');
     $byId = []; foreach ($staff as $m) $byId[(string)$m['memberId']] = $m;

@@ -3432,6 +3432,24 @@ it, and anything CACENTRE refused. A super admin can press **Send now**.
 - *"NGG isn't sending its people there yet"*: that key isn't set. Until it is,
   the gateways and the members' PINs stay NGG's, as before.
 
+**Moving a centre's router to CACENTRE.** Once NGG is connected, routers are
+added at CACENTRE: *Add a router at CACENTRE* opens it, and a centre with no
+router says which site code to use there (the centre's card code, in small
+letters). An NGG router moves in three steps, listed on its card under
+*Moving it to CACENTRE*:
+
+1. At CACENTRE, add the site and a router for it.
+2. Paste CACENTRE's one line on the router. This removes NGG's script.
+3. Press **It now runs from CACENTRE** here.
+
+From then on:
+- NGG stops watching that router and never reports it silent.
+- Members at that centre see CACENTRE's PIN in the app straight away.
+- If NGG's script is in fact still on the router, it keeps its people and logs
+  *moved_to_cacentre*.
+
+*Back to NGG* undoes it, and NGG sends the router a full list at its next fetch.
+
 **Members still get their PIN in the app.** CACENTRE holds the PINs and hands
 them out, but nobody goes to another site for one: *Me → Wi-Fi* asks CACENTRE
 for the member's username and PIN, and *Get a new PIN* changes it there. A

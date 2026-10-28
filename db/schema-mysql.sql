@@ -4327,12 +4327,12 @@ CREATE TABLE IF NOT EXISTS lesson_feedback (
   course VARCHAR(120) NOT NULL DEFAULT '',
   centre VARCHAR(120) NOT NULL DEFAULT '',
   centreId VARCHAR(48) NOT NULL DEFAULT '',
-  signal VARCHAR(16) NOT NULL DEFAULT '',
+  `signal` VARCHAR(16) NOT NULL DEFAULT '',
   body TEXT,
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
   updatedAt VARCHAR(32) NOT NULL DEFAULT '',
   UNIQUE KEY uq_lfb_one (memberId, unitId),
-  KEY idx_lfb_unit (unitId, signal),
+  KEY idx_lfb_unit (unitId, `signal`),
   KEY idx_lfb_centreid (centreId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -4577,3 +4577,8 @@ CREATE TABLE IF NOT EXISTS wifi_usage_sessions (
 ALTER TABLE wifi_gateways ADD COLUMN usageAt VARCHAR(32) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (194) ON DUPLICATE KEY UPDATE version = version;
+
+-- 195: a router that now runs from CACENTRE (domain/wifi-cacentre.php).
+ALTER TABLE wifi_gateways ADD COLUMN movedAt VARCHAR(32) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (195) ON DUPLICATE KEY UPDATE version = version;

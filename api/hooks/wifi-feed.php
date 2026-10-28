@@ -32,7 +32,11 @@ $res = gs_call('wifi.feed', [
 $t0 = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
 if (empty($res['ok'])) {
     // Plain words a router log can show; the gateway keeps the users it has.
-    http_response_code(($res['error'] ?? '') === 'bad_key' ? 401 : 400);
+    /* RouterOS's /tool fetch keeps no body from a 4xx (and fails outright on a
+       401 without WWW-Authenticate), so a MikroTik is answered 200 and its script
+       reads the #error line and logs it. Every other platform keeps the status. */
+    $ros = stripos((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 'mikrotik') !== false;
+    http_response_code($ros ? 200 : (($res['error'] ?? '') === 'bad_key' ? 401 : 400));
     header('Content-Type: text/plain; charset=utf-8');
     $body = '#error;' . preg_replace('/[^a-z_]/', '', (string)($res['error'] ?? 'failed')) . "\n";
     echo $body;

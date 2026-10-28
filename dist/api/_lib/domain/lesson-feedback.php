@@ -139,7 +139,7 @@ function lfb_board(array $scope, string $course = '', int $limit = LFB_BOARD_MAX
     }
     if ($course !== '') { $where .= ' AND lower(f.course) = ?'; $args[] = mb_strtolower($course); }
 
-    $rows = db_all("SELECT f.unitId, f.signal, COUNT(*) n FROM lesson_feedback f WHERE $where GROUP BY f.unitId, f.signal", $args);
+    $rows = db_all("SELECT f.unitId, f.`signal`, COUNT(*) n FROM lesson_feedback f WHERE $where GROUP BY f.unitId, f.`signal`", $args);
     if (!$rows) return ['lessons' => [], 'voices' => 0];
     $tally = []; $voices = 0;
     foreach ($rows as $r) { $tally[(string)$r['unitId']][(string)$r['signal']] = (int)$r['n']; $voices += (int)$r['n']; }
@@ -153,8 +153,8 @@ function lfb_board(array $scope, string $course = '', int $limit = LFB_BOARD_MAX
     /* The words, only from the children who did not follow. A "got it" with a
        nice note attached is pleasant and is not why anybody opened this. */
     $said = [];
-    foreach (db_all("SELECT unitId, signal, body, updatedAt FROM lesson_feedback
-                     WHERE unitId IN $in AND body <> '' AND signal IN ('lost','mostly') ORDER BY updatedAt DESC", $ids) as $r) {
+    foreach (db_all("SELECT unitId, `signal`, body, updatedAt FROM lesson_feedback
+                     WHERE unitId IN $in AND body <> '' AND `signal` IN ('lost','mostly') ORDER BY updatedAt DESC", $ids) as $r) {
         $u = (string)$r['unitId'];
         if (count($said[$u] ?? []) >= 8) continue;      // enough to see the pattern
         $said[$u][] = ['signal' => (string)$r['signal'], 'body' => (string)$r['body'], 'at' => (string)$r['updatedAt']];
