@@ -705,12 +705,28 @@ function wifi_pin_reset(array $acc, string $by, string $ip = ''): array {
 function member_wifi_get(array $p): array {
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // CACENTRE runs the Wi-Fi once connected; the PIN is still shown here (domain/wifi-cacentre.php).
+    if (wifi_cac_serves((string)($m['centre'] ?? ''), wifi_is_staff($m))) {
+        try { return ['ok' => true, 'wifi' => wifi_cac_member_view($m)]; }
+        catch (Throwable $e) { return ['ok' => false, 'error' => 'cacentre_unreachable', 'message' => 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.']; }
+    }
     return ['ok' => true, 'wifi' => wifi_view_member($m, true)];
 }
 
 function member_wifi_reset(array $p): array {
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (wifi_cac_serves((string)($m['centre'] ?? ''), wifi_is_staff($m))) {
+        try { $v = wifi_cac_member_view($m, 'newPin'); }
+        catch (Throwable $e) {
+            $why = $e->getMessage();
+            if ($why === 'wifi_off') return ['ok' => false, 'error' => 'wifi_off', 'message' => 'You don’t have Wi-Fi access right now.'];
+            if (str_starts_with($why, 'A Wi-Fi PIN can be changed')) return ['ok' => false, 'error' => 'too_many_resets', 'message' => $why];
+            return ['ok' => false, 'error' => 'cacentre_unreachable', 'message' => 'CACENTRE, which runs the Wi-Fi, couldn’t be reached. Try again in a minute.'];
+        }
+        audit('wifi.pin.reset', (string)$m['memberId'], 'member:' . (string)$m['memberId'], ['at' => 'cacentre'], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'wifi' => $v];
+    }
     $v = wifi_view_member($m, false);
     if ($v['access'] === 'off') return ['ok' => false, 'error' => 'wifi_off', 'message' => $v['why']];
     $acc = db_row("SELECT * FROM wifi_accounts WHERE subjectType = 'member' AND subjectId = ? LIMIT 1", [(string)$m['memberId']]);

@@ -33125,19 +33125,33 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     // The envelope: what CACENTRE's WifiEnvelope::verify() checks, re-done here.
     $sec = str_repeat('k', 40); $t0 = 1800000000;
-    $tok = wifi_cac_mint('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
+    $tok = dirpush_sign('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
     [$v, $body, $mac] = explode('.', $tok);
     $unb = fn($s) => base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4));
     $c = json_decode($unb($body), true);
-    chk('wifi→cacentre · the roster is signed in the estate’s v1 envelope, as NGG, for wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
+    chk('wifi→cacentre · the roster rides the directory’s connection: its v1 envelope, as NGG, typed wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
         && $c['iss'] === 'ngg' && $c['typ'] === 'wifi.roster' && $c['exp'] - $c['iat'] === 300 && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
 
-    // Not configured: nothing is sent, and the cron tick says so rather than failing.
-    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = '';
-    chk('wifi→cacentre · with no key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
-    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = 'changeme-changeme-changeme-changeme-12';
+    // One connection: the Wi-Fi is on exactly when the directory push is, with its key.
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    chk('wifi→cacentre · with no directory key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
+    $GLOBALS['CONFIG']['dir_push_secret'] = 'changeme-changeme-changeme-changeme-12';
     chk('wifi→cacentre · a placeholder key counts as no key', !wifi_cac_ready());
-    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = '';
+    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    chk('wifi→cacentre · the directory’s key IS the Wi-Fi’s: there is no second one', wifi_cac_ready() && !function_exists('wifi_cac_secret'));
+
+    // Members keep their PIN on their own dashboard. A centre whose NGG router still fetches keeps NGG's PIN;
+    // once it has moved, Me → Wi-Fi asks CACENTRE — and says so honestly when CACENTRE can't be reached.
+    $GLOBALS['CONFIG']['dir_push_url'] = 'http://127.0.0.1:9';   // nothing listens there
+    db_insert('wifi_gateways', ['gatewayId' => 'GCP000001', 'centre' => $C, 'platform' => 'mikrotik', 'label' => 'Still on NGG', 'keyHash' => 'x', 'createdAt' => $now, 'lastSeenAt' => $now]);
+    chk('wifi→cacentre · while the centre’s router still fetches from NGG, the member sees NGG’s PIN', !wifi_cac_serves($C, false)
+        && (backend_dispatch('member.wifi.get', ['memberId' => 'NGG-CP-ACT'])['wifi']['username'] ?? '') === '026-701');
+    db_exec("UPDATE wifi_gateways SET lastSeenAt = ? WHERE gatewayId = 'GCP000001'", [gmdate('Y-m-d\\TH:i:s', time() - 3 * 86400)]);
+    $g = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-CP-ACT']);
+    chk('wifi→cacentre · once it has moved, the dashboard asks CACENTRE, and an outage is an honest error, never NGG’s stale PIN', wifi_cac_serves($C, false)
+        && empty($g['ok']) && ($g['error'] ?? '') === 'cacentre_unreachable' && !isset($g['wifi']));
+    db_exec("DELETE FROM wifi_gateways WHERE gatewayId = 'GCP000001'");
+    $GLOBALS['CONFIG']['dir_push_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
 
     // Who may: the status for anybody with network; sending only for somebody who sees every centre.
     $mem('NGG-CP-SA', ['role' => 'super_admin']);

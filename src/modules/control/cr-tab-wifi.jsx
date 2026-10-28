@@ -472,8 +472,8 @@ const crWfLoad = async () => {
    about each (domain/wifi-cacentre.php). Why a push failed, in words. */
 const CR_WF_CAC_ERR = {
   unreachable: "CACENTRE couldn’t be reached. It is tried again at the next push.",
-  bad_signature: "CACENTRE doesn’t recognise NGG’s key. WIFI_SECRET_NGG must be the same value here and in CACENTRE’s includes/.env.",
-  not_configured: "CACENTRE has no key for NGG yet. Put the same WIFI_SECRET_NGG in CACENTRE’s includes/.env.",
+  bad_signature: "CACENTRE doesn’t recognise NGG’s key. DIR_PUSH_SECRET_NGG (the directory connection) must be the same value here and at CACENTRE.",
+  not_configured: "CACENTRE has no key for NGG yet: DIR_PUSH_SECRET_NGG in its includes/.env, the same value as here.",
   expired: "The two servers’ clocks disagree by more than five minutes.",
   bad_window: "The two servers’ clocks disagree by more than five minutes.",
   too_many: "The list was longer than one push may carry.",
@@ -489,7 +489,7 @@ function crWfCacBlock(ctx, c) {
   if (!c) return null;
   const act = c.canSend && c.configured ? { l: "Send now", run: () => crWfCacPush(ctx) } : undefined;
   if (!c.configured) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi for the estate. NGG isn’t sending its people there yet.",
-    sub: "Put a 32+ character WIFI_SECRET_NGG in NGG’s api/config.php (wifi → cacentre_secret) and the same value in CACENTRE’s includes/.env. Until then the gateways keep fetching from NGG." };
+    sub: "It goes over the connection NGG already has with CACENTRE for the person directory, which isn’t set up here: DIR_PUSH_SECRET_NGG (api/config.php → dir_push_secret), the same value at CACENTRE. Until then the gateways and members’ PINs stay NGG’s." };
   const L = c.last;
   if (!L) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi. NGG’s people are sent there every " + Math.round(c.every / 60) + " minutes; nothing has been sent yet.", act };
   const unknown = Object.keys(L.unknownSites || {});
@@ -497,7 +497,7 @@ function crWfCacBlock(ctx, c) {
   return { type: "note", span: 6, icon: "buildings", tone: L.refused || unknown.length ? "warn" : "ok",
     text: "CACENTRE runs the Wi-Fi. Sent " + crAgo(L.at) + ": " + crNum(L.sent) + " people with NGG’s say about each" + (L.gone ? ", " + crNum(L.gone) + " no longer on NGG’s list withdrawn" : "") + (L.refused ? "; " + crNum(L.refused) + " refused (" + (L.refusals || []).slice(0, 3).map(x => x.id + ": " + x.error).join(", ") + ")" : "") + ".",
     sub: (unknown.length ? "CACENTRE has no site for " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": add each there with the centre’s card code; until then those people sign in at the hubs only. " : "")
-      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does.", act };
+      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does. Members still see their PIN under Me → Wi-Fi, fetched from CACENTRE once their centre’s router has moved.", act };
 }
 
 Object.assign(CR_TAB_DEFS, {

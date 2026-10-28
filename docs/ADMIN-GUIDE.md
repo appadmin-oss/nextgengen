@@ -3398,7 +3398,7 @@ on?* — by whoever looks after their record — with a reason. An override neve
 undoes a suspension.
 
 **CACENTRE runs the Wi-Fi (added 2026-10-28).** CACENTRE is the authority for
-the Wi-Fi across the estate: it holds the PINs, the routers fetch from it, and
+the Wi-Fi across the estate: it holds and hands out the PINs, the routers fetch from it, and
 its blocks and overrides win. NGG keeps its say. Every 15 minutes NGG sends
 CACENTRE everybody it speaks for: members, staff, mentors and instructors, and
 Summer School participants within their edition's dates. Each person goes with
@@ -3414,11 +3414,20 @@ it, and anything CACENTRE refused. A super admin can press **Send now**.
 - *"CACENTRE has no site for CP (12)"*: add a site at CACENTRE (Admin → Wi-Fi →
   Sites & routers) whose code is the centre's card code, here `cp`. Until then
   those 12 people can sign in only at the hubs.
-- *"doesn't recognise NGG's key"*: `WIFI_SECRET_NGG` must be the same value in
-  NGG's `api/config.php` (`wifi → cacentre_secret`) and in CACENTRE's
-  `includes/.env`.
-- *"NGG isn't sending its people there yet"*: no key is set. Until one is,
-  the gateways keep fetching from NGG as before.
+- *"doesn't recognise NGG's key"*: the Wi-Fi uses the connection NGG already
+  has with CACENTRE for the person directory, so the key is `DIR_PUSH_SECRET_NGG`.
+  It must be the same value in NGG's `api/config.php` (`dir_push_secret`) and in
+  CACENTRE's `includes/.env`. There is no separate Wi-Fi key.
+- *"NGG isn't sending its people there yet"*: that key isn't set. Until it is,
+  the gateways and the members' PINs stay NGG's, as before.
+
+**Members still get their PIN in the app.** CACENTRE holds the PINs and hands
+them out, but nobody goes to another site for one: *Me → Wi-Fi* asks CACENTRE
+for the member's username and PIN, and *Get a new PIN* changes it there. A
+centre whose router still fetches from NGG keeps showing NGG's PIN, the one
+that router knows. Once the router is pointed at CACENTRE (no fetch from NGG
+for a day), the app shows CACENTRE's. If CACENTRE can't be reached, the screen
+says so with *Try again* rather than showing a PIN that no longer works.
 
 ### Wi-Fi in the Club portal, regions and analytics (added 2026-10-27)
 

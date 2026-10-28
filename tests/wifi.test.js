@@ -145,7 +145,7 @@ function cleanup() {
     chk('a silent gateway and one reporting a problem are listed as needing a look', /Silent for 3 hours/.test(body) && /reported a problem/i.test(body));
     chk('a centre without a gateway is shown, ready to add one', /Ajah/.test(body) && /No gateway yet/.test(body));
     chk('a working gateway with one wrong-key attempt is a warning, not “not working”', /Main hall router · 1 fetch with the wrong key/.test(body));
-    chk('CACENTRE runs the Wi-Fi: with no key set, the page says NGG isn’t sending its people there yet, and how to', /CACENTRE runs the Wi-Fi for the estate\. NGG isn’t sending its people there yet/.test(body) && /WIFI_SECRET_NGG/.test(body));
+    chk('CACENTRE runs the Wi-Fi: with no key set, the page says NGG isn’t sending its people there yet, and how to', /CACENTRE runs the Wi-Fi for the estate\. NGG isn’t sending its people there yet/.test(body) && /DIR_PUSH_SECRET_NGG/.test(body) && /connection NGG already has with CACENTRE/.test(body));
     await shot(P, 'wifi-1-gateways');
     await P.click('.cr-card:has-text("Main hall router")');
     await P.waitForSelector('.cr-sheet', { timeout: 10000 });
@@ -165,7 +165,9 @@ function cleanup() {
     const sft = await sf.text();
     chk('the router downloads its setup file over HTTP, with its key written in', sf.status === 200 && sft.includes(keys[0][1]) && /\/system script add name="ngg-wifi-sync"/.test(sft));
     const sfb = await fetch(BASE + '/api/hooks/wifi-setup.php', { headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': 'nope' } });
-    chk('…a wrong key gets a file that stops with the reason', sfb.status === 401 && /^:error "NGG Wi-Fi: the key is wrong/.test(await sfb.text()));
+    chk('…a wrong key gets a file that stops with the reason, as a 200 RouterOS will save (it refuses a bare 401)', sfb.status === 200 && /^:error "NGG Wi-Fi: the key is wrong/.test(await sfb.text()));
+    const sfp = await fetch(BASE + '/api/hooks/wifi-setup.php', { headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': 'PASTE-THE-KEY-HERE' } });
+    chk('…and the placeholder left in says exactly that, and where the real line is', sfp.status === 200 && /still says PASTE-THE-KEY-HERE/.test(await sfp.text()));
     await shot(P, 'wifi-3-guide');
     await P.keyboard.press('Escape');
 

@@ -9,10 +9,8 @@
  * with a reason in words), and CACENTRE never loosens past it. A child NGG
  * suspends is off at CACENTRE at the next push.
  *
- * We PUSH (the estate's rule: CACENTRE reads nobody's database). The roster
- * travels inside a signed envelope, the same v1.<payload>.<mac> shape as the
- * directory push, with its own key: WIFI_SECRET_NGG here and the same value in
- * CACENTRE's includes/.env. A Wi-Fi key is never the directory's key.
+ * We PUSH (the estate's rule: CACENTRE reads nobody's database), over the
+ * connection NGG already has with CACENTRE — see below.
  *
  * WHAT TRAVELS: id, kind, name, email, the printed ID (their sign-in name),
  * the centre's card code as the home site, the verdict and its reason, and a
@@ -23,54 +21,29 @@
  * verdict, or the same megabytes would be counted against somebody twice.
  */
 
+/*
+ * THE CONNECTION IS THE DIRECTORY'S (domain/directory-push.php). Same key
+ * (DIR_PUSH_SECRET_NGG / dir_push_secret), same CACENTRE address
+ * (dir_push_url), same signer and sender. Only the document type differs:
+ * `wifi.roster` for the people and NGG's say, `wifi.card` for one member's
+ * Wi-Fi to show on their own dashboard. There is no Wi-Fi key of its own.
+ *
+ * PINS STAY ON THE MEMBER'S DASHBOARD. CACENTRE holds them and decides; the
+ * member still opens Me → Wi-Fi in this app, which asks CACENTRE for their
+ * card (wifi_cac_member_view) — nobody is sent to another site for a PIN.
+ */
+
 /** Must match WifiStore::ROSTER_MAX at CACENTRE: one push carries at most this many. */
 const WIFI_CAC_MAX = 5000;
-const WIFI_CAC_TTL = 300;          // WifiEnvelope::TTL
 const WIFI_CAC_EVERY = 900;        // seconds between pushes from the web-cron tick
 const WIFI_CAC_LAST = 'wifi_cac_last';
+const WIFI_CAC_ROUTER_FRESH = 86400; // an NGG gateway heard from within this still serves its centre
 
-function wifi_cac_secret(): string {
-    $v = getenv('WIFI_SECRET_NGG');
-    if ($v !== false && trim((string)$v) !== '') return trim((string)$v);
-    return trim((string)($GLOBALS['CONFIG']['wifi']['cacentre_secret'] ?? ''));
-}
+function wifi_cac_ready(): bool { return dirpush_ready(); }
 
-/** Configured? A placeholder or a short key counts as absent (as dirpush_ready). */
-function wifi_cac_ready(): bool {
-    $s = wifi_cac_secret();
-    return strlen($s) >= 32 && !preg_match('/^<.*>$/s', $s) && !preg_match('/x{8,}/i', $s)
-        && !preg_match('/^(your|changeme|replace|example|todo)/i', $s);
-}
-
-function wifi_cac_base(): string {
-    $b = trim((string)(getenv('WIFI_CACENTRE_URL') ?: ($GLOBALS['CONFIG']['wifi']['cacentre_url'] ?? ($GLOBALS['CONFIG']['dir_push_url'] ?? ''))));
-    return rtrim($b !== '' ? $b : 'https://cacentre.afrovanguard.org.ng', '/');
-}
-
-function wifi_cac_b64(string $raw): string { return rtrim(strtr(base64_encode($raw), '+/', '-_'), '='); }
-
-/** The signed envelope CACENTRE's WifiEnvelope::verify() reads. */
-function wifi_cac_mint(string $typ, array $claims, ?string $secret = null, ?int $now = null): string {
-    $now = $now ?? time();
-    $body = wifi_cac_b64((string)json_encode($claims + ['iss' => 'ngg', 'typ' => $typ, 'nonce' => bin2hex(random_bytes(12)), 'iat' => $now, 'exp' => $now + WIFI_CAC_TTL],
-        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-    return 'v1.' . $body . '.' . wifi_cac_b64(hash_hmac('sha256', $body, $secret ?? wifi_cac_secret(), true));
-}
-
-/** POST a token to one of CACENTRE's Wi-Fi endpoints. Never throws. */
-function wifi_cac_post(string $path, string $token): array {
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
-    $ch = curl_init(wifi_cac_base() . $path);
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60, CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-        CURLOPT_POSTFIELDS => json_encode(['token' => $token], JSON_UNESCAPED_SLASHES)]);
-    $body = curl_exec($ch); $err = curl_error($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($err !== '' || $body === false) { error_log('[wifi-cac] ' . ($err ?: 'no response')); return ['ok' => false, 'error' => 'unreachable']; }
-    $j = json_decode((string)$body, true);
-    if (!is_array($j)) return ['ok' => false, 'error' => 'bad_response', 'http' => $code];
-    if (empty($j['ok'])) error_log('[wifi-cac] HTTP ' . $code . ' ' . substr((string)$body, 0, 300));
-    return $j + ['http' => $code];
+/** POST one Wi-Fi document over the directory's connection. */
+function wifi_cac_post(string $path, string $typ, array $claims, int $timeout = 60): array {
+    return dirpush_post(dirpush_base() . $path, dirpush_sign($typ, $claims), $timeout);
 }
 
 /** The reason CACENTRE shows a person, in NGG's words, for a case of the access table. */
@@ -137,7 +110,7 @@ function wifi_cac_push(string $by = 'cron'): array {
     $r = ['ok' => true, 'at' => now_iso(), 'by' => $by, 'sent' => count($people), 'full' => $full, 'applied' => 0, 'refused' => 0, 'gone' => 0,
           'unknownSites' => [], 'refusals' => [], 'error' => ''];
     foreach ($chunks as $chunk) {
-        $res = wifi_cac_post('/api/wifi-roster.php?issuer=ngg', wifi_cac_mint('wifi.roster', ['full' => $full, 'people' => $chunk]));
+        $res = wifi_cac_post('/api/wifi-roster.php?issuer=ngg', 'wifi.roster', ['full' => $full, 'people' => $chunk]);
         if (empty($res['ok'])) { $r['ok'] = false; $r['error'] = (string)($res['error'] ?? 'refused'); break; }
         $r['applied'] += (int)($res['applied'] ?? 0); $r['refused'] += (int)($res['refused'] ?? 0); $r['gone'] += (int)($res['gone'] ?? 0);
         foreach ((array)($res['unknownSites'] ?? []) as $code => $n) $r['unknownSites'][(string)$code] = ($r['unknownSites'][(string)$code] ?? 0) + (int)$n;
@@ -164,7 +137,7 @@ function wifi_cac_gate(array $p): array {
 function admin_wifi_cac_status(array $p): array {
     $g = wifi_gate($p); if (!$g['ok']) return $g;
     $last = setting_get(WIFI_CAC_LAST);
-    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => wifi_cac_base(), 'every' => WIFI_CAC_EVERY,
+    return ['ok' => true, 'configured' => wifi_cac_ready(), 'url' => dirpush_base(), 'every' => WIFI_CAC_EVERY,
             'canSend' => $g['scope'] === null, 'last' => is_array($last) ? $last : null];
 }
 
@@ -174,3 +147,60 @@ function admin_wifi_cac_push(array $p): array {
     audit('wifi.cacentre.push', (string)$g['requester']['memberId'], 'ngg', ['sent' => $r['sent'] ?? 0, 'applied' => $r['applied'] ?? 0, 'refused' => $r['refused'] ?? 0, 'error' => $r['error'] ?? '']);
     return $r;
 }
+
+/* ── The member's own dashboard: their PIN, from CACENTRE ─────────────── */
+
+/**
+ * Does CACENTRE serve this person's Wi-Fi yet? Once NGG is connected — and
+ * while no NGG gateway is still serving where they sign in (their centre; any
+ * centre, for staff) — yes. That second half is the move: a centre whose
+ * router still fetches from NGG keeps showing NGG's PIN, because that is the
+ * PIN that router knows. Re-pointing the router flips it within a day.
+ */
+function wifi_cac_serves(string $centre, bool $staff): bool {
+    if (!wifi_cac_ready()) return false;
+    $since = gmdate('Y-m-d\TH:i:s', time() - WIFI_CAC_ROUTER_FRESH);
+    $live = $staff
+        ? db_row("SELECT 1 x FROM wifi_gateways WHERE (removedAt = '' OR removedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$since])
+        : db_row("SELECT 1 x FROM wifi_gateways WHERE centre = ? AND (removedAt = '' OR removedAt IS NULL) AND lastSeenAt >= ? LIMIT 1", [$centre, $since]);
+    return !$live;
+}
+
+/** CACENTRE's card for one of NGG's people. op: show | newPin. */
+function wifi_cac_card(string $localId, string $op = 'show'): array {
+    return wifi_cac_post('/api/wifi-card.php?issuer=ngg', 'wifi.card', ['id' => $localId, 'op' => $op === 'newPin' ? 'newPin' : 'show'], 15);
+}
+
+/** CACENTRE's case names, as the member screen already reads them. */
+const WIFI_CAC_CASES = ['over_limit' => 'overLimit', 'on' => 'member'];
+
+/**
+ * The member screen's view, from CACENTRE's card: the same shape as
+ * wifi_view(), so Me → Wi-Fi draws it unchanged. Throws when CACENTRE can't
+ * be reached — the caller says so with a retry, never an NGG PIN that the
+ * routers no longer know.
+ */
+function wifi_cac_member_view(array $m, string $op = 'show'): array {
+    $r = wifi_cac_card((string)$m['memberId'], $op);
+    if (empty($r['ok'])) throw new RuntimeException((string)($r['error'] ?? 'cacentre_unreachable'));
+    $c = $r['card'] ?? null;
+    if (!is_array($c)) return ['username' => '', 'pin' => '', 'pinSetAt' => '', 'access' => 'off', 'profile' => '', 'limits' => null, 'case' => 'not_listed',
+        'why' => 'Not on CACENTRE’s Wi-Fi list yet; it is sent every 15 minutes', 'override' => null, 'resetsLeft' => 0, 'centre' => (string)($m['centre'] ?? ''),
+        'centreHasWifi' => false, 'usage' => null, 'source' => 'cacentre'];
+    /* CACENTRE words a reason for its staff ("Next Generation Genius has no
+       Wi-Fi for them: Suspended…"). On the member's own screen NGG's part is
+       just NGG's reason, the same words wifi_view() would have shown. */
+    $why = rtrim((string)($c['why'] ?? ''), '.');
+    if (in_array((string)($c['case'] ?? ''), ['issuer_off', 'issuer_limited'], true) && ($k = strpos($why, ': ')) !== false) $why = substr($why, $k + 2);
+    if ($why === 'On') $why = '';
+    $sp = is_array($c['speed'] ?? null) ? $c['speed'] : null;
+    $u = is_array($c['usage'] ?? null) ? $c['usage'] : null;
+    return ['username' => (string)$c['username'], 'pin' => (string)($c['pin'] ?? ''), 'pinSetAt' => (string)($c['pinSetAt'] ?? ''),
+        'access' => in_array($c['access'] ?? '', WIFI_ACCESS, true) ? (string)$c['access'] : 'off', 'profile' => '',
+        'limits' => $sp ? ['down' => (int)$sp['down'], 'devices' => (int)$sp['devices'], 'hours' => (string)($sp['hours'] ?? '')] : null,
+        'case' => WIFI_CAC_CASES[(string)($c['case'] ?? '')] ?? (string)($c['case'] ?? ''), 'why' => $why,
+        'override' => null, 'resetsLeft' => (int)($c['resetsLeft'] ?? 0), 'centre' => (string)($m['centre'] ?? ''), 'centreHasWifi' => !empty($c['hasRouter']),
+        'usage' => $u ? ['today' => (int)$u['today'], 'month' => (int)$u['month'], 'dayMb' => (int)$u['dayMb'], 'monthMb' => (int)$u['monthMb'], 'over' => (string)($u['over'] ?? ''), 'days' => []] : null,
+        'source' => 'cacentre'];
+}
+

@@ -602,15 +602,14 @@ return [
         'unsigned_folder' => 'ngg/headshots',
     ],
 
-    // Wi-Fi: CACENTRE runs it for the estate; NGG sends its people and its say
-    // about each (domain/wifi-cacentre.php), every 15 minutes. Leave the
-    // secret empty and nothing is sent. The SAME value goes in CACENTRE's
-    // includes/.env as WIFI_SECRET_NGG (the environment variable of that name
-    // here wins over this file).
-    'wifi' => [
-        'cacentre_secret' => '',             // 32+ random characters
-        'cacentre_url'    => '',             // default https://cacentre.afrovanguard.org.ng
-    ],
+    // CACENTRE: the one connection NGG has with it. It carries the person
+    // directory (domain/directory-push.php) and the Wi-Fi: NGG's people and its
+    // say about each, every 15 minutes, and each member's PIN for Me → Wi-Fi
+    // (domain/wifi-cacentre.php). Empty secret: nothing is sent. The SAME value
+    // goes in CACENTRE's includes/.env as DIR_PUSH_SECRET_NGG (an environment
+    // variable of that name here wins over this file).
+    'dir_push_secret' => '',                 // 32+ random characters
+    'dir_push_url'    => '',                 // default https://cacentre.afrovanguard.org.ng
 
     // Debug — flip to true only in local dev. Leaks internal errors.
     'debug' => false,

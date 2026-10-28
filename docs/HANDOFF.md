@@ -4020,3 +4020,45 @@ super admins still have a say"). CACENTRE's side is in the cacentre-site repo
   next step is fetching the card from CACENTRE (`/api/wifi-card.php`,
   `wifi.card`) once the routers have moved, then NGG's feed answers "moved".
 
+### Correction, same day: one connection, and PINs stay on the dashboards
+
+The owner: "Use the existing connection between CACENTRE and the websites. Do
+not recreate a new one", and "The members should still get their pins from
+their dashboards. CACENTRE just controls and distributes."
+
+- **The separate Wi-Fi key and envelope are gone, on both sides.**
+  `WIFI_SECRET_NGG/_AVG`, `config.wifi.cacentre_*` and CACENTRE's
+  `WifiEnvelope` are removed. The Wi-Fi rides the directory push's connection:
+  `dirpush_secret()` / `dirpush_ready()` / `dirpush_base()` here, factored into
+  `dirpush_sign($typ, …)` and `dirpush_post()`, which `dirpush_mint`/`_send`
+  now call too. At CACENTRE, `DirectoryEnvelope` with
+  `DIR_PUSH_SECRET_<APP>` gains the document types `wifi.roster` and
+  `wifi.card` (and a size limit per type). `typ` keeps the three documents
+  apart, so a roster is never a directory push, nor the reverse.
+- **Me → Wi-Fi asks CACENTRE** (`wifi_cac_member_view`, op `wifi.card`
+  show | newPin) once NGG is connected and no NGG gateway still serves where
+  the member signs in (`wifi_cac_serves`: their centre, or any centre for
+  staff, heard from within a day). The view has the same shape as
+  `wifi_view()`, so the screen is unchanged. CACENTRE's card now carries
+  `resetsLeft`, `pinSetAt` and `hasRouter`. When CACENTRE can't be reached,
+  the screen says `cacentre_unreachable` with a retry, never NGG's stale PIN.
+  No new PIN is given to somebody who is off (`wifi_off`).
+- Proven again end to end on MariaDB over `DIR_PUSH_SECRET_NGG`: the member's
+  dashboard shows 026-701 with a six-digit PIN from CACENTRE, *Get a new PIN*
+  changes it there (3 left → 2), a suspended member gets no PIN and NGG's own
+  reason, and a wrong key is `bad_signature`.
+- The Control Room desk (*Why can't somebody get on?*) still shows NGG's say
+  and NGG's PIN; it is NGG's side of the decision.
+
+
+### The router's setup file answers with 200 (2026-10-28)
+
+The owner pasted the install line with `PASTE-THE-KEY-HERE` still in it, and
+RouterOS printed only `ERROR parsing http: 401 should contain www-authenticate
+header`. `/tool fetch` saves nothing on a 401 without that header, so the
+`:error "NGG Wi-Fi: …"` file we sent never reached the terminal. The hook now
+answers a refused key with 200 and that file, which `/import` stops on, with the
+reason. The key is still checked, and nothing but the error line is served. A
+left-in placeholder gets its own sentence, saying where the real line is
+(*Rotate the key* on the gateway). CACENTRE's `api/wifi-setup.php` has the same
+fix.

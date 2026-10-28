@@ -1073,10 +1073,10 @@ function Mp9Wifi({ toast }) {
   </div> : null;
   return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
     <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
-    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your Wi-Fi details couldn’t load ({err}).</span><button type="button" onClick={load}>Try again</button></div>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err === "cacentre_unreachable" ? "CACENTRE, which runs the Wi-Fi, couldn’t be reached just now." : "Your Wi-Fi details couldn’t load (" + err + ")."}</span><button type="button" onClick={load}>Try again</button></div>
       : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
       : !on ? <>{d.case === "overLimit" ? <p className="m9x-view-p">You’ve used your Wi-Fi data allowance, so the Wi-Fi is off for you {overWhen}.</p>
-        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
+        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : d.case === "not_listed" ? "Your Wi-Fi details are on their way from CACENTRE, which runs the Wi-Fi. Look again in a quarter of an hour." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
       : <>
         {!d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. These details will work as soon as it is.</p>
           : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use these.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
