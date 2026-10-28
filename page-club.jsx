@@ -40,9 +40,15 @@
 /** Does a haystack contain the needle? Case- and accent-insensitive, because
  *  "Ijaiye" is typed "ijaiye" and Yorùbá diacritics are typed without them. */
 function summerMatch(hay, needle) {
-  if (!needle) return true;
-  const norm = (v) => String(v || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  return norm(hay).indexOf(norm(needle)) !== -1;
+  /* Trimmed, and word by word. A trailing space — which a phone keyboard adds
+     after every suggested word — made "piano " match nothing, and a box
+     holding only spaces emptied every list under a heading that said "Every
+     centre". Each word must appear, in any order, so "coding ijaiye" works. */
+  const norm = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const words = norm(needle).trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const h = norm(hay);
+  return words.every(w => h.indexOf(w) !== -1);
 }
 
 /** "6 July – 14 August 2026", or as much of it as the edition actually has. */
@@ -118,16 +124,17 @@ function SummerPage({ setPage }) {
   // ── Discovery: what matches the search ──────────────────────────────────
   const centres = (disc && disc.centres) || [];
   const academies = (disc && disc.academies) || [];
+  /* One haystack per centre, so the words of "piano ijaiye" can be found in
+     different fields of the same centre. */
   const centreHits = React.useMemo(() => centres.filter(c =>
-    summerMatch(c.name, q) || summerMatch(c.area, q) || summerMatch(c.code, q)
-    || summerMatch(c.tagline, q) || (c.courses || []).some(x => summerMatch(x, q))
+    summerMatch([c.name, c.area, c.code, c.tagline].concat(c.courses || []).join(" "), q)
   ), [centres, q]);
   const academyHits = React.useMemo(() => academies
     .map(a => ({
       name: a.name,
       // Keep an academy when its NAME matches (all its courses are relevant)
       // or when only some courses do (show just those).
-      courses: summerMatch(a.name, q) ? a.courses : (a.courses || []).filter(c => summerMatch(c, q)),
+      courses: summerMatch(a.name, q) ? a.courses : (a.courses || []).filter(c => summerMatch(a.name + " " + c, q)),
     }))
     .filter(a => a.courses.length > 0), [academies, q]);
   /* Where a course is taught. The answer to "can my child learn piano near
@@ -141,7 +148,7 @@ function SummerPage({ setPage }) {
   const faculties = Array.from(new Set(roster.map(m => m.faculty).filter(Boolean)));
   const pool = roster
     .filter(m => track === "all" || m.faculty === track)
-    .filter(m => summerMatch(m.name || m.handle, q) || summerMatch(m.faculty, q) || summerMatch(m.centre, q));
+    .filter(m => summerMatch([m.name || m.handle, m.faculty, m.centre].join(" "), q));
   const filtered = (track === "all" && !q && !showAll) ? pool.slice(0, 8) : pool;
   const hiddenCount = pool.length - filtered.length;
   const maxStars = Math.max(1, ...roster.map(m => m.stars || 0));
@@ -235,8 +242,8 @@ function SummerPage({ setPage }) {
                     + academies.reduce((n, a) => n + a.courses.length, 0) + " courses"
                   : discErr ? "" : "loading…")
               : totalHits === 0
-                ? "Nothing matches “" + q + "”."
-                : totalHits + " match" + (totalHits === 1 ? "" : "es") + " for “" + q + "”"}
+                ? "Nothing matches “" + q.trim() + "”."
+                : totalHits + " match" + (totalHits === 1 ? "" : "es") + " for “" + q.trim() + "”"}
           </p>
 
           {discErr ? (
@@ -556,13 +563,13 @@ function ClubPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="03 NGGC Members">
-      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0", position:"relative", overflow:"hidden"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-59, 64px 0px)", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 20%, rgba(245,176,38,0.16), transparent 60%)"}}/>
         <div className="container" style={{position:"relative"}}>
-          <div style={{display:"grid", gridTemplateColumns:"1.2fr 1fr", gap:48, alignItems:"end"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-60, 1.2fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end"}}>
             <div>
               <span className="chip chip-on-dark"><span className="dot dot-lime"/> STAGE 02 · IDENTITY</span>
-              <h1 className="display" style={{fontSize:"clamp(64px, 8.5vw, 132px)", margin:"18px 0", color:"white", lineHeight:0.9}}>
+              <h1 className="display" style={{fontSize:"var(--rs-fsize-61, clamp(64px, 8.5vw, 132px))", margin:"18px 0", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
                 The Genius<br/>
                 <span style={{color:"var(--gold-500)"}}>Club.</span>
               </h1>
@@ -580,7 +587,7 @@ function ClubPage({ setPage }) {
                   <div style={{display:"flex", alignItems:"center", gap:14, marginTop:14}}>
                     <Avatar seed={featured.id} name={featured.first} size={64} ring/>
                     <div>
-                      <div style={{fontSize:22, fontWeight:700, fontFamily:"var(--font-display)"}}>{featured.first} · {featured.community}</div>
+                      <div style={{fontSize:"var(--rs-fsize-1, 22px)", fontWeight:700, fontFamily:"var(--font-display)"}}>{featured.first} · {featured.community}</div>
                       <div style={{fontSize:13, color:"var(--gold-400)", marginTop:2}}>{featured.title}</div>
                       <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:4}}>
                         LVL {featured.level} · {fmtNum(featured.xp)} XP · ★ {featured.stars} · {featured.streak}-day streak
@@ -604,13 +611,13 @@ function ClubPage({ setPage }) {
       {/* Club dashboard */}
       <section className="section" style={{background:"var(--cream-50)"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"2fr 1fr", gap:24, alignItems:"start"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-62, 2fr 1fr)", gap:24, alignItems:"start"}}>
             {/* Member directory */}
             <div>
               <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:20}}>
                 <div>
                   <span className="eyebrow" style={{color:"var(--gold-500)"}}>MEMBER DIRECTORY · {roster.length}</span>
-                  <h2 className="display" style={{fontSize:48, margin:"4px 0 0"}}>The cohort, in motion.</h2>
+                  <h2 className="display" style={{fontSize:"var(--rs-fsize-63, 48px)", margin:"4px 0 0"}}>The cohort, in motion.</h2>
                 </div>
                 <div style={{display:"flex", gap:8}}>
                   <button
@@ -625,7 +632,7 @@ function ClubPage({ setPage }) {
                   >By rank</button>
                 </div>
               </div>
-              <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}}>
+              <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:14}}>
                 {directory.slice(0, 9).map((m) => (
                   <div key={m.id} className="member-card" onClick={() => setPage("profile")} style={{padding:14}}>
                     <div style={{display:"flex", alignItems:"center", gap:12}}>
@@ -661,7 +668,7 @@ function ClubPage({ setPage }) {
                 <div>
                   {top.slice(0,5).map((m, i) => (
                     <div key={m.id} style={{display:"flex", alignItems:"center", gap:14, padding:"12px 22px", borderTop: i === 0 ? "none" : "1px solid rgba(12,20,50,0.05)", background: i === 0 ? "rgba(245,176,38,0.07)" : "transparent"}}>
-                      <div style={{width:24, fontFamily:"var(--font-display)", fontWeight:800, fontSize:22, color: i === 0 ? "var(--gold-500)" : "var(--ink-400)"}}>{String(i+1).padStart(2,"0")}</div>
+                      <div style={{width:24, fontFamily:"var(--font-display)", fontWeight:800, fontSize:"var(--rs-fsize-1, 22px)", color: i === 0 ? "var(--gold-500)" : "var(--ink-400)"}}>{String(i+1).padStart(2,"0")}</div>
                       <Avatar seed={m.id} name={m.first} size={36}/>
                       <div style={{flex:1, minWidth:0}}>
                         <div style={{fontWeight:600, fontSize:14}}>{m.first}</div>
@@ -677,12 +684,12 @@ function ClubPage({ setPage }) {
               </div>
 
               {/* Live missions */}
-              <div className="card" style={{padding:22, background:"var(--navy-900)", color:"white"}}>
+              <div className="card dark-surface" style={{padding:22, background:"var(--navy-900)", color:"white"}}>
                 <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:12}}>
                   <span className="live-dot"/>
                   <div className="eyebrow" style={{color:"var(--lime)"}}>LIVE COHORT MISSION</div>
                 </div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, lineHeight:1.1, letterSpacing:"-0.02em"}}>
+                <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:"var(--rs-fsize-1, 22px)", lineHeight:1.1, letterSpacing:"-0.02em"}}>
                   Interview an elder. Bring back one proverb.
                 </div>
                 {/* "126 / 164 completed", under a live dot, on a block headed
@@ -703,7 +710,7 @@ function ClubPage({ setPage }) {
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="THE BADGE SYSTEM" title="Public skill, in public view." sub="Badges live on member profiles. They unlock at concrete, observable milestones — not for showing up, but for doing the work in public." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:18}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-303, repeat(5, 1fr))", gap:18}}>
             {BADGES.map((b, i) => (
               <div key={b.id} className="card" style={{padding:24, display:"flex", flexDirection:"column", alignItems:"center", gap:14, textAlign:"center", opacity: b.locked ? 0.55 : 1}}>
                 <BadgePin badge={b}/>
@@ -774,9 +781,20 @@ function cmPhotoOf(post) {
     author: { name: a.name || "", centre: a.centre || "", isMe: !!a.isMe, photo: a.photo || "" },
   };
 }
+/* Cloudinary bills every distinct derived copy. So images come in four widths,
+   not the dozen the screens asked for; the resize goes AFTER any edit already in
+   the URL (before it, a 96px avatar re-ran the whole edit and was then blown up);
+   and a video is delivered as exactly the rendition made at upload
+   (CM_VIDEO_TF = upload-sign.php's eager string), so it is transcoded once. */
+const CM_WIDTHS = [128, 320, 640, 1280];
+const CM_VIDEO_TF = "f_auto,q_auto:eco,w_1280,c_limit";
+function cmSnapW(w) { for (const x of CM_WIDTHS) if (w <= x) return x; return CM_WIDTHS[CM_WIDTHS.length - 1]; }
 function cmOpt(url, w) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
-  return url.replace("/upload/", "/upload/f_auto,q_auto" + (w ? ",w_" + w + ",c_limit" : "") + "/");
+  const tf = /\/video\/upload\//.test(url) ? CM_VIDEO_TF : "f_auto,q_auto" + (w ? ",w_" + cmSnapW(w) + ",c_limit" : "");
+  // …/upload/<edits>/v123/id → …/upload/<edits>/<tf>/v123/id. No version marker: the old place.
+  if (/\/upload\/(?:[^/]+\/)*?v\d+\//.test(url)) return url.replace(/(\/upload\/(?:[^/]+\/)*?)(v\d+\/)/, "$1" + tf + "/$2");
+  return url.replace("/upload/", "/upload/" + tf + "/");
 }
 function cmPoster(url) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";
@@ -901,6 +919,11 @@ function CmStudentSignIn({ compact, dest, roles }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [scan, setScan] = React.useState(false);
+  const [noPhone, setNoPhone] = React.useState("");
+  const authCtx = (typeof useAuth === "function") ? useAuth() : null;
+  /* The other door for the team: a code to the email on their record, through
+     the main sign-in — it knows volunteer card numbers now. */
+  const emailDoor = () => { if (authCtx && authCtx.openSignIn) authCtx.openSignIn({ identifier: sid.trim() }); };
   const doLogin = async (creds, failMsg) => {
     setBusy(true); setErr("");
     try {
@@ -918,6 +941,12 @@ function CmStudentSignIn({ compact, dest, roles }) {
         setErr((e.data && e.data.message) || (e.code === "policy_evicted"
           ? "This ID has been evicted from the programme. Speak to the coordinator."
           : "This ID is suspended — access to the digital channels is paused."));
+      } else if (e.code === "no_phone_use_email" || e.code === "no_phone_on_file") {
+        // The card is right, but no phone is on the record, so it can never pass.
+        setNoPhone(e.code);
+        setErr(e.code === "no_phone_use_email"
+          ? "There’s no phone number on your record, so the card can’t be checked. Sign in with a code sent to your email instead."
+          : "There’s no phone number or email on your record. Ask your coordinator to add one.");
       } else {
         setErr(e.code === "rate_limited" ? "Too many tries — wait a few minutes." : failMsg);
       }
@@ -983,6 +1012,11 @@ function CmStudentSignIn({ compact, dest, roles }) {
       )}
       <label className="cm-stu-remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Stay signed in for 30 days</span></label>
       {err && <div role="alert" className="cm-stu-err">{err}</div>}
+      {isVol && authCtx && (
+        <button type="button" className={"cm-scan-btn cm-stu-email" + (noPhone === "no_phone_use_email" ? " is-on" : "")} onClick={emailDoor}>
+          ✉ Email me a sign-in code instead
+        </button>
+      )}
     </div>
   );
 }
@@ -1055,23 +1089,23 @@ function CommunityPublic({ setPage, auth }) {
     <div className="page cm-page" data-screen-label="Community">
       <style>{"@keyframes ngg-panel-in{from{transform:translateX(100%)}to{transform:none}}@keyframes ngg-fade{from{opacity:0}to{opacity:1}}"}</style>
 
-      <section style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
+      <section className="dark-surface" style={{ background: "var(--grad-hero, linear-gradient(158deg,#0c1432,#16224e 58%,#1d2c63))", color: "#fff", position: "relative", overflow: "hidden", paddingTop: 40 }}>
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(46% 42% at 90% 4%, rgba(245,176,38,0.22), transparent 62%)" }}/>
         <div className="container" style={{ maxWidth: 1320, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, letterSpacing: "0.14em", padding: "6px 13px", borderRadius: 999, background: "rgba(208,255,58,0.12)", border: "1px solid rgba(208,255,58,0.4)", color: "#e8ffb0" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime,#d0ff3a)" }}/>{all.length ? all.length + " GENIUSES ON THE BOARD" : "THE MOVEMENT"}
             </span>
-            <div style={{ position: "relative", width: 260, maxWidth: "44vw" }}>
+            <div className="cm-pub-search" style={{ width: 260, maxWidth: "44vw" }}>
               {/* A placeholder is not a label: it disappears the moment anyone
                   types, and a screen reader announced this as an unnamed edit
                   field. Every input in the signed-in app already does this. */}
               <label className="sr-only" htmlFor="cm-pub-search">Search members by name or centre</label>
               <i className="ph ph-magnifying-glass" aria-hidden="true" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.72)", fontSize: 15 }}/>
-              <input id="cm-pub-search" type="search" value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
+              <input id="cm-pub-search" type="search" value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" className="cm-pub-search-in"/>
             </div>
           </div>
-          <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(30px,4.6vw,48px)", letterSpacing: "-0.03em", lineHeight: 1, margin: "18px 0 10px" }}>The Genius community.</h1>
+          <h1 className="display" style={{ fontWeight: 800, fontSize: "var(--rs-fsize-64, clamp(30px, 4.6vw, 48px))", letterSpacing: "-0.03em", lineHeight: "var(--rs-lheight-7, 1)", margin: "18px 0 10px" }}>The Genius community.</h1>
           {/* The Arcade is named here on purpose. It lives behind the sign-in,
               which means nobody discovers it by browsing — the same way the
               mentor platform went unfound until it was pointed at. */}
@@ -1083,7 +1117,7 @@ function CommunityPublic({ setPage, auth }) {
           </div>
           {stu && <CmStudentSignIn/>}
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginTop: 22, borderTop: "1px solid rgba(255,255,255,0.12)" }} className="home-kpi-strip">
+          <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-301, repeat(4, 1fr))", gap: 16, marginTop: 22, borderTop: "1px solid rgba(255,255,255,0.12)" }} className="home-kpi-strip">
             {kpis.map((k, i) => (
               <div key={i} style={{ borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.14)", padding: "20px 0 20px " + (i === 0 ? "0" : "16px") }}>
                 <div className="display" style={{ fontWeight: 800, fontSize: "clamp(24px,3.2vw,32px)", color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
@@ -1110,7 +1144,7 @@ function CommunityPublic({ setPage, auth }) {
            : all.length === 0 ? <div style={{ textAlign: "center", padding: "60px 0", color: "var(--ink-500)" }}>The board fills up as members earn XP. Check back soon.</div>
            : view === "centres" ? (
             <>
-              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Centres &amp; groups</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "0 0 18px" }}>Centres &amp; groups</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 14 }}>
                 {centres.map(c => (
                   <button key={c.name} onClick={() => { setCentre(c.name); setView("members"); }} style={{ textAlign: "left", cursor: "pointer", fontFamily: "inherit", background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderTop: "4px solid " + colorFor(c.name), borderRadius: 14, padding: 18, color: "var(--ink-900)" }}>
@@ -1125,7 +1159,7 @@ function CommunityPublic({ setPage, auth }) {
             </>
           ) : view === "leaders" ? (
             <>
-              <h2 className="display" style={{ fontSize: 22, margin: "0 0 18px" }}>Top of the board</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "0 0 18px" }}>Top of the board</h2>
               <div style={{ background: "#fff", border: "1px solid var(--line-cool,#e5e8ee)", borderRadius: 16, overflow: "hidden", maxWidth: 640 }}>
                 {leaders.map((m, i) => (
                   <button key={m.memberId || i} onClick={() => setPanel(m)} style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "none", borderBottom: i < leaders.length - 1 ? "1px solid var(--line-cool-soft,#eef0f4)" : "none", background: "none" }}>
@@ -1141,8 +1175,8 @@ function CommunityPublic({ setPage, auth }) {
             <>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 16, flexWrap: "wrap" }}>
                 <div>
-                  <h2 className="display" style={{ fontSize: 22, margin: 0 }}>Members</h2>
-                  <p style={{ color: "var(--ink-500)", fontSize: 13.5, margin: "6px 0 0" }}>{filtered.length} showing{ql ? ' for "' + q + '"' : ""}{centre !== "All" ? " · " + centre : ""}</p>
+                  <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: 0 }}>Members</h2>
+                  <p style={{ color: "var(--ink-700)", fontSize: 13.5, margin: "6px 0 0" }}>{filtered.length} showing{ql ? ' for "' + q + '"' : ""}{centre !== "All" ? " · " + centre : ""}</p>
                 </div>
                 <select value={centre} onChange={e => setCentre(e.target.value)} style={{ fontSize: 13, fontWeight: 600, padding: "9px 13px", borderRadius: 10, border: "1px solid var(--cream-200,#d9d2c0)", background: "#fff", cursor: "pointer" }}>
                   {centreOpts.map(c => <option key={c} value={c}>{c === "All" ? "All centres" : c}</option>)}
@@ -1187,8 +1221,8 @@ function CommunityPublic({ setPage, auth }) {
       </section>
 
       {panel && (<>
-        <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,20,50,0.45)", zIndex: 50, animation: "ngg-fade .2s ease" }}/>
-        <div style={{ position: "fixed", top: 0, right: 0, height: "100%", width: 360, maxWidth: "92vw", background: "#fff", zIndex: 51, boxShadow: "-16px 0 40px rgba(12,20,50,0.25)", animation: "ngg-panel-in .25s cubic-bezier(.2,.8,.2,1)", overflowY: "auto" }}>
+        <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, background: "rgba(12,20,50,0.45)", zIndex: 50, animation: "ngg-fade calc(.2s * var(--motion, 1)) ease" }}/>
+        <div style={{ position: "fixed", top: 0, right: 0, height: "100%", width: 360, maxWidth: "92vw", background: "#fff", zIndex: 51, boxShadow: "-16px 0 40px rgba(12,20,50,0.25)", animation: "ngg-panel-in calc(.25s * var(--motion, 1)) cubic-bezier(.2,.8,.2,1)", overflowY: "auto" }}>
           <div style={{ padding: "20px 20px 0", display: "flex", justifyContent: "flex-end" }}><button onClick={() => setPanel(null)} style={{ border: "none", background: "var(--cream-100,#f3ecdb)", width: 32, height: 32, borderRadius: "50%", cursor: "pointer", fontSize: 16, color: "var(--ink-500)" }}><i className="ph ph-x"/></button></div>
           <div style={{ padding: "8px 28px 28px", textAlign: "center" }}>
             <span className="display" style={{ width: 84, height: 84, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 30, color: inkOn(colorFor(panel.first)).ink, background: colorFor(panel.first), margin: "0 auto" }}>{(panel.first[0] || "?").toUpperCase()}</span>
@@ -1480,6 +1514,9 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
       )}
 
       <div className="cmm-feed">
+        {/* The week's saying leads the whole feed — not a filtered view of it,
+            where it would be noise between the things being looked for. */}
+        {filter === "all" && <QuoteOfWeek variant="community"/>}
         {posts === null && <CmSkeleton rows={3}/>}
         {err && posts && posts.length === 0 && (
           <CmEmpty icon="⚠" title="That didn't load" body={err}
@@ -2022,7 +2059,7 @@ function CmFiles({ slug, channelName, onBack, onOpenThread }) {
                      onOpenThread={onOpenThread}/>
       )}
       {reading && (
-        <NggPdf src={reading.url} name={reading.name} pages={reading.pages} bytes={reading.bytes}
+        <NggPdf src={reading.postId ? cm3DocUrl(reading.postId) : reading.url} name={reading.name} pages={reading.pages} bytes={reading.bytes}
                 open onClose={() => setReading(null)}/>
       )}
       {gallery >= 0 && photos[gallery] && (
@@ -2536,7 +2573,7 @@ function CmJournalMine({ auth, onWrite }) {
           ))}
         </div>
         <p className="cm-jm-note" role="status">
-          {moodNote || (todayMood ? cmMoodNote(todayMood) : "Tap one. It stays private.")}
+          {moodNote || (todayMood ? cmMoodNote(todayMood) : "Tap one. Only you and your mentor see it.")}
         </p>
       </section>
 
@@ -2548,7 +2585,7 @@ function CmJournalMine({ auth, onWrite }) {
 
       <CmChips label="Filter your entries" value={filter} onPick={setFilter}
                items={[{ id: "all", label: "All", count: d.filters.all },
-                       { id: "private", label: "🔒 Private", count: d.filters.private }]
+                       { id: "private", label: "🔒 Not sent", count: d.filters.private }]
                  .concat((d.filters.tags || []).map(t => ({ id: t.tag, label: "#" + t.tag, count: t.count })))
                  .concat(d.filters.voice ? [{ id: "voice", label: "🎙 Voice", count: d.filters.voice }] : [])}/>
 
@@ -2675,8 +2712,8 @@ function cmShortNum(n) {
      · "They can reply privately", not "He". A mentor's pronouns are not
        something this app is told. */
 const cmJwVis = (centre) => [
-  { id: "private",   name: "Only me",              why: "Default. Nobody is notified.", glyph: "🔒" },
-  { id: "mentor",    name: "Me and my mentor",     why: "They can reply privately." },
+  { id: "private",   name: "My journal",           why: "Default. Only you and your mentor can read it; nobody is notified.", glyph: "🔒" },
+  { id: "mentor",    name: "Send to my mentor",    why: "They are told, and can reply privately." },
   { id: "programme", name: "The programme record",
     why: "Visible to " + (centre ? centre + " members." : "everyone at your centre.") },
 ];
@@ -4478,10 +4515,15 @@ function CommunityApp({ setPage, auth }) {
     };
   }, []);
 
+  /* Community v3 (src/modules/community3/) is the Community. The previous
+     screens stay reachable at ?classic=1 only while v3 takes over their last
+     features (the journal, notifications, text size). */
+  const classic = (() => { try { return new URLSearchParams(location.search).get("classic") === "1"; } catch (e) { return false; } })();
   return (
     <div className="page cm-page" data-screen-label="Community">
-      <CmMobileApp auth={auth} setPage={setPage} channels={channels}
-                   reloadChannels={reloadChannels}/>
+      {classic || typeof Cm3App !== "function"
+        ? <CmMobileApp auth={auth} setPage={setPage} channels={channels} reloadChannels={reloadChannels}/>
+        : <Cm3App auth={auth} setPage={setPage}/>}
     </div>
   );
 }
@@ -5587,7 +5629,7 @@ function CmTrnList({ auth, staff, onOpen, onCreate, onBack }) {
         </div>
         {staff && (
           <button className="cmm-icon-btn" onClick={onCreate} aria-label="Host a tournament">
-            <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>＋</span>
+            <span aria-hidden="true" style={{ fontSize: "var(--rs-fsize-1, 22px)", lineHeight: 1 }}>＋</span>
           </button>
         )}
       </header>
@@ -9932,7 +9974,7 @@ function CmBodyBlock({ post, onVote }) {
       {post.mediaType === "doc" && post.mediaUrl && (
         cmIsPdf(post) ? (
           <div className="cm-msg-media">
-            <NggPdf src={post.mediaUrl} name={post.altText || "Document"}
+            <NggPdf src={cm3DocUrl(post.postId)} name={post.altText || "Document"}
                     pages={post.mediaPages || 0} bytes={post.mediaBytes || 0}/>
           </div>
         ) : (

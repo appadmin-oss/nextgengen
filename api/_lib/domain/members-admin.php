@@ -291,25 +291,44 @@ function member_merge_policy(): array {
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_progress'        => 'MOVE_UNIQUE',
+        'lesson_feedback'        => 'MOVE_UNIQUE',    // one tap per person per lesson; the survivor's stands
+        'study_drills'           => 'MOVE',           // their practice history; both accounts' goes come with them
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',
         'community_reads'        => 'MOVE_UNIQUE',
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote
         'community_reactions'    => 'MOVE_UNIQUE',
+        'community_comment_reactions' => 'MOVE_UNIQUE',   // one reaction per person per reply
+        'portal_time'          => 'MOVE_UNIQUE',   // one row per person, day and portal; the kept record's day wins
         'post_reactions'         => 'MOVE_UNIQUE',
         'community_bookmarks'    => 'MOVE_UNIQUE',
         'community_stars'        => 'MOVE_UNIQUE',
+        'community_video_progress' => 'MOVE_UNIQUE',  // one place in a video per person; the survivor's stands
         'event_rsvps'            => 'MOVE_UNIQUE',
         'engagement_snapshots'   => 'MOVE_UNIQUE',
+        /* One line per person per session, so a merge keeps the survivor's
+           where both records wrote about the same Saturday. Their own words
+           are not merged, averaged or concatenated — and a published one
+           keeps pointing at the surviving member, whose consent is what the
+           public page reads (domain/testimonials.php). */
+        'testimonials'           => 'MOVE_UNIQUE',
         'auth_sessions'          => 'DROP',           // sign-in state, not history
         'device_sessions'        => 'DROP',
         'notifications'          => 'MOVE',
         'journal'                => 'MOVE',
         'assignment_submissions' => 'MOVE',
         'mentor_assignments'     => 'MOVE',
+        'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',
         'guardian_wards'         => 'MOVE',           // a parent's link follows the child
+        'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
+        'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
+        'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child
+        'notification_state'     => 'MOVE_UNIQUE',    // read/dismissed marks; the survivor's own marks stand
+        'support_cases'          => 'MOVE',           // the cases about a child follow the surviving record
+        'learn_state'            => 'MOVE_UNIQUE',    // notes and saves per lesson; the survivor's own stand
+        'wifi_region_leads'      => 'MOVE_UNIQUE',    // leading a Wi-Fi region follows the surviving staff record
         'circle_confirmations'   => 'MOVE',
         'circle_remarks'         => 'MOVE',
         'post_comments'          => 'MOVE',
@@ -325,6 +344,9 @@ function member_merge_policy(): array {
            behind. A table that carries a member and is not named here is
            a table a merge silently strands. */
         'member_cards'           => 'MOVE',           // every card they hold keeps working
+        'study_decks'            => 'MOVE',           // a merged member keeps their flashcards (study-tools.php)
+        'study_cards'            => 'MOVE',
+        'study_sessions'         => 'MOVE',           // and their record of study
         'curriculum_progress'    => 'MOVE_UNIQUE',    // one row per lesson; the survivor's stands
         'member_promotions'      => 'MOVE',
         'member_requests'        => 'MOVE',
@@ -572,9 +594,12 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId,
         'community_reads'      => ['postId'],
         'community_poll_votes' => ['postId'],
         'community_reactions'  => ['postId', 'emoji'],
+        'community_comment_reactions' => ['commentId'],
+        'portal_time'          => ['day', 'portal'],
         'post_reactions'       => ['postId', 'emoji'],
         'community_bookmarks'  => ['postId'],
         'community_stars'      => ['postId'],
+        'community_video_progress' => ['postId'],
         'event_rsvps'          => ['eventId'],
         'engagement_snapshots' => ['weekStart', 'role'],
         'member_ledger'        => ['kind', 'periodKey'],

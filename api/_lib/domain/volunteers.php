@@ -454,6 +454,10 @@ function admin_attendance_duty_set(array $p): array {
     else db_insert('attendance_duty', ['date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId, 'source' => 'admin', 'assignedById' => (string)$g['requester']['memberId'], 'createdAt' => now_iso()]);
     volunteer_award_points($volunteerId, 'duty_assigned', DUTY_POINTS_ASSIGNED, "On duty · {$centre}", $date);
     audit('attendance.duty.set', $g['requester']['memberId'], $volunteerId, ['date' => $date, 'centre' => $centre], (string)($p['ip'] ?? ''));
+    // Reading the board materialises an automatic pick for every Summer centre
+    // that day (and emails whoever it picks). A caller that only set one shift
+    // — the Club portal's rota — asks for no board, so it starts nothing else.
+    if (!empty($p['noBoard'])) return ['ok' => true, 'date' => $date, 'centre' => $centre, 'volunteerId' => $volunteerId];
     return attendance_duty_board(['date' => $date]);
 }
 
@@ -524,7 +528,8 @@ function public_cert(array $p): array {
 function admin_volunteer_safeguard(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $status = (string)($p['status'] ?? '');
-    if (!in_array($status, ['pending', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    // in_progress: screening has started (references asked for). Anything but cleared is not cleared.
+    if (!in_array($status, ['pending', 'in_progress', 'cleared'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $volunteerId = (string)($p['volunteerId'] ?? '');
     $n = db_update('volunteers', ['safeguarding' => $status, 'updatedAt' => now_iso()], ['volunteerId' => $volunteerId]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
@@ -627,8 +632,16 @@ function admin_volunteers_list(array $p): array {
         $a['programme'] = volunteer_programme($a);
     }
     unset($a);
-    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    /* photoUrl is on the row because the editor shows it: without it the
+       photo read as empty, and a save wrote that empty back over the picture. */
+    $roster = db_all("SELECT volunteerId, memberId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, photoUrl, honorific, academyClearedAt, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
+    // Who is ALSO on the mentor roster, in one read: an instructor can mentor too.
+    $mentorOf = [];
+    foreach (db_all("SELECT mentorId, memberId, volunteerId, lower(email) e FROM mentors WHERE status = 'active'") as $r)
+        foreach (['memberId', 'volunteerId', 'e'] as $k) if (trim((string)$r[$k]) !== '') $mentorOf[(string)$r[$k]] = (string)$r['mentorId'];
     foreach ($roster as &$v) {
+        $v['mentorId'] = $mentorOf[(string)$v['volunteerId']] ?? (trim((string)($v['memberId'] ?? '')) !== '' ? ($mentorOf[(string)$v['memberId']] ?? '') : '')
+            ?: ($mentorOf[strtolower(trim((string)$v['email']))] ?? '');
         $v['programme'] = volunteer_programme($v);
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         // Portal access granted to this person. Always an array so the console
@@ -643,7 +656,8 @@ function admin_volunteers_list(array $p): array {
         $in = static fn($r) => in_array((string)($r['centre'] ?? ''), $scope, true);
         $pending = array_values(array_filter($pending, $in)); $roster = array_values(array_filter($roster, $in));
     }
-    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null];
+    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null,
+        'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
 }
 
 /** Edit an active volunteer's data — name, contact, role, centre, faculty,
@@ -662,6 +676,21 @@ function admin_volunteer_update(array $p): array {
     foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
     }
+    /* One person, one name: changing the first or last name without a full
+       name rebuilds the full name from the parts (the card, the roster and the
+       sign-in all show fullName), rather than leaving the two to disagree. */
+    if (!array_key_exists('fullName', $d) && (array_key_exists('firstName', $d) || array_key_exists('lastName', $d))) {
+        /* A part this request does not carry comes from the record — and when
+           the record never had parts, from its full name, so changing only the
+           last name of "Bola Ade" gives "Bola Adeyemi", not "Adeyemi". */
+        $words = preg_split('/\s+/', trim((string)($v['fullName'] ?? ''))) ?: [];
+        $hadParts = trim((string)($v['firstName'] ?? '')) !== '' || trim((string)($v['lastName'] ?? '')) !== '';
+        $first = $row['firstName'] ?? ($hadParts ? (string)($v['firstName'] ?? '') : (string)($words[0] ?? ''));
+        $last = $row['lastName'] ?? ($hadParts ? (string)($v['lastName'] ?? '') : implode(' ', array_slice($words, 1)));
+        $name = trim($first . ' ' . $last);
+        if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
+        $row['fullName'] = substr($name, 0, 120);
+    }
     /* Not a plain substr like the rest: with no cloud configured an editor's
        browser sends the image itself, and truncating a data: URL at 512
        characters stores a fragment of base64 that can never render. */
@@ -671,8 +700,11 @@ function admin_volunteer_update(array $p): array {
             : substr(trim((string)$d['photoUrl']), 0, 512);
     }
     if (array_key_exists('email', $d)) {
-        $em = trim((string)$d['email']);
-        if ($em === '' || !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
+        // Stored the way the sign-in door compares it: no spaces, lower case.
+        $em = strtolower(preg_replace('/\s+/', '', (string)$d['email']) ?? '');
+        /* Blank is allowed: an instructor or volunteer who signs in with their
+           ID card may have no email at all, and must still be editable. */
+        if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
         $row['email'] = substr($em, 0, 160);
     }
     if (array_key_exists('role', $d)) {
@@ -681,6 +713,22 @@ function admin_volunteer_update(array $p): array {
     }
     if (array_key_exists('courses', $d)) {
         $courses = is_array($d['courses']) ? array_values(array_filter(array_map(fn($c) => substr(trim((string)$c), 0, 80), $d['courses']))) : [];
+        /* An NGG instructor's courses ARE their class: "coding " or "Robotic"
+           matched no child, and the portal opened on an empty class. Each is
+           spelt as the catalogue spells it, or refused with the name and the
+           nearest course. Summer School keeps its own tracks. */
+        $prog = (string)($d['programme'] ?? $v['programme'] ?? '');
+        if ($prog === 'ngg' && function_exists('curriculum_course_canonical')) {
+            $clean = [];
+            foreach ($courses as $c) {
+                $canon = curriculum_course_canonical($c);
+                if ($canon === null) { $sug = curriculum_course_suggest($c);
+                    return ['ok' => false, 'error' => 'unknown_course', 'course' => $c, 'suggest' => $sug,
+                            'detail' => '"' . $c . '" is not a course.' . ($sug !== '' ? ' Did you mean ' . $sug . '?' : '') . ' Courses: ' . implode(', ', curriculum_courses()) . '.']; }
+                if ($canon !== '' && !in_array($canon, $clean, true)) $clean[] = $canon;
+            }
+            $courses = $clean;
+        }
         $row['courses'] = json_encode(array_slice($courses, 0, 20));
     }
     if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
@@ -697,7 +745,13 @@ function admin_volunteer_update(array $p): array {
         if (!in_array((string)$d['status'], ['active', 'inactive', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
         $row['status'] = (string)$d['status'];
     }
+    // How children address them (staff_public_name). Blank is "Coach".
+    if (array_key_exists('honorific', $d)) {
+        $h = trim((string)$d['honorific']);
+        if ($h !== '' && staff_honorific_clean($h) === '') return ['ok' => false, 'error' => 'bad_title'];
+    }
     db_update('volunteers', $row, ['volunteerId' => $volunteerId]);
+    if (array_key_exists('honorific', $d)) { staff_honorific_set((string)($v['memberId'] ?? ''), '', $volunteerId, (string)$d['honorific']); $row['honorific'] = true; }
     if (array_key_exists('photoUrl', $row) && function_exists('photo_supersede'))
         photo_supersede('volunteer', $volunteerId, (string)($v['photoUrl'] ?? ''), (string)$row['photoUrl'], (string)($g['requester']['memberId'] ?? ''));
     /* Moving someone onto (or off) the Club moves their card's clock with
@@ -832,7 +886,7 @@ function admin_volunteer_approve(array $p): array {
     // that resolves to a nonexistent profile (the "/q link shows no ID" bug).
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'applicationId' => $id,
-        'fullName' => (string)$a['name'], 'email' => (string)$a['email'], 'phone' => (string)($a['phone'] ?? ''),
+        'fullName' => (string)$a['name'], 'email' => strtolower(trim((string)$a['email'])), 'phone' => (string)($a['phone'] ?? ''),
         'firstName' => (string)($a['firstName'] ?? ''), 'lastName' => (string)($a['lastName'] ?? ''),
         'otherName' => (string)($a['otherName'] ?? ''), 'dob' => (string)($a['dob'] ?? ''),
         'sex' => (string)($a['sex'] ?? ''),
@@ -925,8 +979,8 @@ function admin_member_promote_ngv(array $p): array {
 
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'memberId' => $memberId, 'applicationId' => null,
-        'fullName' => (string)$m['fullName'], 'email' => (string)($m['email'] ?? ''), 'phone' => (string)($m['phone'] ?? ''),
-        'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
+        'fullName' => (string)$m['fullName'], 'email' => strtolower(trim((string)($m['email'] ?? ''))), 'phone' => (string)($m['phone'] ?? ''),
+        'role' => $role, 'courses' => volunteer_promote_courses($m, $p), 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
         'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
@@ -1988,4 +2042,46 @@ function admin_item_needs_delete(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('item.need.delete', $g['requester']['memberId'], $centreId, ['item' => $item], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+
+/**
+ * The courses a member promoted to staff starts with: the ones the promoter
+ * named, else the member's own (their chosen courses, else their track),
+ * each in the catalogue's spelling. An instructor created with none opened
+ * on an empty class, with nothing to say why.
+ */
+function volunteer_promote_courses(array $m, array $p): string {
+    $want = is_array($p['courses'] ?? null) ? $p['courses'] : [];
+    if (!$want) {
+        $own = json_decode((string)($m['courses'] ?? ''), true);
+        $want = is_array($own) && $own ? $own : (trim((string)($m['track'] ?? '')) !== '' ? [(string)$m['track']] : []);
+    }
+    $out = [];
+    foreach ($want as $c) {
+        $canon = function_exists('curriculum_course_canonical') ? curriculum_course_canonical((string)$c) : trim((string)$c);
+        if ($canon !== null && $canon !== '' && !in_array($canon, $out, true)) $out[] = $canon;
+    }
+    return $out ? json_encode(array_slice($out, 0, 20)) : '';
+}
+
+
+/**
+ * admin.volunteers.academy — clear (or un-clear) an instructor of the online
+ * Instructor Academy by hand: they did it in person, or need none. Never one's
+ * own record; audited.
+ */
+function admin_volunteer_academy(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [(string)($p['volunteerId'] ?? '')]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($v['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $by = (string)$g['requester']['memberId'];
+    if ((string)($v['memberId'] ?? '') === $by) return ['ok' => false, 'error' => 'own_account'];
+    $on = !empty($p['on']);
+    if ($on === ((string)($v['academyClearedAt'] ?? '') !== '')) return ['ok' => true, 'unchanged' => true, 'academyClearedAt' => (string)$v['academyClearedAt']];
+    $at = $on ? now_iso() : '';
+    db_update('volunteers', ['academyClearedAt' => $at, 'academyClearedBy' => $on ? $by : '', 'updatedAt' => now_iso()], ['id' => (int)$v['id']]);
+    audit('admin.volunteer.academy', $by, (string)$v['volunteerId'], ['cleared' => $on], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'academyClearedAt' => $at];
 }

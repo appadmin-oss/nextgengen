@@ -58,7 +58,10 @@ const ROUTES = [
   { id: "volunteers",  title: "Become a mentor · NGG",                     desc: "Three ways to be useful. Pick the shape of your time." },
   { id: "mentors",     title: "The mentors · NGG",                         desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
   { id: "blog",        title: "The Journal · NGG",                         desc: "Long-form writing from mentors, members and the editorial team." },
+  { id: "support",     title: "Help & support · NGG",                      desc: "Answers to common questions, the live status, and how to reach the NGG team: open a case from My NGG or the Family account." },
   { id: "contact",     title: "Contact · NGG",                             desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
+  { id: "study",       title: "Study tools · NGG",                         desc: "Flashcards with spaced repetition, a focus timer, typing practice, a scientific calculator, a graph plotter and a dictionary — free study tools for NGG members.", chrome: "own" },
+  { id: "telegram",    title: "Free messages on Telegram · NGG",           desc: "Get NGG's messages — sign-in codes, check-ins and notices — on Telegram, free, instead of by SMS. Android and iPhone." },
   { id: "policies",    title: "Member and family policies · NGG",          desc: "What a family agrees to when a child joins the NGG Club: taking part, safeguarding, medical care, privacy, updates, photos, trips and fees." },
   { id: "legal",       title: "Legal & data protection · NGG",             desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
   { id: "s-status",    title: "Live status · Summer School · NGG",         desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
@@ -75,7 +78,11 @@ const ROUTES = [
 
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
-  { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
+  { id: "dashboard",   title: "My NGG · Member portal",                    desc: "Your missions, mentor, streak and journal — the member dashboard.", chrome: "own", index: false },
+  /* The Learn app. Its own place, with its own addresses — /learn/lesson/<id>
+     is a lesson a member can bookmark and send, which it could not be while
+     the curriculum was a sheet over the portal. */
+  { id: "learn",       title: "Learn · NGG",                               desc: "The NGG Club curriculum: this week's lessons, your courses, the review and the study helper.", chrome: "own", index: false },
   { id: "summerprofile", title: "ID card · NGG",                           desc: "The page an NGG or Summer School card opens when it is scanned.", addressable: false, index: false },
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
@@ -86,10 +93,11 @@ const ROUTES = [
   { id: "summer-admin", title: "Summer School · Staff Portal · NGG",       desc: "", chrome: "own", index: false },
   { id: "club-admin",   title: "NGG Club · Staff Portal · NGG",            desc: "", chrome: "own", index: false },
   { id: "mentor",       title: "Mentor Portal · NGG",                      desc: "", chrome: "own", index: false },
+  { id: "instructor",   title: "Instructor Portal · NGG",                  desc: "", chrome: "own", index: false },
   /* A parent's own account: their own sign-in (not a member session), every
      child they look after on one screen. Noindexed — it is a signed-in page. */
   { id: "family",       title: "Family account · NGG",                     desc: "For parents and guardians: attendance, conduct, fees and lesson progress for each child, and a way to tell the centre.", chrome: "own", index: false },
-  { id: "circle",       title: "Anchor Circle · Guardian & Mentor Portal", desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words.", chrome: "own", index: false },
+  { id: "circle",       title: "Anchor Circle has moved · NGG",            desc: "Parents and teachers now follow a child's Anchor week in the NGG family account; mentors in the mentor portal.", chrome: "own", index: false },
   { id: "gate",         title: "Check-in desk · NGG",                      desc: "", chrome: "own", index: false },
   { id: "enrol",        title: "Registration desk · Summer School · NGG",   desc: "", chrome: "own", index: false },
   { id: "review",       title: "Review desk · NGG",                        desc: "", chrome: "own", index: false },
@@ -335,8 +343,16 @@ function App() {
     /* The Control Room owns /control/<page>/<tab> and resolves the old
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
+    /* The mentor portals own /mentor/ngg, /mentor/summer and /mentor/class (MentorHome). */
+    const inMentorSubtree = (page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "")) || (page === "instructor" && /^\/instructor(\/|$)/.test(window.location.pathname || ""));
+    /* Study tools own /study/<tab>/<tool> (src/modules/tools/tools-core.jsx), and forward the old /study/cards-style addresses themselves. */
+    const inStudySubtree = page === "study" && /^\/study(\/|$)/.test(window.location.pathname || "");
+    /* The Learn app owns /learn/<view>/<id> (page-learn.jsx) and reads it
+       itself, so a deep lesson address must not be rewritten back to /learn
+       on mount — that is what made a lesson unbookmarkable before. */
+    const inLearnSubtree = page === "learn" && /^\/learn(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && !inStudySubtree && !inLearnSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -393,7 +409,6 @@ function App() {
 
   useScrollReveal(page);
   useReveal([page]);
-  useCursor();
 
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
@@ -406,6 +421,7 @@ function App() {
     anchor:    <AnchorPage    setPage={setPage}/>,
     profile:   <ProfilePage   setPage={setPage}/>,
     dashboard: <DashboardPage setPage={setPage}/>,
+    learn:     <LearnPage     setPage={setPage}/>,
     book:      <BookPage      setPage={setPage}/>,
     media:     <MediaPage     setPage={setPage}/>,
     parents:   <ParentsPage   setPage={setPage}/>,
@@ -414,8 +430,11 @@ function App() {
     mentors:   <MentorsPage    setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
     policies:  <PoliciesPage  setPage={setPage}/>,
+    telegram:  <TelegramPage  setPage={setPage}/>,
+    study:     <ToolsApp      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
     contact:   <ContactPage   setPage={setPage}/>,
+    support:   <HelpCentrePage setPage={setPage}/>,
     "s-status": <StatusPage    setPage={setPage}/>,
     "v-status": <VolunteerStatusPage setPage={setPage}/>,
     summerprofile: <SummerProfilePage setPage={setPage}/>,
@@ -424,7 +443,8 @@ function App() {
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
     family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorPortal/>,
+    mentor:     <MentorHome/>,
+    instructor: <InstructorHome/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,
     gate:       <GatePage/>,
@@ -466,7 +486,7 @@ function App() {
         <ToastHost/>
         <DialogHost/>
         {/* The Control Room has its own palette (⌘K, CONTROL_ROOM.md §4.1). */}
-        {page !== "admin" && <CommandPalette/>}
+        {page !== "admin" && page !== "dashboard" && <CommandPalette/>}
         <div id="ngg-a11y-live" aria-live="polite" className="sr-only"/>
       </div>
     );
@@ -500,7 +520,7 @@ function App() {
           options={["#d0ff3a", "#ff5a3c", "#b07cff", "#f5b026"]}
         />
         <TweakSection label="Jump to page"/>
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginTop:8}}>
+        <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:6, marginTop:8}}>
           {[
             ["home","Home"],["summer","Summer"],["club","NGGC"],["anchor","Anchor 12"],
             ["profile","Profile"],["blog","Journal"],["media","Media"],["parents","Parents"],

@@ -347,3 +347,135 @@ function admin_engagement_trends(array $p): array {
     return ['ok' => true, 'weeks' => $allWeeks, 'series' => $series, 'detail' => $detail, 'centres' => $centres,
             'filters' => ['weeks' => $weeks, 'centre' => $centre, 'role' => $role, 'personId' => $person]];
 }
+
+
+/* ── Time on the portal ──────────────────────────────────────────────────────
+   The page beats once a minute while it is visible AND someone has touched it
+   in the last two minutes, so a tab left open overnight counts nothing. The
+   server trusts no claim: a beat counts at most PT_BEAT_MAX seconds, beats
+   closer than PT_BEAT_GAP apart are dropped (two tabs do not double the time),
+   and a day tops out at PT_DAY_MAX per portal. */
+const PT_PORTALS  = ['member', 'mentor', 'instructor', 'community', 'club', 'family', 'site', 'other'];
+const PT_BEAT_MAX = 75;
+const PT_BEAT_GAP = 40;
+const PT_DAY_MAX  = 43200;
+
+function portal_time_beat(array $p): array {
+    $mid = trim((string)($p['memberId'] ?? ''));
+    if ($mid === '') return ['ok' => false, 'error' => 'not_signed_in'];
+    $portal = strtolower(trim((string)($p['portal'] ?? '')));
+    if (!in_array($portal, PT_PORTALS, true)) $portal = 'other';
+    $sec = (int)($p['seconds'] ?? 0);
+    if ($sec < 1) return ['ok' => true, 'counted' => 0];
+    $sec = min($sec, PT_BEAT_MAX);
+    $now = time(); $day = date('Y-m-d', $now); $iso = date('c', $now);
+    // Two tabs, two portals: the gap is per person, across portals.
+    $last = db_row("SELECT lastAt FROM portal_time WHERE memberId = ? AND day = ? ORDER BY lastAt DESC LIMIT 1", [$mid, $day]);
+    if ($last && ($t = strtotime((string)$last['lastAt'])) !== false && $now - $t < PT_BEAT_GAP) return ['ok' => true, 'counted' => 0];
+    $row = db_row("SELECT seconds FROM portal_time WHERE memberId = ? AND day = ? AND portal = ?", [$mid, $day, $portal]);
+    if ($row) {
+        $room = max(0, PT_DAY_MAX - (int)$row['seconds']); $sec = min($sec, $room);
+        db_exec("UPDATE portal_time SET seconds = seconds + ?, beats = beats + 1, lastAt = ? WHERE memberId = ? AND day = ? AND portal = ?", [$sec, $iso, $mid, $day, $portal]);
+    } else {
+        db_insert('portal_time', ['memberId' => $mid, 'day' => $day, 'portal' => $portal, 'seconds' => $sec, 'beats' => 1, 'firstAt' => $iso, 'lastAt' => $iso]);
+    }
+    return ['ok' => true, 'counted' => $sec];
+}
+
+function _pt_median(array $xs): int {
+    if (!$xs) return 0; sort($xs); $n = count($xs);
+    return (int)round($n % 2 ? $xs[intdiv($n, 2)] : ($xs[$n / 2 - 1] + $xs[$n / 2]) / 2);
+}
+
+/**
+ * admin.engagement.portal — how long members actually use the portal.
+ * Params: days (1..365, default 30), centre, type ('ngg' default | 'all').
+ * Centre-scoped staff see their centres only. Minutes are rounded per member.
+ */
+function admin_engagement_portal(array $p): array {
+    $g = admin_cap_gate($p, 'audit'); if (!$g['ok']) return $g;
+    $days = (int)($p['days'] ?? 30); if ($days < 1) $days = 30; if ($days > 365) $days = 365;
+    $from = date('Y-m-d', time() - ($days - 1) * 86400);
+    $centre = trim((string)($p['centre'] ?? ''));
+    $all = (string)($p['type'] ?? '') === 'all';
+
+    $where = ["coalesce(m.status,'') NOT IN ('deactivated','deleted','archived')"]; $args = [];
+    if (!$all) $where[] = "lower(coalesce(m.type,'')) = 'ngg'";
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        if (!$scope) $scope = ['__none__'];
+        $where[] = 'm.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $args = array_merge($args, $scope);
+    }
+    if ($centre !== '') { $where[] = 'm.centre = ?'; $args[] = $centre; }
+    $w = implode(' AND ', $where);
+
+    $people = db_all("SELECT m.memberId, m.fullName, coalesce(m.centre,'') AS centre FROM members m WHERE $w", $args);
+    $byId = []; foreach ($people as $r) $byId[(string)$r['memberId']] = $r;
+
+    // One grouped read for the window; everything below is arithmetic.
+    $rows = db_all("SELECT t.memberId, t.day, t.portal, t.seconds, t.lastAt FROM portal_time t JOIN members m ON m.memberId = t.memberId
+                    WHERE t.day >= ? AND $w", array_merge([$from], $args));
+
+    $per = []; $daily = []; $portals = []; $hours = array_fill(0, 24, 0);
+    foreach ($rows as $r) {
+        $id = (string)$r['memberId']; $s = (int)$r['seconds'];
+        $per[$id] ??= ['seconds' => 0, 'days' => [], 'portals' => [], 'lastAt' => ''];
+        $per[$id]['seconds'] += $s; $per[$id]['days'][$r['day']] = true;
+        $per[$id]['portals'][$r['portal']] = ($per[$id]['portals'][$r['portal']] ?? 0) + $s;
+        if ((string)$r['lastAt'] > $per[$id]['lastAt']) $per[$id]['lastAt'] = (string)$r['lastAt'];
+        $daily[$r['day']] ??= ['seconds' => 0, 'members' => []];
+        $daily[$r['day']]['seconds'] += $s; $daily[$r['day']]['members'][$id] = true;
+        $portals[$r['portal']] ??= ['seconds' => 0, 'members' => []];
+        $portals[$r['portal']]['seconds'] += $s; $portals[$r['portal']]['members'][$id] = true;
+        if (($t = strtotime((string)$r['lastAt'])) !== false) $hours[(int)date('G', $t)] += $s;
+    }
+
+    $total = array_sum(array_map(fn($x) => $x['seconds'], $per));
+    $active = count($per);
+    $mins = array_map(fn($x) => $x['seconds'] / 60, $per);
+    $series = [];
+    for ($i = $days - 1; $i >= 0; $i--) {
+        $d = date('Y-m-d', time() - $i * 86400);
+        $series[] = ['day' => $d, 'minutes' => (int)round(($daily[$d]['seconds'] ?? 0) / 60), 'members' => count($daily[$d]['members'] ?? [])];
+    }
+    $byPortal = [];
+    foreach ($portals as $k => $v) $byPortal[] = ['portal' => $k, 'minutes' => (int)round($v['seconds'] / 60), 'members' => count($v['members'])];
+    usort($byPortal, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
+
+    $centres = [];
+    foreach ($byId as $id => $m) {
+        $c = $m['centre'] !== '' ? $m['centre'] : 'No centre';
+        $centres[$c] ??= ['centre' => $c, 'members' => 0, 'active' => 0, 'minutes' => 0];
+        $centres[$c]['members']++;
+        if (isset($per[$id])) { $centres[$c]['active']++; $centres[$c]['minutes'] += (int)round($per[$id]['seconds'] / 60); }
+    }
+    $centres = array_values($centres);
+    foreach ($centres as &$c) $c['reach'] = $c['members'] ? (int)round(100 * $c['active'] / $c['members']) : 0;
+    unset($c);
+    usort($centres, fn($a, $b) => $b['minutes'] <=> $a['minutes']);
+
+    $list = [];
+    foreach ($byId as $id => $m) {
+        $x = $per[$id] ?? null;
+        if ($x) arsort($x['portals']);
+        $list[] = ['memberId' => $id, 'name' => (string)$m['fullName'], 'centre' => (string)$m['centre'],
+                   'minutes' => $x ? (int)round($x['seconds'] / 60) : 0, 'daysActive' => $x ? count($x['days']) : 0,
+                   'avgPerDay' => $x ? (int)round($x['seconds'] / 60 / max(1, count($x['days']))) : 0,
+                   'topPortal' => $x ? (string)array_key_first($x['portals']) : '', 'lastAt' => $x['lastAt'] ?? ''];
+    }
+    usort($list, fn($a, $b) => [$b['minutes'], $a['name']] <=> [$a['minutes'], $b['name']]);
+
+    return ['ok' => true, 'window' => ['days' => $days, 'from' => $from, 'to' => date('Y-m-d')],
+        'totals' => [
+            'members' => count($byId), 'active' => $active,
+            'reach' => count($byId) ? (int)round(100 * $active / count($byId)) : 0,
+            'minutes' => (int)round($total / 60),
+            'avgMinutes' => $active ? (int)round($total / 60 / $active) : 0,
+            'medianMinutes' => _pt_median($mins),
+            'avgDaysActive' => $active ? round(array_sum(array_map(fn($x) => count($x['days']), $per)) / $active, 1) : 0,
+            'quiet' => count($byId) - $active,
+        ],
+        'daily' => $series, 'byPortal' => $byPortal, 'byCentre' => $centres,
+        'byHour' => array_map(fn($s) => (int)round($s / 60), $hours),
+        'rows' => array_slice($list, 0, 500), 'truncated' => count($list) > 500];
+}

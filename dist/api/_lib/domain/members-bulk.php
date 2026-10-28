@@ -66,8 +66,12 @@ function members_bulk_actions(): array {
         'type'        => ['cap' => 'people', 'needs' => 'type',    'staffSafe' => true,  'label' => 'Set membership type'],
         'level'       => ['cap' => 'people', 'needs' => 'level',   'staffSafe' => true,  'label' => 'Set level'],
         'track'       => ['cap' => 'people', 'needs' => 'track',   'staffSafe' => true,  'label' => 'Set track'],
+        // Courses from the catalogue, replacing theirs or added to them (mode).
+        'courses'     => ['cap' => 'people', 'needs' => 'courses', 'staffSafe' => true,  'label' => 'Set courses'],
         'consent'     => ['cap' => 'people', 'needs' => 'consent', 'staffSafe' => true,  'label' => 'Record consent'],
         'remindersOff'=> ['cap' => 'fees',   'needs' => 'onoff',   'staffSafe' => true,  'label' => 'Dues reminders'],
+        // Clears dues they do not owe: delegates to fees_settle_through(), the single-member implementation.
+        'feesSettled' => ['cap' => 'fees',   'needs' => 'settle',  'staffSafe' => true,  'label' => 'Settled up to a date'],
     ];
 }
 
@@ -114,6 +118,15 @@ function admin_members_bulk(array $p): array {
     } elseif ($action === 'track') {
         $value = trim((string)($p['track'] ?? ''));
         if (mb_strlen($value) > 64) return ['ok' => false, 'error' => 'bad_track'];
+    } elseif ($action === 'courses') {
+        [$picked, $unknown] = member_courses_clean($p['courses'] ?? []);
+        if ($unknown) return ['ok' => false, 'error' => 'unknown_course', 'courses' => $unknown,
+                              'detail' => 'Not a course in the catalogue: ' . implode(', ', $unknown) . '.'];
+        if (count($picked) > MEMBER_COURSES_MAX) return ['ok' => false, 'error' => 'too_many_courses', 'max' => MEMBER_COURSES_MAX];
+        $mode = (string)($p['mode'] ?? 'replace');
+        if (!in_array($mode, ['replace', 'add', 'remove'], true)) return ['ok' => false, 'error' => 'bad_mode'];
+        if (!$picked && $mode !== 'replace') return ['ok' => false, 'error' => 'no_courses', 'detail' => 'Choose at least one course.'];
+        $value = ['list' => $picked, 'mode' => $mode];
     } elseif ($action === 'consent') {
         $value = ['type' => (string)($p['consentType'] ?? ''), 'status' => (string)($p['consentStatus'] ?? '')];
         if (!function_exists('consent_record')) return ['ok' => false, 'error' => 'consent_unavailable'];
@@ -122,7 +135,12 @@ function admin_members_bulk(array $p): array {
         }
     } elseif ($action === 'remindersOff') {
         $value = !empty($p['off']) ? 1 : 0;
+    } elseif ($action === 'feesSettled') {
+        $v = fees_settle_validate($p['date'] ?? '', $p['reason'] ?? '');
+        if (!$v['ok']) return $v;
+        $value = ['date' => $v['date'], 'reason' => $v['reason']];
     }
+    $cleared = 0;
 
     $scopeNames = admin_centre_names_in_scope($me);
     $now = now_iso();
@@ -151,6 +169,28 @@ function admin_members_bulk(array $p): array {
         }
 
         try {
+            if ($action === 'feesSettled') {
+                $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+                $r = fees_settle_through($full, $value['date'], $value['reason'], (string)$me['memberId'], (string)($p['ip'] ?? ''));
+                if (empty($r['ok'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => false, 'error' => (string)($r['error'] ?? 'refused')]; $refused++; continue; }
+                if (!empty($r['unchanged'])) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue; }
+                $cleared += (int)$r['cleared'];
+                $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'cleared' => (int)$r['cleared']];
+                $applied++; continue;
+            }
+            if ($action === 'courses') {
+                $full = db_row('SELECT courses, track FROM members WHERE memberId = ? LIMIT 1', [$mid]) ?: [];
+                $cur = member_courses_of($full);
+                $next = $value['mode'] === 'replace' ? $value['list']
+                      : ($value['mode'] === 'add' ? array_values(array_unique(array_merge($cur, $value['list'])))
+                      : array_values(array_filter($cur, fn($c) => !in_array($c, $value['list'], true))));
+                if (count($next) > MEMBER_COURSES_MAX) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => false, 'error' => 'too_many_courses']; $refused++; continue; }
+                if ($next === $cur) { $results[] = ['id' => $mid, 'name' => $name, 'ok' => true, 'unchanged' => true]; continue; }
+                db_update('members', ['courses' => $next ? json_encode($next, JSON_UNESCAPED_UNICODE) : '', 'track' => $next[0] ?? '', 'updatedAt' => $now], ['memberId' => $mid]);
+                audit('member.courses.changed', (string)$me['memberId'], $mid, ['from' => $cur, 'to' => $next, 'via' => 'bulk'], (string)($p['ip'] ?? ''));
+                $results[] = ['id' => $mid, 'name' => $name, 'ok' => true];
+                $applied++; continue;
+            }
             if ($action === 'consent') {
                 $r = consent_record($mid, (string)$value['type'], (string)$value['status'], 'staff',
                                     (string)($me['fullName'] ?? 'Staff'));
@@ -192,10 +232,10 @@ function admin_members_bulk(array $p): array {
     audit('admin.members.bulk', (string)$me['memberId'], $action, [
         'requested' => count($ids), 'applied' => $applied, 'refused' => $refused,
         'value' => is_array($value) ? $value : (string)$value,
-    ], (string)($p['ip'] ?? ''));
+    ] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []), (string)($p['ip'] ?? ''));
 
     return ['ok' => true, 'action' => $action, 'applied' => $applied, 'refused' => $refused,
-            'requested' => count($ids), 'results' => $results];
+            'requested' => count($ids), 'results' => $results] + ($action === 'feesSettled' ? ['cleared' => $cleared] : []);
 }
 
 /**

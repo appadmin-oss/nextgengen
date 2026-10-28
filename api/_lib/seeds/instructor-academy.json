@@ -1,0 +1,102 @@
+{
+ "pass": 80,
+ "groups": ["Start here: using the portal", "Teaching at NGG", "Keeping young people safe"],
+ "modules": [
+  {"id": "i01", "group": 0, "title": "Your portal: Today and the Saturday loop", "mins": 4, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "Where everything is", "body": "On a computer the areas are down the left: Today, Saturday, Progress, Students, Resources (and Summer School if you teach it). On a phone they are the tab bar at the bottom, with More for the rest. The course and centre you are teaching are at the top — press them to switch class."},
+    {"h": "Today", "body": "Today shows this class’s cards — the roll, the session log, the skills board and what is waiting to be marked — and the four-step Saturday loop: Plan, Teach, Exit ticket, Session log. The big “next” button always takes you to the step you are on. Start every Saturday here."},
+    {"h": "The loop, in order", "body": "Before the class: Plan. At the start: Roll. During: Teach. Last ten minutes: Exit ticket. After: Session log. Each step saves as you go, so a dropped connection loses nothing — the screen says when it is offline and sends what you did when it is back."}
+   ],
+   "scenario": {"situation": "It is 9:55 on Saturday and your class starts at 10. You open the portal. Where do you go?", "options": [
+    {"text": "Today, then the Roll as the children arrive.", "right": true, "why": "Today puts the next step in front of you; the roll is first once children arrive."},
+    {"text": "Analytics, to see last week’s scores.", "right": false, "why": "Useful later in the week, not five minutes before the class."},
+    {"text": "Curriculum, to upload a worksheet.", "right": false, "why": "Uploads go for approval; do them in the week, not at the door."}]},
+   "quiz": [
+    {"q": "You teach two courses. How do you switch to the other class?", "options": ["Sign out and in again", "Press the course and centre at the top and choose the other", "Ask the centre admin"], "answer": 1, "why": "The course switcher at the top changes the class every screen shows."},
+    {"q": "What does the “next” button on Today do?", "options": ["Opens the step of the Saturday loop you are on", "Sends the session log", "Closes the roll"], "answer": 0, "why": "It is a shortcut to wherever you are in Plan → Teach → Exit ticket → Session log."}]},
+  {"id": "i02", "group": 0, "title": "Your portal: Roll and Plan", "mins": 4, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "The roll", "body": "Saturday → Roll lists the class. Tap a child to mark them here, late or away; “Everyone here” marks the rest at once. Close the roll when the class has started — closing adds it to the centre’s attendance, so parents and mentors see it. You can reopen it if a child arrives late."},
+    {"h": "The plan", "body": "Saturday → Plan holds the lesson goal, the phase minutes and notes, the retrieval questions (swap any you don’t want), the hinge question and the pairing. It saves as you type. “Start teaching” takes you to Teach with the plan loaded."}
+   ],
+   "scenario": null,
+   "quiz": [
+    {"q": "A child arrives twenty minutes after you closed the roll. What do you do?", "options": ["Nothing — the roll is closed", "Reopen the roll, mark them late, and close it again", "Tell their mentor by message"], "answer": 1, "why": "Reopening keeps the attendance true; it is the record parents see."},
+    {"q": "Where do you set the hinge question for today?", "options": ["Saturday → Plan", "Saturday → Exit ticket", "Resources → Curriculum"], "answer": 0, "why": "The plan holds the hinge question; Teach then tallies the answers."}]},
+  {"id": "i03", "group": 0, "title": "Your portal: Teach and the exit ticket", "mins": 4, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "Teach", "body": "Saturday → Teach runs the lesson: the phase timer (pause, +2 minutes, next phase), quick timers of 5–20 minutes, and the cold-call picker (or press C) that chooses a child fairly. After a cold call, the outcome chips (got it, partly, not yet) add a remark to the session log for you. The hinge tally records how many chose each answer."},
+    {"h": "The exit ticket", "body": "Saturday → Exit ticket closes the lesson: mark each child Got it, Partly or Not yet, pick the misconceptions you saw, and write one piece of whole-class feedback. You can post that feedback to the course channel in the Community so the children see it at home."}
+   ],
+   "scenario": {"situation": "Halfway through, most of the class gets the hinge question wrong. What does the portal help you do?", "options": [
+    {"text": "The hinge tally shows it at a glance — re-teach before moving to the next phase, and add +2 minutes to the timer.", "right": true, "why": "The hinge question exists for this moment; the timer bends to the class."},
+    {"text": "Carry on — the exit ticket will catch it.", "right": false, "why": "The exit ticket records it; it doesn’t fix it. The hinge is your chance to change course."},
+    {"text": "Cold-call the strongest child to give the answer.", "right": false, "why": "One right answer hides a class that doesn’t understand."}]},
+   "quiz": [
+    {"q": "Which key opens the cold-call picker on a computer?", "options": ["C", "Space", "Enter"], "answer": 0, "why": "C picks the next child fairly; the outcome chips record how they did."},
+    {"q": "Where do you choose the misconceptions you saw?", "options": ["Session log", "Exit ticket", "Skills board"], "answer": 1, "why": "The exit ticket records them alongside each child’s mark."}]},
+  {"id": "i04", "group": 0, "title": "Your portal: session log, marking and skills", "mins": 4, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "The session log", "body": "Saturday → Session log asks three short questions about the class and offers remark chips for each child. “File” sends each child’s remarks to their thread, where their mentor reads them. File it the same day."},
+    {"h": "Marking", "body": "Progress → Marking holds the written answers waiting for you. Score each and write feedback (a draft is offered; edit it). Feedback the child can act on beats a mark alone."},
+    {"h": "The skills board", "body": "Progress → Skills board shows every child’s level in each skill of the course. Moving a child up needs evidence — say what they did. “Suggest a plan” reads the board and proposes pairs and next steps."}
+   ],
+   "scenario": null,
+   "quiz": [
+    {"q": "How does a child’s mentor hear what you noticed on Saturday?", "options": ["You message them", "You file the session log; each child’s remarks go to their thread", "They read Analytics"], "answer": 1, "why": "Filing the log is the hand-over to mentors."},
+    {"q": "You move a child up a level on the skills board. What must you add?", "options": ["Nothing", "Evidence of what they did", "Their mentor’s approval"], "answer": 1, "why": "A move up is recorded with its evidence, so it means something to whoever reads it."}]},
+  {"id": "i05", "group": 0, "title": "Your portal: students, results, community and resources", "mins": 4, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "Students", "body": "Students lists the class; open a child for their attendance, skills and remarks. “Summarise for the mentor” writes a short note to their mentor from what is on record."},
+    {"h": "Progress", "body": "Assignments is where you set and collect work. Analytics shows attendance, the skill heat-map, who needs support and who is ready to stretch. School results shows the class’s school reports: leave a note for the mentor, mark one seen, or remind a family that a report is missing."},
+    {"h": "Community and Curriculum", "body": "Community shows the class’s posts waiting for a reply, a homework nudge, and lets you post, set homework or run a poll. Resources → Curriculum shows the units; upload materials there — they are checked before children see them."}
+   ],
+   "scenario": null,
+   "quiz": [
+    {"q": "Three children haven’t handed in this term’s school report. What do you use?", "options": ["Progress → School results → Remind", "Community → Poll", "Message each family from your phone"], "answer": 0, "why": "Remind sends the families the request and records that it went."},
+    {"q": "You have a worksheet for next week. Where does it go?", "options": ["Resources → Curriculum → upload (it is checked before children see it)", "Community → post it", "Email it to the centre"], "answer": 0, "why": "Curriculum keeps materials with the unit, and they are checked first."}]},
+  {"id": "i06", "group": 0, "title": "Your portal: Support and reporting a concern", "mins": 3, "note": "Start here", "orientation": true, "required": false, "renewDays": 0,
+   "lessons": [
+    {"h": "Support", "body": "Resources → Support sends a question about the portal, a lesson or a child to the NGG team, and shows your Academy progress. Use it instead of a personal message, so the right person sees it."},
+    {"h": "Report a concern", "body": "Report a concern (Support, or a child’s page) goes straight to the safeguarding officer. Write what you saw or were told, in the child’s words where you can. Don’t investigate, and never promise a child it stays secret. In immediate danger, call the emergency services first."}
+   ],
+   "scenario": {"situation": "After class a child shows you bruises and says not to tell anyone. What do you do?", "options": [
+    {"text": "Say you can’t keep it secret but will make sure the right person helps; report it through Report a concern today.", "right": true, "why": "The officer reads it the same day; you never promise secrecy."},
+    {"text": "Ask the child’s mentor what they think first.", "right": false, "why": "The safeguarding officer decides; a delay can put the child at risk."},
+    {"text": "Call the parents yourself.", "right": false, "why": "Contacting the family may not be safe. The officer decides the next step."}]},
+   "quiz": [
+    {"q": "Where does Report a concern go?", "options": ["Straight to the safeguarding officer", "To the centre admin’s inbox", "To the child’s mentor"], "answer": 0, "why": "It goes to the safeguarding officer."}]},
+  {"id": "t01", "group": 1, "title": "Retrieval, hinge questions and exit tickets", "mins": 8, "note": "", "required": true, "renewDays": 0,
+   "lessons": [
+    {"h": "Start with retrieval", "body": "Open every lesson with three or four short questions on what the class learned before — last week, last month, last term. Remembering is what makes learning stick, and it tells you what has been forgotten."},
+    {"h": "Hinge questions", "body": "A hinge question is one multiple-choice question at the point where the lesson turns, with wrong answers that reveal a specific misunderstanding. Every child answers at once. If most are right, move on; if not, re-teach now."},
+    {"h": "Exit tickets", "body": "In the last minutes, one or two questions on today’s goal tell you who got it. They decide where next week starts — not the plan you wrote before you met the class."}
+   ],
+   "scenario": null,
+   "quiz": [
+    {"q": "What makes a good hinge question?", "options": ["It is hard, so only the best get it", "Each wrong answer reveals a particular misunderstanding", "It is open-ended"], "answer": 1, "why": "The wrong answers are diagnostic — that is what lets you decide on the spot."},
+    {"q": "What should next week’s lesson start from?", "options": ["The original scheme of work", "What the exit tickets showed", "Whatever the strongest children want"], "answer": 1, "why": "Exit tickets are evidence of where the class actually is."}]},
+  {"id": "t02", "group": 1, "title": "Feedback that moves learning", "mins": 6, "note": "", "required": true, "renewDays": 0,
+   "lessons": [
+    {"h": "Specific and actionable", "body": "Good feedback says what was done well and the one next step, in words the child can act on: “Your loop runs; now make it stop when the score reaches 10.” Not “Good work” or “7/10”."},
+    {"h": "Praise effort and strategy", "body": "Praise how a child worked — the strategy, the persistence, the help they gave — rather than calling them clever. It is what they can repeat."}
+   ],
+   "scenario": null,
+   "quiz": [
+    {"q": "Which is the most useful feedback?", "options": ["Great job!", "8/10", "Your plan is clear; next, test it with a friend before you build it."], "answer": 2, "why": "It names what went well and one action the child can take."}]},
+  {"id": "s01", "group": 2, "title": "Safeguarding for instructors", "mins": 10, "note": "Renew yearly", "required": true, "renewDays": 365,
+   "lessons": [
+    {"h": "Your duty", "body": "Every adult at NGG shares one duty: to notice, to record and to report. You are not expected to decide whether abuse happened — only to pass on what you saw or heard, quickly, to the safeguarding officer."},
+    {"h": "Safe practice", "body": "Never be alone with a child out of sight of others. Don’t share personal phone numbers or social media; contact goes through NGG’s tools, which keep a record and protect you as well as the child. Photos of children are taken and kept only through NGG."},
+    {"h": "Online", "body": "In the Community and messages, keep to the course and the class. Report anything that worries you — a message, a photo, a change in a child — with Report a concern, not by handling it alone."}
+   ],
+   "scenario": {"situation": "A child sends you a friend request on social media. What do you do?", "options": [
+    {"text": "Decline it, and keep contact to NGG’s Community and messages.", "right": true, "why": "NGG’s tools keep a record and protect both of you."},
+    {"text": "Accept it — it’s good for the relationship.", "right": false, "why": "Private channels with children are not permitted; they leave you both unprotected."},
+    {"text": "Accept and mute them.", "right": false, "why": "Accepting is the problem, muted or not."}]},
+   "quiz": [
+    {"q": "What is an instructor’s safeguarding duty?", "options": ["To investigate what happened", "To notice, record and report to the safeguarding officer", "To decide whether to tell the parents"], "answer": 1, "why": "You report; the officer decides what happens next."},
+    {"q": "Which is safe practice?", "options": ["Driving a child home alone", "Giving a child your personal number", "Keeping contact to NGG’s tools, in sight of others"], "answer": 2, "why": "Visible, recorded contact protects the child and you."}]}
+ ]
+}

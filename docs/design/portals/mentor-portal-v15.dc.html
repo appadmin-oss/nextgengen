@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./vendor/phosphor/phosphor.css">
+<script src="./mentor-academy-data.js"></script>
+<style>
+html,body{margin:0;height:100%;background:#f4f4f2}
+*{box-sizing:border-box}
+a{color:#0b0b0c}a:hover{color:#6b4b00}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid #0b0b0c;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none}}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" style="height:100vh; display:flex; font-family:'Geist',system-ui,sans-serif; color:#0b0b0c; font-size:14px; line-height:1.4; background:#f4f4f2; overflow:hidden; position:relative; -webkit-font-smoothing:antialiased;">
+
+<sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+  <aside aria-label="Mentor portal" style="width:248px; flex-shrink:0; background:#fbfbfa; border-right:1px solid #e8e5dd; display:flex; flex-direction:column; padding:16px 12px; gap:16px;">
+    <div style="display:flex; align-items:center; gap:10px; padding:0 6px;"><a href="/" aria-label="Next Generation Genius: website home" title="Website home" style="display:inline-flex;flex:none;border-radius:50%"><img src="assets/logo.png" alt="" style="width:28px; height:28px; border-radius:50%;"></a><span style="display:flex; flex-direction:column;"><span style="font-size:14px; font-weight:700;">Mentor portal</span><span style="font-size:12px; color:#6b6b72;">{{ roleLabel }} · {{ centre }}</span></span></div>
+    <nav style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:2px;">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="8">
+        <button onClick="{{ n.go }}" aria-current="{{ n.cur }}" style="display:flex; align-items:center; gap:10px; height:40px; padding:0 10px; border:0; border-radius:10px; background:{{ n.bg }}; box-shadow:{{ n.sh }}; font-size:14px; font-weight:{{ n.fw }}; cursor:pointer; text-align:left;" style-hover="background:#efefed"><i class="{{ n.icon }}" aria-hidden="true" style="font-size:18px; flex-shrink:0;"></i><span style="flex:1;">{{ n.l }}</span><sc-if value="{{ n.hasB }}"><span style="min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:11.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; font-variant-numeric:tabular-nums;">{{ n.b }}</span></sc-if></button>
+      </sc-for>
+    </nav>
+    <button onClick="{{ goConcern }}" style="height:44px; border:1.5px solid #0b0b0c; border-radius:12px; background:#fff; font-size:14px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;"><i class="ph ph-shield-warning" aria-hidden="true"></i>Report a concern</button>
+    <div style="display:flex; align-items:center; gap:10px; padding:0 6px;"><span style="width:32px; height:32px; border-radius:50%; background:#0b0b0c; color:#f5b026; font-size:12px; font-weight:700; display:grid; place-items:center;">{{ meIni }}</span><span style="flex:1; display:flex; flex-direction:column; min-width:0;"><span style="font-size:13.5px; font-weight:600;">{{ meName }}</span><span style="font-size:11px; color:#6b6b72; font-family:'Geist Mono',monospace;">{{ meId }}</span></span><button onClick="{{ signOutMe }}" aria-label="Sign out" title="Sign out" style="width:40px;height:40px;flex-shrink:0;border:0;border-radius:10px;background:none;cursor:pointer;font-size:20px;color:#3a3a40;display:grid;place-items:center" style-hover="background:#efefed"><i class="ph ph-sign-out" aria-hidden="true"></i></button></div>
+  </aside>
+</sc-if>
+
+<div style="flex:1; min-width:0; display:flex; flex-direction:column; height:100%;">
+  <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+    <header style="height:56px; flex-shrink:0; display:flex; align-items:center; gap:4px; padding:0 4px 0 8px; background:#fbfbfa; border-bottom:1px solid #e8e5dd;">
+      <sc-if value="{{ showBack }}"><button onClick="{{ back }}" aria-label="Back" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-caret-left" aria-hidden="true" style="font-size:20px;"></i></button></sc-if>
+      <span style="flex:1; font-size:17px; font-weight:600; padding-left:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ title }}</span>
+      <button onClick="{{ goConcern }}" aria-label="Report a concern" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-shield-warning" aria-hidden="true" style="font-size:21px;"></i></button>
+    </header>
+  </sc-if>
+  <main style="flex:1; overflow-y:auto; overscroll-behavior:contain;">
+  <div style="max-width:1120px; margin:0 auto; padding:{{ mainPad }}; display:flex; flex-direction:column; gap:20px;">
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <sc-if value="{{ showBack }}"><button onClick="{{ back }}" style="height:44px; padding:0 10px 0 6px; border:0; background:none; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; align-self:center;"><i class="ph ph-caret-left" aria-hidden="true"></i>{{ backL }}</button></sc-if>
+        <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; color:#6b6b72;">{{ sub }}</span><h1 style="margin:0; font-size:28px; font-weight:700; letter-spacing:-0.02em;">{{ title }}</h1></div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ narrowSub }}"><span style="font-size:13px; color:#6b6b72; margin-bottom:-8px;">{{ sub }}</span></sc-if>
+
+    <sc-if value="{{ hasAreaTabs }}" hint-placeholder-val="{{ false }}"><nav aria-label="{{ areaLabel }}" style="display:flex; gap:4px; border-bottom:1px solid #e3e1da; margin-top:-8px; overflow-x:auto; scrollbar-width:none;"><sc-for list="{{ areaTabs }}" as="t" hint-placeholder-count="4"><button onClick="{{ t.go }}" aria-current="{{ t.on }}" style="flex-shrink:0; min-height:44px; padding:0 12px; border:0; border-bottom:2px solid {{ t.bar }}; margin-bottom:-1px; background:none; color:{{ t.fg }}; font-size:14.5px; font-weight:{{ t.fw }}; cursor:pointer; display:flex; align-items:center; gap:6px; white-space:nowrap;">{{ t.l }}<sc-if value="{{ t.hasB }}"><span style="min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:11px; font-weight:700; display:grid; place-items:center;">{{ t.b }}</span></sc-if></button></sc-for></nav></sc-if>
+    <!-- THIS WEEK -->
+    <sc-if value="{{ onWeek }}" hint-placeholder-val="{{ true }}">
+      <section aria-labelledby="due-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+        <div style="display:flex; align-items:baseline; gap:8px; padding:16px 16px 8px;"><h2 id="due-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Due now</h2><span style="font-size:12.5px; color:#6b6b72;">Most urgent first</span></div>
+        <sc-for list="{{ due }}" as="d" hint-placeholder-count="5">
+          <button onClick="{{ d.go }}" style="display:flex; align-items:center; gap:12px; width:100%; min-height:64px; padding:10px 16px; border:0; border-top:1px solid #f0efea; background:#fff; text-align:left; cursor:pointer;" style-hover="background:#fafaf8">
+            <span style="width:36px; height:36px; border-radius:10px; background:{{ d.bg }}; display:grid; place-items:center; flex-shrink:0;"><i class="{{ d.icon }}" aria-hidden="true" style="font-size:18px; color:{{ d.fg }};"></i></span>
+            <span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><span style="font-size:15px; font-weight:600;">{{ d.t }}</span><span style="font-size:13px; color:#6b6b72;">{{ d.s }}</span></span>
+            <i class="ph ph-caret-right" aria-hidden="true" style="color:#9a9aa0;"></i>
+          </button>
+        </sc-for>
+        <sc-if value="{{ dueMore }}"><button onClick="{{ seeAllDue }}" style="width:100%; min-height:48px; border:0; border-top:1px solid #f0efea; background:#fafaf8; font-size:13.5px; font-weight:600; cursor:pointer;">{{ dueRestL }}</button></sc-if>
+        <sc-if value="{{ noDue }}"><div style="padding:24px 16px; border-top:1px solid #f0efea; display:flex; gap:10px; align-items:center;"><i class="ph ph-check-circle" aria-hidden="true" style="font-size:22px; color:#1d6b30;"></i><span style="font-size:15px;">Nothing is due. Every child has been seen in the last two weeks.</span></div></sc-if>
+      </section>
+      <section aria-labelledby="sch-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:4px;">
+        <h2 id="sch-h" style="margin:0 0 6px; font-size:16px; font-weight:600;">Your commitments this week</h2>
+        <sc-for list="{{ week }}" as="w" hint-placeholder-count="4"><div style="display:flex; align-items:center; gap:12px; min-height:48px; border-top:1px solid #f0efea;"><span style="width:84px; font-size:13px; font-weight:600; flex-shrink:0;">{{ w.d }}</span><span style="width:96px; font-size:13px; color:#6b6b72; font-variant-numeric:tabular-nums; flex-shrink:0;">{{ w.t }}</span><span style="flex:1; font-size:14px;">{{ w.l }}</span><sc-if value="{{ w.done }}"><i class="ph-fill ph-check-circle" aria-label="Done" style="color:#1d6b30; font-size:18px;"></i></sc-if></div></sc-for>
+      </section>
+      <section aria-labelledby="gl-h" style="display:flex; flex-direction:column; gap:8px;">
+        <h2 id="gl-h" style="margin:0; padding:0 2px; font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:#5a5a60;">Your pod at a glance</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:8px;"><sc-for list="{{ glance }}" as="g" hint-placeholder-count="4"><button onClick="{{ g.go }}" style="text-align:left; background:#fff; border:1px solid #e8e5dd; border-radius:16px; padding:12px 14px; display:flex; flex-direction:column; gap:2px; cursor:pointer;" style-hover="border-color:#d2d2ce"><span style="font-size:12px; color:#6b6b72;">{{ g.k }}</span><span style="font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; color:{{ g.fg }};">{{ g.v }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ g.s }}</span></button></sc-for></div>
+      </section>
+    </sc-if>
+
+    <!-- MENTEES LIST -->
+    <sc-if value="{{ onList }}" hint-placeholder-val="{{ false }}">
+      <div role="group" aria-label="Filter" style="display:flex; gap:6px; overflow-x:auto; overflow-y:hidden; scrollbar-width:none; padding-bottom:2px;">
+        <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6"><button aria-pressed="{{ f.on }}" onClick="{{ f.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ f.line }}; background:{{ f.bg }}; color:{{ f.fg }}; font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap; flex-shrink:0; display:inline-flex; align-items:center; gap:6px;">{{ f.l }}<span style="font-variant-numeric:tabular-nums; opacity:.75;">{{ f.n }}</span></button></sc-for>
+      </div>
+      <section aria-label="Mentees" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid #f0efea; flex-wrap:wrap; background:{{ barBg }};">
+          <button onClick="{{ selAll }}" aria-label="{{ selAllL }}" style="width:40px; height:40px; border:0; background:none; border-radius:8px; cursor:pointer;"><i class="{{ selAllIcon }}" aria-hidden="true" style="font-size:20px;"></i></button>
+          <sc-if value="{{ noSel }}">
+            <div style="display:flex; align-items:center; gap:8px; height:40px; padding:0 12px; border:1px solid #d6d4cc; border-radius:12px; flex:1; min-width:180px; max-width:360px; background:#fcfcfb;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input type="search" value="{{ q }}" onChange="{{ onQ }}" placeholder="Search name or school" aria-label="Search mentees" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:16px;"></div>
+            <span style="flex:1;"></span>
+            <select value="{{ sort }}" onChange="{{ onSort }}" aria-label="Sort" style="height:40px; padding:0 8px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14px;"><option value="urgent">Needs you most</option><option value="contact">Longest since one-to-one</option><option value="name">Name</option></select>
+          </sc-if>
+          <sc-if value="{{ hasSel }}">
+            <span style="font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;">{{ selText }}</span>
+            <sc-for list="{{ bulk }}" as="b" hint-placeholder-count="3"><button onClick="{{ b.go }}" disabled="{{ b.off }}" title="{{ b.why }}" style="height:40px; padding:0 12px; border-radius:12px; border:1px solid #d6d4cc; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; opacity:{{ b.op }};"><i class="{{ b.icon }}" aria-hidden="true"></i>{{ b.l }}</button></sc-for>
+            <span style="flex:1;"></span><button onClick="{{ clearSel }}" style="height:40px; padding:0 10px; border:0; background:none; font-size:13.5px; text-decoration:underline; cursor:pointer;">Clear</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{ wideCols }}"><div aria-hidden="true" style="display:grid; grid-template-columns:{{ cols }}; gap:10px; padding:8px 16px 8px 8px; font-size:12px; color:#6b6b72; font-weight:500; border-bottom:1px solid #f0efea; background:#fafaf8;"><span></span><span>Mentee</span><span>Last one-to-one</span><span>Relationship</span><span>Active goal</span><span style="text-align:right;">Needs</span></div></sc-if>
+        <sc-for list="{{ kids }}" as="c" hint-placeholder-count="7">
+          <div style="display:grid; grid-template-columns:{{ cols }}; align-items:center; gap:10px; min-height:60px; padding:4px 16px 4px 8px; border-top:1px solid #f0efea; background:{{ c.bg }};">
+            <button onClick="{{ c.toggle }}" aria-label="{{ c.selL }}" aria-pressed="{{ c.selA }}" style="width:40px; height:40px; border:0; background:none; border-radius:8px; cursor:pointer;"><i class="{{ c.selIcon }}" aria-hidden="true" style="font-size:20px; color:{{ c.selFg }};"></i></button>
+            <button onClick="{{ c.open }}" style="display:flex; align-items:center; gap:10px; min-width:0; border:0; background:none; padding:6px 0; text-align:left; cursor:pointer;"><span style="width:36px; height:36px; border-radius:50%; background:#efefed; font-size:12px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ c.ini }}</span><span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.name }}</span><span style="font-size:12.5px; color:#6b6b72; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ c.sub }}</span></span></button>
+            <sc-if value="{{ wideCols }}">
+              <span style="font-size:13.5px; color:{{ c.cFg }}; font-weight:{{ c.cFw }}; font-variant-numeric:tabular-nums;">{{ c.contact }}</span>
+              <span title="{{ c.relTip }}" style="font-size:13.5px; display:inline-flex; align-items:center; gap:6px; font-variant-numeric:tabular-nums;"><span style="width:8px; height:8px; border-radius:50%; background:{{ c.relDot }};"></span>{{ c.rel }}</span>
+              <span style="font-size:13.5px; color:#4a4a50;">{{ c.goal }}</span>
+            </sc-if>
+            <span style="display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end;"><sc-for list="{{ c.flags }}" as="f" hint-placeholder-count="1"><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ f.bg }}; color:{{ f.fg }}; font-size:12px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">{{ f.l }}</span></sc-for></span>
+          </div>
+        </sc-for>
+        <sc-if value="{{ noKids }}"><div style="padding:36px 16px; text-align:center; display:flex; flex-direction:column; gap:10px; align-items:center;"><span style="font-size:15px; font-weight:600;">{{ emptyT }}</span><button onClick="{{ resetF }}" style="height:44px; padding:0 16px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14px; font-weight:600; cursor:pointer;">Show all mentees</button></div></sc-if>
+      </section>
+    </sc-if>
+
+    <!-- MENTEE PROFILE -->
+    <sc-if value="{{ onKid }}" hint-placeholder-val="{{ false }}">
+      <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;"><span style="width:56px; height:56px; border-radius:50%; background:#efefed; font-size:18px; font-weight:700; display:grid; place-items:center;">{{ ck.ini }}</span><span style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:2px;"><span style="font-size:14.5px; color:#4a4a50;">{{ ck.sub }}</span></span></div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px;"><sc-for list="{{ facts }}" as="f" hint-placeholder-count="4"><div style="padding:12px 14px; border-radius:14px; background:#f4f4f2; display:flex; flex-direction:column; gap:2px;"><span style="font-size:12px; color:#6b6b72;">{{ f.k }}</span><span style="font-size:15px; font-weight:600; color:{{ f.fg }};">{{ f.v }}</span></div></sc-for></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;"><sc-for list="{{ kActs }}" as="a" hint-placeholder-count="4"><button onClick="{{ a.go }}" style="height:40px; padding:0 14px; border-radius:12px; border:1px solid {{ a.line }}; background:{{ a.bg }}; color:{{ a.fg }}; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="{{ a.icon }}" aria-hidden="true"></i>{{ a.l }}</button></sc-for></div>
+      </section>
+      <div role="tablist" aria-label="{{ ck.name }}" style="display:flex; gap:20px; border-bottom:1px solid #e8e5dd; overflow-x:auto; overflow-y:hidden; scrollbar-width:none;"><sc-for list="{{ kTabs }}" as="t" hint-placeholder-count="6"><button role="tab" aria-selected="{{ t.on }}" onClick="{{ t.go }}" style="height:44px; padding:0; border:0; border-bottom:2px solid {{ t.line }}; margin-bottom:-1px; background:none; font-size:14.5px; font-weight:{{ t.fw }}; color:{{ t.fg }}; cursor:pointer; white-space:nowrap;">{{ t.l }}</button></sc-for></div>
+
+      <sc-if value="{{ kOverview }}" hint-placeholder-val="{{ true }}">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;"><sc-if value="{{ noTimeline }}" hint-placeholder-val="{{ false }}"><div style="display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:20px 16px;"><span style="font-size:15px; font-weight:600;">Nothing on {{ ck.first }}’s record yet</span><span style="font-size:14px; color:#4a4a50; line-height:1.5;">One-to-ones, Saturday observations, check-ins, courage marks and family contact show here as they happen.</span><button onClick="{{ tlLog }}" style="height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-plus" aria-hidden="true"></i>Log a session</button></div></sc-if><sc-for list="{{ timeline }}" as="e" hint-placeholder-count="5"><div style="display:flex; gap:12px; padding:12px 16px; border-top:1px solid #f0efea;"><i class="{{ e.icon }}" aria-hidden="true" style="font-size:18px; color:{{ e.fg }}; margin-top:1px;"></i><span style="flex:1; display:flex; flex-direction:column; gap:2px;"><span style="font-size:14.5px; line-height:1.45;">{{ e.t }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ e.w }}</span></span></div></sc-for></section>
+      </sc-if>
+      <sc-if value="{{ kGoals }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid; grid-template-columns:{{ kgCols }}; gap:16px; align-items:start;">
+          <section aria-label="Goals" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+            <sc-for list="{{ kGoalList }}" as="g" hint-placeholder-count="2"><button onClick="{{ g.go }}" aria-current="{{ g.cur }}" style="display:flex; flex-direction:column; gap:6px; width:100%; padding:12px 14px; border:0; border-bottom:1px solid #f0efea; background:{{ g.bg }}; text-align:left; cursor:pointer;"><span style="display:flex; gap:8px; align-items:center;"><span style="flex:1; font-size:14.5px; font-weight:600; line-height:1.35;">{{ g.title }}</span><span style="height:22px; padding:0 8px; border-radius:999px; background:{{ g.sBg }}; color:{{ g.sFg }}; font-size:11.5px; font-weight:600; display:inline-flex; align-items:center; flex-shrink:0;">{{ g.status }}</span></span><span style="display:flex; align-items:center; gap:8px;"><span aria-hidden="true" style="display:inline-flex; gap:2px;"><sc-for list="{{ g.segs }}" as="s" hint-placeholder-count="5"><span style="width:12px; height:8px; border-radius:2px; background:{{ s.c }};"></span></sc-for></span><span style="font-size:12.5px; color:#6b6b72;">{{ g.area }}</span></span></button></sc-for>
+            <button onClick="{{ newGoal }}" style="display:flex; align-items:center; gap:8px; width:100%; min-height:52px; padding:0 14px; border:0; background:#fff; font-size:14px; font-weight:600; cursor:pointer;"><i class="ph ph-plus" aria-hidden="true"></i>New goal with {{ ck.first }}</button>
+          </section>
+          <sc-if value="{{ hasGoal }}">
+            <section aria-label="Goal" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px; min-width:0;">
+              <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:600;">Status</span><div role="radiogroup" aria-label="Status" style="display:inline-flex; padding:3px; border-radius:12px; background:#f0efea; gap:2px; flex-wrap:wrap;"><sc-for list="{{ gd.statusOpts }}" as="o" hint-placeholder-count="4"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:44px; padding:0 12px; border:0; border-radius:9px; background:{{ o.bg }}; box-shadow:{{ o.sh }}; font-size:13.5px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div></div>
+                <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:600;">Area</span><select value="{{ gd.area }}" onChange="{{ gd.onArea }}" style="height:42px; padding:0 10px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14.5px;"><sc-for list="{{ areaPick }}" as="a" hint-placeholder-count="4"><option value="{{ a }}">{{ a }}</option></sc-for></select></label>
+                <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13px; font-weight:600;">Review by</span><input type="date" value="{{ gd.due }}" onChange="{{ gd.onDue }}" style="height:42px; padding:0 10px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14.5px;"></label>
+              </div>
+              <sc-for list="{{ gd.woop }}" as="w" hint-placeholder-count="4"><label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:14px; font-weight:600;">{{ w.l }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ w.h }}</span><textarea value="{{ w.v }}" onChange="{{ w.on }}" rows="2" placeholder="{{ w.ph }}" style="padding:10px 12px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; line-height:1.45; background:#fcfcfb; resize:vertical;"></textarea></label></sc-for>
+              <button role="switch" aria-checked="{{ gd.agreedA }}" onClick="{{ gd.toggleAgreed }}" style="display:flex; align-items:center; gap:10px; min-height:44px; border:0; background:none; text-align:left; cursor:pointer; padding:0;"><span style="width:48px; height:28px; border-radius:999px; background:{{ gd.track }}; position:relative; flex-shrink:0;"><span style="position:absolute; top:4px; left:{{ gd.knob }}; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.2); transition:left .18s;"></span></span><span style="font-size:14.5px;">{{ ck.first }} agreed this goal with me · they see it in their portal</span></button>
+              <div style="display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid #f0efea;">
+                <div style="display:flex; align-items:baseline; gap:8px;"><span style="font-size:14px; font-weight:600; flex:1;">Check-ins</span><span style="font-size:12.5px; color:#6b6b72;">{{ gd.ciMeta }}</span></div>
+                <sc-if value="{{ gd.hasChecks }}"><div aria-hidden="true" style="display:flex; align-items:flex-end; gap:6px; height:64px; padding:0 2px; border-bottom:1px solid #e8e5dd;"><sc-for list="{{ gd.checks }}" as="c" hint-placeholder-count="4"><span style="flex:1; max-width:44px; height:{{ c.h }}; background:{{ c.c }}; border-radius:4px 4px 0 0;"></span></sc-for></div></sc-if>
+                <sc-for list="{{ gd.checksRev }}" as="c" hint-placeholder-count="3"><div style="display:flex; gap:10px; font-size:13.5px; padding:6px 0;"><span style="width:64px; color:#6b6b72; flex-shrink:0;">{{ c.d }}</span><span style="width:36px; font-weight:600; font-variant-numeric:tabular-nums; flex-shrink:0;">{{ c.p }}/5</span><span style="flex:1; color:#2b2b30; line-height:1.45;">{{ c.n }}</span></div></sc-for>
+                <span style="font-size:13.5px; font-weight:600; padding-top:4px;">How close is {{ ck.first }} now?</span>
+                <div role="radiogroup" aria-label="How close" style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:6px; max-width:420px;"><sc-for list="{{ gd.ciOpts }}" as="o" hint-placeholder-count="5"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:44px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div>
+                <input value="{{ gd.ciNote }}" onChange="{{ gd.onCiNote }}" placeholder="What helped, or what got in the way?" aria-label="Check-in note" style="height:48px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb;">
+                <button onClick="{{ gd.addCi }}" aria-disabled="{{ gd.ciCantA }}" style="align-self:flex-start; height:44px; padding:0 18px; border:0; border-radius:12px; background:{{ gd.ciBg }}; color:{{ gd.ciFg }}; font-size:14px; font-weight:600; cursor:pointer;">Add check-in</button>
+              </div>
+            </section>
+          </sc-if>
+          <sc-if value="{{ noGoal }}"><section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:24px 16px; display:flex; flex-direction:column; gap:10px; align-items:flex-start;"><span style="font-size:15.5px; font-weight:600;">{{ ck.first }} has no goal yet</span><span style="font-size:14px; color:#4a4a50; line-height:1.5;">In the Connect phase, wait until week 3. Then write one goal together, in their words.</span><button onClick="{{ newGoal }}" style="height:44px; padding:0 18px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Start a goal</button></section></sc-if>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kScore }}" hint-placeholder-val="{{ false }}">
+        <section aria-labelledby="sc-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden; max-width:860px;">
+          <div style="display:flex; align-items:flex-end; gap:16px; padding:16px; flex-wrap:wrap; border-bottom:1px solid #f0efea;">
+            <div style="flex:1; min-width:220px; display:flex; flex-direction:column; gap:2px;"><h2 id="sc-h" style="margin:0; font-size:16px; font-weight:600;">NGG Leadership Index</h2><span style="font-size:13px; color:#6b6b72;">Scored monthly · last scored {{ scLast }}</span></div>
+            <div style="display:flex; flex-direction:column; align-items:flex-end;"><span style="font-size:28px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums;">{{ scTotal }}<span style="font-size:15px; color:#6b6b72; font-weight:500;"> / 100</span></span><span style="font-size:13px; font-weight:600; color:{{ scDFg }};">{{ scDelta }}</span></div>
+          </div>
+          <sc-for list="{{ scRows }}" as="r" hint-placeholder-count="10">
+            <div style="display:grid; grid-template-columns:{{ scCols }}; align-items:center; gap:12px; min-height:60px; padding:8px 16px; border-top:1px solid #f0efea;">
+              <span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:14.5px; font-weight:600;">{{ r.l }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ r.h }}</span></span>
+              <sc-if value="{{ wideCols }}"><span aria-hidden="true" style="display:grid; grid-template-columns:repeat(10, 1fr); gap:3px;"><sc-for list="{{ r.segs }}" as="s" hint-placeholder-count="10"><span style="height:10px; border-radius:2px; background:{{ s.c }};"></span></sc-for></span></sc-if>
+              <span role="group" aria-label="{{ r.l }} score" style="display:flex; align-items:center; gap:4px;"><button onClick="{{ r.dn }}" aria-label="Lower {{ r.l }}" style="width:40px; height:40px; border:1px solid #d6d4cc; border-radius:10px; background:#fff; cursor:pointer;"><i class="ph ph-minus" aria-hidden="true"></i></button><span aria-live="polite" style="width:44px; text-align:center; font-size:16px; font-weight:700; font-variant-numeric:tabular-nums;">{{ r.v }}</span><button onClick="{{ r.up }}" aria-label="Raise {{ r.l }}" style="width:40px; height:40px; border:1px solid #d6d4cc; border-radius:10px; background:#fff; cursor:pointer;"><i class="ph ph-plus" aria-hidden="true"></i></button></span>
+              <span style="font-size:13px; font-weight:600; color:{{ r.dFg }}; text-align:right; font-variant-numeric:tabular-nums; min-width:44px;">{{ r.d }}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex; gap:10px; align-items:center; padding:14px 16px; border-top:1px solid #f0efea; flex-wrap:wrap; background:#fafaf8;"><button onClick="{{ scSave }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer; opacity:{{ scSaveOp }};">{{ scSaveL }}</button><span style="flex:1; min-width:220px; font-size:13px; color:#4a4a50; line-height:1.45;">{{ scNote }}</span></div>
+        </section>
+      </sc-if>
+      <sc-if value="{{ kRel }}" hint-placeholder-val="{{ false }}">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px; max-width:720px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"><div style="padding:12px 14px; border-radius:14px; background:#f4f4f2;"><span style="display:block; font-size:12.5px; color:#6b6b72;">{{ ck.first }} rates it</span><span style="font-size:24px; font-weight:700; font-variant-numeric:tabular-nums;">{{ ck.relCT }}</span></div><div style="padding:12px 14px; border-radius:14px; background:#f4f4f2;"><span style="display:block; font-size:12.5px; color:#6b6b72;">You rate it</span><span style="font-size:24px; font-weight:700; font-variant-numeric:tabular-nums;">{{ ck.relMT }}</span></div></div>
+          <sc-if value="{{ ck.relGap }}"><div role="note" style="padding:12px 14px; border-radius:14px; background:#fdf6e3; border:1px solid #f1e3b8; color:#5c4100; font-size:14px; line-height:1.45;">You see this relationship more warmly than {{ ck.first }} does. Ask what would make your time together more useful. Their individual answers are seen only by the coordinator.</div></sc-if>
+          <span style="font-size:14px; font-weight:600;">Your check for this cycle · every 6 weeks</span>
+          <sc-for list="{{ relQs }}" as="r" hint-placeholder-count="4"><div style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:14px;">{{ r.q }}</span><div role="radiogroup" aria-label="{{ r.q }}" style="display:grid; grid-template-columns:repeat(5, 1fr); gap:6px;"><sc-for list="{{ r.opts }}" as="o" hint-placeholder-count="5"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:44px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div></div></sc-for>
+          <span style="font-size:12.5px; color:#6b6b72;">1 = not at all · 5 = very much</span>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;"><button onClick="{{ saveRel }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer;">Save my check</button><button onClick="{{ askFit }}" style="height:48px; padding:0 16px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">Talk to the coordinator about fit</button></div>
+        </section>
+      </sc-if>
+      <sc-if value="{{ kSess }}" hint-placeholder-val="{{ false }}">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+          <div style="display:flex; align-items:center; gap:8px; padding:12px 16px; flex-wrap:wrap;"><span style="flex:1; font-size:14px; color:#4a4a50;">{{ kSessMeta }}</span><button onClick="{{ logForKid }}" style="height:40px; padding:0 14px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-plus" aria-hidden="true"></i>Log a session</button></div>
+          <sc-for list="{{ kSessList }}" as="r" hint-placeholder-count="3"><div style="display:flex; gap:12px; padding:12px 16px; border-top:1px solid #f0efea; flex-wrap:wrap;"><span style="width:120px; display:flex; flex-direction:column; gap:2px; flex-shrink:0;"><span style="font-size:13.5px; font-weight:600;">{{ r.date }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ r.type }} · {{ r.mins }} min</span></span><span style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:2px;"><span style="font-size:14px; line-height:1.45;">{{ r.what }}</span><span style="font-size:12.5px; color:#4a4a50;">Next: {{ r.next }}</span></span></div></sc-for>
+          <sc-if value="{{ kSessEmpty }}"><div style="padding:20px 16px; border-top:1px solid #f0efea; font-size:14px; color:#4a4a50;">No sessions logged yet.</div></sc-if>
+        </section>
+      </sc-if>
+      <sc-if value="{{ kFamily }}" hint-placeholder-val="{{ false }}">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px; max-width:720px;">
+          <sc-if value="{{ isPeer }}"><div role="note" style="padding:12px 14px; border-radius:14px; background:#fdf6e3; border:1px solid #f1e3b8; color:#5c4100; font-size:14px;">Peer mentors don’t contact families. Add a note and your lead mentor will follow up.</div></sc-if>
+          <sc-if value="{{ notPeer }}">
+            <span style="font-size:14px; color:#4a4a50;">{{ ck.famWho }} · {{ ck.famT }} · SMS and the family app</span>
+            <div role="radiogroup" aria-label="Start from" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ pTpls }}" as="t" hint-placeholder-count="3"><button role="radio" aria-checked="{{ t.on }}" onClick="{{ t.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:{{ t.bw }} solid {{ t.ring }}; background:#fff; font-size:14px; font-weight:600; cursor:pointer;">{{ t.l }}</button></sc-for></div>
+            <textarea value="{{ pBody }}" onChange="{{ onPBody }}" rows="6" aria-label="Message to the family" style="padding:12px 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; line-height:1.5; background:#fcfcfb; resize:vertical;"></textarea>
+            <span style="font-size:13px; color:#6b6b72;">Name one specific thing you saw, and ask one question the family can answer. Journal entries stay private.</span>
+            <button onClick="{{ sendParent }}" style="align-self:flex-start; height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer;">Send</button>
+          </sc-if>
+          <div style="display:flex; flex-direction:column; padding-top:12px; border-top:1px solid #f0efea;"><span style="font-size:14px; font-weight:600; padding-bottom:4px;">Family contact</span><sc-for list="{{ famHist }}" as="h" hint-placeholder-count="2"><div style="display:flex; gap:12px; padding:10px 0; border-top:1px solid #f0efea;"><span style="width:96px; font-size:13px; color:#6b6b72; flex-shrink:0;">{{ h.date }}</span><span style="flex:1; display:flex; flex-direction:column; gap:2px; min-width:0;"><span style="font-size:13px; font-weight:600;">{{ h.kind }}</span><span style="font-size:14px; line-height:1.45;">{{ h.what }}</span></span></div></sc-for><sc-if value="{{ famNone }}"><span style="font-size:14px; color:#4a4a50; padding:8px 0;">No family contact logged yet.</span></sc-if></div>
+        </section>
+      </sc-if>
+      <sc-if value="{{ kProg }}" hint-placeholder-val="{{ false }}">
+        {{ growthBox }}
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:4px; max-width:720px;">
+          <sc-for list="{{ outcomes }}" as="o" hint-placeholder-count="4"><div style="display:flex; flex-direction:column; gap:6px; padding:12px 0; border-bottom:1px solid #f0efea;"><div style="display:flex; justify-content:space-between; gap:8px; font-size:14.5px;"><span style="font-weight:600;">{{ o.l }}</span><span style="color:{{ o.fg }}; font-weight:600; font-variant-numeric:tabular-nums;">{{ o.d }}</span></div><div aria-hidden="true" style="display:flex; align-items:flex-end; gap:4px; height:40px;"><sc-for list="{{ o.pts }}" as="p" hint-placeholder-count="8"><span style="flex:1; height:{{ p.h }}; background:{{ p.c }}; border-radius:3px 3px 0 0;"></span></sc-for></div><span style="font-size:12.5px; color:#6b6b72;">{{ o.note }}</span></div></sc-for>
+          <button onClick="{{ makeReport }}" style="align-self:flex-start; margin-top:12px; height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px;"><i class="ph ph-file-pdf" aria-hidden="true"></i>Make progress report</button>
+          <span style="font-size:13px; color:#6b6b72; margin-top:4px;">Two pages for the family meeting. Private journal entries are never included.</span>
+        </section>
+      </sc-if>
+    </sc-if>
+
+    <!-- GOALS -->
+    <sc-if value="{{ onGoals }}" hint-placeholder-val="{{ false }}">
+      <label style="display:flex; flex-direction:column; gap:6px; max-width:420px;"><span style="font-size:13.5px; font-weight:600;">Start a goal for</span><div style="position:relative;"><div style="display:flex; align-items:center; gap:8px; height:44px; padding:0 12px; border:1px solid {{ pkGoal.line }}; border-radius:12px; background:#fff;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input role="combobox" aria-expanded="{{ pkGoal.openA }}" aria-controls="pkGoal-list" aria-autocomplete="list" aria-label="Search by name or school" value="{{ pkGoal.q }}" onChange="{{ pkGoal.onQ }}" onFocus="{{ pkGoal.onFocus }}" onBlur="{{ pkGoal.onBlur }}" onKeyDown="{{ pkGoal.onKey }}" placeholder="Search by name or school" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:16px;"><sc-if value="{{ pkGoal.hasVal }}"><button onMouseDown="{{ pkGoal.clear }}" aria-label="Clear" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-x" aria-hidden="true"></i></button></sc-if></div><sc-if value="{{ pkGoal.open }}"><div role="listbox" id="pkGoal-list" style="position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20; background:#fff; border:1px solid #d6d4cc; border-radius:12px; box-shadow:0 12px 32px rgba(11,11,12,.14); max-height:280px; overflow-y:auto; padding:4px;"><sc-for list="{{ pkGoal.opts }}" as="o" hint-placeholder-count="5"><button role="option" aria-selected="{{ o.on }}" onMouseDown="{{ o.pick }}" style="display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 10px; border:0; border-radius:8px; background:{{ o.bg }}; text-align:left; cursor:pointer;"><span style="width:30px; height:30px; border-radius:50%; background:#efefed; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ o.ini }}</span><span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:14.5px; font-weight:600;">{{ o.name }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ o.sub }}</span></span></button></sc-for><sc-if value="{{ pkGoal.none }}"><div style="padding:12px 10px; font-size:14px; color:#6b6b72;">No mentee matches “{{ pkGoal.q }}”.</div></sc-if></div></sc-if></div></label>
+      <div role="group" aria-label="Goal status" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px;">
+        <sc-for list="{{ gStats }}" as="k" hint-placeholder-count="5"><button onClick="{{ k.go }}" aria-pressed="{{ k.on }}" style="text-align:left; min-height:76px; padding:12px 14px; border-radius:14px; border:{{ k.bw }} solid {{ k.ring }}; background:#fff; cursor:pointer; display:flex; flex-direction:column; gap:2px;"><span style="font-size:12.5px; color:{{ k.fg }}; font-weight:600;">{{ k.l }}</span><span style="font-size:24px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums;">{{ k.n }}</span><span style="font-size:12px; color:#6b6b72;">{{ k.rule }}</span></button></sc-for>
+      </div>
+      <section aria-label="Goals" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+        <div style="display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid #f0efea; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; color:#4a4a50;">Area<select value="{{ gArea }}" onChange="{{ onGArea }}" style="height:40px; padding:0 8px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14px;"><sc-for list="{{ areaNames }}" as="a" hint-placeholder-count="5"><option value="{{ a }}">{{ a }}</option></sc-for></select></label>
+          <span style="flex:1;"></span><span style="font-size:13px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ gCount }}</span>
+        </div>
+        <sc-if value="{{ wideCols }}"><div aria-hidden="true" style="display:grid; grid-template-columns:{{ gCols }}; gap:12px; padding:8px 16px; font-size:12px; color:#6b6b72; font-weight:500; background:#fafaf8; border-bottom:1px solid #f0efea;"><span>Mentee</span><span>Goal</span><span>How close</span><span>Last check-in</span><span>Review by</span><span style="text-align:right;">Status</span></div></sc-if>
+        <sc-for list="{{ gRows }}" as="r" hint-placeholder-count="6">
+          <button onClick="{{ r.go }}" style="display:grid; grid-template-columns:{{ gCols }}; align-items:center; gap:12px; width:100%; min-height:60px; padding:8px 16px; border:0; border-top:1px solid #f0efea; background:#fff; text-align:left; cursor:pointer;" style-hover="background:#fafaf8">
+            <span style="display:flex; align-items:center; gap:10px; min-width:0;"><span style="width:32px; height:32px; border-radius:50%; background:#efefed; font-size:11.5px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ r.ini }}</span><span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:14.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.name }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ r.area }}</span></span></span>
+            <span style="font-size:14px; color:{{ r.tFg }}; line-height:1.35; min-width:0;">{{ r.title }}</span>
+            <sc-if value="{{ wideCols }}">
+              <span style="display:flex; align-items:center; gap:8px;"><span aria-hidden="true" style="display:inline-flex; gap:2px;"><sc-for list="{{ r.segs }}" as="s" hint-placeholder-count="5"><span style="width:12px; height:8px; border-radius:2px; background:{{ s.c }};"></span></sc-for></span><span style="font-size:12.5px; color:#4a4a50; font-variant-numeric:tabular-nums;">{{ r.pT }}</span></span>
+              <span style="font-size:13.5px; color:{{ r.lFg }}; font-variant-numeric:tabular-nums;">{{ r.last }}</span>
+              <span style="font-size:13.5px; color:#4a4a50;">{{ r.due }}</span>
+            </sc-if>
+            <span style="display:flex; justify-content:flex-end;"><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ r.sBg }}; color:{{ r.sFg }}; font-size:12px; font-weight:600; display:inline-flex; align-items:center; white-space:nowrap;">{{ r.status }}</span></span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ gEmpty }}"><div style="padding:32px 16px; text-align:center; font-size:14.5px; color:#4a4a50;">{{ gEmptyT }}</div></sc-if>
+      </section>
+      <span style="font-size:12.5px; color:#6b6b72;">One active goal per mentee. A goal is stalled when there’s no check-in for 3 weeks, or no movement across the last three check-ins.</span>
+    </sc-if>
+
+    <!-- SESSIONS -->
+    <sc-if value="{{ onSess }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:8px;">
+        <sc-for list="{{ sStats }}" as="k" hint-placeholder-count="4"><div style="padding:12px 14px; border-radius:14px; border:1px solid #e8e5dd; background:#fff; display:flex; flex-direction:column; gap:2px; min-height:76px;"><span style="font-size:12.5px; color:#4a4a50; font-weight:600;">{{ k.l }}</span><span style="font-size:24px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; color:{{ k.fg }};">{{ k.v }}</span><span style="font-size:12px; color:#6b6b72;">{{ k.n }}</span></div></sc-for>
+      </div>
+      <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+        <sc-for list="{{ sTypes }}" as="f" hint-placeholder-count="4"><button aria-pressed="{{ f.on }}" onClick="{{ f.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ f.line }}; background:{{ f.bg }}; color:{{ f.fg }}; font-size:13.5px; font-weight:600; cursor:pointer;">{{ f.l }}</button></sc-for>
+        <span style="flex:1;"></span>
+        <sc-if value="{{ logClosed }}"><button onClick="{{ openLog }}" style="height:44px; padding:0 18px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-plus" aria-hidden="true"></i>Log a session</button></sc-if>
+      </div>
+      <sc-if value="{{ logOpen }}">
+        <section aria-labelledby="lg-h" style="background:#fff; border:1.5px solid #0b0b0c; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px;">
+          <h2 id="lg-h" style="margin:0; font-size:16px; font-weight:600;">Log a session</h2>
+          <div role="radiogroup" aria-label="Type" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ lfTypes }}" as="t" hint-placeholder-count="4"><button role="radio" aria-checked="{{ t.on }}" onClick="{{ t.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:{{ t.bw }} solid {{ t.ring }}; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="{{ t.icon }}" aria-hidden="true"></i>{{ t.l }}</button></sc-for></div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+            <sc-if value="{{ lfNeedsKid }}"><label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Mentee</span><div style="position:relative;"><div style="display:flex; align-items:center; gap:8px; height:44px; padding:0 12px; border:1px solid {{ pkLog.line }}; border-radius:12px; background:#fff;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input role="combobox" aria-expanded="{{ pkLog.openA }}" aria-controls="pkLog-list" aria-autocomplete="list" aria-label="Search by name or school" value="{{ pkLog.q }}" onChange="{{ pkLog.onQ }}" onFocus="{{ pkLog.onFocus }}" onBlur="{{ pkLog.onBlur }}" onKeyDown="{{ pkLog.onKey }}" placeholder="Search by name or school" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:16px;"><sc-if value="{{ pkLog.hasVal }}"><button onMouseDown="{{ pkLog.clear }}" aria-label="Clear" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-x" aria-hidden="true"></i></button></sc-if></div><sc-if value="{{ pkLog.open }}"><div role="listbox" id="pkLog-list" style="position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20; background:#fff; border:1px solid #d6d4cc; border-radius:12px; box-shadow:0 12px 32px rgba(11,11,12,.14); max-height:280px; overflow-y:auto; padding:4px;"><sc-for list="{{ pkLog.opts }}" as="o" hint-placeholder-count="5"><button role="option" aria-selected="{{ o.on }}" onMouseDown="{{ o.pick }}" style="display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 10px; border:0; border-radius:8px; background:{{ o.bg }}; text-align:left; cursor:pointer;"><span style="width:30px; height:30px; border-radius:50%; background:#efefed; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ o.ini }}</span><span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:14.5px; font-weight:600;">{{ o.name }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ o.sub }}</span></span></button></sc-for><sc-if value="{{ pkLog.none }}"><div style="padding:12px 10px; font-size:14px; color:#6b6b72;">No mentee matches “{{ pkLog.q }}”.</div></sc-if></div></sc-if></div></label></sc-if>
+            <sc-if value="{{ lfPod }}"><div style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Who</span><span style="height:44px; display:flex; align-items:center; font-size:15px; color:#4a4a50;">{{ lfPodText }}</span></div></sc-if>
+            <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Date</span><input type="date" value="{{ lf.date }}" onChange="{{ lfDate }}" style="height:44px; padding:0 10px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px;"></label>
+            <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Length</span><select value="{{ lf.mins }}" onChange="{{ lfMins }}" style="height:44px; padding:0 10px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px;"><sc-for list="{{ minsOpts }}" as="m" hint-placeholder-count="6"><option value="{{ m.v }}">{{ m.l }}</option></sc-for></select></label>
+            <sc-if value="{{ lfHasGoals }}"><label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Goal discussed</span><select value="{{ lf.goalId }}" onChange="{{ lfGoal }}" style="height:44px; padding:0 10px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px;"><option value="">Not this time</option><sc-for list="{{ lfGoals }}" as="g" hint-placeholder-count="2"><option value="{{ g.id }}">{{ g.title }}</option></sc-for></select></label></sc-if>
+          </div>
+          <sc-if value="{{ lfShowP }}"><div style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:13.5px; font-weight:600;">How close are they to the goal now?</span><div role="radiogroup" aria-label="How close" style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:6px; max-width:420px;"><sc-for list="{{ lfP }}" as="o" hint-placeholder-count="5"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:44px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div><span style="font-size:12px; color:#6b6b72;">1 = just starting · 5 = done. Adds a check-in to the goal.</span></div></sc-if>
+          <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">What you did and what they said</span><textarea value="{{ lf.what }}" onChange="{{ lfWhat }}" rows="3" style="padding:12px 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb; resize:vertical;"></textarea></label>
+          <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:13.5px; font-weight:600;">Next step</span><input value="{{ lf.next }}" onChange="{{ lfNext }}" placeholder="One thing to follow up" style="height:48px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb;"></label>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><button onClick="{{ saveLog }}" aria-disabled="{{ lfCantA }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:{{ lfBg }}; color:{{ lfFg }}; font-size:15px; font-weight:600; cursor:pointer;">Save session</button><button onClick="{{ closeLog }}" style="height:48px; padding:0 14px; border:0; background:none; font-size:14px; text-decoration:underline; cursor:pointer;">Cancel</button><span style="font-size:12.5px; color:#6b6b72;">Worried about safety? Use Report a concern, not a session note.</span></div>
+        </section>
+      </sc-if>
+      <sc-for list="{{ sWeeks }}" as="w" hint-placeholder-count="2">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+          <div style="display:flex; align-items:baseline; gap:8px; padding:12px 16px; background:#fafaf8;"><h2 style="margin:0; font-size:14px; font-weight:600; flex:1;">{{ w.l }}</h2><span style="font-size:12.5px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ w.meta }}</span></div>
+          <sc-for list="{{ w.rows }}" as="r" hint-placeholder-count="4">
+            <div style="display:grid; grid-template-columns:{{ sCols }}; align-items:start; gap:12px; padding:12px 16px; border-top:1px solid #f0efea;">
+              <span style="display:flex; flex-direction:column; gap:2px;"><span style="font-size:13.5px; font-weight:600;">{{ r.date }}</span><span style="font-size:12.5px; color:#6b6b72; display:flex; align-items:center; gap:4px;"><i class="{{ r.icon }}" aria-hidden="true"></i>{{ r.type }} · {{ r.mins }} min</span></span>
+              <span style="display:flex; flex-direction:column; gap:2px; min-width:0;"><span style="font-size:14.5px; font-weight:600;">{{ r.who }}</span><span style="font-size:13.5px; color:#2b2b30; line-height:1.45;">{{ r.what }}</span><sc-if value="{{ r.hasGoal }}"><span style="font-size:12.5px; color:#1d6b30;">Goal: {{ r.goal }}</span></sc-if></span>
+              <sc-if value="{{ wideCols }}"><span style="font-size:13px; color:#4a4a50; line-height:1.45;"><b style="font-weight:600;">Next:</b> {{ r.next }}</span></sc-if>
+              <button onClick="{{ r.del }}" aria-label="Delete this session" title="Delete" style="width:40px; height:40px; border:0; border-radius:10px; background:none; cursor:pointer; color:#6b6b72;" style-hover="background:#f4f4f2"><i class="ph ph-trash" aria-hidden="true" style="font-size:18px;"></i></button>
+            </div>
+          </sc-for>
+        </section>
+      </sc-for>
+      <sc-if value="{{ sEmpty }}"><div style="padding:32px 16px; text-align:center; font-size:14.5px; color:#4a4a50; background:#fff; border:1px solid #e8e5dd; border-radius:18px;">No sessions of this type yet.</div></sc-if>
+    </sc-if>
+
+    <!-- SATURDAY -->
+    <sc-if value="{{ onSat }}" hint-placeholder-val="{{ false }}">
+      <div role="tablist" aria-label="Saturday" class="tabscroll" style="display:flex;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch; gap:6px; padding:4px; background:#e9e8e3; border-radius:14px; max-width:560px;">
+        <sc-for list="{{ steps }}" as="t" hint-placeholder-count="3"><button role="tab" aria-selected="{{ t.on }}" onClick="{{ t.go }}" style="flex:1 0 auto;white-space:nowrap;scroll-snap-align:start;min-height:52px; padding:6px 10px; border:0; border-radius:11px; background:{{ t.bg }}; box-shadow:{{ t.sh }}; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;"><span style="font-size:14px; font-weight:600;">{{ t.l }}</span><span style="font-size:12px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ t.s }}</span></button></sc-for>
+      </div>
+      <sc-if value="{{ sBefore }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start;">
+          <section aria-labelledby="ag-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:baseline; gap:8px;"><h2 id="ag-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Agenda · 9:30am</h2><span style="font-size:13px; font-weight:600; color:{{ agFg }}; font-variant-numeric:tabular-nums;">{{ agTotal }}</span></div>
+            {{ agendaBox }}
+          </section>
+          <section aria-labelledby="lib-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:10px;">
+            <h2 id="lib-h" style="margin:0; font-size:16px; font-weight:600;">Activities</h2>
+            <div role="radiogroup" aria-label="Aim" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ aims }}" as="f" hint-placeholder-count="5"><button role="radio" aria-checked="{{ f.on }}" onClick="{{ f.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:{{ f.bw }} solid {{ f.ring }}; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer;">{{ f.l }}</button></sc-for></div>
+            <sc-for list="{{ lib }}" as="x" hint-placeholder-count="4"><div style="display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-top:1px solid #f0efea;"><span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><span style="font-size:15px; font-weight:600;">{{ x.t }}</span><span style="font-size:13.5px; color:#4a4a50; line-height:1.45;">{{ x.d }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ x.meta }}</span></span><button onClick="{{ x.add }}" disabled="{{ x.added }}" style="height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; flex-shrink:0; opacity:{{ x.op }};">{{ x.addL }}</button></div></sc-for>
+          </section>
+        </div>
+      </sc-if>
+      <sc-if value="{{ sDuring }}" hint-placeholder-val="{{ false }}">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+          <div style="display:flex; align-items:baseline; gap:8px; padding:14px 16px;"><h2 style="margin:0; font-size:16px; font-weight:600; flex:1;">Register and observations</h2><span style="font-size:13px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ hereText }}</span></div>
+          <sc-for list="{{ reg }}" as="r" hint-placeholder-count="7">
+            <div style="display:flex; align-items:center; gap:10px; min-height:64px; padding:8px 16px; border-top:1px solid #f0efea; flex-wrap:wrap;">
+              <button role="switch" aria-checked="{{ r.hereA }}" aria-label="{{ r.name }} is here" onClick="{{ r.toggle }}" style="height:40px; min-width:92px; padding:0 12px; border-radius:12px; border:1px solid {{ r.line }}; background:{{ r.bg }}; color:{{ r.fg }}; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="{{ r.icon }}" aria-hidden="true"></i>{{ r.hereL }}</button>
+              <button onClick="{{ r.open }}" aria-label="Open {{ r.name }}’s profile" style="flex:1; min-width:140px; min-height:40px; padding:0; border:0; background:none; text-align:left; font:inherit; font-size:15px; font-weight:600; color:#0b0b0c; cursor:pointer; display:flex; flex-direction:column; justify-content:center;"><span>{{ r.name }}</span><span style="font-size:12.5px; font-weight:400; color:#6b6b72;">{{ r.sub }}</span></button>
+              <span role="group" aria-label="Observed in {{ r.name }}" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ r.vals }}" as="v" hint-placeholder-count="4"><button aria-pressed="{{ v.on }}" onClick="{{ v.go }}" disabled="{{ r.away }}" style="height:40px; padding:0 12px; border-radius:999px; border:{{ v.bw }} solid {{ v.ring }}; background:{{ v.bg }}; font-size:13px; font-weight:600; cursor:pointer; opacity:{{ r.op }};">{{ v.l }}</button></sc-for><button aria-expanded="{{ r.noteA }}" onClick="{{ r.noteGo }}" disabled="{{ r.away }}" style="height:40px; padding:0 12px; border-radius:999px; border:1px dashed #b9b7ae; background:#fff; font-size:13px; font-weight:600; cursor:pointer; opacity:{{ r.op }}; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-note-pencil" aria-hidden="true"></i>{{ r.noteL }}</button></span>
+              <sc-if value="{{ r.noteOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="flex-basis:100%; display:flex; flex-direction:column; gap:6px; padding:4px 0 8px;">
+                  <label style="font-size:12.5px; font-weight:600; color:#4a4a50;" for="{{ r.noteId }}">What did you see? The moment, what they did, what it showed.</label>
+                  <textarea id="{{ r.noteId }}" value="{{ r.note }}" onChange="{{ r.onNote }}" maxlength="500" rows="2" placeholder="During debate prep, they offered to present when nobody else would, and kept going after a stumble." style="width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #d6d4cc; border-radius:12px; font:inherit; font-size:14px; line-height:1.45; resize:vertical;"></textarea>
+                  <div style="display:flex; gap:8px; align-items:center;"><span style="flex:1; font-size:12.5px; color:#6b6b72;">{{ r.noteMeta }}</span><button onClick="{{ r.noteSave }}" style="height:40px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:13.5px; font-weight:600; cursor:pointer;">Save detail</button></div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 16px; border-top:1px solid #f0efea;"><span style="flex:1; min-width:220px; font-size:13px; color:#6b6b72;">Tap a value when you see it happen, and add a line of detail while it is fresh. It is waiting in the weekly review.</span><button onClick="{{ toAfter }}" style="height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">Go to the weekly review<i class="ph ph-arrow-right" aria-hidden="true"></i></button></div>
+        </section>
+      </sc-if>
+      <sc-if value="{{ sAfter }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; gap:6px; max-width:560px;"><span style="font-size:13.5px; color:#4a4a50;">{{ revText }}</span><div style="height:6px; border-radius:999px; background:#e8e5dd; overflow:hidden;"><div style="height:100%; width:{{ revPct }}; background:#1d6b30;"></div></div></div>
+        <sc-if value="{{ noReviews }}" hint-placeholder-val="{{ false }}"><section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; font-size:14px; color:#4a4a50; line-height:1.5;">Nobody was marked here last Saturday, so there is nobody to evaluate. Mark the register on During, or the gate's check-ins appear here.</section></sc-if>
+        <sc-for list="{{ reviews }}" as="v" hint-placeholder-count="3">
+          <section aria-label="Saturday evaluation for {{ v.name }}" style="background:#fff; border:1px solid {{ v.bd }}; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span style="flex:1; min-width:160px; display:flex; flex-direction:column; gap:2px;"><span style="font-size:15.5px; font-weight:600;">{{ v.name }}</span><span style="font-size:12.5px; color:#6b6b72; line-height:1.45;">{{ v.seen }}</span></span>
+              <span style="height:24px; padding:0 9px; border-radius:999px; background:{{ v.stBg }}; color:{{ v.stFg }}; font-size:12px; font-weight:600; display:inline-flex; align-items:center;">{{ v.stL }}</span>
+              <button aria-expanded="{{ v.openA }}" aria-controls="{{ v.panelId }}" onClick="{{ v.toggle }}" style="height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">{{ v.toggleL }}<i class="{{ v.chev }}" aria-hidden="true"></i></button>
+            </div>
+            <sc-if value="{{ v.hasSum }}"><span style="font-size:13.5px; color:#2b2b30; line-height:1.5;">{{ v.sum }}</span></sc-if>
+            <sc-if value="{{ v.open }}">
+              <div id="{{ v.panelId }}" style="display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; flex-direction:column; gap:8px;"><span style="font-size:13px; font-weight:600; color:#4a4a50;">The week</span>
+                  <sc-for list="{{ v.scales }}" as="s" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;"><span style="width:120px; font-size:14px;">{{ s.l }}</span><div role="radiogroup" aria-label="{{ s.l }} for {{ v.name }}" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ s.opts }}" as="o" hint-placeholder-count="4"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:40px; padding:0 12px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:#fff; font-size:13px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div></div></sc-for>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px; padding-top:12px; border-top:1px solid #f0efea;"><span style="font-size:13px; font-weight:600; color:#4a4a50;">The Saturday · {{ v.critMeta }}</span>
+                  <sc-for list="{{ v.crit }}" as="c" hint-placeholder-count="8"><div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:4px 0;"><span style="width:200px; display:flex; flex-direction:column; gap:1px;"><span style="font-size:14px; font-weight:600;">{{ c.l }}</span><span style="font-size:12px; color:#6b6b72; line-height:1.4;">{{ c.h }}</span></span><div role="radiogroup" aria-label="{{ c.l }} for {{ v.name }}" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ c.opts }}" as="o" hint-placeholder-count="4"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:40px; padding:0 12px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:{{ o.bg }}; font-size:13px; font-weight:600; cursor:pointer;">{{ o.l }}</button></sc-for></div><sc-if value="{{ c.pre }}"><span style="font-size:12px; color:#6b6b72;">{{ c.preL }}</span></sc-if></div></sc-for>
+                </div>
+                <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:14px; font-weight:600;">A strength I saw</span><span style="font-size:12.5px; color:#6b6b72;">The moment, in a sentence. {{ v.first }} and their family read this.</span><textarea value="{{ v.strength }}" onChange="{{ v.onStrength }}" rows="2" maxlength="400" style="padding:10px 12px; border:1px solid {{ v.strBd }}; border-radius:12px; font:inherit; font-size:14.5px; line-height:1.45; resize:vertical;"></textarea></label>
+                <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:14px; font-weight:600;">One next step</span><span style="font-size:12.5px; color:#6b6b72;">Something {{ v.first }} can do before next Saturday.</span><textarea value="{{ v.next }}" onChange="{{ v.onNext }}" rows="2" maxlength="400" style="padding:10px 12px; border:1px solid {{ v.nextBd }}; border-radius:12px; font:inherit; font-size:14.5px; line-height:1.45; resize:vertical;"></textarea></label>
+                <label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:14px; font-weight:600;">For your notes</span><span style="font-size:12.5px; color:#6b6b72;">Staff only. Not shown to {{ v.first }} or their family.</span><input value="{{ v.line }}" onChange="{{ v.onLine }}" placeholder="One thing you saw this week" style="height:48px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb;"></label>
+                <sc-if value="{{ v.hasErr }}"><span role="alert" style="font-size:13.5px; color:#b0361c;">{{ v.err }}</span></sc-if>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                  <button onClick="{{ v.submit }}" aria-disabled="{{ v.cantA }}" style="height:44px; padding:0 18px; border:0; border-radius:12px; background:{{ v.btnBg }}; color:{{ v.btnFg }}; font-size:14px; font-weight:600; cursor:pointer;">Save evaluation</button>
+                  <sc-if value="{{ v.hasNext }}"><button onClick="{{ v.submitNext }}" aria-disabled="{{ v.cantA }}" style="height:44px; padding:0 16px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">Save and next child<i class="ph ph-arrow-right" aria-hidden="true"></i></button></sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </section>
+        </sc-for>
+      </sc-if>
+    </sc-if>
+
+    <!-- MESSAGES -->
+    <sc-if value="{{ onMsg }}" hint-placeholder-val="{{ false }}">
+      <div role="radiogroup" aria-label="Show" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ mFilters }}" as="f" hint-placeholder-count="4"><button role="radio" aria-checked="{{ f.on }}" onClick="{{ f.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ f.line }}; background:{{ f.bg }}; color:{{ f.fg }}; font-size:13.5px; font-weight:600; cursor:pointer;">{{ f.l }}</button></sc-for></div>
+      <div style="display:flex; flex-direction:column; gap:8px; max-width:520px;">
+        <button onClick="{{ nmToggle }}" aria-expanded="{{ nmOpenA }}" style="align-self:flex-start; height:44px; padding:0 16px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px;"><i class="ph ph-pencil-simple-line" aria-hidden="true"></i>New message</button>
+        <sc-if value="{{ nmOpen }}" hint-placeholder-val="{{ false }}"><div role="search" style="display:flex; flex-direction:column; gap:6px; padding:12px; border:1px solid #e8e5dd; border-radius:14px; background:#fff;">
+          <input value="{{ nmQ }}" onChange="{{ nmOnQ }}" placeholder="{{ nmPh }}" aria-label="Who to write to" autofocus style="height:44px; padding:0 12px; border:1px solid #d6d4cc; border-radius:10px; font-size:16px; background:#fcfcfb;">
+          <span role="status" aria-live="polite" style="font-size:12.5px; color:#6b6b72;">{{ nmStatus }}</span>
+          <sc-for list="{{ nmRes }}" as="r" hint-placeholder-count="2"><button onClick="{{ r.go }}" style="display:flex; justify-content:space-between; gap:10px; min-height:44px; padding:8px 12px; border:0; border-radius:10px; background:#f7f6f2; text-align:left; cursor:pointer; font-size:14.5px;"><b style="font-weight:600;">{{ r.name }}</b><span style="color:#5d5d63; font-size:13px;">{{ r.sub }}</span></button></sc-for>
+        </div></sc-if>
+      </div>
+      <div style="display:grid; grid-template-columns:{{ mCols }}; gap:16px; align-items:start;">
+        <sc-if value="{{ showInbox }}" hint-placeholder-val="{{ true }}"><section aria-label="Inbox" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;"><sc-for list="{{ msgs }}" as="m" hint-placeholder-count="5"><button onClick="{{ m.go }}" aria-current="{{ m.cur }}" style="display:flex; gap:10px; width:100%; min-height:72px; padding:12px 16px; border:0; border-top:1px solid #f0efea; background:{{ m.bg }}; text-align:left; cursor:pointer;"><span style="width:8px; padding-top:7px; flex-shrink:0;"><sc-if value="{{ m.unread }}"><span style="display:block; width:8px; height:8px; border-radius:50%; background:#f5b026;"></span></sc-if></span><span style="flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;"><span style="display:flex; gap:8px;"><span style="flex:1; font-size:14.5px; font-weight:600;">{{ m.who }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ m.when }}</span></span><span style="font-size:12.5px; color:#6b6b72;">{{ m.kind }}</span><span style="font-size:13.5px; color:#2b2b30; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ m.t }}</span></span></button></sc-for><sc-if value="{{ mEmpty }}"><div style="padding:24px 16px; font-size:14px; color:#4a4a50;">Nothing here. You’re up to date.</div></sc-if></section></sc-if>
+        <sc-if value="{{ showDetail }}">
+          <section aria-label="Message" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <sc-if value="{{ mBackShow }}"><button onClick="{{ mBack }}" style="align-self:flex-start; height:44px; padding:0 10px 0 4px; border:0; background:none; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px;"><i class="ph ph-caret-left" aria-hidden="true"></i>All messages</button></sc-if>
+            <span style="font-size:12.5px; color:#6b6b72;">{{ mSel.kind }} · {{ mSel.when }}</span>
+            <span style="font-size:17px; font-weight:600;">{{ mSel.who }}</span>
+            <sc-if value="{{ mSel.notThread }}" hint-placeholder-val="{{ true }}"><p style="margin:0; font-size:15px; line-height:1.6; white-space:pre-wrap;">{{ mSel.t }}</p></sc-if>
+            <sc-if value="{{ mSel.hasAudio }}" hint-placeholder-val="{{ false }}"><audio controls="controls" preload="none" src="{{ mSel.audio }}" aria-label="Voice note" style="max-width:320px; height:40px;"></audio></sc-if>
+            <sc-if value="{{ mSel.isThread }}" hint-placeholder-val="{{ false }}"><div role="log" aria-label="Conversation" style="display:flex; flex-direction:column; gap:8px; max-height:420px; overflow-y:auto; padding:4px 0;">
+              <sc-for list="{{ mSel.thread }}" as="x" hint-placeholder-count="3"><div style="align-self:{{ x.align }}; max-width:85%; padding:10px 12px; border-radius:14px; background:{{ x.bg }}; color:{{ x.fg }}; display:flex; flex-direction:column; gap:2px;"><span style="font-size:12px; opacity:.85;">{{ x.who }} · {{ x.when }}</span><span style="font-size:15px; line-height:1.5; white-space:pre-wrap;">{{ x.t }}</span><sc-if value="{{ x.hasAudio }}" hint-placeholder-val="{{ false }}"><audio controls="controls" preload="none" src="{{ x.audio }}" aria-label="Voice note from {{ x.who }}" style="max-width:260px; height:40px;"></audio></sc-if></div></sc-for>
+              <sc-if value="{{ mSel.empty }}" hint-placeholder-val="{{ false }}"><p style="margin:0; font-size:14px; color:#5d5d63;">No messages yet. Write the first one below — it goes to their portal, and is kept on record.</p></sc-if>
+            </div></sc-if>
+            <textarea value="{{ reply }}" onChange="{{ onReply }}" rows="3" placeholder="{{ replyPh }}" aria-label="Reply" style="padding:12px 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb; resize:vertical;"></textarea>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><button onClick="{{ sendReply }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer;">{{ replyL }}</button><span style="font-size:12.5px; color:#6b6b72;">Messages send between 8am and 8pm and are kept on record.</span></div>
+          </section>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- POD GROWTH -->
+    <sc-if value="{{ onGrowth }}" hint-placeholder-val="{{ false }}">
+      <section aria-labelledby="li-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+        <div style="display:flex; align-items:baseline; gap:8px; padding:16px 16px 8px; flex-wrap:wrap;"><h2 id="li-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Leadership Index · average across your mentees</h2><span style="font-size:13px; color:#6b6b72; font-variant-numeric:tabular-nums;">{{ liMeta }}</span></div>
+        <sc-for list="{{ liRows }}" as="r" hint-placeholder-count="10"><div style="display:grid; grid-template-columns:minmax(140px, 200px) minmax(0, 1fr) 56px 64px; align-items:center; gap:12px; min-height:44px; padding:6px 16px; border-top:1px solid #f0efea;"><span style="font-size:14px; font-weight:500;">{{ r.l }}</span><span aria-hidden="true" style="height:8px; border-radius:999px; background:#f0efea; overflow:hidden;"><span style="display:block; height:100%; width:{{ r.w }}; background:{{ r.c }};"></span></span><span style="font-size:14px; font-weight:600; text-align:right; font-variant-numeric:tabular-nums;">{{ r.v }}</span><span style="font-size:13px; font-weight:600; text-align:right; color:{{ r.dFg }}; font-variant-numeric:tabular-nums;">{{ r.d }}</span></div></sc-for>
+      </section>
+      <section aria-labelledby="bm-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;"><div style="display:flex; align-items:baseline; gap:8px; padding:16px 16px 8px; flex-wrap:wrap;"><h2 id="bm-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">By mentee</h2><span style="font-size:13px; color:#6b6b72;">Lowest total first · open to score</span></div><sc-for list="{{ bmRows }}" as="r" hint-placeholder-count="6"><button onClick="{{ r.go }}" style="display:grid; grid-template-columns:{{ bmCols }}; align-items:center; gap:12px; width:100%; min-height:56px; padding:8px 16px; border:0; border-top:1px solid #f0efea; background:#fff; text-align:left; cursor:pointer;" style-hover="background:#fafaf8"><span style="display:flex; align-items:center; gap:10px; min-width:0;"><span style="width:32px; height:32px; border-radius:50%; background:#efefed; font-size:11.5px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ r.ini }}</span><span style="font-size:14.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.name }}</span></span><sc-if value="{{ wideCols }}"><span style="font-size:13px; color:#4a4a50;">{{ r.lowT }}</span></sc-if><span style="font-size:14px; font-weight:600; text-align:right; font-variant-numeric:tabular-nums;">{{ r.tot }}<span style="color:#6b6b72; font-weight:500;"> / 100</span></span><span style="font-size:13px; font-weight:600; text-align:right; color:{{ r.dFg }}; font-variant-numeric:tabular-nums;">{{ r.d }}</span></button></sc-for><sc-if value="{{ bmMore }}"><button onClick="{{ bmShowAll }}" style="width:100%; min-height:48px; border:0; border-top:1px solid #f0efea; background:#fafaf8; font-size:13.5px; font-weight:600; cursor:pointer;">{{ bmMoreL }}</button></sc-if></section>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px;">
+        <sc-for list="{{ podOut }}" as="o" hint-placeholder-count="4"><section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:8px;"><div style="display:flex; justify-content:space-between; gap:8px;"><span style="font-size:15px; font-weight:600;">{{ o.l }}</span><span style="font-size:13.5px; font-weight:600; color:{{ o.fg }}; font-variant-numeric:tabular-nums;">{{ o.d }}</span></div><div aria-hidden="true" style="display:flex; align-items:flex-end; gap:4px; height:56px;"><sc-for list="{{ o.pts }}" as="p" hint-placeholder-count="8"><span style="flex:1; height:{{ p.h }}; background:{{ p.c }}; border-radius:3px 3px 0 0;"></span></sc-for></div><span style="font-size:12.5px; color:#6b6b72;">{{ o.note }}</span></section></sc-for>
+      </div>
+      <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;"><span style="flex:1; min-width:220px; font-size:14px; color:#4a4a50; line-height:1.45;">Averages across your mentees over the last 8 Saturdays, from observations, weekly reviews, check-ins and relationship checks.</span><button onClick="{{ podReport }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px;"><i class="ph ph-file-pdf" aria-hidden="true"></i>Make a report</button></section>
+    </sc-if>
+
+    <!-- ACADEMY -->
+    <sc-if value="{{ onAcademy }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ acLocked }}" hint-placeholder-val="{{ false }}"><section role="note" aria-labelledby="ac-lock-h" style="display:flex; gap:12px; align-items:flex-start; padding:16px; border-radius:18px; background:#fff8e6; border:1px solid #f0d9a0;"><i class="ph-fill ph-graduation-cap" aria-hidden="true" style="font-size:24px; color:#7a5600; margin-top:2px;"></i><div style="display:flex; flex-direction:column; gap:4px; min-width:0;"><h2 id="ac-lock-h" style="margin:0; font-size:16px; font-weight:600; color:#3d2b00;">{{ acLockH }}</h2><span style="font-size:14px; line-height:1.5; color:#5c4100;">{{ acLockT }}</span></div></section></sc-if>
+      <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:8px;"><div style="display:flex; justify-content:space-between; gap:8px; font-size:14px;"><span style="font-weight:600;">{{ acText }}</span><span style="color:#6b6b72; font-variant-numeric:tabular-nums;">{{ acPctT }}</span></div><div style="height:6px; border-radius:999px; background:#e8e5dd; overflow:hidden;"><div style="height:100%; width:{{ acPct }}; background:#0b0b0c;"></div></div></section>
+      <sc-for list="{{ acGroups }}" as="g" hint-placeholder-count="3">
+        <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;"><h2 style="margin:0; padding:14px 16px 8px; font-size:15px; font-weight:600;">{{ g.h }}</h2><sc-for list="{{ g.mods }}" as="m" hint-placeholder-count="3"><div style="display:flex; align-items:center; gap:12px; min-height:60px; padding:8px 16px; border-top:1px solid #f0efea;"><i class="{{ m.icon }}" aria-hidden="true" style="font-size:20px; color:{{ m.ic }};"></i><span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span style="font-size:14.5px; font-weight:600;">{{ m.t }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ m.s }}</span></span><button onClick="{{ m.go }}" style="height:40px; padding:0 14px; border:{{ m.bd }}; border-radius:12px; background:{{ m.bg }}; color:{{ m.fg }}; font-size:13.5px; font-weight:600; cursor:pointer; flex-shrink:0;">{{ m.cta }}</button></div></sc-for></section>
+      </sc-for>
+    </sc-if>
+
+    <!-- ACADEMY MODULE -->
+    <sc-if value="{{ onModule }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex; flex-direction:column; gap:6px; max-width:720px; width:100%;"><div style="display:flex; justify-content:space-between; gap:8px; font-size:13px; color:#4a4a50;"><span style="font-variant-numeric:tabular-nums;">{{ md.stepL }}</span><span>{{ md.mins }}</span></div><div style="height:6px; border-radius:999px; background:#e8e5dd; overflow:hidden;"><div style="height:100%; width:{{ md.pct }}; background:#0b0b0c; transition:width .2s;"></div></div></div>
+      <section aria-live="polite" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:14px; max-width:720px;">
+        <span style="font-size:12px; font-weight:600; color:#6b6b72; text-transform:uppercase; letter-spacing:.06em;">{{ md.kindL }}</span>
+        <sc-if value="{{ md.isLesson }}"><h2 style="margin:0; font-size:20px; font-weight:700; letter-spacing:-0.01em;">{{ md.h }}</h2><p style="margin:0; font-size:16px; line-height:1.6; text-wrap:pretty;">{{ md.body }}</p></sc-if>
+        <sc-if value="{{ md.isChoice }}"><h2 style="margin:0; font-size:18px; font-weight:600; line-height:1.4; text-wrap:pretty;">{{ md.h }}</h2>
+          <div role="radiogroup" aria-label="Answers" style="display:flex; flex-direction:column; gap:8px;"><sc-for list="{{ md.opts }}" as="o" hint-placeholder-count="3"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" disabled="{{ md.locked }}" style="display:flex; align-items:center; gap:12px; min-height:52px; padding:10px 14px; border-radius:12px; border:{{ o.bw }} solid {{ o.ring }}; background:{{ o.bg }}; color:#0b0b0c; text-align:left; font-size:15px; line-height:1.4; cursor:pointer;"><i class="{{ o.icon }}" aria-hidden="true" style="font-size:20px; color:{{ o.ic }}; flex-shrink:0;"></i><span style="flex:1;">{{ o.l }}</span></button></sc-for></div>
+          <sc-if value="{{ md.fb }}"><div role="note" style="padding:12px 14px; border-radius:14px; background:{{ md.fbBg }}; color:{{ md.fbFg }}; font-size:14.5px; line-height:1.5;"><b style="font-weight:600;">{{ md.fbH }}</b> {{ md.fbT }}</div></sc-if>
+        </sc-if>
+        <sc-if value="{{ md.isResult }}"><div style="display:flex; flex-direction:column; gap:8px; align-items:flex-start;"><i class="{{ md.rIcon }}" aria-hidden="true" style="font-size:40px; color:{{ md.rFg }};"></i><h2 style="margin:0; font-size:22px; font-weight:700; letter-spacing:-0.01em;">{{ md.rH }}</h2><span style="font-size:15px; color:#4a4a50; line-height:1.5; text-wrap:pretty;">{{ md.rT }}</span></div></sc-if>
+      </section>
+      <div style="display:flex; gap:10px; max-width:720px; width:100%;"><sc-if value="{{ md.canPrev }}"><button onClick="{{ md.prev }}" style="height:48px; padding:0 18px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">Back</button></sc-if><span style="flex:1;"></span><button onClick="{{ md.next }}" aria-disabled="{{ md.nextOffA }}" style="height:48px; padding:0 22px; border:0; border-radius:12px; background:{{ md.nextBg }}; color:{{ md.nextFg }}; font-size:15px; font-weight:600; cursor:pointer;">{{ md.nextL }}</button></div>
+    </sc-if>
+
+    <!-- MY ROLE -->
+    <sc-if value="{{ onRole }}" hint-placeholder-val="{{ false }}">
+      <section aria-label="This month" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;"><span style="font-size:22px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums;">{{ cmMet }} of {{ cmTot }}</span><span style="font-size:14px; color:#4a4a50; flex:1;">commitments on track for October</span><span style="font-size:13px; color:#6b6b72;">{{ cmDaysLeft }}</span></div>
+        <div aria-hidden="true" style="display:flex; gap:3px; height:8px;"><sc-for list="{{ cmBar }}" as="x" hint-placeholder-count="12"><span style="flex:1; border-radius:3px; background:{{ x.c }};"></span></sc-for></div>
+      </section>
+
+      <div style="display:grid; grid-template-columns:{{ roleCols }}; gap:16px; align-items:start;">
+        <div style="display:flex; flex-direction:column; gap:16px; min-width:0;">
+          <section aria-labelledby="na-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+            <div style="display:flex; align-items:baseline; gap:8px; padding:16px 16px 8px;"><h2 id="na-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">Needs attention</h2><span style="font-size:12.5px; color:#6b6b72;">{{ cmAttnN }}</span></div>
+            <sc-for list="{{ cmAttn }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:12px; min-height:64px; padding:10px 16px; border-top:1px solid #f0efea; flex-wrap:wrap;">
+                <span style="width:8px; height:8px; border-radius:50%; background:{{ r.dot }}; flex-shrink:0;"></span>
+                <span style="flex:1; min-width:200px; display:flex; flex-direction:column; gap:2px;"><span style="font-size:14.5px; font-weight:600; line-height:1.35;">{{ r.t }}</span><span style="font-size:13px; color:#4a4a50;">{{ r.st }} · {{ r.s }}</span></span>
+                <button onClick="{{ r.go }}" style="height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap;">{{ r.cta }}</button>
+              </div>
+            </sc-for>
+            <sc-if value="{{ cmNoAttn }}"><div style="padding:16px; border-top:1px solid #f0efea; display:flex; gap:10px; align-items:center; font-size:14.5px;"><i class="ph ph-check-circle" aria-hidden="true" style="font-size:20px; color:#1d6b30;"></i>Every commitment is on track this month.</div></sc-if>
+          </section>
+
+          <section aria-labelledby="ok-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;">
+            <div style="display:flex; align-items:baseline; gap:8px; padding:16px 16px 8px;"><h2 id="ok-h" style="margin:0; font-size:16px; font-weight:600; flex:1;">On track</h2><span style="font-size:12.5px; color:#6b6b72;">How each is recorded</span></div>
+            <sc-for list="{{ cmOk }}" as="r" hint-placeholder-count="6">
+              <div style="display:flex; align-items:center; gap:12px; min-height:52px; padding:8px 16px; border-top:1px solid #f0efea;">
+                <i class="ph-fill ph-check-circle" aria-hidden="true" style="font-size:18px; color:#1d6b30; flex-shrink:0;"></i>
+                <span style="flex:1; min-width:0; display:flex; flex-direction:column;"><span style="font-size:14px; font-weight:500;">{{ r.t }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ r.st }} · {{ r.src }}</span></span>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; min-width:0;">
+          <section aria-labelledby="sv-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; flex-direction:column; gap:2px;"><h2 id="sv-h" style="margin:0; font-size:16px; font-weight:600;">Supervision with {{ lead }}</h2><span style="font-size:13.5px; color:#4a4a50;">Tuesday 14 October, after the STS meeting · 20 minutes</span></div>
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <span style="font-size:13px; font-weight:600; color:#4a4a50;">Agreed last time · 30 September</span>
+              <sc-for list="{{ supActs }}" as="x" hint-placeholder-count="3"><button role="checkbox" aria-checked="{{ x.a }}" onClick="{{ x.go }}" style="display:flex; align-items:flex-start; gap:10px; min-height:44px; padding:8px 0; border:0; border-top:1px solid #f0efea; background:none; text-align:left; cursor:pointer;"><i class="{{ x.icon }}" aria-hidden="true" style="font-size:20px; color:{{ x.fg }}; flex-shrink:0;"></i><span style="font-size:14px; line-height:1.4; color:{{ x.tfg }};">{{ x.t }}</span></button></sc-for>
+            </div>
+            <span style="font-size:13px; font-weight:600; color:#4a4a50; padding-top:4px;">Prepare for Tuesday</span>
+            <sc-for list="{{ supQs }}" as="q" hint-placeholder-count="3"><label style="display:flex; flex-direction:column; gap:4px;"><span style="font-size:14px;">{{ q.q }}</span><textarea value="{{ q.v }}" onChange="{{ q.on }}" rows="2" style="padding:10px 12px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb; resize:vertical;"></textarea></label></sc-for>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"><button onClick="{{ sendSup }}" style="height:44px; padding:0 18px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:14px; font-weight:600; cursor:pointer;">Send to {{ lead }}</button><span style="font-size:12.5px; color:#6b6b72;">{{ supNote }}</span></div>
+          </section>
+
+          <section aria-labelledby="fb-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:10px;">
+            <h2 id="fb-h" style="margin:0; font-size:16px; font-weight:600;">Feedback from {{ lead }}</h2>
+            <blockquote style="margin:0; padding:12px 14px; border-radius:14px; background:#f4f4f2; font-size:14.5px; line-height:1.5;">“Your Saturday observations are specific and kind. Next step: lead one family conversation yourself before the retreat, and bring what you learned.”</blockquote>
+            <span style="font-size:12.5px; color:#6b6b72;">30 September · after supervision</span>
+            <button onClick="{{ askFeedback }}" style="align-self:flex-start; height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer;">Respond or raise a concern</button>
+          </section>
+
+          <section aria-labelledby="pol-h" style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:10px;">
+            <h2 id="pol-h" style="margin:0; font-size:16px; font-weight:600;">Commitment and conduct policy</h2>
+            <span style="font-size:14px; color:#4a4a50; line-height:1.45;">You accepted the NGGC Mentorship Commitment and Conduct Policy on 12 January 2026. The 12 commitments you can act on each month are tracked here.</span>
+            <p style="margin:0; padding-top:10px; border-top:1px solid #f0efea; font-size:14.5px; line-height:1.5; font-weight:500; text-wrap:pretty;">A mentor observes, models, guides, challenges, encourages, documents, collaborates and follows through.</p>
+            <button onClick="{{ readPolicy }}" style="align-self:flex-start; height:40px; padding:0 14px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px;"><i class="ph ph-file-text" aria-hidden="true"></i>Read the full policy</button>
+          </section>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- MENTORS (lead / coordinator) -->
+    <sc-if value="{{ onMentors }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:8px;"><sc-for list="{{ mtStats }}" as="k" hint-placeholder-count="3"><div style="padding:12px 14px; border-radius:14px; border:1px solid #e8e5dd; background:#fff; display:flex; flex-direction:column; gap:2px;"><span style="font-size:12.5px; color:#4a4a50; font-weight:600;">{{ k.l }}</span><span style="font-size:24px; font-weight:700; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; color:{{ k.fg }};">{{ k.v }}</span><span style="font-size:12px; color:#6b6b72;">{{ k.n }}</span></div></sc-for></div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><div style="display:flex; align-items:center; gap:8px; height:40px; padding:0 12px; border:1px solid #d6d4cc; border-radius:12px; flex:1; min-width:200px; max-width:360px; background:#fcfcfb;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input type="search" value="{{ mtQ }}" onChange="{{ onMtQ }}" placeholder="Search mentors" aria-label="Search mentors" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:16px;"></div><sc-for list="{{ mtFilters }}" as="f" hint-placeholder-count="2"><button aria-pressed="{{ f.on }}" onClick="{{ f.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:1px solid {{ f.line }}; background:{{ f.bg }}; color:{{ f.fg }}; font-size:13.5px; font-weight:600; cursor:pointer; display:inline-flex; gap:6px;">{{ f.l }}<span style="opacity:.75; font-variant-numeric:tabular-nums;">{{ f.n }}</span></button></sc-for></div>
+      <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; overflow:hidden;"><div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:14px; min-width:720px;"><thead><tr style="background:#fafaf8; color:#5d5d63; font-size:12.5px; text-align:left;"><th scope="col" style="padding:10px 16px; font-weight:500;">Mentor</th><th scope="col" style="padding:10px 16px; font-weight:500; text-align:right;">Mentees</th><th scope="col" style="padding:10px 16px; font-weight:500;">Seen in 2 weeks</th><th scope="col" style="padding:10px 16px; font-weight:500; text-align:right;">Relationship</th><th scope="col" style="padding:10px 16px; font-weight:500;">Commitments</th><th scope="col" style="padding:10px 16px;"><span style="position:absolute; left:-9999px;">Supervision</span></th></tr></thead><tbody><sc-for list="{{ mentors }}" as="m" hint-placeholder-count="6"><tr style="border-top:1px solid #f0efea;"><td style="padding:10px 16px;"><span style="display:flex; flex-direction:column;"><span style="font-weight:600;">{{ m.name }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ m.kind }}</span></span></td><td style="padding:10px 16px; text-align:right; font-variant-numeric:tabular-nums;">{{ m.n }}</td><td style="padding:10px 16px;"><span style="display:inline-flex; align-items:center; gap:8px;"><span style="width:80px; height:6px; border-radius:999px; background:#f0efea; overflow:hidden;"><span style="display:block; height:100%; width:{{ m.pct }}; background:{{ m.pBg }};"></span></span><span style="font-variant-numeric:tabular-nums;">{{ m.pct }}</span></span></td><td style="padding:10px 16px; text-align:right; font-variant-numeric:tabular-nums;">{{ m.rel }}</td><td style="padding:10px 16px;"><span style="height:24px; padding:0 9px; border-radius:999px; background:{{ m.cBg }}; color:{{ m.cFg }}; font-size:12px; font-weight:600; display:inline-flex; align-items:center;">{{ m.commit }}</span></td><td style="padding:10px 16px;"><button onClick="{{ m.sup }}" style="height:44px; padding:0 12px; border:1px solid #d6d4cc; border-radius:10px; background:#fff; font-size:13px; font-weight:600; cursor:pointer; opacity:{{ m.supOp }};">{{ m.supL }}</button></td></tr></sc-for></tbody></table></div><sc-if value="{{ mtEmpty }}"><div style="padding:24px 16px; font-size:14px; color:#4a4a50;">No mentor matches.</div></sc-if></section>
+    </sc-if>
+
+    <!-- CONCERN -->
+    <sc-if value="{{ onConcern }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ cForm }}" hint-placeholder-val="{{ true }}">
+      <section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:16px; display:flex; flex-direction:column; gap:14px; max-width:640px;">
+        <div role="note" style="padding:12px 14px; border-radius:14px; background:#fdeeea; color:#8a2a16; font-size:14px; line-height:1.45;">If a child is in danger now, call 112, then tell the safeguarding officer.</div>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:14px; font-weight:600;">Which child?</span><div style="position:relative;"><div style="display:flex; align-items:center; gap:8px; height:44px; padding:0 12px; border:1px solid {{ pkCon.line }}; border-radius:12px; background:#fff;"><i class="ph ph-magnifying-glass" aria-hidden="true" style="color:#6b6b72;"></i><input role="combobox" aria-expanded="{{ pkCon.openA }}" aria-controls="pkCon-list" aria-autocomplete="list" aria-label="Search by name or school" value="{{ pkCon.q }}" onChange="{{ pkCon.onQ }}" onFocus="{{ pkCon.onFocus }}" onBlur="{{ pkCon.onBlur }}" onKeyDown="{{ pkCon.onKey }}" placeholder="Search by name or school" style="border:0; outline:none; flex:1; min-width:0; background:transparent; font-size:16px;"><sc-if value="{{ pkCon.hasVal }}"><button onMouseDown="{{ pkCon.clear }}" aria-label="Clear" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-x" aria-hidden="true"></i></button></sc-if></div><sc-if value="{{ pkCon.open }}"><div role="listbox" id="pkCon-list" style="position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:20; background:#fff; border:1px solid #d6d4cc; border-radius:12px; box-shadow:0 12px 32px rgba(11,11,12,.14); max-height:280px; overflow-y:auto; padding:4px;"><sc-for list="{{ pkCon.opts }}" as="o" hint-placeholder-count="5"><button role="option" aria-selected="{{ o.on }}" onMouseDown="{{ o.pick }}" style="display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:6px 10px; border:0; border-radius:8px; background:{{ o.bg }}; text-align:left; cursor:pointer;"><span style="width:30px; height:30px; border-radius:50%; background:#efefed; font-size:11px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ o.ini }}</span><span style="display:flex; flex-direction:column; min-width:0;"><span style="font-size:14.5px; font-weight:600;">{{ o.name }}</span><span style="font-size:12.5px; color:#6b6b72;">{{ o.sub }}</span></span></button></sc-for><sc-if value="{{ pkCon.none }}"><div style="padding:12px 10px; font-size:14px; color:#6b6b72;">No mentee matches “{{ pkCon.q }}”.</div></sc-if></div></sc-if></div></label>
+        <div style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:14px; font-weight:600;">What kind of concern?</span><div role="radiogroup" aria-label="What kind of concern" style="display:flex; gap:6px; flex-wrap:wrap;"><sc-for list="{{ cCats }}" as="t" hint-placeholder-count="6"><button role="radio" aria-checked="{{ t.on }}" onClick="{{ t.go }}" style="height:40px; padding:0 14px; border-radius:999px; border:{{ t.bw }} solid {{ t.ring }}; background:#fff; font-size:13.5px; font-weight:600; cursor:pointer;">{{ t.l }}</button></sc-for></div></div>
+        <label style="display:flex; flex-direction:column; gap:6px;"><span style="font-size:14px; font-weight:600;">What happened, in their words if you can</span><textarea value="{{ cText }}" onChange="{{ onCText }}" rows="5" style="padding:12px 14px; border:1px solid #d6d4cc; border-radius:12px; font-size:16px; background:#fcfcfb; resize:vertical;"></textarea></label>
+        <button onClick="{{ sendConcern }}" aria-disabled="{{ cCantA }}" style="align-self:flex-start; height:48px; padding:0 20px; border:0; border-radius:12px; background:{{ cBg }}; color:#fff; font-size:15px; font-weight:600; cursor:pointer;">Send to the safeguarding officer</button>
+        <sc-if value="{{ cHasHint }}"><span style="font-size:13px; color:#7a5600; margin-top:-8px;">{{ cHint }}</span></sc-if>
+        <span style="font-size:13px; color:#6b6b72;">Goes only to Mrs. Bisi Ogun. It is not added to the child’s file or shown to the family.</span>
+      </section>
+      </sc-if>
+      <sc-if value="{{ cSent }}"><section style="background:#fff; border:1px solid #e8e5dd; border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:14px; max-width:640px;"><i class="ph-fill ph-check-circle" aria-hidden="true" style="font-size:36px; color:#1d6b30;"></i><h2 style="margin:0; font-size:20px; font-weight:700;">Sent to Mrs. Bisi Ogun</h2><span style="font-size:14.5px; color:#4a4a50; line-height:1.5;">Reference <span style="font-family:'Geist Mono',monospace; color:#0b0b0c;">{{ cRef }}</span> · {{ cSentWhen }}</span><ol style="margin:0; padding:0; list-style:none; display:flex; flex-direction:column;"><sc-for list="{{ cNext }}" as="n" hint-placeholder-count="3"><li style="display:flex; gap:12px; padding:10px 0; border-top:1px solid #f0efea; font-size:14.5px; line-height:1.45;"><span style="width:24px; height:24px; border-radius:50%; background:#f4f4f2; font-size:12px; font-weight:700; display:grid; place-items:center; flex-shrink:0;">{{ n.i }}</span><span>{{ n.t }}</span></li></sc-for></ol><div style="display:flex; gap:10px; flex-wrap:wrap;"><button onClick="{{ cDone }}" style="height:48px; padding:0 20px; border:0; border-radius:12px; background:#0b0b0c; color:#fff; font-size:15px; font-weight:600; cursor:pointer;">Back to This week</button><button onClick="{{ cAnother }}" style="height:48px; padding:0 16px; border:1px solid #d6d4cc; border-radius:12px; background:#fff; font-size:15px; font-weight:600; cursor:pointer;">Report another</button></div></section></sc-if>
+    </sc-if>
+  </div>
+  </main>
+
+  <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+    <nav aria-label="Main" style="flex-shrink:0; display:flex; padding:6px 8px calc(12px + env(safe-area-inset-bottom)); background:#fbfbfa; border-top:1px solid #e8e5dd;">
+      <sc-for list="{{ tabbar }}" as="t" hint-placeholder-count="5"><button onClick="{{ t.go }}" aria-current="{{ t.cur }}" style="flex:1; min-height:52px; border:0; background:none; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-size:11.5px; font-weight:{{ t.fw }}; color:{{ t.fg }}; cursor:pointer; position:relative;"><i class="{{ t.icon }}" aria-hidden="true" style="font-size:22px;"></i>{{ t.l }}<sc-if value="{{ t.hasB }}"><span style="position:absolute; top:6px; left:calc(50% + 8px); width:9px; height:9px; border-radius:50%; background:#f5b026;"></span></sc-if></button></sc-for>
+    </nav>
+  </sc-if>
+</div>
+
+<sc-if value="{{ moreOpen }}">
+  <div onClick="{{ closeMore }}" style="position:absolute; inset:0; background:rgba(11,11,12,.32); z-index:30;"></div>
+  <div role="dialog" aria-modal="true" aria-label="More" style="position:absolute; left:0; right:0; bottom:0; z-index:31; background:#f4f4f2; border-radius:24px 24px 0 0; padding:8px 16px calc(24px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:8px;">
+    <div style="display:flex; justify-content:center; padding:4px 0 0;"><span style="width:38px; height:5px; border-radius:999px; background:#cfcfcb;"></span></div>
+    <div style="display:flex; align-items:center; padding:0 0 0 4px;"><span style="flex:1; font-size:17px; font-weight:600;">More</span><button onClick="{{ closeMore }}" aria-label="Close" style="width:44px; height:44px; border:0; background:none; cursor:pointer;"><i class="ph ph-x" aria-hidden="true" style="font-size:20px;"></i></button></div>
+    <div style="background:#fff; border-radius:16px; overflow:hidden;"><sc-for list="{{ moreItems }}" as="n" hint-placeholder-count="4"><button onClick="{{ n.go }}" style="display:flex; align-items:center; gap:12px; width:100%; min-height:56px; padding:0 16px; border:0; border-bottom:1px solid #f0efea; background:#fff; font-size:15px; text-align:left; cursor:pointer;"><i class="{{ n.icon }}" aria-hidden="true" style="font-size:20px;"></i><span style="flex:1;">{{ n.l }}</span><sc-if value="{{ n.hasB }}"><span style="min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#f5b026; color:#2a1d00; font-size:11.5px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;">{{ n.b }}</span></sc-if><i class="ph ph-caret-right" aria-hidden="true" style="color:#9a9aa0;"></i></button></sc-for></div>
+    <button onClick="{{ signOutMe }}" style="min-height:52px;border-radius:16px;border:1px solid #d6d4cc;background:#fff;font-size:15px;font-weight:600;color:#0b0b0c;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><i class="ph ph-sign-out" aria-hidden="true"></i>Sign out</button>
+  </div>
+</sc-if>
+
+<sc-if value="{{ hasToast }}"><div role="status" style="position:absolute; left:50%; transform:translateX(-50%); bottom:{{ toastB }}; z-index:60; background:#0b0b0c; color:#fff; padding:10px 16px; border-radius:12px; font-size:14px; box-shadow:0 12px 30px rgba(11,11,12,.25); display:flex; align-items:center; gap:10px; max-width:calc(100% - 32px);"><i class="ph ph-check-circle" aria-hidden="true" style="color:#f5b026;"></i><span>{{ toast }}</span><sc-if value="{{ toastUndo }}"><button onClick="{{ onUndo }}" style="height:44px; padding:0 10px; border:1px solid rgba(255,255,255,.25); border-radius:8px; background:transparent; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Undo</button></sc-if></div></sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;pod&quot;,&quot;peer&quot;,&quot;instructor&quot;,&quot;lead&quot;,&quot;coord&quot;],&quot;default&quot;:&quot;pod&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Preview&quot;}}">
+class Component extends DCLogic {
+  rootRef = React.createRef();
+  state = { scr: 'week', hist: [], kid: null, ktab: 'overview', filter: 'all', q: '', sort: 'urgent', sel: {}, woop: {}, agreed: {}, rel: {}, tpl: 'one', nf: {}, pTpl: 'saw', pBody: null, step: 'before', agenda: null, aim: 'All', here: {}, obs: {}, rv: {}, rvDone: {}, mf: 'all', msel: 'm0', read: {}, reply: '', sup: {}, cKid: '', cText: '', more: false, w: 1200, toast: '', undo: null };
+  componentDidMount() { this.onKey = e => { if (e.key === 'Escape' && this.state.more) this.setState({ more: false }); }; window.addEventListener('keydown', this.onKey); const el = this.rootRef.current; if (el && window.ResizeObserver) { this.ro = new ResizeObserver(([e]) => this.setState({ w: e.contentRect.width })); this.ro.observe(el); } }
+  componentWillUnmount() { window.removeEventListener('keydown', this.onKey); this.ro && this.ro.disconnect(); clearTimeout(this.tt); }
+  say(t, undo) { clearTimeout(this.tt); this.setState({ toast: t, undo: undo || null }); this.tt = setTimeout(() => this.setState({ toast: '', undo: null }), undo ? 6500 : 4000); }
+  go(scr, extra) { const S = this.state; const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0; this.setState({ scr, more: false, hist: scr === S.scr ? S.hist : S.hist.concat([S.scr]).slice(-12), ...(scr !== S.scr ? { mOpen: false } : {}), ...(scr === 'concern' ? { cSent: null } : {}), ...(extra || {}) }); }
+  back() { const h = this.state.hist; this.setState({ scr: h.length ? h[h.length - 1] : 'week', hist: h.slice(0, -1) }); }
+  ROLES = { pod: ['Pod mentor', 7], peer: ['Peer mentor', 3], instructor: ['Instructor mentor', 32], lead: ['Lead mentor', 64], coord: ['Centre coordinator', 118] };
+  kidsData() {
+    if (this._k) return this._k;
+    const F = ['Tolu','Chiamaka','Ifeoluwa','Musa','Zainab','Kelechi','Amaka','Samuel','Halima','David','Blessing','Emeka','Fatima','Joshua','Ngozi','Ibrahim','Esther','Daniel','Aisha','Victor','Precious','Yusuf','Adaora','Michael','Ruth','Tobi','Grace','Uche','Hauwa','Seyi'];
+    const L = ['Bankole','Okafor','Adeyemi','Bello','Abubakar','Eze','Nwosu','Afolabi','Ibrahim','Ogunleye','Okonkwo','Lawal','Danjuma','Balogun','Chukwu','Salami','Obi','Adebayo','Usman','Oyelaran'];
+    const MN = ['Adaeze Okonkwo','Funmi Adebayo','Kunle Bakare','Ngozi Eze','Tayo Salami','Bisi Ogun','Chidi Obi','Remi Lawal','Hadiza Musa','Segun Ade','Ada Nnaji','Femi Ojo','Lola Dada','Emeka Udo'];
+    let r = 11; const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+    return (this._k = Array.from({ length: 118 }, (_, i) => { const f = F[i % F.length], l = L[(i * 7) % L.length]; return { id: 'k' + i, first: f, name: f + ' ' + l, ini: f[0] + l[0], age: 10 + Math.floor(rnd() * 8), school: ['Egbeda High', 'Ayobo Model College', 'Igando Grammar', 'Bethel Academy'][i % 4], phase: ['Connect', 'Grow', 'Grow', 'Grow', 'Lead'][Math.floor(rnd() * 5)], contact: Math.floor(rnd() * 30), wb: rnd() < 0.08 ? 'Struggling' : 'Okay', relM: 3 + Math.floor(rnd() * 3), relC: 2 + Math.floor(rnd() * 4), relDue: rnd() < 0.15, goal: rnd() < 0.12 ? 'No plan yet' : rnd() < 0.18 ? 'Stalled' : 'On track', parent: Math.floor(rnd() * 50), mentor: MN[i % 14], guardian: (i % 2 ? 'Mr. ' : 'Mrs. ') + l }; }));
+  }
+  renderVals() {
+    const S = this.state, set = o => this.setState(o);
+    const roleId = this.props.role || 'pod'; const [roleLabel, N] = this.ROLES[roleId] || this.ROLES.pod;
+    const isPeer = roleId === 'peer', isLead = roleId === 'lead' || roleId === 'coord';
+    const narrow = S.w < 760, wide = !narrow; const lead = 'Funmi';
+    const all = this.kidsData().slice(0, N).map(k => ({ ...k, ...(S.seen && S.seen[k.id] !== undefined ? { contact: S.seen[k.id] } : {}), ...(S.famSent && S.famSent[k.id] ? { parent: 0 } : {}) }));
+    const tone = { bad: ['#fdeeea', '#b0361c'], warn: ['#fdf6e3', '#7a5600'], ok: ['#f3faf4', '#1d6b30'], neu: ['#f0efea', '#4a4a50'] };
+    const B = { wellbeing: k => k.wb !== 'Okay', contact: k => k.contact > 14, rel: k => k.relC <= 2 || k.relM - k.relC >= 2 || k.relDue, goal: k => { const a = this.activeGoal(k); return !a || this.isStalled(a); }, family: k => !isPeer && k.parent > 30 };
+    const score = k => (B.wellbeing(k) ? 6 : 0) + (B.contact(k) ? 2 + (k.contact - 14) / 7 : 0) + (B.rel(k) ? 2 : 0) + (B.goal(k) ? 1 : 0) + (B.family(k) ? 1 : 0);
+    const FL = [['all', 'All'], ['wellbeing', 'Struggling'], ['contact', 'One-to-one overdue'], ['rel', 'Relationship check'], ['goal', 'Goal needs work'], ['family', 'Family update']].filter(f => !(isPeer && f[0] === 'family'));
+    const msgsAll = [{ id: 'm0', who: all[0].name, kind: 'Journal entry shared with you', when: 'Today', t: 'I asked a question in class today even though my voice shook. Nobody laughed. I think I can do it again.' }, { id: 'm1', who: (all[1] || all[0]).name, kind: 'Check-in', when: 'Yesterday', t: 'Struggling this week. Exams and my brother is sick.' }, { id: 'm2', who: (all[2] || all[0]).guardian, kind: 'Family reply', when: 'Yesterday', t: 'Thank you for the update. He talks about the coding club every evening now.' }, { id: 'm3', who: (all[3] || all[0]).name, kind: 'Journal entry shared with you', when: 'Thu', t: 'I helped my sister with homework and did not shout when she got it wrong.' }, { id: 'm4', who: lead + ' (lead mentor)', kind: 'From your lead', when: 'Wed', t: 'Reminder: prep session tonight, 7–8pm. Bring one story from Saturday.' }].filter(m => !(isPeer && m.kind === 'Family reply'));
+    const unreadN = msgsAll.filter(m => !S.read[m.id] && m.id !== 'm4').length;
+    const revDoneN = all.slice(0, Math.min(N, 12)).filter(k => S.rvDone[k.id]).length; const revTotal = Math.min(N, 12);
+    const dueN = all.filter(k => Object.keys(B).some(id => B[id](k))).length;
+    const navDef = [['week', 'This week', 'ph ph-sun-horizon'], ['list', 'Mentees', 'ph ph-users-three'], ['goals', 'Goals', 'ph ph-target'], ['sess', 'Sessions', 'ph ph-notebook'], ['sat', 'Saturday', 'ph ph-calendar-star'], ['msg', 'Messages', 'ph ph-chat-circle-text'], ['growth', 'Pod growth', 'ph ph-chart-line-up'], ['academy', 'Academy', 'ph ph-graduation-cap'], ['role', 'My role', 'ph ph-seal-check']];
+    if (isLead) navDef.splice(2, 0, ['mentors', 'Mentors', 'ph ph-chalkboard-teacher']);
+    const navCur = S.scr === 'kid' ? 'list' : S.scr === 'module' ? 'academy' : S.scr === 'concern' ? 'role' : S.scr;
+    const badges = { list: dueN, sat: revTotal - revDoneN, msg: unreadN, academy: window.ACADEMY ? window.ACADEMY.modules.filter(m => !m.done).length : 0 };
+    const AREAS = [['This week', 'ph ph-sun-horizon', [['week', 'This week']]], ['Mentees', 'ph ph-users-three', [['list', 'All mentees'], ['goals', 'Goals'], ['sess', 'Sessions'], ['growth', 'Pod growth']].concat(isLead ? [['mentors', 'Mentors']] : [])], ['Saturday', 'ph ph-calendar-star', [['sat', 'Saturday']]], ['Messages', 'ph ph-chat-circle-text', [['msg', 'Messages']]], ['Me', 'ph ph-seal-check', [['role', 'My role'], ['academy', 'Academy']]]]
+      .map(([l, icon, kids]) => { const n = kids.reduce((a, [id]) => a + (badges[id] || 0), 0); return { l, icon, kids, ids: kids.map(x => x[0]), b: n }; });
+    const area = AREAS.find(a => a.ids.includes(navCur)) || AREAS[0];
+    const areaNav = AREAS.map(a => { const on = a === area; return { l: a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)' : 'none', fw: on ? 600 : 500, b: a.b, hasB: !!a.b, go: () => this.go(a.ids[0]) }; });
+    const areaTabbar = AREAS.map(a => { const on = a === area; return { l: a.l === 'This week' ? 'Week' : a.l, icon: on ? a.icon.replace('ph ph-', 'ph-fill ph-') : a.icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!a.b, go: () => this.go(a.ids[0]) }; });
+    const areaTabs = area.kids.map(([id, l]) => { const on = S.scr === id; const b = badges[id] || 0; return { l, on: on ? 'true' : 'false', fg: on ? '#0b0b0c' : '#5a5a60', fw: on ? 600 : 500, bar: on ? '#0b0b0c' : 'transparent', b, hasB: !!b, go: () => this.go(id) }; });
+    const inDetail = S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module';
+    const nav = navDef.map(([id, l, icon]) => { const on = navCur === id; return { l, icon: on ? icon.replace('ph ph-', 'ph-fill ph-') : icon, cur: on ? 'page' : undefined, bg: on ? '#fff' : 'transparent', sh: on ? '0 0 0 1px #e8e5dd, 0 1px 2px rgba(11,11,12,.06)' : 'none', fw: on ? 600 : 500, b: badges[id], hasB: !!badges[id], go: () => this.go(id) }; });
+    const tabIds = ['week', 'list', 'sat', 'msg'];
+    const tabbar = navDef.filter(n => tabIds.includes(n[0])).map(([id, l, icon]) => { const on = navCur === id && !S.more; return { l, icon: on ? icon.replace('ph ph-', 'ph-fill ph-') : icon, cur: on ? 'page' : undefined, fg: on ? '#0b0b0c' : '#626a6e', fw: on ? 600 : 500, hasB: !!badges[id], go: () => this.go(id) }; }).concat([{ l: 'More', icon: S.more ? 'ph-fill ph-dots-three-outline' : 'ph ph-dots-three-outline', fg: S.more || !tabIds.includes(navCur) ? '#0b0b0c' : '#626a6e', fw: 600, hasB: !!badges.academy, go: () => set({ more: true }) }]);
+    const moreItems = navDef.filter(n => !tabIds.includes(n[0])).map(([id, l, icon]) => ({ l, icon, b: badges[id], hasB: !!badges[id], go: () => this.go(id) }));
+    const ck = all.find(k => k.id === S.kid) || all[0];
+    const q = S.q.trim().toLowerCase();
+    let kids = all.filter(k => (S.filter === 'all' || B[S.filter](k)) && (!q || (k.name + ' ' + k.school).toLowerCase().includes(q)));
+    kids = kids.slice().sort((a, b) => S.sort === 'name' ? a.name.localeCompare(b.name) : S.sort === 'contact' ? b.contact - a.contact : score(b) - score(a));
+    const selIds = Object.keys(S.sel).filter(k => S.sel[k] && all.some(x => x.id === k)); const nSel = selIds.length;
+    const wideCols = S.w >= 1180;
+    const flagsOf = k => { const f = []; if (B.wellbeing(k)) f.push(['Struggling', 'bad']); if (B.contact(k)) f.push(['One-to-one overdue', 'warn']); if (B.rel(k)) f.push([k.relDue ? 'Check due' : 'Relationship', 'warn']); if (!wideCols && B.goal(k)) f.push([k.goal, 'neu']); if (B.family(k)) f.push(['Family update', 'neu']); return f.slice(0, 2).map(([l, t]) => ({ l, bg: tone[t][0], fg: tone[t][1] })); };
+    const struggling = all.filter(B.wellbeing), overdue = all.filter(B.contact), relN = all.filter(B.rel), famN = all.filter(B.family);
+    const due = [];
+    struggling.slice(0, 2).forEach(k => due.push({ icon: 'ph ph-hand-heart', bg: '#fdeeea', fg: '#b0361c', t: k.first + ' said they’re struggling', s: 'This week’s check-in · talk to them before Saturday', go: () => this.go('kid', { kid: k.id, ktab: 'overview' }) }));
+    if (unreadN) due.push({ icon: 'ph ph-chat-circle-text', bg: '#fdf6e3', fg: '#7a5600', t: unreadN + ' message' + (unreadN > 1 ? 's' : '') + ' waiting for you', s: 'Journal entries, check-ins and family replies', go: () => this.go('msg') });
+    if (overdue.length) due.push({ icon: 'ph ph-clock-countdown', bg: '#fdf6e3', fg: '#7a5600', t: overdue.length + ' one-to-one' + (overdue.length > 1 ? 's' : '') + ' overdue', s: 'Not seen one-to-one in over 14 days', go: () => this.go('list', { filter: 'contact' }) });
+    if (revTotal - revDoneN) due.push({ icon: 'ph ph-clipboard-text', bg: '#f0efea', fg: '#4a4a50', t: (revTotal - revDoneN) + ' weekly reviews to finish', s: 'From last Saturday · due Monday', go: () => this.go('sat', { step: 'after' }) });
+    if (relN.length) due.push({ icon: 'ph ph-handshake', bg: '#f0efea', fg: '#4a4a50', t: relN.length + ' relationship check' + (relN.length > 1 ? 's' : '') + ' to look at', s: 'Due, low, or you and the child disagree', go: () => this.go('list', { filter: 'rel' }) });
+    { const st = all.filter(k => { const a = this.activeGoal(k); return a && this.isStalled(a); }).length; if (st) due.push({ icon: 'ph ph-target', bg: '#fdf6e3', fg: '#7a5600', t: st + (st === 1 ? ' goal has' : ' goals have') + ' stalled', s: 'No check-in for 3 weeks, or no movement', go: () => this.go('goals', { gf: 'stalled' }) }); }
+    if (famN.length) due.push({ icon: 'ph ph-house-line', bg: '#f0efea', fg: '#4a4a50', t: famN.length + ' famil' + (famN.length > 1 ? 'ies' : 'y') + ' due an update', s: 'No update in over 30 days', go: () => this.go('list', { filter: 'family' }) });
+    const W = S.woop[ck.id] || (ck.goal === 'No plan yet' ? { w: '', o: '', ob: '', p: '' } : { w: 'Get confident speaking in front of my class', o: 'Present my coding project at the showcase without reading from notes', ob: 'My voice shakes and I rush when people look at me', p: 'If my voice starts shaking, then I will pause, breathe once, and look at one friendly face' });
+    const agreed = !!S.agreed[ck.id]; const relA = S.rel[ck.id] || {};
+    const TPL = { one: ['One-to-one', ['What we talked about', 'What they decided to try', 'What I’ll follow up on']], obs: ['Observation', ['What I saw (facts only)', 'Which value it shows', 'What I said to them']], fam: ['Family conversation', ['What the family shared', 'What we agreed', 'Next contact']] };
+    const nfKey = ck.id + ':' + S.tpl; const nf = S.nf[nfKey] || {};
+    const PT = { saw: ['Something I saw', 'Good afternoon ' + ck.guardian + '. On Saturday I saw ' + ck.first + ' help a younger member without being asked. Patience is what we’re working on together. What have you noticed at home this month? – ' + this.meFirst()], plan: ['Their growth plan', 'Good afternoon ' + ck.guardian + '. ' + ck.first + ' and I agreed a plan: when nerves come, pause, breathe, and look at a friendly face. You can help by asking how it went after school. – ' + this.meFirst()], meet: ['Ask to meet', 'Good afternoon ' + ck.guardian + '. Could we have 15 minutes after Saturday’s session to talk about how ' + ck.first + ' is growing? Would 11:45 work? – ' + this.meFirst()] };
+    const pBody = S.pBody != null ? S.pBody : PT[S.pTpl][1];
+    const series = (seed, up) => { let v = 2 + (seed % 2); return Array.from({ length: 8 }, (_, i) => { if (i && (seed + i) % 3 === 0) v = Math.max(1, Math.min(5, v + (up ? 1 : -1))); return v; }); };
+    const outOf = (pts) => pts.map((v, i) => ({ h: (v / 5 * 100) + '%', c: i === 7 ? '#0b0b0c' : '#d6d4cc' }));
+    const sid = Number(ck.id.slice(1));
+    const mkOut = (l, pts, note) => { const d = pts[7] - pts[0]; return { l, note, d: (d > 0 ? '+' : '') + d + ' since August', fg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72', pts: outOf(pts) }; };
+    const agenda = S.agenda || [{ t: 'Pod huddle', s: 'Register, one win each, this week’s theme', m: 10, fixed: true }, { t: 'Anchor Journal circle', s: 'Reflection', m: 15 }, { t: 'One-to-ones', s: 'Rotate through the mentees due', m: 45, fixed: true }, { t: 'Close', s: 'One sentence each: what I’ll try this week', m: 10, fixed: true }];
+    let t0 = 570; const total = agenda.reduce((n, a) => n + a.m, 0);
+    const LIB = [['Courage', 'Hot seat, softly', 'Each child answers one kind, specific question from the pod about their week.', '15 min · ages 10–17'], ['Teamwork', 'Silent build', 'Pairs build a paper bridge without speaking, then talk about how they understood each other.', '20 min · ages 10–14'], ['Reflection', 'Anchor Journal circle', 'Five quiet minutes on this week’s prompt, then two volunteers read one line aloud.', '15 min · ages 10–17'], ['Leadership', 'Teach-back', 'One child teaches the pod something from this week in three minutes; everyone asks one question.', '20 min · ages 13–17'], ['Character', 'What would you do?', 'A short real-life dilemma. Children stand on a line from “definitely” to “never” and explain why.', '15 min · ages 10–17']];
+    const satKids = all.slice(0, Math.min(N, 12));
+    const hereOf = k => S.here[k.id] !== undefined ? S.here[k.id] : k.contact % 7 !== 3;
+    const VALS = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
+    const CM = [
+      ['CIMC training', 'Saturdays 7:00am', '3 of 4 Saturdays', 'ok', 'Centre register'],
+      ['Mentor Preparation Session', 'Weekly, 7:00–8:00pm · come prepared', '2 of 2 so far', 'ok', 'Session register'],
+      ['Mentor at 9:30am at least twice a month', 'Two Saturdays left in October', '1 of 2', 'warn', 'Saturday register', 'Plan Saturday', () => this.go('sat', { step: 'before' })],
+      ['At least five children in your care', 'Assessment, scoring, follow-up and mentoring', N + ' children', N >= 5 || isPeer ? 'ok' : 'bad', 'Your caseload'],
+      ['Assess, score and monitor on the platform', 'Observations and weekly reviews by Monday', revDoneN + ' of ' + revTotal + ' reviewed', revDoneN === revTotal ? 'ok' : 'warn', 'Weekly reviews', 'Finish reviews', () => this.go('sat', { step: 'after' })],
+      ['Anchor Journal with families and teachers', 'Reply to shared entries within a week', unreadN ? unreadN + ' waiting' : 'Up to date', unreadN ? 'warn' : 'ok', 'Messages', 'Open messages', () => this.go('msg')],
+      ['Tuesday STS meeting', 'Planning and review', '2 of 2', 'ok', 'Meeting register'],
+      ['Parent engagements', 'Meetings and conversations about your mentees', famN.length ? famN.length + (famN.length === 1 ? ' family due' : ' families due') : 'Up to date', famN.length && !isPeer ? 'warn' : 'ok', 'Family updates', 'See families', () => this.go('list', { filter: 'family' })],
+      ['Support NGGC projects and activities', 'As reasonably assigned', 'Showcase setup, 25 October', 'ok', 'Assigned by your lead'],
+      ['Quarterly day retreat', 'Saturday 13 December', 'Not booked', S.retreat ? 'ok' : 'warn', 'Retreat booking', 'Book my place', () => { this.setState({ retreat: true }); this.say('Place booked for 13 December'); }],
+      ['NGGC Anthem and Pledge', 'Known, upheld and modelled', 'Confirmed', 'ok', 'With your lead, January'],
+      ['Feedback received professionally', 'Concerns raised through the proper channels', 'Next review on Tuesday', 'ok', 'Noted by your lead']
+    ].map(r => r[3] === 'ok' && r[0] === 'Quarterly day retreat' ? [r[0], r[1], 'Booked', 'ok', r[4]] : r);
+    let met = 0, tot = 0; CM.forEach(r => { tot++; if (r[3] === 'ok') met++; });
+    const A = window.ACADEMY; const acMods = A ? A.modules : []; const acDone = acMods.filter(m => m.done).length;
+    const mList = msgsAll.filter(m => S.mf === 'all' || (S.mf === 'journal' ? /Journal/.test(m.kind) : S.mf === 'checkin' ? m.kind === 'Check-in' : m.kind === 'Family reply'));
+    const mSel = mList.find(m => m.id === S.msel) || mList[0];
+    const titles = { module: ((window.ACADEMY && window.ACADEMY.modules.find(m => m.id === S.mod)) || {}).t || 'Module', goals: 'Goals', sess: 'Sessions', week: 'This week', list: 'Mentees', kid: ck.name, sat: 'Saturday', msg: 'Messages', growth: 'Pod growth', academy: 'Academy', role: 'My role', mentors: 'Mentors', concern: 'Report a concern' };
+    const subs = { module: 'Academy', goals: 'Every mentee’s goal, how close they are, and when it was last checked', sess: 'Every one-to-one, pod session and family contact you’ve logged', week: 'Saturday 10 October · ' + N + ' mentees · ' + roleLabel.toLowerCase(), list: N + ' in your care · sorted by who needs you most', kid: '', sat: 'Session at 9:30am · ' + satKids.length + ' mentees', msg: unreadN + ' unread', growth: 'Last 8 Saturdays', academy: acDone + ' of ' + acMods.length + ' modules complete', role: 'NGGC Mentorship Commitment and Conduct Policy', mentors: (roleId === 'lead' ? 8 : 14) + ' mentors', concern: 'Goes straight to the safeguarding officer' };
+    const pill = on => ({ bw: on ? '2px' : '1px', ring: on ? '#0b0b0c' : '#d6d4cc' });
+    const chip = on => ({ line: on ? '#0b0b0c' : '#d6d4cc', bg: on ? '#0b0b0c' : '#fff', fg: on ? '#fff' : '#0b0b0c' });
+    const seg = on => ({ bg: on ? '#fff' : 'transparent', sh: on ? '0 1px 2px rgba(0,0,0,.1)' : 'none' });
+    const cOk = !!S.cKid && S.cText.trim().length > 10;
+    return {
+      rootRef: this.rootRef, wide, narrow, narrowSub: narrow && !!subs[S.scr], mainPad: narrow ? '16px 16px 28px' : '32px 40px 56px', toastB: narrow ? '96px' : '24px',
+      roleLabel, centre: 'Alimosho', meName: this.meName(), meIni: 'AO', nav: areaNav, tabbar: areaTabbar, moreItems, moreOpen: S.more, closeMore: () => set({ more: false }),
+      areaTabs, hasAreaTabs: area.kids.length > 1 && !inDetail, areaLabel: area.l,
+      glance: [['Mentees', String(N), roleLabel, '#0b0b0c', () => this.go('list')], ['Seen in last 14 days', Math.round((N - overdue.length) / N * 100) + '%', overdue.length + ' overdue', overdue.length ? '#7a5600' : '#1d6b30', () => this.go('list', { filter: 'contact' })], ['Struggling this week', String(struggling.length), struggling.length ? 'Talk before Saturday' : 'Nobody flagged', struggling.length ? '#b0361c' : '#1d6b30', () => this.go('list', { filter: 'wellbeing' })], ['Weekly reviews', revDoneN + ' of ' + revTotal, 'Due Monday', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
+      title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: S.scr === 'kid' || S.scr === 'concern' || S.scr === 'module', back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
+      goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
+      onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: S.scr === 'msg', onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
+      due: S.dueAll ? due : due.slice(0, 5), noDue: due.length === 0, dueMore: due.length > 5 && !S.dueAll, dueRestL: 'Show ' + (due.length - 5) + ' more', seeAllDue: () => set({ dueAll: true }),
+      week: [['Tuesday', 'After school', 'STS meeting', true], ['Weekly', '7:00–8:00pm', 'Mentor Preparation Session', true], ['Saturday', '7:00am', 'CIMC training', false]].map(([d, t, l, done]) => ({ d, t, l, done })),
+      filters: FL.map(([id, l]) => ({ l, n: (id === 'all' ? all : all.filter(B[id])).length, on: S.filter === id, ...chip(S.filter === id), go: () => set({ filter: id }) })),
+      q: S.q, onQ: e => set({ q: e.target.value }), sort: S.sort, onSort: e => set({ sort: e.target.value }), barBg: nSel ? '#fff8e6' : '#fff',
+      noSel: !nSel, hasSel: !!nSel, selText: nSel + ' selected', selAllIcon: !nSel ? 'ph ph-square' : nSel >= kids.length ? 'ph-fill ph-check-square' : 'ph-fill ph-minus-square', selAllL: nSel ? 'Clear selection' : 'Select all shown',
+      selAll: () => { if (nSel) return set({ sel: {} }); const m = {}; kids.forEach(k => m[k.id] = true); set({ sel: m }); }, clearSel: () => set({ sel: {} }),
+      bulk: [['Add to Saturday one-to-ones', 'ph ph-calendar-plus', () => { set({ sel: {} }); this.say(nSel + ' added to Saturday’s one-to-ones'); }, false], ['Family update', 'ph ph-house-line', () => { set({ sel: {} }); this.say('Drafts ready for ' + nSel + ' families. Review each before sending.'); }, isPeer], ['Add a note', 'ph ph-note-pencil', () => { set({ sel: {} }); this.say('Note added to ' + nSel + ' records'); }, false]].map(([l, icon, go, off]) => ({ l, icon, go, off, why: off ? 'Your lead mentor contacts families' : '', op: off ? 0.4 : 1 })),
+      wideCols, cols: wideCols ? '40px minmax(220px, 1.6fr) 130px 110px minmax(110px, 1fr) minmax(150px, auto)' : '40px minmax(0, 1fr) auto',
+      kids: kids.map(k => { const on = !!S.sel[k.id]; return { ...k, sub: 'Age ' + k.age + ' · ' + k.phase + ' · ' + (isLead ? k.mentor : k.school), contact: k.contact === 0 ? 'Today' : k.contact + ' days ago', cFg: B.contact(k) ? '#7a5600' : '#4a4a50', cFw: B.contact(k) ? 600 : 400, rel: k.relC + ' · ' + k.relM, relTip: k.first + ' rates ' + k.relC + ', you rate ' + k.relM, relDot: k.relC <= 2 ? '#b0361c' : k.relM - k.relC >= 2 ? '#e0a100' : '#2f9e44', goal: this.activeGoal(k) ? this.activeGoal(k).title : 'No goal yet', flags: flagsOf(k), bg: on ? '#fff8e6' : '#fff', selIcon: on ? 'ph-fill ph-check-square' : 'ph ph-square', selFg: on ? '#0b0b0c' : '#9a9aa0', selA: on ? 'true' : 'false', selL: (on ? 'Deselect ' : 'Select ') + k.name, toggle: () => set({ sel: { ...S.sel, [k.id]: !on } }), open: () => this.go('kid', { kid: k.id, ktab: 'overview', pBody: null }) }; }),
+      noKids: kids.length === 0, emptyT: S.filter === 'all' ? 'Nobody matches that search.' : 'Nobody in this group right now.', resetF: () => set({ filter: 'all', q: '' }),
+      ck: { ...ck, sub: 'Age ' + ck.age + ' · ' + ck.phase + ' phase · ' + ck.school + ' · ' + ck.guardian, relGap: ck.relM - ck.relC >= 2 },
+      facts: [['Last one-to-one', ck.contact === 0 ? 'Today' : ck.contact + ' days ago', B.contact(ck) ? '#7a5600' : '#0b0b0c'], ['This week', ck.wb, B.wellbeing(ck) ? '#b0361c' : '#0b0b0c'], ['Relationship', ck.relC + ' / 5 from ' + ck.first, ck.relC <= 2 ? '#b0361c' : '#0b0b0c'], ['Active goal', this.activeGoal(ck) ? (this.activeGoal(ck).checks.length ? this.activeGoal(ck).checks[this.activeGoal(ck).checks.length - 1][1] + ' of 5 · ' + this.activeGoal(ck).area : 'Not checked yet') : 'None yet', this.activeGoal(ck) && !this.isStalled(this.activeGoal(ck)) ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
+      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Progress']].map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
+      kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family', kProg: S.ktab === 'prog',
+      timeline: [['ph ph-chat-circle-text', '#4a4a50', 'One-to-one: talked about the showcase. Wants to present but is scared of reading aloud.', '4 Oct · you'], ['ph ph-flag', '#a07400', 'Took a courage dare: asked a question in class.', '2 Oct · from the member portal'], ['ph ph-binoculars', '#1d6b30', 'Observed: Responsibility, Teamwork', '27 Sept · Saturday'], ['ph ph-house-line', '#4a4a50', 'Family update sent to ' + ck.guardian, ck.parent + ' days ago']].map(([icon, fg, t, w]) => ({ icon, fg, t, w })),
+      woop: [['w', 'Wish', 'What do they want, in their words?', 'e.g. Get confident speaking in class'], ['o', 'Best outcome', 'What would it look like if it worked?', 'e.g. Present at the showcase without notes'], ['ob', 'Obstacle inside them', 'What in them gets in the way?', 'e.g. My voice shakes when people look'], ['p', 'Plan: if… then I will…', 'One if–then plan for that obstacle', 'If my voice shakes, then I will pause and breathe once']].map(([k, l, h, ph]) => ({ l, h, ph, v: W[k], on: e => set({ woop: { ...S.woop, [ck.id]: { ...W, [k]: e.target.value } } }) })),
+      agreedA: agreed ? 'true' : 'false', agTrack: agreed ? '#0b0b0c' : '#d6d4cc', agKnob: agreed ? '24px' : '4px', toggleAgreed: () => set({ agreed: { ...S.agreed, [ck.id]: !agreed } }),
+      saveGoal: () => this.say(agreed ? 'Growth plan saved. ' + ck.first + ' can see it.' : 'Saved as a draft. Agree it with ' + ck.first + ' to make it live.'),
+      relQs: ['We talk about things that matter to them', 'They can tell me when something is wrong', 'I know what they want from our time', 'Our time helps them move forward'].map((qq, i) => ({ q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck.id]: { ...relA, [i]: n } } }) })) })),
+      saveRel: () => this.say(Object.keys(relA).length < 4 ? 'Answer all four first' : 'Saved. ' + ck.first + ' answers their side this week.'), askFit: () => this.say('Sent to the coordinator. Nothing changes until you’ve talked.'),
+      tpls: Object.keys(TPL).map(id => ({ l: TPL[id][0], on: S.tpl === id, ...pill(S.tpl === id), go: () => set({ tpl: id }) })),
+      tplFields: TPL[S.tpl][1].map((l, i) => ({ l, v: nf[i] || '', on: e => set({ nf: { ...S.nf, [nfKey]: { ...nf, [i]: e.target.value } } }) })),
+      saveNote: () => { set({ nf: { ...S.nf, [nfKey]: {} } }); this.say(isPeer ? 'Note saved and shared with ' + lead : 'Note saved'); },
+      pTpls: Object.keys(PT).map(id => ({ l: PT[id][0], on: S.pTpl === id, ...pill(S.pTpl === id), go: () => set({ pTpl: id, pBody: null }) })), pBody, onPBody: e => set({ pBody: e.target.value }), sendParent: () => this.say('Sent to ' + ck.guardian),
+      outcomes: [['Courage', series(sid + 2, true), 'From Saturday observations'], ['Responsibility', series(sid + 5, true), 'Missions and commitments kept'], ['Wellbeing', series(sid + 1, !B.wellbeing(ck)), 'Weekly check-ins'], ['Relationship', series(sid + 3, ck.relC > 2), 'Both sides, every 6 weeks']].map(x => mkOut(...x)),
+      makeReport: () => this.say('Progress report for ' + ck.first + ' is ready to save as a PDF'),
+      steps: [['before', 'Before', 'Plan the session'], ['during', 'During', satKids.filter(hereOf).length + ' here'], ['after', 'After', revDoneN + ' of ' + revTotal + ' reviewed']].map(([id, l, s]) => ({ l, s, on: S.step === id, ...seg(S.step === id), go: () => set({ step: id }) })),
+      sBefore: S.step === 'before', sDuring: S.step === 'during', sAfter: S.step === 'after',
+      agenda: agenda.map((a, i) => { const at = t0; t0 += a.m; return { ...a, at: Math.floor(at / 60) + ':' + String(at % 60).padStart(2, '0'), first: i === 0, upOp: i ? 1 : 0.3, rmOp: a.fixed ? 0.3 : 1, up: () => { if (!i) return; const n = agenda.slice(); [n[i - 1], n[i]] = [n[i], n[i - 1]]; set({ agenda: n }); }, rm: () => { if (!a.fixed) set({ agenda: agenda.filter((_, j) => j !== i) }); } }; }),
+      agTotal: total + ' of 90 min', agFg: total > 90 ? '#b0361c' : '#4a4a50',
+      ooN: Math.min(3, N), ooNames: all.slice().sort((a, b) => b.contact - a.contact).slice(0, 3).map(k => k.first + ' (' + k.contact + ' days)').join(' · '),
+      sharePlan: () => this.say('Agenda shared with ' + lead),
+      aims: ['All', 'Courage', 'Reflection', 'Teamwork', 'Leadership', 'Character'].map(a => ({ l: a, on: S.aim === a, ...pill(S.aim === a), go: () => set({ aim: a }) })),
+      lib: LIB.filter(x => S.aim === 'All' || x[0] === S.aim).map(([aim, t, d, meta]) => { const added = agenda.some(a => a.t === t); return { t, d, meta: aim + ' · ' + meta, added, op: added ? 0.5 : 1, addL: added ? 'Added' : 'Add', add: () => { if (added) return; const n = agenda.slice(); n.splice(Math.max(1, n.length - 2), 0, { t, s: aim, m: Number(meta.match(/\d+/)[0]) }); set({ agenda: n }); } }; }),
+      hereText: satKids.filter(hereOf).length + ' of ' + satKids.length + ' here',
+      reg: satKids.map(k => { const h = hereOf(k); const o = S.obs[k.id] || {}; return { name: k.name, hereA: h ? 'true' : 'false', hereL: h ? 'Here' : 'Away', icon: h ? 'ph ph-check' : 'ph ph-minus', line: h ? '#1d6b30' : '#d6d4cc', bg: h ? '#f3faf4' : '#fff', fg: h ? '#1d6b30' : '#6b6b72', away: !h, op: h ? 1 : 0.4, toggle: () => set({ here: { ...S.here, [k.id]: !h } }), vals: VALS.map(v => ({ l: v, on: !!o[v], ...pill(!!o[v]), bg: o[v] ? '#f3faf4' : '#fff', go: () => set({ obs: { ...S.obs, [k.id]: { ...o, [v]: !o[v] } } }) })) }; }),
+      revText: revDoneN + ' of ' + revTotal + ' reviews done · due Monday', revPct: (revDoneN / revTotal * 100) + '%',
+      reviews: satKids.map(k => { const v = S.rv[k.id] || {}; const done = !!S.rvDone[k.id]; const ok = v.Effort && v.Character && v.Wellbeing; const obs = Object.keys(S.obs[k.id] || {}).filter(x => S.obs[k.id][x]); return { name: k.name, done, open: !done, seen: obs.length ? 'Observed: ' + obs.join(', ') : hereOf(k) ? 'Here on Saturday' : 'Away on Saturday', line: v.line || '', onLine: e => set({ rv: { ...S.rv, [k.id]: { ...v, line: e.target.value } } }), scales: ['Effort', 'Character', 'Wellbeing'].map(l => ({ l, opts: ['Low', 'Steady', 'Strong', 'Exceptional'].map(o => ({ l: o, on: v[l] === o, ...pill(v[l] === o), go: () => set({ rv: { ...S.rv, [k.id]: { ...v, [l]: o } } }) })) })), cantA: ok ? 'false' : 'true', btnBg: ok ? '#0b0b0c' : '#efefed', btnFg: ok ? '#fff' : '#6b6b72', submit: () => { if (!ok) return; set({ rvDone: { ...S.rvDone, [k.id]: true }, sessions: [{ id: 's' + Date.now() + k.id, date: 'Sat 10 Oct', week: 'This week', type: 'Pod session', kid: k.id, who: k.name, mins: 90, what: (v.line || 'Weekly review') + ' · effort ' + v.Effort.toLowerCase() + ', character ' + v.Character.toLowerCase(), next: 'Follow up next Saturday', goal: '' }].concat(this.sessList()) }); this.say('Review saved for ' + k.first, () => { const d = { ...this.state.rvDone }; delete d[k.id]; set({ rvDone: d }); }); } }; }),
+      mFilters: [['all', 'All'], ['journal', 'Journal'], ['checkin', 'Check-ins']].concat(isPeer ? [] : [['family', 'Families']]).map(([id, l]) => ({ l, on: S.mf === id, ...chip(S.mf === id), go: () => set({ mf: id }) })),
+      mCols: S.w >= 1000 ? 'minmax(0, 1fr) minmax(0, 1.2fr)' : 'minmax(0, 1fr)',
+      msgs: mList.map(m => ({ ...m, unread: !S.read[m.id] && m.id !== 'm4', cur: mSel && m.id === mSel.id ? 'true' : undefined, bg: mSel && m.id === mSel.id ? '#fafaf8' : '#fff', go: () => set({ msel: m.id, read: { ...S.read, [m.id]: true }, reply: '' }) })),
+      hasMsg: !!mSel, mSel: mSel || {}, reply: S.reply, onReply: e => set({ reply: e.target.value }), replyPh: mSel && /Journal/.test(mSel.kind) ? 'Name what you noticed. One line is enough.' : 'Write a reply',
+      sendReply: () => { if (!S.reply.trim()) return; set({ reply: '', read: { ...S.read, [mSel.id]: true } }); this.say('Reply sent to ' + mSel.who.split(' ')[0]); },
+      podOut: [['Courage', series(4, true), 'Saturday observations'], ['Responsibility', series(7, true), 'Missions and commitments kept'], ['Wellbeing', series(2, true), 'Weekly check-ins'], ['Relationship', series(5, true), 'Both sides, every 6 weeks']].map(x => mkOut(...x)),
+      podReport: () => this.say('Pod report is ready to save as a PDF'),
+      acText: acDone + ' of ' + acMods.length + ' modules complete', acPctT: Math.round(acDone / Math.max(1, acMods.length) * 100) + '%', acPct: (acDone / Math.max(1, acMods.length) * 100) + '%',
+      acGroups: A ? A.groups.map((h, gi) => ({ h, mods: acMods.filter(m => m.g === gi).map(m => ({ t: m.t, s: m.done ? 'Passed ' + m.score + '% · ' + m.date + (m.req ? ' · ' + m.req : '') : m.mins + ' min' + (m.req ? ' · ' + m.req : ''), icon: m.done ? 'ph-fill ph-check-circle' : 'ph ph-circle', ic: m.done ? '#1d6b30' : '#9a9aa0', todo: !m.done, go: () => this.say('Opens “' + m.t + '”') })) })) : [],
+      cmMet: met, cmTot: tot, cmDaysLeft: '22 days left in the month', roleCols: S.w >= 1000 ? 'minmax(0, 1.3fr) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+      cmBar: CM.map(r => ({ c: r[3] === 'ok' ? '#1d6b30' : r[3] === 'bad' ? '#b0361c' : '#e0a100' })).sort((x, y) => (x.c === '#1d6b30' ? 0 : 1) - (y.c === '#1d6b30' ? 0 : 1)),
+      cmAttn: CM.filter(r => r[3] !== 'ok').map(r => ({ t: r[0], s: r[1], st: r[2], dot: r[3] === 'bad' ? '#b0361c' : '#e0a100', cta: r[5] || 'Talk to ' + lead, go: r[6] || (() => this.say('Message sent to ' + lead)) })), cmAttnN: CM.filter(r => r[3] !== 'ok').length + ' to do', cmNoAttn: CM.every(r => r[3] === 'ok'),
+      cmOk: CM.filter(r => r[3] === 'ok').map(r => ({ t: r[0], st: r[2], src: r[4] })),
+      supActs: ['Try the Hot seat activity with the pod', 'Agree a growth plan with Musa', 'Send one family update a week'].map((t, i) => { const d = !!(S.supDone || {})[i]; return { t, a: d ? 'true' : 'false', icon: d ? 'ph-fill ph-check-square' : 'ph ph-square', fg: d ? '#1d6b30' : '#9a9aa0', tfg: d ? '#6b6b72' : '#0b0b0c', go: () => this.setState({ supDone: { ...(S.supDone || {}), [i]: !d } }) }; }),
+      supNote: Object.values(S.sup).filter(v => v && v.trim()).length + ' of 3 answered',
+      askFeedback: () => this.say('Opens a private reply to ' + lead), readPolicy: () => this.say('Opens the policy document'),
+      supQs: ['What went well with a mentee since we last met?', 'Where are you stuck?', 'What do you need from me?'].map((qq, i) => ({ q: qq, v: S.sup[i] || '', on: e => set({ sup: { ...S.sup, [i]: e.target.value } }) })), sendSup: () => this.say('Sent to ' + lead + '. See you on Tuesday.'),
+      mentors: isLead ? Array.from({ length: roleId === 'lead' ? 8 : 14 }, (_, i) => { const nm = this.kidsData()[i].mentor; const mine = all.filter(k => k.mentor === nm); const pct = mine.length ? Math.round(mine.filter(k => !B.contact(k)).length / mine.length * 100) : 0; const c = i % 5 === 3 ? ['Training due', 'warn'] : i % 7 === 5 ? ['Below 5 mentees', 'bad'] : ['On track', 'ok']; return { name: nm, kind: i % 4 === 2 ? 'Peer mentor' : i % 4 === 3 ? 'Instructor mentor' : 'Pod mentor', n: mine.length, pct: pct + '%', pBg: pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: mine.length ? (mine.reduce((n, k) => n + k.relC, 0) / mine.length).toFixed(1) : '—', commit: c[0], cBg: tone[c[1]][0], cFg: tone[c[1]][1], sup: () => this.say('Supervision booked with ' + nm.split(' ')[0]) }; }) : [],
+      allNames: all.map(k => ({ id: k.id, name: k.name })), cKid: S.cKid, onCKid: e => set({ cKid: e.target.value }), cText: S.cText, onCText: e => set({ cText: e.target.value }),
+      cCantA: cOk ? 'false' : 'true', cBg: cOk ? '#b0361c' : '#c9a49c', sendConcern: () => { if (!cOk) return; set({ cKid: '', cText: '' }); this.say('Sent to the safeguarding officer. They’ll contact you today.'); },
+      ...this.gsVals({ all, ck, pill, chip, seg, set, wideCols }),
+      pkLog: this.picker('log', (S.lf || {}).kid || '', id => this.setState(st => ({ lf: { ...(st.lf || { type: 'One-to-one', kid: '', date: '2026-10-10', mins: '15', goalId: '', p: 0, what: '', next: '' }), kid: id, goalId: '' } })), all),
+      pkCon: this.picker('con', S.cKid, id => this.setState({ cKid: id }), all),
+      ...this.scVals({ all, ck, set, wideCols }),
+      ...this.xVals({ all, ck, set, pill, chip, wideCols, isPeer, isLead, roleId, B, tone, lead, mList, mSel, pBody }),
+      hasToast: !!S.toast, toast: S.toast, toastUndo: !!S.undo, onUndo: () => { const u = S.undo; clearTimeout(this.tt); set({ toast: '', undo: null }); u && u(); }
+    };
+  }
+
+  AREAS = ['Character', 'Competence', 'Wellbeing', 'Leadership'];
+  seedGoals(k) {
+    const n = Number(k.id.slice(1)); if (k.goal === 'No plan yet') return [];
+    const T = { Character: ['Keep my word on small promises', 'Own up quickly when I get something wrong'], Competence: ['Finish the Python loops unit', 'Build my first app screen'], Wellbeing: ['Sleep before 10pm on school nights', 'Ask for help when I feel overwhelmed'], Leadership: ['Speak at the showcase without notes', 'Lead the pod huddle once'] };
+    const area = this.AREAS[n % 4]; const title = T[area][n % 2]; const st = k.goal === 'Stalled';
+    const g = { id: k.id + 'g1', area, title, outcome: area === 'Leadership' ? 'I present for two minutes and people understand me' : 'I can show my mentor proof that I did it', obstacle: 'I put it off when I feel unsure', plan: 'If I notice I’m putting it off, then I will do the first five minutes straight away', status: 'Active', due: '2026-12-13', agreed: true, last: st ? 24 : (n % 10) + 3, checks: st ? [['15 Sept', 2, 'Started, unsure where to begin'], ['22 Sept', 2, 'Missed the week'], ['29 Sept', 2, 'Same as last time']] : [['15 Sept', 2, 'Agreed the plan'], ['29 Sept', 3, 'Did it twice this week'], ['6 Oct', 3 + (n % 2), 'Getting easier']] };
+    const out = [g];
+    if (n % 3 === 0) out.push({ id: k.id + 'g0', area: 'Character', title: 'Arrive on time every Saturday', outcome: 'On time for six Saturdays in a row', obstacle: 'I wake up late', plan: 'If my alarm goes, then I get up before checking my phone', status: 'Achieved', due: '2026-09-06', agreed: true, last: 40, checks: [['9 Aug', 2, ''], ['23 Aug', 4, ''], ['6 Sept', 5, 'Six in a row']] });
+    return out;
+  }
+  goalsOf(k) { const G = this.state.goals || {}; return G[k.id] || this.seedGoals(k); }
+  activeGoal(k) { return this.goalsOf(k).find(g => g.status === 'Active'); }
+  isStalled(g) { const c = g.checks; return g.status === 'Active' && (g.last > 21 || (c.length >= 3 && c[c.length - 1][1] <= c[c.length - 3][1])); }
+  sessList() {
+    if (this.state.sessions) return this.state.sessions;
+    const K = this.kidsData();
+    return [
+      { id: 's1', date: 'Sat 4 Oct', week: 'Week of 29 September', type: 'One-to-one', kid: K[0].id, who: K[0].name, mins: 15, what: 'Talked about the showcase. Wants to present but is scared of reading aloud.', next: 'Practise the first line together', goal: this.activeGoal(K[0]) ? this.activeGoal(K[0]).title : '' },
+      { id: 's2', date: 'Sat 4 Oct', week: 'Week of 29 September', type: 'One-to-one', kid: K[3].id, who: K[3].name, mins: 15, what: 'Finished two exercises. Proud of it, and asked for a harder one.', next: 'Bring the next exercise', goal: this.activeGoal(K[3]) ? this.activeGoal(K[3]).title : '' },
+      { id: 's3', date: 'Sat 4 Oct', week: 'Week of 29 September', type: 'Pod session', kid: '', who: 'Pod · 6 of 7 here', mins: 90, what: 'Hot seat activity. Everyone answered; two asked follow-up questions.', next: 'Run the Silent build next week', goal: '' },
+      { id: 's4', date: 'Thu 2 Oct', week: 'Week of 29 September', type: 'Family', kid: K[1].id, who: K[1].guardian, mins: 10, what: 'Phone call. Exams are heavy this month; agreed lighter missions for two weeks.', next: 'Check in after exams', goal: '' },
+      { id: 's5', date: 'Sat 27 Sept', week: 'Week of 22 September', type: 'One-to-one', kid: K[5].id, who: K[5].name, mins: 20, what: 'Wrote a goal together, in their words.', next: 'First check-in next Saturday', goal: this.activeGoal(K[5]) ? this.activeGoal(K[5]).title : '' },
+      { id: 's6', date: 'Sat 27 Sept', week: 'Week of 22 September', type: 'Pod session', kid: '', who: 'Pod · 7 of 7 here', mins: 90, what: 'Anchor Journal circle and teach-back.', next: 'Ask one mentee to lead the huddle', goal: '' }
+    ];
+  }
+  gsVals(c) {
+    const S = this.state, set = c.set, all = c.all, ck = c.ck;
+    const updGoals = (k, list) => set({ goals: { ...(S.goals || {}), [k.id]: list } });
+    const stat = g => this.isStalled(g) ? ['Stalled', '#fdf6e3', '#7a5600'] : g.status === 'Active' ? ['Active', '#f0efea', '#2b2b30'] : g.status === 'Achieved' ? ['Achieved', '#f3faf4', '#1d6b30'] : [g.status, '#f4f4f2', '#6b6b72'];
+    const segsOf = g => { const p = g.checks.length ? g.checks[g.checks.length - 1][1] : 0; const col = this.isStalled(g) ? '#e0a100' : g.status === 'Achieved' ? '#1d6b30' : '#0b0b0c'; return [1, 2, 3, 4, 5].map(i => ({ c: i <= p ? col : '#e8e5dd' })); };
+    const fmtDue = d => { if (!d) return '—'; const x = new Date(d + 'T00:00'); return isNaN(x) ? d : x.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
+    const gf = S.gf || 'active', ga = S.gArea || 'All areas';
+    const pairs = []; all.forEach(k => this.goalsOf(k).forEach(g => pairs.push([k, g])));
+    const activeP = pairs.filter(p => p[1].status === 'Active');
+    const noneK = all.filter(k => !this.activeGoal(k));
+    const picked = gf === 'none' ? noneK.map(k => [k, null]) : pairs.filter(([k, g]) => gf === 'active' ? g.status === 'Active' : gf === 'stalled' ? this.isStalled(g) : gf === 'achieved' ? g.status === 'Achieved' : g.status === 'Draft' || g.status === 'Paused');
+    const rows = picked.filter(([k, g]) => ga === 'All areas' || !g || g.area === ga).sort((a, b) => a[1] && b[1] ? ((this.isStalled(b[1]) ? 1 : 0) - (this.isStalled(a[1]) ? 1 : 0)) || (b[1].last - a[1].last) : 0);
+    const G = this.goalsOf(ck); const gsel = (S.gsel || {})[ck.id]; const g = G.find(x => x.id === gsel) || G.find(x => x.status === 'Active') || G[0];
+    const updG = patch => { let list = G.map(x => x.id === g.id ? { ...x, ...patch } : x); if (patch.status === 'Active') { const prev = G.find(x => x.status === 'Active' && x.id !== g.id); if (prev) { list = list.map(x => x.id === prev.id ? { ...x, status: 'Paused' } : x); this.say('One active goal at a time. “' + prev.title + '” is now paused.'); } } updGoals(ck, list); };
+    const ci = (S.ci || {})[g ? g.id : ''] || {};
+    const sess = this.sessList(); const st = S.sType || 'All';
+    const sf = sess.filter(s => st === 'All' || s.type === st || (st === 'Family' && s.type === 'Phone or message'));
+    const weeks = []; sf.forEach(s => { let w = weeks.find(x => x.l === s.week); if (!w) weeks.push(w = { l: s.week, rows: [] }); w.rows.push(s); });
+    const icons = { 'One-to-one': 'ph ph-user', 'Pod session': 'ph ph-users-three', 'Family': 'ph ph-house-line', 'Phone or message': 'ph ph-phone' };
+    const lf = S.lf || { type: 'One-to-one', kid: '', date: '2026-10-10', mins: '15', goalId: '', p: 0, what: '', next: '' };
+    const upLf = p => set({ lf: { ...lf, ...p } });
+    const lfKidObj = all.find(k => k.id === lf.kid);
+    const lfGoals = lfKidObj ? this.goalsOf(lfKidObj).filter(x => x.status === 'Active' || x.status === 'Draft') : [];
+    const lfOk = (lf.type === 'Pod session' || !!lfKidObj) && lf.what.trim().length > 3;
+    const seenN = all.filter(k => k.contact <= 14).length;
+    const oneN = sess.filter(s => s.type === 'One-to-one').length, podN = sess.filter(s => s.type === 'Pod session').length, famN2 = sess.filter(s => s.type === 'Family' || s.type === 'Phone or message').length;
+    const kSess = sess.filter(s => s.kid === ck.id);
+    return {
+      gStats: [['active', 'Active', '#2b2b30', activeP.length, 'One per mentee'], ['stalled', 'Stalled', '#7a5600', activeP.filter(p => this.isStalled(p[1])).length, 'Needs a check-in'], ['none', 'No goal yet', '#7a5600', noneK.length, 'Set one after week 3'], ['achieved', 'Achieved', '#1d6b30', pairs.filter(p => p[1].status === 'Achieved').length, 'This term'], ['other', 'Draft or paused', '#6b6b72', pairs.filter(p => p[1].status === 'Draft' || p[1].status === 'Paused').length, 'Not live yet']].map(([id, l, fg, n, rule]) => ({ l, fg, n, rule, on: gf === id, ...c.pill(gf === id), go: () => set({ gf: id }) })),
+      areaNames: ['All areas'].concat(this.AREAS), areaPick: this.AREAS, gArea: ga, onGArea: e => set({ gArea: e.target.value }),
+      gCols: c.wideCols ? 'minmax(180px, 1.2fr) minmax(180px, 1.6fr) 140px 110px 90px 100px' : 'minmax(0, 1fr) minmax(0, 1.2fr) auto',
+      gCount: rows.length + (gf === 'none' ? (rows.length === 1 ? ' mentee' : ' mentees') : (rows.length === 1 ? ' goal' : ' goals')),
+      gRows: rows.map(([k, x]) => { if (!x) return { ini: k.ini, name: k.name, area: k.phase + ' phase', title: 'No goal yet', tFg: '#6b6b72', segs: [], pT: '', last: '—', lFg: '#6b6b72', due: '—', status: 'Set a goal', sBg: '#0b0b0c', sFg: '#fff', go: () => this.go('kid', { kid: k.id, ktab: 'goals' }) }; const s = stat(x); const p = x.checks.length ? x.checks[x.checks.length - 1][1] : 0; return { ini: k.ini, name: k.name, area: x.area, title: x.title || 'Untitled goal', tFg: '#0b0b0c', segs: segsOf(x), pT: p ? p + ' of 5' : 'Not checked', last: x.status === 'Achieved' ? 'Done' : x.last === 0 ? 'Today' : x.last + ' days ago', lFg: x.last > 21 && x.status === 'Active' ? '#7a5600' : '#4a4a50', due: fmtDue(x.due), status: s[0], sBg: s[1], sFg: s[2], go: () => this.go('kid', { kid: k.id, ktab: 'goals', gsel: { ...(S.gsel || {}), [k.id]: x.id } }) }; }),
+      gEmpty: rows.length === 0, gEmptyT: gf === 'stalled' ? 'No goals have stalled. Every active goal has moved recently.' : gf === 'none' ? 'Every mentee has an active goal.' : 'No goals here yet.',
+      kgCols: c.wideCols ? '300px minmax(0, 1fr)' : 'minmax(0, 1fr)',
+      kGoalList: G.map(x => { const s = stat(x); return { title: x.title || 'Untitled goal', area: x.area, segs: segsOf(x), status: s[0], sBg: s[1], sFg: s[2], cur: g && x.id === g.id ? 'true' : undefined, bg: g && x.id === g.id ? '#fafaf8' : '#fff', go: () => set({ gsel: { ...(S.gsel || {}), [ck.id]: x.id } }) }; }),
+      newGoal: () => { const id = ck.id + 'g' + Date.now(); updGoals(ck, G.concat([{ id, area: 'Character', title: '', outcome: '', obstacle: '', plan: '', status: 'Draft', due: '', agreed: false, last: 0, checks: [] }])); set({ gsel: { ...(S.gsel || {}), [ck.id]: id } }); },
+      hasGoal: !!g, noGoal: !g,
+      gd: g ? {
+        area: g.area, onArea: e => updG({ area: e.target.value }), due: g.due, onDue: e => updG({ due: e.target.value }),
+        statusOpts: ['Draft', 'Active', 'Achieved', 'Paused'].map(l => ({ l, on: g.status === l, ...c.seg(g.status === l), go: () => { if (l === g.status) return; if (l === 'Active' && !g.agreed) return this.say('Agree it with ' + ck.first + ' first, then make it active.'); if (l === 'Active' && !(g.title || '').trim()) return this.say('Write the wish first.'); if (l === 'Achieved') this.say('Marked achieved. ' + ck.first + ' sees it in their growth passport.'); if (l === 'Active') this.say('Goal is live. You’ll be reminded to check in every 2 weeks' + (g.due ? ' and before the review date.' : '.')); updG({ status: l }); } })),
+        woop: [['title', 'Wish', 'What do they want, in their words?', 'e.g. Get confident speaking in class'], ['outcome', 'Best outcome', 'What would it look like if it worked?', 'e.g. Present at the showcase without notes'], ['obstacle', 'Obstacle inside them', 'What in them gets in the way?', 'e.g. My voice shakes when people look'], ['plan', 'Plan: if… then I will…', 'One if–then plan for that obstacle', 'If my voice shakes, then I will pause and breathe once']].map(([k, l, hh, ph]) => ({ l, h: hh, ph, v: g[k], on: e => updG({ [k]: e.target.value }) })),
+        agreedA: g.agreed ? 'true' : 'false', track: g.agreed ? '#0b0b0c' : '#d6d4cc', knob: g.agreed ? '24px' : '4px', toggleAgreed: () => updG({ agreed: !g.agreed }),
+        hasChecks: g.checks.length > 0, ciMeta: g.checks.length ? g.checks.length + ' so far · last ' + (g.last === 0 ? 'today' : g.last + ' days ago') : 'None yet',
+        checks: g.checks.map((x, i) => ({ h: (x[1] / 5 * 100) + '%', c: i === g.checks.length - 1 ? '#0b0b0c' : '#d6d4cc' })),
+        checksRev: g.checks.slice().reverse().map(x => ({ d: x[0], p: x[1], n: x[2] || '—' })),
+        ciOpts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: ci.p === n, ...c.pill(ci.p === n), go: () => set({ ci: { ...(S.ci || {}), [g.id]: { ...ci, p: n } } }) })),
+        ciNote: ci.n || '', onCiNote: e => set({ ci: { ...(S.ci || {}), [g.id]: { ...ci, n: e.target.value } } }),
+        ciCantA: ci.p ? 'false' : 'true', ciBg: ci.p ? '#0b0b0c' : '#efefed', ciFg: ci.p ? '#fff' : '#6b6b72',
+        addCi: () => { if (!ci.p) return; const done = ci.p === 5 && g.status === 'Active'; updG({ checks: g.checks.concat([['10 Oct', ci.p, (ci.n || '').trim()]]), last: 0, status: done ? 'Achieved' : g.status }); set({ ci: { ...(S.ci || {}), [g.id]: {} } }); this.say(done ? 'Check-in added. Goal achieved.' : 'Check-in added'); }
+      } : {},
+      sStats: [['Seen in the last 2 weeks', Math.round(seenN / Math.max(1, all.length) * 100) + '%', seenN + ' of ' + all.length + ' mentees', seenN / Math.max(1, all.length) < 0.8 ? '#7a5600' : '#1d6b30'], ['One-to-ones', oneN, 'Last 3 weeks', '#0b0b0c'], ['Pod sessions', podN, 'Last 3 weeks', '#0b0b0c'], ['Family contacts', famN2, 'Calls, meetings and messages', '#0b0b0c']].map(([l, v, n, fg]) => ({ l, v, n, fg })),
+      sTypes: ['All', 'One-to-one', 'Pod session', 'Family'].map(l => ({ l, on: st === l, ...c.chip(st === l), go: () => set({ sType: l }) })),
+      sCols: c.wideCols ? '150px minmax(0, 1.6fr) minmax(0, 1fr) 40px' : '110px minmax(0, 1fr) 40px',
+      sWeeks: weeks.map(w => ({ l: w.l, meta: w.rows.length + (w.rows.length === 1 ? ' session · ' : ' sessions · ') + w.rows.reduce((n, r) => n + Number(r.mins), 0) + ' min', rows: w.rows.map(r => ({ ...r, icon: icons[r.type] || 'ph ph-user', hasGoal: !!r.goal, del: () => { const prev = sess; set({ sessions: sess.filter(x => x.id !== r.id) }); this.say('Session deleted', () => this.setState({ sessions: prev })); } })) })), sEmpty: sf.length === 0,
+      logOpen: !!S.logOpen, logClosed: !S.logOpen, openLog: () => set({ logOpen: true }), closeLog: () => set({ logOpen: false, lf: null }),
+      logForKid: () => this.go('sess', { logOpen: true, lf: { ...lf, kid: ck.id, type: 'One-to-one', goalId: this.activeGoal(ck) ? this.activeGoal(ck).id : '' } }),
+      lf, lfTypes: [['One-to-one', 'ph ph-user'], ['Pod session', 'ph ph-users-three'], ['Family', 'ph ph-house-line'], ['Phone or message', 'ph ph-phone']].map(([l, icon]) => ({ l, icon, on: lf.type === l, ...c.pill(lf.type === l), go: () => upLf({ type: l, mins: l === 'Pod session' ? '90' : lf.mins === '90' ? '15' : lf.mins }) })),
+      lfNeedsKid: lf.type !== 'Pod session', lfPod: lf.type === 'Pod session', lfPodText: 'Whole pod · ' + Math.min(all.length, 12) + ' mentees',
+      lfKid: e => upLf({ kid: e.target.value, goalId: '' }), lfDate: e => upLf({ date: e.target.value }), lfMins: e => upLf({ mins: e.target.value }), lfGoal: e => upLf({ goalId: e.target.value, p: 0 }),
+      minsOpts: ['10', '15', '20', '30', '45', '60', '90'].map(v => ({ v, l: v + ' minutes' })),
+      lfHasGoals: lf.type !== 'Pod session' && lfGoals.length > 0, lfGoals: lfGoals.map(x => ({ id: x.id, title: x.title || 'Untitled goal' })),
+      lfShowP: !!lf.goalId && lf.type !== 'Pod session', lfP: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: lf.p === n, ...c.pill(lf.p === n), go: () => upLf({ p: n }) })),
+      lfWhat: e => upLf({ what: e.target.value }), lfNext: e => upLf({ next: e.target.value }),
+      lfCantA: lfOk ? 'false' : 'true', lfBg: lfOk ? '#0b0b0c' : '#efefed', lfFg: lfOk ? '#fff' : '#6b6b72',
+      saveLog: () => {
+        if (!lfOk) return; const d = new Date(lf.date + 'T00:00'); const dl = isNaN(d) ? lf.date : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        const gObj = lfKidObj && lfGoals.find(x => x.id === lf.goalId);
+        const rec = { id: 's' + Date.now(), date: dl, week: 'This week', type: lf.type, kid: lf.type === 'Pod session' ? '' : lf.kid, who: lf.type === 'Pod session' ? 'Pod · ' + Math.min(all.length, 12) + ' mentees' : lf.type === 'Family' ? lfKidObj.guardian : lfKidObj.name, mins: lf.mins, what: lf.what.trim(), next: lf.next.trim() || '—', goal: gObj ? gObj.title : '' };
+        const patch = { sessions: [rec].concat(sess), logOpen: false, lf: null };
+        if (lfKidObj && lf.type === 'One-to-one') patch.seen = { ...(S.seen || {}), [lfKidObj.id]: 0 };
+        if (gObj && lf.p) { const list = this.goalsOf(lfKidObj).map(x => x.id === gObj.id ? { ...x, checks: x.checks.concat([[dl.replace(/^\S+ /, ''), lf.p, lf.what.trim().slice(0, 90)]]), last: 0 } : x); patch.goals = { ...(S.goals || {}), [lfKidObj.id]: list }; }
+        set(patch); this.say('Session saved' + (patch.seen ? '. ' + lfKidObj.first + ' is no longer overdue.' : ''));
+      },
+      kSessList: kSess, kSessEmpty: kSess.length === 0, kSessMeta: (kSess.length ? kSess.length + ' logged · last one-to-one ' : 'Last one-to-one ') + (ck.contact === 0 ? 'today' : ck.contact + ' days ago')
+    };
+  }
+
+  picker(key, selId, onPick, all) {
+    const S = this.state; const P = (S.pk || {})[key] || {}; const selK = all.find(k => k.id === selId);
+    const q = P.q !== undefined ? P.q : (selK ? selK.name : ''); const qq = (P.q || '').trim().toLowerCase();
+    const list = all.filter(k => !qq || (k.name + ' ' + k.school).toLowerCase().includes(qq)).slice(0, 8);
+    const setP = p => this.setState(st => ({ pk: { ...(st.pk || {}), [key]: { ...((st.pk || {})[key] || {}), ...p } } }));
+    const pick = k => { onPick(k.id); setP({ q: undefined, open: false }); };
+    return { q, open: !!P.open, openA: P.open ? 'true' : 'false', line: P.open ? '#0b0b0c' : '#d6d4cc', hasVal: !!q,
+      opts: list.map((k, i) => ({ ini: k.ini, name: k.name, sub: 'Age ' + k.age + ' · ' + k.school, on: i === (P.hi || 0) ? 'true' : 'false', bg: i === (P.hi || 0) ? '#f4f4f2' : '#fff', pick: e => { e.preventDefault(); pick(k); } })),
+      none: !!P.open && list.length === 0,
+      onQ: e => { setP({ q: e.target.value, open: true, hi: 0 }); if (selK) onPick(''); }, onFocus: () => setP({ open: true }), onBlur: () => setTimeout(() => setP({ open: false, q: undefined }), 120),
+      onKey: e => { if (e.key === 'ArrowDown') { e.preventDefault(); setP({ open: true, hi: Math.min(list.length - 1, (P.hi || 0) + 1) }); } else if (e.key === 'ArrowUp') { e.preventDefault(); setP({ hi: Math.max(0, (P.hi || 0) - 1) }); } else if (e.key === 'Enter' && P.open && list[P.hi || 0]) { e.preventDefault(); pick(list[P.hi || 0]); } else if (e.key === 'Escape') setP({ open: false }); },
+      clear: e => { e.preventDefault(); onPick(''); setP({ q: '', open: true }); } };
+  }
+  xVals(c) {
+    const S = this.state, set = c.set, all = c.all, ck = c.ck;
+    const act = this.activeGoal(ck);
+    const logKid = () => this.go('sess', { logOpen: true, lf: { type: 'One-to-one', kid: ck.id, date: '2026-10-10', mins: '15', goalId: act ? act.id : '', p: 0, what: '', next: '' } });
+    const btn = p => ({ line: p ? '#0b0b0c' : '#d6d4cc', bg: p ? '#0b0b0c' : '#fff', fg: p ? '#fff' : '#0b0b0c' });
+    const kActs = [['Log a session', 'ph ph-plus', logKid, true], ['Score October', 'ph ph-chart-bar', () => set({ ktab: 'score' })], c.isPeer ? ['Note for ' + c.lead, 'ph ph-note-pencil', () => this.say('Opens a note to ' + c.lead)] : ['Family update', 'ph ph-house-line', () => set({ ktab: 'family' })], ['Report a concern', 'ph ph-shield-warning', () => this.go('concern', { cKid: ck.id })]].map(([l, icon, go, p]) => ({ l, icon, go, ...btn(p) }));
+    // family
+    const sess = this.sessList();
+    const famHist = sess.filter(s => s.kid === ck.id && (s.type === 'Family' || s.type === 'Phone or message')).map(s => ({ date: s.date, kind: s.type === 'Family' ? 'Family conversation' : 'Phone or message', what: s.what })).concat(S.famSent && S.famSent[ck.id] ? [] : [{ date: ck.parent + ' days ago', kind: 'Family update sent', what: 'Monthly update to ' + ck.guardian }]);
+    // messages
+    const wideMsg = S.w >= 1000;
+    // pod by mentee
+    const tots = all.map(k => { const { prev, cur } = this.scoresOf(k); const t = cur.reduce((a, b) => a + b, 0), p = prev.reduce((a, b) => a + b, 0); const lo = cur.indexOf(Math.min(...cur)); return { k, t, d: t - p, low: this.SKILLS[lo][0] }; }).sort((a, b) => a.t - b.t);
+    const bmShow = S.bmAll ? tots : tots.slice(0, 8);
+    // academy
+    const A = window.ACADEMY; const mod = A && A.modules.find(m => m.id === S.mod);
+    let md = {};
+    if (mod) {
+      const steps = mod.lessons.map(([h, b]) => ({ k: 'lesson', h, b }));
+      if (mod.scenario) steps.push({ k: 'scen', h: mod.scenario.s, opts: mod.scenario.opts.map(o => o[0]), right: mod.scenario.opts.map(o => !!o[1]), why: mod.scenario.opts.map(o => o[2]) });
+      (mod.quiz || []).forEach(q => steps.push({ k: 'quiz', h: q[0], opts: q[1], right: q[1].map((_, j) => j === q[2]), why: q[1].map(() => q[3]) }));
+      steps.push({ k: 'result' });
+      const i = Math.min(S.mStep || 0, steps.length - 1), st = steps[i], ans = (S.mAns || {})[i];
+      const qIdx = steps.map((s, j) => s.k === 'quiz' ? j : -1).filter(j => j >= 0);
+      const correct = qIdx.filter(j => { const a = (S.mAns || {})[j]; return a !== undefined && steps[j].right[a]; }).length;
+      const score = qIdx.length ? Math.round(correct / qIdx.length * 100) : 100, pass = score >= A.pass;
+      const choice = st.k === 'scen' || st.k === 'quiz', answered = ans !== undefined;
+      const nLes = mod.lessons.length;
+      const toStep = n => { if (steps[n] && steps[n].k === 'result') { const qs = qIdx.filter(j => { const a = (S.mAns || {})[j]; return a !== undefined && steps[j].right[a]; }).length; const sc = qIdx.length ? Math.round(qs / qIdx.length * 100) : 100; if (sc >= A.pass) { mod.done = true; mod.score = Math.max(mod.score || 0, sc); mod.date = '10 Oct'; } } const m = this.rootRef.current && this.rootRef.current.querySelector('main'); if (m) m.scrollTop = 0; set({ mStep: n }); };
+      md = {
+        stepL: st.k === 'result' ? 'Finished' : 'Step ' + (i + 1) + ' of ' + (steps.length - 1), mins: mod.mins + ' min' + (mod.req ? ' · ' + mod.req : ''), pct: (i / (steps.length - 1) * 100) + '%',
+        kindL: st.k === 'lesson' ? 'Lesson ' + (i + 1) + ' of ' + nLes : st.k === 'scen' ? 'What would you do?' : st.k === 'quiz' ? 'Question ' + (qIdx.indexOf(i) + 1) + ' of ' + qIdx.length : 'Result',
+        isLesson: st.k === 'lesson', isChoice: choice, isResult: st.k === 'result', h: st.h, body: st.b, locked: answered,
+        opts: choice ? st.opts.map((l, j) => { const r = st.right[j], p = ans === j; const showOk = answered && r, showBad = answered && p && !r; return { l, on: p ? 'true' : 'false', bw: showOk || showBad || p ? '2px' : '1px', ring: showOk ? '#1d6b30' : showBad ? '#b0361c' : '#d6d4cc', bg: showOk ? '#f3faf4' : showBad ? '#fdeeea' : '#fff', icon: showOk ? 'ph-fill ph-check-circle' : showBad ? 'ph-fill ph-x-circle' : 'ph ph-circle', ic: showOk ? '#1d6b30' : showBad ? '#b0361c' : '#9a9aa0', go: () => { if (!answered) set({ mAns: { ...(S.mAns || {}), [i]: j } }); } }; }) : [],
+        fb: choice && answered, fbBg: answered && st.right[ans] ? '#f3faf4' : '#fdf6e3', fbFg: answered && st.right[ans] ? '#14501f' : '#5c4100', fbH: answered && st.right[ans] ? 'Right.' : 'Not quite.', fbT: answered ? st.why[ans] : '',
+        rIcon: pass ? 'ph-fill ph-seal-check' : 'ph ph-arrow-counter-clockwise', rFg: pass ? '#1d6b30' : '#7a5600',
+        rH: pass ? 'Passed · ' + score + '%' : score + '% · the pass mark is ' + A.pass + '%',
+        rT: pass ? 'Saved to your record. Your coordinator can see it' + (mod.req ? ', and you’ll be reminded before it needs renewing.' : '.') : 'Read the lessons again, then retake the questions. Nothing is recorded until you pass.',
+        canPrev: i > 0 && st.k !== 'result', prev: () => toStep(i - 1),
+        nextL: st.k === 'result' ? (pass ? 'Back to Academy' : 'Try again') : steps[i + 1].k === 'result' ? 'See result' : 'Continue',
+        nextOffA: choice && !answered ? 'true' : 'false', nextBg: choice && !answered ? '#efefed' : '#0b0b0c', nextFg: choice && !answered ? '#6b6b72' : '#fff',
+        next: () => { if (st.k === 'result') { if (pass) this.go('academy'); else set({ mStep: 0, mAns: {} }); return; } if (choice && !answered) return this.say('Choose an answer first'); toStep(i + 1); }
+      };
+    }
+    const acMods = A ? A.modules : [];
+    // concern
+    const CATS = ['Something they told me', 'Injury or harm', 'Neglect', 'Online safety', 'An adult’s behaviour', 'Something else'];
+    const cOk = !!S.cKid && !!S.cCat && S.cText.trim().length > 10;
+    const cHint = !S.cKid ? 'Choose the child first.' : !S.cCat ? 'Choose what kind of concern.' : S.cText.trim().length <= 10 ? 'Write what happened, in a sentence or two.' : '';
+    // mentors
+    const mtAll = c.isLead ? Array.from({ length: c.roleId === 'lead' ? 8 : 14 }, (_, i) => { const nm = this.kidsData()[i].mentor; const mine = all.filter(k => k.mentor === nm); const pct = mine.length ? Math.round(mine.filter(k => !c.B.contact(k)).length / mine.length * 100) : 0; const cm = i % 5 === 3 ? ['Training due', 'warn'] : i % 7 === 5 ? ['Below 5 mentees', 'bad'] : ['On track', 'ok']; const booked = !!(S.supBooked || {})[nm]; return { name: nm, kind: i % 4 === 2 ? 'Peer mentor' : i % 4 === 3 ? 'Instructor mentor' : 'Pod mentor', n: mine.length, pctN: pct, pct: pct + '%', pBg: pct < 60 ? '#b0361c' : pct < 80 ? '#e0a100' : '#1d6b30', rel: mine.length ? (mine.reduce((n, k) => n + k.relC, 0) / mine.length).toFixed(1) : '—', commit: cm[0], cBg: c.tone[cm[1]][0], cFg: c.tone[cm[1]][1], need: cm[1] !== 'ok' || pct < 80, supL: booked ? 'Booked' : 'Book supervision', supOp: booked ? 0.55 : 1, sup: () => { if (booked) return; set({ supBooked: { ...(S.supBooked || {}), [nm]: true } }); this.say('Supervision booked with ' + nm.split(' ')[0] + ' for Tuesday after STS'); } }; }) : [];
+    const mq = (S.mtQ || '').trim().toLowerCase(), mf = S.mtF || 'all';
+    const mt = mtAll.filter(m => (mf === 'all' || m.need) && (!mq || m.name.toLowerCase().includes(mq))).sort((a, b) => mf === 'need' ? a.pctN - b.pctN : 0);
+    const needN = mtAll.filter(m => m.need).length, avgSeen = mtAll.length ? Math.round(mtAll.reduce((n, m) => n + m.pctN, 0) / mtAll.length) : 0;
+    return {
+      kActs, famHist, famNone: famHist.length === 0,
+      sendParent: () => { const txt = (c.pBody || '').trim(); if (!txt) return this.say('Write a message first'); set({ famSent: { ...(S.famSent || {}), [ck.id]: true }, pBody: null, sessions: [{ id: 's' + Date.now(), date: 'Sat 10 Oct', week: 'This week', type: 'Family', kid: ck.id, who: ck.guardian, mins: 5, what: 'Message: ' + txt.slice(0, 120) + (txt.length > 120 ? '…' : ''), next: 'Wait for their reply', goal: '' }].concat(sess) }); this.say('Sent to ' + ck.guardian + '. Logged in Sessions.'); },
+      pkGoal: this.picker('goal', '', id => { if (!id) return; const k = all.find(x => x.id === id); if (!k) return; const gid = k.id + 'g' + Date.now(); const list = this.goalsOf(k).concat([{ id: gid, area: 'Character', title: '', outcome: '', obstacle: '', plan: '', status: 'Draft', due: '', agreed: false, last: 0, checks: [] }]); this.go('kid', { kid: k.id, ktab: 'goals', goals: { ...(this.state.goals || {}), [k.id]: list }, gsel: { ...(this.state.gsel || {}), [k.id]: gid } }); this.say('Draft goal started for ' + k.first); }, all),
+      showInbox: wideMsg || !S.mOpen, showDetail: !!c.mSel && (wideMsg || !!S.mOpen), mBackShow: !wideMsg, mBack: () => set({ mOpen: false }), mEmpty: c.mList.length === 0,
+      msgs: c.mList.map(m => ({ ...m, unread: !S.read[m.id] && m.id !== 'm4', cur: c.mSel && m.id === c.mSel.id ? 'true' : undefined, bg: wideMsg && c.mSel && m.id === c.mSel.id ? '#fafaf8' : '#fff', go: () => set({ msel: m.id, mOpen: true, read: { ...S.read, [m.id]: true }, reply: '' }) })),
+      bmCols: c.wideCols ? 'minmax(0, 1.4fr) minmax(0, 1fr) 96px 56px' : 'minmax(0, 1fr) 96px 48px',
+      bmRows: bmShow.map(r => ({ ini: r.k.ini, name: r.k.name, low: r.low, tot: r.t, d: r.d ? (r.d > 0 ? '+' : '') + r.d : '–', dFg: r.d > 0 ? '#1d6b30' : r.d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.k.id, ktab: 'score' }) })),
+      bmMore: tots.length > 8 && !S.bmAll, bmMoreL: 'Show all ' + tots.length, bmShowAll: () => set({ bmAll: true }),
+      md,
+      acText: acMods.filter(m => m.done).length + ' of ' + acMods.length + ' modules complete',
+      acGroups: A ? A.groups.map((h, gi) => ({ h, mods: acMods.filter(m => m.g === gi).map(m => ({ t: m.t, s: m.done ? 'Passed ' + m.score + '% · ' + m.date + (m.req ? ' · ' + m.req : '') : m.mins + ' min' + (m.due ? ' · due ' + m.due : '') + (m.req ? ' · ' + m.req : ''), icon: m.done ? 'ph-fill ph-check-circle' : 'ph ph-circle', ic: m.done ? '#1d6b30' : '#9a9aa0', cta: m.done ? 'Review' : 'Start', bd: m.done ? '1px solid #d6d4cc' : '0', bg: m.done ? '#fff' : '#0b0b0c', fg: m.done ? '#0b0b0c' : '#fff', go: () => this.go('module', { mod: m.id, mStep: 0, mAns: {} }) })) })) : [],
+      cForm: !S.cSent, cSent: !!S.cSent, cRef: S.cSent ? S.cSent.ref : '', cSentWhen: 'Today, ' + new Date().toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }),
+      cNext: ['Mrs. Ogun reads it today and calls you if she needs more detail.', 'She decides the next step with the centre lead. You won’t need to investigate.', 'Carry on as normal with the child. Don’t promise them it stays secret.'].map((t, i) => ({ i: i + 1, t })),
+      cDone: () => { set({ cSent: null }); this.go('week'); }, cAnother: () => set({ cSent: null }),
+      cCats: CATS.map(l => ({ l, on: S.cCat === l ? 'true' : 'false', ...c.pill(S.cCat === l), go: () => set({ cCat: l }) })),
+      cCantA: cOk ? 'false' : 'true', cBg: cOk ? '#b0361c' : '#c9a49c', cHint, cHasHint: !!S.cTried && !!cHint,
+      sendConcern: () => { if (!cOk) return set({ cTried: true }); set({ cKid: '', cText: '', cCat: '', cTried: false, cSent: { ref: 'SG-' + String(Date.now()).slice(-6) } }); },
+      mtStats: [['Mentors', mtAll.length, c.roleId === 'lead' ? 'In your team' : 'At this centre', '#0b0b0c'], ['Seen in 2 weeks', avgSeen + '%', 'Average across mentors · standard 80%', avgSeen < 80 ? '#7a5600' : '#1d6b30'], ['Need support', needN, 'Below standard or a commitment due', needN ? '#7a5600' : '#1d6b30']].map(([l, v, n, fg]) => ({ l, v, n, fg })),
+      mtQ: S.mtQ || '', onMtQ: e => set({ mtQ: e.target.value }),
+      mtFilters: [['all', 'All', mtAll.length], ['need', 'Need support', needN]].map(([id, l, n]) => ({ l, n, on: mf === id, ...c.chip(mf === id), go: () => set({ mtF: id }) })),
+      mentors: mt, mtEmpty: c.isLead && mt.length === 0
+    };
+  }
+
+  SKILLS = [['Communication', 'Speaks and listens clearly'], ['Confidence', 'Acts without needing permission'], ['Critical Thinking', 'Questions, reasons, weighs evidence'], ['Initiative', 'Starts things without being asked'], ['Team Building', 'Brings others in and helps them work together'], ['Execution', 'Finishes what they start'], ['Problem Solving', 'Finds a way when stuck'], ['Accountability', 'Owns mistakes and keeps their word'], ['Service', 'Creates value for others'], ['Multiplication', 'Grows other people, not just themselves']];
+  scoresOf(k) { const n = Number(k.id.slice(1)); const prev = this.SKILLS.map((s, i) => 3 + ((n + i * 3) % 5)); const seed = prev.map((p, i) => Math.min(10, p + ((n + i) % 3 === 0 ? 1 : 0))); return { prev, cur: (this.state.sc || {})[k.id] || seed }; }
+  scVals(c) {
+    const S = this.state, ck = c.ck, set = c.set; const { prev, cur } = this.scoresOf(ck);
+    const tot = cur.reduce((a, b) => a + b, 0), ptot = prev.reduce((a, b) => a + b, 0), d = tot - ptot;
+    const setV = (i, v) => { const n = cur.slice(); n[i] = Math.max(0, Math.min(10, v)); set({ sc: { ...(S.sc || {}), [ck.id]: n } }); };
+    const avg = i => c.all.reduce((s, k) => s + this.scoresOf(k).cur[i], 0) / Math.max(1, c.all.length);
+    const pavg = i => c.all.reduce((s, k) => s + this.scoresOf(k).prev[i], 0) / Math.max(1, c.all.length);
+    const li = this.SKILLS.map((s, i) => ({ l: s[0], a: avg(i), p: pavg(i) }));
+    return {
+      scLast: '6 September', scTotal: tot, scDelta: (d > 0 ? '+' : '') + d + ' since September', scDFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#6b6b72',
+      scCols: c.wideCols ? 'minmax(180px, 1fr) minmax(160px, 1fr) auto 56px' : 'minmax(0, 1fr) auto 48px',
+      scRows: this.SKILLS.map(([l, hh], i) => { const v = cur[i], p = prev[i], dd = v - p; return { l, h: hh, v, d: dd ? (dd > 0 ? '+' : '') + dd : '–', dFg: dd > 0 ? '#1d6b30' : dd < 0 ? '#b0361c' : '#9a9aa0', segs: Array.from({ length: 10 }, (_, j) => ({ c: j < v ? '#0b0b0c' : j < p ? '#d6d4cc' : '#f0efea' })), up: () => setV(i, v + 1), dn: () => setV(i, v - 1) }; }),
+      ...(() => { const sv = (S.scSaved || {})[ck.id]; const dirty = sv && sv !== cur.join(','); return { scSaveL: !sv ? 'Save October scores' : dirty ? 'Save changes' : 'Saved', scSaveOp: sv && !dirty ? 0.55 : 1, scNote: !sv ? 'Score what you’ve seen across the month, not one Saturday. Grey marks last month.' : dirty ? 'You’ve changed scores since saving.' : 'Saved today. You can change it until 8 November, then it locks.', scSave: () => { if (sv && !dirty) return; set({ scSaved: { ...(S.scSaved || {}), [ck.id]: cur.join(',') } }); this.say('October scores saved for ' + ck.first + '. Next scoring is due 1 November.'); } }; })(),
+      liMeta: 'out of 10 · change since September',
+      liRows: li.map(r => { const dd = Math.round((r.a - r.p) * 10) / 10; return { l: r.l, v: r.a.toFixed(1), w: (r.a * 10) + '%', c: r.a < 5 ? '#e0a100' : '#0b0b0c', d: dd ? (dd > 0 ? '+' : '') + dd.toFixed(1) : '–', dFg: dd > 0 ? '#1d6b30' : dd < 0 ? '#b0361c' : '#9a9aa0' }; }).sort((x, y) => Number(y.v) - Number(x.v))
+    };
+  }
+  meName() { return 'Adaeze Okonkwo'; }
+  meFirst() { return 'Adaeze'; }
+}
+</script>
+</body>
+</html>

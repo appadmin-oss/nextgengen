@@ -1028,7 +1028,7 @@ function photo_intake_url(string $incoming, int $max = 512): string {
     if (preg_match('#^https?://#i', $u)) {
         $host = strtolower((string)parse_url($u, PHP_URL_HOST));
         $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
-        if ($host !== 'res.cloudinary.com' && !($own !== '' && $host === $own && photo_is_stored_locally($u))) return '';
+        if ($host !== 'res.cloudinary.com' && !store_hosted($u) && !($own !== '' && $host === $own && photo_is_stored_locally($u))) return '';
     }
     return substr($u, 0, $max);
 }
@@ -1356,8 +1356,15 @@ function cloudinary_hosted(string $url): bool {
 function cloudinary_adopt(string $url): array {
     $url = trim($url);
     if ($url === '') return ['ok' => false, 'error' => 'no_photo'];
-    if (cloudinary_hosted($url)) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    // On the backup account, a photo still on the spent main one is copied across (by URL) before it is edited there.
+    // (any of our accounts that is full, while another takes the work)
+    $onAcc = cloudinary_hosted($url) ? media_account_for_cloud(cloudinary_cloud_of($url)) : null;
+    $onSpent = $onAcc && $onAcc['id'] !== cloudinary_active() && MEDIA_LEVEL_ORDER[(string)(media_usage_state($onAcc['id'])['level'] ?? 'ok')] >= MEDIA_LEVEL_ORDER['high'];
+    if (cloudinary_hosted($url) && !$onSpent) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    if ($onSpent) $url = cloudinary_base($url);
     if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    // Storage full: the photo stays on the site's own store rather than tipping the plan over.
+    if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return ['ok' => false, 'error' => 'media_storage_full'];
     $file = '';
     if (photo_is_stored_locally($url) && preg_match('/p=([0-9a-f]{32}\.(jpg|png|webp))$/', $url, $m)) {
         $path = photo_store_find($m[1]);
@@ -1369,25 +1376,182 @@ function cloudinary_adopt(string $url): array {
     } else {
         return ['ok' => false, 'error' => 'no_photo'];
     }
+    $up = cloudinary_upload_signed($file, $onSpent ? 'copy_' . md5($url) : '');
+    return empty($up['ok']) ? $up : ['ok' => true, 'url' => $up['url'], 'adopted' => true];
+}
+
+/** One signed upload to Cloudinary (a data: URI or a public URL Cloudinary fetches). [ok, url] */
+/* $publicId: a fixed name for the upload. With overwrite off, a second upload under the same name
+   returns the asset already there rather than storing it again — how a photo copied off a spent
+   account is copied once, however many times it is edited. */
+function cloudinary_upload_signed(string $file, string $publicId = ''): array {
     $cfg = $GLOBALS['CONFIG']['cloudinary'];
     $folder = trim((string)($cfg['folder'] ?? 'ngg'), '/') . '/photos';
     if (isset($GLOBALS['__cloudinary_upload_mock']) && is_callable($GLOBALS['__cloudinary_upload_mock'])) {
         $secure = (string)($GLOBALS['__cloudinary_upload_mock'])($file, $folder);
-        return $secure !== '' ? ['ok' => true, 'url' => $secure, 'adopted' => true] : ['ok' => false, 'error' => 'upload_failed'];
+        return $secure !== '' ? ['ok' => true, 'url' => $secure] : ['ok' => false, 'error' => 'upload_failed'];
     }
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
     $ts = time();
-    $sig = sha1('folder=' . $folder . '&timestamp=' . $ts . $cfg['api_secret']);
-    $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/upload');
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_POSTFIELDS => ['file' => $file, 'api_key' => (string)$cfg['api_key'], 'timestamp' => $ts, 'folder' => $folder, 'signature' => $sig]]);
-    $raw = curl_exec($ch);
-    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    $j = is_string($raw) ? json_decode($raw, true) : null;
+    $named = $publicId !== '' ? ['overwrite' => 'false', 'public_id' => $publicId] : [];
+    $sig = sha1('folder=' . $folder . ($named ? '&overwrite=false&public_id=' . $publicId : '') . '&timestamp=' . $ts . $cfg['api_secret']);
+    // Test seam for the HTTP exchange itself: $GLOBALS['__cld_upload_http'] = fn() => [code, body array].
+    if (isset($GLOBALS['__cld_upload_http']) && is_callable($GLOBALS['__cld_upload_http'])) {
+        [$code, $j] = ($GLOBALS['__cld_upload_http'])($named);
+    } else {
+        if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
+        $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/upload');
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_POSTFIELDS => ['file' => $file, 'api_key' => (string)$cfg['api_key'], 'timestamp' => $ts, 'folder' => $folder, 'signature' => $sig] + $named]);
+        $raw = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $j = is_string($raw) ? json_decode($raw, true) : null;
+    }
     $secure = is_array($j) ? (string)($j['secure_url'] ?? '') : '';
-    if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => is_array($j) ? (string)($j['error']['message'] ?? '') : ''];
-    return ['ok' => true, 'url' => $secure, 'adopted' => true];
+    $msg = is_array($j) ? (string)($j['error']['message'] ?? '') : '';
+    // The main account is out of credits: move to the backup and try once more there.
+    if (($code === 420 || $code === 429 || ($code >= 400 && preg_match('/limit|quota|credit/i', $msg))) && empty($GLOBALS['__cld_retry']) && cloudinary_failover('refused an upload (' . ($msg ?: 'HTTP ' . $code) . ')')) {
+        $GLOBALS['__cld_retry'] = true;
+        try { return cloudinary_upload_signed($file, $publicId); } finally { unset($GLOBALS['__cld_retry']); }
+    }
+    if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => $msg];
+    return ['ok' => true, 'url' => $secure];
+}
+
+/* ── Materialising a finished photo ────────────────────────────────────────
+ * Cloudinary charges for every DERIVED image: an edit is a transformation
+ * chain in the URL, and every card size, crop or format built on top of that
+ * URL is a new derivative that runs the whole chain again. A background
+ * removal costs 75 transformations, so one photo seen at five card sizes in
+ * two formats cost ~750 — the reason the free plan ran out at about fifty
+ * people a month.
+ *
+ * So a finished edit is stored once, as a plain image: Cloudinary fetches the
+ * edited URL (generated once, already paid for) and keeps the result as a new
+ * original. Everything after builds on that original — 1 transformation per
+ * size, never 76. The chain stays in photo_assets.transforms for the record of
+ * what was done. A failed upload changes nothing: the edited URL is kept. */
+/** The transformation chain in a Cloudinary delivery URL ('' when there is none). */
+function photo_chain_of(string $url): string {
+    return preg_match('#/upload/(.+?)/v\d+/#', $url, $m) ? $m[1] : '';
+}
+/** An approved asset row for a photo edited outside the review desk. */
+function photo_asset_record(string $type, string $id, string $source, string $edited, string $transforms, string $by): void {
+    if ($type === '' || $id === '') return;
+    $v = (int)(db_row('SELECT MAX(version) v FROM photo_assets WHERE subjectType = ? AND subjectId = ?', [$type, $id])['v'] ?? 0) + 1;
+    db_insert('photo_assets', ['assetId' => 'PH-' . strtoupper(bin2hex(random_bytes(6))), 'subjectType' => $type, 'subjectId' => $id, 'version' => $v, 'status' => 'approved',
+        'sourceUrl' => $source, 'editedUrl' => $edited, 'transforms' => $transforms, 'reviewedBy' => $by, 'reviewedAt' => now_iso(),
+        'decisionNote' => 'Edited and stored as a plain image', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+}
+
+function photo_materialise(string $url): string {
+    $url = trim($url);
+    if ($url === '' || !cloudinary_hosted($url) || cloudinary_base($url) === $url) return $url;   // nothing derived to fix
+    if (setting_raw('photo_materialise') === '0' || !cloudinary_configured()) return $url;
+    if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) return $url;
+    $up = cloudinary_upload_signed($url);
+    if (empty($up['ok'])) {
+        if (function_exists('ops_record')) ops_record('warn', 'photo.materialise', 'A finished photo could not be stored as a plain image; it is kept as an edit for now.', (string)($up['error'] ?? 'upload_failed') . ' · ' . $url);
+        return $url;
+    }
+    return (string)$up['url'];
+}
+
+/** Photos still on a record as an edit chain (they cost again at every size): how many, and convert a batch. */
+const PHOTO_MATERIALISE_BATCH = 50;
+/**
+ * admin.photos.relocate — copy the photos of the people named in `subjects`
+ * ([{type: member|volunteer|student, id}], at most PHOTO_RELOCATE_MAX) off a
+ * Cloudinary account that is past 70%, to the account uploads go to now.
+ *
+ * On demand, never in bulk: a photo is copied only when it is about to be
+ * used in a way that costs the spent account — printed in the ID Card Studio
+ * (which calls this for the cards on the run), or edited (cloudinary_adopt).
+ * Copying everyone up front would fill the new account with photos nobody
+ * prints. Each is copied once, as it looks now, under a fixed name with
+ * overwrite off, so asking again never stores a second copy; the record then
+ * points at the copy and the old file stays (links already shared still work).
+ * Returns `moved` as [{type, id, url}] so the caller can draw from the copy.
+ */
+const PHOTO_RELOCATE_MAX = 60;
+function photo_spent_clouds(): array {
+    $to = media_active_id(); $from = [];
+    foreach (media_accounts() as $a) {
+        if ($a['id'] === $to) continue;
+        if (MEDIA_LEVEL_ORDER[(string)(media_usage_state($a['id'])['level'] ?? 'ok')] >= MEDIA_LEVEL_ORDER['warn']) $from[strtolower($a['cloud_name'])] = $a['label'];
+    }
+    return $from;
+}
+function admin_photos_relocate(array $p): array {
+    // The permission that prints each kind of card is the one that may copy its photo (card-runs.php).
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $gates = [];
+    $may = static function (string $t) use (&$gates, $p) { return $gates[$t] ??= !empty(crun_gate_for($p, $t)['ok']); };
+    $subs = is_array($p['subjects'] ?? null) ? array_values($p['subjects']) : [];
+    if (!$subs) return ['ok' => false, 'error' => 'missing_field', 'detail' => 'Name the people whose photos are needed.'];
+    if (count($subs) > PHOTO_RELOCATE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => PHOTO_RELOCATE_MAX];
+    $out = ['ok' => true, 'moved' => [], 'kept' => 0, 'failed' => 0];
+    $from = photo_spent_clouds();
+    $toAcc = media_account(media_active_id());
+    if (!$from || !$toAcc) { $out['kept'] = count($subs); return $out; }
+    $map = ['member' => ['members', 'memberId'], 'volunteer' => ['volunteers', 'volunteerId'], 'student' => ['summer_students', 'studentId']];
+    $who = (string)$g['requester']['memberId'];
+    foreach ($subs as $sub) {
+        $t = (string)($sub['type'] ?? ''); $id = (string)($sub['id'] ?? '');
+        if (!isset($map[$t]) || $id === '' || !$may($t)) { $out['failed']++; continue; }
+        [$tbl, $key] = $map[$t];
+        $row = db_row("SELECT photoUrl" . ($t === 'member' ? ', centre' : '') . " FROM {$tbl} WHERE {$key} = ? LIMIT 1", [$id]);
+        // Scope is checked on the way in, per row: a centre-scoped admin moves only their own members' photos.
+        if (!$row || ($t === 'member' && function_exists('admin_centre_allowed') && !admin_centre_allowed($g['requester'], (string)($row['centre'] ?? '')))) { $out['failed']++; continue; }
+        $u = (string)$row['photoUrl'];
+        if (!isset($from[strtolower(media_cloud_of($u))])) { $out['kept']++; continue; }   // not on a spent account: nothing to do
+        $up = cloudinary_upload_signed($u, 'moved_' . md5($u));
+        $m = !empty($up['ok']) ? (string)$up['url'] : '';
+        if ($m === '' || isset($from[strtolower(media_cloud_of($m))])) { $out['failed']++; continue; }
+        // The asset row first, so replacing the record's photo keeps it live (as admin_photos_materialise does).
+        $n = db_exec('UPDATE photo_assets SET editedUrl = ?, updatedAt = ? WHERE subjectType = ? AND subjectId = ? AND editedUrl = ?', [$m, now_iso(), $t, $id, $u]);
+        if (!$n && !db_row("SELECT 1 FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND editedUrl = ? LIMIT 1", [$t, $id, $m])) {
+            photo_asset_record($t, $id, cloudinary_base($u), $m, photo_chain_of($u), $who);
+        }
+        photo_set_subject($t, $id, $m, $who);
+        $out['moved'][] = ['type' => $t, 'id' => $id, 'url' => $m];
+    }
+    if ($out['moved'] || $out['failed']) audit('photo.relocate', $who, 'photos', ['to' => $toAcc['id'], 'moved' => count($out['moved']), 'failed' => $out['failed']], (string)($p['ip'] ?? ''));
+    return $out;
+}
+
+function admin_photos_materialise(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $limit = max(1, min(PHOTO_MATERIALISE_BATCH, (int)($p['limit'] ?? PHOTO_MATERIALISE_BATCH)));
+    $dry = !empty($p['dryRun']);
+    $todo = [];
+    foreach (['member' => ['members', 'memberId'], 'volunteer' => ['volunteers', 'volunteerId'], 'student' => ['summer_students', 'studentId']] as $t => [$tbl, $key]) {
+        foreach (db_all("SELECT {$key} AS id, photoUrl FROM {$tbl} WHERE photoUrl LIKE 'https://res.cloudinary.com/%/image/upload/%'") as $r) {
+            $u = (string)$r['photoUrl'];
+            if (cloudinary_base($u) !== $u) $todo[] = [$t, (string)$r['id'], $u];
+        }
+    }
+    $out = ['ok' => true, 'chained' => count($todo), 'converted' => 0, 'failed' => 0, 'remaining' => count($todo)];
+    if ($dry || !$todo) return $out;
+    if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    foreach (array_slice($todo, 0, $limit) as [$t, $id, $u]) {
+        $m = photo_materialise($u);
+        if ($m === $u) { $out['failed']++; continue; }
+        /* The asset row is pointed at the new image FIRST, so replacing the
+           record's photo keeps it live — and with it the original upload the
+           edit was made from (supersede never deletes what a live asset uses).
+           A record that never had an asset gets one now, holding the original
+           and the chain, for the same reason and for the record of the edit. */
+        $n = db_exec('UPDATE photo_assets SET editedUrl = ?, updatedAt = ? WHERE subjectType = ? AND subjectId = ? AND editedUrl = ?', [$m, now_iso(), $t, $id, $u]);
+        if (!$n && !db_row("SELECT 1 FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND editedUrl = ? LIMIT 1", [$t, $id, $m])) {
+            photo_asset_record($t, $id, cloudinary_base($u), $m, photo_chain_of($u), (string)$g['requester']['memberId']);
+        }
+        photo_set_subject($t, $id, $m, (string)$g['requester']['memberId']);
+        $out['converted']++;
+    }
+    $out['remaining'] = count($todo) - $out['converted'];
+    audit('photo.materialise', (string)$g['requester']['memberId'], 'photos', ['converted' => $out['converted'], 'failed' => $out['failed'], 'remaining' => $out['remaining']], (string)($p['ip'] ?? ''));
+    return $out;
 }
 
 /** The table and key column holding a subject's photo. */
@@ -1421,14 +1585,23 @@ function photo_edit_subject(string $subjectType, string $subjectId, string $asse
     $tbl = photo_subject_table($subjectType);
     $row = ($tbl && $subjectId !== '') ? db_row("SELECT photoUrl FROM {$tbl[0]} WHERE {$tbl[1]} = ? LIMIT 1", [$subjectId]) : null;
     $before = $row ? (string)($row['photoUrl'] ?? '') : '';
+    /* The subject's latest asset is the one to edit only while it IS the photo
+       on the record. A photo replaced since (an upload, an import) is a new
+       picture: editing the old asset would put the old face back. */
+    if ($a && $assetId === '' && $before !== '' && !in_array($before, [photo_store_relativise((string)$a['editedUrl']), photo_store_relativise((string)$a['sourceUrl'])], true)) $a = null;
     $source = $a ? (string)$a['sourceUrl'] : cloudinary_base($before);
     if ($source === '') return ['ok' => false, 'error' => 'no_photo'];
     $ad = cloudinary_adopt($source);
     if (empty($ad['ok'])) return $ad;
     $edit = cloudinary_edit_manual($ad['url'], $spec);
-    if ($a) db_update('photo_assets', ($ad['adopted'] ? ['sourceUrl' => $ad['url']] : []) + ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
-    $unchanged = $before !== '' && photo_store_relativise($edit['url']) === $before;
-    if (!$unchanged) photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url']]);
+    /* The same edit again is no change: the record already shows it (as the
+       chain, or as the plain image it was stored as). Comparing only URLs would
+       re-edit and re-store a materialised photo on every re-run. */
+    $unchanged = $before !== '' && (photo_store_relativise($edit['url']) === $before
+        || ($a && (string)$a['transforms'] === $edit['transforms'] && photo_store_relativise((string)$a['editedUrl']) === $before));
+    if ($a && !$unchanged) db_update('photo_assets', ($ad['adopted'] ? ['sourceUrl' => $ad['url']] : []) + ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
+    if (!$unchanged) photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url'],
+        'assetId' => $a['assetId'] ?? '', 'sourceUrl' => $ad['url'], 'transforms' => $edit['transforms']]);
     return ['ok' => true, 'url' => $edit['url'], 'transforms' => $edit['transforms'], 'unchanged' => $unchanged, 'adopted' => !empty($ad['adopted']),
         'subjectType' => $subjectType, 'subjectId' => $subjectId, 'assetId' => $a['assetId'] ?? ''];
 }
@@ -1530,21 +1703,23 @@ function admin_photo_replace(array $p): array {
  * and the version segment are skipped: an edit of an upload is the same upload.
  */
 function cloudinary_public_id(string $url): string {
-    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
-    $cloud = (string)($cfg['cloud_name'] ?? '');
-    if ($cloud === '' || !preg_match('#^https://res\.cloudinary\.com/([^/]+)/image/upload/(.+)$#', $url, $m) || $m[1] !== $cloud) return '';
+    // Ours means on any of our accounts (media-storage.php); another account's image is never ours to delete.
+    if (!preg_match('#^https://res\.cloudinary\.com/([^/]+)/image/upload/(.+)$#', $url, $m) || !media_account_for_cloud($m[1])) return '';
     $parts = explode('/', strtok($m[2], '?'));
     // Drop leading transformation segments (they contain commas or a known prefix like c_, w_, e_…) and the version.
     while ($parts && (strpos($parts[0], ',') !== false || preg_match('/^[a-z]{1,3}_[^\/]*$/', $parts[0]) || preg_match('/^v\d+$/', $parts[0]))) array_shift($parts);
     $id = implode('/', $parts);
     return (string)preg_replace('/\.[a-z0-9]{2,5}$/i', '', $id);
 }
-/** Delete an upload from our Cloudinary (signed, server side). Test seam: $GLOBALS['__cloudinary_destroy_mock']. */
-function cloudinary_destroy(string $publicId): bool {
+/** Delete an upload from our Cloudinary (signed, server side), on the account
+ *  whose cloud holds it ($cloud; default: the one uploads go to).
+ *  Test seam: $GLOBALS['__cloudinary_destroy_mock']. */
+function cloudinary_destroy(string $publicId, string $cloud = ''): bool {
     if ($publicId === '') return false;
-    if (isset($GLOBALS['__cloudinary_destroy_mock']) && is_callable($GLOBALS['__cloudinary_destroy_mock'])) return (bool)($GLOBALS['__cloudinary_destroy_mock'])($publicId);
-    if (!cloudinary_configured() || !function_exists('curl_init')) return false;
-    $cfg = $GLOBALS['CONFIG']['cloudinary']; $ts = time();
+    if (isset($GLOBALS['__cloudinary_destroy_mock']) && is_callable($GLOBALS['__cloudinary_destroy_mock'])) return (bool)($GLOBALS['__cloudinary_destroy_mock'])($publicId, $cloud);
+    $cfg = $cloud !== '' ? media_account_for_cloud($cloud) : media_cfg();
+    if (!$cfg || empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret']) || !function_exists('curl_init')) return false;
+    $ts = time();
     $sig = sha1('invalidate=true&public_id=' . $publicId . '&timestamp=' . $ts . $cfg['api_secret']);
     $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/destroy');
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_POST => true,
@@ -1646,7 +1821,15 @@ function photo_supersede(string $subjectType, string $subjectId, string $oldUrl,
     $oldPid = $oldId === '' && function_exists('cloudinary_public_id') ? cloudinary_public_id($old) : '';
     if ($oldPid !== '' && $oldPid !== cloudinary_public_id($new)) {
         $refs = photo_store_live_refs($oldPid);
-        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid);
+        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid, media_cloud_of($old));
+        else $kept = 'in use';
+    }
+    /* And an original in OUR bucket (R2 / B2), by the same rule: not if the new
+       photo is the same object, not while anything live still points at it. */
+    $oldKey = $oldId === '' && $oldPid === '' ? store_key_of($old) : '';
+    if ($oldKey !== '' && $oldKey !== store_key_of($new)) {
+        $refs = photo_store_live_refs($oldKey);
+        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldKey . '%', '%' . $oldKey . '%'])) $deleted = store_delete($oldKey);
         else $kept = 'in use';
     }
     audit('photo.superseded', $by !== '' ? $by : null, $subjectType . ':' . $subjectId, ['deleted' => $deleted, 'keptFor' => $kept, 'hosted' => $oldId === ''], '');
@@ -1674,7 +1857,18 @@ function photo_apply_to_subject(array $a): void {
     // Relativised: the pipeline is handed the absolute URL because Cloudinary
     // and the vision model have to fetch it, and it hands the same string back.
     // Writing that into the row would bake today's hostname into every record.
-    $url = photo_store_relativise((string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? ''));
+    $raw = (string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? '');
+    // A finished Cloudinary edit is stored once as a plain image, so later sizes never re-run it.
+    $plain = photo_materialise($raw);
+    if ($plain !== $raw) {
+        if (!empty($a['assetId'])) db_update('photo_assets', ['editedUrl' => $plain, 'updatedAt' => now_iso()], ['assetId' => (string)$a['assetId']]);
+        /* No asset row (an edit made on the record itself): one is written now,
+           holding the original and the chain. A later edit then starts from the
+           original — not from this already-edited image — and supersede keeps
+           the original while the asset is live. */
+        else photo_asset_record((string)$a['subjectType'], (string)$a['subjectId'], (string)($a['sourceUrl'] ?? '') ?: cloudinary_base($raw), $plain, (string)($a['transforms'] ?? '') ?: photo_chain_of($raw), (string)($a['by'] ?? ''));
+    }
+    $url = photo_store_relativise($plain);
     if ($url === '') return;
     // Members too: an edited member photo never reached the record, so the card kept the old one.
     // Through photo_set_subject, so the photo it replaces is superseded, not kept.
@@ -1746,3 +1940,113 @@ function photo_backup_zip(array $p): array {
     return ['ok' => true, 'path' => $tmp, 'images' => $n, 'name' => 'ngg-photos-' . gmdate('Y-m-d') . '.zip'];
 }
 
+
+/* ── Photo change requests ───────────────────────────────────────────────────
+ *
+ * A member does not change the photograph on their record: it is the face on
+ * a printed ID, and for a child it is a safeguarding decision. They ASK, and
+ * send the photo they want instead; a member of staff holding `content`
+ * approves it (applied through admin_photo_replace — one replacement, not two)
+ * or declines it with a note. Either way the member is told.
+ *
+ * One pending request per subject: a second ask replaces the first (status
+ * `replaced`), so the desk never decides between two photos of the same child.
+ */
+const PHOTO_CHANGE_STATUSES = ['pending', 'approved', 'declined', 'withdrawn', 'replaced'];
+
+function photo_change_public(array $r): array {
+    return [
+        'requestId' => (string)$r['requestId'], 'subjectType' => (string)$r['subjectType'], 'subjectId' => (string)$r['subjectId'],
+        'centre' => (string)$r['centre'], 'photoUrl' => (string)$r['photoUrl'], 'oldPhotoUrl' => (string)$r['oldPhotoUrl'],
+        'reason' => (string)$r['reason'], 'via' => (string)$r['via'], 'requestedBy' => (string)$r['requestedBy'],
+        'requestedAt' => (string)$r['requestedAt'], 'status' => (string)$r['status'],
+        'decidedAt' => (string)$r['decidedAt'], 'note' => (string)$r['note'],
+    ];
+}
+
+/** A member's own ask. `photoUrl` is a hosted URL or the image itself. */
+function photo_change_request_create(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT memberId, fullName, centre, photoUrl, status FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $reason = trim(mb_substr((string)($p['reason'] ?? ''), 0, 300));
+    $url = photo_intake_url((string)($p['photoUrl'] ?? ''));
+    if ($url === '') return ['ok' => false, 'error' => 'bad_photo'];
+    $old = (string)($m['photoUrl'] ?? '');
+    if ($old !== '' && photo_store_relativise($old) === photo_store_relativise($url)) return ['ok' => false, 'error' => 'same_photo'];
+    $now = now_iso();
+    $prev = db_all("SELECT requestId FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status = 'pending'", [$memberId]);
+    foreach ($prev as $r) db_update('photo_change_requests', ['status' => 'replaced', 'decidedAt' => $now, 'decidedBy' => $memberId], ['requestId' => $r['requestId']]);
+    $id = new_id('PCR', 'photo_change_requests', 'requestId');
+    db_insert('photo_change_requests', [
+        'requestId' => $id, 'subjectType' => 'member', 'subjectId' => $memberId, 'centre' => (string)($m['centre'] ?? ''),
+        'photoUrl' => photo_store_relativise($url), 'oldPhotoUrl' => $old, 'reason' => $reason,
+        'via' => (string)($p['via'] ?? 'member'), 'requestedBy' => $memberId, 'requestedAt' => $now, 'status' => 'pending',
+    ]);
+    audit('photo.change.requested', $memberId, 'member:' . $memberId, ['requestId' => $id, 'replaced' => count($prev)], (string)($p['ip'] ?? ''));
+    $row = db_row('SELECT * FROM photo_change_requests WHERE requestId = ? LIMIT 1', [$id]);
+    return ['ok' => true, 'request' => photo_change_public($row), 'replaced' => count($prev)];
+}
+
+/** The member's own latest ask (pending first), or null. */
+function photo_change_request_mine(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $r = db_row("SELECT * FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status != 'replaced'
+                 ORDER BY (status = 'pending') DESC, requestedAt DESC, id DESC LIMIT 1", [$memberId]);
+    return ['ok' => true, 'request' => $r ? photo_change_public($r) : null];
+}
+
+/** Withdraw the member's own pending ask. */
+function photo_change_request_withdraw(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $r = db_row("SELECT * FROM photo_change_requests WHERE subjectType = 'member' AND subjectId = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", [$memberId]);
+    if (!$r) return ['ok' => false, 'error' => 'no_pending_request'];
+    db_update('photo_change_requests', ['status' => 'withdrawn', 'decidedAt' => now_iso(), 'decidedBy' => $memberId], ['requestId' => $r['requestId']]);
+    audit('photo.change.withdrawn', $memberId, 'member:' . $memberId, ['requestId' => $r['requestId']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
+/** The desk's queue: pending asks, scoped to the requester's centres. */
+function admin_photo_changes(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $rows = db_all("SELECT * FROM photo_change_requests WHERE status = 'pending' ORDER BY requestedAt ASC, id ASC LIMIT 300");
+    $rows = array_values(array_filter($rows, fn($r) => admin_centre_allowed($g['requester'], (string)$r['centre'])));
+    $names = photo_subject_names($rows);
+    $out = array_map(function ($r) use ($names) {
+        $n = $names[$r['subjectType'] . ':' . $r['subjectId']] ?? null;
+        return photo_change_public($r) + ['subjectName' => $n['name'] ?? '', 'subjectCentre' => $n['centre'] ?? (string)$r['centre']];
+    }, $rows);
+    return ['ok' => true, 'requests' => $out, 'pending' => count($out)];
+}
+
+/** Approve (apply the photo) or decline (keep the current one, with a note). */
+function admin_photo_change_decide(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $decision = (string)($p['decision'] ?? '');
+    if (!in_array($decision, ['approve', 'decline'], true)) return ['ok' => false, 'error' => 'bad_decision'];
+    $r = db_row('SELECT * FROM photo_change_requests WHERE requestId = ? LIMIT 1', [(string)($p['requestId'] ?? '')]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)$r['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ($r['status'] !== 'pending') return ['ok' => false, 'error' => 'already_decided', 'status' => $r['status']];
+    $by = (string)$g['requester']['memberId'];
+    if ($r['subjectId'] === $by) return ['ok' => false, 'error' => 'own_account'];
+    $note = trim(mb_substr((string)($p['note'] ?? ''), 0, 300));
+    if ($decision === 'decline' && $note === '') return ['ok' => false, 'error' => 'note_required'];
+    $applied = '';
+    if ($decision === 'approve') {
+        $rep = admin_photo_replace(['requesterId' => $by, 'ip' => (string)($p['ip'] ?? ''), 'subjectType' => $r['subjectType'],
+            'subjectId' => $r['subjectId'], 'sourceUrl' => (string)$r['photoUrl']]);
+        if (empty($rep['ok'])) return $rep;
+        $applied = (string)($rep['editedUrl'] ?? '');
+    }
+    db_update('photo_change_requests', ['status' => $decision === 'approve' ? 'approved' : 'declined', 'decidedBy' => $by,
+        'decidedAt' => now_iso(), 'note' => $note], ['requestId' => $r['requestId']]);
+    if ($r['subjectType'] === 'member') {
+        push_notification((string)$r['subjectId'], $decision === 'approve'
+            ? ['kind' => 'profile', 'title' => 'Your new photo is on your profile', 'body' => $note !== '' ? $note : 'Your photo change was approved.', 'linkPage' => 'profile']
+            : ['kind' => 'profile', 'title' => 'Your photo change was not approved', 'body' => $note, 'linkPage' => 'profile']);
+    }
+    audit('photo.change.' . ($decision === 'approve' ? 'approved' : 'declined'), $by, $r['subjectType'] . ':' . $r['subjectId'],
+        ['requestId' => $r['requestId'], 'note' => $note], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => $decision === 'approve' ? 'approved' : 'declined', 'applied' => $applied];
+}

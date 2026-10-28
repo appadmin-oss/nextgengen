@@ -31,7 +31,7 @@ const IDS_DEFAULT_SETTINGS = { size: "cr80p", cw: 60, ch: 90, paper: "a4", margi
 const IDS_REASON_LABEL = Object.fromEntries(IDS_REASONS);
 const IDS_KIND_FOR_RUN = { member: "member", summer: "student", volunteer: "volunteer", afrovanguard: "afrovanguard" };
 const IDS_ASK_QUIET_MS = 3 * 864e5;   // the server's quiet period: asking again inside it needs an explicit press
-const IDS_ASK_MAX = 200;              // and its cap per request
+const IDS_ASK_MAX = 2000;             // and its cap per request (a campaign, sent in batches)
 const IDS_QR_WARM_CHUNK = 8;          // hosted QR PNGs sent per request (~30 KB), so no request trips a host's body filter
 /* "The records with no centre on file": a value no real centre can collide with, so the filter stays one value. */
 const IDS_NO_CENTRE = "\u0000none";
@@ -89,15 +89,50 @@ function idsReadUploadFiles(files) {
   }))).then(r => ({ ok: r.filter(Boolean), skipped: files && files.length ? files.length - list.length : 0 }));
 }
 
+/* The workspace survives a refresh, a closed tab and a trip to another page:
+   the sheet settings, the filters, what is on the sheet, and uploaded images
+   (data URLs, megabytes at a time — which is why this is IndexedDB, not
+   localStorage). On this device only; the records themselves are the server's. */
+const IDS_WS_DB = "ngg-ids", IDS_WS_STORE = "ws", IDS_WS_VER = 1;
+function idsWsDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("no_idb"));
+    const rq = indexedDB.open(IDS_WS_DB, 1);
+    rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains(IDS_WS_STORE)) rq.result.createObjectStore(IDS_WS_STORE); };
+    rq.onsuccess = () => resolve(rq.result);
+    rq.onerror = () => reject(rq.error);
+  });
+}
+function idsWsLoad() {
+  return idsWsDb().then(db => new Promise(resolve => {
+    try {
+      const rq = db.transaction(IDS_WS_STORE, "readonly").objectStore(IDS_WS_STORE).get("current");
+      rq.onsuccess = () => { const v = rq.result; resolve(v && v.v === IDS_WS_VER ? v : null); };
+      rq.onerror = () => resolve(null);
+    } catch (_) { resolve(null); }
+  })).catch(() => null);
+}
+function idsWsSave(ws) {
+  return idsWsDb().then(db => new Promise(resolve => {
+    try {
+      const tx = db.transaction(IDS_WS_STORE, "readwrite");
+      tx.objectStore(IDS_WS_STORE).put(Object.assign({ v: IDS_WS_VER, at: Date.now() }, ws), "current");
+      tx.oncomplete = () => resolve(true); tx.onerror = () => resolve(false); tx.onabort = () => resolve(false);
+    } catch (_) { resolve(false); }
+  })).catch(() => false);
+}
+
 /* The studio's type (§2): Geist, and Geist Mono for IDs and run numbers. Loaded
    once, when the studio first opens — no other page uses them. */
-const IDS_FONT_HREF = "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap";
-function idsEnsureFonts() {
-  if (document.getElementById("ids-fonts")) return;
-  const l = document.createElement("link");
-  l.id = "ids-fonts"; l.rel = "stylesheet"; l.href = IDS_FONT_HREF;
-  document.head.appendChild(l);
-}
+/* Geist and Geist Mono are in /assets/fonts and loaded by every page already
+   (assets/fonts/fonts.css) — this studio was fetching them a second time from
+   Google Fonts, which did nothing for the typeface and added a third-party
+   host to a screen that rasterises cards for print.
+   That host mattered twice over: a print run on a connection where it is slow
+   or blocked falls back to a system face, so two batches printed on different
+   days would not match — which is the reason the files were vendored in the
+   first place. */
+function idsEnsureFonts() {}
 
 function IdCardStudioPage({ setPage }) {
   React.useEffect(idsEnsureFonts, []);
@@ -106,15 +141,28 @@ function IdCardStudioPage({ setPage }) {
   const phone = W < 760;
   const [say, toastNode] = idsUseToast();
   const [tab, setTab] = React.useState("make");
+  /* The right-hand panel shows Settings or the Assistant (v4). Below 1024px
+     there is no third column: the same panel opens as a drawer over the sheet. */
+  const [pane, setPaneS] = React.useState(() => { try { return localStorage.getItem("ngg.ids.pane") === "assistant" ? "assistant" : "settings"; } catch (_) { return "settings"; } });
+  const setPane = p => { setPaneS(p); try { localStorage.setItem("ngg.ids.pane", p); } catch (_) {} };
+  const [drawer, setDrawer] = React.useState(false);
+  const paneTrigger = React.useRef(null);
+  // The composer remounts with the pane, so it is found when it is there, not held.
+  const focusComposer = (n = 0) => { const el = document.getElementById("ids-ai-in"); if (el) el.focus(); else if (n < 20) setTimeout(() => focusComposer(n + 1), 30); };
 
   /* ── Data ── */
   const [data, setData] = React.useState({ state: "loading", records: [], queue: [], programs: {}, kinds: [], designs: {}, choices: {} });
-  const load = React.useCallback(() => {
-    setData(d => Object.assign({}, d, { state: "loading" }));
-    idsLoad().then(r => { setData(Object.assign({ state: "ready" }, r)); if (r.avNote) say(r.avNote); })
-      .catch(e => setData(d => Object.assign({}, d, { state: e && e.forbidden ? "forbidden" : "error" })));
+  /* A quiet load refreshes what is on screen without the loading state, and a
+     failed one keeps the records already shown (the next one will try again).
+     Answers are numbered so an older one never lands over a newer one. */
+  const loadSeq = React.useRef(0), lastLoad = React.useRef(0), liveBusy = React.useRef(false);
+  const load = React.useCallback(quiet => {
+    const n = ++loadSeq.current; lastLoad.current = Date.now();
+    if (quiet !== true) setData(d => Object.assign({}, d, { state: "loading" }));
+    idsLoad().then(r => { if (n !== loadSeq.current) return; setData(Object.assign({ state: "ready" }, r)); if (r.avNote && quiet !== true) say(r.avNote); })
+      .catch(e => { if (n !== loadSeq.current) return; setData(d => quiet === true && d.state === "ready" ? d : Object.assign({}, d, { state: e && e.forbidden ? "forbidden" : "error" })); });
   }, []);
-  React.useEffect(load, [load]);
+  React.useEffect(() => { load(); }, [load]);
   const [done, setDone] = React.useState({});     // printed this session: off the queue
   const [asked, setAsked] = React.useState({});   // asked this session: "type:id" => { at, channels }
   const recs = React.useMemo(() => data.queue.filter(r => !done[r.key]), [data.queue, done]);
@@ -149,6 +197,41 @@ function IdCardStudioPage({ setPage }) {
   const [face, setFace] = React.useState("front");
   const [overview, setOverview] = React.useState(false);
   const searchRef = React.useRef(null);
+
+  /* ── The workspace, kept on this device ── */
+  const [wsReady, setWsReady] = React.useState(false);
+  React.useEffect(() => {
+    let live = true;
+    idsWsLoad().then(ws => {
+      if (!live) return;
+      if (ws) {
+        if (ws.st) setSt(Object.assign({}, IDS_DEFAULT_SETTINGS, ws.st));
+        if (ws.scen) setScen(ws.scen);
+        if (ws.src) setSrc(ws.src);
+        if (typeof ws.filter === "string") setFilter(ws.filter);
+        if (typeof ws.kind === "string") setKind(ws.kind);
+        if (typeof ws.centre === "string") setCentre(ws.centre);
+        if (Array.isArray(ws.uploads)) setUploads(ws.uploads);
+        if (Array.isArray(ws.queue)) setQueue(ws.queue.filter(x => x && (x.t === "r" ? typeof x.key === "string" : x.t === "u" && (ws.uploads || []).some(u => u.uid === x.uid))));
+        if (ws.face === "front" || ws.face === "back") setFace(ws.face);
+        if (Number.isFinite(ws.sheetIdx)) setSheetIdx(ws.sheetIdx);
+        if (ws.queue && ws.queue.length) say("Your sheet is as you left it: " + idsN(ws.queue.length, "card") + " on it");
+      }
+      setWsReady(true);   // nothing is saved until what was there has been read back
+    });
+    return () => { live = false; };
+  }, []);
+  React.useEffect(() => {
+    if (!wsReady) return;
+    const t = setTimeout(() => { idsWsSave({ st, scen, src, filter, kind, centre, queue, uploads, face, sheetIdx }); }, 400);
+    return () => clearTimeout(t);
+  }, [wsReady, st, scen, src, filter, kind, centre, queue, uploads, face, sheetIdx]);
+  /* Records on the sheet that no longer exist (deleted, merged) leave it once
+     the records are in — never before, or a slow load would empty the sheet. */
+  React.useEffect(() => {
+    if (data.state !== "ready" || !wsReady) return;
+    setQueue(qq => { const keep = qq.filter(x => x.t !== "r" || byKey[x.key]); return keep.length === qq.length ? qq : keep; });
+  }, [data, wsReady, byKey]);
   // The model names the custom size customW/customH; the settings keep it as cw/ch.
   // G is the grid for UPLOADED images (the "Card size" setting); a record's card prints at its own size.
   const G = idsGrid(Object.assign({}, st, { customW: st.cw, customH: st.ch }));
@@ -163,14 +246,23 @@ function IdCardStudioPage({ setPage }) {
      when they registered, by the block of ID numbers they were given, or by a
      pasted list (restored from the old Card Studio). Applied AFTER the centre,
      because that is the order it is said in: "Egbeda, the ones from last week". */
-  const [rmode, setRmode] = React.useState("");          // "" | date | number
+  /* v4 adds "by name" and makes "by ID" read the printed ID alphabetically
+     ("EG-26-1100" to "EG-26-1150"); a range of bare digits still means the
+     serial at the end of the ID, which is what a coordinator handed a block of
+     numbers says. Partial values work and the ends are inclusive: "Ade" to
+     "Chi" covers Ade… through Chi…; ends typed the wrong way round swap. */
+  const [rmode, setRmode] = React.useState("name");      // name | id | date | paste
   const [rng, setRng] = React.useState({ dFrom: "", dTo: "", nFrom: "", nTo: "" });
+  const rangeAlpha = idsRangeEnds(rng.nFrom, rng.nTo);
+  const rangeKeyOf = r => rmode === "name" ? String(r.name || "") : String(r.displayId || r.id || "");
+  const alphaRanged = (rmode === "name" || (rmode === "id" && !rangeAlpha.digits)) && (rangeAlpha.lo !== "" || rangeAlpha.hi !== "");
   const inRangeRec = r => {
     if (rmode === "date" && (rng.dFrom || rng.dTo)) return !!r.day && (!rng.dFrom || r.day >= rng.dFrom) && (!rng.dTo || r.day <= rng.dTo);
-    if (rmode === "number" && (rng.nFrom !== "" || rng.nTo !== "")) {
-      const lo = rng.nFrom === "" ? -Infinity : Number(rng.nFrom), hi = rng.nTo === "" ? Infinity : Number(rng.nTo);
+    if (rmode === "id" && rangeAlpha.digits) {
+      const lo = rangeAlpha.lo === "" ? -Infinity : Number(rangeAlpha.lo), hi = rangeAlpha.hi === "" ? Infinity : Number(rangeAlpha.hi);
       return r.seq !== null && r.seq >= lo && r.seq <= hi;
     }
+    if (alphaRanged) return idsInAlphaRange(rangeKeyOf(r), rangeAlpha.lo, rangeAlpha.hi);
     return true;
   };
   const inCentre = r => !centre || (centre === IDS_NO_CENTRE ? !r.centre : r.centre === centre);
@@ -179,7 +271,11 @@ function IdCardStudioPage({ setPage }) {
   const undated = rmode === "date" && (rng.dFrom || rng.dTo) ? preRange.filter(r => !r.day).length : 0;
   const noCentreCount = recs.filter(r => (!kind || r.kind === kind) && !r.centre).length;
   const cnt = { new: base.filter(r => !isBlocked(r) && r.reason === "new").length, reprint: base.filter(r => !isBlocked(r) && r.reason === "reprint").length, blocked: base.filter(isBlocked).length, all: base.length };
-  const shown = base.filter(r => filter === "all" ? true : filter === "blocked" ? isBlocked(r) : !isBlocked(r) && r.reason === filter);
+  const shown0 = base.filter(r => filter === "all" ? true : filter === "blocked" ? isBlocked(r) : !isBlocked(r) && r.reason === filter);
+  // While a range is set the list reads in the range's own order, so its two ends are where you look.
+  const shown = alphaRanged || (rmode === "id" && rangeAlpha.digits && (rangeAlpha.lo !== "" || rangeAlpha.hi !== ""))
+    ? shown0.slice().sort((a, b) => rmode === "name" ? String(a.name).localeCompare(String(b.name)) : rangeAlpha.digits ? (a.seq || 0) - (b.seq || 0) : rangeKeyOf(a).localeCompare(rangeKeyOf(b)))
+    : shown0;
   const addable = shown.filter(r => !isBlocked(r) && !inQ.has(r.key));
   /* Every card prints at its own size: a record at its design's (or its
      standard card's) size, an uploaded image at the size set for uploads. A
@@ -249,7 +345,7 @@ function IdCardStudioPage({ setPage }) {
     const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
     const items = list.map(r => ({ subjectType: r.subjectType, subjectId: r.id, cause: cause || "asked", why: rs ? rs[1] : "Reprint asked for by ID" }));
     if (!items.length) return false;
-    try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(); return true; }
+    try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(true); return true; }
     catch (e) { say(idsErrText(e, "Couldn’t queue the reprint. Try again.")); return false; }
   };
   /* Per-card acts the old Card Studio had on every card: resend the digital
@@ -299,8 +395,14 @@ function IdCardStudioPage({ setPage }) {
   const records = {
     q, setQ, kind, setKind, centre, setCentre, filter, setFilter: f => { setFilter(f); setLim(IDS_REC_PAGE); },
     noCentreCount, rmode, setRmode: m => { setRmode(m); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }, rng, setRng: p => setRng(r => Object.assign({}, r, p)),
+    clearRange: () => setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }),
+    rangeSet: (rmode === "date" && !!(rng.dFrom || rng.dTo)) || ((rmode === "name" || rmode === "id") && (rangeAlpha.lo !== "" || rangeAlpha.hi !== "")),
+    rangeLo: rangeAlpha.shownLo, rangeHi: rangeAlpha.shownHi, rangeDigits: rangeAlpha.digits,
     undated, ranged: base.length !== preRange.length || undated > 0, inRangeN: base.length, preRangeN: preRange.length, pasteIds: list => pasteIds(list, preRange), queueReprints,
-    filters: [["new", "New", "ok"], ["reprint", "Reprints", "warn"], ["blocked", "Blocked", "bad"], ["all", "All", null]].map(([k, label, dot]) => ({ k, label, dot, n: cnt[k], on: filter === k })),
+    // Status: pressing the one that is on again shows everybody (v4).
+    filters: [["new", "New", "ok", "Have a photo and have never had a card"], ["reprint", "Reprints", "warn", "Lost, damaged or details changed"], ["blocked", "Blocked", "bad", "No approved photo yet"]]
+      .map(([k, label, dot, help]) => ({ k, label, dot, help, n: cnt[k], on: filter === k })),
+    narrowed: !!(kind || centre || ((rmode === "name" || rmode === "id" || rmode === "date") && (rng.dFrom || rng.dTo || rng.nFrom || rng.nTo))),
     shown, addable: addable.length, canAddAll: addable.length > 0, addAll: () => addRecs(addable),
     askable: askable.length, canAskAll: filter === "blocked" && askable.length > 1, askAll: () => setAskConfirm(askable.slice(0, IDS_ASK_MAX)),
     more: Math.max(0, shown.length - lim), showMore: () => setLim(l => l + IDS_REC_MORE),
@@ -312,10 +414,10 @@ function IdCardStudioPage({ setPage }) {
     cardedMore: Math.max(0, carded.length - IDS_CARDED_MAX),
     rows: shown.slice(0, lim).map(r => {
       const b = isBlocked(r), on = inQ.has(r.key), wasAsked = askedOf(r), recent = idsAskedRecently(wasAsked);
-      const tag = b ? (wasAsked ? "No photo yet · asked " + idsAskedOn(wasAsked) : "No photo yet · can’t print") : r.reason === "reprint" ? "Reprint · " + (r.why || "requested") : r.divMissing ? "New · division is blank" : r.kind === "afrovanguard" && !r.hasPhoto ? "New card · no photo, prints initials" : "New card";
+      const tag = b ? (wasAsked ? "Photo requested " + idsAskedOn(wasAsked) + " · waiting for approval" : "No photo yet · can’t print") : r.reason === "reprint" ? "Reprint · " + (r.why || "requested") : r.divMissing ? "New · division is blank" : r.kind === "afrovanguard" && !r.hasPhoto ? "New card · no photo, prints initials" : "New card";
       return Object.assign({}, r, { blocked: b, on, tag, tagTone: b ? (recent ? "muted" : "bad") : r.reason === "reprint" || r.divMissing ? "warn" : "muted",
         aria: (on ? "Take " : "Put ") + r.name + (on ? " off the sheet" : " on the sheet"), toggle: () => toggleRec(r),
-        askLabel: recent ? "Ask again" : "Ask for photo", ask: () => askOne(r),
+        asked: recent, askedOn: wasAsked ? idsAskedOn(wasAsked) : "", askLabel: recent ? "Ask again" : "Ask for photo", ask: () => askOne(r),
         canEditPhoto: !!IDS_PHOTO_EDIT[r.kind], editPhoto: () => setEditPhoto(r) });
     }),
   };
@@ -382,7 +484,7 @@ function IdCardStudioPage({ setPage }) {
     used: nSheets ? Math.round(cards.length / sections.reduce((n, sec) => n + sec.count * sec.G.per, 0) * 100) : 0 };
   React.useEffect(() => { if (sheetIdx > Math.max(0, nSheets - 1)) setSheetIdx(Math.max(0, nSheets - 1)); }, [nSheets, sheetIdx]);
   const lastSec = sections[sections.length - 1] || null;
-  const gap = lastSec && lastSec.count && !breakActive ? lastSec.count * lastSec.G.per - lastSec.skip - lastSec.slots.length : 0;
+  const gap = lastSec && lastSec.count ? lastSec.count * lastSec.G.per - lastSec.skip - lastSec.slots.length : 0;
   const ready = recs.filter(r => !isBlocked(r) && !inQ.has(r.key));
   // The last sheet is filled with cards of ITS size; another size would start a sheet of its own.
   const fillable = lastSec ? ready.filter(r => idsSameMm(mmOf(r), lastSec.mm)) : [];
@@ -454,6 +556,14 @@ function IdCardStudioPage({ setPage }) {
     checks.push({ tone: "bad", text: idsN(photoGone.length, "photo") + " can’t be loaded (" + photoGone.slice(0, 3).map(c => c.label).join(", ") + (photoGone.length > 3 ? "…" : "") + "): the file is missing on the server, so the card would print with an empty photo box. Replace the photo, or take " + (photoGone.length === 1 ? "it" : "them") + " off the sheet.",
       action: "Take " + (photoGone.length === 1 ? "it" : "them") + " off", onAction: () => setQueue(qq => qq.filter(x => !(x.t === "r" && gone.has(x.key)))) });
   }
+  /* Printed since it was put on the sheet — on another computer, or before a
+     refresh brought the sheet back. A second card is a decision, not a default. */
+  const printedSince = st.reason === "new" ? recCards.filter(c => c.rec.printedBefore && c.rec.reason !== "reprint" && !done[c.rec.key]) : [];
+  if (printedSince.length) {
+    const had = new Set(printedSince.map(c => c.base));
+    checks.push({ tone: "warn", text: idsN(printedSince.length, "card") + " on this sheet " + (printedSince.length === 1 ? "has" : "have") + " been printed since " + (printedSince.length === 1 ? "it was" : "they were") + " put on it (" + printedSince.slice(0, 3).map(c => c.label).join(", ") + (printedSince.length > 3 ? "…" : "") + "). Printing again makes a second card.",
+      action: "Take " + (printedSince.length === 1 ? "it" : "them") + " off", onAction: () => setQueue(qq => qq.filter(x => !(x.t === "r" && had.has(x.key)))) });
+  }
   if (lowDpi.length) checks.push({ tone: lowDpi.some(u => idsDpiChip(idsEffDpi(u, G.cw, G.ch), st.dpi).tone === "bad") ? "bad" : "warn", text: idsN(lowDpi.length, "uploaded image") + " " + (lowDpi.length === 1 ? "is" : "are") + " below " + st.dpi + " dpi at this size and may print soft." });
   if (sideways.length) checks.push({ tone: "warn", text: idsN(sideways.length, "image") + " look sideways for this card.", action: "Rotate them", onAction: () => setUploads(us => us.map(u => sideways.some(s => s.uid === u.uid) ? Object.assign({}, u, { rot: ((u.rot || 0) + 90) % 360 }) : u)) });
   if (noBack.length) checks.push({ tone: "warn", text: idsN(noBack.length, "uploaded card") + " have no back image, so the back prints blank." });
@@ -468,6 +578,8 @@ function IdCardStudioPage({ setPage }) {
   }
   if (blockedCount) checks.push({ tone: "info", text: idsN(blockedCount, "person", "people") + " are left out because they have no photo yet.", action: "See who", onAction: () => { setSrc("records"); setFilter("blocked"); } });
   if (!checks.some(c => c.tone === "warn" || c.tone === "bad") && cards.length) checks.push({ tone: "ok", text: "Ready to print. Everything on the sheet checks out." });
+  const toneRank = { ok: 0, bad: 1, warn: 2, info: 3 };
+  checks.sort((a, b) => toneRank[a.tone] - toneRank[b.tone]);
   const hasBad = checks.some(c => c.tone === "bad");
   const printBlock = !cards.length ? "Put some cards on the sheet first" : hasBad ? "Fix the red item first" : "";
 
@@ -511,6 +623,17 @@ function IdCardStudioPage({ setPage }) {
     if (sc.filter) setFilter(sc.filter);
     set(Object.assign({ order: sc.order, breakBy: sc.breakBy, packing: sc.packing, reason: sc.reason }, sc.dpi ? { dpi: sc.dpi } : {}));
     if (sc.focusSearch) setTimeout(() => searchRef.current && searchRef.current.focus(), 30);
+  };
+  /* Changing the job changes several things at once; the toast says which, and Undo puts them back (v4). */
+  const pickJob = key => {
+    const sc = IDS_SCENARIOS.find(x => x.key === key);
+    if (!sc || key === scen) return;
+    const was = { scen, src, filter, st };
+    applyScenario(key);
+    const bits = [sc.src === "uploads" ? "showing uploads" : sc.filter === "all" ? "showing everyone" : "showing " + (sc.filter === "reprint" ? "reprints" : "new cards"),
+      "sorted by " + ((IDS_ORDERS.find(o => o[0] === sc.order) || IDS_ORDERS[0])[1]).toLowerCase(), sc.packing ? "packing list on" : "no packing list"];
+    if (sc.dpi && sc.dpi !== st.dpi) bits.push(sc.dpi + " dpi");
+    say("Job: " + sc.label + " · " + bits.join(", "), () => { setScen(was.scen); setSrc(was.src); setFilter(was.filter); setSt(was.st); });
   };
 
   /* ── Printing (§4) ── */
@@ -664,9 +787,32 @@ function IdCardStudioPage({ setPage }) {
     }
   };
 
+  /* A photo still on a Cloudinary account that has run out is copied to the
+     account uploads go to now — only the photos on this run, only now, when
+     they are about to be drawn (a print size is a new transformation, billed
+     to whichever account holds the photo). The server decides which accounts
+     are spent; a run with none moves nothing. The records then draw from the copy. */
+  const movePhotos = async recs => {
+    const subs = [], seen = new Set();
+    recs.forEach(r => { if (!r || !/^https:\/\/res\.cloudinary\.com\//.test(r.photoUrl || "") || seen.has(r.key)) return; seen.add(r.key); subs.push({ r, type: r.subjectType || IDS_KIND_FOR_RUN[r.kind], id: r.id }); });
+    if (!subs.length || !(NGGApi.admin.photos && NGGApi.admin.photos.relocate)) return;
+    let moved = 0, failed = 0;
+    try {
+      for (let i = 0; i < subs.length; i += 60) {
+        const part = subs.slice(i, i + 60);
+        const res = await NGGApi.admin.photos.relocate(part.map(x => ({ type: x.type, id: x.id })));
+        failed += res.failed || 0;
+        (res.moved || []).forEach(m => { const x = part.find(y => y.type === m.type && String(y.id) === String(m.id)); if (!x) return;
+          x.r.photoUrl = m.url; if (x.r.raw) x.r.raw.photoUrl = m.url; moved++; });
+      }
+    } catch (e) { if (e && e.code !== "forbidden") say("Some photos couldn’t be moved off the full Cloudinary account (" + idsErrText(e, "no answer") + "); they print from where they are."); return; }
+    if (moved) { setData(d => Object.assign({}, d)); say(idsN(moved, "photo") + " copied to the Cloudinary account in use, so printing doesn’t spend the full one" + (failed ? " · " + idsN(failed, "photo") + " couldn’t be copied" : "")); }
+  };
+
   const onConfirmPrint = async ({ mode, batches, range, packing, reason }) => {
     setConfirm(null);
     if (!(await mintMissing(recCards.filter(c => c.rec.kind === "member"), reason === "proof"))) return;
+    await movePhotos(recCards.map(c => c.rec));
     await framePhotos(recCards.map(c => c.rec));
     if (mode === "batch") {
       setJob({ batches, i: 0, total: nSheets, done: batches[0][1], next: batches[1] || batches[0], reason, packing });
@@ -724,6 +870,8 @@ function IdCardStudioPage({ setPage }) {
   const [warm, setWarm] = React.useState({ ready: 0, total: 0, busy: false });
   const [xconfirm, setXconfirm] = React.useState(null);
   const [xjob, setXjob] = React.useState(null);        // { i, n, note, print }
+  liveBusy.current = !!(job || xjob);
+
   const [xresult, setXresult] = React.useState(null);
   const xcancel = React.useRef(false);
   React.useEffect(() => {
@@ -966,7 +1114,7 @@ function IdCardStudioPage({ setPage }) {
     }
     setXjob(null);
     _idsTplDone.clear(); idsFaceForget();
-    if (applied) load();
+    if (applied) load(true);
     setImproveRes({ applied, unchanged, failed });
   };
 
@@ -1117,7 +1265,20 @@ function IdCardStudioPage({ setPage }) {
   /* ── Keys (§3.5) ── */
   React.useEffect(() => {
     const onKey = e => {
-      if (e.key === "Escape") { if (confirm || runOpen || after) return; if (sel) { setSel(null); } return; }
+      if (e.key === "Escape") {
+        if (confirm || runOpen || after || document.querySelector(".ids-dialog")) return;
+        if (drawer && W < 1024) { setDrawer(false); if (paneTrigger.current) paneTrigger.current.focus(); return; }
+        if (sel) { setSel(null); } return;
+      }
+      // "/" anywhere in the studio goes to the assistant's composer, as it does in most tools.
+      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && tab === "make" && !phone && data.state === "ready"
+          && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target && e.target.tagName) || "") && !document.querySelector(".ids-dialog")) {
+        // Ours, not the site's command palette (window-level, so it never sees this).
+        e.preventDefault(); e.stopPropagation();
+        setPane("assistant"); if (W < 1024) setDrawer(true);
+        setTimeout(() => focusComposer(), 0);
+        return;
+      }
       if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target && e.target.tagName) || "") || !sel || phone || tab !== "make") return;
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSel(); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); moveSel(-1); }
@@ -1134,7 +1295,7 @@ function IdCardStudioPage({ setPage }) {
   const IDS_LOG_PAGE = 50;
   const [log, setLog] = React.useState({ state: "idle", runs: [], total: 0, page: 0, kind: "", type: "" });
   const logRow = x => ({
-    runId: x.runId, at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
+    runId: x.runId, iso: x.startedAt || "", at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
     design: x.templateName || (x.kind === "graphic" ? "External upload" : "Standard card"), version: x.templateVersion ? "v" + x.templateVersion : "",
     type: x.kind === "graphic" ? "external" : x.mode === "proof" ? "proof" : x.mode === "reprint" ? "reprint" : x.reason === IDS_REASON_LABEL.mixed ? "mixed" : "new",
     cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Sheet PDF" : x.output === "pdf" ? "Print-ready PDF" : x.output === "png" ? "PNG images" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
@@ -1142,22 +1303,47 @@ function IdCardStudioPage({ setPage }) {
   });
   const logRef = React.useRef(log);
   logRef.current = log;
-  const loadLog = React.useCallback((f, more) => {
+  const loadLog = React.useCallback((f, more, quiet) => {
     const l = logRef.current;
     const kind = f ? f.kind : l.kind, type = f ? f.type : l.type, page = more ? l.page + 1 : 1;
     const q = { pageSize: IDS_LOG_PAGE, page };
     if (type === "external") q.kind = "graphic";
     else if (kind) q.kind = IDS_KIND_FOR_RUN[kind];
     if (type === "new" || type === "mixed") q.mode = "print"; else if (type === "reprint" || type === "proof") q.mode = type;
-    setLog(cur => Object.assign({}, cur, { kind, type, state: more ? cur.state : "loading", runs: more ? cur.runs : [], moreErr: false, loadingMore: !!more }));
+    if (!quiet) setLog(cur => Object.assign({}, cur, { kind, type, state: more ? cur.state : "loading", runs: more ? cur.runs : [], moreErr: false, loadingMore: !!more }));
     NGGApi.admin.registration.cardRuns(q).then(r => setLog(cur => {
       if (cur.kind !== kind || cur.type !== type) return cur;      // a newer filter has taken over
       // "New issues" and "mixed" share the server's print mode; the reason tells them apart.
       const rows = (r.runs || []).map(logRow).filter(x => type !== "new" && type !== "mixed" ? true : x.type === type);
       return Object.assign({}, cur, { state: "ready", runs: more ? cur.runs.concat(rows) : rows, total: r.total || 0, page, more: page * IDS_LOG_PAGE < (r.total || 0), loadingMore: false });
-    })).catch(() => setLog(cur => Object.assign({}, cur, { state: more ? "ready" : "error", moreErr: !!more, loadingMore: false })));
+    })).catch(() => setLog(cur => quiet ? cur : Object.assign({}, cur, { state: more ? "ready" : "error", moreErr: !!more, loadingMore: false })));
     // eslint-disable-next-line
   }, []);
+
+  /* ── Live: a change made elsewhere shows here ──
+     A photo replaced in the Control Room, a member added, a card printed from
+     another computer: the studio reads the records again, quietly, when it is
+     come back to, once a minute while it is on screen, and soon after any
+     change saved anywhere on the site (this tab or another — api-client.js
+     announces each one). Never in the middle of a print run. */
+  React.useEffect(() => {
+    let soon = null;
+    const refresh = (minGap) => {
+      if (liveBusy.current || document.visibilityState !== "visible") return;
+      if (Date.now() - lastLoad.current < minGap) return;
+      load(true);
+      if (logRef.current.state === "ready" && logRef.current.page === 1) loadLog(null, false, true);
+    };
+    const onChanged = () => { clearTimeout(soon); soon = setTimeout(() => refresh(4000), 1500); };
+    const onVis = () => refresh(15000);
+    const onStore = e => { if (e.key === "ngg.changed") onChanged(); };
+    const tick = setInterval(() => refresh(55000), 60000);
+    window.addEventListener("ngg:changed", onChanged);
+    window.addEventListener("storage", onStore);
+    window.addEventListener("focus", onVis);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearTimeout(soon); clearInterval(tick); window.removeEventListener("ngg:changed", onChanged); window.removeEventListener("storage", onStore); window.removeEventListener("focus", onVis); document.removeEventListener("visibilitychange", onVis); };
+  }, [load, loadLog]);
   React.useEffect(() => { if (tab === "log" && log.state === "idle") loadLog(); }, [tab, log.state, loadLog]);
   const openRun = async r => {
     setRunOpen(Object.assign({}, r, { people: [], issuesState: "loading" }));
@@ -1175,13 +1361,13 @@ function IdCardStudioPage({ setPage }) {
     try {
       const res = await NGGApi.admin.idStudio.failed(r.runId, list.map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId })));
       say(idsN(res.marked || list.length, "card") + " marked as not printed" + (res.requeued ? ", back in the queue as reprints" : ""));
-      openRun(r); loadLog(); load();
+      openRun(r); loadLog(); load(true);
     } catch (e) { say(idsErrText(e, "Couldn’t mark them. Try again.")); }
   };
   const reprintRun = async r => {
     const items = (r.issues || []).map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId, why: "Reprint of " + r.runId }));
     if (!items.length) return;
-    try { await NGGApi.admin.idStudio.reprint(items); setRunOpen(null); say(idsN(items.length, "card") + " queued as reprints"); load(); }
+    try { await NGGApi.admin.idStudio.reprint(items); setRunOpen(null); say(idsN(items.length, "card") + " queued as reprints"); load(true); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
   /* Look up by printed ID or by the record's own id (member, participant or
@@ -1205,29 +1391,68 @@ function IdCardStudioPage({ setPage }) {
     const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
     const why = rs ? rs[1] : d.changed && d.changed.length ? idsStaleWhy(d.changed) : "Design changed";
     try { await NGGApi.admin.idStudio.reprint([{ subjectType: d.rec.subjectType, subjectId: d.rec.id, cause: cause || (d.changed && d.changed.length ? d.changed[0] : "design"), why }]);
-      say(d.name + " is queued for a reprint" + (cause === "lost" || cause === "never_received" ? ". Their card gets a new QR when it prints" : "")); load(); }
+      say(d.name + " is queued for a reprint" + (cause === "lost" || cause === "never_received" ? ". Their card gets a new QR when it prints" : "")); load(true); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
 
-  /* ── Print from a prompt (ids-ask.jsx) ──
-     The plan selects from what the studio shows and sets its own controls;
-     the result names the count, and Print goes straight to the PDF only while
-     the sheet still holds exactly that many cards. A plan on screen is sent
-     with the next request, which adjusts it; a chip's × adjusts it here. */
+  /* ── The assistant (ids-ask.jsx) ──
+     A plan selects from what the studio shows and sets its own controls; the
+     reply names the count, and its Print goes to the PDF only while the sheet
+     still holds exactly that many cards. The pane keeps the conversation:
+     `chat` is the transcript, `liveId` the one reply that is live. A plan on
+     screen is sent with the next request, which adjusts it; a chip's × adjusts
+     it here. In Ask mode a reply waits for Apply; in Act mode it applies. */
   const [askBusy, setAskBusy] = React.useState(false);
-  const [askErr, setAskErr] = React.useState("");
   const [askRes, setAskRes] = React.useState(null);
+  /* The conversation survives a refresh, in this tab only. What comes back is
+     the record of what was said; nothing in it is live (the sheet itself is
+     not restored), so no Undo or live plan returns with it. */
+  const IDS_CHAT_KEY = "ngg.ids.ask.chat";
+  const [chat, setChat] = React.useState(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(IDS_CHAT_KEY) || "[]");
+      return Array.isArray(v) ? v.map(m => Object.assign({}, m, { undo: null, restored: true })) : [];
+    } catch (_) { return []; }
+  });
+  React.useEffect(() => {
+    try { sessionStorage.setItem(IDS_CHAT_KEY, JSON.stringify(chat.slice(-40).map(m => { const x = Object.assign({}, m); delete x.undo; return x; }))); } catch (_) {}
+  }, [chat]);
+  const [liveId, setLiveId] = React.useState(0);
+  const [askMode, setAskModeS] = React.useState(idsAskModeGet);
+  const setAskMode = m => { setAskModeS(m); try { localStorage.setItem(IDS_ASK_MODE_KEY, m); } catch (_) {} };
+  const chatSeq = React.useRef(chat.reduce((n, m) => Math.max(n, m.id || 0), 0));
+  const aiInput = React.useRef(null);
+  const say2 = (who, m) => { const id = ++chatSeq.current; setChat(c => c.concat([Object.assign({ id, who }, m)])); return id; };
   const askUndo = React.useRef(null);     // the studio as it was before the first plan
   const askLast = React.useRef("");
   const applyPlan = (res, prompt) => {
     const plan = res.plan || {};
     const meta = { by: res.by, provider: res.provider, aiError: res.aiError, refined: !!res.refined, prompt };
-    if (!Object.keys(plan).length) { setAskRes(Object.assign(meta, { empty: true, issues: [], what: [] })); return; }
+    if (!Object.keys(plan).length) { setAskRes(null); return null; }
     const sel = idsPlanSelect(plan, { pool: recs, all: data.records, isBlocked });
     const issues = (res.notes || []).map(t => ({ tone: "info", text: t }));
     if (sel.blocked.length) issues.push({ tone: "warn", text: idsN(sel.blocked.length, "person", "people") + " left out: no photo yet (" + sel.blocked.slice(0, 3).map(r => r.name).join(", ") + (sel.blocked.length > 3 ? "…" : "") + ").",
       action: "Ask for photos", onAction: () => setAskConfirm(sel.blocked.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX)) });
-    if (sel.missing.length) issues.push({ tone: "bad", text: "Not found: " + sel.missing.slice(0, 8).join(", ") + (sel.missing.length > 8 ? "…" : "") + "." });
+    /* Named but kept off by the plan's own narrowing: who they are and why,
+       with the one tap that puts them on (their own kind, for them alone). */
+    sel.filtered.forEach(f => issues.push({ tone: "warn", text: f.who + (f.who.toLowerCase() !== f.name.toLowerCase() ? " (“" + f.name + "”)" : "") + " " + f.why + ".",
+      action: "Put " + f.who.split(/\s+/)[0] + " on too", onAction: () => askDrop(q => { const n = Object.assign({}, q); n.kindOf = Object.assign({}, n.kindOf, { [f.name]: f.rec.kind });
+        if (!(n.names || []).includes(f.name) && !((n.also || {}).names || []).includes(f.name)) n.also = Object.assign({}, n.also, { names: ((n.also || {}).names || []).concat([f.name]) });
+        if (n.centre && f.rec.centre !== n.centre && (n.names || []).includes(f.name)) delete n.centre; return n; }) }));
+    sel.twoLists.forEach(t => issues.push({ tone: "warn", text: t.name + " is on two lists (" + t.kinds.map(k => (IDS_KIND_ONE[k] || k).replace(/^an? /, "")).join(" and ") + "), so both cards are on the sheet.",
+      actions: t.kinds.map(k => ({ label: "Keep the " + (IDS_KIND_PLURAL[k] || k).replace(/s$/, "") + " card", run: () => askDrop(q => Object.assign({}, q, { kindOf: Object.assign({}, q.kindOf, { [t.name]: k }) })) })) }));
+    sel.notWaiting.forEach(x => issues.push({ tone: "info", text: x.who + " isn’t waiting for a card: not on the new-card list and never printed here." }));
+    const sug = new Map(sel.suggest.map(x => [x.name, x.near]));
+    // An ID nobody holds is simply not found; a name gets the closest names on the lists.
+    const missIds = sel.missing.filter(x => /\d/.test(x)), missNames = sel.missing.filter(x => !/\d/.test(x));
+    if (missIds.length) issues.push({ tone: "bad", text: "Not found: " + missIds.slice(0, 8).join(", ") + (missIds.length > 8 ? "…" : "") + "." });
+    if (missNames.length) issues.push({ tone: "bad", text: "No one called " + missNames.slice(0, 8).map(n => "“" + n + "”" + (sug.has(n) ? " (closest: " + sug.get(n).map(r => r.name).join(" or ") + ")" : "")).join(", ") + (missNames.length > 8 ? "…" : "") + " is on the lists.",
+      actions: sel.suggest.slice(0, 3).flatMap(x => x.near.slice(0, 1).map(r => ({ label: "Use " + r.name, run: () => askDrop(q => {
+        const swap = list => (list || []).map(v => v === x.name ? r.name : v);
+        const n = Object.assign({}, q);
+        if (n.names) n.names = swap(n.names);
+        if (n.also && n.also.names) n.also = Object.assign({}, n.also, { names: swap(n.also.names) });
+        return n; }) }))) });
     sel.ambiguous.forEach(x => issues.push({ tone: "warn", text: "“" + x.name + "” matches " + x.n + " people. Add a surname or their ID number." }));
     if (sel.excluded.length) issues.push({ tone: "info", text: "Left out as asked: " + sel.excluded.slice(0, 4).map(r => r.name).join(", ") + (sel.excluded.length > 4 ? " +" + (sel.excluded.length - 4) : "") + "." });
     if (sel.cut) issues.push({ tone: "info", text: idsN(sel.cut, "more card") + " matched beyond the limit and " + (sel.cut === 1 ? "was" : "were") + " left for the next run." });
@@ -1235,15 +1460,15 @@ function IdCardStudioPage({ setPage }) {
     if (sel.carded.length) {
       const list = sel.carded;
       issues.push({ key: "carded", tone: "info", text: idsN(list.length, "person", "people") + " already " + (list.length === 1 ? "has" : "have") + " a card (" + list.slice(0, 3).map(r => r.name).join(", ") + (list.length > 3 ? "…" : "") + ").",
-        action: "Reprint " + (list.length === 1 ? "it" : "them"), onAction: async () => {
-          if (!(await queueReprints(list, "asked"))) return;
+        action: "Reprint " + (list.length === 1 ? "it" : "them") + (plan.cause === "lost" || plan.cause === "never_received" ? " with a new QR" : ""), onAction: async () => {
+          if (!(await queueReprints(list, plan.cause || "asked"))) return;
           const add = list.filter(r => !isBlocked(r));
           setQueue(qq => qq.concat(add.filter(r => !qq.some(x => x.t === "r" && x.key === r.key)).map(r => ({ t: "r", key: r.key }))));
           set({ reason: n ? "mixed" : "reprint" });
           setAskRes(a => a && Object.assign({}, a, { n: a.n + add.length, issues: a.issues.filter(x => x.key !== "carded") }));
         } });
     }
-    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan), issues, n, applied: false });
+    const out = Object.assign(meta, { plan, what: idsPlanWhat(plan, sel), issues, n, applied: false, asked: sel.asked, gapNote: idsPlanGapNote(sel) });
     /* The first plan keeps the studio as it was, for Undo. A follow-up always
        re-applies, even to an empty sheet, so the sheet never shows a selection
        the card no longer describes; a fresh request that finds nobody leaves
@@ -1253,8 +1478,9 @@ function IdCardStudioPage({ setPage }) {
       if (!askUndo.current) askUndo.current = { queue, st, kind, centre, filter, rmode, rng };
       const reasons = new Set(sel.pick.map(r => r.reason));
       const patch = { reason: plan.proof ? "proof" : reasons.size > 1 ? "mixed" : reasons.has("reprint") ? "reprint" : "new", skip: 0 };
-      ["backs", "marks", "paper", "dpi", "order"].forEach(k => { if (plan[k] !== undefined) patch[k] = plan[k]; });
+      ["backs", "marks", "paper", "dpi", "order", "margin", "gap", "skip", "packing"].forEach(k => { if (plan[k] !== undefined) patch[k] = plan[k]; });
       if (plan.order) patch.breakBy = plan.order !== "name";
+      if (plan.breakBy !== undefined) patch.breakBy = plan.breakBy;
       setQueue(sel.pick.map(r => ({ t: "r", key: r.key })));
       set(patch);
       // The list on the left shows the same people, so what the plan chose can be checked and changed by hand.
@@ -1262,22 +1488,407 @@ function IdCardStudioPage({ setPage }) {
       setKind(plan.kind || ""); setCentre(plan.centre === "none" ? IDS_NO_CENTRE : plan.centre || "");
       setFilter((plan.ids || []).length || (plan.names || []).length || plan.also || plan.which === "all" ? "all" : plan.which || "new");
       if (plan.dateFrom || plan.dateTo) { setRmode("date"); setRng({ dFrom: plan.dateFrom || "", dTo: plan.dateTo || "", nFrom: "", nTo: "" }); }
-      else if (plan.numFrom != null || plan.numTo != null) { setRmode("number"); setRng({ dFrom: "", dTo: "", nFrom: plan.numFrom != null ? String(plan.numFrom) : "", nTo: plan.numTo != null ? String(plan.numTo) : "" }); }
-      else { setRmode(""); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }
+      else if (plan.numFrom != null || plan.numTo != null) { setRmode("id"); setRng({ dFrom: "", dTo: "", nFrom: plan.numFrom != null ? String(plan.numFrom) : "", nTo: plan.numTo != null ? String(plan.numTo) : "" }); }
+      else { setRmode("name"); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }
       setSel(null); setSheetIdx(0);
       out.applied = true;
       const base = askUndo.current.st;
-      out.changed = ["backs", "marks", "paper", "dpi", "order", "reason"].filter(k => patch[k] !== undefined && patch[k] !== base[k]);
+      out.changed = ["backs", "marks", "paper", "dpi", "order", "reason", "margin", "gap", "skip", "packing"].filter(k => patch[k] !== undefined && patch[k] !== base[k]);
     }
     setAskRes(out);
+    return out;
+  };
+  /* What a reply says, without touching the sheet: the count and the chips. */
+  const planSnap = res => {
+    const plan = res.plan || {};
+    const sel = idsPlanSelect(plan, { pool: recs, all: data.records, isBlocked });
+    return { n: sel.pick.length, what: idsPlanWhat(plan, sel), refined: !!res.refined, asked: sel.asked, gapNote: idsPlanGapNote(sel) };
+  };
+  const ranOf = (out, n) => {
+    const ran = [];
+    if (out.applied) ran.push("Put " + idsN(n, "card") + " on the sheet");
+    (out.changed || []).forEach(k => ran.push("Set " + ({ backs: "backs", marks: "cut marks", paper: "paper", dpi: "image quality", order: "the order", reason: "the reason for the log", margin: "the margin", gap: "the gap", skip: "skipped slots", packing: "the packing list" })[k]));
+    return ran;
+  };
+  const actAfter = React.useRef(null);   // { id, do } — an act waiting for the sheet a plan just made
+  const commit = (id, res, prompt) => {
+    const out = applyPlan(res, prompt);
+    if (!out) return;
+    const m0 = chat.find(m => m.id === id);
+    if ((m0 && m0.then) || (res.plan && res.plan.do === "fill")) actAfter.current = { id, do: "fill" };
+    setLiveId(id);
+    setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: ranOf(out, out.n) }) : m));
+  };
+  /* ── Commands: settings on the sheet as it is, and the three acts ──
+     A request with no "who" in it ("make it A3", "margin 5mm", "fill the
+     gaps", "clear the sheet") changes the sheet on screen; it never reselects
+     people. Asking for photos opens the same confirm as the button, with the
+     count — the assistant never sends on its own. */
+  const [lastCmdId, setLastCmdId] = React.useState(0);
+  const runCmd = plan => {
+    const undo = { queue, st };
+    const ran = [], notes = [];
+    const patch = {};
+    IDS_ASK_SET_KEYS.forEach(k => {
+      if (plan[k] === undefined) return;
+      if (k === "proof") { const want = plan.proof ? "proof" : (st.reason === "proof" ? "new" : st.reason); if (want !== st.reason) { patch.reason = want; if (plan.proof) patch.dpi = 150; ran.push("Set " + idsCmdLabel(k, plan[k], st)); } return; }
+      if (plan[k] !== st[k]) { patch[k] = plan[k]; ran.push("Set " + idsCmdLabel(k, plan[k], Object.assign({}, st, patch))); }
+      else notes.push("It was already " + idsCmdLabel(k, plan[k], st) + ".");
+    });
+    if (Object.keys(patch).length) set(patch);
+    const acts = idsPlanActs(plan);
+    /* Whose photos an act is about: the people the request names; else the
+       plan on screen (its sheet, and those it left out for want of a photo);
+       else the sheet. Never everybody waiting, unless nothing else is there. */
+    const pSel = Object.assign({}, plan); delete pSel.do; delete pSel.acts; delete pSel.photo;
+    const livePlan = askRes && askRes.plan && liveId ? askRes.plan : null;
+    const scopeSel = idsPlanHasSel(pSel) ? idsPlanSelect(pSel, { pool: recs, all: data.records, isBlocked }) : livePlan ? idsPlanSelect(livePlan, { pool: recs, all: data.records, isBlocked }) : null;
+    if (acts.includes("clear")) {
+      if (!queue.length) notes.push("The sheet was already empty.");
+      else { setQueue([]); setSel(null); ran.push("Took " + idsN(cards.length, "card") + " off the sheet"); }
+    }
+    if (acts.includes("fill")) {
+      const k = Math.min(gap, fillable.length);
+      if (!cards.length) notes.push("The sheet is empty, so there are no gaps to fill. Tell me who to put on it.");
+      else if (!gap) notes.push("Every slot on the last sheet is already used.");
+      else if (!k) notes.push("No card that is ready to print fits the " + idsN(gap, "empty slot") + ".");
+      else { fillGap(); ran.push("Filled " + idsN(k, "empty slot") + " with cards that were waiting"); }
+    }
+    if (acts.includes("improvePhotos")) {
+      // Everybody in scope who has a photo on file; the Improve dialog opens with what was asked already set.
+      const base = scopeSel ? scopeSel.pick.concat(scopeSel.carded) : cards.map(c => c.rec).filter(Boolean);
+      const seen = new Set(), list = base.filter(r => r && IDS_IMPROVE_KIND[r.kind] && r.photoUrl && !seen.has(r.key) && seen.add(r.key));
+      const without = (scopeSel ? scopeSel.blocked : []).length;
+      const spec = Object.assign({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false }, plan.photo || {});
+      if (!list.length) notes.push(cards.length || scopeSel ? "Nobody " + (scopeSel ? "in that request" : "on the sheet") + " has a photo on file to improve yet." : "The sheet is empty. Tell me whose photos, or put cards on the sheet first.");
+      else {
+        setImprove({ n: list.length, recs: list, spec });
+        ran.push("Opened Improve photos for " + idsN(list.length, "person", "people") + [spec.removeBg && "plain grey background", spec.brighten && "brighter", spec.sharpen && "sharper", spec.zoom > 1 && "zoomed to the face"].filter(Boolean).map((x, i) => (i ? ", " : " with ") + x).join("") + ". Check it and press Improve");
+        if (without) notes.push(idsN(without, "person has", "people have") + " no photo yet, so there is nothing to improve for " + (without === 1 ? "them" : "them") + (acts.includes("askPhotos") ? "; the photo request is for them." : ". Say “ask them for photos”, or add one with 📎."));
+      }
+    }
+    if (acts.includes("adjustPhoto")) {
+      // One person: the framing tool, on their card. Several: each gets a button, since positioning is done by eye.
+      const base = scopeSel ? scopeSel.pick.concat(scopeSel.carded) : selCard && selCard.rec ? [selCard.rec] : cards.map(c => c.rec).filter(Boolean);
+      const seen = new Set(), list = base.filter(r => r && r.photoUrl && !seen.has(r.key) && seen.add(r.key));
+      if (!list.length) notes.push(base.length ? "No photo on file to position yet." : "Pick a card on the sheet, or tell me whose photo, and I’ll open the framing tool.");
+      else if (list.length === 1) { setFramePhoto(list[0]); ran.push("Opened the framing tool for " + list[0].name + ": move and zoom the photo inside the card’s frame, then Save"); }
+      else { ran.push("Choose whose photo to position"); notes.push("Positioning is done by eye, one photo at a time. Every photo is also framed on the face automatically before it prints."); }
+      return { ran, notes, undo: null, people: list.length > 1 ? list.slice(0, 12).map(r => r.key) : null, frame: true };
+    }
+    if (acts.includes("askPhotos")) {
+      const pool = scopeSel ? scopeSel.blocked : recs.filter(isBlocked);
+      const list = pool.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX);
+      const recent = pool.length - pool.filter(r => !idsAskedRecently(askedOf(r))).length;
+      if (!pool.length) notes.push("Nobody " + (scopeSel ? "in that request " : "") + "is waiting for a photo.");
+      else if (!list.length) notes.push("All " + pool.length + " were asked in the last 3 days. Ask one again from their row if you need to.");
+      else { setAskConfirm(list); ran.push("Opened the photo request for " + idsN(list.length, "person", "people") + (scopeSel ? "" : " waiting anywhere") + ". Check the count and send it"); if (recent) notes.push(recent + " asked in the last 3 days " + (recent === 1 ? "is" : "are") + " left out."); }
+    }
+    return { ran, notes, undo: ran.length && !acts.some(a => a === "askPhotos" || a === "improvePhotos") ? undo : null };
+  };
+  const commitCmd = (id, plan) => {
+    const r = runCmd(plan);
+    if (r.undo) setLastCmdId(id);
+    setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: r.ran, notes: r.notes, undo: r.undo, people: r.people || m.people, frame: r.frame }) : m));
+  };
+  const undoCmd = m => {
+    if (!m.undo) return;
+    setQueue(m.undo.queue); setSt(m.undo.st);
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { undone: true }) : x));
+    setLastCmdId(0);
+    say("The sheet is back as it was");
+  };
+  /* What the answers read: the studio as it is now. */
+  const askCtx = () => {
+    const norm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const statusOf = r => {
+      const q = recs.find(x => x.key === r.key);
+      if (q && inQ.has(q.key)) return "is on the sheet now";
+      if (q && isBlocked(q)) { const a = askedOf(q); return "is waiting for a photo" + (a ? " (asked " + idsAskedOn(a) + ")" : ", and hasn’t been asked yet"); }
+      if (q && q.reason === "reprint") return "is waiting for a reprint" + (q.why ? " (" + q.why.toLowerCase() + ")" : "");
+      if (q) return "is waiting for their first card, ready to print";
+      if (r.printedBefore) return "has a card" + (r.lastIssue && r.lastIssue.at ? ", printed " + idsAskedOn(r.lastIssue) + " " + String(r.lastIssue.at).slice(0, 4) : "");
+      return "isn’t waiting for a card";
+    };
+    const lookup = text => {
+      const t = " " + String(text || "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ") + " ";
+      const ids = (String(text).match(/\b(?:[a-z]{2,4}-\d{2}-\d{3,4}|\d{3}-\d{3,4})\b/gi) || []).map(norm);
+      let hits = data.records.filter(r => {
+        if (ids.length) return ids.includes(norm(r.displayId)) || ids.includes(norm(r.id));
+        const words = String(r.name || "").toLowerCase().split(/\s+/).filter(w => w.length > 1);
+        return words.length >= 2 && t.includes(" " + words[0] + " ") && t.includes(" " + words[words.length - 1] + " ");
+      });
+      let near = false;
+      /* None exactly: a near spelling of two capitalised words in a row
+         ("Jumoke Cardd"), matched the way the planner matches names. */
+      if (!hits.length && !ids.length) {
+        const caps = String(text).match(/\b\p{Lu}[\p{L}'’-]+(?:\s+\p{Lu}[\p{L}'’-]+)+/gu) || [];
+        const pairs = caps.flatMap(run => { const w = run.split(/\s+/); return w.slice(0, -1).map((x, i) => x + " " + w[i + 1]); });
+        hits = data.records.filter(r => pairs.some(pr => idsNameMatch(pr, r.name)));
+        near = hits.length > 0;
+      }
+      return hits.map(r => ({ key: r.key, near, name: r.name, displayId: r.displayId, centre: r.centre, status: statusOf(r) }));
+    };
+    const byC = {};
+    recs.filter(r => !isBlocked(r)).forEach(r => { const k = r.centre || "No centre"; byC[k] = (byC[k] || 0) + 1; });
+    return {
+      n: cards.length, sheets: nSheets, block: printBlock, stock, gap, fillable: fillable.length,
+      bad: checks.filter(c => c.tone === "bad").map(c => c.text), warn: checks.filter(c => c.tone === "warn").map(c => c.text),
+      blocked: recs.filter(isBlocked).length, ready: ready.length, reprints: recs.filter(r => !isBlocked(r) && r.reason === "reprint").length,
+      blockedList: recs.filter(isBlocked).map(r => ({ name: r.name, asked: idsAskedRecently(askedOf(r)) })),
+      onSheet: sorted.map(c => c.label), byCentre: Object.entries(byC).sort((a, b) => b[1] - a[1]).map(([centre, n]) => ({ centre, n })), lookup,
+    };
+  };
+  /* What can be done for one person, from where they are now. Computed when
+     the answer is drawn, so the buttons follow the person: once they are on
+     the sheet, "Put on the sheet" becomes "Take off the sheet". */
+  const askPerson = key => {
+    const r = data.records.find(x => x.key === key);
+    if (!r) return null;
+    const q = recs.find(x => x.key === key);
+    const acts = [];
+    if (q && inQ.has(key)) acts.push({ label: "Take off the sheet", run: () => toggleRec(q) });
+    else if (q && !isBlocked(q)) acts.push({ label: "Put on the sheet", run: () => toggleRec(q) });
+    if (q && isBlocked(q)) {
+      acts.push({ label: idsAskedRecently(askedOf(q)) ? "Ask again for a photo" : "Ask for a photo", run: () => askOne(q) });
+      if (IDS_PHOTO_EDIT[q.kind]) acts.push({ label: "Add a photo", run: () => setEditPhoto(q) });
+    }
+    if (!q && r.printedBefore) acts.push({ label: "Queue a reprint", run: () => reprintOne(r, "asked") });
+    // With a photo on file: position it in the card's frame, or edit the photo itself.
+    const withPhoto = q || r;
+    if (withPhoto.photoUrl) {
+      acts.push({ label: "Position photo", run: () => setFramePhoto(withPhoto) });
+      if (IDS_PHOTO_EDIT[withPhoto.kind]) acts.push({ label: "Edit photo", run: () => setEditPhoto(withPhoto) });
+    }
+    return { name: r.name, acts };
+  };
+  /* ── Photos from the assistant (📎) ──────────────────────────────────────
+     Each file is matched to a person by its name: their printed ID in it
+     ("026-014.jpg"), else their name ("Ada Obi.png"), preferring the people
+     on the sheet or waiting for a photo. One file and one obvious person (the
+     card picked on the sheet, or the only one waiting) needs no name. Anyone
+     not matched is picked from a short list. Saving goes through the same
+     replace as the photo editor, one row at a time, each with its verdict. */
+  const IDS_UP_MAX = 30;
+  const upFiles = React.useRef({});
+  const upNorm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const upLikely = () => {
+    const seen = new Set(), out = [];
+    const add = (r, why) => { if (r && IDS_PHOTO_EDIT[r.kind] && !seen.has(r.key)) { seen.add(r.key); out.push({ key: r.key, name: r.name, displayId: r.displayId || "", why }); } };
+    cards.forEach(c => add(c.rec, "On the sheet"));
+    (askRes && askRes.plan && liveId ? idsPlanSelect(askRes.plan, { pool: recs, all: data.records, isBlocked }).blocked : []).forEach(r => add(r, "Waiting for a photo"));
+    recs.filter(isBlocked).forEach(r => add(r, "Waiting for a photo"));
+    return out;
+  };
+  const upMatch = (fileName, likely) => {
+    const stem = String(fileName || "").replace(/\.[a-z0-9]+$/i, "").replace(/[_.]+/g, " ").replace(/\s*[-–]\s*(front|photo|headshot|pic|picture|passport)\s*$/i, "").trim();
+    const ns = upNorm(stem);
+    const byId = data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && ((r.displayId && ns.includes(upNorm(r.displayId))) || (r.id && ns === upNorm(r.id))));
+    if (byId.length === 1) return byId[0];
+    const words = stem.replace(/[^\p{L}\s'’-]/gu, " ").replace(/\s+/g, " ").trim();
+    if (words.split(" ").length < 2) return null;
+    const byName = data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && idsNameMatch(words, r.name));
+    if (byName.length === 1) return byName[0];
+    const pref = byName.filter(r => likely.some(l => l.key === r.key));
+    return pref.length === 1 ? pref[0] : null;
+  };
+  const askUpload = files => {
+    const list = Array.from(files || []).filter(f => /^image\//.test(f.type));
+    if (!list.length) { say2("studio", { kind: "answer", text: "Those weren’t photos. Choose JPEG, PNG or WebP images." }); return; }
+    const likely = upLikely();
+    const rows = list.slice(0, IDS_UP_MAX).map((f, i) => {
+      const uid = "p" + Date.now().toString(36) + i;
+      upFiles.current[uid] = f;
+      const m = upMatch(f.name, likely);
+      return { uid, file: f.name, thumb: URL.createObjectURL(f), key: m ? m.key : "", auto: !!m };
+    });
+    if (rows.length === 1 && !rows[0].key) {
+      const only = selCard && selCard.rec && IDS_PHOTO_EDIT[selCard.rec.kind] ? selCard.rec : likely.filter(l => l.why === "Waiting for a photo").length === 1 ? data.records.find(r => r.key === likely.find(l => l.why === "Waiting for a photo").key) : null;
+      if (only) { rows[0].key = only.key; rows[0].auto = true; }
+    }
+    say2("me", { text: "📎 " + idsN(rows.length, "photo") + (list.length > IDS_UP_MAX ? " (the first " + IDS_UP_MAX + " of " + list.length + ")" : "") });
+    say2("studio", { kind: "upload", rows, likely, status: "ready" });
+  };
+  const upSet = (id, uid, key) => setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { rows: m.rows.map(r => r.uid === uid ? Object.assign({}, r, { key, auto: false }) : r) }) : m));
+  const upSave = async m => {
+    const rows = m.rows.filter(r => r.key && upFiles.current[r.uid]);
+    if (!rows.length) return;
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { status: "saving", done: 0 }) : x));
+    const results = [];
+    for (const row of rows) {
+      const rec = data.records.find(r => r.key === row.key);
+      const file = upFiles.current[row.uid];
+      const name = rec ? rec.name : row.file;
+      try {
+        if (!rec || !IDS_PHOTO_EDIT[rec.kind]) throw Object.assign(new Error("not_editable"), { code: "not_editable" });
+        if (typeof loadImageEl === "function" && typeof validateHeadshot === "function") {
+          let check = { ok: true };
+          try { const im = await loadImageEl(row.thumb); check = await validateHeadshot(im, im.naturalWidth, im.naturalHeight); } catch (_) {}
+          if (!check.ok) throw Object.assign(new Error(check.reason), { code: "headshot", reason: check.reason });
+        }
+        const up = await NGGApi.uploadOrInline(file, "headshot");
+        await NGGApi.admin.photos.replace(IDS_PHOTO_EDIT[rec.kind], rec.id, up.url);
+        results.push({ key: row.key, name, ok: true });
+      } catch (e) {
+        const c = (e && (e.code || e.message)) || "failed";
+        results.push({ key: row.key, name, ok: false, why: c === "forbidden" || (e && e.status === 403) ? "adding photos needs the Content permission" : c === "headshot" ? e.reason
+          : c === "photo_format" && typeof photoFormatHelp === "function" ? photoFormatHelp(e) : c === "not_editable" ? "photos for this kind of card aren’t kept here" : c });
+      }
+      setChat(cc => cc.map(x => x.id === m.id ? Object.assign({}, x, { done: results.length }) : x));
+    }
+    if (results.some(r => r.ok)) { _idsTplDone.clear(); idsFaceForget(); load(true); }
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { status: "done", results }) : x));
+  };
+  /* After saving: put the people whose photos just arrived on the sheet (the list has reloaded by the time this is pressed). */
+  const upToSheet = keys => {
+    const add = recs.filter(r => keys.includes(r.key) && !isBlocked(r) && !inQ.has(r.key));
+    if (!add.length) { say(keys.length ? "They’re already on the sheet, or still waiting for the photo to be approved." : "Nobody to add."); return; }
+    setQueue(q => q.concat(add.map(r => ({ t: "r", key: r.key }))));
+    say(idsN(add.length, "card") + " added to the sheet");
+  };
+
+  /* Which AI reads requests: the operator's choice ("use Gemini"), kept in
+     this browser, sent with each request; the server says when it isn't set
+     up and who read it instead. The list of what is set up comes back with
+     every reading. */
+  const IDS_AI_PREF_KEY = "ngg.ids.ask.provider";
+  const [aiPref, setAiPrefS] = React.useState(() => { try { return localStorage.getItem(IDS_AI_PREF_KEY) || ""; } catch (_) { return ""; } });
+  const setAiPref = v => { setAiPrefS(v); try { v ? localStorage.setItem(IDS_AI_PREF_KEY, v) : localStorage.removeItem(IDS_AI_PREF_KEY); } catch (_) {} };
+  const aiKnown = React.useRef(null);      // providers set up for the studio, from the last reading
+  const IDS_AI_WORDS = { gemini: "gemini", google: "gemini", groq: "groq", llama: "groq", claude: "anthropic", anthropic: "anthropic", openai: "openai", chatgpt: "openai", gpt: "openai", openrouter: "openrouter" };
+  const aiTalk = prompt => {
+    const t = String(prompt || "").toLowerCase();
+    const named = (t.match(/\b(gemini|google|groq|llama|claude|anthropic|openai|chat ?gpt|gpt|openrouter)\b/) || [])[1];
+    const short = t.replace(/[^a-z ]/g, " ").trim().split(/\s+/).length <= 7;
+    const aboutAi = /\b(which|what|who)\b.*\b(ai|model|provider|reads?|reading|answer\w*)\b|\b(use|switch( to)?|try|change to|with|prefer)\b.*\b(ai|model)\b/.test(t);
+    if (!(named && short) && !(aboutAi && short)) return null;
+    const known = aiKnown.current;
+    const nameOf = k => IDS_ASK_PROVIDER[k] || k;
+    const lastBy = (chat.slice().reverse().find(m => m.who === "studio" && m.by) || {});
+    const usedNow = lastBy.by === "ai" ? nameOf(lastBy.provider) : lastBy.by === "rules" ? "the studio’s own rules" : "";
+    const setUp = known ? (known.length ? known.map(nameOf).join(", ") : "none — the studio’s own rules read every request") : "";
+    if (/\b(rules|no ai|without (the )?ai|plain)\b/.test(t)) { setAiPref("rules"); return "From your next request, the studio’s own rules read it, with no AI. Say “use " + (known && known[0] ? nameOf(known[0]) : "Groq") + "” to go back."; }
+    if (named) {
+      const want = IDS_AI_WORDS[named.replace(" ", "")] || named;
+      if (known && !known.includes(want)) return "**" + nameOf(want) + "** isn’t set up for the studio here" + (setUp ? " (set up: " + setUp + ")" : "") + ". An admin adds its key in Control Room → Settings → Integrations → AI. Until then " + (aiPref && aiPref !== "rules" ? nameOf(aiPref) : known && known[0] ? nameOf(known[0]) : "the studio’s rules") + " reads your requests.";
+      setAiPref(want);
+      return "From your next request I’ll ask **" + nameOf(want) + "** first" + (known ? "" : " (if it isn’t set up here, I’ll say so and another reads it)") + "." + (usedNow ? " The last one was read by " + usedNow + "." : "");
+    }
+    return (usedNow ? "Your last request was read by **" + usedNow + "**. " : "") + (aiPref ? "You asked for " + (aiPref === "rules" ? "the studio’s rules" : nameOf(aiPref)) + " first. " : "")
+      + (setUp ? "Set up for the studio: " + setUp + ". " : "") + "Say “use Gemini” (or Groq, Claude, OpenAI) to choose, or “use the rules” for no AI.";
+  };
+  /* The buttons on a reply ({act, arg}) and the requests that do the same thing in words. */
+  const askBtn = (act, arg) => {
+    if (act === "remind") {
+      setAskBusy(true);
+      return NGGApi.admin.idStudio.remindPhoto(arg)
+        .then(r => say2("studio", { kind: "answer", text: "Reminder on its way to **" + idsN(r.reminded, "person", "people") + "** who were reached and still have no photo"
+          + (r.queued ? " (" + r.queued + " go out over the next few minutes)" : "") + ". That was this request’s one reminder; staff get one summary when it has gone." }))
+        .catch(e => say2("studio", { kind: "answer", text: ({ too_soon: "It’s too soon: a reminder can go two days after the request.", reminded_already: "That request has already had its reminder.",
+          nobody_to_remind: "Nobody needs reminding: everyone reached has sent a photo.", still_sending: "The request is still going out. Try once it has all gone." })[e.code || e.message] || idsErrText(e, "Couldn’t send the reminder.") }))
+        .finally(() => setAskBusy(false));
+    }
+    if (act === "csvCampaign") {
+      return NGGApi.admin.idStudio.photoCampaigns().then(r => {
+        const c = (r.campaigns || []).find(x => x.campaignId === arg);
+        if (!c || !c.waiting.length) { say2("studio", { kind: "answer", text: "Nobody from that request is still waiting." }); return; }
+        idsCsv("photo-request-still-waiting", ["Name", "Type", "Centre", "Reached", "Reminded"], c.waiting.map(w => [w.name, IDS_KIND_ONE[w.subjectType === "student" ? "summer" : w.subjectType] || w.subjectType, w.centre, w.unreachable ? "No email or guardian on file" : "Yes", w.reminded ? "Yes" : "No"]));
+        say2("studio", { kind: "answer", text: "Downloaded the **" + c.waiting.length + "** still waiting from the request of " + idsDay(c.createdAt) + "." });
+      }).catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the photo requests. Try again." }));
+    }
+    if (act === "csvBlocked") {
+      const list = data.records.filter(isBlocked);
+      if (!list.length) { say2("studio", { kind: "answer", text: "Nobody is waiting for a photo, so there is nothing to download." }); return; }
+      idsCsv("waiting-for-a-photo", ["Name", "Printed ID", "Type", "Centre", "Last asked"], list.map(r => { const a = askedOf(r); return [r.name, r.displayId, IDS_KIND_ONE[r.kind] || r.kind, r.centre, a && a.at ? idsDay(a.at) : "Not asked"]; }));
+      say2("studio", { kind: "answer", text: "Downloaded the **" + list.length + "** waiting for a photo, with when each was last asked." });
+    }
   };
   const askPlan = prompt => {
     askLast.current = prompt;
-    setAskBusy(true); setAskErr("");
-    const current = askRes && askRes.plan && !askRes.empty ? askRes.plan : null;
-    NGGApi.admin.idStudio.plan(prompt, current).then(res => applyPlan(res, prompt))
-      .catch(e => setAskErr(e && e.code === "rate_limited" ? "That’s a lot of plans in a few minutes. Wait a moment, then try again."
-        : e && e.code === "prompt_too_long" ? "Keep it under 400 characters." : idsErrText(e, "Couldn’t read that. Check your connection, then try again.")))
+    say2("me", { text: prompt });
+    // "Undo" in words does what the newest Undo button does.
+    if (/^\s*(undo|undo (that|it|this)|go back|revert( (that|it))?|put it back|take that back)\s*[.!]?\s*$/i.test(prompt)) {
+      const cmd = lastCmdId ? chat.find(m => m.id === lastCmdId) : null;
+      if (askRes && askUndo.current && liveId) { askUndoIt(); say2("studio", { kind: "answer", text: "Done: the sheet is back as it was before the plan." }); }
+      else if (cmd && cmd.undo && !cmd.undone) { undoCmd(cmd); say2("studio", { kind: "answer", text: "Done: undid “" + (cmd.ran || []).join(", ").toLowerCase() + "”." }); }
+      else say2("studio", { kind: "answer", text: "There’s nothing of mine to undo. Changes you made by hand have their own Undo on the toast." });
+      return;
+    }
+    // Photo requests after they went: how it is going, one reminder, the list to download.
+    if (idsAskIsExport(prompt)) { askBtn("csvBlocked"); return; }
+    if (idsAskIsRemind(prompt) || idsAskIsPhotoReq(prompt)) {
+      setAskBusy(true);
+      NGGApi.admin.idStudio.photoCampaigns()
+        .then(r => {
+          const camps = r.campaigns || [];
+          if (idsAskIsRemind(prompt)) {
+            const c = camps.find(x => x.people > 0);
+            if (c && c.canRemind) return askBtn("remind", c.campaignId);
+            const a = idsPhotoReqAnswer(camps);
+            say2("studio", { kind: "answer", text: (c && c.remindedAt ? "That request has had its one reminder. " : c && c.stillWaiting && c.status === "done" ? "It’s too soon for a reminder: give people two days. " : "") + a.text, btns: a.btns });
+            return;
+          }
+          const a = idsPhotoReqAnswer(camps);
+          say2("studio", { kind: "answer", text: a.text, btns: a.btns });
+        })
+        .catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the photo requests. Check your connection, then try again." }))
+        .finally(() => setAskBusy(false));
+      return;
+    }
+    // Printing that has happened: read from the print log.
+    if (idsAskIsHistory(prompt)) {
+      setAskBusy(true);
+      NGGApi.admin.registration.cardRuns({ pageSize: 50, page: 1 })
+        .then(r => { const a = idsAskHistory(prompt, (r.runs || []).map(logRow)); say2("studio", { kind: "answer", text: a.text, runs: a.runs }); })
+        .catch(() => say2("studio", { kind: "error", retry: true, text: "Couldn’t read the print log. Check your connection, then try again." }))
+        .finally(() => setAskBusy(false));
+      return;
+    }
+    // About the AI itself ("Gemini?", "use Claude", "which AI?"): answered here, never read as a person's name.
+    const ai = aiTalk(prompt);
+    if (ai) { say2("studio", { kind: "answer", text: ai }); return; }
+    // A question about the sheet or a person is answered here, from the studio's own data; nothing is sent.
+    const local = idsAskAnswer(prompt, askCtx());
+    if (local) { say2("studio", typeof local === "string" ? { kind: "answer", text: local } : { kind: "answer", text: local.text, people: local.people }); return; }
+    setAskBusy(true);
+    const current = askRes && askRes.plan ? askRes.plan : (chat.slice().reverse().find(m => m.kind === "plan" && m.res) || {}).res ? (chat.slice().reverse().find(m => m.kind === "plan" && m.res)).res.plan : null;
+    NGGApi.admin.idStudio.plan(prompt, current, aiPref).then(res => {
+      if (Array.isArray(res.providers)) aiKnown.current = res.providers;
+      const meta = { by: res.by, provider: res.provider, aiError: res.aiError, notes0: res.notes || [] };
+      if (!Object.keys(res.plan || {}).length) {
+        const bad = checks.filter(c => c.tone === "bad").map(c => c.text), warn = checks.filter(c => c.tone === "warn").map(c => c.text);
+        const answer = idsAskAnswer(prompt, { n: cards.length, sheets: nSheets, block: printBlock, bad, warn, blocked: recs.filter(isBlocked).length, ready: ready.length });
+        say2("studio", answer ? { kind: "answer", text: answer } : Object.assign({ kind: "empty" }, meta));
+        return;
+      }
+      const plan = res.plan;
+      const live0 = !!(askRes && askRes.plan && liveId);
+      /* "New cards for Egbeda, then fill the gaps": the selection goes on the
+         sheet first, and the act runs on the sheet it made (actAfter). Asking
+         for photos with a "who" is one act over those people; clearing has
+         nothing to follow. */
+      const acts0 = idsPlanActs(plan);
+      if (acts0.length === 1 && acts0[0] === "fill" && idsPlanHasSel(plan)) {
+        const snap = planSnap(res);
+        const id = say2("studio", Object.assign({ kind: "plan", res, prompt, snap, pending: askMode === "ask", then: "fill" }, meta));
+        if (askMode === "act") commit(id, res, prompt);
+        return;
+      }
+      if (acts0.length || (!idsPlanHasSel(plan) && !live0)) {
+        const id = say2("studio", Object.assign({ kind: "cmd", plan, preview: idsCmdPreview(plan, st), pending: askMode === "ask" }, meta));
+        if (askMode === "act") commitCmd(id, plan);
+        return;
+      }
+      // Each reply keeps what it said, so it still reads right once a later one is live.
+      const snap = planSnap(res);
+      const id = say2("studio", Object.assign({ kind: "plan", res, prompt, snap, pending: askMode === "ask" }, meta));
+      if (askMode === "act") commit(id, res, prompt);
+    }).catch(e => { const c = (e && (e.code || e.message)) || "";
+      say2("studio", { kind: "error", retry: true, text: c === "rate_limited" ? "That’s a lot of requests in a few minutes. Wait a moment, then try again."
+        : c === "prompt_too_long" ? "Keep it under 400 characters."
+        : c === "timeout" || /timed? ?out/i.test(c) ? "That took too long to read (the AI was slow to answer). Try again, or say “use the rules” to read requests without the AI."
+        : c === "network" || c === "offline" || /failed to fetch|network/i.test(c) ? "Couldn’t reach the site. Check your connection, then try again."
+        : idsErrText(e, "Couldn’t read that (" + (c || "error") + "). Try again; if it keeps happening, say “use the rules”.") }); })
       .finally(() => setAskBusy(false));
   };
   // A chip's ×: the same plan without that part, applied here — no second reading needed.
@@ -1287,24 +1898,60 @@ function IdCardStudioPage({ setPage }) {
     // With every part taken out, what is left is "every new card".
     applyPlan({ plan: Object.keys(next).length ? next : { which: "new" }, by: askRes.by, provider: askRes.provider, refined: true, notes: [] }, askRes.prompt);
   };
-  const askClose = () => { setAskRes(null); setAskErr(""); askUndo.current = null; };
+  React.useEffect(() => {
+    const a = actAfter.current;
+    if (!a) return;
+    actAfter.current = null;
+    const r = runCmd({ do: a.do });
+    setChat(c => c.map(m => m.id === a.id ? Object.assign({}, m, { ran: (m.ran || []).concat(r.ran), notes: (m.notes || []).concat(r.notes) }) : m));
+    // eslint-disable-next-line
+  }, [liveId, cards.length, sections.length]);
+  const askReset = () => { setChat([]); setLiveId(0); setAskRes(null); askUndo.current = null; };
   const askUndoIt = () => {
     const u = askUndo.current;
     if (!u) return;
     setQueue(u.queue); setSt(u.st); setKind(u.kind); setCentre(u.centre); setFilter(u.filter); setRmode(u.rmode); setRng(u.rng);
     askUndo.current = null;
     setAskRes(null);
+    setChat(c => c.map(m => m.id === liveId ? Object.assign({}, m, { undone: true }) : m));
+    setLiveId(0);
     say("The sheet is back as it was");
   };
   const askPrint = () => {
     if (!askRes || !askRes.n) return;
     if (cards.length !== askRes.n) return say("The sheet has changed since the plan (" + idsN(cards.length, "card") + " now). Check it, then use Print in the panel.");
     if (printBlock) return say(printBlock);
-    setAskRes(null); askUndo.current = null;
-    onConfirmPrint({ mode: "all", packing: st.packing, reason: st.reason });
+    /* Not straight to the printer: the same confirm the header's Print opens,
+       with the count, the sheets and the reason on it (v4: the assistant
+       cannot print). */
+    startPrint();
   };
   const askFill = () => { const k = fillGap(); if (k) setAskRes(a => a && Object.assign({}, a, { n: a.n + k })); };
-  const askLive = askRes && askRes.n ? {
+  /* Starters from the studio's real queue, and the next steps after a reply. */
+  const askStarters = (() => {
+    const out = [];
+    const byC = {};
+    recs.filter(r => !isBlocked(r) && r.reason === "new").forEach(r => { if (r.centre) byC[r.centre] = (byC[r.centre] || 0) + 1; });
+    const top = Object.entries(byC).sort((a, b) => b[1] - a[1])[0];
+    if (top) out.push("New cards for everyone at " + top[0] + ", front and back");
+    const rp = recs.filter(r => !isBlocked(r) && r.reason === "reprint").length;
+    if (rp) out.push("Print the " + rp + " " + (rp === 1 ? "reprint" : "reprints"));
+    const bl = recs.filter(isBlocked).length;
+    if (bl) out.push("Who is waiting for a photo?");
+    return out;
+  })();
+  const askNext = (() => {
+    const out = [];
+    if (!cards.length) return out;
+    if (gap > 0 && fillable.length && !(breakActive && pads)) out.push("Fill the gaps");
+    if (printBlock) out.push("Why can’t I print yet?");
+    if (st.backs === "off") out.push("Front and back");
+    if (st.reason !== "proof") out.push("Make it a proof");
+    if (recs.some(isBlocked)) out.push("Ask the ones with no photo for photos");
+    if (!printBlock) out.push("Who is on the sheet?");
+    return out.slice(0, 3);
+  })();
+  const askLive = askRes && askRes.n && liveId ? {
     sheets: nSheets, block: printBlock, gap, fill: Math.min(gap, fillable.length),
     settings: [
       { label: IDS_PAPERS[st.paper][0], k: "paper" },
@@ -1312,10 +1959,18 @@ function IdCardStudioPage({ setPage }) {
       { label: st.marks ? "Crop marks" : "No crop marks", k: "marks" },
       { label: st.dpi + " dpi", k: "dpi" },
       { label: "Sorted by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase(), k: "order" },
-    ].concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
+    ].concat((askRes.changed || []).filter(k => k === "margin" || k === "gap" || k === "skip" || k === "packing").map(k => ({ label: idsCmdLabel(k, st[k], st).replace(/^./, c => c.toUpperCase()), k }))).concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
   } : null;
-  const A = { ask: askPlan, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, err: askErr, result: askRes, live: askLive,
-    print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current), close: askClose, drop: askDrop, fill: askFill };
+  const A = { ask: askPlan, btn: askBtn, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
+    chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => m.kind === "cmd" ? commitCmd(m.id, m.plan) : commit(m.id, m.res, m.prompt),
+    lastCmdId, undoCmd, starters: askStarters, next: askNext, person: askPerson,
+    openRun: r => openRun(r),
+    bindInput: ref => { aiInput.current = ref.current; },
+    people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
+    say,
+    exact: q => { const t = String(q || "").trim().toLowerCase().replace(/\s+/g, " "); return t ? data.records.filter(r => String(r.name || "").toLowerCase().replace(/\s+/g, " ") === t || String(r.displayId || "").toLowerCase() === t) : []; },
+    print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill,
+    upload: askUpload, upSet, upSave, upToSheet, upPeople: q => { const t = String(q || "").toLowerCase(); return t.length < 2 ? [] : data.records.filter(r => IDS_PHOTO_EDIT[r.kind] && (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 8); } };
 
   /* ── Everything the Make tab reads ── */
   const M = {
@@ -1341,8 +1996,7 @@ function IdCardStudioPage({ setPage }) {
       const last = sorted.map((c, j) => (slots.find(x => !x.pad && x.key === c.key) || {}).sec === secKey ? j : -1).filter(j => j >= 0).pop();
       reorder(k, last == null ? sorted.length : last + 1);
     },
-    // While a plan from the prompt bar is on screen its Print is the one solid button.
-    askActive: !!(askRes && askRes.n),
+    setFilterToggle: f => records.setFilter(filter === f ? "all" : f), pickJob,
     renderFace, checks, printBlock, startPrint, startExport, xjob, warm, dpi: st.dpi, improve: { n: improveN, open: () => setImprove({ n: improveN, recs: improvable() }) }, stopExport: () => { xcancel.current = true; },
     pngSel: () => { const sl = selCard && slots.find(x => !x.pad && x.key === selCard.key); if (sl) runExport({ format: "png", dpi: st.dpi >= 300 ? st.dpi : 300, verify: false, reason: "proof", only: sl }); }, printTest: () => runPrint({ test: true }), job, printNextBatch, stopJob: () => { setJob(null); say("Stopped. The sheets already out are logged."); },
   };
@@ -1350,11 +2004,26 @@ function IdCardStudioPage({ setPage }) {
   const tabs = [["make", phone ? "Queue" : "Make cards", recs.filter(r => !isBlocked(r)).length], ["log", "Print log", null], ["lookup", phone ? "Look up" : "Look up a person", null]];
   const gridCls = W >= 1280 ? "is-roomy" : W >= 1024 ? "is-wide" : "is-two";
 
+  const two = W < 1024;
+  const showPane = p => e => {
+    paneTrigger.current = e.currentTarget;
+    if (two) { if (drawer && pane === p) setDrawer(false); else { setPane(p); setDrawer(true); } }
+    else setPane(p);
+    if (p === "assistant") setTimeout(() => focusComposer(), 0);
+  };
+  const closePane = () => {
+    if (two) setDrawer(false); else setPane("settings");
+    if (paneTrigger.current) paneTrigger.current.focus();
+  };
+  const paneOn = p => two ? drawer && pane === p : pane === p;
+  const side = pane === "assistant" ? <IdsAssistant A={A} onClose={closePane}/> : <IdsSettings M={M}/>;
+
   return (
     <div className={"ids-app" + (phone ? " is-phone" : "")} ref={rootRef}>
+      {typeof GuideTour === "function" && <GuideTour portal="idcards"/>}
       <header className="ids-head">
         <a href="/club-admin" className="ids-brand" aria-label="Back to the Club portal" onClick={e => { e.preventDefault(); setPage && setPage("club-admin"); }}>
-          <img src="/assets/logo.png" alt="" width="26" height="26"/><span>ID Card Studio</span>
+          <IdsIcon name="caret-left" className="ids-brand-back"/><img src="/assets/logo.png" alt="" width="26" height="26"/><span>ID Card Studio</span>
         </a>
         <div className="ids-tabs" role="tablist" aria-label="Studio">
           {tabs.map(([k, l, n]) => (
@@ -1364,45 +2033,53 @@ function IdCardStudioPage({ setPage }) {
           ))}
         </div>
         <span className="ids-grow"/>
-        {!phone && <span className="ids-design" title={designHead}>Design: <b>{designHead}</b></span>}
-        <a href="/club-admin" className="ids-btn ids-btn--34 ids-btn--outline-soft" onClick={e => { e.preventDefault(); setPage && setPage("club-admin"); }}><IdsIcon name="arrow-left"/>Club portal</a>
+        {tab === "make" && !phone && data.state === "ready" && <>
+          <div className="ids-tabs ids-panes" role="group" aria-label="Side panel">
+            <button type="button" className={"ids-tab" + (paneOn("settings") ? " is-on" : "")} aria-pressed={paneOn("settings")} onClick={showPane("settings")}><IdsIcon name="sliders-horizontal"/>Settings</button>
+            <button type="button" className={"ids-tab" + (paneOn("assistant") ? " is-on" : "")} aria-pressed={paneOn("assistant")} onClick={showPane("assistant")}><IdsIcon name="sparkle" className="ids-spark"/>Assistant</button>
+          </div>
+          {/* The one solid button on screen: it states the count before anyone presses it. */}
+          <button type="button" className={"ids-btn ids-btn--headprint" + (printBlock ? " is-off" : "")} aria-disabled={!!printBlock || undefined} disabled={!!xjob}
+                  title={printBlock || undefined} onClick={startPrint}>
+            <IdsIcon name="printer"/>Print {cards.length}
+          </button>
+        </>}
       </header>
 
       {data.state === "forbidden" ? (
         <div className="ids-page"><div className="ids-state is-error" role="alert"><IdsIcon name="lock"/><span>Printing ID cards needs the People or Summer School permission. Ask an admin to grant it.</span></div></div>
       ) : tab === "make" ? (phone
-        ? (data.state === "ready" ? <IdsPhoneQueue recs={recs} isBlocked={isBlocked} onAsk={askOne}/> : <div className="ids-page"><IdsLoadState state={data.state} onRetry={load} what="the records"/></div>)
+        ? (data.state === "ready" ? <IdsPhoneQueue recs={recs} isBlocked={isBlocked} onAsk={askOne} askedOf={r => idsAskedRecently(askedOf(r))}/> : <div className="ids-page"><IdsLoadState state={data.state} onRetry={load} what="the records"/></div>)
         : (
           <div className="ids-make-wrap">
-          {data.state === "ready" && <IdsAsk A={A}/>}
-          <div className={"ids-make " + gridCls}>
-            <IdsSource M={M}/>
-            <IdsSheetCol M={M}/>
-            <IdsSettings M={M}/>
-          </div>
+            <div className={"ids-make " + gridCls + (!two && pane === "assistant" ? " has-ai" : "") + (W < 860 ? " is-narrow" : "")}>
+              <IdsSource M={M}/>
+              <IdsSheetCol M={M}/>
+              {!two && (pane === "assistant" ? <aside className="ids-side" aria-label="Assistant">{side}</aside> : side)}
+            </div>
+            {two && drawer && (
+              <div className="ids-pane-drawer" role="dialog" aria-modal="false" aria-label={pane === "assistant" ? "Assistant" : "Settings"}>
+                <div className="ids-pane-drawer-top">
+                  <b>{pane === "assistant" ? "Assistant" : "Settings"}</b>
+                  <button type="button" className="ids-iconbtn" aria-label={"Close " + (pane === "assistant" ? "the assistant" : "settings")} onClick={closePane}><IdsIcon name="x"/></button>
+                </div>
+                {side}
+              </div>
+            )}
           </div>
         )) : tab === "log" ? <IdsLog log={log} state={log.state === "idle" ? "loading" : log.state} onFilter={f => loadLog(f)} onMore={() => loadLog(null, true)} onRetry={() => loadLog()} onOpen={openRun} narrow={W < 900}/>
         : <IdsLookup lookup={lookup} design={designHead} onQueue={queueReprint}/>}
 
       {confirm && <IdsConfirm run={confirm} onCancel={() => setConfirm(null)} onPrint={onConfirmPrint}/>}
-      {askConfirm && (
-        <IdsDialog alert width={480} title={"Ask " + idsN(askConfirm.length, "person", "people") + " for a photo?"} onClose={() => setAskConfirm(null)}
-          footer={<>
-            <button type="button" className="ids-btn" onClick={() => setAskConfirm(null)}>Cancel</button>
-            <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={() => { const l = askConfirm; setAskConfirm(null); askPhotos(l, false); }}>Ask {askConfirm.length}</button>
-          </>}>
-          <p className="ids-note">Each member gets a message saying how to add a photo, and a child’s guardians get it too. Summer School participants’ guardians are asked; volunteers are asked by email. The admins for their centres get one summary.</p>
-          <p className="ids-note">Anyone asked in the last 3 days is left out.{askable.length > IDS_ASK_MAX ? " This sends the first " + IDS_ASK_MAX + "; ask again for the rest." : ""}</p>
-        </IdsDialog>
-      )}
+      {askConfirm && <IdsAskConfirm list={askConfirm} onCancel={() => setAskConfirm(null)} onSend={l => { setAskConfirm(null); askPhotos(l, false); }}/>}
       {after && <IdsAfterPrint items={after.items} renderFace={renderFace} onLater={() => { setAfter(null); say("You can mark failures from the print log later."); }} onDone={afterDone}/>}
       {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
-      {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
+      {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} designOfKind={designOfKind} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
-          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(); }} onClose={() => setEditPhoto(null)}/>
+          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(true); }} onClose={() => setEditPhoto(null)}/>
       )}
-      {improve && <IdsImproveDialog run={improve} onCancel={() => setImprove(null)} onStart={runImprove}/>}
+      {improve && <IdsImproveDialog run={improve} preset={improve.spec} onCancel={() => setImprove(null)} onStart={runImprove}/>}
       {improveRes && <IdsImproveResult res={improveRes} onClose={() => setImproveRes(null)}/>}
       {xconfirm && <IdsExportDialog run={xconfirm} onCancel={() => setXconfirm(null)} onStart={runExport}/>}
       {xresult && <IdsExportResult res={xresult} onClose={() => setXresult(null)} onRetry={xresult.retry} onDrop={xresult.drop}/>}

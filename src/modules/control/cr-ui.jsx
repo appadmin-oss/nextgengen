@@ -250,7 +250,41 @@ function crReadFile(file) {
    render would leak into the next panel opened). */
 function CrPanelMount({ tab, render, ctx }) {
   React.useState(() => { if (tab && typeof setPendingAdminTab === "function") setPendingAdminTab(tab); return true; });
-  return <div className="cr-panel admin-main">{render(ctx)}</div>;
+  const ref = React.useRef(null);
+  React.useEffect(() => crFoldHints(ref.current), []);
+  return <div ref={ref} className="cr-panel admin-main">{render(ctx)}</div>;
+}
+
+/* On a phone, an old panel's long explanation folds to three lines with a More. The
+   panels open with a paragraph of guidance — eleven lines above "Add a centre" — and on
+   a phone that put every one of them below the first screen. Progressive: the button is
+   appended to the paragraph (React leaves a node it did not render alone, and if a
+   re-render replaces the text the observer adds it back), and nothing is removed, so a
+   screen reader still reads the whole paragraph. Returns the cleanup for useEffect. */
+const CR_FOLD_CHARS = 180;
+function crFoldHints(root) {
+  if (!root || typeof MutationObserver !== "function") return undefined;
+  const phone = () => !!root.closest('.cr-app[data-tree="phone"]');
+  const fold = () => {
+    if (!phone()) return;
+    root.querySelectorAll(".admin-hint").forEach(p => {
+      if (p.querySelector(".cr-fold-btn") || (p.textContent || "").length < CR_FOLD_CHARS) return;
+      p.classList.add("cr-fold");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cr-fold-btn"; b.textContent = "More";
+      b.setAttribute("aria-expanded", p.classList.contains("is-open") ? "true" : "false");
+      b.addEventListener("click", () => {
+        const open = p.classList.toggle("is-open");
+        b.setAttribute("aria-expanded", open ? "true" : "false");
+        b.textContent = open ? "Less" : "More";
+      });
+      p.appendChild(b);
+    });
+  };
+  fold();
+  const mo = new MutationObserver(fold);
+  mo.observe(root, { childList: true, subtree: true });
+  return () => mo.disconnect();
 }
 function crPanel(render, opts) {
   const o = opts || {};

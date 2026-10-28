@@ -454,8 +454,10 @@ function admin_summer_students_list(array $p): array {
     $c = summer_ensure_cohort();
     $cohortId = trim((string)($p['cohortId'] ?? '')) ?: $c['cohortId'];
     $where = ['cohortId = ?']; $params = [$cohortId];
-    $q = strtolower((string)($p['q'] ?? ''));
-    if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(handle) LIKE ? OR lower(studentId) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
+    /* The printed ID (EG-26-001) as well as the internal one: it is what the
+       roster's ID column shows and what is on the lanyard. */
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'handle', 'studentId']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     $rows = db_all('SELECT * FROM summer_students WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT ' . ROSTER_SCAN_MAX, $params);
     $total = count($rows);
 
@@ -1103,6 +1105,7 @@ function summer_checkout(array $p): array {
     if ($no = attendance_checkout_refusal($type, $at, $p)) return $no;
     $outIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
     db_update('attendance', ['checkOutAt' => $outIso], ['id' => $row['id']]);
+    policy_checkout_landed($sid, $type, $today, $byId);
     $early = trim((string)($p['earlyReason'] ?? ''));
     audit($early !== '' && attendance_close_time($type) !== '' ? 'attendance.early_checkout' : 'summer.checkout', $byId, $sid,
           ['date' => $today] + ($early !== '' ? ['reason' => mb_substr($early, 0, 200)] : []), (string)($p['ip'] ?? ''));
@@ -1127,11 +1130,19 @@ function admin_summer_absence_alert(array $p): array {
     }
     if ($one !== '') {
         $rows = db_all("SELECT * FROM summer_students WHERE studentId = ? LIMIT 1", [$one]);
+        if ($rows && !admin_centre_allowed($g['requester'], (string)($rows[0]['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
     } else {
-        // Active students in the cohort with no attendance row today.
-        $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND status = 'active'
-                        AND studentId NOT IN (SELECT studentId FROM attendance WHERE date = ?) ORDER BY fullName LIMIT 300", [$cid, $today]);
+        /* Active, confirmed participants with no attendance row today — in the
+           requester's centres. The same set the portal counts as "not in", so
+           the number on the button is the number of guardians emailed. */
+        $args = [$cid, $today];
+        $scope = ss3_scope_sql(admin_centre_names_in_scope($g['requester']), 'centre', $args);
+        $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND status = 'active' AND COALESCE(NULLIF(regStatus, ''), 'verified') = 'verified'
+                        AND studentId NOT IN (SELECT studentId FROM attendance WHERE date = ?)$scope ORDER BY fullName LIMIT 300", $args);
     }
+    /* A bulk alert waits out its undo window (pending.php); a named child's
+       follow-up is one deliberate email and goes now. */
+    if ($one === '' && ($d = pending_defer('admin.summer.absence.alert', $p + ['cohortId' => $cid], 'Alert ' . count($rows) . ' guardians', count($rows)))) return $d + ['absent' => count($rows)];
     $sent = 0; $skipped = 0;
     foreach ($rows as $s) {
         $to = trim((string)($s['parentEmail'] ?? ''));

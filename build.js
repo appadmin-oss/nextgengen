@@ -42,7 +42,9 @@ const ORDER = [
   'auth.jsx',
   'command.jsx',
   'tweaks-panel.jsx',
+  'lesson-blocks.jsx',
   'components.jsx',
+  'lesson-editor.jsx',
   'table.jsx',
   'card-photo.jsx',
   'card-template.jsx',
@@ -67,11 +69,19 @@ const ORDER = [
   'src/modules/control/cr-tab-home.jsx',
   'src/modules/control/cr-tab-inbox.jsx',
   'src/modules/control/cr-tab-members.jsx',
+  'src/modules/control/cr-tab-security.jsx',
   'src/modules/control/cr-tab-programme.jsx',
   'src/modules/control/cr-tab-money.jsx',
+  'src/modules/learn/assign-desk.jsx',
+  'src/modules/gate/face-check.jsx',
+  'src/modules/tools/tools-core.jsx',
+  'src/modules/tools/tools-more.jsx',
+  'src/modules/tools/tools-labs.jsx',
   'src/modules/control/cr-tab-learning.jsx',
   'src/modules/control/cr-tab-publishing.jsx',
   'src/modules/control/cr-tab-system.jsx',
+  'src/modules/control/cr-tab-wifi.jsx',
+  'src/modules/control/cr-tab-support.jsx',
   'src/modules/control/cr-tab-analytics.jsx',
   'src/modules/control/cr-tab-mentors.jsx',
   'src/modules/control/cr-tab-mentorship.jsx',
@@ -93,7 +103,34 @@ const ORDER = [
   'src/modules/timetable/tt-app.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
+  'page-learn.jsx',
   'src/modules/portal/member-results.jsx',
+  'src/modules/dc/dc-runtime.jsx',
+  'src/modules/mentor15/mp15-view.jsx',
+  'src/modules/mentor15/mp15-formation.jsx',
+  'src/modules/mentor15/mp15-class.jsx',
+  'src/modules/mentor15/mp15-app.jsx',
+  'src/modules/instructor6/ip6-view.jsx',
+  'src/modules/instructor6/ip6-app.jsx',
+  'src/modules/guide/guide.jsx',
+  'src/modules/auth/mfa.jsx',
+  'src/modules/support/support-desk.jsx',
+  'src/modules/member9/mp9-view.jsx',
+  'src/modules/member9/mp9-app.jsx',
+  'src/modules/member9/mp9-more.jsx',
+  'src/modules/club3/cp3-view.jsx',
+  'src/modules/club3/sd3-view.jsx',
+  'src/modules/club3/cp3-wifi.jsx',
+  'src/modules/club3/cp3-meta.jsx',
+  'src/modules/club3/cp3-directory.jsx',
+  'src/modules/club3/cp3-app.jsx',
+  'src/modules/summer3/ss3-view.jsx',
+  'src/modules/summer3/ss3-app.jsx',
+  'src/modules/community3/cm3-view.jsx',
+  'src/modules/community3/cm3-app.jsx',
+  'src/modules/family3/fp3-view.jsx',
+  'src/modules/family3/fp3-data.jsx',
+  'src/modules/family3/fp3-app.jsx',
   'page-family.jsx',
   'page-book.jsx',
   'page-analytics.jsx',
@@ -176,6 +213,7 @@ async function build() {
   // index.html MUST list the same files in the same order, or the prod bundle
   // silently diverges from what dev runs. Fail the build if they don't match.
   validateOrderAgainstIndex();
+  validateCssBraces();
 
   // The source treats classic-script top-level bindings (e.g.
   // `const { useState, useEffect } = React;` in components.jsx) as
@@ -242,10 +280,18 @@ async function build() {
 
   // The map name goes in the bundle's sourceMappingURL, so it has to be
   // decided before the code is written.
+  /* The source map does NOT ship. An 8 MB map served from the live site hands
+     anyone the whole un-minified client, comments included. It is written
+     beside the repo (.build/, ignored by git) for debugging a production stack
+     trace, and the bundle carries no sourceMappingURL to go looking for it. */
   const mapName = assets['app.min.js'] + '.map';
-  const code = minified.code + `\n//# sourceMappingURL=${mapName}\n`;
+  const code = minified.code + '\n';
   fs.writeFileSync(path.join(DIST, assets['app.min.js']), code);
-  if (minified.map) fs.writeFileSync(path.join(DIST, mapName), minified.map);
+  if (minified.map) {
+    fs.mkdirSync(path.join(ROOT, '.build'), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, '.build', mapName), minified.map);
+  }
+  for (const f of fs.readdirSync(DIST)) if (/\.map$/.test(f)) fs.rmSync(path.join(DIST, f), { force: true });
   /* The plain name as well, and this one matters more than the other plain
      copies. dist/ is a drop-in deploy folder that is not wiped between builds
      and root files are not pruned, so the moment this stopped being written it
@@ -286,7 +332,14 @@ async function build() {
   // Insert the bundled scripts + a preload right after the React tags
   prod = prod.replace(
     /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
-    `$1<link rel="modulepreload" href="${A('app.min.js')}"/>\n`
+    /* `preload as="script"`, NOT `modulepreload`.
+       The bundle is a classic script (`<script defer>`), and a
+       modulepreload is fetched with module semantics — so the browser could
+       not reuse it and downloaded the whole bundle a SECOND time. The
+       browser's own Resource Timing said so: two entries, 4.97 MB each,
+       one initiated by the link and one by the script tag. On a phone on
+       metered data that is the single most expensive line in the build. */
+    `$1<link rel="preload" as="script" href="${A('app.min.js')}"/>\n`
     + ['data.js', 'photos.js', 'api-client.js', 'outbox.js', 'app.min.js']
         .map(f => `<script defer src="${A(f)}"></script>`).join('\n') + '\n'
   );
@@ -345,6 +398,10 @@ async function build() {
     const p = path.join(DIST, junk);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
   }
+  /* The PHP test suite is not part of the product. Shipped, api/tests/run.php
+     is a script on the live host that builds a throwaway database and prints
+     the codebase's internals — not something a web server should hold. */
+  fs.rmSync(path.join(DIST, 'api', 'tests'), { recursive: true, force: true });
   /* Runtime data never ships: the cache, the logs, and anything in storage
      (photos, payment evidence, a database) belong to the server they were made
      on. A deploy carries only each folder's .htaccess, so unpacking it over a
@@ -394,6 +451,8 @@ async function build() {
   }
   if (swept) log(`swept ${swept} fingerprinted file(s) from earlier builds`);
 
+  writeProductionCsp();
+
   // Build manifest — ops visibility + a machine-readable record of the deploy.
   // `assets` is the plain→fingerprinted map, which is what an operator needs to
   // answer "which bundle is this browser running" from a support report.
@@ -412,6 +471,27 @@ async function build() {
 // Ensure the compile ORDER and index.html's JSX <script> tags agree. A
 // mismatch means the prod bundle would run different code than dev — a
 // class of bug that is invisible until a specific page breaks in prod only.
+/* A stylesheet with one unclosed brace is not an error to a browser: every
+   rule after it is read as nested inside the open block. An `@media (pointer:
+   coarse) {` lost its `}` once, and the whole Family Portal (and everything
+   after it in styles-app.css) applied on touch screens only — a laptop got an
+   unstyled page and nothing failed. Refuse to build a sheet like that. */
+function validateCssBraces() {
+  for (const f of ['styles.css', 'styles-app.css']) {
+    const p = path.join(ROOT, f);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+      .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, m => m.replace(/[{}]/g, ' '));
+    let depth = 0, line = 1, openedAt = 0;
+    for (const c of src) {
+      if (c === '\n') line++;
+      if (c === '{') { if (depth === 0) openedAt = line; depth++; }
+      if (c === '}') { depth--; if (depth < 0) { console.error(`[build] ${f}:${line} closes a brace that was never opened`); process.exit(1); } }
+    }
+    if (depth !== 0) { console.error(`[build] ${f}: a block opened at line ${openedAt} is never closed, so every rule after it is nested inside it`); process.exit(1); }
+  }
+}
+
 function validateOrderAgainstIndex() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const tags = [];
@@ -483,6 +563,49 @@ async function buildJournal(buildId, assets) {
  *
  * `keep` protects paths the build writes into dist/ deliberately and which
  * have no counterpart in the source tree. */
+/* The production Content-Security-Policy.
+ *
+ * The root .htaccess allows 'unsafe-inline' and 'unsafe-eval' for scripts
+ * because development compiles JSX in the browser with Babel, which needs
+ * both. Production runs no Babel, so dist/.htaccess gets a policy without
+ * either: each inline <script> in the shipped HTML is allowed by its SHA-256,
+ * and each inline event handler (the font loader's onload, a print button) by
+ * its hash under 'unsafe-hashes'. Computed from the built files, so an edit to
+ * an inline script changes its hash here in the same build, never by hand.
+ *
+ * The vendors' own eval sites (pdf.js, jszip, docx, tui) are feature-detects
+ * inside try/catch or polyfills only reached with a string argument; they fall
+ * back cleanly when eval is refused. style-src keeps 'unsafe-inline': React
+ * renders inline style attributes, and a stylesheet cannot run code. */
+const CSP_PHP_HANDLERS = ['window.print()'];   // receipt and curriculum-document pages
+function writeProductionCsp() {
+  const crypto = require('crypto');
+  const sha = (t) => "'sha256-" + crypto.createHash('sha256').update(t, 'utf8').digest('base64') + "'";
+  const scripts = new Set(), handlers = new Set(CSP_PHP_HANDLERS);
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { if (!['api', 'vendor', 'node_modules'].includes(e.name)) walk(p); continue; }
+      if (!/\.html$/.test(e.name)) continue;
+      const html = fs.readFileSync(p, 'utf8');
+      for (const m of html.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)) {
+        const attrs = m[1] || '';
+        if (/\ssrc=/.test(attrs) || /type="application\/(ld\+)?json"/.test(attrs)) continue;
+        scripts.add(m[2]);
+      }
+      for (const m of html.matchAll(/\son[a-z]+="([^"]*)"/g)) handlers.add(m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&'));
+    }
+  };
+  walk(DIST);
+  const src = ["'self'"].concat([...scripts].map(sha), handlers.size ? ["'unsafe-hashes'"].concat([...handlers].map(sha)) : []).join(' ');
+  const file = path.join(DIST, '.htaccess');
+  const ht = fs.readFileSync(file, 'utf8');
+  const next = ht.replace(/script-src 'self' 'unsafe-inline' 'unsafe-eval';/, `script-src ${src};`);
+  if (next === ht) { console.error("[build] FAILED: dist/.htaccess has no development script-src to tighten"); process.exit(1); }
+  fs.writeFileSync(file, next);
+  log(`production CSP: ${scripts.size} inline script(s) and ${handlers.size} handler(s) allowed by hash; no unsafe-inline, no unsafe-eval`);
+}
+
 function copyDir(src, dst, keep) {
   keep = keep || new Set();
   if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true });

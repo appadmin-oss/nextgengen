@@ -48,12 +48,13 @@ function admin_mentor_promote(array $p): array {
     $src = db_row('SELECT memberId, fullName, email, phone, centre, photoUrl FROM members WHERE memberId = ? LIMIT 1', [$who]);
     $kind = $src ? 'member' : '';
     if (!$src) {
-        $src = db_row("SELECT volunteerId, fullName, email, phone, centre, faculty, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$who]);
+        $src = db_row("SELECT volunteerId, memberId, fullName, email, phone, centre, faculty, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$who]);
         $kind = $src ? 'volunteer' : '';
     }
     if (!$src) return ['ok' => false, 'error' => 'not_found'];
 
-    $memberId    = $kind === 'member' ? $who : '';
+    // A volunteer who is also a member (an instructor who signs in as one) is the same person on both rows.
+    $memberId    = $kind === 'member' ? $who : trim((string)($src['memberId'] ?? ''));
     $volunteerId = $kind === 'volunteer' ? $who : '';
     $email = strtolower(trim((string)($src['email'] ?? '')));
 

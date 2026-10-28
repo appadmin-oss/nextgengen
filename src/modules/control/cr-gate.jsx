@@ -90,7 +90,7 @@ function CrTotp({ auth, onDone }) {
             <div className="cr-ff">
               <span className="cr-ff-l">Backup codes — save these now</span>
               <span className="cr-ff-help">Shown once. Each works one time if you lose your authenticator.</span>
-              <div className="cr-mono" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 13 }}>{setup.backupCodes.map(c => <span key={c}>{c}</span>)}</div>
+              <div className="cr-mono" style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: 6, fontSize: 13 }}>{setup.backupCodes.map(c => <span key={c}>{c}</span>)}</div>
             </div>
           )}
           {form}

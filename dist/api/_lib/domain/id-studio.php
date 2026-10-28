@@ -33,9 +33,13 @@
    card (domain/ngv-portal.php, admin_ids_av_*). Its owner is `people`. */
 const IDS_SUBJECTS = ['member', 'student', 'volunteer', 'afrovanguard'];
 const IDS_BATCH_MAX = 600;      // the same ceiling as a recorded run (CRUN_MAX_ISSUES)
-const IDS_ASK_MAX = 200;        // photo asks in one press
+const IDS_ASK_MAX = 2000;       // people in one photo request (a campaign); sent a batch at a time
+const IDS_ASK_INLINE = 25;      // sent during the press itself; the rest go out with the web-cron
+const IDS_ASK_DRAIN = 40;       // sent per web-cron tick
 const IDS_ASK_QUIET_DAYS = 3;   // nobody is asked again inside this window unless the operator insists
-const IDS_ASK_DIGEST_NAMES = 20; // names listed in the admins' notice; the rest are counted
+const IDS_ASK_REMIND_AFTER = 2; // days before a campaign's one reminder may go
+const IDS_ASK_DIGEST_NAMES = 5; // a staff summary names people only when it is this small; above, it counts by centre
+const IDS_PHOTO_LINK_DAYS = 21; // how long a one-tap photo link works
 const IDS_WHY_MAX = 80;
 
 /** The capability that owns a subject's card. */
@@ -359,93 +363,391 @@ function ids_mail(string $to, string $title, string $intro, string $body, string
     } catch (\Throwable $e) { error_log('[ids.mail] ' . $e->getMessage()); return false; }
 }
 
+/* ── One-tap photo links ─────────────────────────────────────────────────
+   A photo request used to tell a member to open their dashboard, find Edit
+   profile, then Upload; a volunteer to reply to an email nobody reads; and a
+   guardian that the child could do it. Every request now carries a link that
+   opens the photo page for exactly that person (the Summer School re-shoot
+   page, /reshoot), signed and time-limited, so a parent can do it from their
+   phone in a minute. The photo still goes through the photo pipeline's checks
+   and review like any other. Signed, not stored: nothing to clean up. */
+function ids_photo_link_token(string $t, string $id, ?int $exp = null): string {
+    $exp = $exp ?? time() + IDS_PHOTO_LINK_DAYS * 86400;
+    $body = b64url($t . '|' . $id . '|' . $exp);
+    return 'PL.' . $body . '.' . substr(b64url(hash_hmac('sha256', 'photo-link|' . $body, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true)), 0, 32);
+}
+function ids_photo_link(string $t, string $id): string {
+    return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/reshoot?t=' . rawurlencode(ids_photo_link_token($t, $id));
+}
+/** [subjectType, subjectId] for a valid, unexpired link; null otherwise. */
+function ids_photo_link_verify(string $tok): ?array {
+    if (!preg_match('/^PL\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]{32})$/', $tok, $m)) return null;
+    $want = substr(b64url(hash_hmac('sha256', 'photo-link|' . $m[1], (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''), true)), 0, 32);
+    if (!hash_equals($want, $m[2])) return null;
+    $parts = explode('|', b64url_decode($m[1]));
+    if (count($parts) !== 3 || !in_array($parts[0], ['member', 'volunteer', 'student'], true) || $parts[1] === '' || (int)$parts[2] < time()) return null;
+    return [$parts[0], $parts[1]];
+}
+
+/** The guardians who take alerts for a member, with their names, for a personal hello. */
+function ids_guardians_for(string $memberId): array {
+    if (!function_exists('family_notify_prefs')) return [];
+    $out = [];
+    foreach (db_all("SELECT g.email, g.fullName, w.notify FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                      WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$memberId]) as $r) {
+        $e = strtolower(trim((string)$r['email']));
+        if ($e === '' || !filter_var($e, FILTER_VALIDATE_EMAIL) || empty(family_notify_prefs($r['notify'] ?? '')['alerts']) || isset($out[$e])) continue;
+        $out[$e] = ['email' => $e, 'name' => trim((string)$r['fullName'])];
+    }
+    return array_values($out);
+}
+
+/** How to take a photo that passes, said the same way in every message. */
+const IDS_PHOTO_TIPS = "For a photo that passes first time:\n• Face the camera, head and shoulders in the frame.\n• Stand in front of a plain, light wall.\n• Daylight or a bright room; no hat, cap or sunglasses.";
+
 /**
- * Ask for a photo, for one person or many (§3.1 "Ask for photo"; the
- * blocked filter's "Ask everyone").
+ * The words for one person, for each audience who can act. `$reminder` is the
+ * one follow-up a campaign may send. Written to one person: their name, their
+ * centre, their card, and a button that does the thing.
+ */
+function ids_photo_messages(string $t, array $c, string $link, bool $reminder): array {
+    $first = explode(' ', trim($c['name']))[0] ?: 'there';
+    $centre = trim((string)$c['centre']);
+    $card = $t === 'volunteer' ? 'NGG volunteer card' : 'NGG ID card';
+    $nudge = $reminder ? 'A quick reminder: ' : '';
+    $out = [];
+    if ($t === 'member') {
+        $out['member'] = ['title' => $reminder ? $first . ', your NGG card is still waiting for your photo' : $first . ', add your photo for your NGG card',
+            'intro' => 'Hi ' . $first . ',',
+            'body' => $nudge . 'your ' . $card . ' is ready to print. All it needs is your photo.' . "\n\n"
+                . 'Tap the button to take one or choose one from your phone. It takes about a minute, and the team checks it before it goes on your card.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add my photo', 'push' => ($reminder ? 'Still waiting: ' : '') . 'your NGG card needs your photo. Tap Edit profile, then Upload.'];
+        $out['guardian'] = ['title' => ($reminder ? 'Reminder: ' : '') . 'a photo for ' . $first . '’s NGG ID card',
+            'intro' => 'Hello{name},',
+            'body' => $nudge . $c['name'] . '’s ' . $card . ($centre !== '' ? ' (' . $centre . ' centre)' : '') . ' is ready to print. All it needs is a photo.' . "\n\n"
+                . 'You can add one from your phone in about a minute with the button below. ' . $first . ' can also add it from their own NGG dashboard, so whoever gets to it first is fine.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add ' . $first . '’s photo'];
+    } elseif ($t === 'volunteer') {
+        $out['volunteer'] = ['title' => $reminder ? $first . ', your volunteer card is still waiting for your photo' : $first . ', a photo for your NGG volunteer card',
+            'intro' => 'Hi ' . $first . ',',
+            'body' => $nudge . 'your ' . $card . ($centre !== '' ? ' for ' . $centre : '') . ' is ready to print. All it needs is your photo.' . "\n\n"
+                . 'Tap the button to take one or choose one from your phone. It takes about a minute.' . "\n\n" . IDS_PHOTO_TIPS,
+            'cta' => 'Add my photo'];
+    }
+    return $out;
+}
+
+/** One email in the house template, with a button to an absolute URL. Never throws. */
+function ids_mail_to(string $to, string $title, string $intro, string $body, string $ctaLabel, string $ctaUrl): bool {
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL) || !function_exists('send_mail') || !function_exists('email_template')) return false;
+    try {
+        $html = email_template(['title' => $title, 'eyebrow' => 'Next Generation Genius', 'intro' => $intro,
+            'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html($body)) . '</p>', 'ctaLabel' => $ctaLabel, 'ctaUrl' => $ctaUrl,
+            'footNote' => 'You are getting this because a card is waiting to be printed. If the photo is already sent, you can ignore it.']);
+        return (bool)@send_mail($to, $title, $html);
+    } catch (\Throwable $e) { error_log('[ids.mail] ' . $e->getMessage()); return false; }
+}
+
+/** Send one queued ask (or its reminder). Returns the channels that went; [] when nobody could be reached. */
+function ids_photo_send_one(array $row): array {
+    $t = (string)$row['subjectType']; $id = (string)$row['subjectId'];
+    $reminder = (string)$row['status'] === 'remind';
+    $c = ids_subject_contact($t, $id);
+    if (!$c) return ['status' => 'skipped', 'channels' => []];
+    // A photo arrived while it waited in the queue: nothing to ask for.
+    if ($c['photo'] !== '') return ['status' => 'skipped', 'channels' => []];
+    $sent = []; $tried = 0;
+    if ($t === 'student') {
+        if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
+            db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
+            try { reshoot_notify_guardian($id, $reminder ? 'A reminder: we still do not have a photo for their ID card.' : 'We do not have a photo on file for their ID card yet.'); $sent[] = 'guardian'; }
+            catch (\Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+        }
+    } else {
+        $link = ids_photo_link($t, $id);
+        $msg = ids_photo_messages($t, $c, $link, $reminder);
+        if ($t === 'member') {
+            $mm = $msg['member'];
+            try { push_notification($id, ['kind' => 'photo', 'title' => mb_substr($mm['title'], 0, 160), 'body' => $mm['push'], 'linkPage' => 'dashboard']); $sent[] = 'member_app'; } catch (\Throwable $e) {}
+            if ($c['email'] !== '') { $tried++; if (ids_mail_to($c['email'], $mm['title'], $mm['intro'], $mm['body'], $mm['cta'], $link)) $sent[] = 'member'; }
+            $gOk = 0; $gm = $msg['guardian'];
+            foreach (ids_guardians_for($id) as $g) {
+                $tried++;
+                if (ids_mail_to($g['email'], $gm['title'], str_replace('{name}', $g['name'] !== '' ? ' ' . $g['name'] : '', $gm['intro']), $gm['body'], $gm['cta'], $link)) $gOk++;
+            }
+            if ($gOk) $sent[] = 'guardians';
+        } elseif ($t === 'volunteer') {
+            $vm = $msg['volunteer'];
+            if ($c['email'] !== '') { $tried++; if (ids_mail_to($c['email'], $vm['title'], $vm['intro'], $vm['body'], $vm['cta'], $link)) $sent[] = 'volunteer'; }
+        }
+    }
+    // The app alone is not reaching anyone who never opens it: only an email or a guardian counts as reached.
+    $reached = array_values(array_diff($sent, ['member_app']));
+    /* An address was on file and every mail to it failed: that is the site's
+       mail, not a missing address, and the studio says which. */
+    if (!$reached && $tried > 0) $sent[] = 'mail_failed';
+    return ['status' => $reached ? 'sent' : 'unreachable', 'channels' => $sent];
+}
+
+/**
+ * Send the next queued asks, oldest first — the web-cron's job (and the first
+ * IDS_ASK_INLINE of a press, during the press). A campaign whose last person
+ * has gone gets its ONE staff summary.
+ */
+function ids_photo_drain(int $limit = IDS_ASK_DRAIN, string $campaignId = ''): array {
+    $rows = db_all("SELECT * FROM id_photo_asks WHERE status IN ('queued','remind')" . ($campaignId !== '' ? ' AND campaignId = ?' : '') . ' ORDER BY id LIMIT ' . (int)$limit,
+        $campaignId !== '' ? [$campaignId] : []);
+    $done = 0; $touched = [];
+    foreach ($rows as $r) {
+        $wasRemind = (string)$r['status'] === 'remind';
+        // Claimed first, so two ticks never send the same message twice.
+        if (!db_exec("UPDATE id_photo_asks SET status = 'sending' WHERE id = ? AND status = ?", [(int)$r['id'], (string)$r['status']])) continue;
+        $res = ids_photo_send_one($r);
+        $upd = ['status' => $res['status'], 'sent' => $res['status'] === 'sent' ? 1 : 0, 'channels' => json_encode($res['channels']), 'sentAt' => now_iso()];
+        if ($wasRemind) $upd['reminders'] = (int)$r['reminders'] + 1;
+        db_update('id_photo_asks', $upd, ['id' => (int)$r['id']]);
+        $done++;
+        if ((string)$r['campaignId'] !== '') $touched[(string)$r['campaignId']] = true;
+    }
+    foreach (array_keys($touched) as $cid) ids_photo_campaign_settle($cid);
+    return ['sent' => $done];
+}
+
+/** A campaign with nobody left in the queue is done; its staff summary goes once. */
+function ids_photo_campaign_settle(string $cid): void {
+    $left = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status IN ('queued','remind','sending')", [$cid])['c'] ?? 0);
+    if ($left) return;
+    $camp = db_row('SELECT * FROM id_photo_campaigns WHERE campaignId = ? LIMIT 1', [$cid]);
+    if (!$camp) return;
+    if ((string)$camp['status'] !== 'done') db_update('id_photo_campaigns', ['status' => 'done'], ['campaignId' => $cid]);
+    if ((string)$camp['summaryAt'] === '') { db_update('id_photo_campaigns', ['summaryAt' => now_iso()], ['campaignId' => $cid]); ids_photo_campaign_notify($camp); }
+}
+
+/**
+ * The staff summary: one notice per campaign to the admins who own those
+ * cards for those centres, never the requester. It counts — by centre, and
+ * who could not be reached — and names people only for a handful. It used to
+ * list the first twenty names in one sentence and "and 980 more".
+ */
+function ids_photo_campaign_notify(array $camp): void {
+    $cid = (string)$camp['campaignId'];
+    $rows = db_all('SELECT subjectType, subjectId, status, reminders FROM id_photo_asks WHERE campaignId = ?', [$cid]);
+    if (!$rows) return;
+    $byCap = [];
+    foreach ($rows as $r) {
+        if ((string)$r['status'] === 'skipped') continue;
+        $c = ids_subject_contact((string)$r['subjectType'], (string)$r['subjectId']);
+        if (!$c) continue;
+        $byCap[ids_cap_for((string)$r['subjectType'])][] = ['name' => $c['name'], 'centre' => $c['centre'], 'status' => (string)$r['status']];
+    }
+    $reminder = (string)$camp['remindedAt'] !== '' && (int)array_sum(array_map(fn($r) => (int)$r['reminders'], $rows)) > 0;
+    foreach ($byCap as $cap => $people) {
+        $centres = array_values(array_unique(array_filter(array_column($people, 'centre'))));
+        $staff = staff_with_cap($cap, [(string)$camp['askedBy']], function ($s) use ($centres) {
+            if (!$centres) return true;
+            foreach ($centres as $c) if (admin_centre_allowed($s, $c)) return true;
+            return false;
+        });
+        if (!$staff) continue;
+        $n = count($people);
+        $unreach = array_values(array_filter($people, fn($x) => $x['status'] === 'unreachable'));
+        $per = [];
+        foreach ($people as $x) { $k = $x['centre'] !== '' ? $x['centre'] : 'No centre'; $per[$k] = ($per[$k] ?? 0) + 1; }
+        arsort($per);
+        $lines = [];
+        if ($n <= IDS_ASK_DIGEST_NAMES) $lines[] = 'Asked: ' . implode(', ', array_map(fn($x) => $x['name'] . ($x['centre'] !== '' ? ' (' . $x['centre'] . ')' : ''), $people)) . '.';
+        else $lines[] = 'By centre: ' . implode(' · ', array_map(fn($k, $v) => $k . ' ' . $v, array_keys(array_slice($per, 0, 8, true)), array_slice($per, 0, 8, true))) . (count($per) > 8 ? ' · and ' . (count($per) - 8) . ' more centres' : '') . '.';
+        if ($unreach) $lines[] = count($unreach) === 1 ? '1 person has no email or guardian on file, so they need asking in person: ' . $unreach[0]['name'] . '.'
+            : count($unreach) . ' have no email or guardian on file and need asking in person. The ID Card Studio lists them (filter: waiting on a photo).';
+        $lines[] = 'Each card prints as soon as its photo is approved. If you see them at the centre, a photo taken there works too.';
+        $title = ($reminder ? 'Photo reminder sent to ' : 'Photo request sent to ') . ($n === 1 ? '1 person' : $n . ' people');
+        notify_people($staff, ['kind' => 'photo', 'title' => $title, 'body' => implode("\n\n", $lines),
+            'ctaLabel' => 'Open the ID Card Studio', 'ctaPath' => '/club/id-cards', 'linkPage' => 'id-cards']);
+    }
+}
+
+/** Validate one item of a photo request. Returns the contact, or an error code. */
+function ids_photo_check(array $g, array $it, string $cut, bool $force): array {
+    $t = (string)($it['subjectType'] ?? ''); $id = trim((string)($it['subjectId'] ?? ''));
+    if (!in_array($t, IDS_SUBJECTS, true) || $id === '') return ['subjectId' => $id, 'error' => 'bad_subject'];
+    if (!ids_can($g['requester'], $t)) return ['subjectId' => $id, 'error' => 'forbidden'];
+    $c = ids_subject_contact($t, $id);
+    if (!$c) return ['subjectId' => $id, 'error' => 'not_found'];
+    if ($c['centre'] !== '' && !admin_centre_allowed($g['requester'], $c['centre'])) return ['subjectId' => $id, 'error' => 'out_of_scope'];
+    if ($c['photo'] !== '') return ['subjectId' => $id, 'error' => 'has_photo'];
+    $open = db_row("SELECT 1 FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? AND status IN ('queued','remind','sending') LIMIT 1", [$t, $id]);
+    if ($open) return ['subjectId' => $id, 'error' => 'already_queued'];
+    $last = db_row("SELECT askedAt FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC LIMIT 1", [$t, $id]);
+    if ($last && (string)$last['askedAt'] > $cut && !$force) return ['subjectId' => $id, 'error' => 'asked_recently', 'askedAt' => (string)$last['askedAt']];
+    return ['subjectId' => $id, 'subjectType' => $t, 'contact' => $c];
+}
+
+/** Who a person's request would reach, without sending: for the confirm's counts. */
+function ids_photo_reach(string $t, array $c, string $id): array {
+    if ($t === 'student') return $c['guardian'] !== '' ? ['guardian'] : [];
+    if ($t === 'volunteer') return $c['email'] !== '' && filter_var($c['email'], FILTER_VALIDATE_EMAIL) ? ['volunteer'] : [];
+    $r = [];
+    if ($c['email'] !== '' && filter_var($c['email'], FILTER_VALIDATE_EMAIL)) $r[] = 'member';
+    if (ids_guardians_for($id)) $r[] = 'guardians';
+    return $r;
+}
+
+/**
+ * Ask for photos, for one person or two thousand: a CAMPAIGN.
  *
- * Who hears, by who can act:
- *   - a member: the member (in-app and email, pointing at the dashboard's
- *     Edit profile, where the photo uploads), and their linked guardians who
- *     take alerts — many members are children;
- *   - a volunteer: the volunteer, by email (there is no self-upload for a
- *     volunteer, so it asks them to send one to their coordinator);
- *   - a Summer School participant: their guardian, with the reshoot link;
- *   - and for every kind: the NGG admins who own that card for that centre
- *     (the capability, centre-scoped), in ONE notice per press listing who is
- *     waiting — never one notice per child.
- * Nobody is asked again within IDS_ASK_QUIET_DAYS unless `force`; that row is
- * reported as asked_recently. The answer says, per person, which channels
- * actually went, so the screen never claims a message nobody sent.
+ * Who hears, by who can act — each message written to one person, with a
+ * one-tap link to the photo page for exactly them (ids_photo_link):
+ *   - a member: in the app and by email, and their guardians who take alerts,
+ *     each by name;
+ *   - a volunteer: by email, with the link (no more "reply with a photo");
+ *   - a Summer School participant: their guardian, with the re-shoot link;
+ *   - staff: ONE summary per campaign when it has gone out, counting by
+ *     centre and naming who could not be reached — never one per child.
+ *
+ * `preview: true` sends nothing and returns what WOULD happen: how many, by
+ * whom they are reached, who cannot be, who is left out and why, and the
+ * exact words of each message — so the confirm says what will be sent.
+ *
+ * Otherwise the people are queued (id_photo_asks, status queued), the first
+ * IDS_ASK_INLINE are sent now, and the rest go out with the web-cron
+ * IDS_ASK_DRAIN at a time: a thousand people is one press, not five, and no
+ * request ever tries to send two thousand emails before it answers.
+ * Nobody is asked again within IDS_ASK_QUIET_DAYS unless `force`, nor while
+ * an earlier request for them is still in the queue.
  */
 function admin_ids_photo_ask(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $raw = $p['items'] ?? null;
     if ($raw === null && isset($p['subjectType'])) $raw = [['subjectType' => $p['subjectType'], 'subjectId' => $p['subjectId'] ?? '']];
     if (!is_array($raw) || !$raw) return ['ok' => false, 'error' => 'no_items'];
-    if (count($raw) > IDS_ASK_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_ASK_MAX . ' at a time.'];
-    $force = !empty($p['force']);
+    if (count($raw) > IDS_ASK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => IDS_ASK_MAX, 'message' => 'At most ' . IDS_ASK_MAX . ' people in one request.'];
+    $force = !empty($p['force']); $preview = !empty($p['preview']);
     $by = (string)$g['requester']['memberId'];
     $cut = gmdate('Y-m-d\TH:i:s\Z', time() - IDS_ASK_QUIET_DAYS * 86400);
-    $results = []; $waiting = [];   // $waiting[cap] = [[name, centre], …] for the admins' notice
-
+    $results = []; $ok = []; $seen = [];
     foreach ($raw as $it) {
-        $t = (string)($it['subjectType'] ?? ''); $id = trim((string)($it['subjectId'] ?? ''));
-        if (!in_array($t, IDS_SUBJECTS, true) || $id === '') { $results[] = ['subjectId' => $id, 'error' => 'bad_subject']; continue; }
-        if (!ids_can($g['requester'], $t)) { $results[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
-        $c = ids_subject_contact($t, $id);
-        if (!$c) { $results[] = ['subjectId' => $id, 'error' => 'not_found']; continue; }
-        if ($c['centre'] !== '' && !admin_centre_allowed($g['requester'], $c['centre'])) { $results[] = ['subjectId' => $id, 'error' => 'out_of_scope']; continue; }
-        if ($c['photo'] !== '') { $results[] = ['subjectId' => $id, 'error' => 'has_photo']; continue; }
-        $last = db_row('SELECT askedAt FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC LIMIT 1', [$t, $id]);
-        if ($last && (string)$last['askedAt'] > $cut && !$force) { $results[] = ['subjectId' => $id, 'error' => 'asked_recently', 'askedAt' => (string)$last['askedAt']]; continue; }
+        if (!is_array($it)) { $results[] = ['subjectId' => '', 'error' => 'bad_subject']; continue; }
+        $k = (string)($it['subjectType'] ?? '') . ':' . (string)($it['subjectId'] ?? '');
+        if (isset($seen[$k])) continue;
+        $seen[$k] = true;
+        $v = ids_photo_check($g, $it, $cut, $force);
+        if (isset($v['error'])) { $results[] = $v; continue; }
+        $ok[] = $v;
+    }
 
-        $first = explode(' ', trim($c['name']))[0] ?: 'there';
-        $sent = [];
-        if ($t === 'member') {
-            notify_people([$c['row']], ['kind' => 'photo', 'title' => 'A photo for your NGG ID card',
-                'body' => 'Your NGG ID card is ready to print except for your photo. On your dashboard, tap Edit profile, then Upload, and choose a clear, front-facing photo in good light. It is checked before it goes on your card.',
-                'intro' => 'Hello ' . $first . ',', 'eyebrow' => 'Next Generation Genius', 'ctaLabel' => 'Add your photo', 'ctaPath' => '/dashboard', 'linkPage' => 'dashboard']);
-            if ($c['email'] !== '') $sent[] = 'member';
-            else $sent[] = 'member_app';
-            $gs = function_exists('family_guardian_emails') ? family_guardian_emails($id, 'alerts') : [];
-            $gOk = 0;
-            foreach ($gs as $ge) if (ids_mail($ge, 'A photo for ' . $first . '’s NGG ID card', 'Hello,',
-                $c['name'] . '’s NGG ID card is ready to print except for the photo. ' . $first . ' can add it from their dashboard (Edit profile, then Upload), or you can send a clear, front-facing photo to their centre coordinator.')) $gOk++;
-            if ($gOk) $sent[] = 'guardians';
-        } elseif ($t === 'volunteer') {
-            if (ids_mail($c['email'], 'A photo for your NGG volunteer card', 'Hello ' . $first . ',',
-                'Your NGG volunteer card is ready to print except for your photo. Reply to this email with a clear, front-facing photo in good light, or hand one to your centre coordinator.')) $sent[] = 'volunteer';
-        } else {
-            if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
-                db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
-                try { reshoot_notify_guardian($id, 'We do not have a photo on file for their ID card.'); $sent[] = 'guardian'; }
-                catch (\Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+    if ($preview) {
+        $reach = ['member' => 0, 'guardians' => 0, 'volunteer' => 0, 'guardian' => 0, 'unreachable' => 0, 'appOnly' => 0];
+        $unreachNames = []; $sample = [];
+        foreach ($ok as $v) {
+            $r = ids_photo_reach($v['subjectType'], $v['contact'], $v['subjectId']);
+            foreach ($r as $ch) $reach[$ch]++;
+            if (!$r) {
+                // A member with no email and no guardian still gets the in-app note; nobody else does.
+                if ($v['subjectType'] === 'member') $reach['appOnly']++;
+                $reach['unreachable']++;
+                if (count($unreachNames) < 8) $unreachNames[] = $v['contact']['name'];
             }
+            if ($v['subjectType'] !== 'student' && !isset($sample[$v['subjectType']])) $sample[$v['subjectType']] = ids_photo_messages($v['subjectType'], $v['contact'], '', false);
         }
-        $waiting[ids_cap_for($t)][] = [$c['name'], $c['centre'], $t];
-        db_insert('id_photo_asks', ['subjectType' => $t, 'subjectId' => $id, 'askedBy' => $by, 'askedAt' => now_iso(), 'sent' => $sent ? 1 : 0, 'channels' => json_encode($sent)]);
-        $results[] = ['subjectId' => $id, 'subjectType' => $t, 'sent' => $sent];
+        $why = [];
+        foreach ($results as $r) $why[$r['error']] = ($why[$r['error']] ?? 0) + 1;
+        $words = [];
+        foreach ($sample as $t => $msgs) foreach ($msgs as $aud => $m)
+            $words[] = ['to' => $aud, 'subject' => $m['title'], 'intro' => str_replace('{name}', '', $m['intro']), 'body' => $m['body'], 'cta' => $m['cta']];
+        return ['ok' => true, 'preview' => true, 'people' => count($ok), 'reach' => $reach, 'unreachable' => $unreachNames, 'leftOut' => $why,
+                'inline' => min(count($ok), IDS_ASK_INLINE), 'queued' => max(0, count($ok) - IDS_ASK_INLINE), 'messages' => $words];
     }
 
-    // The admins who own these cards, scoped to the centres involved: one notice each, per press.
-    $admins = 0;
-    foreach ($waiting as $cap => $people) {
-        $centres = array_values(array_unique(array_filter(array_map(fn($x) => $x[1], $people))));
-        $staff = staff_with_cap($cap, [$by], function ($s) use ($centres) {
-            if (!$centres) return true;
-            foreach ($centres as $c) if (admin_centre_allowed($s, $c)) return true;
-            return false;
-        });
-        if (!$staff) continue;
-        $names = array_map(fn($x) => $x[0] . ($x[1] !== '' ? ' (' . $x[1] . ')' : ''), array_slice($people, 0, IDS_ASK_DIGEST_NAMES));
-        $more = count($people) - count($names);
-        $admins += notify_people($staff, ['kind' => 'photo', 'title' => count($people) === 1 ? 'A card is waiting on a photo' : count($people) . ' cards are waiting on photos',
-            'body' => 'A photo was requested for: ' . implode(', ', $names) . ($more > 0 ? ', and ' . $more . ' more' : '') . '. Their cards print as soon as a photo is approved. If you see them at the centre, a photo taken there works too.',
-            'ctaLabel' => 'Open the ID Card Studio', 'ctaPath' => '/club/id-cards', 'linkPage' => 'id-cards']);
+    if (!$ok) {
+        audit('ids.photo.ask', $by, '', ['asked' => 0, 'refused' => count($results), 'force' => $force], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'asked' => 0, 'queued' => 0, 'admins' => 0, 'results' => $results];
     }
-    $asked = count(array_filter($results, fn($r) => isset($r['sent'])));
-    audit('ids.photo.ask', $by, '', ['asked' => $asked, 'refused' => count($results) - $asked, 'admins' => $admins, 'force' => $force], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'asked' => $asked, 'admins' => $admins, 'results' => $results];
+    $cid = 'PC-' . strtoupper(rand_hex(5));
+    $now = now_iso();
+    db_insert('id_photo_campaigns', ['campaignId' => $cid, 'askedBy' => $by, 'createdAt' => $now, 'total' => count($ok), 'status' => 'sending']);
+    foreach ($ok as $v) db_insert('id_photo_asks', ['subjectType' => $v['subjectType'], 'subjectId' => $v['subjectId'], 'askedBy' => $by, 'askedAt' => $now,
+        'sent' => 0, 'channels' => '[]', 'campaignId' => $cid, 'status' => 'queued', 'sentAt' => '', 'reminders' => 0]);
+    ids_photo_drain(IDS_ASK_INLINE, $cid);
+    // Per-row verdicts: what went now, and what is queued to go.
+    foreach (db_all('SELECT subjectType, subjectId, status, channels FROM id_photo_asks WHERE campaignId = ?', [$cid]) as $r) {
+        $ch = json_decode((string)$r['channels'], true) ?: [];
+        $st = (string)$r['status'];
+        $results[] = ['subjectId' => (string)$r['subjectId'], 'subjectType' => (string)$r['subjectType']]
+            + ($st === 'queued' ? ['queued' => true, 'sent' => []] : ($st === 'skipped' ? ['error' => 'has_photo'] : ['sent' => array_values(array_diff($ch, ['mail_failed']))] + ($st === 'unreachable' ? ['unreachable' => true] + (in_array('mail_failed', $ch, true) ? ['mailFailed' => true] : []) : [])));
+    }
+    $queued = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'queued'", [$cid])['c'] ?? 0);
+    audit('ids.photo.ask', $by, $cid, ['asked' => count($ok), 'refused' => count($results) - count($ok), 'queued' => $queued, 'force' => $force], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'campaignId' => $cid, 'asked' => count($ok), 'queued' => $queued, 'results' => $results];
+}
+
+/** admin.ids.photo.campaigns — the recent requests, and what came of each: how many sent, reached, photos arrived. */
+function admin_ids_photo_campaigns(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $out = [];
+    foreach (db_all('SELECT * FROM id_photo_campaigns ORDER BY id DESC LIMIT 12') as $c) {
+        $rows = db_all('SELECT subjectType, subjectId, status, reminders FROM id_photo_asks WHERE campaignId = ?', [(string)$c['campaignId']]);
+        // Only the people this operator may see count for them.
+        $mine = []; $arrived = 0; $st = ['queued' => 0, 'sent' => 0, 'unreachable' => 0, 'skipped' => 0]; $waiting = [];
+        $byType = [];
+        foreach ($rows as $r) $byType[(string)$r['subjectType']][] = (string)$r['subjectId'];
+        $photo = []; $centre = []; $name = [];
+        foreach ($byType as $t => $ids) {
+            [$tbl, $key] = $t === 'student' ? ['summer_students', 'studentId'] : ($t === 'volunteer' ? ['volunteers', 'volunteerId'] : ['members', 'memberId']);
+            foreach (array_chunk($ids, 400) as $chunk)
+                foreach (db_all("SELECT $key AS id, fullName, centre, photoUrl FROM $tbl WHERE $key IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', $chunk) as $x) {
+                    $photo[$t . ':' . $x['id']] = trim((string)$x['photoUrl']) !== ''; $centre[$t . ':' . $x['id']] = (string)$x['centre']; $name[$t . ':' . $x['id']] = (string)$x['fullName'];
+                }
+        }
+        foreach ($rows as $r) {
+            $k = (string)$r['subjectType'] . ':' . (string)$r['subjectId'];
+            if (!isset($name[$k]) || !ids_can($g['requester'], (string)$r['subjectType'])) continue;
+            if (($centre[$k] ?? '') !== '' && !admin_centre_allowed($g['requester'], $centre[$k])) continue;
+            $s = (string)$r['status']; $s = $s === 'remind' || $s === 'sending' ? 'queued' : $s;
+            if (isset($st[$s])) $st[$s]++;
+            if (!empty($photo[$k])) $arrived++;
+            elseif ($s !== 'skipped') $waiting[] = ['subjectType' => (string)$r['subjectType'], 'subjectId' => (string)$r['subjectId'], 'name' => $name[$k], 'centre' => $centre[$k] ?? '', 'unreachable' => $s === 'unreachable', 'reminded' => (int)$r['reminders'] > 0];
+            $mine[] = $k;
+        }
+        if (!$mine) continue;
+        $age = time() - strtotime((string)$c['createdAt']);
+        $out[] = ['campaignId' => (string)$c['campaignId'], 'createdAt' => (string)$c['createdAt'], 'mine' => (string)$c['askedBy'] === (string)$g['requester']['memberId'],
+            'people' => count($mine), 'status' => (string)$c['status'], 'counts' => $st, 'arrived' => $arrived, 'stillWaiting' => count($waiting),
+            'waiting' => array_slice($waiting, 0, 600), 'remindedAt' => (string)$c['remindedAt'],
+            'canRemind' => (string)$c['remindedAt'] === '' && (string)$c['status'] === 'done' && count($waiting) > 0 && $age >= IDS_ASK_REMIND_AFTER * 86400,
+            'remindFrom' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$c['createdAt']) + IDS_ASK_REMIND_AFTER * 86400)];
+    }
+    return ['ok' => true, 'campaigns' => $out];
+}
+
+/**
+ * admin.ids.photo.remind — the ONE reminder a campaign may send, to the people
+ * in it who still have no photo and could be reached, not before
+ * IDS_ASK_REMIND_AFTER days. Queued and drained like the request itself.
+ */
+function admin_ids_photo_remind(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $cid = (string)($p['campaignId'] ?? '');
+    $c = $cid !== '' ? db_row('SELECT * FROM id_photo_campaigns WHERE campaignId = ? LIMIT 1', [$cid]) : null;
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$c['remindedAt'] !== '') return ['ok' => false, 'error' => 'reminded_already', 'remindedAt' => (string)$c['remindedAt']];
+    if ((string)$c['status'] !== 'done') return ['ok' => false, 'error' => 'still_sending'];
+    if (time() - strtotime((string)$c['createdAt']) < IDS_ASK_REMIND_AFTER * 86400) return ['ok' => false, 'error' => 'too_soon', 'from' => gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$c['createdAt']) + IDS_ASK_REMIND_AFTER * 86400)];
+    $n = 0; $refused = [];
+    foreach (db_all("SELECT * FROM id_photo_asks WHERE campaignId = ? AND status = 'sent' AND reminders = 0", [$cid]) as $r) {
+        $t = (string)$r['subjectType']; $id = (string)$r['subjectId'];
+        if (!ids_can($g['requester'], $t)) { $refused[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
+        $ct = ids_subject_contact($t, $id);
+        if (!$ct || $ct['photo'] !== '') continue;
+        if ($ct['centre'] !== '' && !admin_centre_allowed($g['requester'], $ct['centre'])) { $refused[] = ['subjectId' => $id, 'error' => 'out_of_scope']; continue; }
+        db_update('id_photo_asks', ['status' => 'remind'], ['id' => (int)$r['id']]);
+        $n++;
+    }
+    if (!$n) return ['ok' => false, 'error' => 'nobody_to_remind', 'refused' => $refused];
+    db_update('id_photo_campaigns', ['remindedAt' => now_iso(), 'remindedBy' => (string)$g['requester']['memberId'], 'status' => 'sending', 'summaryAt' => ''], ['campaignId' => $cid]);
+    ids_photo_drain(IDS_ASK_INLINE, $cid);
+    $left = (int)(db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE campaignId = ? AND status = 'remind'", [$cid])['c'] ?? 0);
+    audit('ids.photo.remind', (string)$g['requester']['memberId'], $cid, ['reminded' => $n, 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'reminded' => $n, 'queued' => $left, 'refused' => $refused];
 }
 
 /**
@@ -525,7 +827,36 @@ const IDS_PLAN_ORDERS = ['centre', 'kind', 'name'];
 const IDS_PLAN_IDS_MAX = 600;
 const IDS_PLAN_NAMES_MAX = 50;
 const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
-const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof'];
+const IDS_PLAN_SCALARS = ['kind', 'centre', 'centres', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'numPrefix', 'limit', 'latest', 'hasPhoto', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
+    'margin', 'gap', 'skip', 'breakBy', 'packing', 'cause', 'notKinds'];
+const IDS_PLAN_CENTRES_MAX = 12;
+/* A kind said of ONE named person ("Badmus should be NGG, not summer"): which
+   of their records is meant, when a name is on more than one list. Never a
+   filter on everybody else. */
+const IDS_PLAN_KIND_WORDS = ['ngg' => 'member', 'member' => 'member', 'members' => 'member', 'summer' => 'summer', 'summer school' => 'summer',
+    'participant' => 'summer', 'participants' => 'summer', 'volunteer' => 'volunteer', 'volunteers' => 'volunteer', 'afrovanguard' => 'afrovanguard'];
+/* One-off acts the assistant may ask the studio to do (v4's whitelist). Each
+   is carried out in the browser through the studio's own controls, and the
+   ones that reach people (asking for photos) still go through the confirm
+   that states the count. None of them prints, and none marks anyone printed. */
+const IDS_PLAN_DO = ['clear', 'fill', 'askPhotos', 'improvePhotos', 'adjustPhoto'];
+/* "Improve the photos, remove their backgrounds" is a Cloudinary edit (the
+   studio's Improve photos, admin.photo.edit.bulk); "help position the image"
+   opens the photo editor. Both still go through the studio's own dialog,
+   with the count, before anything changes. */
+const IDS_PLAN_PHOTO_GRAVITY = ['face', 'center', 'north', 'south'];
+const IDS_PLAN_ACTS_MAX = 3;
+// A request that only names an AI is about the assistant, not about a person called Gemini.
+const IDS_PLAN_PROVIDER_WORDS = ['Gemini', 'Groq', 'Claude', 'Anthropic', 'OpenAI', 'ChatGPT', 'GPT', 'OpenRouter', 'AI', 'Llama'];
+// The time the planner gives the AI before the rules answer alone (the browser waits 40s).
+const IDS_PLAN_AI_BUDGET = 22;
+const IDS_PLAN_MARGIN = [3, 30];
+const IDS_PLAN_GAP = [0, 20];
+const IDS_PLAN_SKIP_MAX = 60;
+/* Why a card is being reprinted, when the request says so. It matters: a
+   LOST (or never received) card's reprint gets a new QR and the old card
+   stops opening the gate; a damaged one keeps its QR. */
+const IDS_PLAN_CAUSES = ['lost', 'damaged', 'never_received', 'name'];
 const IDS_PLAN_NUMBER_WORDS = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
     'eleven' => 11, 'twelve' => 12, 'a dozen' => 12, 'dozen' => 12, 'fifteen' => 15, 'twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50, 'a hundred' => 100, 'hundred' => 100];
 const IDS_PLAN_MONTHS = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
@@ -533,8 +864,8 @@ const IDS_PLAN_MONTH_RE = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may
 // Words that start a follow-up rather than a fresh request.
 const IDS_PLAN_REFINE_RE = '/^\s*(only|just|make (it|them)|and|also|add|plus|include|remove|drop|without|except|not|but|now|switch|change|instead|use|with|no|leave out|take (off|out))\b/u';
 // What introduces people to add, and people to leave out.
-const IDS_PLAN_ADD_RE = '/\b(?:add|also|plus|include|and also)\b(.*)$/u';
-const IDS_PLAN_EXCLUDE_RE = '/\b(?:except(?: for)?|excluding|apart from|other than|but not|leave out|take (?:off|out)|remove|drop|minus|not)\b(.*)$/u';
+const IDS_PLAN_ADD_RE = '/\b(?:add|also|plus|include|and also)\b(.*)$/iu';
+const IDS_PLAN_EXCLUDE_RE = '/\b(?:except(?: for)?|excluding|apart from|other than|but not|leave out|take (?:off|out)|remove|drop|minus|not)\b(.*)$/iu';
 
 /** The studio kinds this operator may print (a kind maps to the subject's owning capability). */
 function ids_plan_kinds(array $requester): array {
@@ -605,6 +936,11 @@ function ids_plan_clean_people($in): array {
 function ids_plan_clean(array $in, array $kinds, array $centres): array {
     $out = [];
     $notes = [];
+    if (isset($in['notKinds'])) {
+        $nk = array_values(array_unique(array_filter(array_map(static fn($k) => IDS_PLAN_KIND_WORDS[strtolower(trim((string)$k))] ?? strtolower(trim((string)$k)), (array)$in['notKinds']),
+            static fn($k) => in_array($k, IDS_PLAN_KINDS, true))));
+        if ($nk) $out['notKinds'] = $nk;
+    }
     $kind = strtolower(trim((string)($in['kind'] ?? '')));
     if (in_array($kind, ['student', 'participant', 'participants'], true)) $kind = 'summer';
     if (in_array($kind, ['members', 'ngg'], true)) $kind = 'member';
@@ -618,6 +954,22 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
         if ($c !== null) $out['centre'] = $c;
         else $notes[] = 'No centre called “' . mb_substr(trim((string)$in['centre']), 0, 40) . '”, so every centre is included.';
     }
+    /* Several centres ("Ijaiye and Ikorodu"): each must be a real one; one
+       left is just `centre`. A centre nobody has is said, never guessed. */
+    if (is_array($in['centres'] ?? null)) {
+        $cs = [];
+        foreach (array_slice($in['centres'], 0, IDS_PLAN_CENTRES_MAX) as $said) {
+            if (!is_scalar($said) || trim((string)$said) === '') continue;
+            $c = ids_plan_centre_match((string)$said, $centres);
+            if ($c === null) { $notes[] = 'No centre called “' . mb_substr(trim((string)$said), 0, 40) . '”, so it was left out.'; continue; }
+            if (!in_array($c, $cs, true)) $cs[] = $c;
+        }
+        if (isset($out['centre']) && !in_array($out['centre'], $cs, true) && $cs) array_unshift($cs, $out['centre']);
+        if (count($cs) > 1) { $out['centres'] = $cs; unset($out['centre']); }
+        elseif ($cs) $out['centre'] = $cs[0];
+    }
+    if (isset($in['hasPhoto']) && is_bool($in['hasPhoto'])) $out['hasPhoto'] = $in['hasPhoto'];
+    if (!empty($in['latest']) && $in['latest'] === true) $out['latest'] = true;
     $which = strtolower((string)($in['which'] ?? ''));
     if (in_array($which, IDS_PLAN_WHICH, true)) $out['which'] = $which;
     $out += ids_plan_clean_people(['ids' => $in['ids'] ?? [], 'names' => $in['names'] ?? []]);
@@ -628,6 +980,9 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
         if (isset($in[$k]) && is_numeric($in[$k]) && (int)$in[$k] >= 0 && (int)$in[$k] <= 999999) $out[$k] = (int)$in[$k];
     }
     if (isset($out['numFrom'], $out['numTo']) && $out['numFrom'] > $out['numTo']) [$out['numFrom'], $out['numTo']] = [$out['numTo'], $out['numFrom']];
+    // The printed ID's own prefix for a range said as two IDs ("026-001 to 026-040"): 2026's, not every year's.
+    $np = strtoupper(trim((string)($in['numPrefix'] ?? '')));
+    if ($np !== '' && (isset($out['numFrom']) || isset($out['numTo'])) && preg_match('/^(?:\d{3}|[A-Z]{2,4}-\d{2})$/', $np)) $out['numPrefix'] = $np;
     if (isset($in['limit']) && is_numeric($in['limit']) && (int)$in['limit'] >= 1) $out['limit'] = min(IDS_BATCH_MAX, (int)$in['limit']);
     $backs = strtolower((string)($in['backs'] ?? ''));
     if (in_array($backs, IDS_PLAN_BACKS, true)) $out['backs'] = $backs;
@@ -638,6 +993,35 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
     $order = strtolower((string)($in['order'] ?? ''));
     if (in_array($order, IDS_PLAN_ORDERS, true)) $out['order'] = $order;
     if (isset($in['proof']) && is_bool($in['proof'])) $out['proof'] = $in['proof'];
+    if (isset($in['margin']) && is_numeric($in['margin'])) $out['margin'] = max(IDS_PLAN_MARGIN[0], min(IDS_PLAN_MARGIN[1], (int)round((float)$in['margin'])));
+    if (isset($in['gap']) && is_numeric($in['gap'])) $out['gap'] = max(IDS_PLAN_GAP[0], min(IDS_PLAN_GAP[1], (int)round((float)$in['gap'])));
+    if (isset($in['skip']) && is_numeric($in['skip']) && (int)$in['skip'] >= 0) $out['skip'] = min(IDS_PLAN_SKIP_MAX, (int)$in['skip']);
+    foreach (['breakBy', 'packing'] as $k) if (isset($in[$k]) && is_bool($in[$k])) $out[$k] = $in[$k];
+    $cause = (string)($in['cause'] ?? '');
+    if (in_array($cause, IDS_PLAN_CAUSES, true)) $out['cause'] = $cause;
+    // One act or several, in the order asked ("improve the photos, then ask the rest for one").
+    $acts = [];
+    foreach ((array)($in['acts'] ?? []) as $a) if (in_array((string)$a, IDS_PLAN_DO, true) && !in_array((string)$a, $acts, true)) $acts[] = (string)$a;
+    foreach ((array)($in['do'] ?? []) as $a) if (in_array((string)$a, IDS_PLAN_DO, true) && !in_array((string)$a, $acts, true)) $acts[] = (string)$a;
+    $acts = array_slice($acts, 0, IDS_PLAN_ACTS_MAX);
+    if ($acts) { $out['do'] = $acts[0]; if (count($acts) > 1) $out['acts'] = $acts; }
+    if (is_array($in['photo'] ?? null)) {
+        $ph = [];
+        foreach (['removeBg', 'brighten', 'sharpen'] as $k) if (isset($in['photo'][$k]) && is_bool($in['photo'][$k])) $ph[$k] = $in['photo'][$k];
+        if (in_array((string)($in['photo']['gravity'] ?? ''), IDS_PLAN_PHOTO_GRAVITY, true)) $ph['gravity'] = (string)$in['photo']['gravity'];
+        if (isset($in['photo']['zoom']) && is_numeric($in['photo']['zoom'])) $ph['zoom'] = round(max(1, min(2.5, (float)$in['photo']['zoom'])), 2);
+        if ($ph) $out['photo'] = $ph;
+    }
+    if (is_array($in['kindOf'] ?? null)) {
+        $ko = [];
+        foreach ($in['kindOf'] as $name => $k) {
+            $name = trim(preg_replace('/\s+/u', ' ', (string)$name)); $k = IDS_PLAN_KIND_WORDS[strtolower(trim((string)$k))] ?? strtolower(trim((string)$k));
+            if ($name === '' || mb_strlen($name) > 60 || !preg_match('/^[\p{L}][\p{L}\p{M}\'’\- .]*$/u', $name) || !in_array($k, $kinds, true)) continue;
+            $ko[$name] = $k;
+            if (count($ko) >= IDS_PLAN_NAMES_MAX) break;
+        }
+        if ($ko) $out['kindOf'] = $ko;
+    }
     return ['plan' => $out, 'notes' => $notes];
 }
 
@@ -651,14 +1035,53 @@ function ids_plan_find_ids(string $t): array {
 function ids_plan_find_names(string $clause, array $centres): array {
     $skip = array_merge(['Add', 'Also', 'Plus', 'Include', 'Except', 'Not', 'But', 'And', 'Remove', 'Drop', 'Without', 'Leave', 'Take', 'Out', 'Off', 'Only', 'Just', 'The', 'For', 'At', 'In',
         'Members', 'Member', 'Summer', 'School', 'Participants', 'Volunteers', 'Afrovanguard', 'NGG', 'Reprint', 'Reprints', 'New', 'Cards', 'Card', 'Print', 'Proof', 'Monday', 'Tuesday',
-        'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'A4', 'A3', 'Letter'], array_map(fn($c) => $c['name'], $centres));
+        'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'A4', 'A3', 'Letter', 'Improve', 'Fix', 'Ask', 'Remove', 'Can', 'Please', 'Help', 'Photos', 'Photo',
+        'Front', 'Fronts', 'Back', 'Backs', 'Double', 'Single', 'Sided', 'Make', 'It', 'I', 'We', 'Need', 'Following', 'These', 'Them', 'They', 'Should', 'Use', 'Fill', 'Clear', 'Then',
+        'Crop', 'Marks', 'Long', 'Short', 'Edge', 'Sheet', 'Sheets', 'Name', 'Names', 'Is', 'Are', 'Who', 'What', 'Why', 'How', 'Where', 'When', 'Ok', 'OK', 'Yes', 'No', 'Club'],
+        IDS_PLAN_PROVIDER_WORDS, array_map(fn($c) => $c['name'], $centres));
+    // A centre's name is not a person's, however many words it has ("Yaba Hub").
+    foreach ($centres as $c) $clause = (string)preg_replace('/(?<![\p{L}])' . preg_quote((string)$c['name'], '/') . '(?![\p{L}])/u', ' ', $clause);
     preg_match_all('/\b\p{Lu}[\p{Ll}\'’\-]+(?:\s+\p{Lu}[\p{Ll}\'’\-]+)*/u', $clause, $m);
     $out = [];
     foreach ($m[0] as $run) {
+        // "Ada Okafor's card" is Ada Okafor.
+        $run = (string)preg_replace('/[\'’]s?$/u', '', $run);
         $words = array_values(array_filter(preg_split('/\s+/u', $run), fn($w) => !in_array($w, $skip, true) && !preg_match('/^' . IDS_PLAN_MONTH_RE . '$/iu', $w)));
         if ($words) $out[] = implode(' ', $words);
     }
     return array_values(array_unique($out));
+}
+
+/** Every centre the text names, in the order written ("Ijaiye and Ikorodu"). The
+ *  same tests as ids_plan_find_centre, plus the first word of a longer name
+ *  after "at/in/for/from" ("at Yaba" for Yaba Hub) when only one centre has it. */
+function ids_plan_find_centres(string $t, array $centres): array {
+    if (preg_match('/\b(no|without an?)\s+cent(re|er)\b/u', $t)) return [IDS_PLAN_NONE];
+    $words = preg_split('/[^\p{L}]+/u', $t, -1, PREG_SPLIT_NO_EMPTY);
+    $found = [];
+    foreach ($centres as $c) {
+        $n = mb_strtolower($c['name']); $at = -1;
+        if (preg_match('/(?<![\p{L}])' . preg_quote($n, '/') . '(?![\p{L}])/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+        elseif ($c['code'] !== '' && preg_match('/\b(at|in|for|from)\s+' . preg_quote(mb_strtolower($c['code']), '/') . '\b(?!-)/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+        else {
+            $first = explode(' ', $n)[0];
+            $shared = count(array_filter($centres, static fn($o) => explode(' ', mb_strtolower($o['name']))[0] === $first));
+            if ($first !== $n && mb_strlen($first) >= 4 && $shared === 1 && preg_match('/\b(?:at|in|for|from)\s+' . preg_quote($first, '/') . '\b/u', $t, $m, PREG_OFFSET_CAPTURE)) $at = $m[0][1];
+            else {
+                $k = count(preg_split('/\s+/u', $n)); $room = ids_plan_typo_room($n);
+                if ($room > 0) for ($i = 0; $i + $k <= count($words); $i++) {
+                    $w = implode(' ', array_slice($words, $i, $k));
+                    if (mb_strlen($w) >= 4 && levenshtein($w, $n) <= $room && preg_match('/(?<![\p{L}])' . preg_quote($w, '/') . '/u', $t, $m, PREG_OFFSET_CAPTURE)) { $at = $m[0][1]; break; }
+                }
+            }
+        }
+        if ($at >= 0) $found[$c['name']] = $at;
+    }
+    // A longer name wins over a shorter one inside it ("Yaba Hub" over "Yaba").
+    foreach (array_keys($found) as $a) foreach (array_keys($found) as $b)
+        if ($a !== $b && isset($found[$a], $found[$b]) && str_contains(mb_strtolower($b), mb_strtolower($a)) && abs($found[$a] - $found[$b]) <= mb_strlen($b)) unset($found[$a]);
+    asort($found);
+    return array_keys($found);
 }
 
 /** A centre in free text: its name (or a near spelling of it), or its code after "at/in/for/from". */
@@ -692,6 +1115,11 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     /* People to leave out, and people to add, are read from their own clause,
        so "except 026-002" never puts 026-002 on the sheet. "without a card",
        "without crop marks" and "no centre" are not exclusions. */
+    /* "Except those already printed" is not a person to leave out: it is the
+       people still waiting for a card. Read before the exclusion clause. */
+    $waitRe = '/\b(?:except|but not|excluding|other than|apart from|not)\s+(?:for\s+)?(?:those|the ones|people|anyone|anybody|everyone|ones)?\s*(?:who|that)?\s*(?:are|is|have|has|\'ve)?\s*(?:already|been)?\s*(?:been\s+)?(?:printed|carded|with (?:a\s+)?cards?|got (?:a\s+)?cards?|have (?:a\s+)?cards?)\b/iu';
+    $waiting = (bool)preg_match($waitRe, $prompt);
+    if ($waiting) $prompt = trim((string)preg_replace($waitRe, ' ', $prompt));
     $main = $prompt;
     $exClause = '';
     if (preg_match(IDS_PLAN_EXCLUDE_RE, $prompt, $m, PREG_OFFSET_CAPTURE) && !preg_match('/^\s*(?:the\s+|a\s+|any\s+)?(cards?|crop|cut|trim|backs?|cent(re|er)s?|marks?|proofs?|draft|limit|dates?|filter)\b/iu', $m[1][0])) {
@@ -703,20 +1131,67 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
         $addClause = $m[1][0];
         $main = substr($main, 0, $m[0][1]);
     }
+    /* "Badmus should be NGG, not summer": a kind said of one named person
+       picks which of their records is meant. The clause is taken out before
+       the kind is read, so it never becomes a filter on everyone. */
+    $kindRe = '/(\p{Lu}[\p{L}\'’\-]+(?:\s+\p{Lu}[\p{L}\'’\-]+)*)\s+(?:should be|must be|needs to be|is an?|is|are|as an?|as)\s+(?:an?\s+|the\s+)?((?i:ngg|members?|summer(?: school)?|participants?|volunteers?|afrovanguard))\b(?:[^.;!?]*?\b(?i:not)\s+(?:an?\s+|the\s+)?(?i:ngg|members?|summer(?: school)?|participants?|volunteers?)\b)?/u';
+    if (preg_match_all($kindRe, $main, $km, PREG_SET_ORDER)) {
+        foreach ($km as $k) {
+            $who = trim(preg_replace('/^(?:The|A|An|Make|Put|Print)\s+/u', '', $k[1]));
+            if ($who !== '' && !in_array($who, IDS_PLAN_PROVIDER_WORDS, true)) $p['kindOf'][$who] = IDS_PLAN_KIND_WORDS[mb_strtolower($k[2])] ?? 'member';
+            $main = str_replace($k[0], ' ', $main);
+        }
+    }
     $mt = mb_strtolower($main);
+    /* "It should exclude summer", "no volunteers": a kind left out, read before
+       the kind itself so "summer" here never means "Summer School only". */
+    $kindAlt = 'summer(?: school)?|participants?|campers?|volunteers?|members?|ngg|afrovanguard';
+    if (preg_match_all('/\b(?:exclud\w*|without|no|not|except|minus|leave out|drop|remove|skip)\s+(?:the\s+|any\s+)?(' . $kindAlt . ')\b(?:\s+(?:ones|people|records|cards))?/u', $mt, $nk, PREG_SET_ORDER)) {
+        foreach ($nk as $x) { $p['notKinds'][] = IDS_PLAN_KIND_WORDS[$x[1]] ?? (str_starts_with($x[1], 'camper') ? 'summer' : 'member'); $mt = str_replace($x[0], ' ', $mt); }
+        $p['notKinds'] = array_values(array_unique($p['notKinds']));
+    }
     if ($exClause !== '') { $ex = array_filter(['ids' => ids_plan_find_ids($exClause), 'names' => ids_plan_find_names($exClause, $centres)]); if ($ex) $p['exclude'] = $ex; }
     if ($addClause !== '') { $ad = array_filter(['ids' => ids_plan_find_ids($addClause), 'names' => ids_plan_find_names($addClause, $centres)]); if ($ad) $p['also'] = $ad; }
 
-    if (preg_match('/\b(summer|participants?|campers?)\b/u', $mt)) $p['kind'] = 'summer';
+    /* Two kinds or more ("volunteers and members"): the kinds not named are
+       the ones left out, so both lists come. */
+    $named = [];
+    foreach (['summer' => '/\b(summer|participants?|campers?)\b/u', 'volunteer' => '/\b(volunteers?|mentors?|instructors?)\b/u',
+              'afrovanguard' => '/\b(afrovanguard|vanguard|ngv)\b/u', 'member' => '/\b(members?|ngg)\b/u'] as $k => $re)
+        if (preg_match($re, $mt, $km2, PREG_OFFSET_CAPTURE)) $named[$k] = $km2[0][1];
+    if (count($named) >= 2 && empty($p['notKinds']) && preg_match('/\b(?:and|&|plus|together|both)\b/u', $mt) && !preg_match('/\bsummer\s+(?:school\s+)?members?\b|\bngg\s+members?\b/u', $mt)) {
+        $p['notKinds'] = array_values(array_diff(IDS_PLAN_KINDS, array_keys($named)));
+    }
+    if (count($named) >= 2 && isset($p['notKinds']) && count($p['notKinds']) === count(IDS_PLAN_KINDS) - count($named)) { /* both lists: no single kind */ }
+    elseif (preg_match('/\b(summer|participants?|campers?)\b/u', $mt)) $p['kind'] = 'summer';
     elseif (preg_match('/\b(volunteers?|mentors?|instructors?|staff)\b/u', $mt)) $p['kind'] = 'volunteer';
     elseif (preg_match('/\b(afrovanguard|vanguard|ngv)\b/u', $mt)) $p['kind'] = 'afrovanguard';
     elseif (preg_match('/\b(members?|ngg|kids|children|students?)\b/u', $mt)) $p['kind'] = 'member';
-    if (($c = ids_plan_find_centre($mt, $centres)) !== null) $p['centre'] = $c;
+    $cs = ids_plan_find_centres($mt, $centres);
+    if (count($cs) > 1 && !in_array(IDS_PLAN_NONE, $cs, true)) $p['centres'] = $cs;
+    elseif ($cs) $p['centre'] = $cs[0];
+    $stillNeeds = '/\b(?:still\s+)?needs?\s+(?:a\s+|their\s+)?cards?\b|\b(?:don.?t|do not|doesn.?t|does not)\s+have\s+(?:a\s+)?cards?\b|\bwaiting (?:for|on) (?:a\s+|their\s+)?cards?\b|\bno cards? yet\b|\bnot (?:yet\s+)?(?:been\s+)?printed\b|\bhaven.?t been printed\b|\bnot carded\b/u';
     if (preg_match('/\b(reprints?|re-?print|replace(ment)?s?|lost|damaged|stolen)\b/u', $mt)) $p['which'] = 'reprint';
-    elseif (preg_match('/\b(new|first time|never had|haven.?t had|without a card)\b/u', $mt)) $p['which'] = 'new';
+    elseif ($waiting || preg_match($stillNeeds, $mt) || preg_match('/\b(new|first time|never had|haven.?t had|without a card)\b/u', $mt)) $p['which'] = 'new';
     elseif (preg_match('/\b(everyone|everybody|all of them|whole (list|queue)|all waiting)\b/u', $mt)) $p['which'] = 'all';
     $ids = ids_plan_find_ids($main);
+    /* "026-001 to 026-040" is the forty between, not two people: a range on
+       the printed number, kept to that prefix (2026's, not every year's). */
+    if (preg_match('/\b(\d{3}|[a-z]{2,4}-\d{2})-(\d{3,4})\s*(?:-|–|—|to|through|thru|until|till)\s*(?:\1-)?(\d{3,4})\b/iu', $main, $rg)) {
+        $p['numFrom'] = (int)$rg[2]; $p['numTo'] = (int)$rg[3]; $p['numPrefix'] = strtoupper($rg[1]);
+        $ids = array_values(array_diff($ids, [strtoupper($rg[1] . '-' . $rg[2]), strtoupper($rg[1] . '-' . $rg[3])]));
+        if (preg_match('/^\d{3}$/', $rg[1]) && !isset($p['kind']) && empty($p['notKinds'])) $p['kind'] = 'member';
+    }
     if ($ids) $p['ids'] = $ids;
+    /* Photos on file, as a filter: "without a photo", "only the ones with photos". */
+    $picW = '(?:photos?|pictures?|pics?|headshots?|passport(?:s| photos?)?)';
+    if (preg_match('/\b(?:without|no|missing|lacking|need(?:s|ing)?)\s+(?:a\s+|any\s+|their\s+)?' . $picW . '\b|\b' . $picW . '\s+(?:missing|not uploaded|not in)\b|\b(?:haven.?t|hasn.?t|don.?t|doesn.?t)\s+(?:got\s+|have\s+)?(?:a\s+|any\s+)?' . $picW . '\b/u', $mt)) $p['hasPhoto'] = false;
+    elseif (preg_match('/\b(?:with|has|have|having|got)\s+(?:a\s+|their\s+)?' . $picW . '\b(?!\s+(?:edit|fix|improv))/u', $mt) && !preg_match('/\b(?:improve|fix|brighten|sharpen|remove|background)\b/u', $mt)) $p['hasPhoto'] = true;
+    /* People named in the request itself ("print these: 1. Agbalaya Habeebat
+       2. Idi Oluwadarasimi"). Two words at least: a capital at the start of a
+       sentence ("Front and back") is not a person. */
+    $people = array_values(array_filter(ids_plan_find_names($main, $centres), static fn($n) => count(preg_split('/\s+/u', $n)) >= 2));
+    if ($people) $p['names'] = $people;
     if (preg_match('/\b(?:cards?|numbers?|ids?|nos?\.?)\s*#?(\d{1,6})\s*(?:-|–|to|through|until)\s*#?(\d{1,6})\b/u', $mt, $r)) { $p['numFrom'] = (int)$r[1]; $p['numTo'] = (int)$r[2]; }
 
     $d = new DateTime($today);
@@ -750,7 +1225,7 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if (preg_match('/\b(?:to|until|till)\s+(\d{4}-\d{2}-\d{2})\b/u', $mt, $r)) $p['dateTo'] = $r[1];
 
     if (preg_match('/\bshort[- ]edge\b/u', $t)) $p['backs'] = 'short';
-    elseif (preg_match('/\b(double[- ]sided|two[- ]sided|both sides|front and back|fronts and backs|duplex|with (the )?backs?|long[- ]edge)\b/u', $t)) $p['backs'] = 'long';
+    elseif (preg_match('/\b(double[- ]sided|two[- ]sided|both sides|front and back|fronts and backs|duplex|with (the )?backs?|long[- ]edge|backs? (too|as well)|and (the )?backs?|print (the )?backs?|include (the )?backs?)\b/u', $t)) $p['backs'] = 'long';
     elseif (preg_match('/\b(fronts? only|only (the )?fronts?|single[- ]sided|one[- ]sided|no backs?|without (the )?backs?)\b/u', $t)) $p['backs'] = 'off';
     if (preg_match('/\b(no|without)\s+(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = false;
     elseif (preg_match('/\b(crop|cut|trim)\s+marks?\b/u', $t)) $p['marks'] = true;
@@ -765,8 +1240,59 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if (preg_match('/\b(by name|alphabetical(ly)?|a to z|a-z)\b/u', $t)) $p['order'] = 'name';
     elseif (preg_match('/\bby (centre|center)\b/u', $t)) $p['order'] = 'centre';
     elseif (preg_match('/\bby (kind|type)\b/u', $t)) $p['order'] = 'kind';
+    // Layout, said in millimetres or slots.
+    // "margin 5mm" and "a 5mm margin" both.
+    if (preg_match('/\bmargins?\s*(?:of|to|at|=)?\s*(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)?\b/u', $t, $r)
+        || preg_match('/\b(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)\s+margins?\b/u', $t, $r)) $p['margin'] = (float)$r[1];
+    if (preg_match('/\b(?:gaps?|gutters?|spacing)\s*(?:of|to|at|=|between cards)?\s*(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)?\b/u', $t, $r)
+        || preg_match('/\b(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)\s+(?:gaps?|gutters?|spacing)\b/u', $t, $r)) $p['gap'] = (float)$r[1];
+    if (preg_match('/\bskip\s+(?:the\s+)?(?:first\s+)?(\d{1,2})\b/u', $t, $r) || preg_match('/\b(\d{1,2})\s+(?:slots?|spaces?|cards?)\s+(?:are\s+)?(?:already\s+)?used\b/u', $t, $r)) $p['skip'] = (int)$r[1];
+    elseif (preg_match('/\b(?:fresh|new|full|unused)\s+sheet of (?:card )?stock\b|\bdon.?t skip\b|\bno skipp?ing\b/u', $t)) $p['skip'] = 0;
+    if (preg_match('/\b(?:don.?t|do not|no need to)\s+(?:split|separate|break)\b|\b(?:share|mix)\s+(?:the\s+)?sheets?\b|\bone pile\b/u', $t)) $p['breakBy'] = false;
+    elseif (preg_match('/\b(?:new|own|separate|fresh|one|a)\s+sheets?\s+(?:for|per)\s+(?:each\s+|every\s+)?(?:centre|center|kind|group)\b|\bkeep (?:the )?(?:centres|piles) apart\b|\bsheets? (?:per|by) (?:centre|center)\b/u', $t)) $p['breakBy'] = true;
+    if (preg_match('/\b(?:no|without(?: a)?)\s+packing list\b/u', $t)) $p['packing'] = false;
+    elseif (preg_match('/\bpacking list\b/u', $t)) $p['packing'] = true;
+    // Why a reprint, in so many words. Never inferred from "new".
+    if (preg_match('/\b(lost|stolen|missing|misplaced)\b/u', $t)) $p['cause'] = 'lost';
+    elseif (preg_match('/\bnever (got|received|arrived|reached)\b|\bdidn.?t (get|receive)\b/u', $t)) $p['cause'] = 'never_received';
+    elseif (preg_match('/\b(damaged|broken|cracked|faded|torn|bent|smudged)\b/u', $t)) $p['cause'] = 'damaged';
+    elseif (preg_match('/\b(name|details?|spelling)\b.*\b(changed|wrong|corrected|misspelt|misspelled|fixed)\b|\b(wrong|misspelt|misspelled) name\b/u', $t)) $p['cause'] = 'name';
+    if (isset($p['cause']) && !isset($p['which']) && empty($p['ids']) && !ids_plan_find_names($prompt, $centres)) $p['which'] = 'reprint';
+    // Acts. Asked for in so many words, never inferred; several in one request run in the order written.
+    $acts = [];
+    $at = static function (string $re) use ($t): int { return preg_match($re, $t, $m, PREG_OFFSET_CAPTURE) ? (int)$m[0][1] : -1; };
+    $pic = '(?:photos?|pictures?|pics?|images?|headshots?|faces?)';
+    $bgRe = '/\b(?:remove|take (?:off|out)|cut (?:out)?|clear|change|replace|plain|grey|gray|white|clean)\b[^.?!;]*\b(?:bg|bgs|backgrounds?|backdrops?)\b|\b(?:bg|backgrounds?)\b[^.?!;]*\b(?:remov\w*|off|plain|grey|gray|white)\b/u';
+    $impRe = '/\b(?:improve|enhance|clean(?:\s|-)?up|fix|touch(?:\s|-)?up|retouch|brighten|sharpen|better)\b[^.?!;]*\b' . $pic . '\b/u';
+    $posRe = '/\b(?:position|reposition|move|centre|center|align|frame|reframe|crop|zoom|straighten|fit|adjust)\w*\b[^.?!;]*\b' . $pic . '\b|\b' . $pic . '\b[^.?!;]*\b(?:position|centred|centered|too (?:small|big|low|high)|off[- ]centre|off[- ]center)\b/u';
+    $askRe = '/\b(?:ask|chase|request|remind|nudge)\b[^.?!;]*\b' . $pic . '\b|\b(?:the ones|people|those|anyone|everyone) (?:with(?:out)?|who (?:have|has)n.?t (?:got )?)\s*(?:no |a |any )?' . $pic . '\b[^.?!;]*\bask\b|\b(?:without|no|missing)\s+(?:a\s+|any\s+)?' . $pic . '\b[^.?!]*\b(?:ask|chase|remind|nudge)\s+(?:them|those|the parents|their parents|for one)\b/u';
+    $cand = ['clear' => $at('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u'),
+             'improvePhotos' => max($at($impRe), $at($bgRe)) >= 0 ? min(array_filter([$at($impRe), $at($bgRe)], static fn($x) => $x >= 0)) : -1,
+             'adjustPhoto' => $at($posRe),
+             'askPhotos' => $at($askRe),
+             'fill' => $at('/\bfill\b.*\b(?:gaps?|slots?|sheet|spaces?|blanks?)\b/u')];
+    // Positioning many photos at once is the bulk edit's reframe; one photo is the editor.
+    if ($cand['adjustPhoto'] >= 0 && $cand['improvePhotos'] >= 0) $cand['adjustPhoto'] = -1;
+    asort($cand);
+    foreach ($cand as $a => $pos) if ($pos >= 0) $acts[] = $a;
+    if ($acts) { $p['do'] = $acts; }
+    $photo = [];
+    if ($at($bgRe) >= 0) $photo['removeBg'] = true;
+    if (preg_match('/\b(?:brighten|brighter|too dark|lighter|light(?:en)? (?:them|it) up)\b/u', $t)) $photo['brighten'] = true;
+    if (preg_match('/\b(?:sharpen|sharper|blurr?y|blurred|soft|clearer)\b/u', $t)) $photo['sharpen'] = true;
+    if (preg_match('/\bzoom(?:ed)? in\b|\bcloser\b|\btoo small\b|\bbigger face\b/u', $t)) $photo['zoom'] = 1.3;
+    elseif (preg_match('/\bzoom(?:ed)? out\b|\btoo (?:big|close)\b|\bwhole (?:head|photo)\b/u', $t)) $photo['zoom'] = 1;
+    if (preg_match('/\b(?:on|to|around) (?:the|their) faces?\b|\bcentre (?:the|their) faces?\b|\bcenter (?:the|their) faces?\b/u', $t)) $photo['gravity'] = 'face';
+    elseif (preg_match('/\b(?:move|shift) (?:it|them|the (?:photo|image|picture)s?) (?:up|higher)\b|\btoo low\b/u', $t)) $photo['gravity'] = 'south';
+    elseif (preg_match('/\b(?:move|shift) (?:it|them|the (?:photo|image|picture)s?) (?:down|lower)\b|\btoo high\b/u', $t)) $photo['gravity'] = 'north';
+    if ($photo && $acts) $p['photo'] = $photo;
     $nw = implode('|', array_map(fn($w) => preg_quote($w, '/'), array_keys(IDS_PLAN_NUMBER_WORDS)));
-    if (preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
+    if (!preg_match('/\bskip\b/u', $mt) && preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
+    // "The last 20 who joined", "the 10 newest": the most recent first, then the limit.
+    elseif (preg_match('/\b(?:last|latest|newest|most recent)\s+(\d{1,3}|' . $nw . ')\b(?!\s*(?:days?|weeks?|months?|years?)\b)|\b(\d{1,3}|' . $nw . ')\s+(?:newest|latest|most recent(?:ly)?(?:\s+joined)?)\b/u', $mt, $r)) {
+        $n = $r[1] !== '' ? $r[1] : $r[2];
+        $p['limit'] = is_numeric($n) ? (int)$n : IDS_PLAN_NUMBER_WORDS[$n]; $p['latest'] = true;
+    }
     return ids_plan_clean($p, $kinds, $centres)['plan'];
 }
 
@@ -781,6 +1307,8 @@ function ids_plan_union(array $a, array $b): array {
 function ids_plan_is_refinement(string $prompt, array $current, array $read): bool {
     if (!$current) return false;
     if (preg_match(IDS_PLAN_REFINE_RE, mb_strtolower($prompt))) return true;
+    if (isset($read['do'])) return false;   // an act stands on its own; the browser applies it to what is on screen
+    if (!empty($read['kindOf'])) return true;
     // A fresh request names who: a kind, new/reprint, or a whole list of IDs. Anything else adjusts the plan on screen.
     return !isset($read['kind']) && !isset($read['which']) && empty($read['ids']);
 }
@@ -789,6 +1317,13 @@ function ids_plan_is_refinement(string $prompt, array $current, array $read): bo
 function ids_plan_refine(array $current, array $read): array {
     $plan = $current;
     foreach (IDS_PLAN_SCALARS as $k) if (array_key_exists($k, $read)) $plan[$k] = $read[$k];
+    // One centre said now replaces several said before, and the other way round.
+    if (array_key_exists('centre', $read)) unset($plan['centres']);
+    if (array_key_exists('centres', $read)) unset($plan['centre']);
+    if (!empty($read['kindOf'])) $plan['kindOf'] = array_merge($plan['kindOf'] ?? [], $read['kindOf']);
+    // An act belongs to this request only; it is never carried into the plan on screen.
+    unset($plan['do'], $plan['acts'], $plan['photo']);
+    foreach (['do', 'acts', 'photo'] as $k) if (isset($read[$k])) $plan[$k] = $read[$k];
     $named = ids_plan_union(['ids' => $read['ids'] ?? [], 'names' => $read['names'] ?? []], $read['also'] ?? []);
     if ($named) {
         // Named people join a named list; on a filtered selection they go on top of it.
@@ -817,20 +1352,31 @@ function ids_plan_instructions(array $kinds, array $centres, string $today, arra
         . "Fields (include ONLY what the request says or clearly implies; omit everything else):\n"
         . "kind: one of the kinds above.\n"
         . "centre: a centre name from the list, or \"none\" for people with no centre.\n"
+        . "centres: a list of centre names, when the request names two or more (\"Ijaiye and Ikorodu\"); then leave centre out.\n"
+        . "hasPhoto: false for people with no photo on file (\"without a photo\"), true for only those with one; leave out otherwise.\n"
         . "which: \"new\" (never had a card), \"reprint\" (replacing a card they have), or \"all\".\n"
         . "ids: printed card numbers or record ids to print, e.g. \"026-014\", \"EG-26-001\".\n"
         . "names: people's names to print (only names, as written).\n"
         . "also: {ids, names} people to add on top of the selection.\n"
         . "exclude: {ids, names} people to leave out (\"except…\", \"not…\").\n"
         . "dateFrom, dateTo: YYYY-MM-DD, for when they registered or joined (\"last week\", \"since Monday\", \"in October\").\n"
-        . "numFrom, numTo: integers, for a block of card numbers (\"cards 40 to 80\").\n"
-        . "limit: integer, at most this many cards (\"the first ten\").\n"
+        . "numFrom, numTo: integers, for a block of card numbers (\"cards 40 to 80\"). numPrefix: when the block is written as two printed IDs (\"026-001 to 026-040\"), their shared prefix (\"026\"), with numFrom 1 and numTo 40.\n"
+        . "limit: integer, at most this many cards (\"the first ten\"). latest: true when they want the most recent ones (\"the last 20 who joined\", \"the 10 newest\").\n"
         . "backs: \"off\" (fronts only), \"long\" (double-sided, long edge, the usual), \"short\" (short edge).\n"
         . "marks: true/false for crop marks.\n"
         . "paper: \"a4\", \"letter\" or \"a3\".\n"
         . "dpi: 150, 300 or 600.\n"
         . "order: \"centre\", \"kind\" or \"name\".\n"
         . "proof: true for a proof or test print, false to undo one.\n"
+        . "margin: millimetres round the sheet (3-30). gap: millimetres between cards (0-20). skip: slots already used on the first sheet (0-60).\n"
+        . "breakBy: true for a new sheet for each centre (or kind), false to let them share sheets. packing: true/false for a packing list.\n"
+        . "do: the acts asked for in so many words, as a list in the order written: \"clear\" (take every card off the sheet), \"fill\" (fill the empty slots on the last sheet), \"askPhotos\" (ask the people with no photo for one), \"improvePhotos\" (improve, fix, brighten, sharpen or remove the background of the photos already on file), \"adjustPhoto\" (help position, move, crop or zoom ONE person's photo). You can never print and never mark anyone printed; if asked to, leave do out.\n"
+        . "photo: with improvePhotos or adjustPhoto, what to do: {\"removeBg\": true for a plain background, \"brighten\": true, \"sharpen\": true, \"gravity\": \"face\"|\"center\"|\"north\"|\"south\", \"zoom\": 1 to 2.5}.\n"
+        . "notKinds: kinds to leave out (\"exclude summer\", \"no volunteers\") — a list; never set kind for that.\n"
+        . "kindOf: {\"<name as written>\": kind} when the request says which kind ONE named person is (\"Badmus should be NGG, not summer\"); do not set kind for that.\n"
+        . "cause: why a card is reprinted, only when said: \"lost\" (lost or stolen; the reprint gets a new QR), \"never_received\", \"damaged\", \"name\" (details changed).\n"
+        . "A request that only changes settings (\"make it A3\", \"margin 5mm\") holds only those fields.\n"
+        . "A question about which AI is answering, or a request to use a different AI, is not a person's name: return {}.\n"
         . "Never invent people, ids, centres or dates that the request does not support.";
 }
 
@@ -846,11 +1392,21 @@ function admin_ids_plan(array $p): array {
     // The plan on screen comes from the browser: it is cleaned like anything else before it is used.
     $current = is_array($p['current'] ?? null) ? ids_plan_clean($p['current'], $kinds, $centres)['plan'] : [];
     $rules = ids_plan_rules($prompt, $kinds, $centres, $today);
-    $refine = ids_plan_is_refinement($prompt, $current, $rules);
+    // Nothing read is nothing to do: an unreadable request never re-applies the plan on screen.
+    $refine = $rules && ids_plan_is_refinement($prompt, $current, $rules);
     $plan = $refine ? ids_plan_refine($current, $rules) : $rules;
     $notes = []; $by = 'rules'; $provider = ''; $aiError = '';
-    if (ai_enabled('studio') || isset($GLOBALS['__ai_mock'])) {
-        $r = ai_classify(ids_plan_instructions($kinds, $centres, $today, $current), $prompt, 500, 'studio');
+    $providers = ai_providers_for('studio');
+    $want = strtolower(trim((string)($p['provider'] ?? '')));
+    // "Use the rules": the operator asked for no AI at all.
+    $rulesOnly = $want === 'rules';
+    if (!in_array($want, AI_PROVIDERS, true)) $want = '';
+    if ($want !== '' && !in_array($want, $providers, true) && !isset($GLOBALS['__ai_mock'])) {
+        $notes[] = ucfirst($want === 'anthropic' ? 'Claude' : $want) . ' isn’t set up for the studio here' . ($providers ? ', so ' . ucfirst($providers[0] === 'anthropic' ? 'Claude' : $providers[0]) . ' read it.' : '.');
+        $want = '';
+    }
+    if (!$rulesOnly && (ai_enabled('studio') || isset($GLOBALS['__ai_mock']))) {
+        $r = ai_classify(ids_plan_instructions($kinds, $centres, $today, $current), $prompt, 500, 'studio', $want, IDS_PLAN_AI_BUDGET);
         if (!empty($r['ok']) && is_array($r['data'])) {
             $c = ids_plan_clean($r['data'], $kinds, $centres);
             $aiRefine = $current && array_key_exists('refine', $r['data']) ? !empty($r['data']['refine']) : $refine;
@@ -861,12 +1417,15 @@ function admin_ids_plan(array $p): array {
             foreach (['also', 'exclude'] as $k) if (!empty($rules[$k])) $plan[$k] = ids_plan_union($plan[$k] ?? [], $rules[$k]);
             if (!$aiRefine && !empty($rules['ids'])) $plan['ids'] = array_values(array_unique(array_merge($c['plan']['ids'] ?? [], $rules['ids'])));
             $refine = $aiRefine;
-            $notes = $c['notes']; $by = 'ai'; $provider = (string)($r['provider'] ?? '');
+            $notes = array_merge($notes, $c['notes']); $by = 'ai'; $provider = (string)($r['provider'] ?? '');
+            // The rules see a kind said of one person, and the acts, word for word; the model's reading keeps them.
+            if (!empty($rules['kindOf'])) $plan['kindOf'] = array_merge($rules['kindOf'], $plan['kindOf'] ?? []);
+            if (!empty($rules['do']) && empty($plan['do'])) { $plan['do'] = $rules['do']; if (!empty($rules['acts'])) $plan['acts'] = $rules['acts']; if (!empty($rules['photo'])) $plan['photo'] = $rules['photo']; }
         } else {
             $aiError = (string)($r['error'] ?? 'ai_failed');
         }
     }
     audit('ids.plan', (string)$g['requester']['memberId'], '', ['by' => $by, 'provider' => $provider, 'refine' => $refine, 'fields' => array_keys($plan)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'plan' => (object)$plan, 'notes' => $notes, 'by' => $by, 'provider' => $provider, 'aiError' => $aiError,
-            'refined' => $refine, 'kinds' => $kinds, 'understood' => count($plan) > 0];
+            'refined' => $refine, 'kinds' => $kinds, 'understood' => count($plan) > 0, 'providers' => $providers];
 }

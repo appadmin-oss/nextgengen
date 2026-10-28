@@ -1,0 +1,2914 @@
+{
+  "key": "curriculum-instruments-2026",
+  "title": "Instruments & Voice — Foundation (2026)",
+  "allowNewCourse": false,
+  "description": "12 Saturdays per instrument: drums, violin, saxophone, voice and music production. Practical throughout — the marked work each week is played, sung or produced in front of the instructor. Built to follow a graded syllabus (Trinity College London runs music exams in Nigeria) so a learner can be examined against it.",
+  "source": "Written for NGG by the programme team (2026). Not adapted from any third-party curriculum.",
+  "lessons": [
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Sit, hold, and your first stroke",
+      "summary": "How to set up at the kit, hold the sticks so they rebound, and play one even stroke.",
+      "objectives": [
+        "You will set a stool and snare to your own height",
+        "You will hold a stick so it bounces instead of being forced",
+        "You will play 20 even single strokes"
+      ],
+      "body": "## What to do\n\n- Set the stool so your thighs slope slightly down and your heel can lift\n- Find the balance point of the stick, about a third from the butt\n- Play singles on the snare: R L R L, slow and even\n\n## Practise at home\n\n1. Eight minutes of singles on a pillow or your knees, counting out loud\n1. Ten slow strokes with each hand alone, watching the stick rebound\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play 60 seconds of single strokes at a steady slow tempo without the sticks sticking in the head.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play 60 seconds of single strokes at a steady slow tempo without the sticks sticking in the head.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: set a stool and snare to your own height; hold a stick so it bounces instead of being forced; play 20 even single strokes.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "You hold the stick about a third from the butt because…",
+          "options": [
+            "It looks correct",
+            "That is the balance point, so the stick rebounds and your hand does less work",
+            "It is louder",
+            "It stops the stick breaking"
+          ],
+          "answer": "That is the balance point, so the stick rebounds and your hand does less work",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Pulse: counting, and the metronome",
+      "summary": "The pulse underneath everything, counted out loud and played with a click.",
+      "objectives": [
+        "You will count 1-2-3-4 out loud while playing",
+        "You will play quarter notes with a metronome at 60 bpm",
+        "You will say what a bar is"
+      ],
+      "body": "## What to do\n\n- Clap the pulse of three songs the class chooses\n- Play quarter notes on the snare with the metronome at 60, then 70\n- Count out loud the whole time — if you stop counting, stop playing\n\n## Practise at home\n\n1. Five minutes a day with a free metronome app at 60 bpm\n1. Count along to one song you love and find beat 1\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play 16 bars of quarter notes at 70 bpm with the click, counting aloud.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play 16 bars of quarter notes at 70 bpm with the click, counting aloud.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: count 1-2-3-4 out loud while playing; play quarter notes with a metronome at 60 bpm; say what a bar is.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Counting out loud while you play helps because…",
+          "options": [
+            "It is traditional",
+            "It keeps your place in the bar and shows you where the time slipped",
+            "It makes you play louder",
+            "Examiners require it"
+          ],
+          "answer": "It keeps your place in the bar and shows you where the time slipped",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "The backbeat",
+      "summary": "Kick on 1 and 3, snare on 2 and 4 — the groove under most popular music.",
+      "objectives": [
+        "You will play kick on 1 and 3 and snare on 2 and 4",
+        "You will keep it steady for a minute",
+        "You will name the backbeat in a song you hear"
+      ],
+      "body": "## What to do\n\n- Kick alone on 1 and 3, then snare alone on 2 and 4\n- Put them together slowly, 60 bpm\n- Listen to a song and clap only on 2 and 4\n\n## Practise at home\n\n1. Three minutes of kick and snare only, no hi-hat, at 60 bpm\n1. Find the backbeat in two songs and tap it on your leg\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play the kick-and-snare backbeat for one minute at 70 bpm, clean and even.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play the kick-and-snare backbeat for one minute at 70 bpm, clean and even.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play kick on 1 and 3 and snare on 2 and 4; keep it steady for a minute; name the backbeat in a song you hear.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "In a standard backbeat the snare falls on…",
+          "options": [
+            "1 and 3",
+            "2 and 4",
+            "Every beat",
+            "Only beat 1"
+          ],
+          "answer": "2 and 4",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Eighth notes on the hi-hat",
+      "summary": "Adding the hi-hat over the backbeat, and keeping three limbs independent.",
+      "objectives": [
+        "You will play eight hi-hat notes to a bar",
+        "You will add the kick and snare under them",
+        "You will count 1 and 2 and 3 and 4 and"
+      ],
+      "body": "## What to do\n\n- Hi-hat alone, eight to a bar, counting \"1 and 2 and\"\n- Add snare on 2 and 4\n- Add kick on 1 and 3 — slowly, it will fall apart at first\n\n## Practise at home\n\n1. Four minutes at 55 bpm. If it breaks down, go slower, not faster\n1. Hi-hat and kick only, then hi-hat and snare only, then all three\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play the full beat — hi-hat eighths, snare on 2 and 4, kick on 1 and 3 — for 16 bars.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play the full beat — hi-hat eighths, snare on 2 and 4, kick on 1 and 3 — for 16 bars.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play eight hi-hat notes to a bar; add the kick and snare under them; count 1 and 2 and 3 and 4 and.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Your groove falls apart at 80 bpm but is clean at 55. You should…",
+          "options": [
+            "Practise at 80 until it works",
+            "Stay at 55 until it is clean, then add 5 bpm at a time",
+            "Give up the hi-hat",
+            "Play louder"
+          ],
+          "answer": "Stay at 55 until it is clean, then add 5 bpm at a time",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Fills",
+      "summary": "Moving round the kit and landing back on beat 1.",
+      "objectives": [
+        "You will play a one-bar fill in eighth notes",
+        "You will land on beat 1 of the next bar",
+        "You will count through the fill"
+      ],
+      "body": "## What to do\n\n- Play three bars of groove, one bar of fill, repeat\n- Fill: four strokes on snare, four on the tom, then crash on 1\n- The crash on beat 1 is the point — the fill is only the run-up\n\n## Practise at home\n\n1. Three bars of groove plus one bar of fill, eight times, at 60 bpm\n1. Try the same fill starting on the tom instead\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play eight bars: groove for three, fill for one, twice, landing on the crash each time.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play eight bars: groove for three, fill for one, twice, landing on the crash each time.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a one-bar fill in eighth notes; land on beat 1 of the next bar; count through the fill.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The most important beat in a fill is…",
+          "options": [
+            "The first note of the fill",
+            "The loudest note",
+            "Beat 1 of the next bar, where you land",
+            "The last note of the fill"
+          ],
+          "answer": "Beat 1 of the next bar, where you land",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Afrobeat: the feel Tony Allen built",
+      "summary": "The looser, busier hi-hat and ghost notes that make an Afrobeat groove move.",
+      "objectives": [
+        "You will play ghost notes on the snare",
+        "You will play a 16th-note hi-hat pattern",
+        "You will say how Afrobeat differs from a straight rock beat"
+      ],
+      "body": "## What to do\n\n- Listen to Tony Allen with Fela — count the bar and find the snare\n- Play soft ghost notes between the backbeats\n- Open the hi-hat on the last eighth of the bar\n\n## Practise at home\n\n1. Five minutes of ghost notes at low volume — they must be quiet to work\n1. Play along with one Afrobeat track, just hi-hat and kick\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play eight bars of an Afrobeat groove with ghost notes you can hear are quieter than the backbeat.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play eight bars of an Afrobeat groove with ghost notes you can hear are quieter than the backbeat.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play ghost notes on the snare; play a 16th-note hi-hat pattern; say how Afrobeat differs from a straight rock beat.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A ghost note is…",
+          "options": [
+            "A note you imagine",
+            "A very quiet snare stroke between the main beats",
+            "A note played on the cymbal",
+            "A mistake"
+          ],
+          "answer": "A very quiet snare stroke between the main beats",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Looking back: three grooves from memory",
+      "summary": "Returning to the grooves of weeks 3 to 6 without the music in front of you, which is the test of whether they are learnt.",
+      "objectives": [
+        "You will play three earlier grooves from memory",
+        "You will move between them without stopping",
+        "You will say which one is weakest and why"
+      ],
+      "body": "## What to do\n\n- Play the week 3 backbeat, the week 4 eighth-note groove and the week 6 Afrobeat, four bars each\n- Change between them on the bar line, no gaps\n- Record it on a phone and listen back\n\n## Practise at home\n\n1. Run the three grooves again every day this week, four bars each\n1. Spend the extra time on the weakest one, slowly\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play the three earlier grooves back to back, four bars each, without stopping.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play the three earlier grooves back to back, four bars each, without stopping.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play three earlier grooves from memory; move between them without stopping; say which one is weakest and why.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "You can play a groove with the sheet in front of you but not without it. That means…",
+          "options": [
+            "You have learnt it",
+            "You are reading it, not yet playing it — it needs more repetition from memory",
+            "You need a better sheet",
+            "You should move on"
+          ],
+          "answer": "You are reading it, not yet playing it — it needs more repetition from memory",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "The dùndún: the drum that talks",
+      "summary": "The Yoruba talking drum, how its tension changes pitch, and why it follows speech.",
+      "objectives": [
+        "You will change the pitch of a dùndún with arm pressure",
+        "You will play a simple speech phrase on it",
+        "You will say why Yoruba tone makes this possible"
+      ],
+      "body": "## What to do\n\n- Hold the drum under the arm and squeeze to raise the pitch\n- Play a three-syllable phrase in low-mid-high tones\n- Listen to a master drummer and follow the rise and fall\n\n## Practise at home\n\n1. Practise squeezing and releasing while striking — pitch, not rhythm, is the exercise\n1. Say your own name in tones, then play it\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play your own name as tones on the dùndún so a classmate can recognise it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play your own name as tones on the dùndún so a classmate can recognise it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: change the pitch of a dùndún with arm pressure; play a simple speech phrase on it; say why Yoruba tone makes this possible.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The dùndún can imitate speech because Yoruba is…",
+          "options": [
+            "A written language",
+            "A tonal language, where pitch changes meaning",
+            "Spoken slowly",
+            "Related to drumming"
+          ],
+          "answer": "A tonal language, where pitch changes meaning",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Dynamics: loud, soft, and accents",
+      "summary": "Playing the same pattern at three volumes, and placing an accent where you choose.",
+      "objectives": [
+        "You will play a groove quietly and loudly on purpose",
+        "You will accent a chosen note in a pattern",
+        "You will say why a quiet drummer is more useful than a loud one"
+      ],
+      "body": "## What to do\n\n- Play the week 4 groove as quietly as you can, then as loudly as is still controlled\n- Play eight hi-hat notes with an accent on 1 and 3 only\n- Play behind someone singing — you must be quieter than them\n\n## Practise at home\n\n1. Two minutes of the same groove at three volumes\n1. Accent practice: eight strokes, accent moving one position each time\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play one groove at three clearly different volumes without the tempo changing.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play one groove at three clearly different volumes without the tempo changing.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a groove quietly and loudly on purpose; accent a chosen note in a pattern; say why a quiet drummer is more useful than a loud one.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Playing quietly is hard mainly because…",
+          "options": [
+            "The sticks are heavy",
+            "Control at low volume needs more accuracy than hitting hard does",
+            "The kit is badly tuned",
+            "It is boring"
+          ],
+          "answer": "Control at low volume needs more accuracy than hitting hard does",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Playing with other people",
+      "summary": "Locking with a bass player, listening more than you play, and following a song.",
+      "objectives": [
+        "You will lock the kick with a bass line",
+        "You will follow a song through its sections",
+        "You will stop when the band stops"
+      ],
+      "body": "## What to do\n\n- Play with a bass player or a recorded bass line — match the kick to the bass notes\n- Follow a song: intro, verse, chorus, and mark each change with a fill\n- Practise stopping dead on a cue\n\n## Practise at home\n\n1. Play along to two full songs, all the way through, mistakes and all\n1. Count the bars of a verse so you know when the chorus arrives\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play one full song with the band or a recording, including every section change.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play one full song with the band or a recording, including every section change.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: lock the kick with a bass line; follow a song through its sections; stop when the band stops.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "In a band the drummer's first job is to…",
+          "options": [
+            "Be heard above everyone",
+            "Keep steady time and lock with the bass",
+            "Fill every bar",
+            "Play the loudest fills"
+          ],
+          "answer": "Keep steady time and lock with the bass",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Reading a drum chart",
+      "summary": "What the lines and spaces mean on a drum stave, and how to follow a chart through a song.",
+      "objectives": [
+        "You will name the positions for kick, snare and hi-hat",
+        "You will read and play a four-bar chart",
+        "You will follow repeat marks"
+      ],
+      "body": "## What to do\n\n- Learn the stave positions: kick bottom space, snare third space, hi-hat above the top line with an x\n- Read a four-bar groove and play it\n- Follow a chart with repeats and a coda\n\n## Practise at home\n\n1. Read and clap one new four-bar chart a day\n1. Write out the week 4 groove yourself, then play what you wrote\n1. **With an AI assistant —** ask it to explain one drum notation symbol you are unsure of, then check what it says against the chart in front of you — if the symbol does not appear on your chart the way it described, it was wrong.\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Read and play a four-bar chart you have not seen before.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Read and play a four-bar chart you have not seen before.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: name the positions for kick, snare and hi-hat; read and play a four-bar chart; follow repeat marks.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "An x-shaped notehead above the top line usually means…",
+          "options": [
+            "A mistake",
+            "A hi-hat or cymbal stroke",
+            "A rest",
+            "Play very loudly"
+          ],
+          "answer": "A hi-hat or cymbal stroke",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Drums",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Term showcase",
+      "summary": "Playing a prepared piece in front of the class, with the grooves and fills of the term in it.",
+      "objectives": [
+        "You will perform a prepared piece from memory",
+        "You will play with at least one other musician",
+        "You will take and use one note from the audience"
+      ],
+      "body": "## What to do\n\n- Perform your piece — groove, one fill, a dynamic change, and a clean ending\n- Play with a second musician or a backing track\n- Listen to two classmates and give each one useful note\n\n## Practise at home\n\n1. Run the whole piece daily, from the beginning, including the ending\n1. Practise starting after a mistake rather than stopping\n\n## Make it fit you\n\n- **If this is new to you:** Play it at half speed with the metronome until it is clean, then add 10 bpm. Two clean minutes beat twenty messy ones.\n- **If you already can:** Play it with your weak hand leading, add ghost notes, and teach the groove to someone in the class.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform a prepared piece of at least 90 seconds that uses a groove, a fill and a change of volume.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop",
+          "title": "Trinity Rock & Pop: Drums — the graded syllabus this course follows",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/rock-and-pop/drums",
+          "title": "Trinity Rock & Pop Drums: grade books and set pieces",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform a prepared piece of at least 90 seconds that uses a groove, a fill and a change of volume.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: perform a prepared piece from memory; play with at least one other musician; take and use one note from the audience.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Perform a prepared drum piece that uses a groove, a fill, a dynamic change and a clean ending",
+          "rubric": "Technical skill 35% · Musicality and expression 25% · Preparation and reliability 20% · Presentation 10% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Holding the violin and the bow",
+      "summary": "Getting the instrument onto the shoulder without gripping, and holding a bow that can still move.",
+      "objectives": [
+        "You will hold the violin without squeezing with your chin",
+        "You will form a bow hold with a bent thumb",
+        "You will name the four open strings"
+      ],
+      "body": "## What to do\n\n- Set the shoulder rest; the violin should balance without your left hand\n- Bow hold: bent thumb against the frog, fingers curved, little finger on top\n- Name and pluck the open strings: G D A E\n\n## Practise at home\n\n1. Two minutes a day of putting the violin up and taking it down\n1. Make the bow hold, let go, and make it again — twenty times\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Hold the violin for 30 seconds with the left hand away from the neck, and show a bow hold with a bent thumb.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Hold the violin for 30 seconds with the left hand away from the neck, and show a bow hold with a bent thumb.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: hold the violin without squeezing with your chin; form a bow hold with a bent thumb; name the four open strings.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Your left hand should NOT be…",
+          "options": [
+            "Curved over the fingerboard",
+            "Holding the violin up — the shoulder and chin do that",
+            "Relaxed",
+            "Near the scroll"
+          ],
+          "answer": "Holding the violin up — the shoulder and chin do that",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Drawing a straight bow",
+      "summary": "Long bows on open strings, parallel to the bridge, which is where tone comes from.",
+      "objectives": [
+        "You will draw a full bow on one string without hitting another",
+        "You will keep the bow parallel to the bridge",
+        "You will say what makes a scratchy sound"
+      ],
+      "body": "## What to do\n\n- Long slow bows on open D, watching the bow stay parallel to the bridge\n- Play at the halfway point between bridge and fingerboard\n- Try bowing too close to the bridge and hear what happens\n\n## Practise at home\n\n1. Five minutes of long bows on open strings, in front of a mirror if you have one\n1. Four bows on each string, slow, no fingers\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play eight full bows on open D with a clean, even tone.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play eight full bows on open D with a clean, even tone.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: draw a full bow on one string without hitting another; keep the bow parallel to the bridge; say what makes a scratchy sound.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A scratchy sound usually means…",
+          "options": [
+            "The violin is broken",
+            "Too much pressure, or bowing too near the bridge",
+            "The strings are new",
+            "You are playing too quietly"
+          ],
+          "answer": "Too much pressure, or bowing too near the bridge",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "First fingers: the A major scale",
+      "summary": "Where fingers 1, 2 and 3 fall on the A and E strings, and your first scale.",
+      "objectives": [
+        "You will place fingers 1, 2 and 3 in first position",
+        "You will play a one-octave A major scale",
+        "You will check each note against the open string"
+      ],
+      "body": "## What to do\n\n- Tape or mark the first position if your instructor does that\n- Play A B C# D on the A string, then E F# G# A on the E string\n- Check the note A on the E string against the open A\n\n## Practise at home\n\n1. The scale up and down, slowly, five times a day\n1. Stop on each note and ask whether it is in tune before moving on\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play a one-octave A major scale up and down, in tune, at a slow steady tempo.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play a one-octave A major scale up and down, in tune, at a slow steady tempo.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: place fingers 1, 2 and 3 in first position; play a one-octave A major scale; check each note against the open string.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The quickest way to check whether your finger is in tune is to…",
+          "options": [
+            "Ask someone",
+            "Compare the note with an open string or a tuner",
+            "Play it faster",
+            "Press harder"
+          ],
+          "answer": "Compare the note with an open string or a tuner",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Reading notation in first position",
+      "summary": "The treble stave, the notes you can already play, and matching paper to fingers.",
+      "objectives": [
+        "You will name the notes on the treble stave",
+        "You will find a written note on the fingerboard",
+        "You will play a four-bar written line"
+      ],
+      "body": "## What to do\n\n- Learn the lines and spaces: E G B D F, F A C E\n- Match five written notes to fingers on the A string\n- Play a four-bar written melody slowly\n\n. **With an AI assistant —** ask it to explain a notation symbol you do not recognise, then find that symbol in the music in front of you. If it does not appear there the way it described, it was wrong.\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play a four-bar written melody you have not seen before, in first position.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play a four-bar written melody you have not seen before, in first position.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: name the notes on the treble stave; find a written note on the fingerboard; play a four-bar written line.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The bottom line of the treble stave is…",
+          "options": [
+            "D",
+            "E",
+            "F",
+            "G"
+          ],
+          "answer": "E",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Rhythm: quarters, eighths and rests",
+      "summary": "Counting while you bow, and giving a rest its full length.",
+      "objectives": [
+        "You will play quarter and eighth notes in time",
+        "You will count a bar out loud while playing",
+        "You will hold a rest for its full value"
+      ],
+      "body": "## What to do\n\n- Clap the rhythm before you play it, every time\n- Play a line mixing quarters and eighths at 60 bpm\n- Play a line with rests — stop the bow, do not rush\n\n## Practise at home\n\n1. Clap then play two short rhythms a day\n1. Play the A major scale in eighth notes, two per bow\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play an eight-bar line mixing quarters, eighths and one rest, in time with a click.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play an eight-bar line mixing quarters, eighths and one rest, in time with a click.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play quarter and eighth notes in time; count a bar out loud while playing; hold a rest for its full value.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Most beginners get rests wrong by…",
+          "options": [
+            "Holding them too long",
+            "Cutting them short and coming in early",
+            "Playing through them loudly",
+            "Counting them twice"
+          ],
+          "answer": "Cutting them short and coming in early",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Playing a Nigerian melody",
+      "summary": "Taking a tune you already know by ear and finding it on the instrument.",
+      "objectives": [
+        "You will find a familiar tune by ear in first position",
+        "You will write down the notes you found",
+        "You will play it with a steady pulse"
+      ],
+      "body": "## What to do\n\n- Choose a melody the class knows and hum it first\n- Find the first three notes by ear, then the rest\n- Write down what you found and play it back\n\n## Practise at home\n\n1. Play the tune daily, from your own written notes\n1. Find one more short tune by ear this week\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play a familiar melody from memory, in tune, with a steady pulse.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play a familiar melody from memory, in tune, with a steady pulse.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: find a familiar tune by ear in first position; write down the notes you found; play it with a steady pulse.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Humming the tune before you look for it on the violin helps because…",
+          "options": [
+            "It warms up the violin",
+            "You cannot find a note you cannot hear in your head first",
+            "It is faster",
+            "It is required"
+          ],
+          "answer": "You cannot find a note you cannot hear in your head first",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Intonation: going back over earlier weeks",
+      "summary": "Returning to the week 3 scale and the week 6 tune with a tuner, and fixing what has drifted.",
+      "objectives": [
+        "You will check an earlier scale against a tuner",
+        "You will name your two least reliable notes",
+        "You will fix one of them"
+      ],
+      "body": "## What to do\n\n- Play the week 3 A major scale again, stopping on each note with a tuner\n- Write down which two notes are consistently sharp or flat\n- Drill only those two notes for ten minutes\n\n## Practise at home\n\n1. Five minutes a day on the two notes you named, nothing else\n1. Play the week 6 tune again and listen for the same two notes\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play the A major scale with every note within the tuner's green, and name the note that needed most work.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play the A major scale with every note within the tuner's green, and name the note that needed most work.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: check an earlier scale against a tuner; name your two least reliable notes; fix one of them.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A note you have played wrong for weeks is hard to fix because…",
+          "options": [
+            "The violin remembers it",
+            "Your hand has learnt the wrong place, so it needs slow deliberate repetition to relearn",
+            "The string is worn",
+            "It cannot be fixed"
+          ],
+          "answer": "Your hand has learnt the wrong place, so it needs slow deliberate repetition to relearn",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "Slurs and sharing the bow",
+      "summary": "Two or more notes in one bow, and planning where the bow runs out.",
+      "objectives": [
+        "You will play two notes in one bow",
+        "You will plan bowing for a four-bar phrase",
+        "You will say why bow distribution matters"
+      ],
+      "body": "## What to do\n\n- Play the A scale two notes to a bow, then four\n- Mark a phrase with up-bow and down-bow signs\n- Play a long note using the whole bow evenly\n\n## Practise at home\n\n1. The scale slurred two, then four, daily\n1. Play the week 6 tune with your own bowing marked on it\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play eight bars with slurs marked, finishing the phrase without running out of bow.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play eight bars with slurs marked, finishing the phrase without running out of bow.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play two notes in one bow; plan bowing for a four-bar phrase; say why bow distribution matters.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A slur means…",
+          "options": [
+            "Play louder",
+            "Play the notes in one bow stroke",
+            "Play faster",
+            "Repeat the bar"
+          ],
+          "answer": "Play the notes in one bow stroke",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "D major, and the second finger pattern",
+      "summary": "A second scale, and the half-step that moves when the key changes.",
+      "objectives": [
+        "You will play a one-octave D major scale",
+        "You will show where the second finger moves between A and D major",
+        "You will play a tune in D"
+      ],
+      "body": "## What to do\n\n- Play D major from the open D string\n- Compare the second finger in D major with A major — it moves\n- Play a short tune in D\n\n## Practise at home\n\n1. Both scales, A and D, back to back, daily\n1. Say out loud where the half-steps fall in each\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play A major and D major one after the other, in tune, with the correct finger patterns.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play A major and D major one after the other, in tune, with the correct finger patterns.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a one-octave D major scale; show where the second finger moves between A and D major; play a tune in D.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Between the A major and D major finger patterns, what changes?",
+          "options": [
+            "The bow hold",
+            "Where the half-step falls, so the second finger moves",
+            "The number of strings",
+            "Nothing"
+          ],
+          "answer": "Where the half-step falls, so the second finger moves",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Tone and dynamics",
+      "summary": "Changing volume with bow speed, weight and where you bow, instead of just pressing harder.",
+      "objectives": [
+        "You will play the same note loudly and softly with good tone",
+        "You will name the three things that change volume",
+        "You will shape a phrase"
+      ],
+      "body": "## What to do\n\n- Play one long note quiet to loud and back, keeping it clean\n- Change volume with bow speed, then with weight, then with contact point\n- Shape a four-bar phrase: grow to the third bar, ease off\n\n## Practise at home\n\n1. Long notes quiet to loud, five a day\n1. Play the week 6 tune with a shape rather than flat\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play a four-bar phrase with a clear shape, without the tone breaking at the loud end.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play a four-bar phrase with a clear shape, without the tone breaking at the loud end.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play the same note loudly and softly with good tone; name the three things that change volume; shape a phrase.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "To play louder with a good tone you change…",
+          "options": [
+            "Only pressure",
+            "Bow speed, weight and how near the bridge you play",
+            "The finger",
+            "The shoulder rest"
+          ],
+          "answer": "Bow speed, weight and how near the bridge you play",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Playing in two parts",
+      "summary": "Holding your own line while somebody else plays a different one.",
+      "objectives": [
+        "You will play a second part against a melody",
+        "You will stay in time with another player",
+        "You will tune to another instrument"
+      ],
+      "body": "## What to do\n\n- Tune to the open A of another player or a piano\n- Play a simple two-part round, swapping parts\n- Listen more than you play — match their tone and tempo\n\n## Practise at home\n\n1. Play your part against a recording of the other part\n1. Practise your entry — count the bars before you come in\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play your part of a two-part piece without being pulled off by the other line.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play your part of a two-part piece without being pulled off by the other line.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a second part against a melody; stay in time with another player; tune to another instrument.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "When playing with another musician your first job is to…",
+          "options": [
+            "Play louder than them",
+            "Listen and match their tuning and tempo",
+            "Finish first",
+            "Add your own notes"
+          ],
+          "answer": "Listen and match their tuning and tempo",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Violin",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Term recital",
+      "summary": "Performing a prepared piece from memory in front of an audience.",
+      "objectives": [
+        "You will perform a prepared piece from memory",
+        "You will tune before you start",
+        "You will recover from a mistake without stopping"
+      ],
+      "body": "## What to do\n\n- Tune, settle, breathe, then start — do not rush the beginning\n- Perform your piece\n- Give one useful note to two classmates\n\n## Practise at home\n\n1. Run the piece from the start daily, including the walk-on\n1. Practise carrying on after a deliberate mistake\n\n## Make it fit you\n\n- **If this is new to you:** Practise the bow arm on open strings before adding fingers. Tone first, notes second.\n- **If you already can:** Play it from memory at a faster tempo, then play the same tune starting on a different string.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform a prepared piece of at least 60 seconds from memory, in tune.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Violin — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform a prepared piece of at least 60 seconds from memory, in tune.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: perform a prepared piece from memory; tune before you start; recover from a mistake without stopping.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Perform a prepared violin piece from memory, in tune, with a shaped phrase",
+          "rubric": "Technical skill 35% · Musicality and expression 25% · Preparation and reliability 20% · Presentation 10% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Putting it together, and your first sound",
+      "summary": "Assembling the instrument, fitting the reed, and making a steady note.",
+      "objectives": [
+        "You will assemble the saxophone safely",
+        "You will fit a reed so it is level with the tip",
+        "You will produce a steady note"
+      ],
+      "body": "## What to do\n\n- Assemble neck, mouthpiece and reed — never force a joint\n- Soak the reed, line its tip level with the mouthpiece tip, tighten the ligature gently\n- Blow a steady note on the mouthpiece alone first\n\n## Practise at home\n\n1. Mouthpiece alone, five long steady notes a day\n1. Assemble and pack away the instrument twice a day until it is automatic\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Assemble the saxophone unaided and hold one steady note for four seconds.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Assemble the saxophone unaided and hold one steady note for four seconds.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: assemble the saxophone safely; fit a reed so it is level with the tip; produce a steady note.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A reed that squeaks or will not sound is most often…",
+          "options": [
+            "Too wet",
+            "Dry, chipped, or not lined up with the mouthpiece tip",
+            "Too expensive",
+            "The wrong colour"
+          ],
+          "answer": "Dry, chipped, or not lined up with the mouthpiece tip",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Your first three notes: B, A, G",
+      "summary": "The three notes every saxophone method starts with, and the fingers that make them.",
+      "objectives": [
+        "You will finger B, A and G",
+        "You will move between them without stopping the air",
+        "You will hold each for four counts"
+      ],
+      "body": "## What to do\n\n- Finger B (one finger), A (two), G (three) — left hand only\n- Play B-A-G-A-B slowly, keeping the air going\n- Keep the embouchure still while the fingers move\n\n## Practise at home\n\n1. B A G up and down, four counts each, five minutes a day\n1. Play the three notes with your eyes shut, by feel\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play B, A and G in any order for 16 counts without the sound breaking.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play B, A and G in any order for 16 counts without the sound breaking.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: finger B, A and G; move between them without stopping the air; hold each for four counts.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The sound breaks when you change note. The usual cause is…",
+          "options": [
+            "The reed is wrong",
+            "The air stops or the embouchure moves when the fingers do",
+            "The notes are too low",
+            "The neck strap is loose"
+          ],
+          "answer": "The air stops or the embouchure moves when the fingers do",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Breathing and long tones",
+      "summary": "Where the air comes from, and the exercise that builds every other thing.",
+      "objectives": [
+        "You will breathe from the stomach, not the shoulders",
+        "You will hold a note for eight slow counts",
+        "You will keep the volume even through it"
+      ],
+      "body": "## What to do\n\n- Breathe with a hand on your stomach — it should move out, shoulders still\n- Long tones: one note, eight counts, even all the way\n- Do them on G, A and B\n\n## Practise at home\n\n1. Ten long tones a day. This is the exercise that matters most\n1. Breathe in for four, out for eight, away from the instrument\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Hold one note for eight even counts without the volume sagging at the end.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Hold one note for eight even counts without the volume sagging at the end.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: breathe from the stomach, not the shoulders; hold a note for eight slow counts; keep the volume even through it.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Long tones are worth the time because they build…",
+          "options": [
+            "Speed",
+            "Tone, breath control and a steady embouchure",
+            "Reading",
+            "Fingering"
+          ],
+          "answer": "Tone, breath control and a steady embouchure",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "The C major scale",
+      "summary": "One octave of C major, and the fingerings you have not met yet.",
+      "objectives": [
+        "You will play a one-octave C major scale",
+        "You will name every note in it",
+        "You will play it up and down evenly"
+      ],
+      "body": "## What to do\n\n- Learn the new fingerings between G and C\n- Play the scale slowly, four counts a note, then two, then one\n- Say the note names out loud as you play\n\n. **With an AI assistant —** ask it to explain an alternative fingering, then test it at the instrument against the one you were taught. Your ears decide, not the answer.\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play C major up and down in even notes at a slow steady tempo.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play C major up and down in even notes at a slow steady tempo.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a one-octave C major scale; name every note in it; play it up and down evenly.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Playing the scale from the top down as well as from the bottom up helps because…",
+          "options": [
+            "It is faster",
+            "You learn the notes themselves, rather than a sequence you can only start at one end",
+            "It sounds better",
+            "Examiners ask for it"
+          ],
+          "answer": "You learn the notes themselves, rather than a sequence you can only start at one end",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Tonguing",
+      "summary": "Starting a note with the tongue instead of the throat, and the difference it makes.",
+      "objectives": [
+        "You will start a note with the tip of the tongue",
+        "You will play four tongued notes and four slurred",
+        "You will say what legato and staccato mean"
+      ],
+      "body": "## What to do\n\n- Say \"too\" to find where the tongue touches the reed\n- Play four tongued, four slurred, on one note\n- Apply it to the C major scale\n\n## Practise at home\n\n1. Tongued and slurred scales, alternating, daily\n1. Four tongued notes on each note of the scale\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play the C major scale tongued, then slurred, with a clear difference between them.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play the C major scale tongued, then slurred, with a clear difference between them.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: start a note with the tip of the tongue; play four tongued notes and four slurred; say what legato and staccato mean.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Tonguing is done with…",
+          "options": [
+            "The throat",
+            "The tip of the tongue against the reed",
+            "The lips",
+            "The fingers"
+          ],
+          "answer": "The tip of the tongue against the reed",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Playing a tune",
+      "summary": "Putting the scale, the tonguing and the breathing into a real melody.",
+      "objectives": [
+        "You will play an eight-bar melody",
+        "You will breathe at the end of phrases, not in the middle",
+        "You will play it with a steady pulse"
+      ],
+      "body": "## What to do\n\n- Learn an eight-bar melody the class chooses\n- Mark where you will breathe before you play\n- Play it with a metronome at a slow tempo\n\n## Practise at home\n\n1. The tune daily, slowly, with your breath marks\n1. Sing the tune before you play it\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play an eight-bar melody with planned breaths and a steady pulse.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play an eight-bar melody with planned breaths and a steady pulse.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play an eight-bar melody; breathe at the end of phrases, not in the middle; play it with a steady pulse.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Marking your breaths before you play stops you from…",
+          "options": [
+            "Playing too fast",
+            "Breathing in the middle of a phrase and breaking it up",
+            "Playing too quietly",
+            "Forgetting the notes"
+          ],
+          "answer": "Breathing in the middle of a phrase and breaking it up",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Tone check: back over the earlier weeks",
+      "summary": "Returning to the week 3 long tones and the week 4 scale, and hearing what has changed.",
+      "objectives": [
+        "You will record and listen back to an earlier exercise",
+        "You will name your weakest note",
+        "You will spend the week on it"
+      ],
+      "body": "## What to do\n\n- Record the week 3 long tones again and compare with how they sounded then\n- Play the week 4 scale and mark the note with the worst tone\n- Drill that one note for ten minutes\n\n## Practise at home\n\n1. Long tones on your weakest note only, five minutes a day\n1. Record yourself again at the end of the week\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Record one long tone and say honestly what is better and what is not, compared with week 3.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Record one long tone and say honestly what is better and what is not, compared with week 3.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: record and listen back to an earlier exercise; name your weakest note; spend the week on it.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Recording yourself is useful mainly because…",
+          "options": [
+            "It proves you practised",
+            "You hear what the room hears, which is not what you hear while playing",
+            "It is required",
+            "It improves tone by itself"
+          ],
+          "answer": "You hear what the room hears, which is not what you hear while playing",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "The octave key",
+      "summary": "Opening the upper register, and keeping the tone when you go up.",
+      "objectives": [
+        "You will play the octave above your first notes",
+        "You will use the octave key with the left thumb",
+        "You will keep the embouchure steady across the break"
+      ],
+      "body": "## What to do\n\n- Play low G, then G with the octave key — same fingers\n- Work through the scale an octave up\n- Do not bite — the embouchure stays the same\n\n## Practise at home\n\n1. Octave jumps on three notes, daily, slowly\n1. Long tones in the upper register\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play C major one octave up, with a tone as steady as the lower octave.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play C major one octave up, with a tone as steady as the lower octave.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play the octave above your first notes; use the octave key with the left thumb; keep the embouchure steady across the break.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Biting harder to reach the upper octave usually…",
+          "options": [
+            "Helps",
+            "Makes the tone thin and sharp — the air does the work, not the jaw",
+            "Is the correct technique",
+            "Protects the reed"
+          ],
+          "answer": "Makes the tone thin and sharp — the air does the work, not the jaw",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Highlife and Afrobeat lines",
+      "summary": "The riffs and horn lines that the saxophone plays in Nigerian music.",
+      "objectives": [
+        "You will play a highlife horn riff",
+        "You will play it in time with a groove",
+        "You will name two Nigerian saxophonists"
+      ],
+      "body": "## What to do\n\n- Listen to a highlife or Afrobeat horn line and sing it first\n- Learn it by ear, four bars at a time\n- Play it over a backing groove\n\n## Practise at home\n\n1. The riff daily, with a drum track or a metronome\n1. Learn one more riff by ear this week\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play a four-bar horn riff from memory, in time with a groove.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play a four-bar horn riff from memory, in time with a groove.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a highlife horn riff; play it in time with a groove; name two Nigerian saxophonists.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Singing a riff before playing it works because…",
+          "options": [
+            "It warms you up",
+            "If you can sing it you know how it goes, and your fingers only have to find it",
+            "It is quicker",
+            "It is traditional"
+          ],
+          "answer": "If you can sing it you know how it goes, and your fingers only have to find it",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Dynamics and phrasing",
+      "summary": "Shaping a line rather than playing it flat, and changing volume without changing pitch.",
+      "objectives": [
+        "You will play a phrase with a shape",
+        "You will change volume while keeping the note in tune",
+        "You will say where a phrase should grow and ease off"
+      ],
+      "body": "## What to do\n\n- Play one note quiet to loud and back, watching the tuner\n- Shape an eight-bar phrase: grow to bar five, ease off at the end\n- Play the week 6 tune with a shape\n\n## Practise at home\n\n1. Quiet-to-loud long tones, five a day, checking the tuner\n1. Play the tune twice: once flat, once shaped, and hear the difference\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Play an eight-bar phrase with a clear shape, staying in tune at both volumes.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Play an eight-bar phrase with a clear shape, staying in tune at both volumes.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: play a phrase with a shape; change volume while keeping the note in tune; say where a phrase should grow and ease off.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Playing louder on a saxophone tends to make the note…",
+          "options": [
+            "Flatter",
+            "Sharper, unless you adjust",
+            "Stay exactly the same",
+            "Stop"
+          ],
+          "answer": "Sharper, unless you adjust",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Playing with a band",
+      "summary": "Coming in on the right beat, matching the horn section, and knowing when not to play.",
+      "objectives": [
+        "You will count yourself in and enter on the right beat",
+        "You will match another player's tuning and volume",
+        "You will stay silent where the part is silent"
+      ],
+      "body": "## What to do\n\n- Tune to the band before anything else\n- Count four bars of rest and come in exactly\n- Play a line in unison with another horn and match them\n\n## Practise at home\n\n1. Practise your entry against a recording — count the bars aloud\n1. Play the riff along with the record, matching its volume\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Enter correctly after four bars of rest and play eight bars with the band.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Enter correctly after four bars of rest and play eight bars with the band.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: count yourself in and enter on the right beat; match another player's tuning and volume; stay silent where the part is silent.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Four bars of rest in your part means…",
+          "options": [
+            "Play quietly",
+            "Count them silently and come in exactly on the next bar",
+            "Wait for a signal",
+            "Repeat the last bar"
+          ],
+          "answer": "Count them silently and come in exactly on the next bar",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Saxophone",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Term performance",
+      "summary": "Playing a prepared piece with a shaped phrase and a clean ending.",
+      "objectives": [
+        "You will perform a prepared piece",
+        "You will tune and warm up before playing",
+        "You will give a classmate one useful note"
+      ],
+      "body": "## What to do\n\n- Warm up with long tones, tune, then perform\n- Play your piece with planned breaths and a shaped phrase\n- Listen to two classmates and give each one note\n\n## Practise at home\n\n1. Run the piece from the top daily, including the ending\n1. Practise carrying on after a deliberate mistake\n\n## Make it fit you\n\n- **If this is new to you:** Hold each note for four slow counts before joining them up. One clean note is the whole skill.\n- **If you already can:** Play it an octave up, then improvise two bars of your own over the same chords.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform a prepared piece of at least 60 seconds with planned breaths and a shaped phrase.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/classical",
+          "title": "Trinity Classical & Jazz: Saxophone — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform a prepared piece of at least 60 seconds with planned breaths and a shaped phrase.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: perform a prepared piece; tune and warm up before playing; give a classmate one useful note.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Perform a prepared saxophone piece with controlled tone, planned breathing and a shaped phrase",
+          "rubric": "Technical skill 35% · Musicality and expression 25% · Preparation and reliability 20% · Presentation 10% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "Your voice is an instrument",
+      "summary": "How the voice actually works, how to stand, and why the breath is the whole thing.",
+      "objectives": [
+        "You will stand in a balanced singing posture",
+        "You will breathe low without lifting your shoulders",
+        "You will say what the vocal folds do"
+      ],
+      "body": "## What to do\n\n- Stand with feet apart, knees soft, head level — not chin up\n- Hand on the stomach: breathe in so the hand moves out\n- Hiss on one long breath and time it\n\n## Practise at home\n\n1. Low breathing for three minutes a day, lying down if easier\n1. Time your hiss daily and watch the number grow\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Hiss steadily on one breath for 15 seconds without lifting your shoulders.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Hiss steadily on one breath for 15 seconds without lifting your shoulders.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: stand in a balanced singing posture; breathe low without lifting your shoulders; say what the vocal folds do.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Lifting your shoulders to breathe in is a problem because…",
+          "options": [
+            "It looks wrong",
+            "It fills only the top of the lungs, so the breath runs out fast and the throat tightens",
+            "It is slower",
+            "It is too loud"
+          ],
+          "answer": "It fills only the top of the lungs, so the breath runs out fast and the throat tightens",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Warming up, and looking after your voice",
+      "summary": "The warm-up routine, and the habits that keep a voice working for years.",
+      "objectives": [
+        "You will run a five-minute warm-up unaided",
+        "You will name three things that damage a voice",
+        "You will stop when something hurts"
+      ],
+      "body": "## What to do\n\n- Lip trills, humming, sirens, five-note scales\n- Learn the rules: water, sleep, no shouting, no singing through pain\n- Warm up before every single session from now on\n\n## Practise at home\n\n1. The five-minute warm-up every day, even on days you do not sing\n1. Drink water through the day, not just before singing\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Lead yourself through a five-minute warm-up without being prompted.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Lead yourself through a five-minute warm-up without being prompted.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: run a five-minute warm-up unaided; name three things that damage a voice; stop when something hurts.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Singing hurts your throat. You should…",
+          "options": [
+            "Push through it",
+            "Stop, rest, and tell your instructor — pain means something is wrong",
+            "Sing louder to strengthen it",
+            "Drink something cold"
+          ],
+          "answer": "Stop, rest, and tell your instructor — pain means something is wrong",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Pitch: matching, and intervals",
+      "summary": "Hearing a note and singing the same one, then hearing the distance between two.",
+      "objectives": [
+        "You will match a played note with your voice",
+        "You will sing a third, a fourth and a fifth",
+        "You will say whether you were sharp or flat"
+      ],
+      "body": "## What to do\n\n- Match notes played on a keyboard, one at a time\n- Sing up a third, fourth, fifth from a given note\n- Check yourself on a tuner app\n\n## Practise at home\n\n1. Match ten notes a day against a keyboard or app\n1. Sing the first interval of two songs you know\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Match five played notes in a row and sing a fifth above a given note.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Match five played notes in a row and sing a fifth above a given note.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: match a played note with your voice; sing a third, a fourth and a fifth; say whether you were sharp or flat.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "You sing slightly below the note played. You are…",
+          "options": [
+            "Sharp",
+            "Flat",
+            "In tune",
+            "Too loud"
+          ],
+          "answer": "Flat",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Resonance: where the sound sits",
+      "summary": "Making a bigger sound without pushing harder, by changing where it resonates.",
+      "objectives": [
+        "You will feel resonance in the face and chest",
+        "You will sing the same note two ways and hear the difference",
+        "You will keep the throat open"
+      ],
+      "body": "## What to do\n\n- Hum until you feel a buzz in the nose and lips\n- Sing \"ng\" then open to \"ah\", keeping the buzz\n- Yawn-sigh to feel an open throat\n\n## Practise at home\n\n1. Humming and sirens, five minutes a day\n1. Sing one phrase with the buzz, then without, and listen back\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Sing one phrase with clear forward resonance and no throat tension.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Sing one phrase with clear forward resonance and no throat tension.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: feel resonance in the face and chest; sing the same note two ways and hear the difference; keep the throat open.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A bigger singing sound should come from…",
+          "options": [
+            "Pushing harder from the throat",
+            "Breath support and resonance, with the throat relaxed",
+            "Standing closer to people",
+            "Singing higher"
+          ],
+          "answer": "Breath support and resonance, with the throat relaxed",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Words: diction and meaning",
+      "summary": "Being understood, and knowing what you are actually singing about.",
+      "objectives": [
+        "You will sing consonants clearly without stopping the line",
+        "You will say in one sentence what your song is about",
+        "You will sing vowels tall and open"
+      ],
+      "body": "## What to do\n\n- Speak the lyric in rhythm before you sing it\n- Exaggerate the consonants, keep the vowels long\n- Say what the song means in your own words\n\n. **With an AI assistant —** ask it what a word in your lyric means and how it is pronounced, then check with somebody who speaks the language. It is confident about languages it handles badly.\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Sing eight bars where a listener can write down every word correctly.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Sing eight bars where a listener can write down every word correctly.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: sing consonants clearly without stopping the line; say in one sentence what your song is about; sing vowels tall and open.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Most of a singer's clarity comes from…",
+          "options": [
+            "Volume",
+            "Crisp consonants over long, open vowels",
+            "Singing slowly",
+            "A microphone"
+          ],
+          "answer": "Crisp consonants over long, open vowels",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Range and the passaggio",
+      "summary": "The place where your voice wants to change gear, and how to cross it smoothly.",
+      "objectives": [
+        "You will find where your voice changes quality",
+        "You will sing through that point without a break",
+        "You will say why you must not force the top"
+      ],
+      "body": "## What to do\n\n- Sing a slow siren from low to high and mark where it shifts\n- Practise five-note scales through that point, lightly\n- Never force the top of the range\n\n## Practise at home\n\n1. Light sirens across the shift, five minutes a day\n1. Scales that cross the shift, quietly\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Sing a smooth siren across your whole comfortable range without a break in the sound.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Sing a smooth siren across your whole comfortable range without a break in the sound.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: find where your voice changes quality; sing through that point without a break; say why you must not force the top.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Forcing notes above your comfortable range tends to…",
+          "options": [
+            "Extend the range quickly",
+            "Strain the voice and make the break worse",
+            "Improve tone",
+            "Have no effect"
+          ],
+          "answer": "Strain the voice and make the break worse",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Back to week 3: pitch, recorded",
+      "summary": "Returning to the interval work of week 3 and measuring it honestly.",
+      "objectives": [
+        "You will record the week 3 intervals again",
+        "You will compare the two recordings",
+        "You will name the interval you still miss"
+      ],
+      "body": "## What to do\n\n- Record the same intervals you sang in week 3\n- Listen to both recordings side by side\n- Drill only the interval you still miss\n\n## Practise at home\n\n1. Five minutes a day on that one interval\n1. Record again at the end of the week\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Record the week 3 intervals and say which are better, which are not, and what you will do about it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Record the week 3 intervals and say which are better, which are not, and what you will do about it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: record the week 3 intervals again; compare the two recordings; name the interval you still miss.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Comparing a new recording with an old one is useful because…",
+          "options": [
+            "It proves you practised",
+            "Progress in singing is slow and hard to hear day to day — a comparison makes it visible",
+            "It sounds better",
+            "It is required"
+          ],
+          "answer": "Progress in singing is slow and hard to hear day to day — a comparison makes it visible",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "Singing in parts",
+      "summary": "Holding your own line while other people sing different ones.",
+      "objectives": [
+        "You will sing a harmony line against a melody",
+        "You will stay on your part when another is louder",
+        "You will blend rather than stand out"
+      ],
+      "body": "## What to do\n\n- Learn a two-part song, swapping parts\n- Sing your line while listening to the other\n- Match vowels and volume with the people beside you\n\n## Practise at home\n\n1. Sing your part against a recording of the other part\n1. Practise your part alone until it is secure\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Sing a harmony part through a whole verse without drifting onto the melody.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Sing a harmony part through a whole verse without drifting onto the melody.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: sing a harmony line against a melody; stay on your part when another is louder; blend rather than stand out.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "In a choir, blending means…",
+          "options": [
+            "Singing as loudly as you can",
+            "Matching the vowel shape and volume of the people around you",
+            "Singing a different tune",
+            "Standing at the front"
+          ],
+          "answer": "Matching the vowel shape and volume of the people around you",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "The microphone",
+      "summary": "What a microphone does to your voice, and how to work with it.",
+      "objectives": [
+        "You will hold a microphone at the right distance",
+        "You will move it for loud and quiet notes",
+        "You will avoid feedback"
+      ],
+      "body": "## What to do\n\n- Hold the mic a hand's width away, pointed at the mouth\n- Move it back for loud notes, closer for quiet ones\n- Never point the mic at a speaker\n\n## Practise at home\n\n1. Practise with any mic or a phone — notice how distance changes the sound\n1. Sing one loud and one quiet phrase, adjusting distance\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Sing a loud and a quiet phrase with good level on both, using mic distance.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Sing a loud and a quiet phrase with good level on both, using mic distance.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: hold a microphone at the right distance; move it for loud and quiet notes; avoid feedback.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Feedback (the squeal) happens when…",
+          "options": [
+            "The singer is flat",
+            "The microphone picks up its own sound from a speaker",
+            "The song is too fast",
+            "The mic is too far away"
+          ],
+          "answer": "The microphone picks up its own sound from a speaker",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "Telling the story",
+      "summary": "Interpretation: deciding what the song means and letting that change how you sing it.",
+      "objectives": [
+        "You will say what your song is about and who you are singing to",
+        "You will mark two moments to change",
+        "You will sing it with those choices"
+      ],
+      "body": "## What to do\n\n- Write one sentence: what happens in this song\n- Mark one place to get quieter and one to open up\n- Sing it with your choices, not just the notes\n\n## Practise at home\n\n1. Sing the song through daily with your marked choices\n1. Say the lyric aloud as speech, meaning every word\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform one verse with at least two deliberate interpretation choices you can explain.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform one verse with at least two deliberate interpretation choices you can explain.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: say what your song is about and who you are singing to; mark two moments to change; sing it with those choices.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Two singers sing the same notes and one moves the room. The difference is usually…",
+          "options": [
+            "A better voice",
+            "Interpretation — choices about meaning, dynamics and timing",
+            "A better microphone",
+            "A higher key"
+          ],
+          "answer": "Interpretation — choices about meaning, dynamics and timing",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Stage presence and nerves",
+      "summary": "What to do with your body and your fear in front of people.",
+      "objectives": [
+        "You will stand and move with purpose",
+        "You will use a breathing routine to settle nerves",
+        "You will make eye contact with an audience"
+      ],
+      "body": "## What to do\n\n- Walk on, stand still, breathe, then begin\n- Practise the slow breath that settles the heart rate\n- Sing to three points in the room, not the floor\n\n## Practise at home\n\n1. Sing to a mirror or a family member daily\n1. Run your pre-performance breathing routine before each practice\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform one verse standing still and settled, looking at the audience.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform one verse standing still and settled, looking at the audience.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: stand and move with purpose; use a breathing routine to settle nerves; make eye contact with an audience.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Nerves before performing are…",
+          "options": [
+            "A sign you should not perform",
+            "Normal, and manageable with preparation and a breathing routine",
+            "Caused by poor technique",
+            "Something that goes away by itself"
+          ],
+          "answer": "Normal, and manageable with preparation and a breathing routine",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Vocal Training",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Term showcase",
+      "summary": "Performing a prepared song, warmed up, in tune, and meaning it.",
+      "objectives": [
+        "You will warm up before performing",
+        "You will perform a prepared song from memory",
+        "You will take a note and use it"
+      ],
+      "body": "## What to do\n\n- Warm up properly, then perform your song\n- Use your interpretation choices and your mic technique\n- Give two classmates one useful note each\n\n## Practise at home\n\n1. Full run daily: warm-up, song, ending\n1. Practise recovering from a wrong entry without stopping\n\n## Make it fit you\n\n- **If this is new to you:** Work at a comfortable volume in the middle of your range. Pushing a tired voice makes it worse, not stronger.\n- **If you already can:** Sing it in a second key, add a harmony line, and record both to compare.\n\n## Assessed this week\n\n**Practical (6 marks) —** Perform a prepared song from memory, in tune, with clear words and at least two interpretation choices.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.trinitycollege.com/qualifications/music/singing",
+          "title": "Trinity Singing — graded syllabus",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.abrsm.org/en-gb/exam-support/syllabuses",
+          "title": "ABRSM syllabuses — the alternative graded route",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Perform a prepared song from memory, in tune, with clear words and at least two interpretation choices.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: warm up before performing; perform a prepared song from memory; take a note and use it.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Perform a prepared song from memory with accurate pitch, clear diction and deliberate interpretation",
+          "rubric": "Technical skill 35% · Musicality and expression 25% · Preparation and reliability 20% · Presentation 10% · Working with others 10%"
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 1,
+      "position": 1,
+      "title": "What a studio is now",
+      "summary": "A DAW on a phone or a laptop, and the four jobs every record goes through.",
+      "objectives": [
+        "You will open a project in a free DAW",
+        "You will name the four stages: write, record, mix, master",
+        "You will save and find your project again"
+      ],
+      "body": "## What to do\n\n- Install BandLab (phone or browser) or Cakewalk (Windows) — both free\n- Make a project, name it properly, save it\n- Play with the transport: play, stop, loop\n\n## Practise at home\n\n1. Open your project daily and change one thing\n1. Name every project and every track from the start\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Create, name and save a project, and show you can reopen it.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Create, name and save a project, and show you can reopen it.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: open a project in a free DAW; name the four stages: write, record, mix, master; save and find your project again.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Naming tracks and projects properly matters because…",
+          "options": [
+            "It looks professional",
+            "In a month you will not remember what \"Audio 3\" was",
+            "It makes the file smaller",
+            "The DAW requires it"
+          ],
+          "answer": "In a month you will not remember what \"Audio 3\" was",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 2,
+      "position": 1,
+      "title": "Tempo, the grid, and your first beat",
+      "summary": "How a DAW counts time, and placing sounds on the grid.",
+      "objectives": [
+        "You will set a tempo in bpm",
+        "You will place kick and snare on the grid",
+        "You will loop four bars"
+      ],
+      "body": "## What to do\n\n- Set the tempo to 100 bpm\n- Place a kick on beats 1 and 3, a snare on 2 and 4\n- Loop the bar and listen\n\n## Practise at home\n\n1. Make three different four-bar beats at different tempos\n1. Listen to one song and guess its tempo, then check\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Make a four-bar beat at a chosen tempo with kick and snare on the grid.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Make a four-bar beat at a chosen tempo with kick and snare on the grid.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: set a tempo in bpm; place kick and snare on the grid; loop four bars.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The grid in a DAW shows…",
+          "options": [
+            "The volume",
+            "Where the beats and bars fall, so sounds land in time",
+            "The key",
+            "The file size"
+          ],
+          "answer": "Where the beats and bars fall, so sounds land in time",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 3,
+      "position": 1,
+      "title": "Drum programming",
+      "summary": "Hi-hats, swing, velocity, and making a programmed beat sound played.",
+      "objectives": [
+        "You will add hi-hats and a second percussion layer",
+        "You will change velocity so notes are not all identical",
+        "You will nudge a note off the grid on purpose"
+      ],
+      "body": "## What to do\n\n- Add eighth-note hi-hats, then vary their velocity\n- Add one Nigerian percussion sound — shaker, conga, agogo\n- Nudge one hit slightly late and hear it loosen\n\n## Practise at home\n\n1. Rebuild your week 2 beat with velocity changes\n1. Copy the drum pattern of a song you like, by ear\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce an eight-bar drum pattern with varied velocity that does not sound mechanical.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce an eight-bar drum pattern with varied velocity that does not sound mechanical.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: add hi-hats and a second percussion layer; change velocity so notes are not all identical; nudge a note off the grid on purpose.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A programmed beat sounds robotic mainly because…",
+          "options": [
+            "The tempo is wrong",
+            "Every hit is identical in timing and volume",
+            "There are too many drums",
+            "It is too short"
+          ],
+          "answer": "Every hit is identical in timing and volume",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 4,
+      "position": 1,
+      "title": "Chords and melody",
+      "summary": "Adding a virtual instrument, and writing something over the beat.",
+      "objectives": [
+        "You will add a software instrument",
+        "You will play or draw a four-chord progression",
+        "You will write a melody over it"
+      ],
+      "body": "## What to do\n\n- Add a piano or synth track\n- Draw a four-chord loop — try Am F C G\n- Write a short melody using notes from those chords\n\n## Practise at home\n\n1. Write three different melodies over the same four chords\n1. Try the same chords at two different tempos\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Produce eight bars with drums, a chord part and a melody that fit together.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Produce eight bars with drums, a chord part and a melody that fit together.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: add a software instrument; play or draw a four-chord progression; write a melody over it.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A melody fits over chords when it mostly uses…",
+          "options": [
+            "Any notes at all",
+            "Notes that are in the chords or the key",
+            "Only black keys",
+            "The lowest notes available"
+          ],
+          "answer": "Notes that are in the chords or the key",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 5,
+      "position": 1,
+      "title": "Recording a voice",
+      "summary": "Mic, gain, room, and getting a clean take with what you actually have.",
+      "objectives": [
+        "You will set a recording level that does not clip",
+        "You will reduce room noise with what you have",
+        "You will record and keep the best take"
+      ],
+      "body": "## What to do\n\n- Set gain so the loudest part peaks around -6 dB, never at 0\n- Record in a small soft space — a wardrobe beats a big room\n- Record three takes, keep the best, label it\n\n## Practise at home\n\n1. Record one verse three times and compare\n1. Try the same take in two different rooms and hear the difference\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Record a clean 30-second vocal that does not clip and has little room echo.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Record a clean 30-second vocal that does not clip and has little room echo.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: set a recording level that does not clip; reduce room noise with what you have; record and keep the best take.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A recording that clips (hits the top) is a problem because…",
+          "options": [
+            "It is too quiet",
+            "The distortion is permanent and cannot be removed later",
+            "It uses more storage",
+            "It plays too fast"
+          ],
+          "answer": "The distortion is permanent and cannot be removed later",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 6,
+      "position": 1,
+      "title": "Arrangement",
+      "summary": "Turning a loop into a song: intro, verse, chorus, and a reason to keep listening.",
+      "objectives": [
+        "You will build a song structure from your loop",
+        "You will add and remove parts between sections",
+        "You will say why a chorus should feel bigger"
+      ],
+      "body": "## What to do\n\n- Map out intro, verse, chorus, verse, chorus, outro\n- Take parts AWAY in the verse so the chorus feels bigger by contrast\n- Add one new sound at the chorus\n\n## Practise at home\n\n1. Arrange your week 4 loop into a 90-second structure\n1. Map the structure of a song you love, section by section\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Turn your loop into a 90-second arrangement with at least three distinct sections.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Turn your loop into a 90-second arrangement with at least three distinct sections.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: build a song structure from your loop; add and remove parts between sections; say why a chorus should feel bigger.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "The usual way to make a chorus feel big is to…",
+          "options": [
+            "Turn everything up",
+            "Take parts out of the verse, so the chorus is a contrast",
+            "Add more reverb",
+            "Speed it up"
+          ],
+          "answer": "Take parts out of the verse, so the chorus is a contrast",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 7,
+      "position": 1,
+      "title": "Rebuild week 2, better",
+      "summary": "Going back to the first beat with everything learnt since, which shows how far that is.",
+      "objectives": [
+        "You will rebuild an earlier beat with new skills",
+        "You will compare the two versions",
+        "You will name three things you now do differently"
+      ],
+      "body": "## What to do\n\n- Open the week 2 beat and listen to it honestly\n- Rebuild it from scratch with velocity, layers and arrangement\n- Put the two side by side and write down three differences\n\n## Practise at home\n\n1. Finish the rebuild and export both versions\n1. Play both to someone and ask which they prefer and why\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Submit the old and new versions of the same beat with three named improvements.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Submit the old and new versions of the same beat with three named improvements.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: rebuild an earlier beat with new skills; compare the two versions; name three things you now do differently.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Remaking an old project is useful because…",
+          "options": [
+            "The old one was deleted",
+            "The gap between the two is the clearest measure of what you have learnt",
+            "It is quicker than starting fresh",
+            "It uses less storage"
+          ],
+          "answer": "The gap between the two is the clearest measure of what you have learnt",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 8,
+      "position": 1,
+      "title": "Mixing I: level and space",
+      "summary": "Balance and panning — the two moves that fix most amateur mixes.",
+      "objectives": [
+        "You will balance levels so nothing buries anything",
+        "You will pan parts across the stereo field",
+        "You will mix at a low volume"
+      ],
+      "body": "## What to do\n\n- Pull every fader down and rebuild the balance from the kick up\n- Pan: keep kick, bass and lead vocal centre; move others out\n- Mix quietly — loud mixing hides problems\n\n## Practise at home\n\n1. Rebalance your arrangement from silence\n1. Listen to your mix on a phone speaker and on headphones\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Submit a mix where every part can be heard and nothing is buried.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Submit a mix where every part can be heard and nothing is buried.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: balance levels so nothing buries anything; pan parts across the stereo field; mix at a low volume.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Kick, bass and lead vocal usually stay in the centre because…",
+          "options": [
+            "It is a rule",
+            "They carry the most energy, and centring them keeps the mix balanced and mono-safe",
+            "They are loudest",
+            "Panning breaks them"
+          ],
+          "answer": "They carry the most energy, and centring them keeps the mix balanced and mono-safe",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 9,
+      "position": 1,
+      "title": "Mixing II: EQ and compression",
+      "summary": "Cutting what is in the way, and evening out what jumps around.",
+      "objectives": [
+        "You will cut a frequency range rather than boosting everything",
+        "You will apply gentle compression to a vocal",
+        "You will say what a compressor actually does"
+      ],
+      "body": "## What to do\n\n- High-pass everything that is not bass or kick\n- Cut, do not boost, where two parts fight\n- Compress the vocal gently: a few dB of reduction, no more\n\n## Practise at home\n\n1. Mix one song using cuts only, no boosts\n1. Bypass each plugin and ask honestly whether it helped\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Submit a mix with EQ cuts and gentle vocal compression you can explain.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Submit a mix with EQ cuts and gentle vocal compression you can explain.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: cut a frequency range rather than boosting everything; apply gentle compression to a vocal; say what a compressor actually does.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "A compressor…",
+          "options": [
+            "Makes everything louder",
+            "Reduces the loudest parts so the quiet parts can come up — evening out the level",
+            "Removes noise",
+            "Changes the pitch"
+          ],
+          "answer": "Reduces the loudest parts so the quiet parts can come up — evening out the level",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 10,
+      "position": 1,
+      "title": "AI in music production: what it does well, and where it is wrong",
+      "summary": "Stem splitters, mastering services and generators — tested honestly against your own ears.",
+      "objectives": [
+        "You will test an AI tool on your own track",
+        "You will name one thing it did well and one it got wrong",
+        "You will say who owns what it produces"
+      ],
+      "body": "## What to do\n\n- Run a stem splitter on a song and listen for the artefacts it leaves\n- Run your week 9 mix through a free AI mastering service, then compare with your own\n- Read who owns AI-generated audio, and what you must declare\n\n## Practise at home\n\n1. Test one tool and write three sentences on what it got right and wrong\n1. Decide and write down what you will and will not use it for\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Compare your own master with an AI master and argue for one of them with reasons.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Compare your own master with an AI master and argue for one of them with reasons.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: test an AI tool on your own track; name one thing it did well and one it got wrong; say who owns what it produces.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "An AI mastering service returns a louder, brighter version. That means…",
+          "options": [
+            "It is better",
+            "It is louder — which is not the same as better, and you must compare at matched volume",
+            "Your mix was wrong",
+            "You should always use it"
+          ],
+          "answer": "It is louder — which is not the same as better, and you must compare at matched volume",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 11,
+      "position": 1,
+      "title": "Exporting and releasing",
+      "summary": "Getting the file right, and the credits and metadata that make it findable.",
+      "objectives": [
+        "You will export at the correct format and sample rate",
+        "You will fill in title, artist and credits",
+        "You will name everyone who played on it"
+      ],
+      "body": "## What to do\n\n- Export a WAV for distribution and an MP3 for sharing\n- Fill in the metadata: title, artist, year, credits\n- Credit every musician and writer by name\n\n## Practise at home\n\n1. Export your track both ways and check both play\n1. Write the credit list for your track\n1. **With an AI assistant —** ask it to explain one metadata field you are unsure of, then check what it says against the export dialog in front of you.\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Export a finished track with complete metadata and a full credit list.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Export a finished track with complete metadata and a full credit list.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: export at the correct format and sample rate; fill in title, artist and credits; name everyone who played on it.",
+          "points": 6
+        },
+        {
+          "kind": "mcq",
+          "prompt": "Crediting everyone who played on a track matters because…",
+          "options": [
+            "It fills space",
+            "It is how musicians get paid, hired and known — leaving someone off takes that from them",
+            "The DAW requires it",
+            "It makes the file bigger"
+          ],
+          "answer": "It is how musicians get paid, hired and known — leaving someone off takes that from them",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "course": "Music Production",
+      "level": "Year 1 · Foundation",
+      "week": 12,
+      "position": 1,
+      "title": "Term release",
+      "summary": "A finished, mixed, exported track, played to the room and defended.",
+      "objectives": [
+        "You will submit a finished track",
+        "You will explain three production decisions",
+        "You will take a note and act on it"
+      ],
+      "body": "## What to do\n\n- Play your finished track to the class\n- Explain three decisions: arrangement, mix, and one creative choice\n- Take notes from two classmates and apply one\n\n## Practise at home\n\n1. Final mix check on phone speakers, headphones and any speaker you can find\n1. Write your three decisions down before the session\n\n## Make it fit you\n\n- **If this is new to you:** Finish a rough version before you improve anything. A finished eight bars teaches more than a perfect one bar.\n- **If you already can:** Rebuild it with your own sounds, then export a second mix and say which is better and why.\n\n## Assessed this week\n\n**Practical (6 marks) —** Submit a finished, mixed and exported track of at least 90 seconds with full credits.\n\nYour instructor watches you do it and marks against this week's three objectives, two marks each. The written check below is worth one mark: this is a practical subject and it is marked like one.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.bandlab.com/",
+          "title": "BandLab — free DAW, phone or browser",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.cakewalk.com/",
+          "title": "Cakewalk by BandLab — free DAW for Windows",
+          "kind": "link"
+        },
+        {
+          "url": "https://learningmusic.ableton.com/",
+          "title": "Ableton Learning Music — free and interactive",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Submit a finished, mixed and exported track of at least 90 seconds with full credits.",
+          "rubric": "Observed by the instructor. Up to 6 marks, 2 for each objective: submit a finished track; explain three production decisions; take a note and act on it.",
+          "points": 6
+        },
+        {
+          "kind": "project",
+          "prompt": "Produce, mix and export a finished original track with full credits, and defend three production decisions",
+          "rubric": "Technical skill 30% · Arrangement and mix 25% · Originality 20% · Presentation and defence 15% · Working with others 10%"
+        }
+      ]
+    }
+  ]
+}

@@ -46,11 +46,8 @@ const CLUB_BULK_STATUSES = ['active', 'graduated-ngg', 'inactive'];
 function admin_club_promotable(array $p): array {
     $g = admin_cap_gate($p, 'club'); if (!$g['ok']) return $g;
     $where = ["status IN ('active','graduated')"]; $params = [];
-    $q = strtolower(trim((string)($p['q'] ?? '')));
-    if ($q !== '') {
-        $where[] = '(lower(fullName) LIKE ? OR lower(studentId) LIKE ? OR lower(displayId) LIKE ?)';
-        $like = '%' . $q . '%'; array_push($params, $like, $like, $like);
-    }
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'studentId']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     foreach (['centre' => 'centre', 'track' => 'track', 'editionId' => 'cohortId', 'groupId' => 'groupId'] as $k => $col) {
         if (!empty($p[$k])) { $where[] = "$col = ?"; $params[] = (string)$p[$k]; }
     }
@@ -124,6 +121,7 @@ function admin_club_promote_bulk(array $p): array {
     $ids = array_values(array_unique(array_filter(array_map(fn($v) => trim((string)$v), $ids))));
     if (!count($ids)) return ['ok' => false, 'error' => 'nothing_selected'];
     if (count($ids) > CLUB_PROMOTE_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CLUB_PROMOTE_MAX];
+    if ($d = pending_defer('admin.club.promote.bulk', array_merge($p, ['studentIds' => $ids]), 'Move ' . count($ids) . ' children to NGG', count($ids))) return $d;
 
     $results = []; $promoted = 0; $refused = 0;
     foreach ($ids as $sid) {
@@ -256,6 +254,11 @@ function admin_club_promote(array $p): array {
         $chosen = club_promote_suggestion((string)($s['centre'] ?? ''), null, participant_home_address($s), true)['name'];
         if ($chosen === '') return ['ok' => false, 'error' => 'centre_required', 'detail' => 'Choose which NGG centre they will join.'];
     }
+    /* Held for its undo window when the screen asked for one (pending.php):
+       the centre is resolved above so the commit posts them where the
+       coordinator saw, and nothing — the member row, the welcome email — exists
+       until the window ends. */
+    if ($d = pending_defer('admin.club.promote', array_merge($p, ['centre' => $chosen]), 'Move ' . (string)$s['fullName'] . ' to NGG', 1)) return $d + ['centre' => $chosen, 'name' => (string)$s['fullName']];
     $newId = new_id('NGG', 'members', 'memberId');
     /* Carry the record across.
      *
@@ -287,6 +290,9 @@ function admin_club_promote(array $p): array {
         'parentPhone' => $guardianPhone,
         'joinDate' => gmdate('Y-m-d'),
         'notes' => 'Promoted from Summer ' . $s['studentId'] . ' (' . $s['cohortId'] . ')',
+        /* The link back, as a column: Into NGG asks "which participants have a
+           member row yet" for a page of graduates in one query. */
+        'fromSummerId' => (string)$s['studentId'],
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
@@ -327,17 +333,16 @@ function admin_club_promote(array $p): array {
  */
 function admin_club_members(array $p): array {
     $g = admin_cap_gate($p, 'club'); if (!$g['ok']) return $g;
-    $q = strtolower(trim((string)($p['q'] ?? '')));
     $where = ["type = 'NGG'"]; $params = [];
     /* Absent ⇒ active, which is what this screen has always shown. An explicit
        'all' means every status; anything else is matched exactly. */
     $status = array_key_exists('status', $p) ? (string)$p['status'] : 'active';
     if ($status !== '' && $status !== 'all') { $where[] = 'status = ?'; $params[] = $status; }
-    if ($q !== '') {
-        $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)';
-        $like = '%' . $q . '%'; array_push($params, $like, $like, $like);
-    }
+    // The printed ID too: it is the number on the card and on every roster row.
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''), ['fullName', 'displayId', 'memberId', 'email'], ['phone', 'parentPhone']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     if (!empty($p['centre'])) { $where[] = 'centre = ?'; $params[] = (string)$p['centre']; }
+    if (!empty($p['track'])) { $where[] = 'lower(track) = ?'; $params[] = strtolower((string)$p['track']); }
     // A centre-scoped coordinator sees only their centres, same as the member desk.
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {
@@ -349,15 +354,23 @@ function admin_club_members(array $p): array {
 
     // Allow-listed, like the member desk: the column lands in SQL text.
     $sortable = ['createdAt' => 'createdAt', 'fullName' => 'fullName', 'memberId' => 'memberId',
-                 'centre' => 'centre', 'status' => 'status'];
+                 'centre' => 'centre', 'status' => 'status', 'track' => 'track'];
     $sortKey = (string)($p['sort'] ?? '');
     $sortCol = $sortable[$sortKey] ?? 'createdAt';
     $dir = strtolower((string)($p['dir'] ?? '')) === 'asc' ? 'ASC' : 'DESC';
     if ($sortKey === '') $dir = 'DESC';
-    $orderExpr = in_array($sortCol, ['fullName', 'centre', 'status'], true) ? "lower($sortCol)" : $sortCol;
+    $orderExpr = in_array($sortCol, ['fullName', 'centre', 'status', 'track'], true) ? "lower($sortCol)" : $sortCol;
     $orderSql = " ORDER BY $orderExpr $dir, memberId ASC";
 
     $total = (int)(db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'] ?? 0);
+    /* The same filter by every status, for the status tabs' counts: the status
+       clause is the second condition when present (see above), so drop it. */
+    $counts = [];
+    if (!empty($p['counts'])) {
+        $cw = $where; $cp = $params;
+        if ($status !== '' && $status !== 'all') { array_splice($cw, 1, 1); array_splice($cp, 0, 1); }
+        foreach (db_all('SELECT status, COUNT(*) c FROM members WHERE ' . implode(' AND ', $cw) . ' GROUP BY status', $cp) as $r) $counts[(string)$r['status']] = (int)$r['c'];
+    }
     if (!empty($p['all'])) {
         $rows = db_all('SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT 5000', $params);
         return ['ok' => true, 'total' => $total, 'members' => array_map('public_member', $rows)];
@@ -368,6 +381,6 @@ function admin_club_members(array $p): array {
         array_merge($params, [$pageSize, ($page - 1) * $pageSize]));
     return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
             'sort' => array_search($sortCol, $sortable, true) ?: 'createdAt', 'dir' => strtolower($dir),
-            'statuses' => CLUB_BULK_STATUSES,
+            'statuses' => CLUB_BULK_STATUSES, 'counts' => $counts,
             'members' => array_map('public_member', $rows)];
 }

@@ -16,6 +16,174 @@ function crSyPhotoBackup(ctx) {
   document.body.appendChild(a); a.click(); a.remove();
   ctx.toast("Preparing the download — a big store can take a minute.");
 }
+/* Image storage (media-storage.php): how full the Cloudinary plan is, what that
+   is doing to uploads, and the two things an operator can do about it now. */
+const CR_SY_MEDIA_LEVEL = {
+  ok: ["ok", "Plenty of room"], warn: ["warn", "Filling up"], high: ["warn", "Nearly full — AI photo edits have stopped"],
+  critical: ["bad", "Full — new uploads are paused"],
+};
+function crSyMediaBlocks(m, ctx) {
+  const u = m.usage || {}, lv = CR_SY_MEDIA_LEVEL[u.level] || CR_SY_MEDIA_LEVEL.ok, parts = u.parts || {};
+  const name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth (people viewing images)", transformations: "Transformations" };
+  const items = Object.keys(name).filter(k => parts[k]).map(k => {
+    const p = parts[k].pct;
+    return [name[k], p == null ? "Not reported" : Math.round(p) + "% used", p == null ? "neutral" : p >= 95 ? "bad" : p >= 70 ? "warn" : "ok"];
+  });
+  items.push(["Last checked", u.checkedAt ? crAgo(u.checkedAt) + " ago" : "Not yet", "neutral"]);
+  const out = [{ type: "status", span: 3, title: "Image storage", sub: (u.plan ? u.plan + " plan · " : "") + (u.pct == null ? "" : Math.round(u.pct) + "% of the plan used"),
+                 summary: lv[1], tone: lv[0], items }];
+  const text = {
+    ok: "New images are compressed before they are stored, so the plan fills more slowly. Usage is checked every six hours and you are emailed as it climbs.",
+    warn: "Over 70% used. Free space below, and keep an eye on bandwidth — every time a page shows an image it counts.",
+    high: "Over 85% used. AI photo edits have stopped to save credits. Free space now, or upgrade the Cloudinary plan, before uploads have to pause.",
+    critical: "The plan is full. New uploads are paused: photos are kept on this site instead, and other uploads say why they can’t go. Free space or upgrade the plan, then press Check now.",
+  }[u.level] || "";
+  out.push({ type: "note", span: 3, icon: u.level === "ok" ? "info" : "warning", tone: u.level === "ok" ? undefined : lv[0], text: text + (u.error ? " " + u.error : ""),
+             act: { l: "Check now", run: () => crSyMediaCheck(ctx) } });
+  out.push({ type: "note", span: 6, icon: "broom", text: "Free space: delete the resized and reformatted copies Cloudinary made for each page. Every original is kept, and a copy is remade the next time a page needs it.",
+             sub: "Safe to do at any time. It frees storage now and uses a little of the plan later as copies are remade.",
+             act: { l: "Free space…", run: () => crSyMediaPurge(ctx) } });
+  out.push({ type: "note", span: 6, icon: "images", text: "Store edited photos as plain images: a photo kept as an edit is edited again at every size a card or page needs. Stored once, it costs one transformation per size instead.",
+             act: { l: "Store edited photos…", run: () => crSyPhotoMaterialise(ctx) } });
+  out.push({ type: "note", span: 6, icon: "arrows-left-right", text: "Photos on a spent account move only when they are needed: printing a card in the ID Card Studio, or editing a photo, first copies that one photo to the account uploads go to now.",
+             sub: "Nothing is copied in bulk, so the new account holds only photos somebody used. Each is copied once; the old file stays, so shared links keep working." });
+  return out;
+}
+/* ══ Several Cloudinary accounts (media-storage.php) ═════════════════════════
+   One free plan holds about fifty people's photos a month; more accounts mean
+   more room. Uploads go to the first account, in this order, with room; a full
+   one hands over by itself on the next usage reading, and takes uploads back
+   when it resets. Images already uploaded stay where they are and keep
+   showing. A secret is checked against Cloudinary before it is kept, sealed,
+   and never shown again. */
+const CR_SY_ACC_ERR = { bad_cloud_name: "cloudName", duplicate_cloud: "cloudName", bad_cloud: "cloudName", bad_api_key: "apiKey", bad_api_secret: "apiSecret", secret_required: "apiSecret", bad_credentials: "apiSecret", label_too_long: "label" };
+function crSyAccountBlocks(A, ctx) {
+  const accs = A.accounts || [], live = accs.filter(a => a.enabled);
+  const where = A.uploadsTo ? (accs.find(a => a.id === A.uploadsTo) || {}).label : "";
+  const out = [{ type: "table", span: 6, title: "Cloudinary accounts", nosel: true,
+    sub: live.length > 1 ? "New uploads go to " + (where || "no account: every plan is full") + (A.pin ? ", as you chose: open an account to go back to automatic." : ". The first account in this order under 70% used takes them; a plan past that hands over by itself, and takes them back when it resets. Open an account to send uploads there now.")
+      : "One account. Add another to get more room: when this plan fills, new uploads move to the next account by themselves.",
+    cols: ["Account", "Cloud", { l: "Used", num: true }, "State"],
+    rows: accs.map((a, i) => {
+      const lv = CR_SY_MEDIA_LEVEL[a.level] || CR_SY_MEDIA_LEVEL.ok;
+      const state = !a.enabled ? ["Paused", "neutral"] : a.active ? ["Uploads go here", "ok"] : a.level === "critical" ? ["Full", "bad"] : [lv[1], lv[0] || "neutral"];
+      return { key: a.id, cells: [ { k: "strong", t: a.label, s: a.settings ? (a.primary ? "Main account" : "Backup") + " · Settings → API keys" : "Added " + (a.addedAt ? crAgo(a.addedAt) + " ago" : "") },
+        { k: "mono", t: a.cloudName, s: "Key ends " + a.keyEnds }, { k: "num", t: a.pct == null ? "—" : Math.round(a.pct) + "%", v: a.pct == null ? -1 : a.pct },
+        { k: "status", t: state[0], tone: state[1] }],
+        open: () => crSyAccountDrawer(a, i, accs, ctx, A.pin || "") };
+    }), emptyText: "No Cloudinary account yet." }];
+  if (accs.filter(a => !a.settings).length < (A.max || 8)) out.push({ type: "note", span: 6, icon: "plus-circle",
+    text: "Add a Cloudinary account: a free one from cloudinary.com, signed up with another email address, adds its own credits and storage.",
+    sub: "You need its cloud name, API key and API secret, from the Cloudinary console → Settings → API Keys. The keys are checked before they are kept.",
+    act: { l: "Add an account…", run: () => crSyAccountForm(null, ctx) } });
+  return out;
+}
+function crSyAccountDrawer(a, i, accs, ctx, pin) {
+  const extras = accs.filter(x => !x.settings), xi = extras.findIndex(x => x.id === a.id);
+  const act = (l, fn, okMsg) => ({ l, run: async () => { try { await fn(); ctx.closeDrawer(); ctx.toast(okMsg); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "That didn’t work."), null, true); } } });
+  const parts = a.parts || {}, name = { credits: "Plan credits", storage: "Storage", bandwidth: "Bandwidth", transformations: "Transformations" };
+  const actions = [];
+  if (a.enabled) actions.push(Object.assign(act("Check usage now", () => NGGApi.admin.media.accountCheck(a.id), "Checked " + a.label + "."), { primary: true }));
+  /* Choose where new uploads go, now: held until Back to automatic (a full account is still skipped). */
+  if (a.enabled && pin !== a.id && !a.active) actions.push(act("Use for new uploads now", () => NGGApi.admin.media.account(a.id), "New photos and edits now go to " + a.label + "."));
+  if (pin) actions.push(act("Back to automatic", () => NGGApi.admin.media.account("auto"), "Automatic again: the next account takes over from 70% used."));
+  if (!a.settings) {
+    if (xi > 0) actions.push(act("Move up", () => NGGApi.admin.media.accountMove(a.id, "up"), a.label + " moved up."));
+    if (xi >= 0 && xi < extras.length - 1) actions.push(act("Move down", () => NGGApi.admin.media.accountMove(a.id, "down"), a.label + " moved down."));
+    actions.push({ l: "Change name or keys…", run: () => { ctx.closeDrawer(); crSyAccountForm(a, ctx); } });
+    actions.push(act(a.enabled ? "Pause uploads to it" : "Resume", () => NGGApi.admin.media.accountSave({ id: a.id, enabled: !a.enabled }), a.enabled ? a.label + " takes no new uploads." : a.label + " is back in the order."));
+    actions.push({ l: "Remove…", danger: true, run: async () => {
+      if (!(await ctx.confirm({ title: "Remove " + a.label + "?", body: "Photos already on it keep showing — an image link needs no key. This site just stops uploading to it, reading its usage and deleting from it. You can add it again later.", cta: "Remove it" }))) return;
+      try { const r = await NGGApi.admin.media.accountRemove(a.id); ctx.closeDrawer(); ctx.toast(a.label + " removed" + (r.photosStillThere ? " · " + crPlural(r.photosStillThere, "photo") + " on record still show from it" : "") + "."); ctx.reload(); }
+      catch (e) { ctx.toast(crErr(e, "Couldn’t remove it."), null, true); }
+    } });
+  } else actions.push({ l: "Change keys in Settings", run: () => { ctx.closeDrawer(); ctx.go("settings", "keys"); } });
+  ctx.drawer({ title: a.label, sub: a.cloudName + (a.primary ? " · main account" : ""),
+    stats: [["Used", a.pct == null ? "Not read yet" : Math.round(a.pct) + "%"], ["Plan", a.plan || "—"], ["Checked", a.checkedAt ? crAgo(a.checkedAt) + " ago" : "Not yet"]],
+    fields: Object.keys(name).filter(k => parts[k]).map(k => [name[k], parts[k].pct == null ? "Not reported" : Math.round(parts[k].pct) + "% used"])
+      .concat([["API key", "ends " + a.keyEnds], ["Uploads", !a.enabled ? "Paused" : a.active ? "New uploads go here" : a.level === "critical" ? "Full — skipped" : "Next in line"]]),
+    sections: a.error ? [{ h: "Last reading", text: a.error }] : undefined,
+    actions });
+}
+function crSyAccountForm(a, ctx) {
+  ctx.form({
+    title: a ? "Change " + a.label : "Add a Cloudinary account", submit: a ? "Save" : "Check and add",
+    intro: a ? "Leave the secret empty to keep the one saved. New keys are checked with Cloudinary before they are kept." : "From the Cloudinary console → Settings → API Keys. The keys are checked with Cloudinary before they are kept, and the secret is never shown again.",
+    fields: [
+      { id: "label", l: "Name on this list", max: 60, ph: "e.g. Second free plan" },
+      { id: "cloudName", l: "Cloud name", req: true, max: 64, ac: "off", ph: "e.g. ngg-photos-2" },
+      { id: "apiKey", l: "API key", req: !a, max: 20, ac: "off", ph: a ? "Ends " + a.keyEnds + " · leave empty to keep" : "The number" },
+      { id: "apiSecret", l: "API secret", req: !a, type: "password", ac: "new-password", max: 64, ph: a ? "Saved · leave empty to keep" : "" },
+    ],
+    values: { label: a ? a.label : "", cloudName: a ? a.cloudName : "", apiKey: "", apiSecret: "" },
+    onSubmit: async v => {
+      const body = { label: String(v.label || "").trim(), cloudName: String(v.cloudName || "").trim(), apiKey: String(v.apiKey || "").trim(), apiSecret: String(v.apiSecret || "").trim() };
+      if (a) body.id = a.id;
+      try { return await NGGApi.admin.media.accountSave(body); }
+      catch (e) { const f = CR_SY_ACC_ERR[e.code]; if (f) return { fieldErrors: { [f]: crErr(e, "") } }; throw e; }
+    },
+    done: () => { ctx.reload(); return a ? a.label + " saved." : "Added. It takes uploads when the accounts before it are full."; },
+  });
+}
+
+/* What the storage bucket holds, and what was saved without touching a pixel:
+   identical files stored once, and unused files swept (media-objects.php). */
+const crSyBytes = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + " GB" : b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+const CR_SY_KIND_NAMES = { post: "Community posts", assignment: "Hand-ins", headshot: "Headshots", avatar: "Profile pictures", cover: "Covers", proof: "Proofs", results: "School reports" };
+function crSyObjectBlocks(o, ctx) {
+  const out = [{ type: "status", span: 3, title: "Files in the bucket", sub: crNum(o.total.files) + " files · " + crSyBytes(o.total.bytes),
+    summary: o.deduped.bytes || o.swept.bytes ? "Saved " + crSyBytes(o.deduped.bytes + o.swept.bytes) : "Nothing to save yet", tone: "ok",
+    items: [["Identical files stored once", crNum(o.deduped.uploads) + " uploads · " + crSyBytes(o.deduped.bytes) + " not stored", "ok"],
+            ["Unused files deleted", crNum(o.swept.files) + " · " + crSyBytes(o.swept.bytes) + " freed", "ok"]]
+      .concat((o.byKind || []).slice(0, 5).map(k => [CR_SY_KIND_NAMES[k.kind] || k.kind || "Other", crNum(k.files) + " · " + crSyBytes(k.bytes), "neutral"])) }];
+  out.push({ type: "note", span: 3, icon: "broom", text: "A file nothing uses for " + o.graceDays + " days — a photo picked and abandoned, a post deleted, a hand-in replaced — is deleted from the bucket every night. A file still on any record is never touched.",
+    act: { l: "Clean up now", run: () => crSyObjectSweep(ctx) } });
+  if (o.largest && o.largest.length) out.push({ type: "table", span: 6, title: "Largest files", sub: "Open one to see it. “Reused ×3” means three uploads of the same file, stored once.", nosel: true,
+    cols: ["File", "Where", "By", { l: "Size", num: true }, { l: "Reused", num: true }, "Uploaded"],
+    rows: o.largest.map(f => ({ key: f.key, cells: [{ k: "mono", t: f.key.split("/").pop() }, { k: "text", t: CR_SY_KIND_NAMES[f.kind] || f.kind || "—" }, { k: "text", t: f.owner || "—" },
+        { k: "num", t: crSyBytes(f.bytes), v: f.bytes }, { k: "num", t: f.reuses ? "×" + (f.reuses + 1) : "—", v: f.reuses }, { k: "text", t: f.createdAt ? crAgo(f.createdAt) + " ago" : "—" }],
+      open: () => { try { window.open(f.url, "_blank", "noopener"); } catch (_) {} } })) });
+  return out;
+}
+async function crSyObjectSweep(ctx) {
+  try { const r = await NGGApi.admin.media.sweep(); const x = r.ran || {}; ctx.toast(x.deleted ? "Deleted " + crNum(x.deleted) + " unused " + (x.deleted === 1 ? "file" : "files") + " · " + crSyBytes(x.freed) + " freed." : "Nothing to clean up: every file older than a week is still in use."); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t clean up the bucket."), null, true); }
+}
+async function crSyMediaCheck(ctx) {
+  try { const r = await NGGApi.admin.media.usage(true); const u = r.usage || {}; ctx.toast("Checked: " + (u.pct == null ? "usage not reported" : Math.round(u.pct) + "% of the plan used") + "."); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t reach Cloudinary."), null, true); }
+}
+function crSyMediaPurge(ctx) {
+  ctx.form({
+    title: "Free space on Cloudinary", submit: "Free space",
+    intro: "This deletes the derived copies of every image and video. Originals are not touched. Type FREE SPACE to confirm.",
+    fields: [{ id: "confirm", l: "Type FREE SPACE", req: true, max: 20 }],
+    values: { confirm: "" },
+    onSubmit: async v => {
+      try {
+        const r = await NGGApi.admin.media.purge(String(v.confirm || "").trim());
+        const u = r.usage || {};
+        ctx.toast("Deleted " + crNum(r.deleted) + " derived " + (r.deleted === 1 ? "copy" : "copies") + (r.more ? " — more remain, press again" : "") + ". Now " + (u.pct == null ? "?" : Math.round(u.pct)) + "% used.");
+        ctx.reload();
+      } catch (e) { ctx.toast(crErr(e, "Couldn’t free space."), null, true); }
+    },
+  });
+}
+
+/* Edited photos still kept as a Cloudinary edit chain cost again at every size
+   and format a page asks for. This stores each one once as a plain image. */
+async function crSyPhotoMaterialise(ctx) {
+  try {
+    const d = await NGGApi.admin.photos.materialise(true);
+    if (!d.chained) return ctx.toast("Every edited photo is already stored as a plain image.");
+    const ok = await ctx.confirm({ title: "Store " + crPlural(d.chained, "edited photo") + " as plain images?", cta: "Store them",
+      body: "Each is saved once as it looks now, so cards and pages stop re-running the edit (a background removal costs Cloudinary 75 transformations every time). The edit is kept on record. Up to 50 go per press." });
+    if (!ok) return;
+    const r = await NGGApi.admin.photos.materialise(false);
+    ctx.toast("Stored " + crPlural(r.converted, "photo") + (r.failed ? ", " + crNum(r.failed) + " couldn’t be stored" : "") + (r.remaining ? " — " + crNum(r.remaining) + " left, press again" : "") + ".", null, !!r.failed);
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t store the photos."), null, true); }
+}
 async function crSyPhotoSecure(ctx) {
   try {
     const r = await NGGApi.admin.photos.secure();
@@ -220,7 +388,11 @@ function crSyLight(ok, label, detail) { return [label, ok ? "OK" : (detail || "F
 Object.assign(CR_TAB_DEFS, {
   ops: {
     skeleton: ["kpis", "table"],
-    load: async () => NGGApi.admin.ops.status(),
+    load: async () => {
+      const [st, media, objects, accounts] = await Promise.all([NGGApi.admin.ops.status(), NGGApi.admin.media.usage().catch(() => null), NGGApi.admin.media.objects().catch(() => null),
+        NGGApi.admin.media.accounts().catch(() => null)]);
+      return Object.assign({}, st, { media: media && media.usage ? media : null, objects: objects && objects.configured ? objects : null, accounts: accounts && accounts.accounts ? accounts : null });
+    },
     actions: (d, ctx) => [
       { l: "Mark all dealt with", icon: "checks", primary: true, run: () => crSyOpsClear(ctx, 0, (d.events || []).length), disabled: !(d.events || []).length, why: (d.events || []).length ? undefined : "There are no open faults." },
       { l: "Run all jobs now", icon: "play", run: () => crSyOpsRun(ctx, "all") },
@@ -286,6 +458,17 @@ Object.assign(CR_TAB_DEFS, {
         }[cl.state];
         if (fix) out.push({ type: "note", span: 3, icon: fix[0] ? "warning" : "info", tone: fix[0] || undefined, text: fix[1], sub: fix[2] || undefined });
       }
+
+      /* Where a new upload goes. A bucket, once set, takes every upload, and
+         Cloudinary's plan stops deciding whether uploads may go at all. */
+      if (d.media) out.push(d.media.store
+        ? { type: "status", span: 3, title: "File storage", sub: d.media.store.bucket + " · " + d.media.store.endpointHost, summary: "New uploads go to the bucket", tone: "ok",
+            items: [["Files served from", d.media.store.host, "neutral"], ["Cloudinary", d.media.usage && d.media.usage.configured ? "Keeps serving what it already holds" : "Not used", "neutral"]] }
+        : { type: "note", span: 3, icon: "info", text: "New uploads go to " + (d.media.uploadsTo === "cloudinary" ? "Cloudinary." : "this server.") + " A storage bucket (Cloudflare R2, Backblaze B2, Amazon S3 or any S3-compatible service) takes them instead once it is set in Settings → API keys → File storage, which has a step-by-step guide for each.",
+            act: { l: "Set up storage", run: () => ctx.go("settings", "keys") } });
+      if (d.objects) out.push(...crSyObjectBlocks(d.objects, ctx));
+      if (d.media && d.media.usage && d.media.usage.configured) out.push(...crSyMediaBlocks(d.media, ctx));
+      if (d.accounts && (d.accounts.primaryConfigured || d.accounts.accounts.length)) out.push(...crSyAccountBlocks(d.accounts, ctx));
 
       const jobs = Object.keys(h.cron || {});
       out.push({ type: "table", span: 6, title: "Background jobs", sub: "Driven by ordinary traffic — a quiet site runs them less often, which is not a fault. Open one to run it now.", nosel: true,
@@ -586,7 +769,7 @@ const crSyGenCtx = { current: null };
 const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
-const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled"];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled", "face_check_enabled"];
 const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
@@ -607,6 +790,7 @@ function crSyGenForm(d, part) {
         tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),
+        tog("face_check_enabled", "Face check at the check-in desk", "After a card is scanned, the desk can compare the person’s face with the photo on their record, with a check that it is a live face, not a photo or a screen held up. It runs on the desk’s own device: no image or face data is sent or kept — only the result. It advises; the person on duty decides. Tell parents before turning it on."),
       ] },
       { part: "general", h: "Messages", rows: [
         tog("volunteer_sms_notify", "Text volunteers their ID by SMS", "When a phone number is on file."),
@@ -730,12 +914,17 @@ async function crSyAiProbe(ctx) {
    Status in words (connected here, from config.php, not set), what the service
    powers, where to get a key, and Add / Change / Test / Remove. A secret is
    never shown — only how it ends — and a blank field keeps what is saved. */
-function crSyKeyEdit(ctx, s) {
+function crSyKeyEdit(ctx, s, prov) {
   const ids = s.fields.map((f, i) => "f" + i);
   const vals = {};
   s.fields.forEach((f, i) => { vals[ids[i]] = f.kind === "secret" ? "" : (f.source === "here" ? f.value : ""); });
+  /* File storage: the provider picked in the guide fills its own label and
+     shows that provider's shapes as placeholders, so the form says what to type. */
+  const pv = prov && s.providers ? s.providers.find(x => x.id === prov) : null;
+  const shape = pv ? { "storage.endpoint": pv.endpoint, "storage.region": pv.region, "storage.public_base": pv.public, "storage.provider": pv.label } : {};
+  if (pv) s.fields.forEach((f, i) => { if (f.path === "storage.provider") vals[ids[i]] = pv.label; });
   ctx.form({
-    title: (s.setHere || s.connected ? "Change " : "Connect ") + s.label,
+    title: (s.setHere || s.connected ? "Change " : "Connect ") + (pv ? pv.label : s.label),
     intro: s.what + (s.guarded ? " Once a secret key is in use, a change waits until a second person with Fees and Settings confirms it, and everyone with Fees is emailed." : ""),
     submit: s.guarded && s.connected ? "Propose the change" : "Save",
     values: vals,
@@ -744,7 +933,7 @@ function crSyKeyEdit(ctx, s) {
       type: f.kind === "secret" ? "password" : f.kind === "port" ? "text" : f.kind === "email" ? "email" : "text",
       ac: f.kind === "secret" ? "new-password" : "off", im: f.kind === "port" ? "numeric" : undefined,
       ph: f.kind === "secret" ? (f.set ? "Saved · ends " + f.ending + (f.source === "file" ? " (config.php)" : "") + " — leave blank to keep" : "Paste the key")
-        : (f.source === "file" ? f.value + " (config.php)" : ""),
+        : (f.source === "file" ? f.value + " (config.php)" : (shape[f.path] || "")),
       help: [f.help, f.optional ? "" : ""].filter(Boolean).join(" ") || undefined,
     })),
     onSubmit: async v => {
@@ -783,7 +972,53 @@ function crSyFirstSentence(t) {
   if (out.length < 30 && parts[1]) out += " " + parts[1].trim();   // "Paid." alone says too little
   return out;
 }
+/* File storage's connection guide: a picker of S3-compatible providers and
+   that provider's numbered steps, its address shapes and the CORS rule the
+   bucket needs (the browser uploads straight to it). The catalogue is the
+   server's (STORAGE_PROVIDERS, service-keys.php) — one list. */
+function crSyStorageProvider(s) {
+  const f = s.fields.find(x => x.path === "storage.provider");
+  const said = String(f && f.value || "").toLowerCase();
+  const hit = said && s.providers.find(p => p.label.toLowerCase() === said || p.id === said);
+  if (hit) return hit.id;
+  const ep = String((s.fields.find(x => x.path === "storage.endpoint") || {}).value || "");
+  const by = [["r2", /r2\.cloudflarestorage/], ["b2", /backblazeb2/], ["s3", /amazonaws/], ["wasabi", /wasabisys/], ["spaces", /digitaloceanspaces/], ["supabase", /supabase\.co/], ["idrive", /idrivee2/]];
+  const m = ep && by.find(x => x[1].test(ep));
+  return m ? m[0] : ep ? "other" : "r2";
+}
+function CrSyStorageGuide({ ctx, s, prov, setProv }) {
+  const p = s.providers.find(x => x.id === prov) || s.providers[0];
+  const gid = "cr-stg-" + p.id;
+  return (
+    <section className="cr-stg" aria-labelledby={gid + "-h"}>
+      <div className="cr-stg-head">
+        <label className="cr-stg-pick"><span>Provider</span>
+          <select className="cr-select" value={p.id} onChange={e => setProv(e.target.value)}>
+            {s.providers.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select></label>
+        <p className="cr-hint">{p.note}</p>
+      </div>
+      <h4 id={gid + "-h"} className="cr-stg-h">Connect {p.label}, step by step</h4>
+      <ol className="cr-stg-steps">{p.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+      <dl className="cr-stg-shape">
+        <div><dt>Endpoint</dt><dd className="cr-mono">{p.endpoint}</dd></div>
+        <div><dt>Region</dt><dd className="cr-mono">{p.region}</dd></div>
+        <div><dt>Public address</dt><dd className="cr-mono">{p.public}</dd></div>
+      </dl>
+      {p.id !== "supabase" && s.cors && <details className="cr-stg-cors"><summary>{p.id === "b2" ? "The B2 command that sets the CORS rule" : "The CORS rule for this site"}</summary><pre className="cr-mono">{p.id === "b2" ? s.corsB2 : s.cors}</pre></details>}
+      <div className="cr-key-acts">
+        <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s, p.id)}>{s.connected || s.setHere ? "Change to " + p.label : "Connect " + p.label}</button>
+        {p.id !== "supabase" && s.cors && (p.id === "b2"
+          ? <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, s.corsB2, "The B2 command")}>Copy the B2 command</button>
+          : <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, s.cors, "The CORS rule")}>Copy the CORS rule</button>)}
+        <span className="cr-grow"/>
+        <a className="cr-key-link" href={p.link} target="_blank" rel="noopener noreferrer">Open {p.label}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>
+      </div>
+    </section>
+  );
+}
 function CrSyKeyCard({ ctx, s, open, onToggle }) {
+  const [prov, setProv] = React.useState(() => s.providers ? crSyStorageProvider(s) : "");
   const [res, setRes] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const st = crSyKeyState(s);
@@ -812,6 +1047,7 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
         <CrPill tone={st.tone} t={st.t}/>
         {s.connected || s.setHere
           ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage"}</button>
+          : s.providers ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Set up"}</button>
           : <button type="button" className="cr-btn is-sm" onClick={() => crSyKeyEdit(ctx, s)}>Add key</button>}
       </div>
       <div className="cr-key-body" id={pid} hidden={!open}>
@@ -826,15 +1062,16 @@ function CrSyKeyCard({ ctx, s, open, onToggle }) {
         </dl>
         {res && <p className={"cr-key-res" + (res.pass === true ? " is-ok" : res.pass === false ? " is-bad" : "")} role="status"><CrIcon n={res.pass === true ? "check-circle" : res.pass === false ? "warning-circle" : "info"}/>{res.detail}{res.ms ? " · " + crNum(res.ms) + " ms" : ""}</p>}
         <div className="cr-key-acts">
-          {(s.connected || s.setHere) && <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s)}>Change</button>}
+          {(s.connected || s.setHere) && !s.providers && <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s)}>Change</button>}
           {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
           {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
           {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, CR_SY_SCRIPT_MAIL, "The Apps Script")}>Copy the Apps Script</button>}
           {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, crSyNewSecret(), "A new secret")} title="Paste it into the script’s SHARED_SECRET and into Change here.">Copy a new secret</button>}
           <span className="cr-grow"/>
           {s.changedAt && <span className="cr-hint">Changed {crAgo(s.changedAt)}{s.changedBy ? " by " + s.changedBy : ""}</span>}
-          <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">{s.connected ? "Open " + s.label : "Get a key"}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>
+          {!s.providers && <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">{s.connected ? "Open " + s.label : "Get a key"}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>}
         </div>
+        {s.providers && <CrSyStorageGuide ctx={ctx} s={s} prov={prov} setProv={setProv}/>}
       </div>
     </article>
   );
@@ -906,41 +1143,109 @@ function CrSyKeysPending({ ctx, svc }) {
    photos and backs the first up. Keys are sealed on the server and never come
    back to the browser — this shows only that one is set and how it ends. */
 function crSyKeysForm(ctx, k) {
+  /* Six slots: two for photos, then the backups every AI job uses (the tutor, the
+     Companion, report cards, marking): three Gemini keys that share the load and
+     cover for each other, and a Groq key as the last resort. */
+  const SL = [["framing", "Key 1 — headshot framing", "Measures each photo so the card shows an accurate head-and-shoulders."],
+    ["second", "Key 2 — photo checks, and backup for framing", ""],
+    ["pool1", "Backup Gemini key A — every AI job", "The tutor, the Companion, report cards and marking use these three in turn, and switch when one runs out for the day."],
+    ["pool2", "Backup Gemini key B — every AI job", ""], ["pool3", "Backup Gemini key C — every AI job", ""],
+    ["groq", "Groq key — last resort", "From console.groq.com (starts gsk_). Used when every Gemini key is out. Not used to read photos or report cards."]];
+  const cap = x => x.charAt(0).toUpperCase() + x.slice(1);
+  const vals = { model: (k && k.model) || "" }; SL.forEach(([id]) => { vals[id + "Key"] = ""; vals["clear" + cap(id)] = false; });
   ctx.form({
-    title: "Gemini keys for photos",
-    intro: "From Google AI Studio (aistudio.google.com → Get API key). Leave a field blank to keep the key already saved. Keys are encrypted on the server and never shown again.",
+    title: "AI keys",
+    intro: "Gemini keys from Google AI Studio (aistudio.google.com → Get API key), each from a different Google account so each has its own free quota. Leave a field blank to keep the key already saved. Keys are encrypted on the server and never shown again.",
     submit: "Save keys",
-    values: { framingKey: "", secondKey: "", model: (k && k.model) || "", clearFraming: false, clearSecond: false },
-    fields: [
-      { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AQ.… or AIza…",
-        help: "Measures each photo so the card shows an accurate head-and-shoulders, whatever shape the photo was." },
-      { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AQ.… or AIza…" },
-      { id: "model", l: "Model", max: 60, ph: "Automatic", help: "Leave blank: each key uses the newest Gemini Flash model Google lets it use (gemini-3.8-flash today), and moves on by itself when Google retires one. Type a model name only to pin one." },
-      k && k.framing.set ? { id: "clearFraming", l: "Remove key 1", type: "switch" } : null,
-      k && k.second.set ? { id: "clearSecond", l: "Remove key 2", type: "switch" } : null,
-    ].filter(Boolean),
+    values: vals,
+    fields: SL.map(([id, l, help]) => ({ id: id + "Key", l, type: "password", ac: "new-password", max: 200, ph: k && k[id] && k[id].set ? "Saved · ends " + k[id].ending : id === "groq" ? "gsk_…" : "AQ.… or AIza…", help: help || undefined }))
+      .concat([{ id: "model", l: "Gemini model", max: 60, ph: "Automatic", help: "Leave blank: each key uses the newest Gemini Flash model Google lets it use, and moves on by itself when Google retires one." }])
+      .concat(SL.filter(([id]) => k && k[id] && k[id].set).map(([id, l]) => ({ id: "clear" + cap(id), l: "Remove " + l.split(" — ")[0].toLowerCase(), type: "switch" }))),
     onSubmit: async v => {
-      try { return await NGGApi.admin.summer.aiKeysSet({ framingKey: v.framingKey.trim(), secondKey: v.secondKey.trim(), model: v.model.trim(), clearFraming: !!v.clearFraming, clearSecond: !!v.clearSecond }); }
+      const body = { model: v.model.trim() }; SL.forEach(([id]) => { body[id + "Key"] = (v[id + "Key"] || "").trim(); body["clear" + cap(id)] = !!v["clear" + cap(id)]; });
+      try { return await NGGApi.admin.summer.aiKeysSet(body); }
       catch (e) { if (e.code === "bad_key") return { fieldErrors: { [((e.data && e.data.field) || "framing") + "Key"]: crErr(e, "") } }; if (e.code === "bad_model") return { fieldErrors: { model: crErr(e, "") } }; throw e; }
     },
-    done: () => { ctx.reload(); return "Saved. Use “Test” to check Google accepts them."; },
+    done: () => { ctx.reload(); return "Saved. Use “Test” to check each key works."; },
   });
 }
 async function crSyKeysTest(ctx) {
   ctx.toast("Sending one small request with each key…");
   try {
     const r = await NGGApi.admin.summer.aiKeysTest();
-    const say = (n, x) => n + ": " + (x.ok ? "works, using " + x.model + " (" + crNum(x.ms) + " ms)"
-      : x.error === "not_set" ? "not set" : "refused — " + (x.detail || x.error) + (x.model ? " [" + x.model + "]" : ""));
-    ctx.toast(say("Key 1", r.results.framing) + " · " + say("Key 2", r.results.second), null, !(r.results.framing.ok || r.results.second.ok));
+    const names = { framing: "Key 1", second: "Key 2", pool1: "Backup A", pool2: "Backup B", pool3: "Backup C", groq: "Groq" };
+    const say = (n, x) => n + ": " + (x.ok ? "works" + (x.model ? " (" + x.model + ")" : "") : x.error === "not_set" ? "not set" : "refused — " + (x.detail || x.error));
+    const res = r.results || {};
+    ctx.toast(Object.keys(names).filter(id => res[id]).map(id => say(names[id], res[id])).join(" · "), null, !Object.values(res).some(x => x.ok));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
 }
+/* AI spending (api/_lib/ai.php ai_route): nobody chooses a provider. Everyday work runs on
+   free models; hard thinking tries paid ones first, under this monthly limit. */
+const CR_SY_JOB = { everyday: "Everyday · free models", brain: "Hard thinking · paid first" };
+function crSyUsd(n) { const v = Number(n) || 0; return "$" + (v > 0 && v < 0.01 ? v.toFixed(4) : v.toFixed(2)); }
+function crSyAiSpendForm(ctx, sp) {
+  ctx.form({
+    title: "AI spending",
+    intro: "Free models (Groq, Gemini, OpenRouter’s free ones) do everyday work. Paid models (Claude, OpenAI) only do hard thinking — marking written answers and the Analyst — and only within this monthly limit. Once it is reached they wait until next month and the free models carry on.",
+    submit: "Save",
+    values: { limit: sp.limitUsd ? String(sp.limitUsd) : "", everyday: sp.paidEveryday ? "1" : "0", prices: (sp.prices || []).map(x => x.model + " " + x.in + " " + x.out).join("\n") },
+    fields: [
+      { id: "limit", l: "Monthly limit for paid models (US$)", im: "decimal", ph: "0 — paid models off", max: 10,
+        help: "Estimated from each call’s tokens. Leave blank or 0 to keep paid models off.",
+        check: v => (v === "" || (/^\d+(\.\d{1,2})?$/.test(v) && Number(v) >= 0)) ? "" : "Enter a number of dollars, such as 10 or 12.50." },
+      { id: "everyday", l: "When no free model is set up", type: "chips", opts: [["0", "Everyday work uses each feature’s own rules"], ["1", "Paid models may do everyday work too, within the limit"]] },
+      { id: "prices", l: "Your prices (optional)", type: "textarea", rows: 3, max: 2000, ph: "claude-opus-5-5 4 20",
+        help: "One model a line: its name, then the US$ per million input and output tokens. Only needed if your price differs from the built-in table." },
+    ],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.summer.aiRouting({ monthlyLimitUsd: v.limit.trim() || "0", paidEveryday: v.everyday === "1", prices: v.prices }); }
+      catch (e) { if (/limit/.test(e.code || "")) return { fieldErrors: { limit: crErr(e, "") } }; if (/price/.test(e.code || "")) return { fieldErrors: { prices: crErr(e, "") } }; throw e; }
+    },
+    done: (v) => { ctx.reload(); return Number(v.limit) > 0 ? "Saved. Paid models may spend up to " + crSyUsd(v.limit) + " a month." : "Saved. Paid models are off."; },
+  });
+}
+function CrSyAiSpend({ ctx, sp }) {
+  if (!sp) return null;
+  const on = sp.limitUsd > 0, pct = on ? Math.min(100, Math.round(sp.spentUsd / sp.limitUsd * 100)) : 0;
+  const mon = sp.month ? new Date(sp.month + "-01T12:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
+  return (
+    <div className="cr-box cr-sy-spend">
+      <div className="cr-sy-spend-head">
+        <span className="cr-sy-spend-big">{crSyUsd(sp.spentUsd)}<small>{on ? " of " + crSyUsd(sp.limitUsd) + " · " + mon : " spent · " + mon}</small></span>
+        <CrPill tone={!on ? "neutral" : sp.paidOpen ? "ok" : "warn"} t={!on ? "Paid models off" : sp.paidOpen ? crSyUsd(sp.leftUsd) + " left" : "Limit reached"}/>
+      </div>
+      {on && <span className="cr-sy-spend-bar" role="progressbar" aria-label={"Spent this month: " + pct + "% of the limit"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}><span style={{ width: pct + "%" }}/></span>}
+      <p className="cr-hint" role="status" aria-live="polite">
+        {!on ? "Paid models are off, so hard thinking uses free models when it can. Set a limit to let Claude or OpenAI mark written answers and write the Analyst’s reports."
+          : sp.paidOpen ? "Paid models do hard thinking until the month’s spend reaches the limit." : "This month’s limit is reached: paid models wait until next month, and the free models carry on."}
+        {sp.held ? " " + crPlural(sp.held, "paid call") + " held back by the limit this month." : ""}
+      </p>
+      {sp.byModel && sp.byModel.length > 0 && (
+        <div className="cr-tscroll"><table className="cr-tbl cr-sy-spend-t">
+          <thead><tr><th scope="col">Model</th><th scope="col">Kind</th><th scope="col" className="is-num">Calls</th><th scope="col" className="is-num">Tokens in / out</th><th scope="col" className="is-num">Cost</th></tr></thead>
+          <tbody>{sp.byModel.map(m => (
+            <tr key={m.provider + m.model}>
+              <td>{m.model || m.provider}</td>
+              <td>{m.tier === "paid" ? "Paid" : "Free"}</td>
+              <td className="is-num">{crNum(m.calls)}{m.held ? " (" + crNum(m.held) + " held)" : ""}</td>
+              <td className="is-num">{crNum(m.inTokens)} / {crNum(m.outTokens)}</td>
+              <td className="is-num">{m.tier === "paid" ? crSyUsd(m.costUsd) + (m.estimated ? " est." : "") : "Free"}</td>
+            </tr>))}</tbody>
+        </table></div>
+      )}
+      <div className="cr-sy-frame-acts">
+        <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyAiSpendForm(ctx, sp)}>{on ? "Change the limit" : "Set a monthly limit"}</button>
+      </div>
+    </div>
+  );
+}
+
 function CrSyFraming({ ctx, k }) {
   const [run, setRun] = React.useState(null);
   const stop = React.useRef(false);
   React.useEffect(() => () => { stop.current = true; }, []);
   if (!k) return null;
-  const on = k.framing.set || k.second.set;
+  const on = ["framing", "second", "pool1", "pool2", "pool3", "groq"].some(id => k[id] && k[id].set);
   const frameAll = async () => {
     stop.current = false;
     let done = 0, failed = 0, left = k.backlog;
@@ -961,6 +1266,7 @@ function CrSyFraming({ ctx, k }) {
       <div className="cr-sy-frame-keys">
         <span><b>Key 1 · framing</b> {k.framing.set ? "set · ends " + k.framing.ending : "not set"}{k.framing.updatedBy ? " · " + k.framing.updatedBy : ""}</span>
         <span><b>Key 2 · checks &amp; backup</b> {k.second.set ? "set · ends " + k.second.ending : "not set"}</span>
+        {[["pool1", "Backup A"], ["pool2", "Backup B"], ["pool3", "Backup C"], ["groq", "Groq · last resort"]].map(([id, l]) => <span key={id}><b>{l} · every AI job</b> {k[id] && k[id].set ? "set · ends " + k[id].ending : "not set"}</span>)}
         <span><b>Model</b> {k.model || "Automatic — the best each key can use"}</span>
       </div>
       <p className="cr-hint" role="status" aria-live="polite">
@@ -1055,13 +1361,16 @@ Object.assign(CR_TAB_DEFS, {
           : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
             text: ai.anyEnabled ? "AI is on. The table shows which provider answers each feature." : "AI is off — everything still works.",
             sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Gemini or Groq key above to switch it on (both have free tiers)." },
+        ai.aiErr ? null : { type: "custom", span: 6, title: "AI spending", sub: "Nobody picks a provider: everyday work goes to free models, hard thinking to paid ones first, within a monthly limit.",
+          render: () => <CrSyAiSpend ctx={ctx} sp={ai.spend}/> },
         d.keys ? { type: "custom", span: 6, title: "Photo framing (Gemini)", sub: "Two keys: one measures every headshot so cards frame it accurately at their own shape, the other checks photos and backs it up. Existing photos are measured with “Measure existing photos”; new ones when their cards are printed.",
           render: () => <CrSyFraming ctx={ctx} k={d.keys}/> } : null,
         ai.aiErr ? null : { type: "table", span: 6, title: "AI features", nosel: true,
-          cols: [{ l: "Feature", wrap: true }, { l: "Status", wrap: true }, "Provider", "Test"],
+          cols: [{ l: "Feature", wrap: true }, "Kind of work", { l: "Status", wrap: true }, "Provider", "Test"],
           rows: rows.map(r => ({ key: r.profile, cells: [
             { k: "strong", t: r.profile, s: r.what },
-            r.enabled ? { k: "status", t: "On", tone: "ok" } : { k: "text", t: "Rules only", s: r.behaviourWhenOff },
+            { k: "text", t: CR_SY_JOB[r.job] || "Everyday · free models" },
+            r.enabled ? { k: "status", t: r.tier === "paid" ? "On · paid" : "On", tone: "ok" } : { k: "text", t: "Rules only", s: r.routeNote || r.behaviourWhenOff },
             { k: "text", t: r.enabled ? r.provider + (r.model ? " · " + r.model : "") : "—", s: r.fallbacks > 0 ? "+" + crPlural(r.fallbacks, "fallback") : "" },
             !r.probe ? { k: "text", t: "Not tested" } : r.probe.ok ? { k: "status", t: "OK · " + crNum(r.probe.ms) + " ms", tone: "ok" } : { k: "status", t: r.probe.error || "Failed", tone: "bad" },
           ] })),
@@ -1349,15 +1658,17 @@ function CrMpaCard({ ctx, d, j, busy, act, run, history }) {
     if (!patch) { ctx.toast(msg, null, true); return; }
     NGGApi.admin.mentorAutomations.thresholds(patch).then(r => { ctx.setData(x => Object.assign({}, x, r)); ctx.toast("Saved. It applies from the next run."); }, e => ctx.toast(crMpaErr(e, "Couldn’t save that."), null, true));
   };
-  const state = !j.on ? ["Paused", "neutral"] : failedLast ? ["Last run failed", "bad"] : j.locked ? ["Always on", "ok"] : ["Active", "ok"];
+  const state = j.pausedReason ? ["Paused · screen withdrawn", "neutral"] : !j.on ? ["Paused", "neutral"] : failedLast ? ["Last run failed", "bad"] : j.locked ? ["Always on", "ok"] : ["Active", "ok"];
   const prep = (j.uses || []).indexOf("prepDay") >= 0 ? (d.thresholds || []).find(t => t.key === "prepDay") : null;
   const extra = (j.uses || []).filter(k => !new RegExp("\\{" + k + "\\}").test(j.trigger + j.if + (j.then || []).join(" ")) && k !== "prepDay");
   return <article className={"cr-mpa-card" + (j.on ? "" : " is-off")} aria-labelledby={"mpa-" + j.key}>
     <header className="cr-mpa-head">
       <span className="cr-mpa-title"><b id={"mpa-" + j.key}>{j.label}</b><CrPill tone={state[1]} t={state[0]}/>{j.shows && <span className="cr-mpa-tag">Shows in Due now</span>}</span>
-      {j.locked ? <span className="cr-mpa-lock" title="Protects a child or a record, so it cannot be switched off"><CrIcon n="lock-simple"/>Locked on</span>
+      {j.pausedReason ? <span className="cr-mpa-lock" title={j.pausedReason}><CrIcon n="pause-circle"/>Paused in code</span>
+        : j.locked ? <span className="cr-mpa-lock" title="Protects a child or a record, so it cannot be switched off"><CrIcon n="lock-simple"/>Locked on</span>
         : <CrSwitch on={j.on} label={(j.on ? "Pause " : "Turn on ") + j.label} disabled={!edit || busy === j.key} onChange={v => act(j.key, { on: v }, j.label + (v ? " is on" : " is paused"))}/>}
     </header>
+    {j.pausedReason && <p className="cr-muted cr-mpa-why">{j.pausedReason}</p>}
     <ol className="cr-mpa-flow">
       <li><span className="cr-mpa-k"><CrIcon n={j.cron ? "clock" : "lightning"}/>When</span>
         <span className="cr-mpa-v"><CrMpaSentence text={j.trigger} d={d} editable={edit} onSet={setTh}/>

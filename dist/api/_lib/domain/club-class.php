@@ -31,6 +31,13 @@ const CLUB_STEPS = ['roll', 'plan', 'teach', 'exit', 'log'];
 function club_class_gate(array $p): array {
     $g = results_instructor_gate($p);
     if (empty($g['ok'])) return $g;
+    /* A class is children. Until their check is cleared an instructor sees
+     * the courses in Curriculum, and here is told plainly why the class is
+     * empty and who clears it — not "that class isn't yours". */
+    if (($g['clearance'] ?? '') === 'pending') {
+        return ['ok' => false, 'error' => 'not_cleared', 'courses' => array_values((array)($g['reportCourses'] ?? [])),
+                'detail' => 'Your safeguarding check has not been recorded yet. Your courses and lessons are under Curriculum; your learners appear here once your centre admin marks the check as cleared.'];
+    }
     return $g;
 }
 
@@ -75,11 +82,17 @@ function club_class_roster(array $g, string $course, string $centre, string $dat
     $scan = [];
     foreach (db_all("SELECT studentId, status, method FROM attendance WHERE date = ? AND studentId IN ($ph)", array_merge([$date], $ids)) as $r)
         $scan[(string)$r['studentId']] = ['status' => (string)($r['status'] ?? ''), 'method' => (string)($r['method'] ?? '')];
-    $photos = [];
-    foreach (db_all("SELECT memberId, photoUrl FROM members WHERE memberId IN ($ph)", $ids) as $r) $photos[(string)$r['memberId']] = (string)$r['photoUrl'];
+    $photos = []; $dob = [];
+    foreach (db_all("SELECT memberId, photoUrl, dob FROM members WHERE memberId IN ($ph)", $ids) as $r) { $photos[(string)$r['memberId']] = (string)$r['photoUrl']; $dob[(string)$r['memberId']] = (string)($r['dob'] ?? ''); }
+    /* Who mentors each child, in one grouped read: the instructor's log
+     * remarks reach that mentor, so the class list says who it is. */
+    $mentor = [];
+    foreach (db_all("SELECT a.memberId, t.fullName FROM mentor_assignments a JOIN mentors t ON t.mentorId = a.mentorId WHERE a.status = 'active' AND a.memberId IN ($ph)", $ids) as $r) $mentor[(string)$r['memberId']] = (string)$r['fullName'];
+    $today = results_today();
     return array_map(static fn($r) => ['memberId' => (string)$r['memberId'], 'fullName' => (string)$r['fullName'], 'displayId' => (string)$r['displayId'],
         'photoUrl' => $photos[(string)$r['memberId']] ?? '', 'scanned' => isset($scan[(string)$r['memberId']]),
-        'scanLate' => ($scan[(string)$r['memberId']]['status'] ?? '') === 'late'], $rows);
+        'scanLate' => ($scan[(string)$r['memberId']]['status'] ?? '') === 'late',
+        'mentor' => $mentor[(string)$r['memberId']] ?? '', 'age' => function_exists('mp_age') ? mp_age($dob[(string)$r['memberId']] ?? '', $today) : null], $rows);
 }
 
 function club_class_row(string $course, string $centre, string $date): ?array {
@@ -222,8 +235,52 @@ function instructor_class(array $p): array {
         'lesson' => club_class_lesson($slot['course'], $slot['date']),
         'skills' => $levels['skills'], 'levels' => (object)$levels['by'],
         'mix' => club_class_groups($roster, $levels, $present),
+        'division' => function_exists('nggc_division_for_track') ? nggc_division_for_track($slot['course']) : '',
+        'slotInfo' => club_class_slot_info($slot['course'], $slot['centre']),
+        'questions' => club_class_questions($slot['course'], $slot['date']),
         'carryOver' => ['from' => (string)($prev['date'] ?? ''), 'misconception' => (string)($prevExit['misconception'] ?? ''),
             'notYet' => array_values(array_map(static fn($id) => ['memberId' => $id, 'fullName' => $names[$id] ?? ''], array_filter($carry, static fn($id) => isset($names[$id]))))]];
+}
+
+/** The class's Saturday slot on the timetable (room and time), if it is scheduled there. */
+function club_class_slot_info(string $course, string $centre): ?array {
+    $r = db_row("SELECT t.startTime, t.endTime, t.room FROM timetable_slots t JOIN centres c ON c.centreId = t.centreId
+                 WHERE c.name = ? AND lower(t.course) = lower(?) AND t.weekday = 6 AND t.status = 'active' ORDER BY t.startTime LIMIT 1", [$centre, $course]);
+    return $r ? ['start' => (string)$r['startTime'], 'end' => (string)$r['endTime'], 'room' => (string)$r['room']] : null;
+}
+
+/**
+ * The questions the lesson already holds, so the instructor does not retype
+ * them: this week's first multiple-choice check is the hinge question (with
+ * its answer, which only staff are served), its last check the exit ticket,
+ * and earlier weeks' prompts the retrieval review (spaced practice).
+ */
+function club_class_questions(string $course, string $date): array {
+    $out = ['hinge' => null, 'exit' => '', 'retrieval' => []];
+    if (!function_exists('curriculum_load') || !function_exists('curriculum_schedule')) return $out;
+    $cfg = curriculum_schedule();
+    $units = curriculum_load("status = 'published' AND lower(course) = lower(?)", [$course], 'week, position');
+    if (!$units) return $out;
+    $week = (string)$cfg['startDate'] !== '' ? max(1, (int)floor((strtotime($date . 'T00:00:00Z') - strtotime($cfg['startDate'] . 'T00:00:00Z')) / (7 * 86400)) + 1) : null;
+    foreach ($units as $b) {
+        $w = (int)$b['unit']['week'];
+        if ($week !== null && $w === $week) {
+            foreach ($b['checks'] as $c) {
+                $opts = json_decode((string)$c['options'], true) ?: [];
+                if ($out['hinge'] === null && (string)$c['kind'] === 'mcq' && count($opts) >= 2)
+                    $out['hinge'] = ['question' => (string)$c['prompt'], 'options' => array_values($opts), 'correct' => ctype_digit((string)$c['answer']) ? (int)$c['answer'] : null];
+            }
+            $last = end($b['checks']);
+            if ($last) $out['exit'] = (string)$last['prompt'];
+        } elseif ($week === null || $w < $week) {
+            foreach ($b['checks'] as $c) if (trim((string)$c['prompt']) !== '')
+                $out['retrieval'][] = ['week' => $w, 'ago' => $week !== null ? $week - $w : null, 'q' => (string)$c['prompt']];
+        }
+    }
+    // The most recent weeks first: last week's material is the one most worth recalling.
+    usort($out['retrieval'], static fn($a, $b) => $b['week'] <=> $a['week']);
+    $out['retrieval'] = array_slice($out['retrieval'], 0, 12);
+    return $out;
 }
 
 /** instructor.class.roll — save marks as tapped; close to sync the centre's attendance. */
@@ -434,7 +491,14 @@ function member_today(array $p): array {
     try {
         $c = member_compliance(['memberId' => $mid]);
         if (!empty($c['ok']) && !empty($c['enabled']) && in_array((string)$c['state'], ['warned', 'dormant', 'suspended', 'evicted'], true))
-            $standing = ['state' => (string)$c['state'], 'until' => (string)$c['until'], 'reason' => (string)$c['reason'], 'finesOwed' => (int)$c['finesOwed']];
+            $standing = ['state' => (string)$c['state'], 'until' => (string)$c['until'], 'reason' => (string)$c['reason'], 'finesOwed' => (int)$c['finesOwed'],
+                // The counts behind the state, so the member sees how close the next step is.
+                'lates' => 0, 'absences' => 0, 'latenessCap' => 3, 'absenceLimit' => 3];
+        if ($standing) {
+            $ps = policy_state($mid, 'member'); $pc = policy_settings();
+            $standing['lates'] = (int)($ps['lates'] ?? 0); $standing['absences'] = (int)($ps['absences'] ?? 0);
+            $pm = (array)($pc['member'] ?? $pc['student'] ?? []); $standing['latenessCap'] = (int)($pm['latenessCap'] ?? 3); $standing['absenceLimit'] = (int)($pm['absenceLimit'] ?? 2) + 1; $standing['lateRedline'] = (string)($pm['lateRedline'] ?? '08:30'); $standing['fine'] = (int)($pm['fine'] ?? 0);
+        }
         $fines = !empty($c['ok']) ? (int)$c['finesOwed'] : 0;
     } catch (\Throwable $e) { $fines = 0; }
 
@@ -507,6 +571,8 @@ function member_today(array $p): array {
         $promises = ['planId' => $pub['planId'], 'items' => $pub['items'], 'adherence' => $pub['adherence'], 'status' => $pub['status']];
         if ($left > 0) $todo[] = portal_todo('promises', 'check-circle', "{$left} study session" . ($left === 1 ? '' : 's') . ' left this week', 'Your plan · tick each one when it’s done', 'Tick', '/member/grow/results', 'neutral', 4);
     }
+    // Projects finishing within a week that are not done yet.
+    try { foreach (member_project_todos($mid, $today) as $t) $todo[] = $t; } catch (\Throwable $e) {}
     $sat = club_class_next_date($today);
 
     usort($todo, static fn($a, $b) => [$a['rank'], $a['deadline'] === '' ? '9999' : $a['deadline']] <=> [$b['rank'], $b['deadline'] === '' ? '9999' : $b['deadline']]);
@@ -518,8 +584,13 @@ function member_today(array $p): array {
     $age = trim((string)($m['dob'] ?? '')) !== '' ? mp_age(substr((string)$m['dob'], 0, 10), $today) : null;
     $profile = ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'memberId' => $mid,
         'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'school' => (string)($m['school'] ?? ''),
+        // The courses as the curriculum reads them (chosen ones first), Chess aside: what "My course" shows.
+        'courses' => function_exists('curriculum_member_courses') ? array_values(array_filter(curriculum_member_courses($m), static fn($c) => strcasecmp((string)$c, 'Chess') !== 0)) : [],
         'dob' => (string)($m['dob'] ?? ''), 'joinDate' => (string)($m['joinDate'] ?? ''), 'email' => (string)($m['email'] ?? ''),
         'phone' => (string)($m['phone'] ?? ''), 'guardianName' => (string)($m['parentName'] ?? ''),
+        'level' => (string)($m['level'] ?? ''), 'gender' => (string)($m['gender'] ?? ''), 'bio' => (string)($m['bio'] ?? ''),
+        // The year that starts the printed ID (026- ⇒ 2026), never called a cohort on screen.
+        'intakeYear' => function_exists('member_intake_year') ? member_intake_year($m) : 0,
         // Masked: the member's own screen does not need a guardian's full number on display.
         'guardianPhone' => function_exists('mp_mask_phone') ? mp_mask_phone((string)($m['parentPhone'] ?? '')) : ''];
     return ['ok' => true, 'today' => $today, 'firstName' => mp_first((string)$m['fullName']), 'age' => $age, 'profile' => $profile,
@@ -527,8 +598,11 @@ function member_today(array $p): array {
         'todo' => array_map(static fn($t) => array_diff_key($t, ['rank' => 1]), $todo),
         'checkin' => ['done' => (bool)$chk, 'wellbeing' => (string)($chk['wellbeing'] ?? ''), 'week' => $week],
         'week' => ['saturday' => $sat, 'isToday' => $sat === $today, 'centre' => (string)$m['centre'], 'track' => (string)$m['track'],
-            'mentor' => $mentor ? ['name' => (string)$mentor['fullName'], 'first' => mp_first((string)$mentor['fullName'])] : null],
+            'mentor' => $mentor ? ['name' => ($mt = staff_public_name((string)$mentor['mentorId'], 'Your mentor')), 'first' => $mt] : null],
         'promises' => $promises,
+        // Who to call: the centre's safeguarding officer (the Get help screen's "Talk to someone now").
+        'safeguarding' => (function () use ($m) { $o = function_exists('sg_officer') ? sg_officer((string)$m['centre']) : null;
+            return $o ? ['name' => staff_title_name((string)($o['fullName'] ?? ''), (string)($o['honorific'] ?? '')), 'phone' => (string)($o['phone'] ?? ''), 'centre' => (string)$m['centre']] : null; })(),
         'glance' => ['index' => $sc ? (int)$sc[0]['total'] : null, 'indexChange' => count($sc) === 2 ? (int)$sc[0]['total'] - (int)$sc[1]['total'] : null,
             'indexMonth' => (string)($sc[0]['month'] ?? ''), 'level' => (int)($stats['level'] ?? 1), 'streak' => (int)($stats['streak'] ?? 0), 'week' => (int)($stats['currentWeek'] ?? 0)],
         'badges' => (object)$badges];
@@ -585,7 +659,16 @@ function instructor_student(array $p): array {
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $id = (string)$m['memberId'];
-    $course = (string)$m['track'];
+    /* The course being taught (the instructor's, when the child takes it),
+       else the child's first course. Reading only the old track showed a
+       Robotics instructor the child's Coding skills, and the marks they made
+       were refused. */
+    $theirs = function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : [(string)$m['track']];
+    $want = trim((string)($p['course'] ?? ''));
+    $course = '';
+    if ($want !== '') foreach ($theirs as $c) if (strcasecmp($c, $want) === 0) { $course = $want; break; }
+    if ($course === '' && ($g['courses'] ?? null)) foreach ($theirs as $c) foreach ((array)$g['courses'] as $gc) if (strcasecmp($c, (string)$gc) === 0) { $course = (string)$gc; break 2; }
+    if ($course === '') $course = (string)(array_values(array_filter($theirs, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0))[0] ?? $m['track']);
     $skills = course_skills($course);
     $marks = [];
     foreach (db_all('SELECT skill, level, prevLevel, evidence, markedByName, updatedAt FROM skill_marks WHERE subjectId = ? AND course = ?', [$id, $course]) as $r)
@@ -606,9 +689,11 @@ function instructor_student(array $p): array {
         array_map(static fn($r) => ['at' => (string)$r['createdAt'], 'who' => (string)$r['authorName'], 'what' => ucfirst((string)$r['kind']) . ' remark', 'type' => 'remark'], array_slice((array)($rem['remarks'] ?? []), 0, 20)),
         array_map(static fn($k, $v) => ['at' => (string)$v['at'], 'who' => (string)$v['by'], 'what' => $k . ': ' . (SKILL_LEVELS[$v['level']] ?? '') . ($v['evidence'] !== '' ? ' — ' . $v['evidence'] : ''), 'type' => 'skill'], array_keys($marks), $marks));
     usort($history, static fn($a, $b) => strcmp($b['at'], $a['at']));
-    return ['ok' => true, 'member' => ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'track' => $course, 'centre' => (string)$m['centre'],
+    return ['ok' => true, 'member' => ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'track' => $course, 'course' => $course, 'courses' => array_values($theirs), 'centre' => (string)$m['centre'],
             'mentor' => $mentor ? (string)$mentor['fullName'] : ''],
         'skills' => $skills, 'marks' => (object)$marks, 'levels' => SKILL_LEVELS, 'attendance' => $att, 'timeline' => $timeline,
         'remarks' => (array)($rem['remarks'] ?? []), 'remarkKinds' => REMARK_KINDS,
-        'results' => $term !== '' ? results_record($m, $term, results_today()) : null, 'history' => array_slice($history, 0, 40)];
+        'results' => $term !== '' ? results_record($m, $term, results_today()) : null, 'history' => array_slice($history, 0, 40),
+        // Where they are in the course's lessons (curriculum_child_state).
+        'curriculum' => function_exists('curriculum_child_state') ? curriculum_child_state($m, $course) : null];
 }

@@ -11,8 +11,11 @@ declare(strict_types=1);
 function org_contact(): array {
     global $CONFIG;
     $o = $CONFIG['org'] ?? [];
+    /* The example config's placeholder ("hello@yourdomain.com") was copied into
+       live configs and printed in every email footer. A placeholder is no address. */
+    $real = static fn($e) => ($e = trim((string)$e)) !== '' && !preg_match('/@(your)?domain\.|example\.(com|org)$/i', $e) ? $e : '';
     return [
-        'email' => (string)(($o['email'] ?? '') ?: ($CONFIG['mail']['reply_to'] ?? '') ?: 'next@afrovanguard.org.ng'),
+        'email' => $real($o['email'] ?? '') ?: $real($CONFIG['mail']['reply_to'] ?? '') ?: 'next@afrovanguard.org.ng',
         'phone' => (string)($o['phone'] ?? '+234 903 777 6318'),
         'site'  => preg_replace('#^https?://#', '', (string)($CONFIG['app_origin'] ?? 'next.afrovanguard.org.ng')) ?: 'next.afrovanguard.org.ng',
     ];
@@ -599,7 +602,7 @@ function email_template(array $opts): string {
 
     // Navy CTA — solid base for Outlook, gradient as progressive enhancement.
     $cta = (!empty($opts['ctaLabel']) && !empty($opts['ctaUrl']))
-        ? '<tr><td style="padding:28px 36px 0"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:block;text-align:center;background:' . $navy . ';background:linear-gradient(180deg,' . $navyTop . ',' . $navy . ');color:#ffffff;text-decoration:none;font-family:' . $sans . ';font-size:15px;font-weight:600;letter-spacing:.2px;padding:15px 30px;border-radius:12px">' . esc_html($opts['ctaLabel']) . '</a></td></tr>'
+        ? '<tr><td style="padding:28px 36px 0"><a href="' . esc_html($opts['ctaUrl']) . '" style="display:block;text-align:center;background:' . $navy . ';background:linear-gradient(180deg,' . $navyTop . ',' . $navy . ');color:#ffffff;text-decoration:none;font-family:' . $sans . ';font-size:15px;font-weight:600;letter-spacing:.2px;padding:15px 24px;border-radius:12px">' . str_replace(' →', '&nbsp;→', esc_html($opts['ctaLabel'])) . '</a></td></tr>'
         : '';
 
     return '<div style="background:' . $outer . ';padding:40px 0;font-family:' . $sans . ';-webkit-font-smoothing:antialiased">'

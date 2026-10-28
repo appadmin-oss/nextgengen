@@ -83,8 +83,14 @@ const MEMBER_TYPES = ['NGG', 'Summer'];
 function admin_members_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
-    $q = strtolower((string)($p['q'] ?? ''));
-    if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
+    /* The search. It matched the full name, the internal memberId and the
+       email — not the PRINTED ID, which is the one on the card in the child's
+       hand, on the roster beside every name, and the one anybody reads out;
+       nor a phone number, which is what a parent on the line gives. Typing
+       "026-014" found nobody while the row said 026-014. */
+    [$qSql, $qArgs] = sql_text_search((string)($p['q'] ?? ''),
+        ['fullName', 'displayId', 'memberId', 'email', 'parentEmail'], ['phone', 'parentPhone']);
+    if ($qSql !== '') { $where[] = $qSql; foreach ($qArgs as $a) $params[] = $a; }
     /* `level` joins the exact-match facets. The roster workbook files every
        member at a level and the column has existed since migration 109, but
        nothing could filter by it — so "show me everyone at level C" meant
@@ -127,7 +133,11 @@ function admin_members_list(array $p): array {
         // The card shows `disciplines` and falls back to `track`, so a member is
         // only missing one when BOTH are blank.
         'discipline' => "(TRIM(COALESCE(disciplines,'')) = '' AND TRIM(COALESCE(track,'')) = '')",
+        // No courses chosen from the list: their lessons and channels rest on
+        // whatever the old track names exactly, which may be nothing.
+        'courses'    => "COALESCE(courses,'') = '' AND COALESCE(type,'NGG') = 'NGG'",
     ];
+    if (($p['missing'] ?? '') === 'courses' && function_exists('member_courses_backfill_once')) member_courses_backfill_once();
     $missing = (string)($p['missing'] ?? '');
     // Unknown value ⇒ no filter, same as a stale sort key: a bookmark that has
     // gone out of date should show the roster, not an error.
@@ -306,14 +316,11 @@ function admin_member_consent(array $p): array {
  * not exist — and every one of those is invisible until somebody tries to
  * use the record, by which time it is one row among thousands.
  *
- * THE DUPLICATE CHECK IS THE IMPORTANT ONE. `email` is indexed but not
- * unique, and sign-in resolves an identifier with
- * `WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1`. Two members
- * sharing an address therefore means one of them can never sign in, and
- * which one is whichever the database returns first — it can change when
- * rows move. A duplicate is refused rather than merged, because merging two
- * people's records automatically is a worse mistake than refusing one
- * entry.
+ * A SHARED EMAIL IS ALLOWED. Brothers and sisters on a parent's address are
+ * normal. It used to be refused, because sign-in opened whichever row the
+ * database returned first; sign-in now proves the inbox and asks "Who's
+ * signing in?" (auth_pick in auth.php), so every account on an address can
+ * be reached. The roster's data-quality view still lists shared addresses.
  *
  * @return array{ok: bool, error?: string, detail?: string, data?: array}
  */
@@ -354,17 +361,7 @@ function admin_member_validate(array $data, ?array $existing): array {
                 'detail' => '"' . $data['parentEmail'] . '" is not an email address.'];
     }
 
-    if ($email !== '') {
-        $clash = $id
-            ? db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? AND memberId <> ? LIMIT 1', [strtolower($email), $id])
-            : db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? LIMIT 1', [strtolower($email)]);
-        if ($clash) {
-            return ['ok' => false, 'error' => 'email_taken',
-                    'detail' => $email . ' is already on ' . (string)$clash['fullName'] . "'s record ("
-                        . (string)$clash['memberId'] . '). Sign-in resolves an address to one member, so two '
-                        . 'records sharing one would leave whichever the database returned second unable to sign in.'];
-        }
-    }
+    // An email shared with another member (siblings on a parent's address) is allowed: sign-in asks who (auth_pick).
 
     /*
      * The vocabularies the rest of the system actually uses, not a plausible
@@ -657,7 +654,20 @@ function admin_members_upsert(array $p): array {
         }
     }
 
-    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
+    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division','courses'];
+
+    /* ── Courses: chosen from the catalogue, refused by name when not in it ──
+       The first chosen course is kept in `track` too, so every reader that
+       still looks at one course sees the right one. */
+    if (array_key_exists('courses', $data)) {
+        [$picked, $unknown] = member_courses_clean($data['courses']);
+        if ($unknown) return ['ok' => false, 'error' => 'unknown_course', 'courses' => $unknown,
+                              'detail' => 'Not a course in the catalogue: ' . implode(', ', $unknown) . '. Pick from the list, or add it under Divisions & courses first.'];
+        if (count($picked) > MEMBER_COURSES_MAX) return ['ok' => false, 'error' => 'too_many_courses', 'max' => MEMBER_COURSES_MAX,
+                                                         'detail' => 'At most ' . MEMBER_COURSES_MAX . ' courses.'];
+        $data['courses'] = $picked ? json_encode($picked, JSON_UNESCAPED_UNICODE) : '';
+        if (!array_key_exists('track', $data)) $data['track'] = $picked[0] ?? '';
+    }
 
     /* ── The join date is not a free field (domain/profile-drive.php) ──
        Set when the member is made (blank means today), and changed afterwards
@@ -930,7 +940,8 @@ function staff_invite_email(string $memberId, string $role): void {
 function admin_mentors_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $rows = db_all('SELECT * FROM mentors ORDER BY createdAt DESC');
-    return ['ok' => true, 'mentors' => array_map('mentor_full', $rows)];
+    return ['ok' => true, 'mentors' => array_map(static fn($r) => mentor_full($r) + ['honorific' => (string)($r['honorific'] ?? '')], $rows),
+            'titles' => STAFF_HONORIFICS, 'titleDefault' => STAFF_HONORIFIC_DEFAULT];
 }
 
 function admin_mentors_upsert(array $p): array {
@@ -939,7 +950,10 @@ function admin_mentors_upsert(array $p): array {
     // Client may send tracks as an array — flatten to the CSV the column stores.
     if (isset($data['tracks']) && is_array($data['tracks'])) $data['tracks'] = implode(', ', array_filter(array_map('trim', $data['tracks'])));
     $mentorId = trim((string)($data['mentorId'] ?? ''));
-    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef','programme'];
+    $cols = ['fullName','email','phone','status','tracks','centre','bio','photoUrl','maxMentees','availability','checkedAt','joinedAt','source','program','skills','linkedin','afrovanguardRef','programme','rank','department'];
+    /* Rank is editable here, so a lead can be stepped down (or appointed)
+       without re-promoting the person. Only the three the portal knows. */
+    if (isset($data['rank']) && !in_array((string)$data['rank'], ['mentor', 'lead', 'peer'], true)) return ['ok' => false, 'error' => 'bad_rank'];
     // Which cohort they supervise. Anything unrecognised falls back to the
     // narrowest option rather than the widest — a typo must not hand somebody
     // both cohorts.
@@ -960,11 +974,15 @@ function admin_mentors_upsert(array $p): array {
         }
     }
 
+    // How children address them (staff_public_name); checked before any write.
+    if (array_key_exists('honorific', $data) && trim((string)$data['honorific']) !== '' && staff_honorific_clean((string)$data['honorific']) === '') return ['ok' => false, 'error' => 'bad_title'];
     if ($existing) {
         $patch = db_pick($data, $cols, [], ['maxMentees']);
         $patch['updatedAt'] = now_iso();
         db_update('mentors', $patch, ['id' => $existing['id']]);
-        audit('admin.mentor.update', $g['requester']['memberId'], $mentorId, [], (string)($p['ip'] ?? ''));
+        if (array_key_exists('honorific', $data)) staff_honorific_set((string)($existing['memberId'] ?? ''), $mentorId, (string)($existing['volunteerId'] ?? ''), (string)$data['honorific']);
+        audit('admin.mentor.update', $g['requester']['memberId'], $mentorId,
+            isset($patch['rank']) && (string)$patch['rank'] !== (string)($existing['rank'] ?? 'mentor') ? ['rank' => [(string)($existing['rank'] ?? 'mentor'), (string)$patch['rank']]] : [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'mentorId' => $mentorId];
     }
     $newId = new_id('MEN', 'mentors', 'mentorId');
@@ -974,6 +992,7 @@ function admin_mentors_upsert(array $p): array {
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
     db_insert('mentors', $insert);
+    if (array_key_exists('honorific', $data)) staff_honorific_set('', $newId, '', (string)$data['honorific']);
     audit('admin.mentor.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'mentorId' => $newId];
 }
@@ -990,12 +1009,14 @@ function admin_sessions_upsert(array $p): array {
     $patch['updatedAt'] = now_iso();
     if ($existing) {
         db_update('sessions', $patch, ['id' => $existing['id']]);
+        cache_invalidate('sessions');
         audit('admin.session.update', $g['requester']['memberId'], $sessionId, [], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'sessionId' => $sessionId];
     }
     $patch['sessionId'] = $sessionId ?: (strtoupper((string)($data['code'] ?? 'SESS')) . '-' . (int)($data['year'] ?? gmdate('Y')));
     $patch['createdAt'] = now_iso();
     db_insert('sessions', $patch);
+    cache_invalidate('sessions');
     audit('admin.session.create', $g['requester']['memberId'], $patch['sessionId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'sessionId' => $patch['sessionId']];
 }
@@ -1201,17 +1222,42 @@ function admin_audit_tail(array $p): array {
 
 // ── Announcements / broadcast ────────────────────────────────────────────
 
+/**
+ * Who an announcement goes to: 'all', a programme ('NGG' | 'Summer'), or a centre.
+ *
+ * The centres used to be two names typed into this file and into the screen —
+ * Egbeda and Ayobo — so a centre opened since could not be addressed at all, and
+ * anything else (a typo, a renamed centre) was stamped as '' — which the member
+ * feed reads as EVERYONE, while the email path sent to every active member. An
+ * audience nobody can name is now refused, never widened. A centre counts when it
+ * is in the directory or on an active member's record (rosters predate the
+ * directory). The member feed already matches on the member's own centre and type
+ * (domain/members.php), so a new centre works there with no change.
+ *
+ * @return array{kind:string,key:string}|null  kind: all | type | centre; null = refuse
+ */
+function admin_broadcast_audience(string $audience): ?array {
+    $a = trim($audience);
+    if ($a === '' || $a === 'all') return ['kind' => 'all', 'key' => ''];
+    if ($a === 'NGG' || $a === 'Summer') return ['kind' => 'type', 'key' => $a];
+    $known = db_row("SELECT 1 AS x FROM centres WHERE name = ? AND status <> 'deleted'", [$a])
+          ?: db_row("SELECT 1 AS x FROM members WHERE centre = ? AND status = 'active' LIMIT 1", [$a]);
+    return $known ? ['kind' => 'centre', 'key' => $a] : null;
+}
+
 function admin_broadcast(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $title = (string)($p['title'] ?? '');
     $body = (string)($p['body'] ?? '');
     $linkPage = (string)($p['linkPage'] ?? '');
-    $audience = (string)($p['audience'] ?? 'all'); // all | Egbeda | Ayobo | Summer | NGG
+    $audience = (string)($p['audience'] ?? 'all');
     $alsoEmail = !empty($p['email']);
+    $aud = admin_broadcast_audience($audience);
+    if ($aud === null) return ['ok' => false, 'error' => 'bad_audience', 'message' => 'Choose everyone, a programme, or one of the centres.'];
 
     // Persistent broadcast notification (memberId '*' = every member's feed).
     // The audience is stamped so the in-app feed matches the emailed audience.
-    $audKey = in_array($audience, ['Egbeda', 'Ayobo', 'Summer', 'NGG'], true) ? $audience : '';
+    $audKey = $aud['key'];
     db_insert('notifications', [
         'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
         'memberId' => '*', 'kind' => 'announcement', 'title' => $title, 'body' => $body,
@@ -1221,8 +1267,8 @@ function admin_broadcast(array $p): array {
     $emailResult = ['sent' => 0, 'skipped' => 0];
     if ($alsoEmail) {
         $where = "status='active'"; $params = [];
-        if (in_array($audience, ['Egbeda', 'Ayobo'], true)) { $where .= ' AND centre = ?'; $params[] = $audience; }
-        elseif (in_array($audience, ['Summer', 'NGG'], true)) { $where .= ' AND type = ?'; $params[] = $audience; }
+        if ($aud['kind'] === 'centre') { $where .= ' AND centre = ?'; $params[] = $aud['key']; }
+        elseif ($aud['kind'] === 'type') { $where .= ' AND type = ?'; $params[] = $aud['key']; }
         $members = db_all("SELECT fullName, email FROM members WHERE $where", $params);
         $emailResult = email_members($members, $title ?: 'Announcement · NGG', function ($m) use ($title, $body) {
             global $CONFIG;
@@ -1243,7 +1289,18 @@ function admin_broadcast(array $p): array {
 function admin_broadcast_history(array $p): array {
     $g = admin_gate($p); if (!$g['ok']) return $g;
     $rows = db_all("SELECT notifId, title, body, linkPage, audience, createdAt FROM notifications WHERE memberId = '*' AND kind = 'announcement' ORDER BY id DESC LIMIT 50");
-    return ['ok' => true, 'announcements' => array_map(fn($r) => [
+    /* Who can be addressed, with how many active members each reaches — one grouped
+       query per dimension, from the same records admin_broadcast_audience() accepts. */
+    $active = (int)(db_row("SELECT COUNT(*) AS n FROM members WHERE status = 'active'")['n'] ?? 0);
+    $byType = []; foreach (db_all("SELECT type, COUNT(*) AS n FROM members WHERE status = 'active' GROUP BY type") as $r) $byType[(string)$r['type']] = (int)$r['n'];
+    $byCentre = []; foreach (db_all("SELECT centre, COUNT(*) AS n FROM members WHERE status = 'active' AND centre <> '' GROUP BY centre") as $r) $byCentre[(string)$r['centre']] = (int)$r['n'];
+    foreach (db_all("SELECT name FROM centres WHERE status = 'active'") as $r) if (!isset($byCentre[(string)$r['name']])) $byCentre[(string)$r['name']] = 0;
+    ksort($byCentre);
+    $audiences = [['id' => 'all', 'l' => 'Everyone', 'n' => $active],
+                  ['id' => 'NGG', 'l' => 'NGG members', 'n' => $byType['NGG'] ?? 0],
+                  ['id' => 'Summer', 'l' => 'Summer School', 'n' => $byType['Summer'] ?? 0]];
+    foreach ($byCentre as $name => $n) $audiences[] = ['id' => $name, 'l' => $name, 'n' => $n];
+    return ['ok' => true, 'audiences' => $audiences, 'announcements' => array_map(fn($r) => [
         'notifId' => $r['notifId'], 'title' => (string)$r['title'], 'body' => (string)$r['body'],
         'linkPage' => (string)$r['linkPage'], 'audience' => (string)($r['audience'] ?? '') ?: 'all', 'createdAt' => $r['createdAt'],
     ], $rows)];
@@ -1326,6 +1383,9 @@ function admin_members_suggest(array $p): array {
     foreach (db_all("SELECT memberId, fullName, displayId, centre, status, photoUrl FROM members WHERE type = 'NGG'") as $m) {
         $name = member_name_norm((string)$m['fullName']);
         if ($name === '' || strpos($name, $q) !== false) continue;
+        // The roster finds every word in any order (sql_text_search), so a
+        // name holding them all is already on screen — not a "did you mean".
+        if (count($words) > 1 && !array_filter($words, fn($w) => strpos($name, $w) === false)) continue;
         if (stripos((string)$m['displayId'], $raw) !== false || stripos((string)$m['memberId'], $raw) !== false) continue;
         // Names that differ only in their numbers (a test roster's "Member 07" / "Member 01") are not typos.
         if (preg_replace('/\d+/', '', $name) === preg_replace('/\d+/', '', $q)) continue;

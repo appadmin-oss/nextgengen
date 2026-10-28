@@ -10,7 +10,12 @@ const MENTOR_PORTAL_VIEWS = [
     'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
-    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan',
+    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan', 'messageSearch' => 'member.mentor.message.search', 'growth' => 'member.mentor.growth', 'projects' => 'member.mentor.projects',
+    'slots' => 'member.mentor.slots',
+    // A mentee's Anchor week: connected by the assignment, no code (domain/circle.php).
+    'anchor' => 'member.mentor.anchor',
+    // A mentee's whole journal, every entry; never for a peer mentor (domain/mentor-portal.php).
+    'journal' => 'member.mentor.journal',
 ];
 /** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
 const MENTOR_PORTAL_ACTIONS = [
@@ -25,20 +30,29 @@ const MENTOR_PORTAL_ACTIONS = [
     'concern'         => ['member.mentor.concern.create', ['subjectId', 'category', 'body'], 'mentor.concern'],
     'supervisionPrep' => ['member.mentor.supervision.prep', ['answers'], 'mentor.meeting'],
     'supervisionBook' => ['member.mentor.supervision.book', ['mentorId'], 'mentor.meeting'],
+    'supervisionRecord' => ['member.mentor.supervision.record', ['mentorId', 'feedback', 'agreed'], 'mentor.meeting'],
     'retreatBook'     => ['member.mentor.retreat.book', ['retreatId'], ''],
     'academyResult'   => ['member.mentor.academy.result', ['moduleId', 'answers'], 'mentor.meeting'],
     'saturdayPlan'    => ['member.mentor.saturday.plan', ['date', 'agenda', 'oneToOnes', 'share'], ''],
     'oneToOnesAdd'    => ['member.mentor.onetoones.add', ['subjectIds'], ''],
     'register'        => ['member.mentor.register', ['date', 'rows', 'close'], ''],
-    'weekReview'      => ['member.mentor.week.review', ['subjectId', 'date', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
+    'weekReview'      => ['member.mentor.week.review', ['subjectId', 'date', 'effort', 'character', 'wellbeing', 'line', 'eval'], 'mentor.review'],
     'weekReviewUndo'  => ['member.mentor.week.review.undo', ['subjectId', 'period'], ''],
     'messageRead'     => ['member.mentor.message.read', ['threadId'], ''],
     'messageReply'    => ['member.mentor.message.reply', ['threadId', 'subjectId', 'body'], 'mentor.meeting'],
     'messageLead'     => ['member.mentor.message.lead', ['body', 'toId'], 'mentor.meeting'],
     'summerReview'    => ['member.mentor.summer.review', ['subjectId', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
     'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
-    'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note'], 'mentor.meeting'],
+    'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note', 'items'], 'mentor.meeting'],
+    'planCheer'       => ['member.mentor.plan.cheer', ['planId', 'note'], 'mentor.meeting'],
     'planReturn'      => ['member.mentor.plan.return', ['planId', 'note'], 'mentor.meeting'],
+    'projectSave'     => ['member.mentor.project.save', ['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'people'], 'mentor.meeting'],
+    'projectMark'     => ['member.mentor.project.mark', ['projectId', 'kind', 'personId', 'status', 'note'], 'mentor.meeting'],
+    // Times a family may book to meet (domain/family-portal.php).
+    'slotAdd'         => ['member.mentor.slot.add', ['start', 'mode'], 'mentor.meeting'],
+    'slotRemove'      => ['member.mentor.slot.remove', ['slotId'], ''],
+    'anchorConfirm'   => ['member.mentor.anchor.confirm', ['subjectId', 'date', 'on'], 'mentor.meeting'],
+    'anchorRemark'    => ['member.mentor.anchor.remark', ['subjectId', 'text'], 'mentor.meeting'],
 ];
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -52,6 +66,8 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'subjectId'   => (string)($_GET['subjectId'] ?? ''),
         ]);
+    } elseif ($view === 'lessons') {
+        $res = gs_call('member.mentor.child.lessons', ['requesterId' => $s['mid'], 'subjectId' => (string)($_GET['subjectId'] ?? '')]);
     } elseif ($view === 'due') {
         // §18's actual question: who has nobody looked at this week.
         $res = gs_call('member.mentor.reviews.due', [
@@ -59,6 +75,7 @@ if ($method === 'GET') {
             'centre'      => (string)($_GET['centre'] ?? ''),
             'scope'       => (string)($_GET['scope'] ?? ''),
             'period'      => (string)($_GET['period'] ?? ''),
+            'programme'   => (string)($_GET['programme'] ?? ''),
         ]);
     } elseif ($view === 'attention') {
         $res = gs_call('member.mentor.attention', [
@@ -68,8 +85,8 @@ if ($method === 'GET') {
     } elseif (isset(MENTOR_PORTAL_VIEWS[$view])) {
         // The Mentor Portal's screens (design handoff v14). Every one is gated
         // by mentor_gate in the domain; these lines only carry the query.
-        $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
-            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term'])));
+        $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid'], 'ip' => client_ip()]
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term', 'q', 'before'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.
@@ -79,6 +96,7 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'centre'      => (string)($_GET['centre'] ?? ''),
             'scope'       => (string)($_GET['scope'] ?? ''),
+            'programme'   => (string)($_GET['programme'] ?? ''),
         ]);
     }
 } elseif ($method === 'POST') {
@@ -94,7 +112,7 @@ if ($method === 'GET') {
         ]);
     } elseif ((string)($b['action'] ?? '') === 'review') {
         // The twelve questions for one child for one week. Amends in place.
-        rate_limit_check('mentor.review');
+        rate_limit_check_actor('mentor.review', (string)$s['mid']);
         $res = gs_call('member.mentor.review.save', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -107,7 +125,7 @@ if ($method === 'GET') {
     } elseif ((string)($b['action'] ?? '') === 'courage') {
         // One observed instance on the 1-5 courage ladder (brief §14). The
         // domain requires the evidence; this only carries it.
-        rate_limit_check('mentor.courage');
+        rate_limit_check_actor('mentor.courage', (string)$s['mid']);
         $res = gs_call('member.mentor.courage.mark', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -138,7 +156,7 @@ if ($method === 'GET') {
         ] + array_intersect_key($b, array_flip(['stars', 'category', 'severity', 'note']))
           + ['ip' => client_ip()]);
     } elseif ((string)($b['action'] ?? '') === 'meeting') {
-        rate_limit_check('mentor.meeting');
+        rate_limit_check_actor('mentor.meeting', (string)$s['mid']);
         $res = gs_call('member.mentor.meeting.save', [
             'requesterId' => $s['mid'],
             'subjectId'   => $b['subjectId'] ?? '',
@@ -166,6 +184,10 @@ if ($method === 'GET') {
             'dueOn'       => $b['dueOn'] ?? '',
             'ip'          => client_ip(),
         ] + array_intersect_key($b, array_flip(['outcome', 'obstacle', 'plan', 'area', 'reviewBy', 'agreed'])));
+    } elseif ((string)($b['action'] ?? '') === 'cover') {
+        // Open a record I am not paired to, with a reason the child's mentor and lead will see.
+        $res = gs_call('member.mentor.record.cover', ['requesterId' => $s['mid'], 'subjectId' => (string)($b['subjectId'] ?? ''),
+                                                      'reason' => (string)($b['reason'] ?? ''), 'ip' => client_ip()]);
     } elseif ((string)($b['action'] ?? '') === 'goalStatus') {
         $res = gs_call('member.mentor.goal.status', [
             'requesterId' => $s['mid'],
@@ -176,11 +198,11 @@ if ($method === 'GET') {
         ]);
     } elseif (isset(MENTOR_PORTAL_ACTIONS[(string)($b['action'] ?? '')])) {
         [$op, $keys, $bucket] = MENTOR_PORTAL_ACTIONS[(string)$b['action']];
-        if ($bucket !== '') rate_limit_check($bucket);
+        rate_limit_check_actor($bucket !== '' ? $bucket : 'mentor.write', (string)$s['mid']);
         $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => client_ip()] + array_intersect_key($b, array_flip(array_merge($keys, ['centre']))));
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, isset($res['detail']) ? (string)$res['detail'] : null);
 unset($res['ok']); json_ok($res);

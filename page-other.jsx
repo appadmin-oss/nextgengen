@@ -56,10 +56,10 @@ function MediaPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="06 Media">
-      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"64px 0 32px"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-70, 64px 0px 32px)"}}>
         <div className="container">
           <span className="chip chip-on-dark">THE MOVEMENT, ON CAMERA</span>
-          <h1 className="display" style={{fontSize:"clamp(64px, 9vw, 132px)", margin:"16px 0", color:"white", lineHeight:0.9}}>
+          <h1 className="display" style={{fontSize:"var(--rs-fsize-51, clamp(64px, 9vw, 132px))", margin:"16px 0", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
             Media<span style={{color:"var(--gold-500)"}}>.room</span>
           </h1>
           <p style={{fontSize:19, color:"rgba(255,255,255,0.75)", maxWidth:660, lineHeight:1.5}}>
@@ -68,7 +68,7 @@ function MediaPage({ setPage }) {
         </div>
       </section>
 
-      <section style={{padding:"28px 0", background:"var(--paper)", borderBottom:"1px solid rgba(12,20,50,0.07)", position:"sticky", top:"60px", zIndex:5, backdropFilter:"saturate(1.2) blur(8px)"}}>
+      <section className="media-filter-bar">
         <div className="container">
           <div role="tablist" aria-label="Media filter" style={{display:"flex", gap:8, flexWrap:"wrap"}}>
             {kinds.map(k => (
@@ -84,23 +84,32 @@ function MediaPage({ setPage }) {
       <section className="section">
         <div className="container">
           {items.length === 0 ? (
-            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
-              No media in this category yet.
-              <div style={{marginTop:14}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
-              </div>
+            /* Two different empty states, because they mean different things.
+               Nothing at all is "we have not published any yet", and the
+               filter button would be a dead control. The six items that used
+               to fill this page were invented — one of them claimed 12.4k
+               views for a film nobody made (data.js). */
+            <div style={{textAlign:"center", padding:"var(--rs-p-44, 48px 0px)", color:"var(--ink-700)"}}>
+              {MEDIA_ITEMS.length === 0
+                ? "Nothing published yet. The first cohort's reels, documentaries and showcase cuts land here."
+                : "No media in this category yet."}
+              {MEDIA_ITEMS.length > 0 && (
+                <div style={{marginTop:14}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
+                </div>
+              )}
             </div>
           ) : (
             <React.Fragment>
               {/* Featured pair */}
               {featuredA && (
-                <div style={{display:"grid", gridTemplateColumns: featuredB ? "2fr 1fr" : "1fr", gap:18, marginBottom:32}}>
+                <div style={{display:"grid", gridTemplateColumns: featuredB ? "var(--rs-gcolumns-62, 2fr 1fr)" : "1fr", gap:18, marginBottom:32}}>
                   <FeatureCard big item={featuredA} onPlay={() => handlePlay(featuredA)}/>
                   {featuredB && <FeatureCard item={featuredB} onPlay={() => handlePlay(featuredB)}/>}
                 </div>
               )}
               {/* Grid */}
-              <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:18}}>
+              <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:18}}>
                 {rest.map((m, i) => <FeatureCard key={m.label + i} item={m} onPlay={() => handlePlay(m)}/>)}
               </div>
             </React.Fragment>
@@ -215,12 +224,12 @@ function MediaModal({ item, onClose }) {
 function ParentsPage({ setPage }) {
   return (
     <div className="page" data-screen-label="07 Parents">
-      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"var(--rs-p-48, 72px 0px)"}}>
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"end"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-71, 1.3fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"end"}}>
             <div>
               <span className="chip chip-navy"><span className="dot dot-gold"/> FOR PARENTS & GUARDIANS</span>
-              <h1 className="display" style={{fontSize:"clamp(56px, 7vw, 108px)", margin:"18px 0 16px"}}>
+              <h1 className="display" style={{fontSize:"var(--rs-fsize-72, clamp(56px, 7vw, 108px))", margin:"18px 0 16px"}}>
                 A safe room<br/>with <em style={{fontStyle:"normal", color:"var(--coral)"}}>high ceilings.</em>
               </h1>
               <p style={{fontSize:19, lineHeight:1.5, color:"var(--ink-700)", maxWidth:560, margin:0}}>
@@ -232,7 +241,7 @@ function ParentsPage({ setPage }) {
                 <button className="btn btn-ghost" onClick={() => setPage("timetable")}>Timetable maker</button>
               </div>
             </div>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:12}}>
               {[
                 { num: "100%", label: "Mentors background-checked" },
                 { num: "2-mentor", label: "Minimum at every session" },
@@ -240,7 +249,7 @@ function ParentsPage({ setPage }) {
                 { num: "0 fee", label: "For accepted summer scholars" },
               ].map(s => (
                 <div key={s.label} className="card" style={{padding:18}}>
-                  <div className="display" style={{fontSize:36, color:"var(--navy-900)"}}>{s.num}</div>
+                  <div className="display" style={{fontSize:"var(--rs-fsize-45, 36px)", color:"var(--navy-900)"}}>{s.num}</div>
                   <div className="mono" style={{fontSize:11, letterSpacing:"0.12em", textTransform:"uppercase", color:"var(--ink-500)", marginTop:6}}>{s.label}</div>
                 </div>
               ))}
@@ -253,16 +262,16 @@ function ParentsPage({ setPage }) {
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="OUR PHILOSOPHY" title="We train character through public work." sub="A teenager learns who they are by attempting things in front of people who care. Our job is to design the attempts and curate the people." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:20}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-302, repeat(3, 1fr))", gap:20}}>
             {[
               { h: "Safety is a system, not a slogan.",         d: "Background checks, two-mentor minimum, code-of-conduct training, anonymous reporting, parent digest, monitored channels." },
               { h: "Discipline before charisma.",                d: "We do not chase prodigies. We build habit, attention and follow-through. Talent is downstream of these." },
               { h: "African intelligence is the spine.",         d: "We do not import a foreign curriculum and translate. The lens is ours. The languages we learn serve it." },
             ].map((c, i) => (
-              <div key={c.h} className="card" style={{padding:28, minHeight:240}}>
-                <div className="display" style={{fontSize:48, color:"var(--gold-500)"}}>0{i+1}</div>
-                <h3 style={{fontFamily:"var(--font-display)", fontSize:22, margin:"12px 0", letterSpacing:"-0.02em"}}>{c.h}</h3>
-                <p style={{fontSize:14, color:"var(--ink-500)", lineHeight:1.5, margin:0}}>{c.d}</p>
+              <div key={c.h} className="card" style={{padding:28, minHeight:"var(--rs-minheight-73, 240px)"}}>
+                <div className="display" style={{fontSize:"var(--rs-fsize-26, 48px)", color:"var(--gold-500)"}}>0{i+1}</div>
+                <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:"var(--rs-fsize-1, 22px)", margin:"12px 0", letterSpacing:"-0.02em"}}>{c.h}</h3>
+                <p style={{fontSize:14, color:"var(--ink-700)", lineHeight:1.5, margin:0}}>{c.d}</p>
               </div>
             ))}
           </div>
@@ -301,13 +310,13 @@ function FAQList({ items }) {
                 cursor:"pointer", textAlign:"left", fontFamily:"inherit",
               }}
             >
-              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
+              <span style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:"var(--rs-fsize-1, 22px)", letterSpacing:"-0.02em", color:"var(--ink-900)"}}>{f.q}</span>
               <span aria-hidden="true" style={{
                 width:32, height:32, borderRadius:"50%", flexShrink:0,
                 background: isOpen ? "var(--navy-900)" : "var(--cream-100)",
                 color: isOpen ? "white" : "var(--navy-900)",
                 display:"grid", placeItems:"center", fontSize:18, fontWeight:700,
-                transition:"transform 0.25s cubic-bezier(0.2,0.7,0.2,1), background 0.2s ease, color 0.2s ease",
+                transition:"transform calc(0.25s * var(--motion, 1)) cubic-bezier(0.2,0.7,0.2,1), background calc(0.2s * var(--motion, 1)) ease, color calc(0.2s * var(--motion, 1)) ease",
                 transform: isOpen ? "rotate(45deg)" : "rotate(0)",
               }}>+</span>
             </button>
@@ -363,12 +372,12 @@ function AfrovanguardMentorStrip() {
 function VolunteersPage({ setPage }) {
   return (
     <div className="page" data-screen-label="08 Volunteers">
-      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"72px 0", position:"relative", overflow:"hidden"}}>
+      <section className="page-hero page-hero-dark" style={{background:"var(--navy-900)", color:"white", padding:"var(--rs-p-48, 72px 0px)", position:"relative", overflow:"hidden"}}>
         <div style={{position:"absolute", inset:0, backgroundImage:"radial-gradient(circle at 80% 50%, rgba(208,255,58,0.14), transparent 60%)"}}/>
-        <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"1.3fr 1fr", gap:48, alignItems:"center"}}>
+        <div className="container" style={{position:"relative", display:"grid", gridTemplateColumns:"var(--rs-gcolumns-71, 1.3fr 1fr)", gap:"var(--rs-gap-21, 48px)", alignItems:"center"}}>
           <div>
             <span className="chip chip-on-dark"><span className="dot dot-lime"/> ADMINS · MENTORS · INSTRUCTORS</span>
-            <h1 className="display" style={{fontSize:"clamp(56px, 8vw, 124px)", margin:"18px 0 16px", color:"white", lineHeight:0.9}}>
+            <h1 className="display" style={{fontSize:"var(--rs-fsize-74, clamp(56px, 8vw, 124px))", margin:"18px 0 16px", color:"white", lineHeight:"var(--rs-lheight-52, 0.9)"}}>
               Join the rebuilding<br/>of <span style={{color:"var(--lime)"}}>the next generation.</span>
             </h1>
             <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:560, margin:0}}>
@@ -379,7 +388,7 @@ function VolunteersPage({ setPage }) {
               onClick={() => setPage("volunteer")}
             >Register as a volunteer →</button>
           </div>
-          <Photo name="mentor" style={{height:420}} overlay>
+          <Photo name="mentor" style={{height:"var(--rs-height-29, 420px)"}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", color:"var(--gold-400)"}}>MENTOR CIRCLE · LAGOS</div>
               <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:24, marginTop:4, lineHeight:1.05}}>The Saturday session.</div>
@@ -393,13 +402,13 @@ function VolunteersPage({ setPage }) {
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="THREE WAYS TO BE USEFUL" title="Pick the shape of your time." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:14}} className="vol-role-grid">
+          <div className="vol-role-grid">
             {VOLUNTEER_ROLES.map((r, i) => (
-              <button key={r.key} className="card vol-role-card" style={{padding:24, minHeight:240, display:"flex", flexDirection:"column", justifyContent:"space-between", textAlign:"left", cursor:"pointer"}}
+              <button key={r.key} className="card vol-role-card" style={{padding:24, minHeight:"var(--rs-minheight-73, 240px)", display:"flex", flexDirection:"column", justifyContent:"space-between", textAlign:"left", cursor:"pointer"}}
                 onClick={() => { history.replaceState({}, "", "/volunteer?role=" + r.key); setPage("volunteer"); }}>
                 <div>
-                  <div className="display" style={{fontSize:36, color:"var(--gold-500)"}}>0{i+1}</div>
-                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:22, marginTop:8, lineHeight:1.1}}>{r.name}</div>
+                  <div className="display" style={{fontSize:"var(--rs-fsize-45, 36px)", color:"var(--gold-500)"}}>0{i+1}</div>
+                  <div style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:"var(--rs-fsize-1, 22px)", marginTop:8, lineHeight:1.1}}>{r.name}</div>
                   <div className="mono" style={{fontSize:11, color:"var(--coral)", marginTop:8, letterSpacing:"0.12em"}}>{r.commit.toUpperCase()}</div>
                 </div>
                 <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{r.ideal}<span style={{display:"block", marginTop:10, fontWeight:600, color:"var(--navy-900)"}}>Register →</span></div>
@@ -414,7 +423,7 @@ function VolunteersPage({ setPage }) {
         <div className="container">
           <div style={{maxWidth:820, margin:"0 auto", textAlign:"center"}}>
             <span className="eyebrow" style={{color:"var(--navy-900)"}}>OUR MENTORING PHILOSOPHY</span>
-            <h2 className="display" style={{fontSize:"clamp(32px, 5vw, 64px)", margin:"10px 0 18px", lineHeight:0.98}}>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-75, clamp(32px, 5vw, 64px))", margin:"10px 0 18px", lineHeight:"var(--rs-lheight-4, 0.98)"}}>
               "These teenagers do not need rescuing.<br/>They need a room with high ceilings."
             </h2>
             <p style={{fontSize:16, color:"var(--ink-700)", lineHeight:1.6, maxWidth:560, margin:"0 auto"}}>
@@ -428,8 +437,8 @@ function VolunteersPage({ setPage }) {
       <section className="section" style={{paddingTop:0}}>
         <div className="container" style={{maxWidth:760, textAlign:"center"}}>
           <div className="card" style={{padding:"44px 36px"}}>
-            <h2 className="display" style={{fontSize:"clamp(28px,4vw,44px)", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
-            <p style={{color:"var(--ink-500)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
+            <h2 className="display" style={{fontSize:"var(--rs-fsize-76, clamp(28px, 4vw, 44px))", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
+            <p style={{color:"var(--ink-700)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
             <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteer")}>Register as a volunteer →</button>
           </div>
         </div>
@@ -479,26 +488,26 @@ function MentorApplySection() {
   };
 
   return (
-    <section id="mentor-apply" className="section" style={{background:"var(--navy-900)", color:"white"}}>
+    <section id="mentor-apply" className="section dark-surface" style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{maxWidth:760}}>
         <div style={{textAlign:"center", marginBottom:36}}>
           <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
-          <h2 className="display" style={{fontSize:"clamp(40px, 5vw, 64px)", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
+          <h2 className="display" style={{fontSize:"var(--rs-fsize-77, clamp(40px, 5vw, 64px))", margin:"10px 0 0", color:"white"}}>Put your hand up.</h2>
           <p style={{fontSize:16, color:"rgba(255,255,255,0.78)", maxWidth:480, margin:"14px auto 0", lineHeight:1.5}}>
             Two minutes. We read every application and reply within a week — yes or no, in writing.
           </p>
         </div>
         {sent ? (
-          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(208,255,58,0.35)", color:"white"}}>
-            <div className="badge-pin lime" style={{width:72, height:72, fontSize:32, margin:"0 auto 18px"}}>✓</div>
-            <h3 style={{fontFamily:"var(--font-display)", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
+          <div className="card" style={{padding:40, textAlign:"center", background:"rgba(255,255,255,0.06)", border:"var(--rs-border-78, 1px solid rgba(208, 255, 58, 0.35))", color:"white"}}>
+            <div className="badge-pin lime" style={{width:72, height:72, fontSize:"var(--rs-fsize-65, 32px)", margin:"0 auto 18px"}}>✓</div>
+            <h3 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:28, margin:"0 0 10px"}}>Application received.</h3>
             <p style={{color:"rgba(255,255,255,0.78)", margin:0, lineHeight:1.5}}>
               Watch your inbox — we reply within a week. Thank you for offering your Saturdays.
             </p>
           </div>
         ) : (
-          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)"}}>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+          <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16, background:"rgba(255,255,255,0.05)", border:"var(--rs-border-79, 1px solid rgba(255, 255, 255, 0.12))"}}>
+            <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
               <div className="field">
                 <label style={{color:"rgba(255,255,255,0.8)"}}>First name</label>
                 <input value={d.firstName} onChange={e => setD({...d, firstName: e.target.value})} placeholder="e.g. Adaeze" autoComplete="given-name"/>
@@ -586,7 +595,7 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
       <style>{"@keyframes ascPop{0%{opacity:0;transform:scale(.7)}70%{transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}@keyframes ascPulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,.5)}70%{box-shadow:0 0 0 14px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}.asc-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}@media(max-width:620px){.asc-steps{grid-template-columns:1fr}}"}</style>
       <div style={{ height: 5, width: 64, borderRadius: 3, background: cfg.accent, margin: "0 auto 28px" }}/>
       <div style={{ display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#e9f7ee", display: "grid", placeItems: "center", animation: "ascPop .5s cubic-bezier(.2,.8,.2,1), ascPulse 2.4s ease-in-out .5s infinite" }}>
+        <div style={{ width: 84, height: 84, borderRadius: "50%", background: "#e9f7ee", display: "grid", placeItems: "center", animation: "ascPop calc(.5s * var(--motion, 1)) cubic-bezier(.2,.8,.2,1), ascPulse calc(2.4s * var(--motion, 1)) ease-in-out calc(.5s * var(--motion, 1)) infinite" }}>
           <i className="ph-fill ph-check-circle" style={{ fontSize: 46, color: "#2f9e44" }}/>
         </div>
       </div>
@@ -610,7 +619,7 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
               <div style={{ fontSize: 12.5, color: "#5a6488", marginTop: 1 }}>Timetables, reminders and updates.</div>
             </div>
           </div>
-          <a href={whatsapp} target="_blank" rel="noopener noreferrer" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 13.5, padding: "10px 18px", borderRadius: 999, textDecoration: "none" }}><i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 17 }}/> Join</a>
+          <a href={whatsapp} target="_blank" rel="noopener noreferrer" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, background: "#25D366", color: "#04331b", fontWeight: 800, fontSize: 13.5, padding: "10px 18px", borderRadius: 999, textDecoration: "var(--rs-textdecoration-47, none)" }}><i className="ph-fill ph-whatsapp-logo" style={{ fontSize: 17 }}/> Join</a>
         </div>
       ) : null}
       <h2 style={{ fontFamily: sora, fontWeight: 700, letterSpacing: "0.06em", margin: "30px 0 14px", textTransform: "uppercase", fontSize: 11.5, color: "#5a6488" }}>What happens next</h2>
@@ -723,10 +732,10 @@ function ContactPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Contact">
-      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"64px 0 40px"}}>
+      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"var(--rs-p-80, 64px 0px 40px)"}}>
         <div className="container" style={{maxWidth:980}}>
           <span className="chip chip-navy"><span className="dot dot-gold"/> WE READ EVERY MESSAGE</span>
-          <h1 className="display" style={{fontSize:"clamp(48px, 6.5vw, 96px)", margin:"18px 0 10px"}}>
+          <h1 className="display" style={{fontSize:"var(--rs-fsize-81, clamp(48px, 6.5vw, 96px))", margin:"18px 0 10px"}}>
             Say <em style={{fontStyle:"normal", color:"var(--coral)"}}>hello.</em>
           </h1>
           <p style={{fontSize:18, lineHeight:1.5, color:"var(--ink-700)", maxWidth:600, margin:0}}>
@@ -737,13 +746,13 @@ function ContactPage({ setPage }) {
 
       <section className="section" style={{paddingTop:32}}>
         <div className="container" style={{maxWidth:980}}>
-          <div style={{display:"grid", gridTemplateColumns:"1.5fr 1fr", gap:32, alignItems:"start"}}>
+          <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-82, 1.5fr 1fr)", gap:32, alignItems:"start"}}>
             {/* Form */}
             <div>
               {sent ? (
                 <div className="card" style={{padding:40, textAlign:"center"}}>
-                  <div className="badge-pin unlocked" style={{width:80, height:80, fontSize:38, margin:"0 auto 18px"}}>✓</div>
-                  <h2 style={{fontFamily:"var(--font-display)", fontSize:30, margin:"0 0 10px"}}>Message sent.</h2>
+                  <div className="badge-pin unlocked" style={{width:80, height:80, fontSize:"var(--rs-fsize-30, 38px)", margin:"0 auto 18px"}}>✓</div>
+                  <h2 style={{fontFamily:"var(--rs-ffamily-11, var(--font-display))", fontSize:30, margin:"0 0 10px"}}>Message sent.</h2>
                   <p style={{color:"var(--ink-700)", margin:"0 0 8px", lineHeight:1.5}}>
                     Thank you — we'll reply within two working days.
                   </p>
@@ -754,7 +763,7 @@ function ContactPage({ setPage }) {
                 </div>
               ) : (
                 <form onSubmit={submit} className="card" style={{padding:32, display:"flex", flexDirection:"column", gap:16}}>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
                     <div className="field">
                       <label>Your name</label>
                       <input value={d.name} onChange={e => setD({...d, name: e.target.value})} placeholder="Full name" autoComplete="name"/>
@@ -764,7 +773,7 @@ function ContactPage({ setPage }) {
                       <input type="email" value={d.email} onChange={e => setD({...d, email: e.target.value})} placeholder="you@email.com" autoComplete="email"/>
                     </div>
                   </div>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+                  <div style={{display:"grid", gridTemplateColumns:"var(--rs-gcolumns-16, 1fr 1fr)", gap:14}}>
                     <div className="field">
                       <label>Phone (optional)</label>
                       <input value={d.phone} onChange={e => setD({...d, phone: e.target.value})} placeholder="+234…" autoComplete="tel"/>
@@ -814,7 +823,7 @@ function ContactPage({ setPage }) {
                   <b>CACENTRE Ayobo</b><br/>Alimosho · Lagos<br/>Saturdays · 09:00 – 13:00
                 </div>
               </div>
-              <div className="card" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
+              <div className="card dark-surface" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
                 <div className="eyebrow" style={{color:"var(--gold-400)"}}>LOOKING TO APPLY?</div>
                 <p style={{fontSize:14, color:"rgba(255,255,255,0.8)", margin:"12px 0 16px", lineHeight:1.5}}>
                   You don't need to email — start your application in about six minutes.
@@ -851,7 +860,7 @@ function DonateWidget() {
   };
   if (hidden) return null;
   return (
-    <div className="card" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
+    <div className="card dark-surface" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
       <div className="eyebrow" style={{ color: "var(--gold-400)" }}>SUPPORT THE MISSION</div>
       <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
       <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -916,11 +925,11 @@ function MentorsPage({ setPage }) {
 
   return (
     <div className="page" data-screen-label="Mentors">
-      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "72px 0 56px", position: "relative", overflow: "hidden" }}>
+      <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "var(--rs-p-83, 72px 0px 56px)", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle at 82% 25%, rgba(245,176,38,0.16), transparent 60%)" }}/>
         <div className="container" style={{ position: "relative" }}>
           <span className="chip chip-on-dark"><span className="dot dot-gold"/> {av ? av.mentorProgram : "STREET-TO-STARDOM · NEXT GEN"}</span>
-          <h1 className="display" style={{ fontSize: "clamp(52px, 8vw, 116px)", margin: "18px 0 14px", color: "white", lineHeight: 0.92 }}>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-84, clamp(52px, 8vw, 116px))", margin: "18px 0 14px", color: "white", lineHeight: "var(--rs-lheight-50, 0.92)" }}>
             The <span style={{ color: "var(--gold-500)" }}>mentors.</span>
           </h1>
           <p style={{ fontSize: 19, lineHeight: 1.5, color: "rgba(255,255,255,0.78)", maxWidth: 620, margin: 0 }}>
@@ -988,7 +997,7 @@ function ProfileCommunityCTA({ token, name }) {
     catch (e) { setErr("Couldn't sign you in from this card."); setBusy(false); }
   };
   return (
-    <div className="card" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+    <div className="card dark-surface" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18 }}>Enter the Community</div>
         <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span role="alert" style={{ color: "#ffb3b3" }}>{err}</span>}</div>
@@ -1008,7 +1017,7 @@ function ProfileCheckin({ token, name }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 20, border: "1px solid var(--gold-500)", background: "rgba(245,176,38,0.07)" }}>
+    <div className="card" style={{ padding: 18, marginBottom: 20, border: "var(--rs-border-85, 1px solid var(--gold-500))", background: "rgba(245,176,38,0.07)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 170 }}>
           <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", color: "var(--ink-500)" }}>STAFF · ATTENDANCE</div>
@@ -1128,7 +1137,11 @@ function MembershipPayPage({ setPage }) {
           <div className="mpay-msg"><h1>We couldn’t load your invoice</h1><p>Check your connection and try again.</p><button className="btn btn-primary" onClick={load}>Try again</button></div>
         ) : (
           <>
-            <h1 className="mpay-title">{inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is fully enrolled." : "Complete " + (inv.firstName ? inv.firstName + "’s" : "your") + " membership"}</h1>
+            <h1 className="mpay-title">{inv.purpose === "advance"
+              ? (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is paid ahead." : "Pay ahead for " + (inv.firstName || "your child"))
+              : inv.purpose === "balance"
+              ? (inv.status === "paid" ? "Thank you — " + (inv.firstName ? inv.firstName + "’s" : "the") + " account is paid." : "Pay " + (inv.firstName ? inv.firstName + "’s" : "the") + " account balance")
+              : (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is fully enrolled." : "Complete " + (inv.firstName ? inv.firstName + "’s" : "your") + " membership")}</h1>
             <p className="mpay-sub">Invoice <span className="mpay-mono">{inv.invoiceId}</span>{inv.displayId ? <> · member <span className="mpay-mono">{inv.displayId}</span></> : null}{inv.centre ? " · " + inv.centre : ""}</p>
             <table className="mpay-items">
               <tbody>
@@ -1143,7 +1156,7 @@ function MembershipPayPage({ setPage }) {
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
               </div>
             ) : inv.status === "void" ? (
-              <div className="mpay-msg"><p>This invoice was cancelled. Contact your centre if you think that is a mistake.</p></div>
+              <div className="mpay-msg"><p>{inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
             ) : inv.pendingOffline ? (
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (
@@ -1160,7 +1173,8 @@ function MembershipPayPage({ setPage }) {
                 {!inv.paystack && !inv.bank && <p className="mpay-fine">Pay at your centre; you’ll get a receipt once it is recorded and checked.</p>}
               </div>
             )}
-            <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>
+            {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
+            {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
           </>
         )}
       </div>
@@ -1185,8 +1199,8 @@ function SummerProfilePage({ setPage }) {
   if (!state.profile) return (
     <div className="page"><section className="section"><div className="container" style={{ textAlign: "center", padding: "80px 0" }}>
       <div className="mono" style={{ color: "var(--coral)", letterSpacing: "0.14em" }}>PROFILE NOT FOUND</div>
-      <h1 className="display" style={{ fontSize: "clamp(40px,6vw,80px)", margin: "12px 0" }}>Nobody on this card.</h1>
-      <p style={{ color: "var(--ink-500)" }}>That card isn't assigned to anybody yet, or the link is wrong. If it is an NGG member card, ask the centre to check it.</p>
+      <h1 className="display" style={{ fontSize: "var(--rs-fsize-86, clamp(40px, 6vw, 80px))", margin: "12px 0" }}>Nobody on this card.</h1>
+      <p style={{ color: "var(--ink-700)" }}>That card isn't assigned to anybody yet, or the link is wrong. If it is an NGG member card, ask the centre to check it.</p>
       <button className="btn btn-primary mt-24" onClick={() => setPage("home")}>Back to home →</button>
     </div></section></div>
   );
@@ -1305,7 +1319,7 @@ function SummerProfilePage({ setPage }) {
               </div>
             </div>
             {att.length === 0
-              ? <p style={{ color: "var(--ink-500)", marginTop: 12 }}>No check-ins recorded yet.</p>
+              ? <p style={{ color: "var(--ink-700)", marginTop: 12 }}>No check-ins recorded yet.</p>
               : <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
                   {att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}
                 </div>}
@@ -1315,7 +1329,7 @@ function SummerProfilePage({ setPage }) {
           {milestones.length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Milestones · {milestones.length}</div>
-              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>Earned along the way.</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "8px 0 20px" }}>Earned along the way.</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 14 }}>
                 {milestones.map((b, i) => (
                   <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, textAlign: "center" }}>
@@ -1331,7 +1345,7 @@ function SummerProfilePage({ setPage }) {
           {(m.projects || []).length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-500)" }}>Public projects · {m.projects.length}</div>
-              <h2 className="display" style={{ fontSize: 22, margin: "8px 0 20px" }}>What I've put into the world.</h2>
+              <h2 className="display" style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "8px 0 20px" }}>What I've put into the world.</h2>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 16 }}>
                 {m.projects.map(pr => {
                   const inner = (<>
@@ -1340,7 +1354,7 @@ function SummerProfilePage({ setPage }) {
                     {pr.kind ? <div className="mono" style={{ fontSize: 10, letterSpacing: "0.06em", color: "var(--ink-400)", marginTop: 3 }}>{pr.kind}</div> : null}
                   </>);
                   return pr.url
-                    ? <a key={pr.id} href={pr.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none", color: "inherit", display: "block" }}>{inner}</a>
+                    ? <a key={pr.id} href={pr.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "var(--rs-textdecoration-47, none)", color: "inherit", display: "block" }}>{inner}</a>
                     : <div key={pr.id}>{inner}</div>;
                 })}
               </div>
@@ -1349,7 +1363,7 @@ function SummerProfilePage({ setPage }) {
 
           {/* Mentor notes — only notes an admin marked public reach this page. */}
           {(m.notes || []).length > 0 && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold-400)" }}>Mentor notes</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 18 }}>
                 {m.notes.map((n, i) => (
@@ -1365,7 +1379,7 @@ function SummerProfilePage({ setPage }) {
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
           {m.kind === "volunteer" && m.game && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
                 <div>
                   <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
@@ -1397,10 +1411,10 @@ function SummerProfilePage({ setPage }) {
           {m.kind === "volunteer" && (m.certificates || []).length > 0 && (
             <div className="card" style={{ padding: 28, marginTop: 20 }}>
               <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Service certificates</h2>
-              <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Verifiable proof of your hours — open, print or share the link.</p>
+              <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>Verifiable proof of your hours — open, print or share the link.</p>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {m.certificates.map(c => (
-                  <a key={c.certId} href={"/cert/" + c.certId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 14, background: "var(--cream-50, #faf6ec)", border: "1px solid rgba(12,20,50,0.08)", textDecoration: "none", color: "var(--ink-900)" }}>
+                  <a key={c.certId} href={"/cert/" + c.certId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: 14, background: "var(--cream-50, #faf6ec)", border: "1px solid rgba(12,20,50,0.08)", textDecoration: "var(--rs-textdecoration-47, none)", color: "var(--ink-900)" }}>
                     <span><b style={{ fontFamily: "var(--font-display)" }}>{c.milestone} sessions</b> <span style={{ color: "var(--ink-500)" }}>· ≈{c.hours} hours</span></span>
                     <span className="mono" style={{ fontSize: 12, color: "var(--gold-600, #b07c12)" }}>{c.certId} →</span>
                   </a>
@@ -1444,9 +1458,9 @@ function InstructorRoster({ token }) {
     return (
       <div className="card" style={{ padding: 28, marginTop: 20 }}>
         <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Your class{d.courses.length > 1 ? "es" : ""}</h2>
-        <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>{d.courses.join(" · ")} · {d.students.length} student{d.students.length === 1 ? "" : "s"}</p>
+        <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>{d.courses.join(" · ")} · {d.students.length} student{d.students.length === 1 ? "" : "s"}</p>
         {d.students.length === 0
-          ? <p style={{ color: "var(--ink-500)" }}>No verified students in your course{d.courses.length > 1 ? "s" : ""} yet.</p>
+          ? <p style={{ color: "var(--ink-700)" }}>No verified students in your course{d.courses.length > 1 ? "s" : ""} yet.</p>
           : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {d.students.map((st, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", borderRadius: 10, background: st.todayPresent ? "rgba(118,176,67,0.12)" : "var(--cream-50, #faf6ec)" }}>
@@ -1461,7 +1475,7 @@ function InstructorRoster({ token }) {
   return (
     <div className="card" style={{ padding: 28, marginTop: 20 }}>
       <h2 className="display" style={{ fontSize: 24, margin: "0 0 4px" }}>Instructor view</h2>
-      <p style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 16px" }}>Confirm your registered email to see today's class roster.</p>
+      <p style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 16px" }}>Confirm your registered email to see today's class roster.</p>
       <form onSubmit={open} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"
           style={{ flex: "1 1 220px", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(12,20,50,0.15)", fontSize: 15, fontFamily: "inherit" }}/>
@@ -1484,7 +1498,7 @@ function CertificatePage() {
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0a1130", color: "#fff", textAlign: "center", padding: 24 }}>
       <div>
         <div className="mono" style={{ color: "#ff8a8a", letterSpacing: "0.14em" }}>CERTIFICATE NOT FOUND</div>
-        <h1 className="display" style={{ fontSize: "clamp(32px,5vw,56px)", margin: "12px 0" }}>We can't verify that link.</h1>
+        <h1 className="display" style={{ fontSize: "var(--rs-fsize-36, clamp(32px, 5vw, 56px))", margin: "12px 0" }}>We can't verify that link.</h1>
         <p style={{ color: "rgba(255,255,255,0.6)" }}>The certificate ID is wrong, or it was revoked.</p>
         <a className="btn btn-gold mt-24" href="/">Back to home →</a>
       </div>
@@ -1494,9 +1508,12 @@ function CertificatePage() {
   const isCompletion = c.type === "completion";
   const issued = fmtDateLong(c.issuedAt);
   return (
-    <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
-      <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
-      <div className="cert-card" style={{ width: "min(760px, 100%)", background: "#fff", borderRadius: 20, padding: "clamp(32px, 6vw, 64px)", boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)", position: "relative", overflow: "hidden" }}>
+    <div className="cert-page">
+      <style>{`.cert-page { min-height: 100vh; background: #0a1130; padding: 48px 20px; display: grid; place-items: center; }
+.cert-card { width: min(760px, 100%); background: #fff; border-radius: 20px; padding: clamp(32px, 6vw, 64px); box-shadow: 0 30px 80px -20px rgba(0,0,0,0.5); position: relative; overflow: hidden; }
+.cert-actions { margin-top: 24px; display: flex; gap: 12px; }
+@media print { .cert-page { background: #fff; padding: 0; } .cert-noprint { display: none; } .cert-card { box-shadow: none; border: 1px solid #ddd; } }`}</style>
+      <div className="cert-card">
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 50% at 100% 0%, rgba(245,176,38,0.12), transparent 60%)" }}/>
         {c.revoked && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}><span style={{ transform: "rotate(-18deg)", border: "4px solid rgba(228,21,95,0.5)", color: "rgba(228,21,95,0.5)", fontWeight: 800, fontSize: "clamp(40px,9vw,90px)", letterSpacing: 6, padding: "6px 28px", borderRadius: 12 }}>REVOKED</span></div>}
         <div style={{ position: "relative" }}>
@@ -1505,7 +1522,7 @@ function CertificatePage() {
             <span className="mono" style={{ fontSize: 11, letterSpacing: "0.18em", color: "#8a93a6" }}>{isCompletion ? "CERTIFICATE OF COMPLETION" : "CERTIFICATE OF SERVICE"}</span>
           </div>
           <p style={{ margin: 0, color: "#6b7385", fontSize: 15 }}>This certifies that</p>
-          <h1 className="display" style={{ fontSize: "clamp(34px,5vw,56px)", margin: "6px 0 4px", color: "#0a1130", lineHeight: 1 }}>{c.fullName}</h1>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-88, clamp(34px, 5vw, 56px))", margin: "6px 0 4px", color: "#0a1130", lineHeight: "var(--rs-lheight-7, 1)" }}>{c.fullName}</h1>
           {isCompletion ? (
             <p style={{ margin: "0 0 28px", color: "#6b7385", fontSize: 15 }}>
               completed <b style={{ color: "#0a1130" }}>NGG Summer School{c.cohort ? " · " + c.cohort : ""}</b>{c.track ? <> on the <b style={{ color: "#0a1130" }}>{c.track}</b> track</> : null},
@@ -1525,7 +1542,7 @@ function CertificatePage() {
           {c.revoked && <p style={{ margin: "20px 0 0", color: "#E4155F", fontWeight: 600, fontSize: 14 }}>This certificate has been revoked and is no longer valid.</p>}
         </div>
       </div>
-      <div className="cert-noprint" style={{ marginTop: 24, display: "flex", gap: 12 }}>
+      <div className="cert-noprint cert-actions">
         <button className="btn btn-gold" onClick={() => window.print()}>Print / Save PDF</button>
         <a className="btn btn-on-dark-ghost" href="/">Home</a>
       </div>
@@ -1574,11 +1591,11 @@ function HandbookSummary() {
     ["Purpose Development", "Life vision aligned with Afrocentric impact."],
   ];
   return (
-    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "none" }}>
+    <div className="card handbook-summary dark-surface" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
       </div>
-      <h2 style={{ fontFamily: "var(--font-display)", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
+      <h2 style={{ fontFamily: "var(--rs-ffamily-11, var(--font-display))", fontSize: 26, margin: "10px 0 6px", letterSpacing: "-0.02em" }}>
         One movement, one standard.
       </h2>
       <p style={{ color: "rgba(255,255,255,0.78)", lineHeight: 1.6, margin: "0 0 18px", maxWidth: 620 }}>
@@ -1771,7 +1788,7 @@ function VolunteerRegisterPage({ setPage }) {
 
   if (done) return (
     <div className="page" data-screen-label="Volunteer · done">
-      <section className="section" style={{ padding: "56px 24px" }}><div className="container" style={{ maxWidth: 620 }}>
+      <section className="section" style={{ padding: "var(--rs-p-89, 56px 24px)" }}><div className="container" style={{ maxWidth: 620 }}>
         <ApplySuccessCard
           variant="volunteer"
           refCode={typeof done === "string" ? done : ""}
@@ -1964,292 +1981,38 @@ function VolunteerRegisterPage({ setPage }) {
 }
 
 /* ============================================================================
-   Anchor Circle — the consent-based, READ-ONLY guardian / teacher / mentor
-   portal. Role → code → verify → consent → dashboard. Own chrome (blue/teal),
-   no member session; a signed portal token is kept in localStorage.
+   /circle — Anchor Circle has moved. It was a no-account portal paired with
+   the child's code; it is now part of the NGG family account (parents,
+   /family) and the mentor portal (mentors, connected by being
+   assigned). Kept as a route because it is in bookmarks and on printed
+   slips: it says where each person goes now, and forgets the old tokens this
+   browser held, which no longer open anything.
    ============================================================================ */
-const CIRCLE_TOKEN_KEY = "ngg_circle_token";
-// Every portal token this device has paired (mentors/teachers hold several —
-// one per student). The active token stays in CIRCLE_TOKEN_KEY.
-const CIRCLE_TOKENS_KEY = "ngg_circle_tokens";
-const circleTokens = {
-  all() { try { return JSON.parse(localStorage.getItem(CIRCLE_TOKENS_KEY)) || []; } catch (_) { return []; } },
-  save(list) { try { localStorage.setItem(CIRCLE_TOKENS_KEY, JSON.stringify(list.slice(0, 30))); } catch (_) {} },
-  add(t) { const l = circleTokens.all(); if (t && l.indexOf(t) === -1) { l.push(t); circleTokens.save(l); } },
-  remove(t) { circleTokens.save(circleTokens.all().filter(x => x !== t)); },
-};
-const CIRCLE_ROLES = [
-  { key: "parent", label: "Parent / Guardian", desc: "Confirm home discipline & encourage", icon: "🏠" },
-  { key: "teacher", label: "Teacher", desc: "Verify school conduct & effort", icon: "🎓" },
-  { key: "mentor", label: "Afrovanguard Mentor", desc: "Guide your mentee's journey", icon: "🧭" },
+const CIRCLE_MOVED = [
+  { icon: "ph-house-line", who: "Parents and guardians", what: "Sign in to the family account with your email. Add your child with the six-digit code from their app and their name: their Anchor week is under Growth, beside attendance, fees and their mentor.", go: "/family", cta: "Open the family account" },
+  { icon: "ph-compass", who: "Mentors", what: "Nothing to do. The children you are assigned are connected already: open one in the mentor portal and their Anchor week is under Growth and lessons.", go: "/mentor", cta: "Open the mentor portal" },
 ];
-const CIRCLE_CAN = ["See streaks, systems held & progress", "Confirm daily / school conduct", "Leave weekly remarks & encouragement"];
-const CIRCLE_CANNOT = ["Read private journal reflections", "Open personal notes or goals", "See AI coach conversations"];
-
 function CirclePortal({ setPage }) {
-  const [step, setStep] = React.useState("role");
-  const [role, setRole] = React.useState(null);
-  const [code, setCode] = React.useState("");
-  const [guardianName, setGuardianName] = React.useState("");
-  const [student, setStudent] = React.useState(null);
-  const [consent, setConsent] = React.useState(false);
-  const [token, setToken] = React.useState(() => { try { return localStorage.getItem(CIRCLE_TOKEN_KEY) || ""; } catch (_) { return ""; } });
-  const [dash, setDash] = React.useState(null);
-  const [busy, setBusy] = React.useState(false);
-  const [err, setErr] = React.useState("");
-  const [childName, setChildName] = React.useState("");
-  const [remark, setRemark] = React.useState("");
-  const [toast, setToastMsg] = React.useState("");
-  const flash = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(""), 2400); };
-
-  const [cohort, setCohort] = React.useState(null);
-
-  const loadDash = React.useCallback((tok) => {
-    setBusy(true); setErr("");
-    return NGGApi.public.circle.dashboard(tok)
-      .then(d => { setDash(d); setStep("dashboard"); })
-      .catch(e => {
-        if ((e.code || e.message) === "link_invalid") {
-          // This student revoked (or the token expired) — fall over to the
-          // next paired student on this device, or back to the start.
-          circleTokens.remove(tok);
-          const rest = circleTokens.all();
-          if (rest.length) { try { localStorage.setItem(CIRCLE_TOKEN_KEY, rest[0]); } catch (_) {} setToken(rest[0]); return loadDash(rest[0]); }
-          try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {}
-          setToken(""); setDash(null); setStep("role");
-        } else setErr(humanizeError(e.message, e.code));
-      })
-      .finally(() => setBusy(false));
-  }, []);
-  React.useEffect(() => { if (token) loadDash(token); /* eslint-disable-next-line */ }, []);
-
-  // Cohort strip — one summary chip per student this device holds a valid
-  // token for. The server silently skips revoked tokens; we prune to match.
-  const refreshCohort = React.useCallback((activeTok) => {
-    const list = circleTokens.all();
-    if (activeTok && list.indexOf(activeTok) === -1) { list.push(activeTok); circleTokens.save(list); }
-    if (!list.length) { setCohort([]); return; }
-    NGGApi.public.circle.cohort(list)
-      .then(r => { const students = r.students || []; circleTokens.save(students.map(s => s.token)); setCohort(students); })
-      .catch(() => {});
-  }, []);
-  React.useEffect(() => { if (step === "dashboard" && token) refreshCohort(token); }, [step, token, refreshCohort]);
-
-  const switchStudent = (tok) => {
-    if (tok === token) return;
-    try { localStorage.setItem(CIRCLE_TOKEN_KEY, tok); } catch (_) {}
-    setToken(tok); loadDash(tok);
-  };
-  const addStudent = () => { setRole((dash && dash.role) || role || "mentor"); setStudent(null); setCode(""); setChildName(""); setErr(""); setStep("code"); };
-
-  const roleWord = role === "teacher" ? "student" : (role === "mentor" ? "mentee" : "child");
-  const submitCode = async () => {
-    setBusy(true); setErr("");
-    try { const r = await NGGApi.public.circle.lookup(code, childName.trim()); setStudent(r.student); setStep("verify"); }
-    /* One message for a wrong code AND a wrong name, matching the server. Telling
-       someone "right code, wrong name" would confirm the code is live, which is
-       most of what the name check was added to prevent. */
-    catch (e) { setErr((e.code === "not_found")
-      ? "That code and name don't match a student. Check both and try again."
-      : humanizeError(e.message, e.code)); }
-    finally { setBusy(false); }
-  };
-  const connect = async () => {
-    setBusy(true); setErr("");
-    try {
-      const r = await NGGApi.public.circle.connect({ code, name: childName.trim(), role, guardianName, consent: true });
-      try { localStorage.setItem(CIRCLE_TOKEN_KEY, r.token); } catch (_) {}
-      circleTokens.add(r.token);
-      setToken(r.token); await loadDash(r.token); flash("Connected securely ✓");
-    } catch (e) { setErr(humanizeError(e.message, e.code)); } finally { setBusy(false); }
-  };
-  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setChildName(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
-  const weekDates = () => { const out = []; const base = dash && dash.weekStart ? new Date(dash.weekStart + "T00:00:00Z") : new Date(); for (let i = 0; i < 7; i++) { const d = new Date(base); d.setUTCDate(d.getUTCDate() + i); out.push(d.toISOString().slice(0, 10)); } return out; };
-  const toggleDay = async (date) => {
-    const on = !(dash.confirmed || []).includes(date);
-    setDash(d => ({ ...d, confirmed: on ? [...(d.confirmed || []), date] : (d.confirmed || []).filter(x => x !== date) }));
-    try { await NGGApi.public.circle.confirm(token, date, on); } catch (e) { flash("Couldn't save — try again"); loadDash(token); }
-  };
-  const sendRemark = async () => {
-    if (!remark.trim()) return;
-    try { await NGGApi.public.circle.remark(token, remark.trim()); setRemark(""); flash("Remark sent to " + (dash.student.name.split(" ")[0])); }
-    catch (e) { flash(humanizeError(e.message, e.code)); }
-  };
-  const downloadReport = async () => {
-    try {
-      const r = await NGGApi.public.circle.report(token); const rep = r.report; const s = rep.stats;
-      const w = window.open("", "_blank"); if (!w) return;
-      const remarks = (rep.remarks || []).map(x => `<li><b>${x.role}</b>: ${x.text}</li>`).join("") || "<li>None yet.</li>";
-      w.document.write(`<html><head><title>Anchor weekly report — ${rep.student}</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:32px;color:#111;max-width:640px}h1{font-size:22px}.k{display:flex;gap:16px;margin:18px 0}.k div{flex:1;border:1px solid #ddd;border-radius:12px;padding:14px;text-align:center}.k b{display:block;font-size:26px}small{color:#666}</style></head><body><h1>Anchor weekly report</h1><p><b>${rep.student}</b> · week of ${rep.weekStart} · ${rep.role} view</p><div class="k"><div><b>${s.avgSystems}</b><small>avg systems</small></div><div><b>${s.reflections}</b><small>reflections</small></div><div><b>${s.conduct}%</b><small>conduct</small></div></div><p><b>Trend:</b> ${s.trend} · <b>Consistency:</b> ${s.consistency}% · <b>Streak:</b> ${s.streak} (best ${s.longestStreak})</p><p><b>Suggested focus:</b> ${rep.suggestion}</p><h3>Recent remarks</h3><ul>${remarks}</ul><script>window.onload=function(){print()}</script></body></html>`);
-      w.document.close();
-    } catch (e) { flash("Couldn't prepare the report"); }
-  };
-
-  const bg = { position: "absolute", inset: 0, background: "radial-gradient(92% 60% at 15% 4%,rgba(56,120,220,.5) 0%,transparent 60%),radial-gradient(80% 55% at 92% 8%,rgba(94,224,192,.32) 0%,transparent 55%),linear-gradient(175deg,#173056 0%,#122240 55%,#0d1830 100%)" };
-  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 18 };
-  const teal = "#5ee0c0";
-  const wrap = (children) => (
-    <div className="circle-portal" style={{ minHeight: "100vh", background: "#0d1830", color: "#fff", position: "relative", overflow: "hidden" }}>
-      <div style={bg} aria-hidden="true"/>
-      <div style={{ position: "relative", maxWidth: 460, margin: "0 auto", padding: "32px 22px 60px" }}>{children}</div>
-      {toast && <div className="circle-toast" role="status">{toast}</div>}
-    </div>
-  );
-
-  if (step === "role") return wrap(<>
-    <div style={{ width: 66, height: 66, borderRadius: 20, background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", fontSize: 30 }}>🛡️</div>
-    <h1 style={{ font: "800 30px/1.05 var(--font-display,sans-serif)", margin: "20px 0 0" }}>Anchor <span style={{ color: teal }}>Circle</span></h1>
-    <div className="mono" style={{ letterSpacing: ".28em", color: "rgba(255,255,255,.6)", fontSize: 11, marginTop: 6 }}>GUARDIAN &amp; MENTOR PORTAL</div>
-    <p style={{ color: "rgba(255,255,255,.78)", lineHeight: 1.55, marginTop: 16 }}>Support their twelve-week journey — confirm conduct, leave encouragement, and track growth <b>without ever reading their private words.</b></p>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: "rgba(255,255,255,.6)", margin: "26px 0 12px" }}>I AM CONNECTING AS A…</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-      {CIRCLE_ROLES.map(r => (
-        <button key={r.key} onClick={() => { setRole(r.key); setErr(""); setStep("code"); }} style={{ ...card, display: "flex", alignItems: "center", gap: 14, textAlign: "left", padding: "15px 16px", cursor: "pointer", color: "#fff" }}>
-          <span style={{ fontSize: 24 }}>{r.icon}</span>
-          <span style={{ flex: 1 }}><span style={{ display: "block", fontWeight: 700, fontSize: 16 }}>{r.label}</span><span style={{ fontSize: 12, color: "rgba(255,255,255,.66)" }}>{r.desc}</span></span>
-          <span aria-hidden="true" style={{ color: "rgba(255,255,255,.5)" }}>›</span>
-        </button>
-      ))}
-    </div>
-    <div style={{ ...card, display: "flex", gap: 11, padding: "14px 16px", marginTop: 20, alignItems: "flex-start" }}>
-      <span aria-hidden="true">🔒</span><span style={{ fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,.72)" }}>Anchor Link is a consent-based, read-only connection. It can be revoked by the student at any time.</span>
-    </div>
-    <button className="btn btn-ghost btn-sm" style={{ marginTop: 22, color: "rgba(255,255,255,.7)" }} onClick={() => setPage("home")}>← Back to site</button>
-  </>);
-
-  if (step === "code") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("role")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 1 OF 3 · PAIR</div>
-    <h1 style={{ font: "800 28px/1.05 var(--font-display,sans-serif)", margin: "12px 0 0" }}>Enter the Anchor Link code</h1>
-    <p style={{ color: "rgba(255,255,255,.76)", lineHeight: 1.55, marginTop: 12 }}>Ask your {roleWord} to open Anchor → <b>You → Your Circle</b>. They'll read you a 6-digit code.</p>
-    <input value={code} onChange={e => setCode((e.target.value || "").replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••••"
-      aria-label="6-digit Anchor Link code"
-      style={{ width: "100%", marginTop: 24, textAlign: "center", letterSpacing: ".5em", background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 18, color: "#fff", font: "700 34px var(--font-mono,monospace)", padding: "20px 0 20px .5em", outline: "none" }}/>
-    {/* Required, and it is the actual security control on this page: without
-        it a six-digit code was enough to pull back a child's name and then a
-        guardian's-eye view of them. Asking for a name the guardian obviously
-        knows costs them one field and makes a guessed code worth nothing.
-        It also stops a mistyped code quietly pairing you to another child. */}
-    <input value={childName} onChange={e => setChildName(e.target.value)} placeholder={"Your " + roleWord + "'s name"}
-      aria-label={"Your " + roleWord + "'s name"} autoComplete="off"
-      style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
-    <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 7 }}>First name or surname — whichever is on their record.</div>
-    <input value={guardianName} onChange={e => setGuardianName(e.target.value)} placeholder="Your name (optional)"
-      aria-label="Your name (optional)"
-      style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
-    {err && <div role="alert" className="circle-err">{err}</div>}
-    {(() => {
-      const ready = code.length === 6 && childName.trim().length >= 2;
-      return <button className="btn btn-lg" disabled={!ready || busy} onClick={submitCode} style={{ width: "100%", marginTop: 18, background: ready ? teal : "rgba(255,255,255,.12)", color: ready ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Checking…" : "Find student →"}</button>;
-    })()}
-  </>);
-
-  if (step === "verify") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("code")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 2 OF 3 · VERIFY</div>
-    <h1 style={{ font: "800 28px/1.05 var(--font-display,sans-serif)", margin: "12px 0 18px" }}>Is this your {roleWord}?</h1>
-    <div style={{ ...card, padding: 24, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-      <div style={{ width: 74, height: 74, borderRadius: "50%", background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 30px var(--font-display,sans-serif)" }}>{((student && student.name) || "?").charAt(0)}</div>
-      <div style={{ font: "800 22px var(--font-display,sans-serif)", marginTop: 14 }}>{student && student.name}</div>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "6px 13px", borderRadius: 99, background: "rgba(94,224,192,.14)", border: "1px solid rgba(94,224,192,.3)" }}><span style={{ color: teal, fontSize: 11, fontWeight: 700 }} className="mono">✓ CODE + NAME MATCHED</span></div>
-    </div>
-    <button className="btn btn-lg" onClick={() => setStep("consent")} style={{ width: "100%", marginTop: 20, background: teal, color: "#06231d", border: "none", fontWeight: 800 }}>Yes, continue →</button>
-    <button className="btn btn-ghost" style={{ width: "100%", marginTop: 10, color: "rgba(255,255,255,.7)" }} onClick={() => { setStep("code"); setStudent(null); }}>No, re-enter code</button>
-  </>);
-
-  if (step === "consent") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("verify")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 3 OF 3 · PERMISSIONS</div>
-    <h1 style={{ font: "800 26px/1.05 var(--font-display,sans-serif)", margin: "12px 0 6px" }}>A transparent connection</h1>
-    <p style={{ fontSize: 13, color: "rgba(255,255,255,.74)" }}>Anchor Link is deliberately limited. Here's exactly what you can and can't do.</p>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: teal, margin: "20px 0 10px" }}>✓ YOU CAN</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CAN.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(94,224,192,.08)", border: "1px solid rgba(94,224,192,.2)" }}><span style={{ color: teal }}>✓</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#ff8a8a", margin: "20px 0 10px" }}>✕ YOU CAN NOT</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CANNOT.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.2)" }}><span style={{ color: "#ff8a8a" }}>⃠</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <button type="button" role="checkbox" aria-checked={consent} aria-label="I agree to Anchor's guardian terms and the student's privacy" onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
-      <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
-      <span style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>I agree to Anchor's guardian terms &amp; the student's privacy.</span>
-    </button>
-    {err && <div role="alert" className="circle-err">{err}</div>}
-    <button className="btn btn-lg" disabled={!consent || busy} onClick={connect} style={{ width: "100%", marginTop: 14, background: consent ? teal : "rgba(255,255,255,.12)", color: consent ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Connecting…" : "Connect securely 🔗"}</button>
-  </>);
-
-  // Dashboard
-  if (err) return wrap(<ErrorState title="Couldn't load the dashboard" code={err} onRetry={() => loadDash(token)}/>);
-  if (!dash) return wrap(<div style={{ textAlign: "center", padding: "80px 0" }}><div className="dash-spinner"/></div>);
-  const s = dash.stats || {}; const confirmed = dash.confirmed || []; const dates = weekDates();
-  const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
-  const roleLabel = (dash.role || role || "guardian").toUpperCase();
-  const first = (dash.student.name || "").split(" ")[0];
-  const confirmTitle = dash.role === "teacher" ? "Verify school conduct" : (dash.role === "mentor" ? "Confirm weekly discipline" : "Confirm home discipline");
-  return wrap(<>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div><div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: teal }}>{roleLabel} PORTAL</div><h2 style={{ font: "800 22px var(--font-display,sans-serif)", margin: "3px 0 0" }}>Anchor Circle</h2></div>
-      <button className="circle-back" onClick={unlink} aria-label="Sign out">⎋</button>
-    </div>
-    {cohort && (cohort.length > 1 || dash.role === "mentor") && (
-      <div style={{ marginTop: 18 }}>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 8 }}>{dash.role === "mentor" ? "YOUR MENTEES" : "YOUR STUDENTS"}</div>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }} role="tablist" aria-label="Linked students">
-          {cohort.map(s => {
-            const active = s.token === token;
-            return (
-              <button key={s.token} role="tab" aria-selected={active} onClick={() => switchStudent(s.token)}
-                title={s.atRisk ? "Needs support — " + (s.trend || "") : "On track — " + (s.trend || "")}
-                style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", borderRadius: 99, cursor: "pointer",
-                  background: active ? "rgba(94,224,192,.16)" : "rgba(255,255,255,.06)",
-                  border: "1px solid " + (active ? teal : "rgba(255,255,255,.14)"), color: "#fff" }}>
-                {s.atRisk && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff8a8a", boxShadow: "0 0 8px rgba(255,120,120,.8)" }}/>}
-                <span style={{ fontWeight: 700, fontSize: 13 }}>{(s.name || "?").split(" ")[0]}</span>
-                <span className="mono" style={{ fontSize: 11, color: "#ffce54" }}>🔥{s.streak}</span>
-              </button>
-            );
-          })}
-          <button onClick={addStudent} style={{ flex: "none", padding: "9px 13px", borderRadius: 99, background: "transparent", border: "1px dashed rgba(255,255,255,.3)", color: "rgba(255,255,255,.75)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>+ Add</button>
-        </div>
+  React.useEffect(() => { try { localStorage.removeItem("ngg_circle_token"); localStorage.removeItem("ngg_circle_tokens"); } catch (_) {} }, []);
+  return (
+    <main className="circle-portal circle-moved" id="main">
+      <div className="circle-moved-in">
+        <p className="circle-moved-eyebrow">Anchor Circle</p>
+        <h1>Anchor Circle has moved</h1>
+        <p className="circle-moved-lead">Following a child’s Anchor week — the systems they held, the days they reflected, their streak, the conduct days you confirm and the notes you leave — is now part of the NGG family account and the mentor portal. A child’s mentor reads their journal and reflections in the mentor portal.</p>
+        <ul className="circle-moved-list">
+          {CIRCLE_MOVED.map(x => (
+            <li key={x.who} className="circle-moved-card">
+              <i className={"ph " + x.icon} aria-hidden="true"/>
+              <div><h2>{x.who}</h2><p>{x.what}</p><a className="btn btn-gold" href={x.go}>{x.cta}</a></div>
+            </li>
+          ))}
+        </ul>
+        <p className="circle-moved-note">Connected here before? That link has ended. The days you confirmed and the notes you left are still on the child’s record.</p>
+        <button type="button" className="btn btn-ghost btn-sm circle-moved-back" onClick={() => setPage("home")}>← Back to the site</button>
       </div>
-    )}
-    <div style={{ ...card, display: "flex", alignItems: "center", gap: 14, padding: 18, marginTop: 20 }}>
-      <div style={{ width: 54, height: 54, borderRadius: 16, background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 24px var(--font-display,sans-serif)" }}>{(dash.student.name || "?").charAt(0)}</div>
-      <div style={{ flex: 1 }}><div style={{ font: "800 19px var(--font-display,sans-serif)" }}>{dash.student.name}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.68)" }}>Streak {s.streak} · best {s.longestStreak}</div></div>
-      <div style={{ textAlign: "right" }}><div style={{ font: "700 16px var(--font-mono,monospace)", color: "#ffce54" }}>🔥 {s.streak}</div><div className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>DAY STREAK</div></div>
-    </div>
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 14 }}>
-      {[[s.avgSystems, "avg systems", teal], [s.reflections, "reflections", "#7fb0ff"], [(s.conduct || 0) + "%", "conduct", "#ffce54"]].map((t, i) => (
-        <div key={i} style={{ ...card, padding: "15px 12px", textAlign: "center" }}><div style={{ font: "800 22px var(--font-display,sans-serif)", color: t[2] }}>{t[0]}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,.66)", marginTop: 2 }}>{t[1]}</div></div>
-      ))}
-    </div>
-    <div style={{ borderRadius: 18, padding: 16, marginTop: 16, background: s.atRisk ? "rgba(255,120,120,.1)" : "rgba(94,224,192,.1)", border: "1px solid " + (s.atRisk ? "rgba(255,120,120,.3)" : "rgba(94,224,192,.3)") }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: s.atRisk ? "#ff8a8a" : teal }}>{s.atRisk ? "⚠ NEEDS SUPPORT" : "✓ ON TRACK"} · {String(s.trend || "").toUpperCase()}</div>
-      <p style={{ fontSize: 14, lineHeight: 1.5, margin: "8px 0 0", color: "rgba(255,255,255,.85)" }}>{dash.suggestion}</p>
-    </div>
-    <div style={{ marginTop: 20 }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 10 }}>SYSTEMS HELD THIS WEEK</div>
-      <div style={{ display: "flex", gap: 8 }}>{(s.weekBars || []).map((b, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <div style={{ width: "100%", height: 60, borderRadius: 9, background: "rgba(255,255,255,.07)", display: "flex", alignItems: "flex-end", overflow: "hidden" }}><div style={{ width: "100%", height: b.pct + "%", background: "linear-gradient(180deg,#5ee0c0,#2f6fd0)", borderRadius: 9 }}/></div>
-          <span className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>{dayLabels[i]}</span>
-        </div>
-      ))}</div>
-    </div>
-    <div style={{ ...card, padding: 18, marginTop: 20, background: "linear-gradient(140deg,rgba(94,224,192,.14),rgba(47,111,208,.16))" }}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>{confirmTitle}</div>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,.72)", marginTop: 3 }}>Mark the days conduct met expectations.</div>
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>{dates.map((date, i) => { const on = confirmed.includes(date); return (
-        <button key={date} onClick={() => toggleDay(date)} className="mono" style={{ flex: 1, aspectRatio: "1", borderRadius: 11, background: on ? teal : "rgba(255,255,255,.06)", border: "1px solid " + (on ? teal : "rgba(255,255,255,.12)"), color: on ? "#06231d" : "rgba(255,255,255,.6)", cursor: "pointer", fontWeight: 700 }}>{dayLabels[i]}</button>
-      ); })}</div>
-    </div>
-    <div style={{ marginTop: 20 }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 10 }}>LEAVE A WEEKLY REMARK</div>
-      <textarea value={remark} onChange={e => setRemark(e.target.value)} placeholder="A word of encouragement or an honest observation…" style={{ width: "100%", minHeight: 84, resize: "none", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16, color: "#fff", font: "500 14px/1.5 var(--font-body,sans-serif)", padding: "14px 15px", outline: "none" }}/>
-      <button className="btn btn-lg" onClick={sendRemark} disabled={!remark.trim()} style={{ width: "100%", marginTop: 10, background: teal, color: "#06231d", border: "none", fontWeight: 800 }}>Send to {first} →</button>
-    </div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
-      <button onClick={downloadReport} style={{ ...card, display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", cursor: "pointer", color: "#fff" }}><span>📄</span><span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14 }}>Download weekly report</span><span aria-hidden="true">↓</span></button>
-      <button onClick={unlink} style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", borderRadius: 15, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.22)", cursor: "pointer", color: "#ff8a8a" }}><span>⛓️‍💥</span><span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14 }}>Sign out of this device</span></button>
-    </div>
-    <p style={{ textAlign: "center", fontSize: 11, lineHeight: 1.5, color: "rgba(255,255,255,.55)", margin: "20px 0 0" }}>Read-only connection · private reflections, notes &amp; coach chats are never shared.</p>
-  </>);
+    </main>
+  );
 }
 
 /* ============================================================================
@@ -2323,8 +2086,8 @@ function ParentVerifyPage() {
   const card = { background: "#fff", border: "1px solid #e6e6e0", borderRadius: 18, padding: 20 };
   const first = ctx && ctx.student ? (ctx.student.name || "").split(" ")[0] : "";
 
-  if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: 48 }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
-  if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: 22, margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
+  if (state === "loading") return shell(<div style={{ ...card, textAlign: "center", padding: "var(--rs-p-91, 48px)" }}><div className="dash-spinner"/><p style={{ color: "#777" }}>One moment…</p></div>);
+  if (state === "error") return shell(<div style={card}><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "0 0 8px" }}>We couldn't open this link</h1><p style={{ color: "#555", lineHeight: 1.55 }}>{err}</p></div>);
   /* The centre's parent group, offered the moment consent is done — the one
      moment a parent is certain to be looking at this page, and the point at
      which the group is most useful to them. Rendered only when the centre has
@@ -2339,15 +2102,15 @@ function ParentVerifyPage() {
           Pickup times, session changes and centre notices go out here first. It is optional, and you can leave at any time.
         </p>
         <a href={g.url} target="_blank" rel="noopener noreferrer"
-          style={{ display: "block", textAlign: "center", padding: "13px 16px", borderRadius: 12, background: "#c9f24e", color: "#243300", fontWeight: 800, fontSize: 15, textDecoration: "none" }}>
+          style={{ display: "block", textAlign: "center", padding: "13px 16px", borderRadius: 12, background: "#c9f24e", color: "#243300", fontWeight: 800, fontSize: 15, textDecoration: "var(--rs-textdecoration-47, none)" }}>
           Open the parent group →
         </a>
       </div>
     );
   };
 
-  if (state === "done") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>{groupPanel()}</>);
-  if (state === "success") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>{groupPanel()}</>);
+  if (state === "done") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>✅</div><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>Already confirmed</h1><p style={{ color: "#555" }}>You've already given consent for <b>{ctx.student.name}</b>. Nothing more is needed — thank you.</p></div>{groupPanel()}</>);
+  if (state === "success") return shell(<><div style={{ ...card, textAlign: "center" }}><div style={{ fontSize: 44 }}>🎉</div><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>{first} is fully registered</h1><p style={{ color: "#555", lineHeight: 1.55 }}>Thank you. Their ID card is being prepared, and the program team has been notified. We'll only contact you about the program.</p></div>{groupPanel()}</>);
 
   return shell(<>
     <div style={{ fontSize: 11, letterSpacing: ".18em", fontWeight: 700, color: "#8a8a80", textTransform: "uppercase" }}>NGG Summer School</div>
@@ -2539,7 +2302,7 @@ function SelfRegisterPage() {
   }, [g]);
 
   const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 60px" }}>
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "var(--rs-p-92, 26px 18px 60px)" }}>
       <div style={{ maxWidth: 560, margin: "0 auto" }}>{ch}</div>
     </div>
   );
@@ -3082,7 +2845,7 @@ function ReviewDeskPage() {
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "bad") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>This review link isn't open</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>This review link isn't open</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>It has been closed or revoked. Ask an admin for a fresh one.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
     <h1 style={{ fontSize: 21 }}>Couldn't load the queue</h1>
@@ -3413,7 +3176,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
   });
 
   return <>
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }} className="review-grid">
+    <div className="review-grid">
       {/* Left: the photo, at a size you can actually judge, with the machine's
           reading beside it rather than instead of it. */}
       <div style={card}>
@@ -3428,7 +3191,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
           </div>
           <div style={{ flex: "1 1 240px", minWidth: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <h2 style={{ fontSize: 22, margin: 0, fontWeight: 800 }}>{r.fullName}</h2>
+              <h2 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: 0, fontWeight: 800 }}>{r.fullName}</h2>
               {r.possibleDuplicate && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#ffce54", background: "rgba(245,176,38,.18)" }}>possible duplicate</span>}
               {decided && <span style={{ fontSize: 11.5, fontWeight: 800, padding: "4px 10px", borderRadius: 999, color: "#a7e8c6", background: "rgba(127,209,166,.18)" }}>{r.regStatus === "rejected" ? "rejected" : "approved"}</span>}
             </div>
@@ -4170,7 +3933,7 @@ function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
     {step === 2 && (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ ...card, padding: 16, display: "flex", gap: 13, alignItems: "center" }}>
-          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: 22, fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
+          {photoUrl ? <img src={photoUrl} alt="" style={{ width: 54, height: 54, borderRadius: 12, objectFit: "cover" }}/> : <div style={{ width: 54, height: 54, borderRadius: 12, background: "rgba(255,255,255,.1)", display: "grid", placeItems: "center", fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800 }}>{(regDisplayName(form) || "?").charAt(0)}</div>}
           <div><div style={{ fontWeight: 800, fontSize: 16 }}>{regDisplayName(form)}</div><div style={{ ...mut, fontSize: 13 }}>{form.course || ""}{form.age ? " · " + form.age : ""}</div></div>
         </div>
         <div style={{ ...card, padding: 14, fontSize: 13.5, lineHeight: 1.6 }}>
@@ -4301,7 +4064,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ ...card, overflow: "hidden", position: "relative", height: 300, display: "grid", placeItems: "center" }}>
+      <div style={{ ...card, overflow: "hidden", position: "relative", height: "var(--rs-height-93, 300px)", display: "grid", placeItems: "center" }}>
         {photoUrl ? (
           <PhotoCompare url={photoUrl}/>
         ) : (
@@ -4450,7 +4213,7 @@ function ReshootPage() {
   const mut = { color: "rgba(230,238,255,.62)" };
   const shell = (children) => (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
-      <div style={{ maxWidth: 460, margin: "0 auto", padding: "26px 18px 70px" }}>{children}</div>
+      <div style={{ maxWidth: 460, margin: "0 auto", padding: "var(--rs-p-94, 26px 18px 70px)" }}>{children}</div>
     </div>
   );
 
@@ -4486,23 +4249,33 @@ function ReshootPage() {
     finally { setBusy(false); }
   };
   const first = ctx && ctx.student ? String(ctx.student.name || "").split(" ")[0] : "";
+  /* One page for every photo link: a Summer School parent's re-shoot, and the
+     photo request a member, their parent or a volunteer was sent. A request is
+     for somebody with no photo yet, so it is a first photo, not a retake. */
+  const isFirst = !!ctx && !(ctx.student && ctx.student.photoUrl) && !ctx.reason;
+  const cardName = (ctx && ctx.card) || "ID card";
+  const whose = first ? first + "’s " + cardName : "the " + cardName;
 
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
   if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Photo link</h1><p style={mut}>{err}</p></div>);
   if (state === "done") return shell(<div style={{ ...card, padding: 24, textAlign: "center", marginTop: 50 }}>
     <div style={{ fontSize: 40 }}>✅</div>
-    <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Thank you!</h1>
-    <p style={mut}>The new photo is in. Our team will check it and finish {first || "your child"}'s ID — no need to do anything else.</p>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "10px 0 6px" }}>Thank you!</h1>
+    <p style={mut}>The photo is in. The team checks it, then {whose} is printed. There is nothing else to do.</p>
   </div>);
 
   return shell(<>
-    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>NEW PHOTO</div>
-    <h1 style={{ fontSize: 22, margin: "4px 0 12px", fontWeight: 800 }}>A quick new photo{first ? " for " + first : ""}</h1>
+    <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{isFirst ? "PHOTO FOR YOUR CARD" : "NEW PHOTO"}</div>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)", margin: "4px 0 12px", fontWeight: 800 }}>{isFirst ? "A photo for " + whose : "A quick new photo" + (first ? " for " + first : "")}</h1>
     {ctx && ctx.reason
       ? <div style={{ ...card, padding: 14, marginBottom: 12, fontSize: 13.5, lineHeight: 1.5 }}><b style={{ color: gold }}>What to fix:</b> {ctx.reason}</div>
-      : <p style={{ ...mut, fontSize: 13.5, marginBottom: 12 }}>Please use a clear, front-facing photo in good light, with a plain background.</p>}
+      : <ul style={{ ...mut, fontSize: 13.5, margin: "0 0 12px", paddingLeft: 18, lineHeight: 1.6 }}>
+          <li>Face the camera, head and shoulders in the frame.</li>
+          <li>Stand in front of a plain, light wall.</li>
+          <li>Daylight or a bright room; no hat, cap or sunglasses.</li>
+        </ul>}
 
-    <div style={{ ...card, overflow: "hidden", height: 300, display: "grid", placeItems: "center", marginBottom: 12 }}>
+    <div style={{ ...card, overflow: "hidden", height: "var(--rs-height-93, 300px)", display: "grid", placeItems: "center", marginBottom: 12 }}>
       {photoUrl
         ? <PhotoCompare url={photoUrl}/>
         : ctx && ctx.student && ctx.student.photoUrl
@@ -4518,7 +4291,7 @@ function ReshootPage() {
           <button onClick={() => { setPhotoUrl(""); }} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Retake</button>
           <button onClick={submit} disabled={busy} style={{ flex: 1, padding: 13, borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Sending…" : "Send this photo →"}</button>
         </div>}
-    <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: "12px 0 0", lineHeight: 1.5 }}>Used only for {first || "your child"}'s program ID. We enhance lighting and framing but never change the face.</p>
+    <p style={{ ...mut, fontSize: 11.5, textAlign: "center", margin: "12px 0 0", lineHeight: 1.5 }}>Used only for {whose}. We may improve the lighting and framing, but never change the face.</p>
   </>);
 }
 
@@ -4634,12 +4407,14 @@ function GateDeskGuide() {
  * looking, big enough to read across a desk, and it shows the PHOTO — glancing
  * between the screen and the child is the only check that the card belongs to
  * the person holding it. Kind is told by word, glyph AND colour. */
-function ScanResult({ result, onDone }) {
+function ScanResult({ result, onDone, onFace }) {
+  // Offered on a check-in with a photo to compare (Settings → Face check at the check-in desk).
+  const canFace = !!(onFace && result && result.token && (result.kind === "in" || result.kind === "already"));
   React.useEffect(() => {
     if (!result || result.stop) return;
     // Long enough to read a name and compare a face; short enough not to block
     // the queue behind them. A "do not admit" never times out.
-    const t = setTimeout(onDone, result.kind === "no" ? 6000 : 3500);
+    const t = setTimeout(onDone, result.kind === "no" || canFace ? 6000 : 3500);
     return () => clearTimeout(t);
   }, [result, onDone]);
   const okRef = React.useRef(null);
@@ -4654,6 +4429,7 @@ function ScanResult({ result, onDone }) {
       <p className="gate-result-word"><span aria-hidden="true">{k.glyph}</span> {result.word || k.word}</p>
       <p className="gate-result-name">{result.name}</p>
       {result.sub && <p className="gate-result-sub">{result.sub}</p>}
+      {canFace && <button type="button" className="gate-btn is-quiet gate-face-btn" onClick={() => onFace(result)}><i className="ph ph-scan-smiley" aria-hidden="true"/> Check face</button>}
       {result.stop && <button ref={okRef} type="button" className="gate-btn is-quiet gate-stop-ok" onClick={onDone}>OK — next person</button>}
     </div>
   );
@@ -4781,6 +4557,7 @@ function GateCheckin({ g, ctx }) {
   const [pending, setPending] = React.useState(0);
   // The big outcome panel + whether the desk is allowed to make noise.
   const [scan, setScan] = React.useState(null);
+  const [faceFor, setFaceFor] = React.useState(null);   // {token, name, photo} while the face check is open
   const [muted, setMuted] = React.useState(() => { try { return localStorage.getItem("ngg.gate.mute") === "1"; } catch (_) { return false; } });
   const mutedRef = React.useRef(muted);
   React.useEffect(() => { mutedRef.current = muted; try { localStorage.setItem("ngg.gate.mute", muted ? "1" : "0"); } catch (_) {} }, [muted]);
@@ -4885,7 +4662,7 @@ function GateCheckin({ g, ctx }) {
       const st = r.student || {};
       const isVol = st.kind === "volunteer";
       announce(r.already ? "already" : "in", {
-        name: st.fullName || token,
+        name: st.fullName || token, token,
         photo: st.photoUrl || "",
         sub: [st.centre, st.track || st.role, r.status === "late" ? "Late by " + (r.lateMinutes || 0) + " min" : ""]
           .filter(Boolean).join(" · "),
@@ -4982,8 +4759,12 @@ function GateCheckin({ g, ctx }) {
     <div className="gate-grid">
       <section className="gate-scan" aria-label="Scan a card">
         <div className="gate-stage">
-          <QRScanner onToken={mark}/>
-          <ScanResult result={scan} onDone={() => setScan(null)}/>
+          {/* The face check takes the camera while it runs; the scanner comes back after. */}
+          {faceFor ? null : <QRScanner onToken={mark}/>}
+          <ScanResult result={scan} onDone={() => setScan(null)}
+            onFace={ctx && ctx.faceCheck && typeof FaceCheck === "function" ? (r) => { setScan(null); setFaceFor(r); } : null}/>
+          {faceFor ? <FaceCheck gate={g} token={faceFor.token} name={faceFor.name} photo={faceFor.photo} thresholds={ctx.faceCheck.thresholds}
+            onClose={(res, decision) => { setFaceFor(null); if (decision === "held") announce("no", { name: faceFor.name, sub: "Held at the desk after the face check — check their identity another way.", word: "Held", stop: true }); }}/> : null}
         </div>
         {mode === "out" && <p className="gate-banner is-info" role="status"><span>Signing out. Every scan now signs the person <b>out</b>{gateClosingLine(ctx)}. Switch back to Check in for arrivals.</span></p>}
         <form className="gate-manual" role="search" aria-label={mode === "out" ? "Sign out by code" : "Check in by code"}
@@ -5290,6 +5071,13 @@ function CardCentreRing({ centre, size, px, radius, children }) {
   );
 }
 
+/* Each standard card's photograph, declared beside its renderer so whatever
+   frames a photo for it reads the shape that prints: the Summer School card's
+   is a circle; the volunteer card's is 404 × 318 design units (it scales on
+   that aspect on a shorter card). The member card's is NGGC_PHOTO_MM. */
+const CARD_FRONT_PHOTO = { round: true };
+const VOL_CARD_PHOTO = { w: 404, h: 318 };
+
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
@@ -5405,8 +5193,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      at a legibility floor and must not shrink. */
   const colH = H - 30 - 112 - 96 - 44;         // panel, less the column's padding
   const fixed = fnSize * 1.1 + snSize * 1.04 + 2 + 46 + 20 + 98 + 3 * 14;
-  const phH = Math.round(Math.max(150, Math.min(318, colH - fixed)));
-  const phW = Math.round(phH * 404 / 318);
+  const phH = Math.round(Math.max(150, Math.min(VOL_CARD_PHOTO.h, colH - fixed)));
+  const phW = Math.round(phH * VOL_CARD_PHOTO.w / VOL_CARD_PHOTO.h);
   const field = (label, value, big) => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(5) }}>
       <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: CARD_CAPTION_INK, lineHeight: 1 }}>{label}</span>
@@ -5619,17 +5407,47 @@ const PORTAL_ROLES = {
 
 const MC_NAVY = "#16223e", MC_GOLD = "#ffce54", MC_CARD = "rgba(255,255,255,.06)";
 
+/* Not my mentee: the record opens for a week once I say why. No approval to
+   wait for — the reason goes to the child's own mentor and the centre lead at
+   once, which is what keeps this both quick and safe. */
+const MTR_COVER_ERR = { say_why: "Say why in a sentence — it goes to their mentor and the lead.",
+  cover_limit: "You already have five records open on cover. They close after a week." };   // not_screened: mtrGateErr, at call time
+function MentorCoverAsk({ student, onOpened }) {
+  const [why, setWhy] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const first = (student.fullName || "This child").split(" ")[0];
+  const go = (e) => {
+    e.preventDefault(); setBusy(true); setErr("");
+    NGGApi.member.mentorCover(student.studentId, why)
+      .then(() => onOpened())
+      .catch(x => { setErr(MTR_COVER_ERR[x && x.message] || mtrGateErr(x, "That didn’t work. Try again.")); setBusy(false); });
+  };
+  return (
+    <form className="mtr-cover" onSubmit={go}>
+      <h3 className="mtr-cover-h">{first} isn’t one of your mentees</h3>
+      <p className="mtr-cover-p">If you’re covering for their mentor, or {first} came to you, you can open the record for a week. Say why: their mentor and the centre lead will see it straight away.</p>
+      <label className="mtr-cover-l" htmlFor="mtr-cover-why">Why you need it</label>
+      <textarea id="mtr-cover-why" className="mtr-cover-in" rows={2} value={why} onChange={e => setWhy(e.target.value)}
+                placeholder="e.g. Covering Ngozi’s pod this Saturday" maxLength={400}/>
+      {err && <p className="mtr-err" role="alert">{err}</p>}
+      <button type="submit" className="mtr-cover-go" disabled={busy || why.trim().length < 10}>{busy ? "Opening…" : "Open for a week"}</button>
+    </form>
+  );
+}
+
 function MentorChildSheet({ student, onClose, onChanged }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [needCover, setNeedCover] = React.useState(false);   // not my mentee: offer cover
   const [busy, setBusy] = React.useState(false);
   const [tab, setTab] = React.useState("record");
   const closeRef = React.useRef(null);
 
   const load = React.useCallback(() => {
     NGGApi.member.mentorChild(student.studentId)
-      .then(r => { setD(r); setErr(""); })
-      .catch(e => setErr((e && e.message) || "Could not open that record."));
+      .then(r => { setD(r); setErr(""); setNeedCover(false); })
+      .catch(e => { if (e && e.message === "not_your_mentee") { setNeedCover(true); setErr(""); } else setErr(mtrGateErr(e, "Could not open that record.")); });
   }, [student.studentId]);
   React.useEffect(() => { load(); }, [load]);
   // Escape closes, and focus starts on the close control rather than wherever
@@ -5666,13 +5484,17 @@ function MentorChildSheet({ student, onClose, onChanged }) {
         {err && <div role="alert" style={{ background: "rgba(255,90,110,.16)", border: "1px solid rgba(255,90,110,.5)",
                      borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 14 }}>{err}</div>}
 
-        {!d ? <div style={{ textAlign: "center", padding: "60px 0" }}><div className="dash-spinner"/></div> : <>
+        {needCover && <MentorCoverAsk student={student} onOpened={load}/>}
+        {d && d.access && d.access.via === "cover" && (
+          <p className="mtr-cover-note" role="status">You’re covering for this child’s mentor until {fmtDate(d.access.expiresAt)}. Their mentor and the centre lead have been told.</p>
+        )}
+        {needCover ? null : !d ? <div style={{ textAlign: "center", padding: "60px 0" }}><div className="dash-spinner"/></div> : <>
           <McStats d={d}/>
           <McV3 weeks={d.v3}/>
 
           <div role="tablist" style={{ display: "flex", gap: 4, margin: "22px 0 14px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
             {[["record", "Conversations (" + d.meetings.length + ")"],
-              ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"],
+              ["goals", "Goals (" + d.goals.filter(g => g.status === "active" || g.status === "draft").length + ")"],
               ["courage", "Courage (" + ((d.courage && d.courage.inWindow) || 0) + ")"],
               ["review", "This week" + (((d.reviews || [])[0] || {}).reviewed ? " ✓" : "")]].map(([k, label]) => (
               <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -5713,7 +5535,7 @@ function McStats({ d }) {
               border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "12px 14px" }}>
           <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".14em",
                         color: "rgba(230,238,255,.55)", textTransform: "uppercase" }}>{label}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+          <div style={{ fontSize: "var(--rs-fsize-1, 22px)", fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
           {sub ? <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{sub}</div> : null}
         </div>
       ))}
@@ -5862,6 +5684,7 @@ function McMeetings({ d, subjectId, busy, setBusy, onDone, setErr }) {
               <span style={{ flex: 1 }}/>
               <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{m.mentorName || "—"}</span>
             </div>
+            {m.withheld && <p className="mtr-cover-withheld">A concern was raised here. What it says is for the child’s own mentor and the centre lead — ask the lead if you need to know.</p>}
             {m.discussed ? <p style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{m.discussed}</p> : null}
             {m.agreed ? <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: "#a7e8c6", whiteSpace: "pre-wrap" }}>
               <b style={{ fontSize: 11, letterSpacing: ".08em" }}>AGREED </b>{m.agreed}</p> : null}
@@ -5902,7 +5725,7 @@ function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
     NGGApi.member.mentorMeeting(subjectId, { id: (entry && entry.id) || 0, metOn, kind, discussed, agreed, concern })
       .then(() => onSaved())
       .catch(er => { setErr((er && er.message) === "too_long" ? "That is longer than the record will hold — keep it to the essentials."
-                                                             : ((er && er.message) || "Could not save that.")); setSaving(false); });
+                                                             : mtrGateErr(er, "Could not save that.")); setSaving(false); });
   };
   return (
     <form onSubmit={save} style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.16)",
@@ -5939,9 +5762,9 @@ function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
         <input type="checkbox" checked={concern} onChange={e => setConcern(e.target.checked)}
           style={{ width: 20, height: 20, marginTop: 2, accentColor: "#ff9d5c", flex: "none" }}/>
         <span style={{ fontSize: 13.5, lineHeight: 1.45 }}>
-          <b>This needs a lead's attention.</b>
+          <b>This is a concern about the child.</b>
           <span style={{ display: "block", color: "rgba(230,238,255,.6)", fontSize: 12.5 }}>
-            The lead mentors at this centre are told straight away. Use it whenever you are unsure — that is what it is for.
+            It opens a case for the centre's safeguarding officer today, and the lead mentors are told. Use it whenever you are unsure — that is what it is for.
           </span>
         </span>
       </label>
@@ -6223,15 +6046,15 @@ function McReview({ d, subjectId, onDone, setErr }) {
    The question §18 exists to ask, on the screen a mentor already opens. A
    count alone would be a number to feel bad about; the names are what make it
    an action, so each one opens that child's record at the review tab. */
-function MentorReviewsDue({ centre, scope, onOpenChild }) {
+function MentorReviewsDue({ centre, scope, onOpenChild, programme }) {
   const [d, setD] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
-    NGGApi.member.mentorReviewsDue({ centre: centre || "", scope: scope || "" })
+    NGGApi.member.mentorReviewsDue({ centre: centre || "", scope: scope || "", programme: programme || "" })
       .then(r => { if (alive) setD(r); })
       .catch(() => { if (alive) setD(null); });
     return () => { alive = false; };
-  }, [centre, scope]);
+  }, [centre, scope, programme]);
 
   // Nothing to say until it is known, and nothing to say for an empty class.
   if (!d || !d.total) return null;
@@ -6276,17 +6099,34 @@ function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
     setSaving(true); setErr("");
     NGGApi.member.mentorGoal(subjectId, { goal, dueOn })
       .then(() => { setGoal(""); setDueOn(""); onDone(); })
-      .catch(er => setErr((er && er.message) || "Could not save that."))
+      .catch(er => setErr(mtrGateErr(er, "Could not save that.")))
       .then(() => setSaving(false));
   };
+  /* Goals are draft | active | achieved | paused. This panel was written for
+     the older open | done | dropped and compared against "open", which no
+     goal has carried since: every goal read as closed, Done and Drop never
+     appeared, and the only way to make a goal live was a Reopen that skipped
+     the mentee's agreement. A draft now goes live when the mentor records
+     that the mentee agreed it, which is the rule the server keeps. */
+  const GOAL_ERR = { not_agreed: "They need to agree the goal before it goes live.", no_wish: "Write the goal first.",
+                     goals_locked_connect: "Goals open after the first three weeks — this is still getting-to-know-you time." };
+  const fail = (er, fb) => setErr(GOAL_ERR[er && er.message] || mtrGateErr(er, fb));
   const setStatus = (id, status) => {
     setBusy(true);
     NGGApi.member.mentorGoalStatus(subjectId, id, status)
-      .then(() => onDone()).catch(er => setErr((er && er.message) || "Could not update that."))
+      .then(() => onDone()).catch(er => fail(er, "Could not update that."))
       .then(() => setBusy(false));
   };
-  const open = d.goals.filter(g => g.status === "open");
-  const closed = d.goals.filter(g => g.status !== "open");
+  const agreeAndStart = (g) => {
+    setBusy(true);
+    // The goal route rewrites the wish and the date with whatever is sent, so both go back as they are.
+    NGGApi.member.mentorGoal(subjectId, { id: g.id, goal: g.goal, dueOn: g.dueOn || "", agreed: true })
+      .then(() => NGGApi.member.mentorGoalStatus(subjectId, g.id, "active"))
+      .then(() => onDone()).catch(er => fail(er, "Could not start that goal."))
+      .then(() => setBusy(false));
+  };
+  const open = d.goals.filter(g => g.status === "active" || g.status === "draft");
+  const closed = d.goals.filter(g => g.status !== "active" && g.status !== "draft");
   return (
     <>
       <form onSubmit={add} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
@@ -6309,31 +6149,35 @@ function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
           <li key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
                 background: MC_CARD, borderRadius: 13, padding: "11px 14px",
                 border: "1px solid " + (g.overdue ? "rgba(255,150,90,.5)" : "rgba(255,255,255,.12)"),
-                opacity: g.status === "open" ? 1 : .6 }}>
+                opacity: g.status === "active" || g.status === "draft" ? 1 : .6 }}>
             <div style={{ flex: "1 1 160px", minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600,
-                            textDecoration: g.status === "done" ? "line-through" : "none" }}>{g.goal}</div>
+                            textDecoration: g.status === "achieved" ? "line-through" : "none" }}>{g.goal}</div>
               <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", fontVariantNumeric: "tabular-nums" }}>
                 {g.dueOn ? "due " + g.dueOn : "no date"}
                 {/* The word as well as the colour. */}
                 {g.overdue ? " · OVERDUE" : ""}
-                {g.status !== "open" ? " · " + g.status : ""}
+                {g.status !== "active" ? " · " + (g.status === "draft" ? "draft, not agreed yet" : g.status) : ""}
                 {g.setByName ? " · " + g.setByName : ""}
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-              {g.status === "open" ? <>
-                <button onClick={() => setStatus(g.id, "done")} disabled={busy}
+              {g.status === "draft" ? (
+                <button onClick={() => agreeAndStart(g)} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid #7fd1a6",
+                           background: "transparent", color: "#a7e8c6", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>They agreed · start it</button>
+              ) : g.status === "active" ? <>
+                <button onClick={() => setStatus(g.id, "achieved")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid #7fd1a6",
                            background: "transparent", color: "#a7e8c6", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✓ Done</button>
                 {/* 'Drop' exists so a goal that stopped being the right goal is
                     not cleared by pretending it was achieved. A record where
                     everything is always achieved is a record nobody believes. */}
-                <button onClick={() => setStatus(g.id, "dropped")} disabled={busy}
+                <button onClick={() => setStatus(g.id, "paused")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
                            background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Drop</button>
               </> : (
-                <button onClick={() => setStatus(g.id, "open")} disabled={busy}
+                <button onClick={() => setStatus(g.id, "active")} disabled={busy}
                   style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
                            background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Reopen</button>
               )}
@@ -6369,7 +6213,8 @@ function MentorAttention({ centre, onOpenChild }) {
                        borderRadius: 12, padding: "10px 14px", fontSize: 14 }}>{err}</div>;
   if (!d) return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
 
-  const nothing = !d.concerns.length && !d.overdue.length;
+  const covers = d.covers || [];
+  const nothing = !d.concerns.length && !d.overdue.length && !covers.length;
   const card = { background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 14px" };
   const open = (id, name) => onOpenChild && onOpenChild({ studentId: id, fullName: name });
 
@@ -6406,6 +6251,21 @@ function MentorAttention({ centre, onOpenChild }) {
               {c.discussed ? <p style={{ margin: "0 0 4px", fontSize: 14, lineHeight: 1.5 }}>{c.discussed}</p> : null}
               {c.agreed ? <p style={{ margin: 0, fontSize: 13, color: "#a7e8c6" }}>
                 <b style={{ fontSize: 10.5, letterSpacing: ".08em" }}>AGREED </b>{c.agreed}</p> : null}
+            </li>
+          ))}
+        </ul>
+      </>}
+
+      {/* Who opened a record that is not their mentee's, and why — what makes
+          opening one without asking safe. Leads and staff only. */}
+      {covers.length > 0 && <>
+        <h3 className="mtr-att-h">Records opened on cover, last two weeks ({covers.length})</h3>
+        <ul className="mtr-cover-list">
+          {covers.map((c, i) => (
+            <li key={c.subjectId + c.grantedAt + i} className="mtr-cover-row">
+              <button type="button" className="mtr-cover-who" onClick={() => open(c.subjectId, c.fullName)}>{c.fullName || c.subjectId}</button>
+              <span className="mtr-cover-meta">opened by {c.mentorName || "a mentor"} · {fmtDate(c.grantedAt)}{c.expiresAt > new Date().toISOString() ? " · open until " + fmtDate(c.expiresAt) : " · closed"}</span>
+              <span className="mtr-cover-why">“{c.reason}”</span>
             </li>
           ))}
         </ul>
@@ -6493,7 +6353,6 @@ function StaffMaterialForm({ unitId, selfApprove, onDone }) {
 function StaffCurriculumPanel() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [open, setOpen] = React.useState("");
   const [marks, setMarks] = React.useState({});
   const [busy, setBusy] = React.useState(0);
   const load = React.useCallback(() => {
@@ -6557,27 +6416,7 @@ function StaffCurriculumPanel() {
       )}
       <section className="cur-staff-sec" aria-label="Lessons">
         <h2 className="cur-staff-h">Lessons · {d.members} member{d.members === 1 ? "" : "s"}</h2>
-        {!d.units.length ? <p className="cur-staff-msg">No published lessons for your courses yet.</p> :
-          <ul className="cur-staff-list">
-            {d.units.map(u => (
-              <li key={u.unitId} className="cur-staff-unit">
-                <button type="button" className="cur-staff-unit-btn" aria-expanded={open === u.unitId} onClick={() => setOpen(open === u.unitId ? "" : u.unitId)}>
-                  <span><b>W{u.week}</b> · {u.title} <span className="cur-staff-course">{u.course || "Whole Club"}</span></span>
-                  <span className="cur-staff-stat">{u.stats.completed}/{u.stats.audience} done</span>
-                </button>
-                {open === u.unitId && (
-                  <div className="cur-staff-detail">
-                    {u.summary && <p>{u.summary}</p>}
-                    {u.objectives.length > 0 && <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>}
-                    <CurriculumText text={u.body}/>
-                    <CurriculumMaterials materials={u.materials}/>
-                    {u.checks.length > 0 && <p className="cur-note">{u.checks.length} check{u.checks.length === 1 ? "" : "s"} · pass mark {u.passMark}%</p>}
-                    <StaffMaterialForm unitId={u.unitId} selfApprove={!!d.selfApprove} onDone={load}/>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>}
+        <StaffCurriculumMap data={d} reload={load}/>
       </section>
     </div>
   );
@@ -6726,9 +6565,18 @@ function MentorPlan({ subjectId, term, onBack }) {
  * Control Room reads (member.mentor.concern.create → safeguarding_cases). Not
  * on the child's record, not shown to the family, not editable once sent. The
  * button is in the portal's header for every mentor, cleared or not. */
+/* What the record gate's refusals mean, in a mentor's words. */
+const MTR_GATE_ERR = {
+  orientation_required: "Not saved: finish your Academy first (Mentor portals → Mentor Academy). You can look around everything until then.",
+  not_screened: "Your safeguarding check isn't recorded yet, so children's records stay closed to you. Ask your lead mentor — you can still report a concern.",
+  not_your_centre: "That child isn't in your centre or class.",
+  not_your_cohort: "That child is in a programme you don't mentor.",
+};
+const mtrGateErr = (e, fallback) => MTR_GATE_ERR[e && e.message] || (e && e.message) || fallback;
 const MTR_CONCERN_KINDS = ["Something they told me", "Injury or harm", "Neglect", "Online safety", "An adult’s behaviour", "Something else"];
 const MTR_CONCERN_ERR = { choose_the_child: "Choose the child first.", choose_the_kind: "Choose what kind of concern it is.",
-  say_what_happened: "Say what happened, in your own words.", not_found: "That child could not be found." };
+  say_what_happened: "Say what happened, in your own words.", reviewed_by_another: "Another mentor already reviewed this week. Ask your lead if it needs changing.", family_daily_limit: "This family has had two messages today already. Send it tomorrow.", report_limit: "You have sent the most reports allowed today. If a child is in danger now, phone your safeguarding officer.", not_found: "That child could not be found.",
+  not_a_mentor: "Only mentors and staff can report from here — tell a mentor or the centre lead." };
 function MentorConcernSheet({ students, onClose }) {
   const [who, setWho] = React.useState("");
   const [cat, setCat] = React.useState("");
@@ -6794,7 +6642,10 @@ function MentorConcernSheet({ students, onClose }) {
   );
 }
 
-function MentorPortal() {
+/* `programme` (ngg | summer) is which programme this portal is for: /mentor/summer
+   shows Summer School participants only, /mentor/class the NGG class (instructors,
+   stars and school results). The server narrows the roster; nothing here filters. */
+function MentorPortal({ programme, embedded, centre: centreIn } = {}) {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading | need-auth | not-mentor | ready | error
@@ -6805,7 +6656,9 @@ function MentorPortal() {
   const [bulkOpen, setBulkOpen] = React.useState(false);
   /* Which centre's class is on screen. Only ever set by someone who covers
      more than one — a mentor at a single centre never sees the control. */
-  const [centre, setCentre] = React.useState("");
+  /* Embedded in the NGG mentor portal it opens on the centre that portal has
+     on screen, rather than asking a coordinator to pick it a second time. */
+  const [centre, setCentre] = React.useState(embedded && centreIn ? centreIn : "");
   /* ?tab=results is where the "sent their results and plan" email lands. */
   const [tabState, setTabState] = React.useState(() => { try { return new URLSearchParams(location.search).get("tab") || ""; } catch (_) { return ""; } });
   /* "" lets the SERVER decide: my mentees if I have any, the centre otherwise.
@@ -6815,15 +6668,20 @@ function MentorPortal() {
   const [concernOn, setConcernOn] = React.useState(false);
   const [remarkOn, setRemarkOn] = React.useState(null); // child whose thread is open
   const navy = "#16223e", gold = "#ffce54";
+  /* A reload after a save refreshes in place. It used to set "loading", which
+     swapped the whole portal for a spinner — unmounting an open child record,
+     so every saved meeting or goal threw the mentor back to its first tab. */
+  const ready = React.useRef(false);
   const load = React.useCallback((c, sc) => {
-    setState("loading");
-    NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); })
+    if (!ready.current) setState("loading");
+    NGGApi.member.mentorRoster(c || "", sc || "", programme || "").then(r => { setData(r); setState("ready"); ready.current = true; })
       .catch(e => {
         const c2 = e.code || e.message;
         setState(c2 === "unauthorized" ? "need-auth"
                : c2 === "not_a_mentor" ? "not-mentor"
                : c2 === "not_cleared" ? "not-cleared"
                : c2 === "no_centre" ? "no-centre"
+               : c2 === "not_this_programme" ? "not-mentor"
                : "error");
       });
   }, []);
@@ -6837,9 +6695,12 @@ function MentorPortal() {
      by centre. */
   const pickCentre = (c) => { setPicked([]); setQuery(""); setScope("centre"); setCentre(c); };
 
-  const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
+  /* Embedded in the NGG mentor portal it is a panel in that page, not a page of its own. */
+  const shell = (ch) => embedded ? <div className="m15x-classic">{ch}</div> : (
+    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "var(--rs-p-95, 26px 18px 90px)" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>{ch}</div>
+      {/* First visit to the Summer School mentor portal: a short tour (guide.jsx). */}
+      {state === "ready" && programme !== "ngg" && typeof GuideTour === "function" && <GuideTour portal="summer"/>}
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
@@ -6872,20 +6733,20 @@ function MentorPortal() {
      names no centre, is not a stranger and not an error — they are one staff
      action away, and each of these says which one. */
   if (state === "not-cleared") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>Your safeguarding check isn’t cleared yet</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>Your safeguarding check isn’t cleared yet</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
       The portal opens once your screening is cleared — the same check required before anyone takes a
       register. Ask your centre coordinator where yours has got to.
     </p>
   </div>);
   if (state === "no-centre") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
-    <h1 style={{ fontSize: 22 }}>No centre on your record</h1>
+    <h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>No centre on your record</h1>
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
       The portal shows a centre’s children, and yours doesn’t name one yet. A coordinator can add it to
       your volunteer record in the console.
     </p>
   </div>);
-  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
+  if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: "var(--rs-fsize-1, 22px)" }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} className="shell-retry">Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
@@ -6982,7 +6843,7 @@ function MentorPortal() {
      reach anything but the roster. */
   /* The Club curriculum is for staff who serve NGG — a Summer-only mentor has
      none, and the server refuses them (curriculum_staff_gate). */
-  const servesClub = (m.programmes || []).includes("ngg");
+  const servesClub = programme !== "summer" && (m.programmes || []).includes("ngg");
   const tabList = (canTeach ? [["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]]
                             : [["class", "Stars & notes"]])
     .concat(servesClub ? [["curriculum", "Curriculum"], ["results", "School results"]] : [])
@@ -7007,12 +6868,16 @@ function MentorPortal() {
     </div>
   );
 
-  const header = (
+  /* Embedded in the NGG mentor portal, the portal already names the mentor,
+     carries Report a concern and shows the Saturday day: only the class line stays. */
+  const header = embedded ? (
+    <p className="m15x-classic-sub">{m.centre || "All centres"} · {students.length} {students.length === 1 ? "student" : "students"}</p>
+  ) : (
     <div className="mtr-head">
       <div>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{programme === "summer" ? "SUMMER SCHOOL · " : programme === "ngg" ? "NGG CLUB · " : ""}{roleMeta.eyebrow}</div>
         <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} {programme === "summer" ? "participant" : "student"}{students.length === 1 ? "" : "s"} · {done} starred today</p>
       </div>
       <button type="button" className="mtr-btn mtr-concern-btn" onClick={() => setConcernOn(true)}>Report a concern</button>
       {concernOn && <MentorConcernSheet students={students} onClose={() => setConcernOn(false)}/>}
@@ -7045,7 +6910,9 @@ function MentorPortal() {
     {/* §18's question on the screen a mentor already opens. Above the search,
         because a list of who has been missed is worth more than a list of
         everybody, and below the tabs because it belongs to this class. */}
-    <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} onOpenChild={setChildOn}/>
+    {/* NGG's Saturday, the instructor's or mentor's part of each block. Not for Summer School: its day is its own. */}
+    {programme === "ngg" && !embedded && typeof FormationDay === "function" && <FormationDay audience={role === "instructor" ? "instructor" : "mentor"} compact={true}/>}
+    <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} programme={programme} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
     {students.length > 0 && (
@@ -7153,7 +7020,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
       setD(r); setState("ready"); setFlip({});
       setCovered((r.log && r.log.covered) || "");
       setRoom((r.log && r.log.roomScore) || 0);
-    }).catch(e => { setErr(e.code || e.message); setState("error"); });
+    }).catch(e => { setErr(MTR_GATE_ERR[e.code] || e.code || e.message); setState("error"); });
   }, [course, centre]);
   React.useEffect(() => { load(); }, [load]);
 
@@ -7180,7 +7047,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
     } catch (e) {
       setErr(e.code === "nothing_to_record" ? "Add a line about what you covered, or rate the room."
            : e.code === "not_your_course" ? "That isn't one of your courses."
-           : (e.code || e.message));
+           : (MTR_GATE_ERR[e.code] || e.code || e.message));
       setBusy(false);
     }
   };
@@ -7410,7 +7277,7 @@ function RemarksSheet({ student, onClose }) {
     if (!body.trim()) return;
     setBusy(true); setErr("");
     try { await NGGApi.member.remarkAdd(student.studentId, kind, body.trim()); setBody(""); setBusy(false); load(); }
-    catch (e) { setErr(e.code === "not_found" ? "That child isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "not_found" ? "That child isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
 
   return (
@@ -7522,7 +7389,7 @@ function MentorBulkSheet({ count, subjectIds, presets, categories, onClose, onDo
     } catch (e) {
       setErr(e.code === "too_many_subjects" ? "That is too many at once — select fewer."
         : e.code === "nothing_to_record" ? "Pick a preset or write a note first."
-        : (e.code || e.message));
+        : (MTR_GATE_ERR[e.code] || e.code || e.message));
       setBusy(false);
     }
   };
@@ -7629,7 +7496,7 @@ function MentorV3Sheet({ student, period, onClose, onDone }) {
   const submit = async () => {
     setBusy(true); setErr("");
     try { await NGGApi.member.v3Rate(student.studentId, v.verbal, v.vocal, v.visual, note.trim()); onDone(); }
-    catch (e) { setErr(e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "not_your_centre" ? "That student isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
   return (
     <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
@@ -7675,7 +7542,7 @@ function MentorStarSheet({ student, categories, onClose, onDone }) {
   const submit = async () => {
     setBusy(true); setErr("");
     try { await NGGApi.member.starGive(student.studentId, stars, category, note.trim()); onDone(); }
-    catch (e) { setErr(e.code === "already_starred_today" ? "This student already has a rating for today." : e.code === "not_your_centre" ? "That student isn't in your class." : (e.code || e.message)); setBusy(false); }
+    catch (e) { setErr(e.code === "already_starred_today" ? "This student already has a rating for today." : e.code === "not_your_centre" ? "That student isn't in your class." : (MTR_GATE_ERR[e.code] || e.code || e.message)); setBusy(false); }
   };
   return (
     <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
@@ -7722,7 +7589,7 @@ function LegalPage({ setPage }) {
   const [doc, setDoc] = React.useState(LEGAL_DOCS.some(d => d.id === initial) ? initial : "privacy");
   const updated = "July 2026";
   const P = ({ children }) => <p style={{ color: "var(--ink-700)", lineHeight: 1.7, margin: "0 0 14px", fontSize: 15.5 }}>{children}</p>;
-  const H = ({ children }) => <h3 style={{ fontFamily: "var(--font-display)", fontSize: 20, margin: "28px 0 12px", color: "var(--navy-900)" }}>{children}</h3>;
+  const H = ({ children }) => <h3 style={{ fontFamily: "var(--rs-ffamily-11, var(--font-display))", fontSize: 20, margin: "28px 0 12px", color: "var(--navy-900)" }}>{children}</h3>;
   const LI = ({ children }) => <li style={{ color: "var(--ink-700)", lineHeight: 1.65, marginBottom: 8, fontSize: 15.5 }}>{children}</li>;
   const UL = ({ children }) => <ul style={{ margin: "0 0 14px", paddingLeft: 22 }}>{children}</ul>;
 
@@ -7826,13 +7693,13 @@ function LegalPage({ setPage }) {
       <section className="page-hero page-hero-dark" style={{ background: "var(--navy-900)", color: "white", padding: "56px 0 40px" }}>
         <div className="container">
           <span className="chip chip-on-dark"><span className="dot dot-gold"/> LEGAL &amp; DATA PROTECTION</span>
-          <h1 className="display" style={{ fontSize: "clamp(36px,5vw,64px)", margin: "12px 0 6px", color: "white", lineHeight: 0.98 }}>The fine print, in plain words.</h1>
+          <h1 className="display" style={{ fontSize: "var(--rs-fsize-96, clamp(36px, 5vw, 64px))", margin: "12px 0 6px", color: "white", lineHeight: "var(--rs-lheight-4, 0.98)" }}>The fine print, in plain words.</h1>
           <p style={{ color: "rgba(255,255,255,0.7)", fontSize: 15, margin: 0 }}>NDPA/NDPR-aligned · last updated {updated}</p>
         </div>
       </section>
       <section className="section">
-        <div className="container legal-layout" style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 40, alignItems: "start" }}>
-          <nav className="legal-nav" style={{ position: "sticky", top: 90, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div className="container legal-layout">
+          <nav className="legal-nav">
             {LEGAL_DOCS.map(d => (
               <button key={d.id} onClick={() => { setDoc(d.id); history.replaceState({}, "", "/legal?doc=" + d.id); }}
                 className="legal-nav-item"
@@ -7843,7 +7710,7 @@ function LegalPage({ setPage }) {
             ))}
           </nav>
           <div className="legal-body" style={{ maxWidth: 720 }}>
-            <h2 className="display" style={{ fontSize: 32, margin: "0 0 6px" }}>{active.label}</h2>
+            <h2 className="display" style={{ fontSize: "var(--rs-fsize-65, 32px)", margin: "0 0 6px" }}>{active.label}</h2>
             <div className="mono" style={{ color: "var(--ink-500)", fontSize: 12, marginBottom: 24 }}>UPDATED {updated.toUpperCase()}</div>
             {bodies[doc]}
             <div style={{ marginTop: 36, paddingTop: 20, borderTop: "1px solid rgba(12,20,50,0.1)", display: "flex", gap: 12, flexWrap: "wrap" }}>

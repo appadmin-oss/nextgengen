@@ -697,6 +697,11 @@ function members_import_run(array $rows, array $opts = []): array
                     $listId(is_array($row) ? $row : [], $patch['fullName'], $insert['displayId'], 'normalized', $apply ? $insert['memberId'] : '');
                 }
             }
+            // A family inbox is fine — sign-in asks who (auth_pick) — but say so, so the desk knows.
+            if (trim((string)($insert['email'] ?? '')) !== '') {
+                $sh = (int)(db_row('SELECT COUNT(*) c FROM members WHERE lower(trim(email)) = ?', [strtolower(trim((string)$insert['email']))])['c'] ?? 0);
+                if ($sh > 0) $notes[] = 'shares its email with ' . $sh . ' other member' . ($sh === 1 ? '' : 's') . ' — they choose who is signing in';
+            }
             if (!$apply) { $card($insert + ['memberId' => ''], is_array($row) ? $row : []); $consent($insert + ['memberId' => '']); }
             if ($apply) {
                 db_insert('members', $insert);

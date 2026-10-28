@@ -304,64 +304,80 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     chk('…and Escape closes it', await page.evaluate(() => !document.querySelector('.admin-rowmenu-pop')));
 
     console.log('\n── A club coordinator gets NARROWER actions ────────────────');
-    const club = await openAs(CLUBADM);
-    // A club_admin has no console caps, so they are sent to their own portal.
-    await club.page.goto(BASE + '/club-admin', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(club.page);
-    await club.page.waitForTimeout(2500);
-    t = await club.page.evaluate(() => document.body.innerText);
-    chk('the Club portal opens for a club coordinator', /NGG Club/.test(t));
-    chk('…on the promotion bridge', /Promote from Summer School/.test(t));
-    // Seed a graduate to promote, then reload.
+    /* The Club portal (v3, /club-admin) is its own screen: Promote is a
+       section (?s=promote) and the roster's bulk actions live in the
+       directory. Same guards as the member desk, narrower verbs. */
     php(`db_insert('summer_cohorts', ['cohortId'=>'SUM-AB','name'=>'AB Edition','year'=>2030,'status'=>'active','createdAt'=>now_iso()]);`
       + `db_insert('summer_students', ['studentId'=>'AB-S1','cohortId'=>'SUM-AB','token'=>'SUMQR-AB1','handle'=>'abs1','fullName'=>'Graduating Kid','age'=>15,'centre'=>'Ijaiye','track'=>'Piano','parentEmail'=>'abg@example.org','status'=>'graduated','enrolledAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `db_insert('summer_students', ['studentId'=>'AB-S2','cohortId'=>'SUM-AB','token'=>'SUMQR-AB2','handle'=>'abs2','fullName'=>'No Email Kid','age'=>15,'centre'=>'Ijaiye','track'=>'Piano','parentEmail'=>'','status'=>'graduated','enrolledAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
-    await club.page.reload({ waitUntil: 'domcontentloaded' });
+    // Straight to the portal: a club_admin holds no Control Room caps.
+    const club = await (async () => {
+      const ctx = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+      await ctx.addCookies([{ name: 'ngg_sess', value: mintSession(CLUBADM), domain: '127.0.0.1', path: '/', httpOnly: true }]);
+      const pg = await ctx.newPage(); const errs = [];
+      pg.on('pageerror', e => errs.push(String(e).slice(0, 220)));
+      return { page: pg, errs };
+    })();
+    const ctext = () => club.page.evaluate(() => document.body.innerText);
+    const cwait = (re, ms) => club.page.waitForFunction(src => new RegExp(src).test(document.body.innerText), re.source, { timeout: ms || 20000 }).then(() => true).catch(() => false);
+    const cclick = (re, scope) => club.page.evaluate(({ src, scope }) => { const r = new RegExp(src); const root = scope ? document.querySelector(scope) : document; const b = root && Array.from(root.querySelectorAll('button')).find(x => r.test(x.innerText.trim()) && x.offsetParent !== null); if (b) { b.click(); return true; } return false; }, { src: re.source, scope });
+    await club.page.goto(BASE + '/club-admin?s=promote', { waitUntil: 'domcontentloaded' });
     await waitForBoot(club.page);
-    await club.page.waitForSelector('.admin-main tbody tr', { timeout: 30000 });
-    await club.page.waitForTimeout(600);
-    t = await main(club.page);
+    chk('the Club portal opens on Promote for a club coordinator', await cwait(/Promote from Summer School/) && await cwait(/No Email Kid/));
+    t = await ctext();
     chk('the promotion list shows the graduates', /Graduating Kid/.test(t) && /No Email Kid/.test(t));
-    chk('…and flags the one with no guardian email BEFORE the run', /none on file/i.test(t));
-    await club.page.evaluate(() => {
-      const b = document.querySelector('.admin-main .admin-bulk-all input[type=checkbox]');
-      if (b) b.click();
-    });
+    chk('…and flags the one with no guardian email BEFORE the run', /Missing/.test(t));
+    await club.page.evaluate(() => { const b = document.querySelector('button[aria-label="Select all"]'); if (b) b.click(); });
     await club.page.waitForTimeout(300);
-    t = await main(club.page);
-    chk('both can be selected at once', /2 students selected/.test(t));
+    t = await ctext();
+    chk('both can be selected at once', /2 selected/.test(t));
     chk('…and the bar warns about the missing guardian email', /1 with no guardian email/i.test(t));
     /* Which NGG centre each joins: nothing here is on a map, so nothing can be
        suggested and the screen asks — a coordinator picks, per graduate. */
-    for (const sel of await club.page.$$('.admin-main select.promote-joins')) await sel.selectOption('Ijaiye');
+    for (const sel of await club.page.$$('select[aria-label^="Club centre for"]')) await sel.selectOption({ label: 'Ijaiye' });
     await club.page.waitForTimeout(200);
-    await clickText(club.page, 'Promote into the Club', '.admin-bulkbar');
+    await cclick(/^Promote 2$/);
     await club.page.waitForTimeout(500);
-    t = await club.page.evaluate(() => document.body.innerText);
-    chk('the confirm says plainly what a missing email costs',
-      /no guardian email on file/.test(t) && /by hand/.test(t));
-    await clickText(club.page, 'Promote 2');
-    await club.page.waitForTimeout(2500);
+    t = await club.page.evaluate(() => (document.querySelector('[role=alertdialog]') || {}).innerText || '');
+    chk('the confirm says plainly what a missing email costs', /1 of them has no guardian email on file/.test(t) && /by hand/.test(t));
+    await cclick(/^Promote 2$/, '[role=alertdialog]');
+    await cwait(/2 promoted into the Club/, 15000);
     chk('both were promoted in one action',
       php(`echo (int) db_row("SELECT COUNT(*) c FROM summer_students WHERE studentId IN ('AB-S1','AB-S2') AND status='promoted'")['c'];`) === '2');
     chk('…and the one with no email still became a member, as promised',
-      php(`echo (int) db_row("SELECT COUNT(*) c FROM members WHERE notes LIKE '%AB-S2%'")['c'];`) === '1');
+      php(`echo (int) db_row("SELECT COUNT(*) c FROM members WHERE fullName = 'No Email Kid' AND type = 'NGG'")['c'];`) === '1');
 
-    console.log('\n── The Club roster a coordinator can finally see ───────────');
-    await clickText(club.page, 'Club roster');
-    await club.page.waitForTimeout(1800);
-    t = await main(club.page);
-    chk('the roster has a participation filter, which it never had', /Active/.test(t) && /Graduated/.test(t));
-    chk('…and its bulk actions are the club\'s, not the member desk\'s', await club.page.evaluate(() => {
-      const b = document.querySelector('.admin-main .admin-bulk-all input[type=checkbox]');
-      if (b) b.click();
-      return true;
-    }));
-    await club.page.waitForTimeout(400);
-    t = await main(club.page);
-    chk('…offering participation and centre only — no status suspension, no type, no level',
-      /Set participation/.test(t) && /Post to centre/.test(t)
-      && !/Set membership type/.test(t) && !/Set level/.test(t) && !/Dues reminders/.test(t));
+    console.log('\n── The Club roster\'s bulk actions ──────────────────────────');
+    await club.page.goto(BASE + '/club-admin?s=roster', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(club.page);
+    await cwait(/Member Number 01/);
+    // Earlier sections changed some members' status; the directory holds the
+    // active and paused ones. Read its count rather than assume one.
+    const dirN = +((await ctext()).match(/Everyone\s+([\d,]+)/) || [])[1]?.replace(/,/g, '') || 0;
+    await club.page.evaluate(() => { const b = document.querySelector('button[aria-label="Select everyone shown"]'); if (b) b.click(); });
+    await club.page.waitForTimeout(300);
+    await cclick(/^Select all /);
+    await club.page.waitForTimeout(300);
+    t = await ctext();
+    chk('“select all” reaches every matching student, not just those drawn', dirN > 50 && new RegExp('All ' + dirN + ' students|' + dirN + ' selected').test(t));
+    chk('…offering the Club\'s actions: message, mentor, ID cards, move, status, export',
+      /Message guardians/.test(t) && /Assign mentor/.test(t) && /Move centre/.test(t) && /Change status/.test(t) && /Export CSV/.test(t));
+    chk('…and none of the member desk\'s lifecycle verbs — no suspension, type, level or dues',
+      !/Suspend/.test(t) && !/Deactivate/.test(t) && !/Set membership type/.test(t) && !/Set level/.test(t) && !/Dues reminders/.test(t));
+    const pausedBefore = php(`echo (int) db_row("SELECT COUNT(*) c FROM members WHERE type = 'NGG' AND status = 'inactive' AND COALESCE(role,'') IN ('','member')")['c'];`);
+    await cclick(/^Change status$/);
+    await club.page.waitForTimeout(300);
+    await cclick(/^Paused$/, '[role=dialog]');
+    await club.page.waitForTimeout(200);
+    await cclick(new RegExp('^Set ' + dirN + ' to Paused$'), '[role=dialog]');
+    /* Pausing people is a sensitive act: a club admin's is queued for a
+       second admin (approval_intercept), never refused and never applied. */
+    chk('a club admin\'s bulk pause is queued for a second admin, and says so', await cwait(/Sent to a second admin to approve/, 15000));
+    chk('…nothing changed on the record yet',
+      php(`echo (int) db_row("SELECT COUNT(*) c FROM members WHERE type = 'NGG' AND status = 'inactive' AND COALESCE(role,'') IN ('','member')")['c'];`) === pausedBefore);
+    chk('…and one approval request waits, from the coordinator',
+      php(`echo (int) db_row("SELECT COUNT(*) c FROM admin_approvals WHERE status = 'pending' AND requesterId = '${CLUBADM}'")['c'];`) === '1');
+    chk('…and the dialog closed with the selection cleared', await club.page.evaluate(() => !document.querySelector('[role=dialog]')));
 
     chk('no uncaught page errors on the member desk', errs.length === 0);
     chk('no uncaught page errors on the Club desk', club.errs.length === 0);

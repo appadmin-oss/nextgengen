@@ -28,21 +28,8 @@ if (empty($res['ok'])) {
 $kind = (string)($res['kind'] ?? 'student');
 $who = $res['person'];
 $personId = (string)($kind === 'volunteer' ? $who['volunteerId'] : $who['studentId']);
-session_issue_cardholder($who, $kind, !empty($b['remember']));
+$mfa = (string)($res['mfa'] ?? '');
+session_issue_cardholder($who, $kind, !empty($b['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
 audit('community.login', $personId, $personId, ['kind' => $kind], client_ip());
-json_ok(['member' => [
-    'memberId' => $personId,
-    'fullName' => (string)$who['fullName'],
-    'type'     => $kind === 'volunteer' ? 'VOLUNTEER' : 'SUMMER',
-    'role'     => $kind,
-    'caps'     => [],
-    'centre'   => (string)($who['centre'] ?? ''),
-    'track'    => (string)($kind === 'volunteer' ? ($who['role'] ?? '') : ($who['track'] ?? '')),
-    'photoUrl' => (string)($who['photoUrl'] ?? ''),
-    /* Which portal this card opens, answered at sign-in rather than on the
-     * next /auth/me. Without it a mentor signing in with a card saw no Mentor
-     * Portal link until they happened to reload — the tool they had just
-     * signed in to use was invisible on the screen they landed on. */
-    'portal'   => function_exists('mentor_portal_role') ? mentor_portal_role($personId) : '',
-], 'kind' => $kind, 'csrf' => $csrf]);
+json_ok(['member' => community_member_shape($who, $kind), 'kind' => $kind, 'mfa' => $mfa, 'csrf' => $csrf]);

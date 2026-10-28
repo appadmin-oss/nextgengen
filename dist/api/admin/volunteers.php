@@ -18,6 +18,7 @@ if ($method === 'GET') {
     elseif ($action === 'decline')  $res = gs_call('admin.volunteers.decline', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'reason' => $b['reason'] ?? '', 'ip' => $ip]);
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
     elseif ($action === 'caps')      $res = gs_call('admin.volunteers.caps', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'caps' => $b['caps'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'academy')  $res = gs_call('admin.volunteers.academy', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'on' => !empty($b['on']), 'ip' => $ip]);
     elseif ($action === 'update')   $res = gs_call('admin.volunteers.update', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'promoteNgg') $res = gs_call('admin.volunteers.promote.ngg', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'centre' => $b['centre'] ?? '', 'keepSummer' => !empty($b['keepSummer']), 'newCard' => !empty($b['newCard']), 'ip' => $ip]);
     elseif ($action === 'delete')   $res = gs_call('admin.volunteers.delete', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'ip' => $ip]);

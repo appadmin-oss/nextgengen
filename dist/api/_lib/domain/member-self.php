@@ -32,6 +32,12 @@ const MEMBER_REQUEST_KINDS = [
     'payment' => 'Payment made',
     'appeal'  => 'Appeal a charge',
     'leave'   => 'Leave of absence',
+    /* Academic leave: weeks away for school exams or a school programme,
+       approved by the desk with the school's letter where there is one. Its
+       days are not absences — not logged, not fined, and not counted against
+       the absence limit — unlike a leave of absence, which excuses an absence
+       but still counts. */
+    'academic' => 'Academic leave',
     'idcard'  => 'Replacement ID card',
     /* The member portal's profile is read-only ("Managed by NGG"): a wrong
        name, school or guardian number is asked for here, checked with the
@@ -39,9 +45,95 @@ const MEMBER_REQUEST_KINDS = [
     'details' => 'Correct my details',
     'mentor'  => 'Change of mentor',
     'help'    => 'Tell us about something',
+    /* An idea, a change, something they love. Its own kind so it has its own
+       cap: three ideas once filled the `help` cap and the fourth thing that
+       child sent — "something happened at school" — was refused. Raised only
+       through member_feedback_create(), never member_request_create(). */
+    'feedback' => 'Idea or feedback',
+    /* Raised by a parent through the family account only (FAMILY_REQUEST_KINDS):
+       a question for the mentor, a change to the family's own details, and a
+       change to who may collect the child. Profile and collectors are
+       read-only to a family, so these are how they change. */
+    'askmentor'     => 'Question for the mentor',
+    'familydetails' => 'Change family details',
+    'collect'       => 'Change who can collect',
 ];
 
+/** What a piece of feedback is about, and what the desk sees for each. */
+const MEMBER_FEEDBACK_TOPICS = ['experience' => 'How NGG is going for me', 'idea' => 'An idea', 'change' => 'Something to change',
+    'love' => 'Something I love', 'app' => 'Something in the portal isn’t working'];
+
+/** The words for an experience rating, 1 to 5 — what the desk reads beside the number. */
+const MEMBER_FEEDBACK_RATINGS = [1 => 'Not good', 2 => 'Not great', 3 => 'Okay', 4 => 'Good', 5 => 'Great'];
+
+/** Feedback is cheap to give and should be: more of it may wait than requests. */
+const MEMBER_FEEDBACK_OPEN_MAX = 6;
+
+/** Shorter than this is not something the desk can act on ("Chess"). */
+const MEMBER_FEEDBACK_MIN = 6;
+
 const MEMBER_REQUEST_STATUSES = ['open', 'approved', 'declined', 'withdrawn'];
+
+/* Absences, as the policy engine already counts them (docs/POLICY.md §1.1:
+ * "Maximum two (2) absences for the whole program … valid, verified
+ * emergencies only"). The allowance is the member band's `absenceLimit`
+ * (Settings → Policy, 2 by default) and the count is the engine's own
+ * (policy_state: absences logged, two half-days as one). A leave request is
+ * an absence announced in advance, so its programme days still ahead count
+ * too — or several could be filed at once and all approved. */
+
+/** The member's programme days from $from to $to — their centre's meeting days, on the calendar when it is set. */
+function member_excuse_days(array $m, string $from, string $to): array {
+    if ($from === '' || $to === '' || $from > $to) return [];
+    $cfg = function_exists('member_calendar_for') ? member_calendar_for($m) : [];
+    if (!empty($cfg['enabled']) && function_exists('programme_days_between')) return programme_days_between($from, $to, $cfg);
+    // No calendar set: the meeting weekdays (Saturday by default), so a weekday is not a programme absence.
+    $wd = array_map('intval', (array)($cfg['weekdays'] ?? [])) ?: [6];
+    $out = [];
+    for ($t = (int)strtotime($from . ' 00:00:00 UTC'), $end = (int)strtotime($to . ' 00:00:00 UTC'), $i = 0; $t <= $end && $i < 400; $t += 86400, $i++) {
+        if (in_array((int)gmdate('N', $t), $wd, true)) $out[] = gmdate('Y-m-d', $t);
+    }
+    return $out;
+}
+
+/** The longest academic leave one request may cover, in days (a school's exam season, not a term out). */
+const MEMBER_ACADEMIC_MAX_DAYS = 70;
+
+/**
+ * What covers a member's absence on $date: 'academic' (approved academic
+ * leave — not an absence), 'approved' (excused), 'open' (asked, not yet
+ * decided — no fine until it is), 'declined' (asked and refused), or ''
+ * (nobody asked). The strongest cover wins when requests overlap.
+ */
+function member_absence_cover(string $memberId, string $date): string {
+    $best = '';
+    $rank = ['' => 0, 'declined' => 1, 'open' => 2, 'approved' => 3, 'academic' => 4];
+    foreach (db_all("SELECT kind, status FROM member_requests WHERE memberId = ? AND kind IN ('leave', 'academic') AND status IN ('open', 'approved', 'declined')
+                     AND fromDate <> '' AND fromDate <= ? AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [$memberId, $date, $date]) as $r) {
+        $c = (string)$r['status'] === 'approved' && (string)$r['kind'] === 'academic' ? 'academic' : (string)$r['status'];
+        if ($rank[$c] > $rank[$best]) $best = $c;
+    }
+    return $best;
+}
+
+/** {used, max, left, recorded, ahead, days[]}: the engine's absences plus the days still ahead on open or approved leave. */
+function member_excuses(array $m): array {
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    $st = function_exists('policy_state') ? policy_state((string)$m['memberId'], 'member') : ['absences' => 0, 'absenceLimit' => 2];
+    $limit = (int)($st['absenceLimit'] ?? (function_exists('policy_for') ? (int)policy_for('member')['absenceLimit'] : 2));
+    $recorded = (int)($st['absences'] ?? 0);
+    $logged = array_flip(array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND (voidedAt IS NULL OR voidedAt = '')", [(string)$m['memberId']]), 'date'));
+    $ahead = [];
+    foreach (db_all("SELECT fromDate, toDate FROM member_requests WHERE memberId = ? AND kind = 'leave' AND status IN ('open', 'approved') AND fromDate <> ''
+                     AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [(string)$m['memberId'], $today]) as $r) {
+        $to = (string)$r['toDate'] !== '' ? (string)$r['toDate'] : (string)$r['fromDate'];
+        foreach (member_excuse_days($m, max((string)$r['fromDate'], $today), $to) as $d) if (!isset($logged[$d])) $ahead[$d] = true;
+    }
+    $used = $recorded + count($ahead);
+    $fine = function_exists('policy_enabled_for') && policy_enabled_for('member') ? (int)(policy_for('member')['absenceFine'] ?? 0) : 0;
+    return ['used' => $used, 'max' => $limit, 'left' => max(0, $limit - $used), 'recorded' => $recorded, 'ahead' => count($ahead), 'days' => array_keys($ahead),
+            'fine' => $fine];   // ₦ for an absence nobody asked about; 0 when member enforcement is off
+}
 
 /** Body length. Long enough to explain a circumstance, short enough that the
  *  column is a request and not a correspondence archive. */
@@ -69,6 +161,10 @@ const MEMBER_REQUEST_PAGE = 50;
  */
 function member_request_public(array $r): array
 {
+    /* A row with a feedback topic IS feedback, whatever kind an older build
+       saved it under: it was showing in the inbox with Approve and Decline,
+       which mean nothing for "How NGG is going for me". */
+    if ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']])) $r['kind'] = 'feedback';
     return [
         'requestId' => (string)$r['requestId'],
         'kind'      => (string)$r['kind'],
@@ -86,6 +182,12 @@ function member_request_public(array $r): array
         'decidedAt' => (string)($r['decidedAt'] ?? ''),
         'createdAt' => (string)($r['createdAt'] ?? ''),
         'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
+        'topic'     => (string)($r['topic'] ?? ''),
+        'topicLabel' => MEMBER_FEEDBACK_TOPICS[(string)($r['topic'] ?? '')] ?? '',
+        'rating'    => (int)($r['rating'] ?? 0),
+        'ratingLabel' => MEMBER_FEEDBACK_RATINGS[(int)($r['rating'] ?? 0)] ?? '',
+        'anonymous' => (string)$r['kind'] === 'feedback' && (string)($r['memberId'] ?? '') === '',
+        'passedAt'  => (string)($r['passedAt'] ?? ''),
     ];
 }
 
@@ -203,6 +305,8 @@ function member_records(array $p): array
                     'revoked' => trim((string)($c['revokedAt'] ?? '')) !== ''];
     }
 
+    // A day with no sign-out was counted absent by the rule: say so, not "present".
+    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
     $present = count($days);
     return ['ok' => true, 'attendance' => [
         'present' => $present,
@@ -216,7 +320,7 @@ function member_records(array $p): array
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),
             'out' => substr((string)($d['checkOutAt'] ?? ''), 11, 5),
             'method' => (string)($d['method'] ?? ''),
-        ], $days),
+        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, counted absent'] : []), $days),
     ], 'certificates' => $certs, 'member' => [
         'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
         'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? ''),
@@ -232,8 +336,11 @@ function member_requests_list(array $p): array
     $id = (string)($p['memberId'] ?? '');
     if ($id === '') return ['ok' => false, 'error' => 'not_found'];
     $rows = db_all('SELECT * FROM member_requests WHERE memberId = ? ORDER BY id DESC LIMIT ' . MEMBER_REQUEST_PAGE, [$id]);
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     return ['ok' => true, 'requests' => array_map('member_request_public', $rows),
-            'kinds' => MEMBER_REQUEST_KINDS];
+            'kinds' => MEMBER_REQUEST_KINDS,
+            // Excused absences this session, of the two allowed (POLICY §1.1).
+            'excuses' => $m ? array_diff_key(member_excuses($m), ['days' => 1]) : null];
 }
 
 /**
@@ -252,6 +359,13 @@ function member_request_create(array $p): array
 
     $kind = (string)($p['kind'] ?? '');
     if (!isset(MEMBER_REQUEST_KINDS[$kind])) return ['ok' => false, 'error' => 'unknown_kind'];
+    if ($kind === 'feedback') return member_feedback_create($p);
+    /* A payment is confirmed by the parent who made it, from the family
+       account. From their own app a member asks their parent instead
+       (member_family_nudge): a child is not the one who knows the reference. */
+    if ($kind === 'payment' && !empty($p['fromMember'])) {
+        return ['ok' => false, 'error' => 'ask_parent', 'detail' => 'Your parent confirms a payment from their family account. Ask them from Money → Ask my parent.'];
+    }
 
     $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = ? AND status = 'open'",
                          [$id, $kind])['c'] ?? 0);
@@ -287,17 +401,42 @@ function member_request_create(array $p): array
         $u = trim((string)($p['proofUrl'] ?? ''));
         $row['proofUrl'] = preg_match('#^https?://#i', $u) || str_starts_with($u, '/api/public/photo.php') ? $u : '';
         if ($row['subject'] === '') $row['subject'] = 'Payment of ' . fees_money_text($amount);
+    } elseif ($kind === 'academic') {
+        $row['fromDate'] = substr(trim((string)($p['fromDate'] ?? '')), 0, 10);
+        $row['toDate'] = substr(trim((string)($p['toDate'] ?? '')), 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['fromDate']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['toDate'])) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'Academic leave needs a first and a last day.'];
+        if ($row['toDate'] < $row['fromDate']) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'The last day can’t be before the first.'];
+        $span = (int)((strtotime($row['toDate']) - strtotime($row['fromDate'])) / 86400) + 1;
+        if ($span > MEMBER_ACADEMIC_MAX_DAYS) return ['ok' => false, 'error' => 'too_long', 'detail' => 'Academic leave covers at most ' . intdiv(MEMBER_ACADEMIC_MAX_DAYS, 7) . ' weeks at a time. Ask again for the rest.'];
+        if (mb_strlen($body) < 10) return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say what it is for — the exams or the school programme, and the school.'];
+        $u = trim((string)($p['proofUrl'] ?? ''));
+        $row['proofUrl'] = preg_match('#^https?://#i', $u) || str_starts_with($u, '/api/public/photo.php') ? $u : '';
+        if ($row['subject'] === '') $row['subject'] = 'Academic leave from ' . $row['fromDate'] . ' to ' . $row['toDate'];
     } elseif ($kind === 'leave') {
         $row['fromDate'] = substr(trim((string)($p['fromDate'] ?? '')), 0, 10);
         $row['toDate'] = substr(trim((string)($p['toDate'] ?? '')), 0, 10);
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['fromDate'])) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'When does the leave start?'];
         if ($row['toDate'] !== '' && $row['toDate'] < $row['fromDate']) [$row['fromDate'], $row['toDate']] = [$row['toDate'], $row['fromDate']];
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, so the desk can answer without asking.'];
+        /* The allowance: two excused absences a session, counted in programme
+           days. A request that would take it past two is refused whole, with
+           what is left, rather than half-granted by the desk later. */
+        $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]) ?: $m;
+        $asked = member_excuse_days($full, $row['fromDate'], $row['toDate'] !== '' ? $row['toDate'] : $row['fromDate']);
+        if (!$asked) return ['ok' => false, 'error' => 'no_programme_day', 'detail' => 'There is no NGG day between those dates, so there is nothing to excuse.'];
+        $ex = member_excuses($full);
+        $new = array_values(array_diff($asked, $ex['days']));
+        if ($ex['used'] + count($new) > $ex['max']) {
+            return ['ok' => false, 'error' => 'excuse_limit', 'excuses' => array_diff_key($ex, ['days' => 1]),
+                'detail' => 'Only ' . $ex['max'] . ' absences are allowed in the programme, and ' . $ex['used'] . ' ' . ($ex['used'] === 1 ? 'is' : 'are') . ' already counted. '
+                    . ($ex['left'] ? 'These dates cover ' . count($new) . '.' : 'There are none left.') . ' Speak to the centre if this is an emergency.'];
+        }
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
-    } elseif (in_array($kind, ['details', 'mentor', 'help'], true)) {
-        if (mb_strlen($body) < 6) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
+    } elseif (in_array($kind, ['details', 'mentor', 'help', 'askmentor', 'familydetails', 'collect'], true)) {
+        if (mb_strlen($body) < (in_array($kind, ['askmentor', 'familydetails', 'collect'], true) ? 5 : 6)) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
             'details' => 'Say what is wrong and what it should be.', 'mentor' => 'Say what is not working, so the coordinator can help.',
-            'help' => 'Tell us what happened.'][$kind]];
+            'help' => 'Tell us what happened.', 'askmentor' => 'Write your question first.', 'familydetails' => 'Say what has changed.',
+            'collect' => 'Give the name, how they are related and their phone number.'][$kind]];
         if ($row['subject'] === '') $row['subject'] = MEMBER_REQUEST_KINDS[$kind];
     } elseif ($kind === 'appeal') {
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'An appeal needs the reason it is being appealed.'];
@@ -332,6 +471,66 @@ function member_request_create(array $p): array
     return ['ok' => true, 'request' => member_request_public($row)];
 }
 
+/**
+ * Feedback from a member: an idea, something to change, something they love.
+ *
+ * `anonymous` keeps the member off the row: memberId is blank and only their
+ * centre is kept, so the desk of that centre still sees it and a scoped admin
+ * elsewhere does not. It is still raised from a signed-in session, so the
+ * per-member rate limit on the route holds for it; what anonymity removes is
+ * the name, not the limit. It never goes through the public contact form,
+ * which needs an email address a child sending it without a name has not got.
+ */
+function member_feedback_create(array $p): array
+{
+    $id = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $topic = (string)($p['topic'] ?? '');
+    if (!isset(MEMBER_FEEDBACK_TOPICS[$topic])) $topic = 'idea';
+    $body = trim(mb_substr((string)($p['body'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
+    $rating = $topic === 'experience' ? (int)($p['rating'] ?? 0) : 0;
+    if ($topic === 'experience' && !isset(MEMBER_FEEDBACK_RATINGS[$rating])) {
+        return ['ok' => false, 'error' => 'need_rating', 'detail' => 'Pick how it is going, from “Not good” to “Great”.'];
+    }
+    // A rating says enough on its own; words are what every other kind of feedback is.
+    if ($topic !== 'experience' && mb_strlen($body) < MEMBER_FEEDBACK_MIN) {
+        return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Tell us a little more, so the team knows what you mean.'];
+    }
+    if ($topic === 'experience' && $body !== '' && mb_strlen($body) < 2) $body = '';
+    $anon = !empty($p['anonymous']);
+    if (!$anon) {
+        $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = 'feedback' AND status = 'open'", [$id])['c'] ?? 0);
+        if ($open >= MEMBER_FEEDBACK_OPEN_MAX) {
+            return ['ok' => false, 'error' => 'too_many_open',
+                    'detail' => 'You have ' . $open . ' ideas waiting for the team to read. They will answer, and then you can send more.'];
+        }
+    }
+    $centre = (string)($m['centre'] ?? '');
+    $row = [
+        'requestId' => 'REQ-' . strtoupper(bin2hex(random_bytes(5))),
+        'memberId' => $anon ? '' : $id, 'kind' => 'feedback', 'status' => 'open',
+        'subject' => MEMBER_FEEDBACK_TOPICS[$topic] . ($rating ? ' · ' . MEMBER_FEEDBACK_RATINGS[$rating] : ''), 'body' => $body, 'topic' => $topic, 'centre' => $centre, 'rating' => $rating,
+        'amount' => 0, 'reference' => '', 'proofUrl' => '', 'paidAt' => '',
+        'fromDate' => '', 'toDate' => '', 'refEntryId' => '',
+        'decision' => '', 'decidedBy' => '', 'decidedAt' => '', 'ledgerEntryId' => '', 'raisedBy' => '', 'passedAt' => '',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+    ];
+    db_insert('member_requests', $row);
+    // The audit names nobody when the child asked not to be named.
+    audit('member.feedback.create', $anon ? '' : $id, $row['requestId'], ['topic' => $topic, 'anonymous' => $anon, 'centre' => $centre, 'rating' => $rating], '');
+    /* A child who says it is "not good" or "not great" is somebody to talk to,
+       so the title says so rather than reading like one more suggestion. */
+    $low = $rating > 0 && $rating <= 2;
+    notify_people(staff_with_cap('people', $anon ? [] : [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
+        'kind' => 'approval', 'title' => ($low ? 'A member says NGG is ' . strtolower(MEMBER_FEEDBACK_RATINGS[$rating]) . ' for them' : 'New feedback from a member: ' . MEMBER_FEEDBACK_TOPICS[$topic]),
+        'intro' => $anon ? 'A member at ' . ($centre !== '' ? $centre : 'a centre') . ' sent this without their name.' : (string)$m['fullName'] . ' sent this.',
+        'body' => ($rating ? 'Rating: ' . $rating . ' of 5 (' . MEMBER_FEEDBACK_RATINGS[$rating] . ")\n" : '') . mb_substr($body !== '' ? $body : '(No words, just the rating.)', 0, 400) . "\n\nThank them or pass it on in Control Room → Inbox → Member requests.",
+        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Read it →']);
+    $out = member_request_public($row);
+    return ['ok' => true, 'request' => $out];
+}
+
 /** Withdraw one. Only their own, only while it is still open — a decided
  *  request is a record, and a member cannot un-record a decision. */
 function member_request_withdraw(array $p): array
@@ -348,7 +547,141 @@ function member_request_withdraw(array $p): array
 
 // ── The desk's side ──────────────────────────────────────────────────────────
 
-/** The queue. Open first, because that is the working list. */
+/** How many rows any one signal returns. The point is a working list, not an
+ *  export — the roster is where a long list belongs. */
+const ACCOUNTS_SIGNAL_MAX = 25;
+
+/**
+ * Who cannot get in, and who is already gone.
+ *
+ * Gated on `people`, like the rest of the member desk, and it ENDS accounts
+ * for nobody. Whether a membership continues is settled by the MoU between
+ * NGG and the family — a document, not a button — so nothing here closes an
+ * account and members are not offered a way to ask. What this screen is for
+ * is the opposite problem: people who are supposed to be in and cannot get
+ * there.
+ */
+function admin_accounts_overview(array $p): array
+{
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $now = now_iso();
+
+    /* Centre scope applies here exactly as it does to the roster. A scoped
+       admin seeing every locked-out account in the organisation would be a
+       scope leak through a dashboard, which is the direction these usually
+       arrive from. */
+    $scope = admin_centre_names_in_scope($g['requester']);
+    $scopeSql = ''; $scopeArgs = [];
+    if ($scope !== null) {
+        if (!$scope) $scopeSql = ' AND 1 = 0';
+        else {
+            $scopeSql = ' AND centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
+            $scopeArgs = $scope;
+        }
+    }
+
+    $pick = 'memberId, fullName, displayId, email, centre, status, type, role, lastLoginAt, lockedUntil, createdAt';
+    $rows = function (string $where, array $args = []) use ($pick, $scopeSql, $scopeArgs) {
+        return db_all("SELECT $pick FROM members WHERE $where$scopeSql ORDER BY fullName LIMIT "
+                      . ACCOUNTS_SIGNAL_MAX, array_merge($args, $scopeArgs));
+    };
+    $count = function (string $where, array $args = []) use ($scopeSql, $scopeArgs) {
+        return (int)(db_row("SELECT COUNT(*) c FROM members WHERE $where$scopeSql",
+                            array_merge($args, $scopeArgs))['c'] ?? 0);
+    };
+
+    /* Locked by the failed-login guard, and still inside the window. Reading
+       the clock rather than the flag: a lock that expired an hour ago is not a
+       person who needs help. */
+    $lockedW = "COALESCE(lockedUntil,'') > ? AND status != 'deleted'";
+    /* No address at all on an ACTIVE account. Sign-in is a code by email, so
+       this is not a missing detail — it is somebody who cannot get in, and who
+       no dues reminder or notification has ever reached either. */
+    $noWayInW = "status = 'active' AND TRIM(COALESCE(email,'')) = ''";
+    /* Provisioned and never used. Distinguished from "quiet": these have never
+       signed in once, which usually means the welcome mail did not arrive. */
+    $neverW = "status = 'active' AND TRIM(COALESCE(lastLoginAt,'')) = ''";
+    /* Staff without a second factor. The account tier that can change other
+       people's records, protected by a password alone. */
+    $staffNo2faW = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')
+                    AND status = 'active' AND TRIM(COALESCE(totpSecret,'')) = ''";
+    $suspendedW = "status IN ('suspended','inactive')";
+
+    $signals = [
+        ['id' => 'locked', 'label' => 'Locked out right now',
+         'why' => 'Too many failed sign-ins. The lock lifts by itself; clearing it is the fast way back.',
+         'count' => $count($lockedW, [$now]), 'members' => $rows($lockedW, [$now])],
+        ['id' => 'noWayIn', 'label' => 'No email on file',
+         'why' => 'Sign-in is a code by email, so these members cannot get in at all — and no reminder has ever reached them.',
+         'count' => $count($noWayInW), 'members' => $rows($noWayInW)],
+        ['id' => 'neverSignedIn', 'label' => 'Never signed in',
+         'why' => 'Provisioned but never used once. Usually a welcome email that did not arrive.',
+         'count' => $count($neverW), 'members' => $rows($neverW)],
+        ['id' => 'staffNo2fa', 'label' => 'Staff without 2FA',
+         'why' => 'These accounts can change other people\'s records and are protected by a password alone.',
+         'count' => $count($staffNo2faW), 'members' => $rows($staffNo2faW)],
+        ['id' => 'suspended', 'label' => 'Suspended or inactive',
+         'why' => 'Blocked from signing in by a decision somebody made, not by the system.',
+         'count' => $count($suspendedW), 'members' => $rows($suspendedW)],
+    ];
+
+    return [
+        'ok' => true,
+        'signals' => $signals,
+        'totals' => [
+            'active' => $count("status = 'active'"),
+            /* Erased records, kept as anonymised rows for referential
+               integrity. Counted so the number is visible rather than a thing
+               you discover; nothing on this screen creates one. Whether a
+               membership ends at all is the MoU's question, not the app's. */
+            'closed' => $count("status = 'deleted'"),
+        ],
+        'signalMax' => ACCOUNTS_SIGNAL_MAX,
+        'at' => $now,
+    ];
+}
+
+/**
+ * Lift a login lock.
+ *
+ * The lock is the failed-login guard doing its job, and it expires by itself —
+ * but "by itself" is fifteen minutes to a member on the phone to a centre lead,
+ * and there was no way to end it. Clearing the counter with it, or the next
+ * wrong guess re-locks them immediately.
+ */
+function admin_account_unlock(array $p): array
+{
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $mid = trim((string)($p['memberId'] ?? ''));
+    $m = db_row('SELECT id, memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // Scope, on the way in and per row, like every other member write.
+    if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) {
+        return ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    db_update('members', ['lockedUntil' => '', 'failedLogins' => 0, 'updatedAt' => now_iso()], ['id' => (int)$m['id']]);
+    audit('account.unlock', (string)$g['requester']['memberId'], $mid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'memberId' => $mid, 'fullName' => (string)$m['fullName']];
+}
+/** The queue, and the history behind it.
+ *
+ *  `status` is open (the working list, and the default so the Inbox is
+ *  unchanged), one of the decided statuses, or `all` / '' for every request
+ *  ever raised. A request that has been approved, declined or withdrawn is
+ *  a record somebody will come looking for — by its REQ- id from an alert,
+ *  by the member, or by the reference on a bank statement — so `q` matches
+ *  all of those, and `memberId` narrows to one person's history.
+ *
+ *  Centre scope is applied in the query, on the way in: a scoped admin's
+ *  page, total and tally are all of their centres only. Sort is allow-listed
+ *  by name; an unknown sort falls back to newest rather than failing. */
+const MEMBER_REQUEST_SORTS = [
+    'newest'  => 'r.id DESC',
+    'oldest'  => 'r.id ASC',
+    'decided' => "COALESCE(NULLIF(r.decidedAt, ''), '0') DESC, r.id DESC",
+    'amount'  => 'r.amount DESC, r.id DESC',
+];
+const MEMBER_REQUEST_PAGE_MAX = 100;
 function admin_requests_list(array $p): array
 {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -357,28 +690,94 @@ function admin_requests_list(array $p): array
     if (in_array($status, MEMBER_REQUEST_STATUSES, true)) { $where[] = 'r.status = ?'; $args[] = $status; }
     $kind = (string)($p['kind'] ?? '');
     if (isset(MEMBER_REQUEST_KINDS[$kind])) { $where[] = 'r.kind = ?'; $args[] = $kind; }
-    $sql = 'SELECT r.*, m.fullName, m.displayId, m.centre FROM member_requests r
-              LEFT JOIN members m ON m.memberId = r.memberId'
-         . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
-         . ' ORDER BY r.id DESC LIMIT ' . MEMBER_REQUEST_PAGE;
-    $rows = array_map(fn($r) => member_request_public($r) + [
-        'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
-        'centre' => (string)($r['centre'] ?? ''), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
-    ], $raw = db_all($sql, $args));
-    /* Who raised it, when a parent did — one lookup for the page, not one per row. */
-    $gids = array_values(array_unique(array_filter(array_map(static fn($r) => str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') ? substr((string)$r['raisedBy'], 9) : '', $raw))));
-    if ($gids) {
-        $names = [];
-        foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
-            $names['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
-        }
-        foreach ($rows as $i => $row) $rows[$i]['raisedByName'] = $names[(string)($raw[$i]['raisedBy'] ?? '')] ?? '';
+    $mid = trim((string)($p['memberId'] ?? ''));
+    if ($mid !== '') { $where[] = 'r.memberId = ?'; $args[] = $mid; }
+    $q = trim(mb_substr((string)($p['q'] ?? ''), 0, 80));
+    if ($q !== '') {
+        // '!' escapes LIKE's wildcards: a backslash is itself an escape inside a MySQL string literal.
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($q)) . '%';
+        $where[] = "(LOWER(r.requestId) LIKE ? ESCAPE '!' OR LOWER(r.memberId) LIKE ? ESCAPE '!' OR LOWER(COALESCE(m.fullName,'')) LIKE ? ESCAPE '!'"
+                 . " OR LOWER(COALESCE(m.displayId,'')) LIKE ? ESCAPE '!' OR LOWER(r.reference) LIKE ? ESCAPE '!' OR LOWER(r.subject) LIKE ? ESCAPE '!')";
+        array_push($args, $like, $like, $like, $like, $like, $like);
     }
+    $scopeSql = ''; $scopeArgs = [];
+    $names = admin_centre_names_in_scope($g['requester']);
+    if ($names !== null) {
+        // An anonymous feedback row has no member to join: its own centre scopes it.
+        $scopeSql = $names ? "COALESCE(m.centre, NULLIF(r.centre,'')) IN (" . implode(',', array_fill(0, count($names), '?')) . ')' : '1 = 0';
+        $scopeArgs = $names;
+        $where[] = $scopeSql; $args = array_merge($args, $scopeArgs);
+    }
+    $from = ' FROM member_requests r LEFT JOIN members m ON m.memberId = r.memberId' . ($where ? ' WHERE ' . implode(' AND ', $where) : '');
+    $order = MEMBER_REQUEST_SORTS[(string)($p['sort'] ?? '')] ?? MEMBER_REQUEST_SORTS['newest'];
+    $limit = max(1, min(MEMBER_REQUEST_PAGE_MAX, (int)($p['pageSize'] ?? MEMBER_REQUEST_PAGE) ?: MEMBER_REQUEST_PAGE));
+    $offset = max(0, (int)($p['offset'] ?? 0));
+    $total = (int)(db_row('SELECT COUNT(*) c' . $from, $args)['c'] ?? 0);
+    $raw = db_all('SELECT r.*, m.fullName, m.displayId, m.centre AS mCentre' . $from . ' ORDER BY ' . $order . ' LIMIT ' . $limit . ' OFFSET ' . $offset, $args);
+    /* Who decided it, and who raised it when a parent did — one lookup each for the page, not one per row. */
+    $staff = array_values(array_unique(array_filter(array_map(static fn($r) => (string)($r['decidedBy'] ?? ''), $raw))));
+    $staffNames = $staff ? array_column(db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($staff), '?')) . ')', $staff), 'fullName', 'memberId') : [];
+    $gids = array_values(array_unique(array_filter(array_map(static fn($r) => str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') ? substr((string)$r['raisedBy'], 9) : '', $raw))));
+    $gNames = [];
+    if ($gids) foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
+        $gNames['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
+    }
+    $rows = array_map(static fn($r) => member_request_public($r) + [
+        'memberId' => (string)$r['memberId'], 'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
+        'centre' => (string)(($r['mCentre'] ?? '') !== '' ? $r['mCentre'] : ($r['centre'] ?? '')), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
+        'decidedByName' => (string)($staffNames[(string)($r['decidedBy'] ?? '')] ?? ''), 'ledgerEntryId' => (string)($r['ledgerEntryId'] ?? ''),
+        'updatedAt' => (string)($r['updatedAt'] ?? ''), 'raisedByName' => (string)($gNames[(string)($r['raisedBy'] ?? '')] ?? ''),
+    ], $raw);
     $tally = [];
-    foreach (db_all("SELECT kind, COUNT(*) c FROM member_requests WHERE status = 'open' GROUP BY kind") as $t) {
+    foreach (db_all("SELECT r.kind, COUNT(*) c FROM member_requests r LEFT JOIN members m ON m.memberId = r.memberId WHERE r.status = 'open'"
+                    . ($scopeSql !== '' ? ' AND ' . $scopeSql : '') . ' GROUP BY r.kind', $scopeArgs) as $t) {
         $tally[(string)$t['kind']] = (int)$t['c'];
     }
-    return ['ok' => true, 'requests' => $rows, 'openByKind' => $tally, 'kinds' => MEMBER_REQUEST_KINDS];
+    return ['ok' => true, 'requests' => $rows, 'total' => $total, 'offset' => $offset, 'pageSize' => $limit,
+            'openByKind' => $tally, 'kinds' => MEMBER_REQUEST_KINDS, 'statuses' => MEMBER_REQUEST_STATUSES];
+}
+
+/**
+ * Answer a piece of feedback. Feedback is not approved or declined — an
+ * "approved idea" means nothing to a child. Two answers:
+ *   - `thank`: close it with a thank-you (the staff's words, or a plain one),
+ *     which reaches the member unless they sent it without their name;
+ *   - `pass`: send it to the centre lead(s) of that centre, and leave it open
+ *     with `passedAt` set, so the desk can see where it went.
+ */
+const MEMBER_FEEDBACK_THANKS = 'Thank you for telling us. The team read it, and it helps us make NGG better.';
+
+function admin_feedback_answer(array $g, array $r, string $centre, array $p): array
+{
+    $by = (string)($g['requester']['memberId'] ?? '');
+    $rid = (string)$r['requestId'];
+    $answer = (string)($p['answer'] ?? (!empty($p['approve']) ? 'thank' : ''));
+    $note = trim(mb_substr((string)($p['decision'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
+    if ($answer === 'pass') {
+        if ((string)($r['passedAt'] ?? '') !== '') return ['ok' => false, 'error' => 'already_passed'];
+        $leads = array_values(array_filter(db_all("SELECT memberId, fullName, email, role, centreScope FROM members WHERE role = 'centre_lead' AND COALESCE(status,'') NOT IN ('suspended','deleted','merged')"),
+            static fn($s) => $centre !== '' && admin_centre_allowed($s, $centre)));
+        if (!$leads) return ['ok' => false, 'error' => 'no_centre_lead', 'detail' => 'Nobody holds the centre lead role for ' . ($centre !== '' ? $centre : 'this centre') . '.'];
+        notify_people($leads, ['kind' => 'approval', 'title' => 'Member feedback passed to you: ' . ((string)$r['subject']),
+            'intro' => 'From a member at ' . $centre . ((string)$r['memberId'] === '' ? ', sent without their name.' : '.'),
+            'body' => (string)$r['body'] . ($note !== '' ? "\n\nFrom the desk: " . $note : ''),
+            'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Open it →']);
+        db_update('member_requests', ['passedAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$r['id']]);
+        audit('member.feedback.pass', $by, $rid, ['centre' => $centre, 'leads' => count($leads)], (string)($p['ip'] ?? ''));
+    } elseif ($answer === 'thank') {
+        $reply = $note !== '' ? $note : MEMBER_FEEDBACK_THANKS;
+        db_update('member_requests', ['status' => 'approved', 'decision' => $reply, 'decidedBy' => $by, 'decidedAt' => now_iso(), 'updatedAt' => now_iso()], ['id' => (int)$r['id']]);
+        audit('member.feedback.thank', $by, $rid, ['centre' => $centre], (string)($p['ip'] ?? ''));
+        $mm = (string)$r['memberId'] !== '' ? db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
+        if ($mm) notify_people([$mm], ['kind' => 'request', 'eyebrow' => 'NGG · Your ideas',
+            'title' => in_array((string)($r['topic'] ?? ''), ['idea', 'change'], true) ? 'Thank you for your idea' : 'Thank you for telling us',
+            'intro' => (string)$r['body'] !== '' ? 'You told us: “' . mb_substr((string)$r['body'], 0, 120) . '”' : 'You told us: ' . (string)$r['subject'] . '.', 'body' => $reply,
+            'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See what you sent →']);
+    } else {
+        return ['ok' => false, 'error' => 'bad_answer', 'detail' => 'Feedback is thanked or passed to the centre lead.'];
+    }
+    $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
+    return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }
 
 /**
@@ -398,7 +797,12 @@ function admin_request_decide(array $p): array
     $rid = trim((string)($p['requestId'] ?? ''));
     $r = db_row('SELECT * FROM member_requests WHERE requestId = ? LIMIT 1', [$rid]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    // Scope, on the way in: the list hides another centre's requests, and so must the decision.
+    $owner = (string)$r['memberId'] !== '' ? db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]) : null;
+    $rCentre = (string)($owner['centre'] ?? ($r['centre'] ?? ''));
+    if (!admin_centre_allowed($g['requester'], $rCentre)) return ['ok' => false, 'error' => 'out_of_scope'];
     if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
+    if ((string)$r['kind'] === 'feedback' || ((string)($r['topic'] ?? '') !== '' && isset(MEMBER_FEEDBACK_TOPICS[(string)$r['topic']]))) return admin_feedback_answer($g, $r, $rCentre, $p);
 
     $approve = !empty($p['approve']);
     /* Approving a payment claim posts money to the fees ledger, and money is
@@ -437,6 +841,18 @@ function admin_request_decide(array $p): array
     }
 
     db_update('member_requests', $patch, ['id' => (int)$r['id']]);
+    /* An absence request decides a fine that was being held (policy_apply's
+       absence rule): declined, the absences it covered are fined now; approved,
+       they are not. Approved academic leave goes further — its days were never
+       the member's to attend, so absences already logged on them are voided,
+       which lifts anything they caused. */
+    if (in_array((string)$r['kind'], ['leave', 'academic'], true) && (string)$r['memberId'] !== '' && function_exists('policy_apply')) {
+        if ($approve && (string)$r['kind'] === 'academic') {
+            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
+                [now_iso(), $by, 'Academic leave ' . $rid . ' approved', (string)$r['memberId'], (string)$r['fromDate'], (string)($r['toDate'] ?: $r['fromDate'])]);
+        }
+        policy_apply((string)$r['memberId'], 'member');
+    }
     audit('member.request.' . ($approve ? 'approve' : 'decline'), $by, $rid,
           ['kind' => (string)$r['kind'], 'memberId' => (string)$r['memberId'],
            'ledgerEntryId' => (string)($patch['ledgerEntryId'] ?? '')], (string)($p['ip'] ?? ''));

@@ -518,6 +518,7 @@ function intake_photo_accept(string $incoming): string {
     }
     if (preg_match('#^/api/public/photo\.php\?#', $u)) return substr($u, 0, 512);
     if (preg_match('#^https://res\.cloudinary\.com/[A-Za-z0-9_-]+/#', $u)) return substr($u, 0, 512);
+    if (store_hosted($u)) return substr($u, 0, 512);     // our own bucket (R2 / B2)
     return '';
 }
 
@@ -926,7 +927,12 @@ function public_schools(array $p): array {
     $where = implode(' AND ', array_fill(0, count($words), 'nameKey LIKE ?'));
     $args = array_map(fn($w) => '%' . $w . '%', $words);
     $lga = trim((string)($p['lga'] ?? '')); $state = trim((string)($p['state'] ?? ''));
-    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where LIMIT 400", $args);
+    /* The schools that START with what was typed are chosen in SQL, before
+       the cap: the cap used to come first, so in a list of thousands the 400
+       rows ranked below were whichever the table happened to return, and
+       "st" or "ade" could miss every school whose name begins that way. */
+    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where
+                    ORDER BY CASE WHEN nameKey LIKE ? THEN 0 ELSE 1 END, nameKey LIMIT 400", array_merge($args, [$q . '%']));
     usort($rows, function ($a, $b) use ($q, $lga, $state) {
         $sa = (int)(strpos($a['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($a['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($a['state'], $state) === 0);
         $sb = (int)(strpos($b['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($b['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($b['state'], $state) === 0);
@@ -975,13 +981,34 @@ function club_apply_consents_record(string $ref, array $consents, array $details
  *  registration form serves, so the admin's form builder stays the single
  *  place to manage the catalogue. */
 function volunteer_course_options(): array {
-    $live = form_live();
+    /* The VOLUNTEER form, not form_live()'s default.
+     *
+     * This read form_live() with no argument, which is 'summer-reg' — the form
+     * a parent fills in for a child joining Summer School. So the courses a
+     * volunteer was offered to TEACH were the courses on offer to Summer
+     * School children, and none of the Club's own courses appeared at all. */
+    $live = form_live('volunteer');
     foreach ($live['fields'] as $f) {
         if (($f['key'] ?? '') === 'course' && !empty($f['options']) && is_array($f['options'])) {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return academy_courses();
+    /* BOTH programmes, not just Summer School's academy.
+     *
+     * A volunteer may teach on the Club, on Summer School, or on both, and
+     * volunteer_courses_accepted() has accepted the Club's courses on submit
+     * for a while — but this list is what the form actually OFFERS, and it
+     * named Summer's courses alone. So an instructor who came to teach Piano,
+     * Robotics or Finance could not pick them: the submit would have taken
+     * them, and the form never let them say it. */
+    return volunteer_both_programmes_courses();
+}
+
+/** Every course either programme teaches, Club first, de-duplicated. */
+function volunteer_both_programmes_courses(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    foreach (academy_courses() as $c) if (!in_array($c, $out, true)) $out[] = $c;
+    return array_values($out);
 }
 
 /** The full set of courses accepted on an instructor's intake: the flat form
@@ -1015,7 +1042,17 @@ function volunteer_faculty_options(): array {
             return array_values(array_map('strval', $f['options']));
         }
     }
-    return academy_faculties();
+    /* The Club's divisions as well as Summer School's faculties.
+     *
+     * volunteer_courses_by_faculty() has merged both for a while, so the Club's
+     * courses were sitting in the map the form reads — under keys the form
+     * never listed. Choosing a faculty is how the course picker is filtered, so
+     * a division that is not offered here makes every course under it
+     * unreachable. That is what made the updated catalogue impossible to get
+     * to from the volunteer form. */
+    $out = function_exists('club_catalogue') ? array_keys(club_catalogue()) : [];
+    foreach (academy_faculties() as $f) if (!in_array($f, $out, true)) $out[] = $f;
+    return array_values($out);
 }
 
 /** A programme's own courses: the Club's list for 'ngg', the academy catalogue for 'summer'. */

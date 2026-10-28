@@ -11,6 +11,7 @@ if ($method === 'GET') {
     /* Afrovanguard member cards (domain/ngv-portal.php): who has one, and the card's stylesheet. */
     $view = (string)($_GET['view'] ?? '');
     if ($view === 'av') $res = gs_call('admin.ids.av.list', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')]);
+    elseif ($view === 'photoCampaigns') $res = gs_call('admin.ids.photo.campaigns', ['requesterId' => $s['mid']]);
     elseif ($view === 'avStyle') $res = gs_call('admin.ids.av.style', ['requesterId' => $s['mid'], 'design' => (string)($_GET['design'] ?? '')]);
     else $res = gs_call('admin.ids.state', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
@@ -20,13 +21,14 @@ if ($method === 'GET') {
         case 'reprint':   $res = gs_call('admin.ids.reprint.request', $base + ['items' => $b['items'] ?? []]); break;
         case 'printed':   $res = gs_call('admin.ids.reprint.done', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
         case 'failed':    $res = gs_call('admin.ids.run.failed', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
-        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force'])]); break;
+        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force']), 'preview' => !empty($b['preview'])]); break;
+        case 'remindPhoto': $res = gs_call('admin.ids.photo.remind', $base + ['campaignId' => (string)($b['campaignId'] ?? '')]); break;
         case 'design':    $res = gs_call('admin.ids.design.set', $base + ['kind' => (string)($b['kind'] ?? ''), 'templateId' => (string)($b['templateId'] ?? '')]); break;
         // Printed IDs for exactly the members about to be printed.
         case 'avFaces':   $res = gs_call('admin.ids.av.faces', $base + ['ids' => $b['ids'] ?? []]); break;
         case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? [], 'codesOnly' => !empty($b['codesOnly'])]); break;
         // Print from a prompt: read the request into a plan the studio applies. Reads and selects nothing itself.
-        case 'plan':      rate_limit_check('ids.plan'); $res = gs_call('admin.ids.plan', $base + ['prompt' => (string)($b['prompt'] ?? ''), 'current' => is_array($b['current'] ?? null) ? $b['current'] : null]); break;
+        case 'plan':      rate_limit_check('ids.plan'); $res = gs_call('admin.ids.plan', $base + ['prompt' => (string)($b['prompt'] ?? ''), 'current' => is_array($b['current'] ?? null) ? $b['current'] : null, 'provider' => (string)($b['provider'] ?? '')]); break;
         default: json_error('unknown_action', 400);
     }
 } else {

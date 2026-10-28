@@ -93,6 +93,31 @@ const MPA_THRESHOLDS = [
     'concernHours' => [2, 72, 'Escalate an unopened concern after (hours)'],
 ];
 
+/**
+ * Jobs whose only output is a screen that no longer exists.
+ *
+ * The v14 Mentor Portal was withdrawn on 2026-10-13 and the older MentorPortal
+ * restored; it reads no nudges. These jobs wrote "Due now" rows nobody can see,
+ * family drafts for a Family tab that is gone, nightly commitments nobody
+ * reads — and pushed mentors (and, for goal check-ins, children) about work
+ * with nowhere to do it. A push that leads nowhere teaches people to ignore the
+ * next one. So they are paused in code, locked or not, until the portal that
+ * shows them returns: `portalLive` in the automation settings turns them back
+ * on in one place. Jobs whose result is still real stay on — the child's
+ * relationship check (relCheckDue: the dashboard asks from its nudge), the
+ * lead's queue in the Control Room, safeguarding, the reminders of meetings
+ * that happen in a room, and the review reminder (the restored portal has the
+ * weekly review).
+ */
+const MPA_NEEDS_PORTAL = ['pickOneToOnes', 'sessionFollowUp', 'goalCheckDue', 'goalStalled', 'noGoalAfterWeek3', 'scorecardDue',
+    'scoreDrop', 'familyDraft', 'familyOverdue', 'journalReply', 'supervisionPrep', 'retreatBooking', 'academyRenewal',
+    'twiceMonthly', 'commitmentsRecalc', 'checkinSilence', 'missedSaturdays', 'birthday'];
+function mpa_portal_live(): bool { return !empty(mpa_settings()['portalLive']); }
+function mpa_paused_reason(string $key): string {
+    return in_array($key, MPA_NEEDS_PORTAL, true) && !mpa_portal_live()
+        ? 'Paused: what it makes is shown only in the Mentor Portal v14 screens, which are withdrawn.' : '';
+}
+
 /* ── Settings ───────────────────────────────────────────────────────────── */
 
 function mpa_settings(): array {
@@ -102,6 +127,7 @@ function mpa_settings(): array {
 function mpa_job_on(string $key, string $centre = ''): bool {
     $j = MPA_JOBS[$key] ?? null;
     if (!$j) return false;
+    if (mpa_paused_reason($key) !== '') return false;
     if (!empty($j['locked'])) return true;
     $s = mpa_settings();
     if (isset($s['jobs'][$key]['on']) && !$s['jobs'][$key]['on']) return false;
@@ -111,6 +137,14 @@ function mpa_job_cron(string $key): string {
     $cron = (string)(MPA_JOBS[$key]['cron'] ?? '');
     $h = mpa_settings()['jobs'][$key]['hour'] ?? null;
     if ($cron !== '' && is_numeric($h) && (int)$h >= 0 && (int)$h <= 23) { $f = explode(' ', $cron); $f[1] = (string)(int)$h; $cron = implode(' ', $f); }
+    /* The lock runs on the day the setting names. The cron said day 8 whatever
+     * the setting said, so raising scorecardLockDay to 15 had the screen say
+     * "locks on the 15th" while the job locked on the 8th. */
+    if ($key === 'scorecardLock' && $cron !== '') {
+        $f = explode(' ', $cron);
+        $f[2] = (string)max(1, min(28, (int)(mp_opts()['scorecardLockDay'] ?? 8)));
+        $cron = implode(' ', $f);
+    }
     return $cron;
 }
 function mpa_prep_day(): int { $t = mpa_settings()['thresholds']['prepDay'] ?? 3; return is_numeric($t) ? max(0, min(6, (int)$t)) : 3; }
@@ -151,7 +185,21 @@ function mpa_tick(?int $now = null, int $max = 6): array {
     $now = $now ?? time();
     $ran = [];
     if (function_exists('mp_family_flush')) mp_family_flush();
-    foreach (MPA_JOBS as $key => $j) {
+    // The Saturday Formation Schedule's reminders and family messages (idempotent per day, block and person).
+    if (function_exists('sf_tick')) { try { sf_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'formation.tick', $e->getMessage(), ''); } }
+    mpa_push_release($now);
+    // Duty reminders: one email a day to anyone with something open (domain/duties.php), in batches.
+    if (function_exists('duties_tick')) { try { duties_tick($now); } catch (\Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'duties.tick', $e->getMessage(), ''); } }
+    // Housekeeping the week view used to do inside a GET: close follow-ups whose Saturday has passed.
+    if (defined('MP_FOLLOWUP_STALE_DAYS')) {
+        db_exec("UPDATE mentor_nudges SET status = 'done', resolvedAt = ?, resolvedBy = 'expired' WHERE status = 'open' AND rule = 'J:sessionFollowUp' AND createdAt < ?",
+                [gmdate('c', $now), gmdate('Y-m-d', $now - MP_FOLLOWUP_STALE_DAYS * 86400)]);
+    }
+    /* Safety first. The tick runs at most $max jobs, in table order, and the
+     * hourly concern escalation sat near the end — so a Monday-morning backlog
+     * could push it into a later tick. It goes first. */
+    $order = array_merge(['concernEscalate' => MPA_JOBS['concernEscalate']], MPA_JOBS);
+    foreach ($order as $key => $j) {
         if (count($ran) >= $max) break;
         if (empty($j['cron']) || !mpa_job_on($key)) continue;
         $fire = mpa_last_fire(mpa_job_cron($key), $now);
@@ -168,11 +216,21 @@ function mpa_run(string $key, ?int $now = null): array {
     if (!isset(MPA_JOBS[$key]) || !function_exists('mpa_job_' . $key)) return ['ok' => false, 'error' => 'unknown_job'];
     $now = $now ?? time();
     $GLOBALS['__mpa_push'] = [];
+    $GLOBALS['__mpa_orphans'] = [];
     $ctx = mpa_context($now);
     $res = ['found' => 0, 'detail' => ''];
     try { $res = array_merge($res, (array)call_user_func('mpa_job_' . $key, $ctx)); }
     catch (\Throwable $e) { $res = ['found' => 0, 'detail' => 'failed: ' . mb_substr($e->getMessage(), 0, 200)]; }
     $sent = mpa_push_flush($key, $now);
+    /* A lead nudge with no lead to receive it was written with an empty
+     * mentorId — seen by nobody, counted as found. It is reported instead. */
+    $orphans = count(array_unique($GLOBALS['__mpa_orphans'] ?? []));
+    if ($orphans) {
+        $res['detail'] = (string)$res['detail'] . ' · ' . $orphans . ' with no lead mentor to tell';
+        if (function_exists('ops_record')) ops_record('warn', 'mentor.nolead', 'A mentor job had no lead mentor to tell', $key . ': ' . $orphans);
+    }
+    $heldN = (int)($GLOBALS['__mpa_heldn'] ?? 0); $GLOBALS['__mpa_heldn'] = 0;
+    if ($heldN) $res['detail'] = (string)$res['detail'] . ' · ' . $heldN . ' held for 8am (quiet hours)';
     db_insert('mentor_job_log', ['job' => $key, 'ranAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'found' => (int)$res['found'], 'detail' => mb_substr((string)$res['detail'] . ($sent ? ' · ' . $sent . ' notified' : ''), 0, 500)]);
     return ['ok' => true, 'found' => (int)$res['found'], 'detail' => (string)$res['detail'], 'notified' => $sent];
 }
@@ -234,15 +292,40 @@ function mpa_push(string $memberId, string $line, string $link = 'mentor'): void
 function mpa_push_flush(string $job, int $now): int {
     $q = $GLOBALS['__mpa_push'] ?? [];
     $GLOBALS['__mpa_push'] = [];
-    if (!$q || mp_in_quiet_hours($now) || !function_exists('push_notification')) return 0;
+    if (!$q || !function_exists('push_notification')) return 0;
     $label = (string)(MPA_JOBS[$job]['label'] ?? 'Mentoring');
-    foreach ($q as $to => $x) {
-        $lines = array_values(array_unique($x['lines']));
-        push_notification((string)$to, ['kind' => 'mentor', 'title' => count($lines) === 1 ? $lines[0] : $label . ' · ' . count($lines) . ' things',
-            'body' => count($lines) === 1 ? '' : implode(' · ', array_slice($lines, 0, 4)), 'linkPage' => (string)$x['link']]);
+    /* Quiet hours defer; they do not discard. Ten daily jobs run at 07:00,
+     * inside the 20:00–08:00 window, and this used to drop their queue and log
+     * the run as done — so whether anyone was told depended on what time the
+     * first visitor of the day arrived. The batch waits and goes at 08:00. */
+    if (mp_in_quiet_hours($now)) {
+        $held = setting_get('mentor_automation.held');
+        $held = is_array($held) ? $held : [];
+        foreach ($q as $to => $x) {
+            $held[] = ['to' => (string)$to, 'label' => $label, 'lines' => array_values(array_unique($x['lines'])), 'link' => (string)$x['link'], 'after' => mp_next_send_time($now)];
+        }
+        setting_set('mentor_automation.held', array_slice($held, -500), 'system');
+        $GLOBALS['__mpa_heldn'] = count($q);
+        return 0;
     }
+    foreach ($q as $to => $x) mpa_push_send((string)$to, $label, array_values(array_unique($x['lines'])), (string)$x['link']);
     return count($q);
 }
+function mpa_push_send(string $to, string $label, array $lines, string $link): void {
+    push_notification($to, ['kind' => 'mentor', 'title' => count($lines) === 1 ? $lines[0] : $label . ' · ' . count($lines) . ' things',
+        'body' => count($lines) === 1 ? '' : implode(' · ', array_slice($lines, 0, 4)), 'linkPage' => $link]);
+}
+/** Send what quiet hours held, once they are over. Returns how many went. */
+function mpa_push_release(int $now): int {
+    if (mp_in_quiet_hours($now) || !function_exists('push_notification')) return 0;
+    $held = setting_get('mentor_automation.held');
+    if (!is_array($held) || !$held) return 0;
+    setting_set('mentor_automation.held', [], 'system');   // claim first: a racing tick sends nothing twice
+    foreach ($held as $h) if (is_array($h) && ($h['to'] ?? '') !== '') mpa_push_send((string)$h['to'], (string)($h['label'] ?? 'Mentoring'), (array)($h['lines'] ?? []), (string)($h['link'] ?? 'mentor'));
+    return count($held);
+}
+/** Is this nudge new? A push goes with the nudge's first appearance, not every run it stays open. */
+function mpa_is_new(string $key): bool { return !db_row('SELECT 1 FROM mentor_nudges WHERE nudgeKey = ? LIMIT 1', [$key]); }
 function mpa_week_key(string $today): string { return gmdate('o-\WW', strtotime($today . 'T12:00:00Z')); }
 function mpa_centre_on(string $job, array $m): bool { return mpa_job_on($job, (string)($m['centre'] ?? '')); }
 
@@ -295,6 +378,7 @@ function mpa_job_reviewOverdue(array $ctx): array {
     $open = mpa_open_reviews($ctx); $want = []; $n = 0;
     foreach ($open as $mid => $ids) {
         $m = $ctx['mentors'][$mid]; $lead = mpa_lead_of($ctx, $m);
+        if (!$lead) { $GLOBALS['__mpa_orphans'][] = $mid; continue; }   // nobody to tell: said in the log, not filed to nobody
         $want['J:reviewOverdue:' . $mid . ':' . mpa_week_key($ctx['today'])] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'centre' => (string)$m['centre'],
             'title' => mp_first((string)$m['fullName']) . ' has ' . count($ids) . ' review' . (count($ids) === 1 ? '' : 's') . ' overdue', 'body' => 'From last Saturday. Commitment 5 is at risk.'];
         if ($lead) mpa_push((string)$lead['memberId'], mp_first((string)$m['fullName']) . ': ' . count($ids) . ' reviews overdue');
@@ -328,7 +412,8 @@ function mpa_job_goalCheckDue(array $ctx): array {
             if ($since === '' || mp_days(substr($since, 0, 10), $ctx['today']) < $days) continue;
             $k = 'J:goalCheckDue:' . $g['id'] . ':' . intdiv(mp_days(substr($since, 0, 10), $ctx['today']), $days);
             $want[$k] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'], 'title' => 'Check in on ' . $ctx['rows'][$id]['first'] . '’s goal', 'body' => '“' . mb_substr($g['title'], 0, 80) . '” · how close are they now?'];
-            mpa_push($id, 'How close are you to your goal now?', 'dashboard');
+            // Once per due period — not every morning it stays unanswered.
+            if (mpa_is_new($k)) mpa_push($id, 'How close are you to your goal now?', 'dashboard');
         }
     }
     return ['found' => mpa_reconcile('goalCheckDue', $want), 'detail' => count($want) . ' goal check-ins due'];
@@ -357,8 +442,13 @@ function mpa_job_goalReviewDate(array $ctx): array {
             if (!$g || (string)$g['reviewBy'] === '') continue;
             $d = mp_days($ctx['today'], (string)$g['reviewBy']);
             if ($d !== 7 && $d !== 0 && !($d < 0 && $d > -8)) continue;
-            $when = $d === 0 ? 'today' : ($d > 0 ? 'in 7 days' : 'passed ' . (-$d) . ' day' . ($d === -1 ? '' : 's') . ' ago');
-            $want['J:goalReviewDate:' . $g['id'] . ':' . ($d === 7 ? 'w' : 'd')] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
+            /* Three keys, three titles. The day-of and overdue rows shared one key,
+             * and a nudge keeps the title it was created with — so a goal a week
+             * late still said "today". The overdue row names the date instead of
+             * a count of days that would go stale by tomorrow. */
+            $phase = $d === 7 ? 'w' : ($d === 0 ? 'd' : 'o');
+            $when = $d === 7 ? 'in 7 days' : ($d === 0 ? 'today' : '— it was due ' . (string)$g['reviewBy']);
+            $want['J:goalReviewDate:' . $g['id'] . ':' . $phase] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
                 'title' => 'Review ' . $ctx['rows'][$id]['first'] . '’s goal ' . $when, 'body' => mb_substr($g['title'], 0, 100)];
             if ($d === 0) mpa_push((string)$m['memberId'], 'Review ' . $ctx['rows'][$id]['first'] . '’s goal today');
         }
@@ -373,7 +463,8 @@ function mpa_job_noGoalAfterWeek3(array $ctx): array {
         foreach ($ids as $id) {
             $r = $ctx['rows'][$id] ?? null;
             if (!$r || $r['activeGoal'] || ($r['phase'] === 'Connect' && $r['week'] < 3) || $r['week'] === 0) continue;
-            $want['J:noGoalAfterWeek3:' . $id] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'], 'title' => 'Set a goal with ' . $r['first'], 'body' => 'Week ' . $r['week'] . ' and no active goal yet'];
+            // A month window: once resolved, a child who is goal-less again is raised again.
+            $want['J:noGoalAfterWeek3:' . $id . ':' . substr($ctx['today'], 0, 7)] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'], 'title' => 'Set a goal with ' . $r['first'], 'body' => 'Week ' . $r['week'] . ' and no active goal yet'];
         }
     }
     return ['found' => mpa_reconcile('noGoalAfterWeek3', $want), 'detail' => count($want) . ' without a goal'];
@@ -409,8 +500,10 @@ function mpa_job_relCheckDue(array $ctx): array {
             $r = $ctx['rows'][$id] ?? null;
             if (!$r || empty($r['rel']['due'])) continue;
             $cycle = mp_cycle($ctx['today'], $ctx['o']['relWeeks']);
-            $want['J:relCheckDue:' . $id . ':' . $cycle] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'], 'title' => 'Relationship check with ' . $r['first'], 'body' => 'Four questions, about two minutes'];
-            mpa_push($id, 'How is mentoring going? Four quick questions.', 'dashboard'); $asked++;
+            $k = 'J:relCheckDue:' . $id . ':' . $cycle;
+            $want[$k] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'], 'title' => 'Relationship check with ' . $r['first'], 'body' => 'Four questions, about two minutes'];
+            // The child is asked once per cycle; the dashboard keeps the question up until it is answered.
+            if (mpa_is_new($k)) { mpa_push($id, 'How is mentoring going? Four quick questions.', 'dashboard'); $asked++; }
         }
     }
     return ['found' => mpa_reconcile('relCheckDue', $want), 'detail' => $asked . ' children asked their side'];
@@ -531,6 +624,7 @@ function mpa_job_caseloadCheck(array $ctx): array {
         $n = count($ctx['kids'][$mid] ?? []);
         if ($n >= $min) continue;
         $lead = mpa_lead_of($ctx, $m);
+        if (!$lead) { $GLOBALS['__mpa_orphans'][] = $mid; continue; }
         $want['J:caseloadCheck:' . $mid . ':' . substr($ctx['today'], 0, 7)] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'centre' => (string)$m['centre'],
             'title' => mp_first((string)$m['fullName']) . ' has ' . $n . ' mentee' . ($n === 1 ? '' : 's'), 'body' => 'Below the minimum of ' . $min . ' · commitment 4'];
     }
@@ -594,7 +688,7 @@ function mpa_job_leadDigest(array $ctx): array {
         }
         $concerns = (int)(db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE status <> 'resolved' AND centre = ?", [(string)$lead['centre']])['c'] ?? 0);
         $html = '<p><strong>Below standard:</strong> ' . ($below ? esc_html(implode(', ', $below)) : 'nobody') . '</p><p><strong>Weekly reviews missing:</strong> ' . $missing . '</p><p><strong>Open safeguarding concerns at ' . esc_html((string)$lead['centre']) . ':</strong> ' . $concerns . ' (details in the Control Room only)</p>';
-        if (filter_var((string)$lead['email'], FILTER_VALIDATE_EMAIL)) { try { send_mail((string)$lead['email'], 'Your mentors this week', email_template(['title' => 'Your mentors this week', 'intro' => 'Mentor contact report for ' . esc_html((string)$lead['centre']) . '.', 'bodyHtml' => $html])); } catch (\Throwable $e) {} }
+        if (filter_var((string)$lead['email'], FILTER_VALIDATE_EMAIL)) { try { send_mail((string)$lead['email'], 'Your mentors this week', email_template(['title' => 'Your mentors this week', 'intro' => 'Mentor contact report for ' . (string)$lead['centre'] . '.', 'bodyHtml' => $html])); } catch (\Throwable $e) {} }
         mpa_push((string)$lead['memberId'], count($below) . ' below standard · ' . $missing . ' reviews missing', 'mentor');
         $sent++;
     }
@@ -668,6 +762,12 @@ function mpa_job_missedSaturdays(array $ctx): array {
     }
     return ['found' => mpa_reconcile('missedSaturdays', $want), 'detail' => count($want) . ' absent'];
 }
+/** Is a birthday (MM-DD) today? A 29 February birthday falls on the 28th in a common year, rather than never. */
+function mpa_birthday_today(string $md, string $today): bool {
+    $t = substr($today, 5, 5);
+    if ($md === $t) return true;
+    return $md === '02-29' && $t === '02-28' && !(bool)(int)gmdate('L', strtotime($today . 'T12:00:00Z'));
+}
 function mpa_job_birthday(array $ctx): array {
     $all = array_keys($ctx['rows']); $md = substr($ctx['today'], 5, 5); $want = [];
     $dob = [];
@@ -678,7 +778,7 @@ function mpa_job_birthday(array $ctx): array {
     foreach ($ctx['kids'] as $mid => $ids) {
         $m = $ctx['mentors'][$mid];
         if (!mpa_centre_on('birthday', $m)) continue;
-        foreach ($ids as $id) if (isset($dob[$id]) && substr($dob[$id], 5, 5) === $md && isset($ctx['rows'][$id])) {
+        foreach ($ids as $id) if (isset($dob[$id]) && mpa_birthday_today(substr($dob[$id], 5, 5), $ctx['today']) && isset($ctx['rows'][$id])) {
             $age = mp_age($dob[$id], $ctx['today']);
             $want['J:birthday:' . $id . ':' . $ctx['today']] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
                 'title' => 'It’s ' . $ctx['rows'][$id]['first'] . '’s birthday' . ($age ? ' (' . $age . ')' : ''), 'body' => 'A message from you today means more than you think'];
@@ -696,9 +796,10 @@ function mpa_job_mentorQuiet(array $ctx): array {
         $last = $logged[(string)$m['memberId']] ?? '';
         if ($last !== '' && $last >= $since) continue;
         $lead = mpa_lead_of($ctx, $m);
+        mpa_push((string)$m['memberId'], 'Your mentees haven’t had a session logged for ' . $days . ' days.');
+        if (!$lead) { $GLOBALS['__mpa_orphans'][] = $mid; continue; }
         $want['J:mentorQuiet:' . $mid . ':' . mpa_week_key($ctx['today'])] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'centre' => (string)$m['centre'],
             'title' => mp_first((string)$m['fullName']) . ' has logged nothing for ' . ($last === '' ? 'a while' : mp_days($last, $ctx['today']) . ' days'), 'body' => mp_plural_mentees(count($ctx['kids'][$mid])) . ' · check in with them'];
-        mpa_push((string)$m['memberId'], 'Your mentees haven’t had a session logged for ' . $days . ' days.');
     }
     return ['found' => mpa_reconcile('mentorQuiet', $want), 'detail' => count($want) . ' quiet mentors'];
 }
@@ -742,17 +843,19 @@ function mpa_job_scoreDrop(array $ctx): array {
 }
 function mpa_job_relLowTwice(array $ctx): array {
     $low = $ctx['o']['relLow']; $want = [];
-    $all = array_keys($ctx['rows']); $by = [];
+    $all = array_keys($ctx['rows']); $by = []; $cyc = [];
     foreach (array_chunk($all, 500) as $chunk) {
         $ph = implode(',', array_fill(0, count($chunk), '?'));
-        foreach (db_all("SELECT subjectId, score, cycle FROM mentor_rel_checks WHERE side = 'child' AND subjectId IN ($ph) ORDER BY createdAt DESC", $chunk) as $r) $by[$r['subjectId']][] = (int)$r['score'];
+        foreach (db_all("SELECT subjectId, score, cycle FROM mentor_rel_checks WHERE side = 'child' AND subjectId IN ($ph) ORDER BY createdAt DESC", $chunk) as $r) { $by[$r['subjectId']][] = (int)$r['score']; $cyc[$r['subjectId']] ??= (string)$r['cycle']; }
     }
     foreach ($ctx['kids'] as $mid => $ids) {
         $m = $ctx['mentors'][$mid]; $lead = mpa_lead_of($ctx, $m);
         foreach ($ids as $id) {
             $s = $by[$id] ?? [];
             if (count($s) < 2 || $s[0] > $low || $s[1] > $low) continue;
-            $want['J:relLowTwice:' . $id] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'memberId' => $id, 'centre' => (string)$m['centre'],
+            if (!$lead) { $GLOBALS['__mpa_orphans'][] = $id; continue; }
+            // Keyed by the latest check: a new pair of low checks is a new conversation about fit.
+            $want['J:relLowTwice:' . $id . ':' . ($cyc[$id] ?? '')] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'memberId' => $id, 'centre' => (string)$m['centre'],
                 'title' => 'Talk about fit: ' . ($ctx['rows'][$id]['first'] ?? '') . ' and ' . mp_first((string)$m['fullName']), 'body' => 'The child rated the relationship ' . $s[1] . ' then ' . $s[0] . ' out of 5'];
         }
     }
@@ -817,7 +920,7 @@ function admin_mentor_automations_list(array $p): array {
                    'cat' => (string)($j['cat'] ?? 'commitments'), 'trigger' => (string)($j['trigger'] ?? ''), 'if' => (string)($j['if'] ?? ''), 'then' => (array)($j['then'] ?? []),
                    'uses' => (array)($j['uses'] ?? []), 'stats' => $stats[$key] ?? ['runs' => 0, 'found' => 0, 'failed' => 0],
                    'cron' => $cron, 'when' => $cron !== '' ? mpa_cron_words($cron) : 'When it happens', 'hour' => $cron !== '' && explode(' ', $cron)[1] !== '*' ? (int)explode(' ', $cron)[1] : null,
-                   'on' => mpa_job_on($key), 'centresOff' => array_values((array)($s['centresOff'][$key] ?? [])), 'shows' => !empty($j['due']) ? 'Due now' : '',
+                   'on' => mpa_job_on($key), 'pausedReason' => mpa_paused_reason($key), 'centresOff' => array_values((array)($s['centresOff'][$key] ?? [])), 'shows' => !empty($j['due']) ? 'Due now' : '',
                    'lastRun' => $lastRow[$key] ?? null];
     }
     $th = [];

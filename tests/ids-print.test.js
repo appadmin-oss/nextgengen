@@ -102,7 +102,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const open = async (w, h, at) => {
@@ -132,15 +132,15 @@ function cleanup() {
     console.log('desktop (1440), production CSP, stale print tools in the cache');
     const P = await open(1440, 900);
     await P.waitForSelector('.ids-rec', { timeout: 20000 });
-    await P.click('.ids-fchip:has-text("New")');
-    await P.click('.ids-btn--outline:has-text("Add 5 to the sheet")');
+    // New is the status shown on arrival (pressing it again would show everyone, v4).
+    await P.click('.ids-btn--ink:has-text("Add all 5")');
     const missing = await P.waitForFunction(() => /can’t be loaded/.test((document.querySelector('.ids-set') || {}).innerText || ''), null, { timeout: 20000 }).then(() => true, () => false);
     chk('a photo whose file is gone on the server is named before printing', missing && /Ogunlaja Sarah Ayobami/.test(await P.innerText('.ids-set')));
     chk('…its slot says so', (await P.$$('.ids-slot-warn.is-bad')).length === 1);
-    chk('…and the print is held until it is dealt with', await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') === 'true'));
+    chk('…and the print is held until it is dealt with', await P.$eval('.ids-btn--headprint', b => b.getAttribute('aria-disabled') === 'true'));
     await P.click('.ids-set .ids-linkbtn:has-text("Take it off")');
     await P.waitForTimeout(300);
-    chk('one press takes it off the sheet', /4 cards ·/.test(await P.innerText('.ids-stat')) && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') !== 'true'));
+    chk('one press takes it off the sheet', /4 cards ·/.test(await P.innerText('.ids-stat')) && await P.$eval('.ids-btn--headprint', b => b.getAttribute('aria-disabled') !== 'true'));
     chk('a photo from the local store is shown whole on the card', (await P.$$('.ids-slot.is-card [data-card-photo="plain"]')).length === 4);
 
     // An image made elsewhere, at A6, in two copies.
@@ -167,7 +167,7 @@ function cleanup() {
     await P.waitForTimeout(300);
     chk('…and Undo puts it back', /of 3/.test(await P.innerText('.ids-pager')));
 
-    await P.click('.ids-btn--print');
+    await P.click('.ids-btn--headprint');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm lists both sizes and their sheets', /54 × 85\.6 mm · 4 cards, 9 per sheet · sheet 1/.test(await P.innerText('.ids-sum')) && /105 × 148 mm · 2 cards, 1 per sheet · sheets 2–3/.test(await P.innerText('.ids-sum')));
     const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 120000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
@@ -184,6 +184,7 @@ function cleanup() {
     const left = await P.innerText('.ids-stat');
     const downloads = [];
     P.on('download', d => downloads.push(d.suggestedFilename()));
+    await openMore(P, "Printing");
     await P.click('button:has-text("Export files for a print shop")');
     await P.waitForSelector('[role=alertdialog]');
     await P.click('[role=alertdialog] .ids-btn--primary');

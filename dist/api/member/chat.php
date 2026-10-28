@@ -12,7 +12,7 @@ if ($method === 'GET') {
 } elseif ($method === 'POST') {
     $b = read_json_body();
     rate_limit_check('member.chat', $s['mid']);
-    $res = gs_call('member.mentor.chat.send', ['memberId' => $s['mid'], 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
+    $res = gs_call('member.mentor.chat.send', ['memberId' => $s['mid'], 'body' => $b['body'] ?? '', 'media' => is_array($b['media'] ?? null) ? $b['media'] : [], 'ip' => client_ip()]);
 } else {
     json_error('method_not_allowed', 405);
 }

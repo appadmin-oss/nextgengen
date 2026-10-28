@@ -74,7 +74,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const tok = id => php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${id}'"), true);`, ['session']);
     const errs = [];
     const open = async (at, who, w) => {
@@ -101,7 +101,8 @@ function cleanup() {
     await J.waitForSelector('.apf-cgroup', { timeout: 30000 });
     const divs = await J.$$eval('.apf-cgroup', g => g.map(x => x.innerText.replace(/\s+/g, ' ')));
     chk('the NGG form groups courses by the four NGG divisions, each in a family\'s words', divs.length === 5 && /Creative & Performing Arts/.test(divs[0]) && /cybersecurity/i.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]) && /Not sure yet/.test(divs[4]));
-    chk('…and no Summer School course is on it', !/Talking Drums|Piano|Tie & Dye/.test(await J.innerText('.apf-courses')));
+    // Piano, Guitar and Catering are NGG courses too (the Creative division); these three are Summer School's alone.
+    chk('…and no Summer School course is on it', !/Talking Drums|Tie & Dye|Dance \/ Acting/.test(await J.innerText('.apf-courses')));
     await J.click('button:has-text("Continue")');
     chk('continuing without a course says what is missing', /Choose an option/.test(await J.innerText('.apf-errsum')));
     await J.click('.apf-course:has-text("Robotics")');
@@ -205,11 +206,14 @@ function cleanup() {
     chk('…and the row shows the receipt and who checked it', /checked by Bola Ade/.test(await Q.innerText('.cr-mp-table')) && !!(await Q.$('.cr-mp-table a:has-text("NGG-RCT-")')));
 
     await Q.evaluate(() => window.__adminSection('centres'));
-    await Q.waitForSelector('.admin-seg', { timeout: 20000 });
-    await Q.click('.admin-seg button:has-text("NGG Club")');
-    const cen = await Q.innerText('.admin-main');
-    chk('People → Centres can be read programme by programme', /Egbeda/.test(cen) && !/Ijaiye Summer Venue/.test(cen) && /NGG Club only/i.test(cen));
-    if (!/NGG Club only/i.test(cen) || /Ijaiye Summer Venue/.test(cen)) console.error('       centres said: ' + cen.replace(/\s+/g, ' ').slice(0, 600));
+    // The Control Room's centres page: the Runs filter reads it programme by programme.
+    await Q.waitForSelector('.cr-tbl tbody tr', { timeout: 30000 });
+    await Q.click('.cr-fchip:has-text("Runs")');
+    await Q.locator('.cr-fopts button', { hasText: /^NGG Club/ }).click();
+    await Q.waitForFunction(() => !/Ijaiye Summer Venue/.test(document.querySelector('.cr-tbl tbody')?.innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    const cen = await Q.innerText('.cr-tbl tbody');
+    chk('People → Centres can be read programme by programme', /Egbeda/.test(cen) && /NGG Club/.test(cen) && !/Ijaiye Summer Venue/.test(cen));
+    if (!/Egbeda/.test(cen) || /Ijaiye Summer Venue/.test(cen)) console.error('       centres said: ' + cen.replace(/\s+/g, ' ').slice(0, 600));
     await Q.context().close();
 
     console.log('the family’s pages');

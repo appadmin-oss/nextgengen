@@ -831,6 +831,19 @@ function insight_chat_ask(array $p): array {
         [(string)($plan['provider'] ?? ''), (string)($comp['provider'] ?? '')],
         array_map(fn($l) => (string)($l['provider'] ?? ''), $ran)))));
 
+    /* An empty answer was returned as a success, and the screen could only say
+     * "No answer came back". Every way here says something: the points the
+     * lenses found when composing failed, why nothing was found, or that the
+     * service did not answer. */
+    if (trim((string)$comp['answer']) === '') {
+        $err = (string)($comp['error'] ?? '');
+        if (!empty($comp['claims'])) $comp['answer'] = implode(' ', array_slice(array_values(array_unique(array_map(fn($c) => trim((string)$c['claim']), $comp['claims']))), 0, 4));
+        elseif ($err === 'no_points' || ($ran && $err === ''))
+            $comp['answer'] = 'The figures I can read don’t answer that. I read attendance, retention and learning totals by centre, age, sex and weekday for ' . ((string)($ev['range']['label'] ?? 'this period'))
+                . ' — no names and no lists of people. For a list or an export of members, ask for one here (for example “export the members grouped by division”) or use Members › Roster › Export CSV.';
+        else $comp['answer'] = 'The analysis service didn’t answer this time (' . ($err ?: 'no reply') . '). Try again in a minute; if it keeps happening, check the AI settings in System.';
+    }
+
     $store = [
         'threadId' => $tid, 'seq' => $seq, 'askedById' => $me, 'question' => $question,
         'answer' => (string)$comp['answer'],

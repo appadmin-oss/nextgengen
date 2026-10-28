@@ -87,7 +87,7 @@ function mentor_admin_programmes(array $caps): array {
 function mentor_rows_for_email(string $email, string $exceptMentorId = ''): array {
     $e = mb_strtolower(trim($email));
     if ($e === '') return [];
-    $sql = "SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active'";
+    $sql = "SELECT * FROM mentors WHERE lower(trim(email)) = ? AND lower(trim(COALESCE(status,''))) = 'active'";
     $args = [$e];
     if ($exceptMentorId !== '') { $sql .= " AND mentorId <> ?"; $args[] = $exceptMentorId; }
     return db_all($sql . " ORDER BY id", $args);
@@ -128,7 +128,7 @@ function mentor_gate(array $p): array {
          * who mentors a class of six should still be able to open that six. */
         $ownMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND (memberId = ? OR volunteerId = ?) LIMIT 1",
                             [(string)$m['memberId'], (string)$m['memberId']]);
-        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
+        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin', 'screened' => true,
             'mentorId' => (string)($ownMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => (string)($m['__volunteer']['centre'] ?? ''), 'department' => '', 'rank' => 'admin'],
             'programmes' => $progs,
@@ -162,7 +162,37 @@ function mentor_gate(array $p): array {
             }
             return ['ok' => false, 'error' => 'mentor_record_ambiguous'];
         }
-        $mentor = $rows[0] ?? null;
+        /* Email is a fallback for a record nobody has claimed, never a key to
+         * one somebody has. A mentor row already bound to a member or a
+         * volunteer belongs to THAT person; a different account that happens
+         * to carry the same address (a sibling, a shared family inbox, a typo
+         * fixed the wrong way) must not inherit their caseload. */
+        $cand = $rows[0] ?? null;
+        if ($cand && (trim((string)($cand['memberId'] ?? '')) !== '' || trim((string)($cand['volunteerId'] ?? '')) !== '')) {
+            if (function_exists('ops_record')) {
+                ops_record('warn', 'mentor.gate', 'An email matched a mentor record bound to someone else',
+                           'requester=' . $mid . ' mentor=' . (string)$cand['mentorId']);
+            }
+            return ['ok' => false, 'error' => 'mentor_record_ambiguous'];
+        }
+        $mentor = $cand;
+    }
+    /* ONE PERSON, TWO ROLES. Someone who teaches a class AND mentors children
+     * has a `mentors` row and an instructor volunteer record. The mentor row
+     * was always found first, so in the instructor portal they were a mentor:
+     * the instructor ops refused them (forbidden_role) and /instructor/ngg
+     * quietly showed the old Mentor Portal. Asked as an instructor (`as`), the
+     * instructor record answers; the Mentor Portal still gets the mentor. */
+    // `as` from the op, else the portal's X-NGG-As header (api-client setPortalAs). It only chooses among records the person holds.
+    if ($mentor && (string)($p['as'] ?? ($_SERVER['HTTP_X_NGG_AS'] ?? '')) === 'instructor') {
+        $vi = $m['__volunteer'] ?? null;
+        if (!$vi && trim((string)($mentor['volunteerId'] ?? '')) !== '')
+            $vi = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [(string)$mentor['volunteerId']]);
+        if (!$vi || (string)($vi['role'] ?? '') !== 'instructor')
+            $vi = db_row("SELECT * FROM volunteers WHERE memberId = ? AND status = 'active' AND role = 'instructor' ORDER BY id LIMIT 1", [(string)$m['memberId']]) ?: $vi;
+        if ((!$vi || (string)($vi['role'] ?? '') !== 'instructor') && $email !== '')
+            $vi = db_row("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active' AND role = 'instructor' ORDER BY id LIMIT 1", [$email]);
+        if ($vi && (string)($vi['role'] ?? '') === 'instructor') { $mentor = null; $m['__volunteer'] = $vi; }
     }
     if ($mentor) {
         $centre = trim((string)($mentor['centre'] ?? ''));
@@ -171,7 +201,15 @@ function mentor_gate(array $p): array {
          * narrowing who they can see, because "who has gone quiet at Egbeda"
          * is their job — a lead held to one department is a lead in name. */
         $isLead = trim((string)($mentor['rank'] ?? 'mentor')) === 'lead';
-        return ['ok' => true, 'member' => $m, 'role' => 'mentor',
+        /* SCREENED, OR NO REACH. The gate still opens — an unscreened mentor
+         * has to be able to reach the Academy and the policy, which is how
+         * they become screened — but it opens onto nobody. `centres` and
+         * `courses` of [] are "no centre, no course" to every consumer (the
+         * roster's IN-list, mentor_scope_ok, the curriculum board), so each
+         * legacy action fails closed here rather than at forty call sites
+         * that each have to remember. */
+        $screened = function_exists('ms_clearance') ? (bool)ms_clearance($mentor)['screened'] : trim((string)($mentor['checkedAt'] ?? '')) !== '';
+        return ['ok' => true, 'member' => $m, 'role' => 'mentor', 'screened' => $screened,
             'rank' => $isLead ? 'lead' : 'mentor',
             /* Carried so the roster can answer "who is assigned to ME". It was
              * absent, which is why the pairing an admin makes had no effect on
@@ -180,19 +218,44 @@ function mentor_gate(array $p): array {
             'mentor' => ['fullName' => (string)($mentor['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isLead ? '' : $dept, 'rank' => $isLead ? 'lead' : 'mentor'],
             'programmes' => mentor_programmes($mentor),
-            'centres' => $centre !== '' ? [$centre] : null,
-            'courses' => (!$isLead && $dept !== '') ? [$dept] : null];
+            /* Fail CLOSED: a mentor whose record has no centre reaches no centre
+             * (it used to read as "every centre"). An admin fixes the record. A
+             * lead mentor's null courses — every department — is by design. */
+            'centres' => !$screened ? [] : ($centre !== '' ? [$centre] : []),
+            // A mentor with no department mentors across courses (that is the role); only the centre fails closed.
+            'courses' => !$screened ? [] : ((!$isLead && $dept !== '') ? [$dept] : null),
+            // Their own centre, kept for one purpose: filing a concern
+            // (member_mp_concern). Reporting is not reading a record.
+            'reportCentres' => $centre !== '' ? [$centre] : null,
+            'reportCourses' => (!$isLead && $dept !== '') ? [$dept] : null];
     }
 
     /* The volunteer lane. A volunteer who registered as "Admin / Ops" is NOT
      * console staff and does not land here — that lane is a self-service form,
      * and a console capability is the only thing that actually says someone
      * was given oversight of behaviour data. */
-    $v = $m['__volunteer'] ?? ($email !== ''
-        ? db_row("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active'
-                  AND role IN ('mentor','instructor','admin') ORDER BY id DESC LIMIT 1", [$email])
-        : null);
+    $v = $m['__volunteer'] ?? null;
+    if (!$v && $email !== '') {
+        /* The same rule as the mentor lane: `ORDER BY id DESC LIMIT 1` picked
+         * the newest of several volunteers sharing a mailbox, so the reach a
+         * member account got depended on who had registered last. Two matches
+         * is an answer the system does not have — fail closed and say so. */
+        $vs = db_all("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active'
+                      AND role IN ('mentor','instructor','admin') ORDER BY id LIMIT 2", [$email]);
+        if (count($vs) > 1) return ['ok' => false, 'error' => 'mentor_record_ambiguous'];
+        $v = $vs[0] ?? null;
+    }
+    /* Every volunteer lane is gated on safeguarding, not only Ops. A mentor or
+     * an instructor is a role somebody ticks on a public form; clearing them is
+     * the staff action that says they may be handed a child's record.
+     *
+     * Gated, not refused: an instructor whose check is still pending gets in
+     * and sees their own COURSES — the lessons and materials they will teach —
+     * and no child. Refusing outright left them with an empty portal and no
+     * idea why ("the instructors cannot see the courses"). Their reach is
+     * centres [] (nobody), exactly as an unscreened mentor's is. */
     if ($v && in_array((string)($v['role'] ?? ''), ['mentor', 'instructor'], true)) {
+        $volCleared = (string)($v['safeguarding'] ?? 'pending') === 'cleared';
         $isInstructor = (string)$v['role'] === 'instructor';
         $centre  = trim((string)($v['centre'] ?? ''));
         $faculty = trim((string)($v['faculty'] ?? ''));
@@ -205,7 +268,9 @@ function mentor_gate(array $p): array {
             : ($faculty !== '' ? academy_courses_for($faculty) : []);
         $volMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND volunteerId = ? LIMIT 1",
                             [(string)($v['volunteerId'] ?? '')]);
-        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor',
+        return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor', 'screened' => $volCleared,
+            'clearance' => $volCleared ? 'cleared' : 'pending',
+            'reportCentres' => $centre !== '' ? [$centre] : null, 'reportCourses' => $courses ?: null,
             'mentorId' => (string)($volMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isInstructor ? implode(' · ', $courses) : $faculty, 'rank' => 'mentor'],
@@ -215,8 +280,9 @@ function mentor_gate(array $p): array {
              * curriculum. volunteers.programme speaks the mentors' vocabulary
              * (summer | ngg | both), and mentor_programmes() reads it. */
             'programmes' => mentor_programmes(['programme' => volunteer_programme($v)]),
-            'centres' => $centre !== '' ? [$centre] : null,
-            'courses' => $courses ?: null];
+            // Fail closed, as above: no centre on the record is no centre; an instructor with no courses teaches none.
+            'centres' => !$volCleared ? [] : ($centre !== '' ? [$centre] : []),
+            'courses' => $courses ?: ($isInstructor ? [] : null)];
     }
 
     /* The centre Ops lane.
@@ -244,7 +310,7 @@ function mentor_gate(array $p): array {
         if ($centre === '') return ['ok' => false, 'error' => 'no_centre'];
         $opsMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND volunteerId = ? LIMIT 1",
                             [(string)($v['volunteerId'] ?? '')]);
-        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
+        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin', 'screened' => true,
             'mentorId' => (string)($opsMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
                          'department' => '', 'rank' => 'admin'],
@@ -275,7 +341,7 @@ function mentor_scope_ok(array $g, array $subject): bool {
     $centres = $g['centres'] ?? null;
     if ($centres !== null && !in_array(trim((string)($subject['centre'] ?? '')), $centres, true)) return false;
     $courses = $g['courses'] ?? null;
-    if ($courses !== null && !in_array(trim((string)($subject['track'] ?? '')), $courses, true)) return false;
+    if ($courses !== null && !member_takes_any($subject, $courses)) return false;
     return true;
 }
 
@@ -308,13 +374,28 @@ function mentor_covers(array $g, string $programme): bool {
 function mentor_scope_centres(array $g): array {
     $centres = $g['centres'] ?? null;
     if ($centres !== null) return array_values($centres);
-    return array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    /* Narrowed to one programme (the roster's `programme`), an admin picks
+     * only among the centres that run it: a Summer School portal offering an
+     * NGG-only centre is the clash this exists to prevent. */
+    $only = $g['onlyProgramme'] ?? '';
+    $rows = db_all("SELECT name, programmes FROM centres WHERE status = 'active' ORDER BY name");
+    if ($only !== '') $rows = array_filter($rows, static fn($r) => in_array($only, array_map('trim', explode(',', (string)($r['programmes'] ?: 'ngg,summer'))), true));
+    return array_values(array_column($rows, 'name'));
 }
 
 /** The class for today — children in reach, each with today's star state so
  *  the portal can show what has already been given. */
 function mentor_roster(array $p): array {
     $g = mentor_gate($p); if (!$g['ok']) return $g;
+    /* `programme` (ngg | summer) narrows the roster to one programme. An
+     * admin covers both, and one list holding NGG members and Summer School
+     * participants side by side is how a star meant for one landed on the
+     * other. Asking for a programme you do not cover is refused, not widened. */
+    $prog = (string)($p['programme'] ?? '');
+    if ($prog === 'ngg' || $prog === 'summer') {
+        if (!mentor_covers($g, $prog)) return ['ok' => false, 'error' => 'not_this_programme'];
+        $g['programmes'] = [$prog]; $g['onlyProgramme'] = $prog;
+    }
     $today  = gmdate('Y-m-d');
 
     /* Whose children these are. `centres`/`courses` are null-means-everything,
@@ -365,6 +446,11 @@ function mentor_roster(array $p): array {
         // are not this year's class.
         if ($sessionId !== '') { $sql .= ' AND sessionId = ?'; $args[] = $sessionId; }
         $mineIds = array_values(array_unique(array_map('strval', array_column(db_all($sql, $args), 'memberId'))));
+        /* A pairing made without a session (or before this one) is still a
+           pairing. Reading only this session's made such a mentor "have no
+           mentees", and the portal showed the whole centre as their class. */
+        if (!$mineIds && $sessionId !== '')
+            $mineIds = array_values(array_unique(array_map('strval', array_column(db_all("SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'", [$mentorId]), 'memberId'))));
     }
     $scope = (string)($p['scope'] ?? '');
     if ($scope !== 'mine' && $scope !== 'centre') $scope = $mineIds ? 'mine' : 'centre';
@@ -460,6 +546,7 @@ function mentor_roster(array $p): array {
         'needsCentre' => $needsCentre,
         'scope' => $scope,
         'mineCount' => count($mineIds),
+        'programme' => $prog === 'ngg' || $prog === 'summer' ? $prog : '',
         'mentor' => ['name' => (string)($g['mentor']['fullName'] ?? ''),
                      'centre' => $want !== '' ? $want : (string)($g['mentor']['centre'] ?? ''),
                      'department' => (string)($g['mentor']['department'] ?? ''),

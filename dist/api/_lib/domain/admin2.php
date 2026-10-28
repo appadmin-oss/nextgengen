@@ -541,7 +541,41 @@ function admin_ai_status(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $probe = !empty($p['probe']);
     if ($probe) audit('ai.probe', (string)$g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'ai' => ai_status($probe), 'anyEnabled' => ai_enabled()];
+    return ['ok' => true, 'ai' => ai_status($probe), 'anyEnabled' => ai_enabled(), 'spend' => ai_spend_summary()];
+}
+
+/** The most a month's paid AI may be set to: a typo of an extra zero should not be a bill. */
+const AI_LIMIT_MAX_USD = 2000;
+/** admin.ai.routing.set — the monthly limit on paid models (USD; 0 = paid models off), whether they may do everyday work
+ *  when no free model is set up, and price overrides ("model in out" per line, USD per million tokens). Whole payload checked first. */
+function admin_ai_routing_set(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $cur = setting_get('ai_routing'); $cur = is_array($cur) ? $cur : [];
+    $next = $cur;
+    if (array_key_exists('monthlyLimitUsd', $p)) {
+        $v = trim((string)$p['monthlyLimitUsd']);
+        if ($v === '') $v = '0';
+        if (!is_numeric($v) || (float)$v < 0) return ['ok' => false, 'error' => 'bad_limit', 'detail' => 'The limit is a number of US dollars, 0 or more.'];
+        if ((float)$v > AI_LIMIT_MAX_USD) return ['ok' => false, 'error' => 'limit_too_high', 'detail' => 'At most $' . AI_LIMIT_MAX_USD . ' a month.'];
+        $next['monthlyLimitUsd'] = round((float)$v, 2);
+    }
+    if (array_key_exists('paidEveryday', $p)) $next['paidEveryday'] = !empty($p['paidEveryday']);
+    if (array_key_exists('prices', $p)) {
+        $prices = [];
+        foreach (preg_split('/\r?\n/', (string)$p['prices']) as $i => $line) {
+            $line = trim($line); if ($line === '' || str_starts_with($line, '#')) continue;
+            if (!preg_match('/^([A-Za-z0-9._:\/\-]{2,100})\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/', $line, $m))
+                return ['ok' => false, 'error' => 'bad_price_line', 'detail' => 'Line ' . ($i + 1) . ': write a model, then its input and output price per million tokens, e.g. “claude-opus-5-5 4 20”.'];
+            $prices[strtolower($m[1])] = [(float)$m[2], (float)$m[3]];
+        }
+        if (count($prices) > 40) return ['ok' => false, 'error' => 'too_many_prices', 'detail' => 'Forty price lines at most.'];
+        $next['prices'] = $prices;
+    }
+    setting_set('ai_routing', $next, (string)$g['requester']['memberId']);
+    unset($GLOBALS['__ai_spend']);
+    audit('ai.routing.set', (string)$g['requester']['memberId'], '', ['from' => (float)($cur['monthlyLimitUsd'] ?? 0), 'to' => (float)($next['monthlyLimitUsd'] ?? 0),
+        'paidEveryday' => !empty($next['paidEveryday']), 'prices' => count((array)($next['prices'] ?? []))], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'spend' => ai_spend_summary()];
 }
 
 // ── Analytics overview ──────────────────────────────────────────────────────
@@ -614,9 +648,11 @@ function admin_overview_waiting(): array {
         'toGrade'      => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM assignment_submissions WHERE status = 'submitted'"),
         'messages'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM contact_messages WHERE status = 'new'"),
         'photos'       => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM photo_assets WHERE status IN ('pending_review','in_review')"),
+        'photoChanges' => $q("SELECT COUNT(*) c, MIN(requestedAt) o FROM photo_change_requests WHERE status = 'pending'"),
         'approvals'    => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM admin_approvals WHERE status = 'pending'"),
         'requests'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM member_requests WHERE status = 'open'"),
         'comments'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM post_comments WHERE status = 'pending'"),
+        'testimonials' => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM testimonials WHERE status = 'new'"),
         'missions'     => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM member_progress WHERE status = 'submitted'"),
     ];
 }
@@ -675,6 +711,7 @@ function admin_member_detail(array $p): array {
         'progress' => ['total' => (int)($prog['total'] ?? 0), 'verified' => (int)($prog['verified'] ?? 0), 'submitted' => (int)($prog['submitted'] ?? 0)],
         'submissions' => array_map(fn($s) => ['assignmentId' => $s['assignmentId'], 'title' => $s['title'] ?: $s['assignmentId'], 'points' => (int)($s['points'] ?? 0), 'status' => $s['status'], 'grade' => $s['grade'] === null ? null : (int)$s['grade'], 'submittedAt' => $s['submittedAt']], $subs),
         'mentor' => $mentorLink ? ['mentorId' => $mentorLink['mentorId'], 'fullName' => $mentorLink['fullName'], 'sessionId' => $mentorLink['sessionId']] : null,
+        'supporting' => function_exists('ms_supports_of') ? ms_supports_of($id) : [],
         'state' => $state,
     ]];
 }
@@ -688,16 +725,76 @@ function admin_assign_mentor(array $p): array {
     $sessionId = (string)($p['sessionId'] ?? ($sc['current']['sessionId'] ?? ''));
     if (!$memberId) return ['ok' => false, 'error' => 'no_member'];
     $sg = admin_member_scope_gate($g['requester'], $memberId); if (!$sg['ok']) return $sg;
-    // End any current active links for this member+session.
-    db_exec("UPDATE mentor_assignments SET status='ended', endedAt=? WHERE memberId=? AND sessionId=? AND status='active'", [now_iso(), $memberId, $sessionId]);
+    $mentor = null;
     if ($mentorId) {
-        $mentor = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]);
-        $track = $mentor && $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
-        db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => now_iso(), 'endedAt' => '']);
-        push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => ($mentor['fullName'] ?? 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
+        $mentor = db_row("SELECT * FROM mentors WHERE mentorId = ? AND status = 'active' LIMIT 1", [$mentorId]);
+        if (!$mentor) return ['ok' => false, 'error' => 'mentor_not_found'];
     }
-    audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    $now = now_iso();
+    /* A child has one mentor at a time. Every active link ends, whichever
+     * session it was made in — ending only this session's left a pairing
+     * from an earlier term active beside the new one, so the child sat in two
+     * mentors' caseloads and counted toward both mentors' commitments. */
+    db_exec("UPDATE mentor_assignments SET status='ended', endedAt=? WHERE memberId=? AND status='active'", [$now, $memberId]);
+    if ($mentor) {
+        $track = $mentor['tracks'] ? explode(',', (string)$mentor['tracks'])[0] : '';
+        db_insert('mentor_assignments', ['memberId' => $memberId, 'mentorId' => $mentorId, 'track' => trim($track), 'sessionId' => $sessionId, 'status' => 'active', 'startedAt' => $now, 'endedAt' => '']);
+        if (function_exists('ms_support_end_for_primary')) ms_support_end_for_primary($memberId, $mentorId);
+        push_notification($memberId, ['kind' => 'mentor', 'title' => 'You have a mentor', 'body' => staff_public_name($mentorId, 'A mentor') . ' is now guiding your Anchor journey.', 'linkPage' => 'dashboard']);
+    }
+    $match = admin_assign_mentor_sync_match($memberId, $mentor, (string)$g['requester']['memberId']);
+    audit('admin.mentor.assign', $g['requester']['memberId'], $memberId, ['mentorId' => $mentorId, 'sessionId' => $sessionId, 'match' => $match], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'match' => $match];
+}
+
+/**
+ * Keep the match — the record the cadence tasks, the week-3 goal lock, pod
+ * loads and the relationship phase are all read from — in step with a pairing
+ * made by hand. admin_assign_mentor wrote only mentor_assignments, so a child
+ * paired here had no tasks, unlocked goals and week 0; and after a
+ * reassignment the old mentor kept the match, its tasks and the pod place.
+ *
+ *   no mentor (unpair)      → the live match closes
+ *   an offer is open        → it is resolved in favour of this mentor
+ *   a different mentor      → the old match closes (its tasks are cancelled)
+ *                             and a new one starts: a new relationship has its
+ *                             own Connect phase
+ *   no match yet            → one is started, with its cadence
+ *   the same mentor         → nothing changes
+ *
+ * NGG members only: pods are an NGG programme (ms_mentor_is_ngg); a Summer
+ * School child keeps the plain assignment. Returns what it did.
+ */
+function admin_assign_mentor_sync_match(string $memberId, ?array $mentor, string $by): string {
+    if (!function_exists('ms_live_match')) return 'none';
+    $mem = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$mem || !member_is_ngg($mem)) return 'not_ngg';
+    $live = ms_live_match($memberId);
+    $mentorId = $mentor ? (string)$mentor['mentorId'] : '';
+    if ($live && (string)$live['status'] !== 'offered' && (string)$live['mentorId'] === $mentorId) return 'unchanged';
+    if ($live) {
+        if ((string)$live['status'] === 'offered') {
+            db_exec("UPDATE mentor_match_offers SET status = 'declined' WHERE matchId = ? AND status = 'open'", [$live['matchId']]);
+            if ($mentorId === '') { db_update('mentor_matches', ['status' => 'closed', 'closedAt' => now_iso(), 'closeReason' => 'Withdrawn by staff', 'updatedAt' => now_iso()], ['matchId' => $live['matchId']]); return 'offer_withdrawn'; }
+            $start = gmdate('Y-m-d');
+            db_update('mentor_matches', ['mentorId' => $mentorId, 'status' => 'active', 'phase' => 'connect', 'startedAt' => $start,
+                'chosenBy' => 'staff', 'updatedAt' => now_iso()], ['matchId' => $live['matchId']]);
+            $live['mentorId'] = $mentorId;
+            ms_cadence_create($live, $start);
+            return 'offer_resolved';
+        }
+        ms_set_status($live, 'closed', $mentorId === '' ? 'Unpaired by staff' : 'Reassigned by staff', $by);
+        if ($mentorId === '') return 'closed';
+    } elseif ($mentorId === '') {
+        return 'none';
+    }
+    $start = gmdate('Y-m-d');
+    $new = ['matchId' => ms_new_match_id(), 'memberId' => $memberId, 'mentorId' => $mentorId, 'centre' => (string)($mem['centre'] ?? ''),
+        'track' => (string)($mem['track'] ?? ''), 'phase' => 'connect', 'status' => 'active', 'offeredAt' => '', 'startedAt' => $start,
+        'chosenBy' => 'staff', 'agreementJson' => '', 'closingAt' => '', 'closedAt' => '', 'closeReason' => '', 'createdBy' => $by, 'updatedAt' => now_iso()];
+    db_insert('mentor_matches', $new);
+    ms_cadence_create($new, $start);
+    return $live ? 'reassigned' : 'started';
 }
 
 // ── Applications review ─────────────────────────────────────────────────────
@@ -807,6 +904,14 @@ function admin_application_convert(array $p): array {
         'disciplines' => $division !== '' && function_exists('club_division_short') ? club_division_short($division) : '',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
+    /* The courses the applicant chose become the member's courses, exactly
+       (members.courses): their lessons and channels follow them from day one,
+       instead of being guessed from the first course's name. */
+    if ($type === 'NGG' && function_exists('member_courses_clean')) {
+        $chose = json_decode((string)($a['courses'] ?? ''), true);
+        [$picked] = member_courses_clean(array_merge(is_array($chose) ? $chose : [], [(string)($a['track'] ?? '')]));
+        if ($picked) { $__m['courses'] = json_encode(array_slice($picked, 0, MEMBER_COURSES_MAX), JSON_UNESCAPED_UNICODE); if ($__m['track'] === '') $__m['track'] = $picked[0]; }
+    }
     /* The Club application (v2026.10) knows more: the parent by name and
        their own number, the school and class, and the child's own mobile when
        it is not the parent's. The rest stays on the application. */
@@ -1065,6 +1170,7 @@ function admin_settings_get(array $p): array {
         'session_idle_admin'        => session_idle_max(true),
         'featured_session_id'       => setting_raw('featured_session_id') ?? '',
         'geofence_enabled'          => setting_raw('geofence_enabled') === '1',
+        'face_check_enabled'        => setting_raw('face_check_enabled') === '1',
         'photo_gate_issuance'       => setting_raw('photo_gate_issuance') === '1',
         'intake_photo_required'     => (setting_raw('intake_photo_required') ?? '1') !== '0',
         'site_content'              => site_content(),
@@ -1077,7 +1183,7 @@ function admin_settings_get(array $p): array {
 function admin_settings_set(array $p): array {
     $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
-    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'checkin_state_emails', 'qotw_mail', 'companion_enabled', 'geofence_enabled', 'photo_gate_issuance', 'intake_photo_required'] as $k) {
+    foreach (['applications_open', 'mentor_applications_open', 'volunteer_applications_open', 'volunteer_sms_notify', 'checkin_state_emails', 'qotw_mail', 'companion_enabled', 'geofence_enabled', 'photo_gate_issuance', 'intake_photo_required', 'face_check_enabled'] as $k) {
         if (array_key_exists($k, $data)) setting_set($k, !empty($data[$k]) ? '1' : '0', $g['requester']['memberId']);
     }
     if (array_key_exists('volunteer_session_hours', $data)) setting_set('volunteer_session_hours', (string)max(1, min(12, (int)$data['volunteer_session_hours'])), $g['requester']['memberId']);

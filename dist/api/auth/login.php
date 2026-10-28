@@ -11,7 +11,11 @@ ensure_super_admin();
 rate_limit_check('auth.verify');
 
 $body = read_json_body();
-$identifier = trim((string)($body['identifier'] ?? ''));
+if (bot_trap_tripped($body)) {
+    audit('bot.trap', null, 'login', [], client_ip());
+    json_error('request_failed', 400);
+}
+$identifier = auth_clean_identifier((string)($body['identifier'] ?? ''));
 $password   = (string)($body['password'] ?? '');
 if ($identifier === '' || $password === '') {
     json_error('missing_credentials', 422);
@@ -30,8 +34,12 @@ if (empty($res['ok'])) {
     json_error($code, $code === 'rate_limited' ? 429 : 401);
 }
 
+// One password on several accounts that share the address: the person picks (auth/pick.php).
+if (!empty($res['pick'])) json_ok(['pick' => $res['pick'], 'pickToken' => $res['pickToken'], 'pickMinutes' => $res['pickMinutes'] ?? 10]);
+
 $member = $res['member'] ?? [];
-session_issue($member, false, '', !empty($body['remember']));
+$mfa = (string)($res['mfa'] ?? '');
+session_issue($member, false, '', !empty($body['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
 
-json_ok(['member' => $member, 'csrf' => $csrf]);
+json_ok(['member' => $member, 'mfa' => $mfa, 'csrf' => $csrf]);

@@ -65,7 +65,11 @@ function tt_centre_window(string $text): ?array {
 
 /** Courses a slot may name: the academy catalogue, plus any already holding lessons. */
 function tt_courses(): array {
-    return function_exists('curriculum_courses') ? curriculum_courses() : (function_exists('academy_courses') ? academy_courses() : []);
+    $all = function_exists('curriculum_courses') ? curriculum_courses() : (function_exists('academy_courses') ? academy_courses() : []);
+    // Chess is taught in every division, so it is in no one division's catalogue.
+    foreach ($all as $c) if (strcasecmp((string)$c, 'Chess') === 0) return $all;
+    array_unshift($all, 'Chess');
+    return $all;
 }
 
 function tt_public_slot(array $r, array $centres, array $instructors, bool $withInstructor = true): array {
@@ -230,12 +234,14 @@ function admin_timetable_remove(array $p): array {
 }
 
 /** A centre's active slots, shaped for a member, a parent or the public. */
-function tt_for_centre(string $centreName, bool $withInstructor, string $highlightCourse = ''): array {
+/** $mine: the course(s) to mark as the viewer's — a member takes several (curriculum_member_courses). */
+function tt_for_centre(string $centreName, bool $withInstructor, string|array $mine = ''): array {
+    $mineL = array_values(array_filter(array_map(static fn($c) => mb_strtolower(trim((string)$c)), (array)$mine), static fn($c) => $c !== ''));
     [$centres, $vol] = tt_lookups();
     $cid = null; foreach ($centres as $id => $c) if (strcasecmp((string)$c['name'], trim($centreName)) === 0) $cid = $id;
     if ($cid === null) return ['centre' => $centreName, 'slots' => [], 'meetDays' => '', 'meetTime' => ''];
     $slots = array_map(static fn($r) => tt_public_slot($r, $centres, $vol, $withInstructor)
-                       + ['mine' => $highlightCourse !== '' && strcasecmp((string)$r['course'], $highlightCourse) === 0],
+                       + ['mine' => in_array(mb_strtolower(trim((string)$r['course'])), $mineL, true)],
         db_all("SELECT * FROM timetable_slots WHERE centreId = ? AND status = 'active' ORDER BY weekday, startTime, course", [$cid]));
     // The slug opens the public timetable maker on this centre's week (?centre=).
     return ['centre' => (string)$centres[$cid]['name'], 'slug' => (string)($centres[$cid]['slug'] ?? ''), 'meetDays' => (string)$centres[$cid]['meetDays'], 'meetTime' => (string)$centres[$cid]['meetTime'], 'slots' => $slots];
@@ -243,9 +249,31 @@ function tt_for_centre(string $centreName, bool $withInstructor, string $highlig
 
 /** member.timetable — the member's own centre, their course marked. */
 function member_timetable(array $p): array {
-    $m = db_row('SELECT memberId, centre, track FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
+    $m = db_row('SELECT memberId, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'course' => (string)($m['track'] ?? '')] + tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? ''));
+    $courses = function_exists('curriculum_member_courses') ? curriculum_member_courses($m) : [(string)($m['track'] ?? '')];
+    $tt = tt_for_centre((string)($m['centre'] ?? ''), true, $courses);
+    // The member's own week names who teaches as a child addresses them.
+    $titled = staff_public_names(array_column($tt['slots'], 'instructorId'));
+    foreach ($tt['slots'] as $i => $sl) if ((string)($sl['instructorId'] ?? '') !== '') $tt['slots'][$i]['instructor'] = $titled[$sl['instructorId']] ?? 'Your instructor';
+    /* The division the member's courses are in (the first that is not Chess,
+       which every division takes): a placement stored long ago must not name
+       Media for a member whose courses are Technology's. */
+    $main = array_values(array_filter($courses, static fn($c) => strcasecmp((string)$c, 'Chess') !== 0));
+    $divId = $main && function_exists('nggc_division_for_track') ? nggc_division_for_track((string)$main[0]) : '';
+    if ($divId === '' && $main && function_exists('nggc_divisions')) foreach (nggc_divisions() as $dv) if (array_intersect(array_map('mb_strtolower', $dv['courses']), array_map('mb_strtolower', $main))) { $divId = $dv['id']; break; }
+    /* No course chosen yet: the division stored on the record, or the one
+       the track names ("Tech"), as its NAME. The raw id leaked through and
+       the card read "tech · Tech". */
+    if ($divId === '' && function_exists('nggc_division_for_track')) {
+        foreach ([(string)($m['division'] ?? ''), (string)($m['track'] ?? '')] as $hint) {
+            $hint = trim($hint); if ($hint === '') continue;
+            if (function_exists('nggc_division') && nggc_division(mb_strtolower($hint))) { $divId = mb_strtolower($hint); break; }
+            $divId = nggc_division_for_track($hint); if ($divId !== '') break;
+        }
+    }
+    $div = $divId !== '' && function_exists('nggc_division') ? nggc_division($divId) : null;
+    return ['ok' => true, 'course' => (string)($main[0] ?? ''), 'courses' => $main, 'division' => $div ? (string)$div['name'] : ''] + $tt;
 }
 
 /**

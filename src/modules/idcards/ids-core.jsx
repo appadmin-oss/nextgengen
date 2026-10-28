@@ -140,17 +140,42 @@ function idsCutMarks(G, len = 4, weight = 0.2) {
 }
 
 /**
- * The run's slot list: the queue in print order, with blank pads inserted at
- * every group break so each group starts on a fresh sheet (§3.4: pads until
- * (skip + placed) % per == 0). `groupOf` returns the group key, or null for
- * no grouping. Returns { slots, pads } — a slot is a card or { pad: true }.
+ * A range's two ends as typed (v4). Bare digits on both ends (one may be
+ * empty) mean the serial at the end of an ID; anything else compares as text,
+ * case-insensitively. Ends typed the wrong way round are swapped.
+ */
+function idsRangeEnds(from, to) {
+  let lo = String(from == null ? "" : from).trim(), hi = String(to == null ? "" : to).trim();
+  const digits = (lo !== "" || hi !== "") && (lo === "" || /^\d+$/.test(lo)) && (hi === "" || /^\d+$/.test(hi));
+  // As typed, for saying back to the operator; lower-cased, for comparing.
+  let shownLo = lo, shownHi = hi;
+  if (!digits) { lo = lo.toLowerCase(); hi = hi.toLowerCase(); }
+  if (lo !== "" && hi !== "" && (digits ? Number(lo) > Number(hi) : lo > hi)) { [lo, hi] = [hi, lo]; [shownLo, shownHi] = [shownHi, shownLo]; }
+  return { lo, hi, digits, shownLo, shownHi };
+}
+/** Inclusive, and a partial end covers everything it starts: "Ade" to "Chi" takes Ade… through Chi…. */
+function idsInAlphaRange(key, lo, hi) {
+  const k = String(key || "").toLowerCase();
+  return (lo === "" || k >= lo) && (hi === "" || k <= hi || k.startsWith(hi));
+}
+
+/**
+ * The run's slot list: the queue in print order, with blank pads inserted at a
+ * group break so a group starts on a fresh sheet (§3.4: pads until
+ * (skip + placed) % per == 0) — but only for a group big enough to fill a
+ * sheet of its own. Smaller groups share one: 7 cards from 3 centres used to
+ * take 3 sheets of card stock, and now take 1 (v4). `groupOf` returns the
+ * group key, or null for no grouping. Returns { slots, pads } — a slot is a
+ * card or { pad: true }.
  */
 function idsLayout(cards, per, skip, groupOf) {
   const slots = [];
+  const size = {};
+  if (groupOf) cards.forEach(c => { const g = groupOf(c); size[g] = (size[g] || 0) + 1; });
   let pads = 0, prev;
   cards.forEach((c, i) => {
     const g = groupOf ? groupOf(c) : null;
-    if (groupOf && i > 0 && g !== prev && per > 0) {
+    if (groupOf && i > 0 && g !== prev && per > 0 && size[g] >= per) {
       while ((skip + slots.length) % per !== 0) { slots.push({ pad: true }); pads++; }
     }
     prev = g;

@@ -238,6 +238,50 @@ function slugify(string $s): string {
     return substr($s, 0, 80);
 }
 
+/**
+ * A search box as SQL: [fragment, args] for a WHERE, or ['', []] when nothing
+ * was typed.
+ *
+ * Every WORD typed must appear in at least one of $cols, so "bello amina"
+ * finds Amina Bello and "amina egbeda" narrows rather than finding nothing.
+ * One LIKE over the whole string matched only the words in the order they
+ * were stored, and a search that misses a record the operator can see on the
+ * screen is a search they stop trusting.
+ *
+ * Case-insensitive the way SQLite's lower() is (ASCII), and what was typed is
+ * matched literally: '%' and '_' are not wildcards ('!' escapes them — a
+ * backslash is itself an escape inside a MySQL string literal).
+ *
+ * A phone-shaped query (digits, spaces, + - ( ) only, at least four digits)
+ * is also matched against $phoneCols on its last nine digits with the
+ * punctuation stripped, so "0803 111 2222" finds "+2348031112222": the tail
+ * is the part of a Nigerian number that identifies it however it was written.
+ *
+ * $cols are column names written by the CALLER's code, never user input.
+ */
+const SQL_SEARCH_MAX_WORDS = 6;
+function sql_text_search(string $q, array $cols, array $phoneCols = []): array {
+    $q = trim((string)preg_replace('/\s+/u', ' ', mb_substr($q, 0, 120)));
+    if ($q === '' || !$cols) return ['', []];
+    $and = []; $args = [];
+    foreach (array_slice(explode(' ', $q), 0, SQL_SEARCH_MAX_WORDS) as $w) {
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], strtolower($w)) . '%';
+        $or = [];
+        foreach ($cols as $c) { $or[] = "lower(COALESCE($c, '')) LIKE ? ESCAPE '!'"; $args[] = $like; }
+        $and[] = '(' . implode(' OR ', $or) . ')';
+    }
+    $sql = implode(' AND ', $and);
+    $digits = (string)preg_replace('/\D/', '', $q);
+    if ($phoneCols && strlen($digits) >= 4 && preg_match('/^[\d\s+\-()]+$/', $q)) {
+        $tail = '%' . substr($digits, -9) . '%';
+        foreach ($phoneCols as $c) {
+            $sql .= " OR replace(replace(replace(replace(replace(COALESCE($c, ''), ' ', ''), '-', ''), '+', ''), '(', ''), ')', '') LIKE ?";
+            $args[] = $tail;
+        }
+    }
+    return ['(' . $sql . ')', $args];
+}
+
 function mask_email(string $e): string {
     $at = strpos($e, '@');
     if ($at === false || $at < 1) return '***@***';
@@ -290,8 +334,7 @@ function audit(string $event, ?string $actorId, string $subject = '', array $met
 }
 
 function push_notification(string $memberId, array $n): void {
-    db_insert('notifications', [
-        'notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4),
+    $row = [
         'memberId' => $memberId,
         'kind' => $n['kind'] ?? 'announcement',
         'title' => $n['title'] ?? '',
@@ -299,7 +342,43 @@ function push_notification(string $memberId, array $n): void {
         'linkPage' => $n['linkPage'] ?? '',
         'readAt' => '',
         'createdAt' => now_iso(),
-    ]);
+        'actionLabel' => mb_substr((string)($n['actionLabel'] ?? ''), 0, 60),
+    ];
+    if (isset($n['linkRef'])) $row['linkRef'] = (string)$n['linkRef'];
+    /* A running thing keeps ONE live item: the same groupKey updates the row
+       in place and makes it unread again, rather than stacking a new alert
+       for every step (Saturday's timetable sent one per block). */
+    $group = mb_substr((string)($n['groupKey'] ?? ''), 0, 96);
+    if ($group !== '') {
+        $have = db_row('SELECT notifId FROM notifications WHERE memberId = ? AND groupKey = ? ORDER BY id DESC LIMIT 1', [$memberId, $group]);
+        if ($have) {
+            db_update('notifications', $row, ['notifId' => (string)$have['notifId']]);
+            db_exec('DELETE FROM notification_state WHERE memberId = ? AND notifId = ?', [$memberId, (string)$have['notifId']]);
+            return;
+        }
+    }
+    db_insert('notifications', $row + ['notifId' => 'N-' . gmdate('Y') . '-' . rand_hex(4), 'groupKey' => $group]);
+}
+
+/**
+ * What a notification's button does: a label and the member-portal page it
+ * opens. The row's own actionLabel wins; otherwise the kind decides, and a
+ * notification with nowhere to go has no button rather than a dead one.
+ */
+function notification_action(array $n): ?array {
+    $page = (string)($n['linkPage'] ?? '');
+    if ($page === '') return null;
+    $label = trim((string)($n['actionLabel'] ?? ''));
+    if ($label === '') {
+        $kind = (string)($n['kind'] ?? '');
+        $byKind = ['mentor' => 'Open the chat', 'duty' => 'See what to do', 'formation' => 'See today’s plan', 'event' => 'Open the event',
+                   'mission' => 'See the mission', 'curriculum' => 'Open the lesson', 'safeguarding' => 'Open it', 'system' => 'Open it'];
+        $byPage = ['journal' => 'Open your journal', 'community' => 'Open the post', 'results' => 'See your results', 'money' => 'See what is owed',
+                   'account' => 'Open your account', 'records' => 'Open your record', 'events' => 'Open the event', 'timetable' => 'See the timetable',
+                   'learn' => 'Open learning', 'curriculum' => 'Open the lesson', 'mentor' => 'Open the chat', 'dashboard' => 'Open Today'];
+        $label = $byKind[$kind] ?? ($byPage[$page] ?? 'Open');
+    }
+    return ['label' => $label, 'page' => $page, 'ref' => (string)($n['linkRef'] ?? '')];
 }
 
 /**
@@ -366,9 +445,9 @@ function notify_people(array $members, array $n): int {
  * grant them per person (capsExtra).
  */
 const ADMIN_ROLES = [
-    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding'],
+    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding', 'support', 'network', 'wifi_regions'],
                        'summary' => 'Everything, including settings, roles and access. Keep to two or three people.'],
-    'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum'],
+    'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum', 'support'],
                        'summary' => 'Runs the programme day to day: both programmes, members, the door, content and the inbox. No money, settings or roles.'],
     'club_admin'   => ['label' => 'Club coordinator', 'tier' => 3, 'queued' => true, 'caps' => ['club', 'people', 'checkin', 'curriculum'],
                        'summary' => 'The year-round Club: members, centres, volunteers, the door, the timetable and the curriculum. Suspensions, merges and centre changes wait for a second admin.'],
@@ -390,11 +469,14 @@ const ADMIN_CAPS = [
     'curriculum' => 'Lessons, materials, checks and the Club\'s course list',
     'content'    => 'Posts, events, missions, sessions, assignments, the Journal, quotes and announcements',
     'inbox'      => 'Newsletter and messages',
+    'support'    => 'Support cases: answering members, families and visitors, and their priority and status',
     'fees'       => 'Dues, training fees, fines and payments',
     'journal'    => 'Writing the programme\'s institutional record',
     'safeguarding' => 'Safeguarding cases: reading reports about young people and recording what was done',
     'audit'      => 'Monitoring & evaluation and the audit trail (read only)',
     'settings'   => 'Site settings, integrations, diagnostics and donations',
+    'network'    => 'The centres\' Wi-Fi: gateways, their keys and setup, the access table and profiles (systems people only)',
+    'wifi_regions' => 'Wi-Fi regions: making them, choosing their centres, leads and speeds, and seeing them (super admins; never an NGG admin\'s)',
     'rbac'       => 'Staff roles, extra capabilities and centre scope',
 ];
 function admin_role_caps($role): array {
@@ -420,6 +502,80 @@ function admin_may_manage(array $requester, string $targetRole, ?string $newRole
 
 /** Every staff role name, most reach first. */
 function staff_role_names(): array { return array_keys(ADMIN_ROLES); }
+
+/* ── How a child sees an adult ─────────────────────────────────────────────
+ * A mentor, an instructor or a staff member is shown to a child (and their
+ * family) as a title and a surname, "Mrs Adeyemi", never "Funmi": it is how a
+ * child addresses an adult at the centre, and a first name on a screen a
+ * child holds is one more thing a stranger can use. The title is the
+ * person's own (`honorific`, migration 165, on whichever staff record they
+ * have); with none set it is "Coach". Staff screens keep full names. */
+const STAFF_HONORIFICS = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Engr', 'Coach', 'Aunty', 'Uncle', 'Pastor'];
+const STAFF_HONORIFIC_DEFAULT = 'Coach';
+
+/** A title from the allow-list, case and full stop forgiven; '' for anything else. */
+function staff_honorific_clean(string $h): string {
+    $h = strtolower(trim(rtrim(trim($h), '.')));
+    foreach (STAFF_HONORIFICS as $ok) if (strtolower($ok) === $h) return $ok;
+    return '';
+}
+/** The surname: the last word of the name, any title already in it set aside. */
+function staff_surname(string $fullName): string {
+    $p = preg_split('/\s+/', trim($fullName)) ?: [];
+    while ($p && staff_honorific_clean((string)$p[0]) !== '') array_shift($p);
+    return (string)($p ? end($p) : '');
+}
+/** "Mrs Adeyemi" from a name and a title (blank title → "Coach"). */
+function staff_title_name(string $fullName, string $honorific = ''): string {
+    $h = staff_honorific_clean($honorific) ?: STAFF_HONORIFIC_DEFAULT;
+    $s = staff_surname($fullName);
+    return $s === '' ? $h : $h . ' ' . $s;
+}
+/**
+ * Child-facing names for a set of people, by any id they are known by
+ * (memberId, mentorId or volunteerId). Only staff are renamed: an id that is
+ * not a mentor, a volunteer or a staff-role member is absent from the result,
+ * so a child's own name — or a classmate's — is never turned into "Coach X".
+ * Three queries for the whole set, never one per person.
+ */
+function staff_public_names(array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('strval', $ids), static fn($x) => $x !== '')));
+    if (!$ids) return [];
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $out = []; $title = [];
+    // The title follows the person: a mentor who is also a member reads the
+    // same on every record, whichever one carries it.
+    $rows = [];
+    foreach (db_all("SELECT mentorId AS a, memberId AS b, volunteerId AS c, fullName, honorific FROM mentors WHERE mentorId IN ($ph) OR memberId IN ($ph)", array_merge($ids, $ids)) as $r) $rows[] = $r;
+    foreach (db_all("SELECT volunteerId AS a, memberId AS b, '' AS c, fullName, honorific FROM volunteers WHERE volunteerId IN ($ph) OR memberId IN ($ph)", array_merge($ids, $ids)) as $r) $rows[] = $r;
+    // A mentor record older than its member link is matched by email, as the mentor gate does.
+    foreach (db_all("SELECT m.memberId AS a, t.mentorId AS b, '' AS c, t.fullName, COALESCE(NULLIF(t.honorific, ''), m.honorific) AS honorific FROM members m
+                     JOIN mentors t ON t.email <> '' AND lower(t.email) = lower(m.email) AND COALESCE(t.memberId, '') = '' WHERE m.memberId IN ($ph)", $ids) as $r) $rows[] = $r;
+    foreach (db_all("SELECT memberId AS a, '' AS b, '' AS c, fullName, honorific FROM members WHERE memberId IN ($ph) AND COALESCE(role,'') IN ('" . implode("','", staff_role_names()) . "')", $ids) as $r) $rows[] = $r;
+    foreach ($rows as $r) foreach (['a', 'b', 'c'] as $k) { $v = (string)$r[$k]; if ($v !== '' && (string)$r['honorific'] !== '' && !isset($title[$v])) $title[$v] = (string)$r['honorific']; }
+    // A title set on the member row reaches their mentor and volunteer rows too.
+    $memberIds = array_values(array_filter(array_map(static fn($r) => (string)$r['b'], $rows)));
+    if ($memberIds) foreach (db_all('SELECT memberId, honorific FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($memberIds), '?')) . ") AND honorific <> ''", $memberIds) as $m) $title[(string)$m['memberId']] ??= (string)$m['honorific'];
+    foreach ($rows as $r) {
+        $h = '';
+        foreach (['a', 'b', 'c'] as $k) if ($h === '' && (string)$r[$k] !== '' && isset($title[(string)$r[$k]])) $h = $title[(string)$r[$k]];
+        $name = staff_title_name((string)$r['fullName'], $h);
+        foreach (['a', 'b', 'c'] as $k) { $v = (string)$r[$k]; if ($v !== '' && in_array($v, $ids, true) && !isset($out[$v])) $out[$v] = $name; }
+    }
+    return $out;
+}
+/** One person's child-facing name; `$fallback` (already child-safe) when they are not staff. */
+function staff_public_name(string $id, string $fallback = ''): string {
+    return staff_public_names([$id])[$id] ?? $fallback;
+}
+/** Record a person's title on every staff record they have (members, mentors, volunteers). */
+function staff_honorific_set(string $memberId, string $mentorId, string $volunteerId, string $honorific): string {
+    $h = staff_honorific_clean($honorific);
+    if ($memberId !== '') { db_exec('UPDATE members SET honorific = ? WHERE memberId = ?', [$h, $memberId]); db_exec('UPDATE mentors SET honorific = ? WHERE memberId = ?', [$h, $memberId]); db_exec('UPDATE volunteers SET honorific = ? WHERE memberId = ?', [$h, $memberId]); }
+    if ($mentorId !== '') db_exec('UPDATE mentors SET honorific = ? WHERE mentorId = ?', [$h, $mentorId]);
+    if ($volunteerId !== '') { db_exec('UPDATE volunteers SET honorific = ? WHERE volunteerId = ?', [$h, $volunteerId]); db_exec('UPDATE mentors SET honorific = ? WHERE volunteerId = ?', [$h, $volunteerId]); }
+    return $h;
+}
 function admin_role_label($role): string { return (string)(ADMIN_ROLES[strtolower((string)$role)]['label'] ?? $role); }
 function admin_role_scoped($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['scoped']); }
 function admin_role_queued($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['queued']); }
@@ -1076,6 +1232,8 @@ function public_notification(array $n): array {
         'linkRef' => (string)($n['linkRef'] ?? ''),
         'readAt' => $n['readAt'] ?: '',
         'createdAt' => $n['createdAt'],
+        'action' => notification_action($n),
+        'broadcast' => (string)($n['memberId'] ?? '') === '*',
     ];
 }
 
@@ -1194,6 +1352,16 @@ function upload_is_doc_ext(string $ext): bool {
  */
 
 /** Is this subject currently locked out? */
+/**
+ * The sign-in forms carry a field no person can see or reach (`hp`). A person
+ * leaves it empty; a script that fills every input does not. Tripped → the
+ * request is refused with the same generic error a server fault gives, so the
+ * script learns nothing about why. Called from the pre-session routes only.
+ */
+function bot_trap_tripped(array $body): bool {
+    return trim((string)($body['hp'] ?? '')) !== '';
+}
+
 function attempt_locked(string $scope, string $subject): bool {
     if ($subject === '') return false;
     $r = db_row('SELECT lockedUntil FROM attempt_guard WHERE scope = ? AND subject = ? LIMIT 1',

@@ -86,6 +86,9 @@ function gs_cache_purge(string $op): void {
 function gs_cache_topics(): array {
     return [
         'posts'    => ['public.posts', 'post.get'],
+        /* A published testimonial, a withdrawn one, and a consent turned off
+           on a member record all change what the home page may show. */
+        'testimonials' => ['public.testimonials'],
         'events'   => ['public.events'],
         'anchor'   => ['public.anchorContent'],
         /* A centre's name, code and colour drive the public centre list, the
@@ -100,6 +103,7 @@ function gs_cache_topics(): array {
         'catalogue' => ['public.programme', 'public.summer'],
         // A centre's published timetable — changed by the timetable desk.
         'timetable' => ['public.timetable'],
+        'formation' => ['public.formation'],
         // Featuring or hiding a post changes the public Showcase.
         'community' => ['community.showcase'],
         /* Enrolment counts feed the public stats block, and the /summer page's
@@ -110,6 +114,10 @@ function gs_cache_topics(): array {
            page, so changing them has to reach it. Groups too: the page lists
            the courses actually running at each centre, which comes from them. */
         'summer'   => ['public.summer'],
+        /* The current and next programme session headline the public site, so
+           opening or closing a term must reach it on the next request, not
+           five minutes later. */
+        'sessions' => ['public.session'],
     ];
 }
 

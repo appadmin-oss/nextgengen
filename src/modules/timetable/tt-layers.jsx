@@ -151,7 +151,9 @@ function TtImport({ C, init }) {
     NGGApi.public.timetable("").then(r => {
       const list = r.centres || [];
       setCentres(list);
-      setSlug(s => s || (list[0] ? list[0].slug : ""));
+      // A member's own centre is the one offered first.
+      const own = C.member && C.member.centre ? list.find(c => String(c.name).toLowerCase() === String(C.member.centre).toLowerCase()) : null;
+      setSlug(s => s || (own || list[0] || {}).slug || "");
     }).catch(() => setListFailed(true));
   };
   React.useEffect(loadList, []);

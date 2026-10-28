@@ -8,6 +8,7 @@ $token = trim((string)($b['token'] ?? ''));
 if ($token !== '' && !preg_match('/^[a-f0-9]{32,128}$/i', $token)) json_error('bad_token_format', 422);
 $res = gs_call('family.verify', ['token' => $token, 'email' => (string)($b['email'] ?? ''), 'otp' => (string)($b['otp'] ?? ''), 'ip' => client_ip()]);
 if (empty($res['ok'])) { $c = $res['error'] ?? 'invalid'; json_error($c, $c === 'too_many_attempts' ? 429 : 400); }
-session_issue_family($res['guardian'], !empty($b['remember']));
+$mfa = (string)($res['mfa'] ?? '');
+session_issue_family($res['guardian'], !empty($b['remember']), ['mfaP' => $mfa]);
 $csrf = csrf_issue();
-json_ok(['guardian' => family_guardian_public($res['guardian']), 'csrf' => $csrf]);
+json_ok(['guardian' => family_guardian_public($res['guardian']), 'mfa' => $mfa, 'csrf' => $csrf]);

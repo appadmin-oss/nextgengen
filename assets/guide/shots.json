@@ -1,0 +1,134 @@
+{
+ "member": {
+  "phone": {
+   "home": {
+    "file": "member-phone-home.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Today screen of My NGG, on a phone"
+   },
+   "nav": {
+    "file": "member-phone-nav.jpg",
+    "w": 390,
+    "h": 83,
+    "alt": "The bar at the bottom of My NGG: Today, Mentor, Grow, Learn and Account"
+   },
+   "today": {
+    "file": "member-phone-today.jpg",
+    "w": 390,
+    "h": 560,
+    "alt": "Today: what to do first, at the top, on a phone"
+   },
+   "start": {
+    "file": "member-phone-start.jpg",
+    "w": 374,
+    "h": 560,
+    "alt": "The Getting started list on Today, on a phone"
+   },
+   "mentor": {
+    "file": "member-phone-mentor.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Mentor screen: messages with your mentor, on a phone"
+   },
+   "grow": {
+    "file": "member-phone-grow.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Grow screen: Leadership Index, courage and goal, on a phone"
+   },
+   "learn": {
+    "file": "member-phone-learn.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Learn screen: this week’s lessons, on a phone"
+   },
+   "help": {
+    "file": "member-phone-help.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Get help screen, on a phone"
+   }
+  },
+  "desktop": {
+   "home": {
+    "file": "member-desktop-home.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Today screen of My NGG, on a computer"
+   },
+   "nav": {
+    "file": "member-desktop-nav.jpg",
+    "w": 264,
+    "h": 520,
+    "alt": "The list on the left of My NGG: Today, Mentor, Grow, Learn and Account"
+   },
+   "today": {
+    "file": "member-desktop-today.jpg",
+    "w": 868,
+    "h": 520,
+    "alt": "Today: what to do first, at the top, on a computer"
+   },
+   "start": {
+    "file": "member-desktop-start.jpg",
+    "w": 788,
+    "h": 471,
+    "alt": "The Getting started list on Today, on a computer"
+   },
+   "mentor": {
+    "file": "member-desktop-mentor.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Mentor screen: messages with your mentor, on a computer"
+   },
+   "grow": {
+    "file": "member-desktop-grow.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Grow screen: Leadership Index, courage and goal, on a computer"
+   },
+   "learn": {
+    "file": "member-desktop-learn.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Learn screen: this week’s lessons, on a computer"
+   },
+   "help": {
+    "file": "member-desktop-help.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Get help screen, on a computer"
+   }
+  }
+ },
+ "mentor": {
+  "phone": {
+   "home": {
+    "file": "mentor-phone-home.jpg",
+    "w": 390,
+    "h": 844,
+    "alt": "The Mentor Portal: this week, on a phone"
+   },
+   "nav": {
+    "file": "mentor-phone-nav.jpg",
+    "w": 390,
+    "h": 87,
+    "alt": "The bar at the bottom of the Mentor Portal"
+   }
+  },
+  "desktop": {
+   "home": {
+    "file": "mentor-desktop-home.jpg",
+    "w": 1100,
+    "h": 760,
+    "alt": "The Mentor Portal: this week, on a computer"
+   },
+   "nav": {
+    "file": "mentor-desktop-nav.jpg",
+    "w": 264,
+    "h": 520,
+    "alt": "The list on the left of the Mentor Portal"
+   }
+  }
+ }
+}

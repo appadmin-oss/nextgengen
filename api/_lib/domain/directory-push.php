@@ -92,12 +92,16 @@ function dirpush_ready(): bool {
         && !preg_match('/^(your|changeme|replace|example|todo)/i', $s);
 }
 
-/** Where CACENTRE is. */
-function dirpush_endpoint(): string {
+/** Where CACENTRE is. The one address NGG reaches it at, for the directory and the Wi-Fi alike. */
+function dirpush_base(): string {
     $base = trim((string)(getenv('DIR_PUSH_URL') ?: ($GLOBALS['CONFIG']['dir_push_url'] ?? '')));
     if ($base === '') $base = 'https://cacentre.afrovanguard.org.ng';
 
-    return rtrim($base, '/') . '/api/directory-push.php?app=' . DIRPUSH_APP;
+    return rtrim($base, '/');
+}
+
+function dirpush_endpoint(): string {
+    return dirpush_base() . '/api/directory-push.php?app=' . DIRPUSH_APP;
 }
 
 /**
@@ -212,11 +216,22 @@ function dirpush_batch(string $store, int $cursor, int $limit = DIRPUSH_BATCH): 
  * @param list<array<string,mixed>> $rows
  */
 function dirpush_mint(array $rows, ?string $secret = null, ?int $now = null): string {
+    return dirpush_sign(DIRPUSH_TYP, ['rows' => array_values($rows)], $secret, $now);
+}
+
+/**
+ * Sign any document this connection carries. CACENTRE's DirectoryEnvelope
+ * knows three: `dir.push` (above), and the Wi-Fi's `wifi.roster` and
+ * `wifi.card` (domain/wifi-cacentre.php). Same key, same wire; `typ` keeps
+ * them apart at the other end.
+ *
+ * @param array<string,mixed> $claims
+ */
+function dirpush_sign(string $typ, array $claims, ?string $secret = null, ?int $now = null): string {
     $now = $now ?? time();
-    $payload = json_encode([
-        'rows'  => array_values($rows),
+    $payload = json_encode($claims + [
         'iss'   => DIRPUSH_APP,
-        'typ'   => DIRPUSH_TYP,
+        'typ'   => $typ,
         'nonce' => bin2hex(random_bytes(16)),
         'iat'   => $now,
         'exp'   => $now + DIRPUSH_TTL,
@@ -238,17 +253,27 @@ function dirpush_send(array $rows): array {
     if (!dirpush_ready()) return ['ok' => false, 'error' => 'not-configured'];
     if ($rows === [])     return ['ok' => true, 'written' => 0];
 
-    $ch = curl_init(dirpush_endpoint());
+    return dirpush_post(dirpush_endpoint(), dirpush_mint($rows));
+}
+
+/**
+ * POST one signed token to CACENTRE. Never throws.
+ *
+ * @return array<string,mixed>
+ */
+function dirpush_post(string $url, string $token, int $timeout = 30): array {
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_CONNECTTIMEOUT => 8,
         CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
         /* The batch is inside the token and the token is in the body. Not a
            header: five hundred rows is far past the 8KB a server allows
            there, and that is a limit met on the first real run. */
-        CURLOPT_POSTFIELDS => json_encode(['token' => dirpush_mint($rows)], JSON_UNESCAPED_SLASHES),
+        CURLOPT_POSTFIELDS => json_encode(['token' => $token], JSON_UNESCAPED_SLASHES),
     ]);
     $body = curl_exec($ch);
     $err  = curl_error($ch);

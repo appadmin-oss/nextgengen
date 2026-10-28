@@ -27,6 +27,7 @@ const CR_ATTENTION = [
   ["messages", "Unread messages", "", "neutral", "inbox", ["inbox", "messages"]],
   ["photos", "Headshots waiting", "Blocking ID cards from printing", "neutral", "content", ["inbox", "photos"]],
   ["comments", "Comments to moderate", "", "neutral", "content", ["inbox", "comments"]],
+  ["testimonials", "Testimonials to read", "What members said about their sessions", "neutral", "content", ["inbox", "testimonials"]],
 ];
 
 function crAuditIcon(ev) {
@@ -75,6 +76,10 @@ Object.assign(CR_TAB_DEFS, {
         const x = w[a[0]], age = x.oldest ? now - Date.parse(x.oldest) : 0;
         return { n: x.n, l: a[1], s: a[2] || (x.oldest ? "Oldest has waited " + crAgo(x.oldest).replace(/m$/, " min").replace(/h$/, " h").replace(/d$/, " days").replace(/w$/, " weeks") : ""), tone: a[3], go: a[5], age };
       });
+      /* Image storage near or at its limit is work for whoever holds settings: it goes in Needs you, first. */
+      const cl = d.health && d.health.health && d.health.health.checks && d.health.health.checks.cloudinary;
+      if (cl && (cl.level === "high" || cl.level === "critical")) rows.unshift({ n: Math.round(cl.usedPercent || 0) + "%", l: cl.level === "critical" ? "Image storage is full — uploads are paused" : "Image storage is nearly full",
+        s: "Free space or upgrade the Cloudinary plan", tone: cl.level === "critical" ? "bad" : "warn", go: ["settings", "ops"], age: Infinity });
       const hasHealth = !!d.health;
       const out = [{ type: "attention", span: hasHealth ? 4 : 6, title: "Needs you", sub: "Oldest first", rows, empty: "Nothing is waiting on you. New work appears here as it arrives." }];
       if (hasHealth) {

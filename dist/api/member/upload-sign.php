@@ -22,8 +22,15 @@ require_method('POST');
 // Cheap abuse throttle — a member should never need dozens of signatures/min.
 rate_limit_check('upload.sign');
 
+/* A retry after Cloudinary refused an upload carries what it said; the
+   account is checked (and, when spent, left for the next) before signing. */
+$refusedBody = read_json_body();
+$refusal = media_before_sign(is_array($refusedBody['refused'] ?? null) ? $refusedBody['refused'] : null);
 $cfg = $CONFIG['cloudinary'] ?? [];
-if (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret'])) {
+/* A bucket (R2, B2 — api/_lib/object-store.php) wins when one is set: every
+   new upload goes there and Cloudinary keeps serving what it already holds. */
+$useStore = store_configured();
+if (!$useStore && (empty($cfg['cloud_name']) || empty($cfg['api_key']) || empty($cfg['api_secret']))) {
     json_error('uploads_disabled', 503);
 }
 
@@ -38,7 +45,7 @@ $kinds = $cfg['kinds'] ?? [];
 // The kind is strictly sanitised first so it can never escape the base folder.
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
-} elseif ($kind === 'post') {
+} elseif ($kind === 'post' || $kind === 'assignment') {
     /* Community feed media. FOUR kinds, not two.
      *
      * This used to be image-or-video, and everything that was not a video was
@@ -60,7 +67,7 @@ if (isset($kinds[$kind])) {
      */
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     $spec = ['resource_type' => $mk === 'raw' ? 'raw' : ($mk === 'video' ? 'video' : 'image'),
-             'folder' => 'community'];
+             'folder' => $kind === 'assignment' ? 'assignments' : 'community'];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {
@@ -74,8 +81,32 @@ if ($kind === 'cover') {
 
 $resourceType = $spec['resource_type'] ?? 'auto';
 $sub = $spec['folder'] ?? $kind;
+
+if ($useStore) {
+    /* The same kinds and folders as Cloudinary's, and the same media rule: an
+       image kind takes only images; a post or a hand-in takes what it is. No
+       server-side transformation exists on a bucket, so images arrive already
+       shrunk by the browser (api-client.js shrinkForUpload). */
+    /* A post or a hand-in is what the file is (Cloudinary files a PDF under
+       `image`, which here would refuse it); any other image kind takes images. */
+    $mediaAware0 = $kind === 'post' || $kind === 'assignment';
+    $mk = !$mediaAware0 && $resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image'));
+    $sc = $CONFIG['storage'] ?? [];
+    /* Already stored? The same bytes (verified hash and size) are handed back
+       and nothing is uploaded — no storage, no data spent (media-objects.php). */
+    $dup = media_obj_find_dup(strtolower((string)($body['sha256'] ?? '')), (int)($body['size'] ?? 0), store_formats($mk));
+    if ($dup) json_ok(media_obj_reuse_answer($dup));
+    $r = store_upload_spec((string)preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$sub)), $mk, (string)($body['name'] ?? ''), (string)($body['contentType'] ?? ''),
+                           $body['size'] ?? 0, (int)($sc['max_bytes'] ?? ($cfg['max_bytes'] ?? STORE_MAX_BYTES)), store_owner_segment((string)($s['mid'] ?? '')));
+    if (empty($r['ok'])) json_error((string)$r['error'], 400, (string)($r['detail'] ?? ''));
+    media_obj_record_signed($r, (string)($s['mid'] ?? ''), (string)$kind);
+    json_ok($r);
+}
 $base = trim((string)($cfg['folder'] ?? 'ngg'), '/');
-$folder = $base . '/' . $sub;
+/* One folder per uploader (a keyed hash, never the id itself), so one
+   person's files can be found and purged together. */
+$owner = store_owner_segment((string)($s['mid'] ?? ''));
+$folder = $base . '/' . $sub . ($owner !== '' ? '/' . $owner : '');
 
 $timestamp = time();
 
@@ -102,7 +133,20 @@ $signParams = [
 //    extension) on the delivered URL, so a `.pdf` stays recognisably a `.pdf`
 //    to the viewer, the browser and the person downloading it.
 $eager = ''; $incoming = ''; $useFilename = false;
-if ($kind === 'post') {
+// Storage full: refuse before signing, so nothing new tips the plan over (media-storage.php).
+if (function_exists('media_uploads_allowed') && !media_uploads_allowed()) { $r = media_full_refusal(); json_error($r['error'], 503, $r['detail']); }
+/* Every IMAGE upload is compressed before it is stored, not only community
+   posts: headshots, avatars, covers and any image kind. A document, a video
+   or an `auto` upload whose client did not say it is an image is left alone. */
+$isImage = $resourceType === 'image' || ($resourceType === 'auto' && upload_media_kind((string)($body['mediaKind'] ?? '')) === 'image' && isset($body['mediaKind']));
+/* A hand-in is media-aware like a post: a PDF stays a PDF, a recording is
+   stored as audio/video, a photo is compressed. */
+$mediaAware = $kind === 'post' || $kind === 'assignment';
+if (!$mediaAware && $isImage) {
+    $incoming = media_incoming_transformation($kind);
+    $signParams['transformation'] = $incoming;
+}
+if ($mediaAware) {
     $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
     if ($mk === 'video') {
         $eager = 'f_auto,q_auto:eco,w_1280,c_limit';
@@ -117,6 +161,14 @@ if ($kind === 'post') {
         $signParams['transformation'] = $incoming;
     }
 }
+
+/* Formats are pinned in the signature too: an image kind stores only images,
+   a hand-in only the formats its media kind allows. Without it, a signature
+   asked for "a photo" could be spent on any file at all. */
+$fmtKind = $mediaAware ? upload_media_kind((string)($body['mediaKind'] ?? 'image')) : ($resourceType === 'image' ? 'image' : upload_media_kind((string)($body['mediaKind'] ?? 'image')));
+// Cloudinary converts a phone's HEIC on delivery, so it may take one; the bucket cannot.
+$allowedFormats = implode(',', array_merge(store_formats($fmtKind), $fmtKind === 'image' ? ['heic', 'heif', 'avif'] : []));
+$signParams['allowed_formats'] = $allowedFormats;
 
 ksort($signParams);
 $toSign = [];
@@ -136,6 +188,7 @@ json_ok([
     'eagerAsync'   => $eager !== '',
     'transformation' => $incoming,
     'useFilename'  => $useFilename,
+    'allowedFormats' => $allowedFormats,
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     'maxBytes'     => (int)($cfg['max_bytes'] ?? (25 * 1024 * 1024)),
 ]);

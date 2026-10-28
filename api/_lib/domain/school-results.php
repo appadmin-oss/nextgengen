@@ -127,7 +127,7 @@ function results_in_loop(array $m): bool {
 /** The member's own row: NGG, and a child in the results loop. A Summer account has none. */
 function results_member(string $memberId): ?array {
     if ($memberId === '') return null;
-    $m = db_row('SELECT memberId, fullName, centre, track, type, status, role, joinDate, createdAt, dob FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division, type, status, role, joinDate, createdAt, dob FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$m || !member_is_ngg($m) || !results_in_loop($m)) return null;
     return $m;
 }
@@ -165,20 +165,44 @@ function results_ocr(string $url, string $mime): array {
     $img = ai_fetch_image($url);
     if (empty($img['ok'])) return $img;
     $mimeIn = str_starts_with($mime, 'application/pdf') ? 'application/pdf' : $img['mime'];
-    $system = 'You read Nigerian secondary and primary school report cards. Extract each subject and its total score for the term as a whole number from 0 to 100. '
-        . 'Reply with ONLY JSON: {"subjects":[{"name":"Mathematics","score":64,"confidence":0.0-1.0}]}. '
-        . 'Use the subject names as printed. Use the TERM TOTAL (not CA or exam alone). If a score is unreadable, give your best reading with low confidence. '
-        . 'Never invent a subject that is not printed. Skip conduct, attendance, position and remarks rows.';
-    $r = gemini_generate($cand, $system, [['role' => 'user', 'parts' => [
-        ['inline_data' => ['mime_type' => $mimeIn, 'data' => $img['b64']]],
-        ['text' => 'Read the subjects and term totals from this report card.'],
-    ]]], ['maxTokens' => 900, 'temperature' => 0.0, 'thinking' => 'off', 'json' => true]);
+    /* How these cards are laid out, so totals are not missed: a table with a
+       row per subject and columns such as 1st CA, 2nd CA, (3rd CA), Exam,
+       TOTAL (or "Term Total", "Total Score", "Wtd"), Grade, Position, Remark.
+       Photos are often skewed, folded or handwritten in the total column. The
+       first pass read "some scores" as unreadable; it now thinks first, has
+       room for every row, and checks each total against CA + exam. */
+    $system = 'You read Nigerian primary and secondary school report cards (photos or PDFs, often skewed, shadowed, folded or with handwritten totals). '
+        . 'There is a table with one row per subject and columns like "1st CA", "2nd CA", "3rd CA", "Exam", "Total" (also printed "Term Total", "Total Score", "Wtd Total"), "Grade", "Position", "Remark". '
+        . 'For EVERY subject row extract the TERM TOTAL out of 100 as a whole number. If the total cell is blank or unreadable, add the CA and exam marks of that row. '
+        . 'If the card is marked out of something other than 100 (e.g. CA 40 + Exam 60, or a total out of 200), convert to a percentage. '
+        . 'Check each total: it should equal the row\'s CA + exam, and match its grade letter (A is 70+ or 75+, F is below 40). If they disagree, re-read the digits and lower the confidence. '
+        . 'Read digits carefully: 1/7, 3/8, 5/6 and 0/6 are easily confused in handwriting. Use the subject names as printed (keep full names like "Computer Hardware & GSM Repair"). '
+        . 'Never invent a subject; skip conduct, attendance, affective/psychomotor traits, position and remarks rows. '
+        . 'Reply with ONLY JSON: {"subjects":[{"name":"Mathematics","score":64,"ca":24,"exam":40,"grade":"B","confidence":0.0-1.0}],"outOf":100,"notes":"anything unclear"}.';
+    $read = function (string $thinking, string $ask) use ($cand, $system, $mimeIn, $img) {
+        $r = gemini_generate($cand, $system, [['role' => 'user', 'parts' => [
+            ['inline_data' => ['mime_type' => $mimeIn, 'data' => $img['b64']]],
+            ['text' => $ask],
+        ]]], ['maxTokens' => 3000, 'temperature' => 0.0, 'thinking' => $thinking, 'json' => true]);
+        if (empty($r['ok'])) return $r;
+        $text = (string)$r['text'];
+        if (preg_match('/\{.*\}/s', $text, $mm)) $text = $mm[0];
+        $j = json_decode($text, true);
+        if (!is_array($j) || !is_array($j['subjects'] ?? null)) return ['ok' => false, 'error' => 'ai_bad_json'];
+        return ['ok' => true, 'subjects' => $j['subjects'], 'by' => (string)($r['model'] ?? 'gemini')];
+    };
+    $r = $read('low', 'Read every subject row and its term total from this report card.');
+    if (empty($r['ok'])) $r = $read('off', 'Read every subject row and its term total from this report card.');
     if (empty($r['ok'])) return $r;
-    $text = (string)$r['text'];
-    if (preg_match('/\{.*\}/s', $text, $mm)) $text = $mm[0];
-    $j = json_decode($text, true);
-    if (!is_array($j) || !is_array($j['subjects'] ?? null)) return ['ok' => false, 'error' => 'ai_bad_json'];
-    return ['ok' => true, 'subjects' => $j['subjects'], 'by' => (string)($r['model'] ?? 'gemini')];
+    /* Unclear reads (no score, or low confidence on a third or more of rows):
+       one more careful pass, keeping whichever read is more confident. */
+    $weak = static fn(array $subs) => count(array_filter($subs, static fn($x) => !is_numeric($x['score'] ?? null) || (float)($x['confidence'] ?? 1) < 0.6));
+    $w1 = $weak($r['subjects']);
+    if ($r['subjects'] && $w1 * 3 >= count($r['subjects'])) {
+        $r2 = $read('', 'Read this report card again, slowly, row by row. For each subject give the TOTAL; if it is unclear, add that row\'s CA and exam marks.');
+        if (!empty($r2['ok']) && $weak($r2['subjects']) < $w1) $r = $r2;
+    }
+    return $r;
 }
 
 /** Normalise subjects from any source: names cleaned and de-duplicated, scores 0–100 or null. */
@@ -318,12 +342,25 @@ function results_plan_items(string $planId): array {
         'method' => (string)$r['method'], 'methodLabel' => RESULTS_METHODS[(string)$r['method']]['label'] ?? '',
         'why' => RESULTS_METHODS[(string)$r['method']]['why'] ?? '', 'ref' => RESULTS_METHODS[(string)$r['method']]['ref'] ?? '',
         'what' => (string)$r['what'], 'whenWhere' => (string)$r['whenWhere'],
-        'sessionsPerWeek' => (int)$r['sessionsPerWeek'], 'helper' => (string)$r['helper']],
+        'sessionsPerWeek' => (int)$r['sessionsPerWeek'], 'helper' => (string)$r['helper'],
+        'midterm' => results_midterm($r['current'] === null ? null : (int)$r['current'], $r['target'] === null ? null : (int)$r['target'])],
         db_all('SELECT * FROM growth_plan_items WHERE planId = ? ORDER BY position, id', [$planId]));
 }
 
+/* What makes an 85% target realistic: a halfway mark to check against at
+   mid-term, and enough sessions for the size of the climb. */
+function results_midterm(?int $current, ?int $target): ?int {
+    if ($target === null) return null;
+    return $current === null ? $target : (int)ceil($current + ($target - $current) / 2);
+}
+function results_sessions_for(?int $current, int $target): int {
+    $gap = $target - (int)$current;
+    return $gap >= 40 ? 5 : ($gap >= 25 ? 4 : 3);
+}
+
 /** The plan as every reader sees it. $week: this week's ticks, per item. */
-function results_plan_public(?array $p, string $today): ?array {
+/** `$child`: the member's own screen, where adults are named by title and surname (staff_public_name). */
+function results_plan_public(?array $p, string $today, bool $child = false): ?array {
     if (!$p) return null;
     $items = results_plan_items((string)$p['planId']);
     $ws = results_week_start($today);
@@ -341,7 +378,7 @@ function results_plan_public(?array $p, string $today): ?array {
         'recipients' => results_recipients(json_decode((string)$p['recipientsJson'], true)),
         'draftedBy' => (string)$p['aiModel'] !== '' ? 'ai' : 'rules',
         'returnNote' => (string)$p['returnNote'],
-        'approvedByName' => (string)$p['approvedByName'], 'approvedAt' => (string)$p['approvedAt'],
+        'approvedByName' => $child && (string)$p['approvedByName'] !== '' ? staff_public_name((string)$p['approvedBy'], 'Your mentor') : (string)$p['approvedByName'], 'approvedAt' => (string)$p['approvedAt'],
         'sentAt' => (string)$p['sentAt'], 'familySentAt' => (string)$p['familySentAt'],
         'items' => $items, 'weekStart' => $ws,
         'adherence' => $live ? results_adherence($items, (string)$p['sentAt'], $today) : null];
@@ -353,31 +390,35 @@ function results_recipients($r): array {
     return ['mentor' => true, 'instructor' => true, 'admin' => true, 'family' => !empty($r['family'])];
 }
 
-function results_history(string $memberId, string $term = '', int $limit = 60): array {
-    $sql = 'SELECT actorName, actorRole, what, kind, at, term FROM results_log WHERE memberId = ?';
+function results_history(string $memberId, string $term = '', int $limit = 60, bool $child = false): array {
+    $sql = 'SELECT actorId, actorName, actorRole, what, kind, at, term FROM results_log WHERE memberId = ?';
     $args = [$memberId];
     if ($term !== '') { $sql .= ' AND term = ?'; $args[] = $term; }
-    return array_map(static fn($r) => ['at' => (string)$r['at'], 'who' => (string)$r['actorName'], 'role' => (string)$r['actorRole'],
-        'what' => (string)$r['what'], 'kind' => (string)$r['kind'], 'term' => (string)$r['term']],
-        db_all($sql . ' ORDER BY id DESC LIMIT ' . (int)$limit, $args));
+    $rows = db_all($sql . ' ORDER BY id DESC LIMIT ' . (int)$limit, $args);
+    $titled = $child ? staff_public_names(array_column($rows, 'actorId')) : [];
+    return array_map(static fn($r) => ['at' => (string)$r['at'], 'who' => !$child || (string)$r['actorRole'] === 'system' ? (string)$r['actorName']
+            : ((string)$r['actorId'] === $memberId ? 'You' : ($titled[(string)$r['actorId']] ?? 'The NGG team')), 'role' => (string)$r['actorRole'],
+        'what' => (string)$r['what'], 'kind' => (string)$r['kind'], 'term' => (string)$r['term']], $rows);
 }
 
 /** One member's term: upload, subjects (with last term), KPIs, plan, notes. */
-function results_record(array $m, string $term, string $today): array {
+function results_record(array $m, string $term, string $today, bool $child = false): array {
     $mid = (string)$m['memberId'];
     $u = db_row('SELECT * FROM results_uploads WHERE memberId = ? AND term = ? LIMIT 1', [$mid, $term]);
     $last = results_last_scores($mid, $term);
     $subjects = $u ? results_subjects_of((string)$u['uploadId'], $last) : [];
     $p = db_row('SELECT * FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [$mid, $term]);
-    $notes = $p ? array_map(static fn($n) => ['who' => (string)$n['authorName'], 'role' => (string)$n['authorRole'], 'text' => (string)$n['text'], 'at' => (string)$n['createdAt']],
-        db_all('SELECT * FROM plan_notes WHERE planId = ? ORDER BY id DESC LIMIT 40', [(string)$p['planId']])) : [];
+    $nrows = $p ? db_all('SELECT * FROM plan_notes WHERE planId = ? ORDER BY id DESC LIMIT 40', [(string)$p['planId']]) : [];
+    $titled = $child ? staff_public_names(array_column($nrows, 'authorId')) : [];
+    $notes = array_map(static fn($n) => ['who' => $child ? ($titled[(string)$n['authorId']] ?? ((string)$n['authorRole'] === 'instructor' ? 'Your instructor' : 'Your mentor')) : (string)$n['authorName'],
+        'role' => (string)$n['authorRole'], 'text' => (string)$n['text'], 'at' => (string)$n['createdAt']], $nrows);
     $t = results_term_parse($term);
     return ['term' => $term, 'termLabel' => $t['label'] ?? $term, 'dueOn' => $t['dueOn'] ?? '',
         'upload' => $u ? ['uploadId' => (string)$u['uploadId'], 'status' => (string)$u['status'], 'fileUrl' => (string)$u['fileUrl'],
             'fileMime' => (string)$u['fileMime'], 'ocrBy' => (string)$u['ocrBy'], 'confirmedAt' => (string)$u['confirmedAt'],
             'sentAt' => (string)$u['sentAt'], 'createdAt' => (string)$u['createdAt']] : null,
         'subjects' => $subjects, 'kpis' => results_kpis($subjects),
-        'plan' => results_plan_public($p, $today), 'notes' => $notes];
+        'plan' => results_plan_public($p, $today, $child), 'notes' => $notes];
 }
 
 /* ── Member ops ────────────────────────────────────────────────────────── */
@@ -403,8 +444,8 @@ function member_results_state(array $p): array {
     }
     return ['ok' => true, 'term' => $term,
         'terms' => array_map(static fn($t) => ['key' => $t['key'], 'label' => $t['label'], 'dueOn' => $t['dueOn']], $terms),
-        'due' => $due, 'record' => $term !== '' ? results_record($m, $term, $today) : null,
-        'history' => results_history((string)$m['memberId'], $term),
+        'due' => $due, 'record' => $term !== '' ? results_record($m, $term, $today, true) : null,
+        'history' => results_history((string)$m['memberId'], $term, 60, true),
         'past' => $past,
         'methods' => array_map(static fn($k, $v) => ['key' => $k] + $v, array_keys(RESULTS_METHODS), RESULTS_METHODS),
         'helpers' => array_map(static fn($k, $v) => ['key' => $k, 'label' => $v], array_keys(RESULTS_HELPERS), RESULTS_HELPERS),
@@ -438,7 +479,7 @@ function results_file_ok(string $url): bool {
     if (!preg_match('#^https://#', $url) || strlen($url) > 600) return false;
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
-    return $host === 'res.cloudinary.com' || ($own !== '' && $host === $own);
+    return $host === 'res.cloudinary.com' || store_hosted($url) || ($own !== '' && $host === $own);
 }
 
 /** member.results.upload — attach (or replace) this term's report. */
@@ -520,6 +561,13 @@ function member_results_confirm(array $p): array {
     if (!$subs) return ['ok' => false, 'error' => 'no_subjects'];
     $missing = array_values(array_map(static fn($s) => $s['name'], array_filter($subs, static fn($s) => $s['score'] === null)));
     if ($missing) return ['ok' => false, 'error' => 'score_required', 'subjects' => $missing];
+    /* Every score 0 is a report that was not read, not a term of zeros. It was
+       accepted, and became a plan, a "needs attention" flag and a class
+       average built on nothing. Two or more zeros among real scores are kept:
+       that can be true. */
+    $zeros = count(array_filter($subs, static fn($s) => (int)$s['score'] === 0));
+    if (count($subs) >= 2 && $zeros === count($subs)) return ['ok' => false, 'error' => 'scores_all_zero',
+        'message' => 'Every score says 0. Type each score from your report card, or upload a clearer photo.'];
     $ocr = [];
     foreach ((json_decode((string)$u['ocrJson'], true)['subjects'] ?? []) as $o) $ocr[mb_strtolower((string)$o['name'])] = $o;
     $last = results_last_scores((string)$m['memberId'], (string)$u['term']);
@@ -554,6 +602,22 @@ function member_results_confirm(array $p): array {
  * "what I'll do" lines when one is configured. The AI cannot choose subjects,
  * targets or methods outside the lists — those are validated and fall back.
  */
+/**
+ * A child's target. "current + 8" made a child on 0 aim for 8 and one on 48
+ * aim for 56: a programme for geniuses does not plan towards a pass.
+ */
+const RESULTS_GRADE_BANDS = [85, 90, 95, 100];
+/* NGG raises geniuses: no target is below 85%, whoever sets it (the draft,
+   the child, the mentor). Above 85, the next band at least 5 points up. */
+const RESULTS_TARGET_MIN = 85;
+function results_target_for(?int $score): int {
+    if ($score === null) return RESULTS_TARGET_MIN;
+    foreach (RESULTS_GRADE_BANDS as $b) if ($b >= $score + 5) return $b;
+    return 100;
+}
+/** The lowest target allowed for a subject: 85, or where the child already is. */
+function results_target_floor(?int $current): int { return min(100, max(RESULTS_TARGET_MIN, (int)$current)); }
+
 function member_results_plan_draft(array $p): array {
     $m = results_member((string)($p['memberId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
@@ -562,7 +626,7 @@ function member_results_plan_draft(array $p): array {
     if ((string)$u['status'] === 'draft') return ['ok' => false, 'error' => 'check_first'];
     $today = results_today();
     $existing = db_row('SELECT * FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [(string)$m['memberId'], (string)$u['term']]);
-    if ($existing && empty($p['fresh'])) return ['ok' => true, 'plan' => results_plan_public($existing, $today), 'existing' => true];
+    if ($existing && empty($p['fresh'])) return ['ok' => true, 'plan' => results_plan_public($existing, $today, true), 'existing' => true];
     if ($existing && (string)$existing['status'] !== 'draft') return ['ok' => false, 'error' => 'already_sent'];
 
     $subjects = results_subjects_of((string)$u['uploadId'], results_last_scores((string)$m['memberId'], (string)$u['term']));
@@ -571,27 +635,40 @@ function member_results_plan_draft(array $p): array {
     $items = [];
     foreach ($focus as $s) {
         $method = results_default_method($s['name']);
-        $items[] = ['subject' => $s['name'], 'current' => $s['score'], 'target' => min(100, $s['score'] + RESULTS_TARGET_STEP),
-            'method' => $method, 'what' => results_default_what($s['name'], $method), 'whenWhere' => '', 'sessionsPerWeek' => 3, 'helper' => 'self'];
+        $items[] = ['subject' => $s['name'], 'current' => $s['score'], 'target' => results_target_for($s['score']),
+            'method' => $method, 'what' => results_default_what($s['name'], $method), 'whenWhere' => '', 'sessionsPerWeek' => results_sessions_for($s['score'], results_target_for($s['score'])), 'helper' => $s['score'] !== null && $s['score'] < 50 ? 'mentor' : 'self'];
     }
     $flags = [];
     foreach ($subjects as $s) {
         if ($s['change'] !== null && $s['change'] <= -10) $flags[] = "{$s['name']} dropped {$s['change']} points since last term.";
-        if ($s['score'] !== null && $s['score'] < 40) $flags[] = "{$s['name']} is below 40.";
+        if ($s['score'] !== null && $s['score'] === 0) $flags[] = "{$s['name']} shows 0. If that is not your real score, fix it before you send.";
+        elseif ($s['score'] !== null && $s['score'] < 40) $flags[] = "{$s['name']} is below 40.";
     }
     $first = mp_first((string)$m['fullName']);
-    $summary = $kpis['avg'] === null ? '' : "Your average is {$kpis['avg']}" . ($kpis['change'] !== null ? ' (' . ($kpis['change'] >= 0 ? '+' : '') . $kpis['change'] . ' since last term)' : '')
-        . ". Your strongest subject is {$kpis['best']['name']}. This plan picks " . count($items) . ' subject' . (count($items) === 1 ? '' : 's') . ' to work on, with a target a little above where you are now.';
+    $summary = $kpis['avg'] === null ? '' : "Your average is {$kpis['avg']}%" . ($kpis['change'] !== null ? ' (' . ($kpis['change'] >= 0 ? '+' : '') . $kpis['change'] . ' since last term)' : '')
+        . ". Your strongest subject is {$kpis['best']['name']} at {$kpis['best']['score']}%"
+        . (!empty($kpis['lowest']) && $kpis['lowest']['name'] !== $kpis['best']['name'] ? " and your lowest is {$kpis['lowest']['name']} at {$kpis['lowest']['score']}%" : '') . '. '
+        . ($items ? 'This plan works on ' . implode(', ', array_map(static fn($i) => $i['subject'] . ' (' . ($i['current'] ?? '–') . '% → ' . $i['target'] . '%)', $items)) . '. Start with ' . $items[0]['subject'] . ' this week.' : '');
     $aiModel = '';
     if ($items) {
         $brief = ['firstName' => $first, 'average' => $kpis['avg'], 'change' => $kpis['change'],
             'subjects' => array_map(static fn($s) => ['name' => $s['name'], 'score' => $s['score'], 'last' => $s['last']], $subjects),
             'focus' => array_map(static fn($i) => ['subject' => $i['subject'], 'current' => $i['current'], 'target' => $i['target'], 'method' => $i['method']], $items)];
-        $ai = ai_classify('You help a Nigerian teenager plan study for next term. Write a short, warm summary (2 sentences, no emoji, speak to them as "you", '
-            . 'praise effort and strategy never intelligence, never compare with other children) and one concrete "what" line per focus subject (one sentence, '
-            . 'what they will actually do in a session). Keep each focus subject and method exactly as given. Methods: retrieval (test yourself, R1), spaced (spread it out, R1), '
-            . 'worked (worked examples, R2), interleave (mix problem types, R2), selfexplain (explain it to yourself, R2). '
-            . 'JSON: {"summary":"...","items":[{"subject":"...","what":"..."}]}', json_encode($brief, JSON_UNESCAPED_UNICODE), 700, 'coach');
+        /* The evaluation reads the numbers, not the child: "you're showing
+           great dedication" was written for a card of zeros. It must name the
+           strongest and weakest subjects with their scores, any subject that
+           rose or fell by 5+ since last term, how far each focus subject is
+           from 85, and one first step. No praise the numbers do not support. */
+        $brief['target'] = RESULTS_TARGET_MIN;
+        $brief['moves'] = array_values(array_filter(array_map(static fn($s) => $s['score'] !== null && $s['last'] !== null && abs($s['score'] - $s['last']) >= 5 ? ['name' => $s['name'], 'from' => $s['last'], 'to' => $s['score']] : null, $subjects)));
+        $ai = ai_classify('You evaluate a Nigerian secondary-school student\'s term report and help them plan the next term. Every target is at least 85%. '
+            . 'Write "summary": 3 short sentences to the student ("you"), built ONLY from the numbers given: (1) the average and the strongest subject with its score; '
+            . '(2) the subject(s) that rose or fell by 5+ points since last term (with the numbers), or the weakest subject with its score if none moved; '
+            . '(3) which focus subjects this plan works on and how far each is from 85, and what to do first this week. '
+            . 'Praise effort and method, never intelligence; do not praise anything the numbers do not show; no emoji; never compare with other children. '
+            . 'Then one concrete "what" line per focus subject: what they will actually do in one session, specific to that subject (e.g. "Do 10 past WAEC simultaneous-equation questions without notes, then mark them"). '
+            . 'Keep each focus subject and method exactly as given. Methods: retrieval (test yourself, R1), spaced (spread it out, R1), worked (worked examples, R2), interleave (mix problem types, R2), selfexplain (explain it to yourself, R2). '
+            . 'JSON: {"summary":"...","items":[{"subject":"...","what":"..."}]}', json_encode($brief, JSON_UNESCAPED_UNICODE), 900, 'coach');
         if (!empty($ai['ok']) && is_array($ai['data'])) {
             $sum = trim((string)($ai['data']['summary'] ?? ''));
             if ($sum !== '' && mb_strlen($sum) <= 600) { $summary = $sum; $aiModel = (string)($ai['provider'] ?? 'ai'); }
@@ -622,7 +699,7 @@ function member_results_plan_draft(array $p): array {
     });
     results_log((string)$m['memberId'], (string)$u['term'], ['id' => '', 'name' => $aiModel !== '' ? 'Drafted by AI' : 'NGG', 'role' => 'system'],
         'Drafted a plan for ' . (implode(', ', array_column($items, 'subject')) ?: 'no subjects'), 'draft');
-    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE planId = ?', [$planId]), results_today())];
+    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE planId = ?', [$planId]), results_today(), true)];
 }
 
 /** Validate a plan's items as written by the member. Returns [items, error]. */
@@ -643,6 +720,7 @@ function results_items_clean(array $in, array $scores): array {
         $target = (int)($it['target'] ?? 0);
         if ($target < 0 || $target > 100) return [null, ['error' => 'bad_target', 'subject' => $subject]];
         if ($cur !== null && $target < $cur) return [null, ['error' => 'target_below_current', 'subject' => $subject]];
+        if ($target < results_target_floor($cur)) return [null, ['error' => 'target_too_low', 'subject' => $subject, 'min' => results_target_floor($cur)]];
         $spw = (int)($it['sessionsPerWeek'] ?? 3);
         if ($spw < 1 || $spw > 7) return [null, ['error' => 'bad_sessions', 'subject' => $subject]];
         $out[] = ['subject' => $subject, 'current' => $cur, 'target' => $target, 'method' => $method,
@@ -684,7 +762,7 @@ function member_results_plan_save(array $p): array {
         db_update('growth_plans', ['habit' => $habit, 'recipientsJson' => json_encode(['family' => $fam]),
             'committed' => !empty($p['committed']) ? 1 : 0, 'updatedAt' => now_iso()], ['id' => (int)$plan['id']]);
     });
-    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE id = ?', [(int)$plan['id']]), results_today())];
+    return ['ok' => true, 'plan' => results_plan_public(db_row('SELECT * FROM growth_plans WHERE id = ?', [(int)$plan['id']]), results_today(), true)];
 }
 
 /** The member's mentor (member row of the mentor) — the approver. */
@@ -753,7 +831,7 @@ function member_results_plan_send(array $p): array {
     if ($instr) $told[] = 'instructor';
     results_log((string)$m['memberId'], (string)$plan['term'], results_actor_member($m),
         'Sent the results and plan to ' . (implode(' and ', $told) ?: 'the NGG team') . ($mentor ? '' : ' (no mentor assigned yet)'), 'send');
-    return ['ok' => true, 'status' => 'sent', 'mentor' => $mentor ? (string)$mentor['fullName'] : '', 'instructors' => count($instr)];
+    return ['ok' => true, 'status' => 'sent', 'mentor' => $mentor ? staff_public_name((string)$mentor['mentorId'], 'your mentor') : '', 'instructors' => count($instr)];
 }
 
 /** member.results.tick — one session done (or undone) this week, for one plan item. */
@@ -786,7 +864,7 @@ function results_staff_can(array $g, array $m): bool {
     $role = (string)($g['mpRole'] ?? $g['role'] ?? '');
     if (in_array($role, ['pod', 'peer', 'lead'], true)) return in_array((string)$m['memberId'], mp_caseload_ids($g), true);
     if (($g['centres'] ?? null) !== null && !in_array((string)$m['centre'], $g['centres'], true)) return false;
-    if (($g['courses'] ?? null) !== null && !in_array((string)$m['track'], $g['courses'], true)) return false;
+    if (($g['courses'] ?? null) !== null && !member_takes_any($m, $g['courses'])) return false;
     return true;
 }
 function results_staff_actor(array $g): array {
@@ -850,21 +928,66 @@ function member_mp_plan_approve(array $p): array {
     if ((string)$plan['status'] !== 'sent') return ['ok' => false, 'error' => 'not_waiting'];
     $actor = results_staff_actor($g);
     $now = now_iso();
+    /* The mentor can adjust before approving: a target, how many sessions a
+       week, what the child will do. Validated whole before any write; each
+       change is logged and named to the child, so the plan stays theirs. */
+    $changes = [];
+    if (is_array($p['items'] ?? null) && $p['items']) {
+        $byId = []; foreach (results_plan_items((string)$plan['planId']) as $it) $byId[(string)$it['itemId']] = $it;
+        $edits = [];
+        foreach ($p['items'] as $e) {
+            if (!is_array($e) || !isset($byId[(string)($e['itemId'] ?? '')])) return ['ok' => false, 'error' => 'not_found'];
+            $it = $byId[(string)$e['itemId']]; $row = [];
+            if (array_key_exists('target', $e)) { $t = (int)$e['target'];
+                if ($t < 0 || $t > 100 || ($it['current'] !== null && $t < (int)$it['current'])) return ['ok' => false, 'error' => 'bad_target', 'subject' => $it['subject']];
+                if ($t < results_target_floor($it['current'] === null ? null : (int)$it['current'])) return ['ok' => false, 'error' => 'target_too_low', 'subject' => $it['subject'], 'min' => results_target_floor($it['current'] === null ? null : (int)$it['current'])];
+                if ($t !== (int)$it['target']) { $row['target'] = $t; $changes[] = $it['subject'] . ' target ' . (int)$it['target'] . ' → ' . $t; } }
+            if (array_key_exists('sessionsPerWeek', $e)) { $n = (int)$e['sessionsPerWeek'];
+                if ($n < 1 || $n > 7) return ['ok' => false, 'error' => 'bad_sessions', 'subject' => $it['subject']];
+                if ($n !== (int)$it['sessionsPerWeek']) { $row['sessionsPerWeek'] = $n; $changes[] = $it['subject'] . ' ' . $n . ' sessions a week'; } }
+            if (array_key_exists('what', $e)) { $w = mb_substr(trim((string)$e['what']), 0, 400);
+                if ($w === '') return ['ok' => false, 'error' => 'what_required', 'subject' => $it['subject']];
+                if ($w !== (string)$it['what']) { $row['what'] = $w; $changes[] = $it['subject'] . ': what to do'; } }
+            if ($row) $edits[(string)$e['itemId']] = $row;
+        }
+        foreach ($edits as $iid => $row) db_update('growth_plan_items', $row, ['itemId' => $iid]);
+    }
     db_update('growth_plans', ['status' => 'live', 'approvedBy' => $actor['id'], 'approvedByName' => $actor['name'], 'approvedAt' => $now, 'updatedAt' => $now], ['id' => (int)$plan['id']]);
     $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
     if ($note !== '') db_insert('plan_notes', ['planId' => (string)$plan['planId'], 'authorId' => $actor['id'], 'authorName' => $actor['name'], 'authorRole' => 'mentor', 'text' => $note, 'createdAt' => $now]);
     $first = mp_first((string)$m['fullName']);
-    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => mp_first($actor['name']) . ' approved your plan.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
-    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Approved the plan' . ($note !== '' ? ' with a note' : ''), 'approve');
+    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => 'Your plan is approved', 'body' => staff_public_name($actor['id'], 'Your mentor') . ' approved your plan' . ($changes ? ', with a change: ' . implode('; ', array_slice($changes, 0, 3)) : '') . '.' . ($note !== '' ? ' “' . mb_substr($note, 0, 140) . '”' : ''), 'linkPage' => 'dashboard']);
+    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Approved the plan' . ($changes ? ' after changing ' . implode('; ', $changes) : '') . ($note !== '' ? ' with a note' : ''), 'approve');
     $family = 0;
     if (json_decode((string)$plan['recipientsJson'], true)['family'] ?? false) {
-        $family = results_family_send($m, $plan, $actor['name']);
+        $family = results_family_send($m, $plan, staff_public_name($actor['id'], mp_first($actor['name'])));
         if ($family) {
             db_update('growth_plans', ['familySentAt' => $now], ['id' => (int)$plan['id']]);
             results_log((string)$m['memberId'], (string)$plan['term'], ['id' => '', 'name' => 'NGG', 'role' => 'system'], "Shared the plan with {$family} family contact" . ($family === 1 ? '' : 's'), 'family');
         }
     }
-    return ['ok' => true, 'status' => 'live', 'family' => $family];
+    return ['ok' => true, 'status' => 'live', 'family' => $family, 'changed' => count($changes)];
+}
+
+/**
+ * member.mentor.plan.cheer — on a live plan, the mentor sends the child a word
+ * about how it is going (a nudge after a missed week, praise after a kept one).
+ * It is on the plan's record and reaches the child as a notification.
+ */
+function member_mp_plan_cheer(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    $plan = db_row('SELECT * FROM growth_plans WHERE planId = ? LIMIT 1', [(string)($p['planId'] ?? '')]);
+    if (!$plan) return ['ok' => false, 'error' => 'not_found'];
+    $m = results_staff_member($g, (string)$plan['memberId']);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$plan['status'] !== 'live') return ['ok' => false, 'error' => 'not_live'];
+    $note = mb_substr(trim((string)($p['note'] ?? '')), 0, 600);
+    if (mb_strlen($note) < 4) return ['ok' => false, 'error' => 'note_required'];
+    $actor = results_staff_actor($g);
+    db_insert('plan_notes', ['planId' => (string)$plan['planId'], 'authorId' => $actor['id'], 'authorName' => $actor['name'], 'authorRole' => 'mentor', 'text' => $note, 'createdAt' => now_iso()]);
+    push_notification((string)$m['memberId'], ['kind' => 'mentor', 'title' => staff_public_name($actor['id'], 'Your mentor') . ' on your study plan', 'body' => '“' . mb_substr($note, 0, 160) . '”', 'linkPage' => 'dashboard']);
+    results_log((string)$m['memberId'], (string)$plan['term'], $actor, 'Wrote about the plan: ' . mb_substr($note, 0, 120), 'note');
+    return ['ok' => true];
 }
 
 /** The family mail: the plan and a conversation to have, not a score to police (R13). */
@@ -879,7 +1002,7 @@ function results_family_send(array $m, array $plan, string $approver): int {
         $rows .= '<li style="margin:0 0 8px"><b>' . esc_html($it['subject']) . '</b>: aiming for ' . (int)$it['target'] . ' (now ' . (int)$it['current'] . '). '
             . esc_html($it['what']) . ' <i>' . esc_html($it['whenWhere']) . '</i>, ' . (int)$it['sessionsPerWeek'] . ' times a week.</li>';
     }
-    $html = '<p style="margin:0 0 10px">' . esc_html($first) . ' wrote a study plan for next term from their ' . esc_html(strtolower($t['label'] ?? 'term')) . ' results, and their mentor ' . esc_html(mp_first($approver)) . ' approved it.</p>'
+    $html = '<p style="margin:0 0 10px">' . esc_html($first) . ' wrote a study plan for next term from their ' . esc_html(strtolower($t['label'] ?? 'term')) . ' results, and their mentor ' . esc_html($approver) . ' approved it.</p>'
         . '<ul style="margin:0 0 12px;padding-left:18px">' . $rows . '</ul>'
         . ((string)$plan['habit'] !== '' ? '<p style="margin:0 0 10px">The habit for the term: ' . esc_html((string)$plan['habit']) . '</p>' : '')
         . '<p style="margin:0 0 10px"><b>A conversation worth having this week:</b> ask ' . esc_html($first) . ' which subject they chose first and why, and when in the week they plan to do it. Interest in the plan helps more than checking the homework.</p>';
@@ -919,23 +1042,50 @@ function member_mp_plan_return(array $p): array {
 /* ── Instructor ops ──────────────────────────────────────────────────── */
 
 function results_instructor_gate(array $p): array {
-    $g = mentor_gate($p);
+    // As an instructor: someone who also holds a mentor record is still an instructor here.
+    $g = mentor_gate(['as' => 'instructor'] + $p);
     if (empty($g['ok'])) return $g;
     if (!in_array((string)$g['role'], ['instructor', 'admin'], true)) return ['ok' => false, 'error' => 'forbidden_role'];
+    return $g;
+}
+
+/**
+ * School results are the MENTOR's (owner's decision, 2026-10-24): an
+ * instructor teaches a course and does not read a child's school report.
+ * The instructor.result* ops answer staff only; an instructor is refused with
+ * `results_are_for_mentors`. The functions stay, so a staff reader and the
+ * tests ($GLOBALS['__results_instructors']) still exercise them.
+ */
+function results_reader_gate(array $p): array {
+    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    if ((string)$g['role'] === 'instructor' && empty($GLOBALS['__results_instructors'])) return ['ok' => false, 'error' => 'results_are_for_mentors'];
     return $g;
 }
 
 /** The NGG members an instructor teaches, as rows. One query. */
 function results_class(array $g, string $q = ''): array {
     $where = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $args = [];
-    foreach (['centre' => $g['centres'] ?? null, 'track' => $g['courses'] ?? null] as $col => $vals) {
-        if ($vals === null) continue;
-        if (!$vals) return [];
-        $where .= " AND $col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
-        $args = array_merge($args, $vals);
+    $centres = $g['centres'] ?? null; $courses = $g['courses'] ?? null;
+    if ($centres !== null) {
+        if (!$centres) return [];
+        $where .= ' AND centre IN (' . implode(',', array_fill(0, count($centres), '?')) . ')';
+        $args = array_merge($args, $centres);
+    }
+    /* A member is in a course's class when it is one of their chosen courses
+       (or, with none chosen, their track — any case). `track IN (…)` left out
+       a member on Robotics as their SECOND course, and one whose track was
+       typed "coding": the instructor could not see, mark or follow them. */
+    if ($courses !== null) {
+        if (!$courses) return [];
+        $or = [];
+        foreach ($courses as $c) {
+            if (function_exists('member_course_sql')) { [$cs, $ca] = member_course_sql((string)$c); $or[] = $cs; $args = array_merge($args, $ca); }
+            else { $or[] = 'lower(track) = lower(?)'; $args[] = (string)$c; }
+        }
+        $where .= ' AND (' . implode(' OR ', $or) . ')';
     }
     if ($q !== '') { $where .= ' AND lower(fullName) LIKE ?'; $args[] = '%' . mb_strtolower($q) . '%'; }
-    return array_values(array_filter(db_all("SELECT memberId, fullName, displayId, centre, track, role, dob, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT 2000", $args), 'results_in_loop'));
+    return array_values(array_filter(db_all("SELECT memberId, fullName, displayId, centre, track, courses, role, dob, joinDate, createdAt FROM members WHERE $where ORDER BY fullName LIMIT 2000", $args), 'results_in_loop'));
 }
 
 /**
@@ -943,7 +1093,7 @@ function results_class(array $g, string $q = ''): array {
  * the server. Counts and KPIs are for the whole class, not the page.
  */
 function instructor_results(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $today = results_today();
     $terms = results_terms($today);
     $term = (string)($p['term'] ?? '');
@@ -973,7 +1123,7 @@ function instructor_results(array $p): array {
             foreach (db_all("SELECT planId FROM plan_acks WHERE userId = ? AND planId IN ($ph)", array_merge([(string)$g['member']['memberId']], $pids)) as $r) $acks[(string)$r['planId']] = true;
         }
     }
-    $rows = []; $counts = ['all' => 0, 'attn' => 0, 'missing' => 0, 'up' => 0]; $changes = [];
+    $rows = []; $counts = ['all' => 0, 'owed' => 0, 'attn' => 0, 'missing' => 0, 'up' => 0]; $changes = [];
     foreach ($class as $m) {
         $mid = (string)$m['memberId'];
         $owed = $t ? results_owed($m, $t) : false;
@@ -983,17 +1133,21 @@ function instructor_results(array $p): array {
         $pl = $plans[$mid] ?? null;
         $adh = ($uploaded && $pl && in_array((string)$pl['status'], ['sent', 'live'], true)) ? results_adherence(results_plan_items((string)$pl['planId']), (string)$pl['sentAt'], $today) : null;
         $attn = $uploaded && (($k['avg'] !== null && $k['avg'] < $cfg['minAvg']) || ($k['change'] !== null && $k['change'] <= -$cfg['dropPts']) || ($adh !== null && $adh < $cfg['minAdh']));
-        if (!$owed && !$uploaded) continue;
+        /* A child who joined after the term ended owes nothing for it, but is
+           still in the class: hiding them showed a new September class as
+           "0 of 0" and an empty list, which read as a broken page. */
+        $notDue = !$owed && !$uploaded;
         $counts['all']++;
+        if (!$notDue) $counts['owed']++;
         if ($attn) $counts['attn']++;
-        if (!$uploaded) $counts['missing']++; else $counts['up']++;
+        if ($notDue) {} elseif (!$uploaded) $counts['missing']++; else $counts['up']++;
         if ($k['change'] !== null) $changes[] = $k['change'];
-        $status = !$uploaded ? ($u ? 'in_progress' : 'missing') : ((string)($pl['status'] ?? '') === 'live' ? 'live' : 'awaiting_mentor');
+        $status = $notDue ? 'not_due' : (!$uploaded ? ($u ? 'in_progress' : 'missing') : ((string)($pl['status'] ?? '') === 'live' ? 'live' : 'awaiting_mentor'));
         $row = ['studentId' => $mid, 'name' => (string)$m['fullName'], 'displayId' => (string)$m['displayId'], 'track' => (string)$m['track'],
             'avg' => $k['avg'], 'change' => $k['change'], 'adherence' => $adh, 'status' => $status, 'attention' => $attn, 'uploaded' => $uploaded,
             'seen' => $pl ? isset($acks[(string)$pl['planId']]) : false];
         if ($filter === 'attn' && !$attn) continue;
-        if ($filter === 'missing' && $uploaded) continue;
+        if ($filter === 'missing' && ($uploaded || $notDue)) continue;
         if ($filter === 'up' && !$uploaded) continue;
         $rows[] = $row;
     }
@@ -1003,7 +1157,7 @@ function instructor_results(array $p): array {
     $page = array_slice($rows, $cursor, 20);
     return ['ok' => true, 'term' => $term, 'termLabel' => $t['label'] ?? '', 'dueOn' => $t['dueOn'] ?? '',
         'terms' => array_map(static fn($x) => ['key' => $x['key'], 'label' => $x['label']], $terms),
-        'kpis' => ['class' => $counts['all'], 'uploaded' => $counts['up'], 'attention' => $counts['attn'], 'missing' => $counts['missing'],
+        'kpis' => ['class' => $counts['all'], 'owed' => $counts['owed'], 'uploaded' => $counts['up'], 'attention' => $counts['attn'], 'missing' => $counts['missing'],
             'avgChange' => $changes ? (int)round(array_sum($changes) / count($changes)) : null],
         'counts' => $counts, 'rows' => $page, 'total' => count($rows),
         'nextCursor' => $cursor + 20 < count($rows) ? $cursor + 20 : null, 'thresholds' => $cfg];
@@ -1011,7 +1165,7 @@ function instructor_results(array $p): array {
 
 /** instructor.result — one member's term for an instructor, with reminders already sent. */
 function instructor_result(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');
@@ -1038,7 +1192,7 @@ function results_remind_wait(string $memberId): int {
 
 /** instructor.result.note — a note to the mentor about this member's plan. */
 function instructor_result_note(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');
@@ -1057,7 +1211,7 @@ function instructor_result_note(array $p): array {
 
 /** instructor.result.seen — "I have read this." */
 function instructor_result_seen(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $plan = db_row('SELECT planId, status FROM growth_plans WHERE memberId = ? AND term = ? LIMIT 1', [(string)$m['memberId'], (string)($p['term'] ?? '')]);
@@ -1071,7 +1225,7 @@ function instructor_result_seen(array $p): array {
 
 /** instructor.result.remind — nudge a member whose results are still owed. One per day. */
 function instructor_result_remind(array $p): array {
-    $g = results_instructor_gate($p); if (empty($g['ok'])) return $g;
+    $g = results_reader_gate($p); if (empty($g['ok'])) return $g;
     $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $term = (string)($p['term'] ?? '');
@@ -1083,7 +1237,7 @@ function instructor_result_remind(array $p): array {
     if ($wait > 0) return ['ok' => false, 'error' => 'rate_limited', 'retryHours' => $wait];
     $actor = results_staff_actor($g);
     push_notification((string)$m['memberId'], ['kind' => 'reminder', 'title' => 'Your ' . strtolower($t['label']) . ' results',
-        'body' => mp_first($actor['name']) . ' asked for your results. Upload them in your dashboard → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
+        'body' => staff_public_name($actor['id'], 'Your mentor') . ' asked for your results. Upload them in your dashboard → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
     results_log((string)$m['memberId'], $term, $actor, 'Sent a reminder to upload the results', 'remind');
     return ['ok' => true];
 }
@@ -1101,8 +1255,19 @@ function results_job_run(?string $today = null, int $limit = 200): array {
     $dow = (int)gmdate('N', strtotime($today . 'T00:00:00Z'));
     $ws = results_week_start($today);
     $sent = ['tick' => 0, 'stall' => 0, 'due' => 0];
-    $once = static function (string $memberId, string $term, string $kind) use ($ws): bool {
-        if (db_row('SELECT 1 FROM results_log WHERE memberId = ? AND kind = ? AND at >= ? LIMIT 1', [$memberId, $kind, $ws . 'T00:00:00'])) return false;
+    /* TWO CLOCKS, ONE COMPARISON.
+       `$ws` is a date in the programme's own time zone (results_today() is
+       Lagos, or whatever attendance_settings says); `results_log.at` is
+       stamped in UTC by now_iso(). Comparing them as plain strings is wrong
+       by the offset, and for the hour either side of a local Monday
+       midnight it is wrong in the direction that matters: the row written a
+       moment ago sorts BEFORE the week it belongs to, the guard does not
+       see it, and a member gets the same reminder twice.
+       So the boundary is converted to the instant `at` is measured against
+       — local midnight expressed in UTC. */
+    $wsAt = gmdate('Y-m-d\TH:i:s', strtotime($ws . 'T00:00:00Z') - (results_now_lagos() - time()));
+    $once = static function (string $memberId, string $term, string $kind) use ($wsAt): bool {
+        if (db_row('SELECT 1 FROM results_log WHERE memberId = ? AND kind = ? AND at >= ? LIMIT 1', [$memberId, $kind, $wsAt])) return false;
         return true;
     };
     $sys = ['id' => '', 'name' => 'NGG', 'role' => 'system'];

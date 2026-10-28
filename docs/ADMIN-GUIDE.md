@@ -22,7 +22,11 @@ those five words to mean something else.
 8. [Summer School](#summer-school)
 9. [The NGG Club](#the-ngg-club)
    - [The curriculum](#the-curriculum)
+   - [The Club portal (/club-admin)](#the-club-portal-club-admin)
+   - [Club announcements](#club-announcements-club-portal--announcements)
    - [Mentorship: Anchor Pods](#mentorship-anchor-pods)
+   - ["Start here": the portal guides](#start-here-the-portal-guides-compulsory-on-first-login)
+   - [The Community (/community)](#the-community-community)
 10. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
 11. [ID cards](#id-cards)
 12. [How bulk actions behave](#how-bulk-actions-behave)
@@ -116,11 +120,48 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 | Behaviour monitor | Conduct incidents as they come in. |
 | Dues & fees | The fee ledger. Separate permission — see below. |
 | Conduct policy & fines | Thresholds, suspensions, fine amounts. Governs members **and** Summer School. |
-| Member requests | Things members have asked for and are waiting on. |
+| Member requests | Things members have asked for and are waiting on (Inbox). |
+| Request history | Every request ever raised — open, approved, declined, withdrawn — and who decided it. |
 | Staff activity | What staff accounts have been doing. |
 | Engagement | Participation figures. |
 | **Centres** | The centre directory. Add, edit, retire. |
 | **ID cards** | The print log, one person's card history, and the doors into both studios. |
+
+**The Analyst** (the sparkle panel beside any Control Room page) answers about
+the figures on screen. It reads totals, never names, so when the figures don't
+answer a question it says what it can read instead of going quiet. Ask it for
+**an export of members** ("send me the members grouped by their divisions") and
+it downloads a CSV straight from the roster — every member you can see (your
+centres only, and only with the People permission), grouped by division,
+centre, level, status or programme, or in name order. The names never go to the
+AI.
+
+**AI: who answers, and what it costs.** Nobody picks an AI provider; each
+feature is routed by the kind of work it is. *Everyday work* — screening posts,
+classifying observations, photo checks, Anchor Journal coaching, summaries, the
+ID Card Studio assistant — runs on **free** models (Groq, Gemini, OpenRouter's
+free ones). *Hard thinking* — marking written answers, the Analyst's answers,
+lenses and synthesis — tries **paid** models (Claude, OpenAI) first and falls
+back to free ones. Paid models only run within the **monthly limit** set in
+**Settings → API keys → AI spending** (blank or 0 keeps them off). Every call is
+logged with its tokens and estimated cost; a paid call that could take the month
+over the limit is not made, and the free model answers instead. The block shows
+this month's spend by model, what is left and how many paid calls the limit held
+back; the *AI features* table shows each feature's kind of work and, when it is
+on rules only, why. With only a paid key and no free one, everyday work uses each
+feature's own rules unless you allow paid models to do everyday work too.
+
+**Finding a request.** A request waiting for a decision is in **Inbox → Member
+requests**; that is where it is approved or declined. Once it is decided — or
+the member withdraws it — it leaves the Inbox, and it is in **Members →
+Request history** (`/control/members/request-log`). Search there by the
+request id an alert or a webhook carried (`REQ-9EE53F1611`), the member's name
+or ID, the subject, or the reference on a bank statement; filter by status and
+kind. Opening one shows what the member wrote, the reply, who decided it and
+when, and the ledger entry a payment was posted to. Typing a `REQ-` id into
+**Ctrl K** goes straight to it, and a member's own record has a **Requests**
+part with all of theirs. A centre admin sees, and can decide, only their own
+centres' requests.
 
 **Summer School** — the season, and only the season.
 
@@ -133,6 +174,18 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 **Content** — sessions, missions, the Anchor Journal app, assignments,
 events, posts, photo review, comments, community, tournaments, promotions,
 announcements, forms, site content, public status pages.
+
+- **Sessions** (Learning → Sessions) shows one year at a time; the arrows step
+  a year back or forward, and the year stays in the address, so a refresh or a
+  shared link opens the same year. Tap a session to change its dates, name,
+  theme or cover.
+- **Missions** (Learning → Missions) lists proof waiting for review first, then
+  the twelve weeks. Tap a submission to verify it (the XP is awarded) or to
+  return it with feedback, which you write in a form and the member sees. Each
+  week has its own **Add**.
+- **Posts** (Content → Posts) lists every post, drafts and archived included.
+  Tapping one opens the stored post for editing. A new post stays a draft until
+  its status is set to Published.
 
 **Inbox** — newsletter and messages.
 
@@ -259,6 +312,29 @@ next printed ID. Tick rows for **Set status** or **Post to centre**; staff
 accounts and your own are refused and named. A Club coordinator's change is
 sent to a second admin to approve, and the screen says so. Roles are not
 edited here: that is **Settings → Access & roles**.
+
+### A member's courses
+
+A member's **courses** are chosen, not typed. In **Edit**, pick their
+**Division** and the **Courses** list shows that division's courses as they
+are under **Divisions & courses** (Chess is in every division). Tick what
+they study. Their lessons, their Community channels, the assignments that
+reach them and the instructors' class lists all follow exactly those courses.
+A member on two courses is in both classes.
+
+- **Several at once:** tick members in the roster → **Set courses**, then
+  *Add these*, *Replace theirs with these*, or *Take these off*. Running it
+  twice reports "unchanged", not applied again.
+- **A course that is not in the catalogue is refused by name.** Add it under
+  **Divisions & courses** first.
+- **Older records** had a typed *track* instead ("Coding", "Piano", "Tech").
+  Where it names courses exactly, it was turned into chosen courses
+  automatically. Where it is broad ("Tech", "Media", "Music") the member keeps
+  that division's or the music courses until you choose; a word that names no
+  course ("Design") gives none. Filter the roster by **Missing → No courses
+  chosen** to find them, select all, and use **Set courses**.
+- An instrument is the **Musical Instruments** course, never the whole arts
+  division: a pianist is no longer given Catering, Adire and Crafts.
 
 ### The dashboard
 
@@ -426,6 +502,15 @@ Each row shows what depends on it: members posted there, Summer School
 participants enrolled and waitlisted in the current edition, and groups. When
 you try to delete one, the refusal adds volunteers to that list.
 
+**Open a centre** (tap its row on a phone) to see its record, with **Edit**,
+**Map and geo-fence**, **Summer venue** (when it runs Summer School), the public
+page when it is live, and **Remove**. Edit is one form: identity, programmes,
+location and leads, contact and meeting times, and — once the public page is
+published — the page's words and pictures. The map and the Summer venue each open
+on a page of their own, with *All centres* to come back. A note at the top counts
+the centres that are not mapped yet, because the check-in desk cannot confirm
+somebody is at a centre without its map.
+
 ### Retiring versus deleting
 
 When you try to delete a centre that is in use, you are asked to **retire it
@@ -524,6 +609,61 @@ cards say.
 **Summer School → Summer School.** One workspace, fifteen panels, grouped by
 what you are actually doing.
 
+### The Summer School portal (`/summer-admin`)
+
+The coordinator's screen for the season, on a phone or a desk. It opens on
+**Today**: who is in, who came late, who has not come, and a **Needs you** list
+with the children who could slip through first (came then stopped, missing a
+required consent), then the things worth a call this week. Every number on it
+opens the list it counts — "1 came, then stopped" opens exactly that child.
+
+The screens are **Today, Participants, Registrations, Groups, Register,
+Check-in desk, Incidents, Consent, Messages, Cards & QR, Editions &
+certificates** and **Into NGG**. The season's settings, sign-up links, imports
+and history stay in the Control Room (below).
+
+- **Incidents** — first aid, health, behaviour, pickup, lost items. Type the
+  child's name or printed ID; a name that matches two children is refused and
+  you are shown their IDs. **Tell guardian** sends an email and a text where the
+  family has them, and is only marked told when one actually went — it never
+  includes your note, which may name other children. If nothing could be sent
+  you are given the guardian's number to call.
+  **Safeguarding** is different on purpose: saving it files a case in the
+  safeguarding queue (Control Room → People → Mentorship → Safeguarding) and
+  emails the centre's safeguarding officer. The portal then shows only
+  "Restricted" and the case number — not the child, not the details — and it
+  cannot tell the family or close it. The lead decides both.
+- **Messages** — pick a template, who it goes to (not in today, stopped
+  coming, under 50%, not yet confirmed, or everyone), and email, SMS or both.
+  The preview shows the message as a family reads it. Sending waits 8 seconds
+  so it can be undone, at most 500 families go in one send, and the Sent list
+  shows how many each one reached. SMS is offered only once text messages are
+  set up; the "Pickup reminder" appears only when a sign-out time is set.
+
+- **Find a child or jump anywhere:** press **/** or **Ctrl K** (⌘K on a Mac)
+  and type a name, a printed ID, or the last four digits of a card. With
+  nothing typed it shows the children you opened last.
+- **Shortcuts:** **g** then **t** Today, **d** desk, **r** register,
+  **p** participants, **i** incidents, **m** messages, **n** Into NGG; **?** lists them; **Esc** closes the
+  top panel. Shortcuts do nothing while you are typing in a box.
+- **Undo really undoes.** Alerting every absent child's guardian, sending a
+  message, moving children into NGG and sending joining invoices wait **8 seconds** before
+  anything happens. Press **Undo** (or **z**) inside that time and nothing is
+  sent. If you close the tab during the 8 seconds, the act still goes through
+  shortly afterwards — it is held on the server, not in your browser.
+- **Check-in desk** takes a card's code, a printed ID or a name and checks the
+  child in or out with the same rules as the door: lateness from the door time
+  and grace minutes (Control Room → Settings → Attendance), the season's dates,
+  and conduct holds. Letting a child go before sign-out time asks for a
+  reason, which is recorded. For a desk with a camera that keeps working
+  offline, use a check-in desk link instead.
+- **Into NGG** lists children who finished with 70% attendance or more. "No
+  NGG centre to offer" means no active centre runs NGG — add or map one in
+  **Control Room → Centres** first. "Fees are off" means no joining invoice
+  can be sent until fees are switched on in **Control Room → Fees**.
+- A coordinator scoped to some centres sees, counts, searches and alerts only
+  those centres' children, everywhere in the portal.
+
 ### Structure — what the season *is*
 
 - **Editions & groups** — the important one. See below.
@@ -555,6 +695,33 @@ end date, the edition moves to **Closed** by itself. Archive it from Records
 when you are ready.
 
 **The volunteer at the door** has a guide on the desk itself (*Volunteer guide*, under the camera) and a printable copy in `docs/VOLUNTEER-DESK-GUIDE.md`. A *Do not admit* result stays up until they press OK.
+
+**The face check (optional).** Turn it on in Control Room → Settings →
+General → *Face check at the check-in desk*. After a scan, the desk shows
+**Check face**: the front camera looks at the person for a few seconds and
+compares them with the photo on that card's record. The desk then sees one of:
+
+| Says | Means |
+|---|---|
+| *Looks like the same person* | The face matches the record photo, and it is a real, live face. |
+| *Not sure* | Close, but not clear enough (poor light, a cap, a slow phone). Check another way. |
+| *Does not look like the card's owner* | Check their identity another way before admitting. |
+| *That doesn't look like a live face* | A photo or a screen may be held up to the camera. |
+| *No clear face seen* | Ask them to face the camera in good light and try again. |
+| *No photo on the record* | Nothing to compare with; check another way. |
+
+The person on duty always decides: **Admit**, or **Hold — check another way**.
+The check is advice, never an automatic refusal.
+
+Privacy (Nigeria Data Protection Act 2023): the comparison happens **on the
+desk's own device**. No picture of the face and no face measurements are sent
+to the server or kept anywhere; the camera is switched off as soon as the check
+closes. The server records only the outcome, the scores and the decision,
+against the card holder, in the audit trail (`gate.face`). Because a face is
+biometric data, tell families in the programme's privacy notice that the desk
+may compare faces with record photos, and leave the check off at centres where
+that notice has not gone out. The first use on a device downloads the face
+models (about 9 MB, once); after that they load from the device.
 
 **One door, everyone.** The kiosk, a gate link's desk and *Mark present* on a
 profile all check in **participants, volunteers and NGG members**. Scan any
@@ -711,8 +878,33 @@ and emails the family **one invoice**:
 The fees must be switched on under Dues & arrears; with them off the member is
 still accepted and the screen says no invoice went.
 
+**Members who don't owe their back-dues** (imported members especially: their
+join date is years back, so every membership year and month since is charged,
+though they paid before this system existed). Select them in **Members →
+Roster** and use **Clear dues they don’t owe**, or open one member's record →
+**Fees** → the same button. Give the date they are settled up to (today is
+usual) and why. What is still unpaid on membership and dues for periods on or
+before that date is cleared with one waiver carrying your reason — payments
+already made count first — and those periods are never charged again. Fines and
+the programme's training cost are not touched. Running it again changes nothing;
+settle to a later date if more was paid outside the system. Needs the Fees
+permission; each account gets a line in its history, and the run one audit event.
+
 The family pays through the link (Paystack), or by bank transfer or cash.
-**Money → Membership payments** lists every invoice:
+
+**Paying the balance online.** After joining, a member's account (their
+dashboard) and the family portal show **Pay ₦… online** whenever there is
+something to pay and Paystack is connected. Pressing it makes a **balance
+invoice** (`NGG-BAL-…`) for exactly what is payable that day and opens the same
+payment page as the joining invoice. Paystack's own confirmation settles it: one
+payment goes on the ledger (the dues and fines were already there), and the
+receipt is emailed. If the balance changes before they pay, the old balance
+invoice is cancelled as *superseded* and the next press makes a new one for the
+new figure. A transfer waiting to be verified blocks online payment until it is
+checked, so nobody pays twice. Policy fines on the conduct ledger are not
+included yet; dues, training fees and fines posted to the fees ledger are.
+
+**Money → Membership payments** lists every invoice, joining and balance:
 
 - **Resend link** — only while unpaid and with no offline payment waiting.
 - **Record offline payment** — for a transfer, deposit, POS or cash payment.
@@ -927,6 +1119,329 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Where a member's courses come from
+
+**Control Room → Learning → Curriculum → Schedule.** Needs `curriculum`.
+
+Two modes, and the setting decides which is live:
+
+| Mode | A member's lessons are… |
+|---|---|
+| **By member** (default) | The courses chosen for them. If none are chosen, their track and the interests on their card are matched to course names; failing that, every course in their division. |
+| **By division** | Their **division's own shared curriculum** — the spine every course in that division has in common — and nothing from the individual strands. Club-wide lessons and Chess still reach everyone. |
+
+**Why the division mode exists.** The fallback in the first mode was doing a
+bad impression of it: a member with no courses on record was handed *all seven*
+of Technology's strands at once, so their week showed Automation, Coding,
+Cybersecurity and more, side by side. That is a wall, not a curriculum. A
+division has one spine; the division mode delivers that.
+
+**Before you turn it on, read the coverage board** (same screen). The spine
+that ships covers **Year 1 only**, so a member placed in Year 2 or 3 would open
+their portal and find nothing. The board shows every division against every
+year, and counts exactly how many members a gap would strand — if that number
+is not zero, write the missing year's curriculum first, or leave the setting
+on *By member*.
+
+### What members say about a session (testimonials)
+
+At the end of every lesson a member is asked one question — *what did today
+give you?* — in one or two lines, in their own words. It is never required:
+skipping it is not recorded, and nothing in the lesson, the review or their
+progress depends on having written one.
+
+**Control Room → Inbox → Testimonials.** Needs `content`. Each one shows the
+words, which member wrote them, and **how they would be signed** if published:
+their initials and age, their first name and age, or not named at all. The
+member chooses that themselves, in the box; a full name is not on the list.
+
+**Publishing needs the guardian's consent**, read from the same consent ledger
+that decides whether a child may be named anywhere else on the public site
+("Feature on our website"). Without it there is **no Publish button** — not a
+button that refuses — and the queue says why. Record the consent on the member
+first, then come back. You can always read the words; they are useful whether
+or not they ever go anywhere.
+
+Three things follow from that, and they are the point of the feature:
+
+- **Withdrawing the consent takes the words off the site**, on the next page
+  load, with nobody having to remember to unpublish anything.
+- **The member can take it back at any time** by clearing the box on the
+  lesson — published or not.
+- **Editing it un-publishes it.** The site shows words somebody approved, and
+  an edited line is not those words any more, so it comes back to this queue.
+
+Published ones appear on the public home page. If none are published, that
+section of the home page is not shown at all — it is never filled with
+examples.
+
+### Where members actually do the lessons: the Learn app (/learn)
+
+Members open **Learn** from their portal, or go straight to `/learn`. It is its
+own app, the way the Anchor Journal and the Study tools are — not a panel
+inside the dashboard.
+
+| Address | What it is |
+|---|---|
+| `/learn` | **This week** — what to do now: anything late first, then the next lesson, then anything half-done |
+| `/learn/courses` | **My courses** — the shelf, with how far through each one they are |
+| `/learn/course/<course>` | One course, week by week |
+| `/learn/lesson/<lesson>` | **A lesson, full screen** |
+| `/learn/plan` | **School** — their own school subjects and this week's practice |
+| `/learn/plan/<subject>` | One subject's drill |
+| `/learn/review` | How the review works, and what they will be asked about |
+| `/learn/helper` | The study helper |
+| `/learn/notes` | **Notes** — the lessons they saved for later, and every note they wrote |
+
+**Every one of those is a real address.** A lesson can be bookmarked, sent to a
+mentor, or opened from a message, and the browser's Back button goes back. It
+could not be any of those things before, because a lesson was an overlay on
+the dashboard with no address of its own.
+
+A lesson page carries, in this order: last session's review (which can always
+be skipped — being away is not a reason to be shut out of this week), what
+they'll learn, the lesson itself with **Read it to me** and a speed control,
+next session's questions, and *How did that go?* at the end.
+
+Around the lesson, so somebody coming back has somewhere to start:
+
+- **Pick up where you left off.** *This week* leads with the last lesson they
+  opened and have not finished, and three figures: weeks in a row with a lesson
+  finished, how many this week, and the time their finished lessons add up to.
+  The figures are worked out from their completions, never stored, so they
+  cannot disagree with the progress you see in the Control Room.
+- **Save for later** and **My notes** on every lesson. Notes are private to the
+  member: no staff screen, report or AI reads them. Both collect under *Notes*.
+- **Mark as done** on a lesson that has no questions, which before had no way
+  to be finished at all.
+- **Previous / Next** at the foot of a lesson, and *Lesson 2 of 8* at the top.
+- **Find a lesson** on *My courses*, across every course they are on.
+- **Go deeper.** A short read on the lesson's topic, fetched from Simple
+  English Wikipedia (English Wikipedia if it has nothing), shown with its
+  source and licence and only when the article's title shares a real word with
+  the lesson — then a short list of free, reputable places to learn more,
+  chosen by hand for each course (Khan Academy, OpenStax, CS50, MDN, Lichess,
+  musictheory.net, the WHO and the like: no ads in front of the first lesson,
+  nothing a child pays for). They open in a new tab. Reads are cached for a
+  month; if Wikipedia is down or busy, the read is simply left out and the list
+  still shows. To change the list for a course, a developer edits
+  `LEARN_SOURCES` in `api/_lib/domain/learn.php`.
+
+### School: practising for their own exams (/learn/plan)
+
+NGG teaches a curriculum, but a child's school results are what decides their
+next five years. **School** is where they practise for those, inside the same
+app, on the plan their own results already produced.
+
+**It is not a new plan.** It is the growth plan a coordinator agreed with them
+after their last report card (People → a member → Results): the subjects, where
+they are now, where they are going, and how many sessions a week they
+committed to. School is that plan with the practice attached, so the sessions
+a child promised can actually be done rather than only counted.
+
+A subject's page gives them five questions. They answer, and the screen marks
+them with the working shown — **why**, not just a tick. Three things then
+happen at once, which is the whole point of it being here rather than in a
+separate tool:
+
+1. **The week's counter moves.** It is the plan's own counter, the same one the
+   coordinator sees at the next check-in. Practice done is practice recorded.
+2. **What they got wrong becomes flashcards**, in a deck called
+   `School · <subject>`, which the spaced repetition in Study tools then brings
+   back on the day they are about to forget it.
+3. **The next set moves with them.** Five levels; 80% or better moves up, under
+   40% moves down. A child who is struggling is not handed the same paper
+   again, and one who is flying is not held at the bottom.
+
+Eight drills a day, at most — after that it says so and sends them away. The
+limit is deliberate: this is practice, not a way to spend an evening.
+
+**Where the questions come from**, in order:
+
+1. **A past-questions bank**, if the deployment has one configured
+   (`study_bank` in `api/config.php`). Real WAEC, NECO and UTME past questions
+   beat anything generated — the wording and the difficulty are the ones the
+   child will actually meet.
+2. **The AI layer**, asked for questions at that child's level, in Nigerian
+   contexts and naira, and required to explain the working.
+3. **Neither** → it says so plainly and points them at their flashcards and
+   their instructor. It never hands a child a blank paper, and it never
+   invents a question it could not explain.
+
+If members report "Nobody can write you questions right now", the deployment
+has no question source — see **Settings → AI** and the `study_bank` block in
+`api/config.example.php`.
+
+### Study tools (/study)
+
+Members open **Learn → Study tools** in their portal (or go to `/study`). It is
+their own kit, and nothing in it is seen by staff. Five tabs, with similar
+tools together and handing work to each other:
+
+- **Today** — the focus timer (25-minute blocks with breaks, or 15, 45, 50),
+  beside the week: focus minutes by day, the study streak, cards due and the
+  best typing speed.
+- **Revise** — **Flashcards** with spaced repetition (a card they know comes
+  back after a day, then six, then weeks; one they miss comes back the same
+  day; typed, pasted "front — back", or written by the study helper from a
+  lesson); **Quiz me** (five multiple-choice questions on one of their lessons,
+  and the ones they miss become flashcards with one press); **Summarise notes**
+  (their own class notes summarised, with key terms that become flashcards).
+- **Maths** — a scientific **calculator** (a sum with x in it is one press from
+  its graph), a **graph plotter** with a table of values, and **number bases**.
+- **Words** — a **dictionary** (any word looked up can be added to a "My words"
+  deck) and **typing practice**.
+- **Course labs** — one per division, the member's own first:
+  Tech (a code playground for HTML, CSS and JavaScript, and a password-strength
+  checker), Creative (metronome with tap tempo; piano with scales and chords),
+  Media (colour contrast to the accessibility standard; palette maker),
+  Business (break-even and profit, budget planner, savings and interest).
+
+The study helper (flashcards from a lesson, quizzes, note summaries) uses the
+same daily allowance as the helper on a lesson page, and refuses to summarise
+notes that talk about being hurt — it points to people instead. Without an
+account, Today's timer, Maths, Words and the labs still work. Limits: 40 decks,
+500 cards a deck. Old addresses (`/study/cards`, `/study/calc` …) forward to
+the tab that holds them now.
+
+The code playground runs a member's code in `assets/sandbox/code-sandbox.html`,
+which `.htaccess` serves with its own policy: no network, and a sandbox that
+cannot read the site's cookies, storage or pages. Keep that `<Files>` block
+when editing `.htaccess`, or the playground's scripts will not run.
+
+### Three years, by mastery
+
+NGG runs for three years, so a lesson's **level** carries its year: `Year 1 ·
+Foundation`, `Year 2 · Developing`, `Year 3 · Advanced` (any level that says
+"Year 2", "Yr 2" or "Level 2" counts). A lesson whose level names no year is
+for everyone, as before.
+
+- A member starts at **Year 1**. Finishing **80%** of a year's lessons in a
+  course opens that course's next year. A quick learner moves on early, and
+  one who needs longer is not pushed on with gaps.
+- Unfinished lessons from a year they have moved past stay on their list,
+  marked **catch-up**.
+- Staff can **place** a member in a year, for example an experienced pianist
+  starting at Year 2: `action=year` on the curriculum route, with the
+  `curriculum` permission in the Control Room, or as their instructor in the
+  portal. A member cannot place themselves.
+- **Deadlines and fines** follow the term for the year a member is *placed*
+  in. Catch-up work, and a year opened early by progress, never falls due.
+
+The bundled **Music — Piano and Guitar** course is built this way: 24 lessons
+per year per instrument. Every lesson has an *Essentials* strand (theory,
+reading, ear, instrument care, practice habits, performance, Nigerian music
+history, technology and business), plus *If this is new to you* and *If you
+already can* work. A JSON file that says `"allowNewCourse": true` (as the
+bundled files do) imports without switching the setting on by hand.
+
+**Export PDF** (Learning → Curriculum) opens one course, or one year of
+it, as a print-ready page. Press **Save as PDF** there, or **Download as
+Word**. The *Instructor* edition includes the answers and marking guides. The
+*Members* edition, and the copy members download from their own portal, has
+no answers and no weekly assignments, because assignments are set and dated
+on the assignments desk.
+
+### The NGG Learning Path: Year → Term → Week
+
+Every course is arranged the same way. There are three programme **years**,
+each of two **terms** of twelve Saturdays. A lesson is coded `Y1·T2·W3`
+(Year 1, Term 2, week 3 of that term). The lesson list sorts and filters by
+these codes, members see them on Learn, and the PDF export groups lessons
+under them.
+
+- The **year** comes from the level ("Year 2 · Developing").
+- The **term** comes from the level ("Term 2", or "Module 3", where two
+  modules make a year), or else from the week: weeks 13–24 are Term 2.
+- A term takes its **name** from the level when the level gives one
+  ("Year 1 · Module 2: Spreadsheets, Finance…").
+
+To keep a new course in line, write its levels as `Year N · Term T: Name`.
+Use weeks 1–24 within each year.
+
+### Which courses have lessons, and building one that has none
+
+**Learning → Curriculum** opens with three figures (courses with lessons,
+courses with none, members with no lessons) and a **Courses** table: every
+course in the catalogue, whether it has lessons, drafts only, or nothing, how
+many lessons are published and for which years and weeks, how many set
+homework, and how many members take it. Courses with members and no lessons
+come first, because those members open Learn to an empty list.
+
+**Build a course outline** drafts a term for one course: choose the course,
+the year and level (say the year, so members see their own year's lessons),
+how many weeks (4 to 24), and the week to start at. It follows NGG's term
+shape: welcome and first win, fundamentals, a mini project, a feedback round, a
+new technique, a real-world brief, a capstone and a showcase. With AI set up
+the titles are written for the course; without it you get the standard
+outline named for the course. The outline goes through the same check as an
+import and arrives as **drafts nobody sees**, never on top of a lesson already
+in that slot. Open each draft, use **Write the lesson** to write it from its
+title, read it, and publish.
+
+### AI in the curriculum
+
+- In the lesson editor, give a lesson only a title and press **✦ Write the
+  lesson with AI**. The AI writes the whole lesson in the NGG Saturday
+  standard, with demonstration, guided practice, independent assignment,
+  feedback, success criteria, AI used well, and support and stretch work. If
+  you have written notes, the AI drafts the summary, objectives and checks
+  instead, and never rewrites your notes. Read every draft before saving.
+- Members have a **Study helper** on Learn. They choose a lesson and ask a
+  question; it explains, gives an example and asks them a question back. It
+  never does their assignment. It allows 20 questions a day, and needs an AI
+  provider under Settings → API keys.
+
+### Assignments
+
+**Learning → Assignments** in the Control Room, and **Progress →
+Assignments** in the instructor portal. It is the same desk in both places.
+
+**Lessons set their own homework.** A published lesson with a "This week's
+assignment" section sets that assignment by itself when its week of the term
+begins: published to the lesson's course and **year**, at every centre, due
+when the lesson is due, with the lesson's success criteria as steps, and the
+members it is for are told. It happens once per lesson. A lesson that already
+has an assignment (one you set by hand) is left alone. On the desk these rows
+say **Set by the lesson**; edit, close or delete them like any other. The bar
+at the top of the desk says it is on and which week of the term it is; an
+admin in the Control Room can **Turn off** (and back on, which sets this
+week's straight away). It needs the term's start date (Curriculum → schedule).
+
+Homework from a lesson reaches the year that lesson is for: a Year 2 lesson's
+homework is not set for Year 1 members.
+
+- **New assignment**: choose the course (an admin can also choose the whole
+  Club), optionally the centre, and optionally a lesson. **Draft from the
+  lesson** fills in the lesson's own weekly assignment, its objectives and its
+  marking guide. **Write it with AI** appears only when an AI model is set up
+  for marking. Before you publish, the editor shows how many members it
+  reaches and names a few of them. Leave the due date blank and it is due
+  next Saturday.
+- **How it is handed in**: *Writing*, *A document or file*, *A photo*
+  (members can take it with the camera), *A recording* (members can record
+  audio or video in the portal, or upload one), *A link* (recognised as a
+  Google Doc, Sheet, Slides or Form, Canva, GitHub, YouTube, Trello and
+  others; members are reminded to share Google links as *Anyone with the link
+  · Viewer*), *A checklist*, or *Anything that shows it*. Up to five files.
+  **Draft from the lesson** suggests the type: a Sheets lesson asks for a
+  link, a piano lesson for a recording.
+- **Success criteria**: one per line. Members tick every one before they can
+  hand in, and the marker sees which were ticked.
+- **Hand-ins** shows what came in, what is waiting to be marked, and who has
+  not handed anything in. **Remind** notifies the people who have not handed
+  in, at most once a day.
+- **Mark** gives a mark out of the points and some feedback. **Return for
+  changes** needs feedback, and the member can then hand it in again.
+  **Suggest a mark** (with AI) only fills in the form; a person still saves
+  the mark.
+- **Bulk**: Publish, Move to draft, Close and Delete. Each asks first and
+  reports each row's result. An assignment someone has handed in cannot be
+  deleted, only closed.
+- An instructor sets work for their own courses and centre. They can also
+  mark an every-centre assignment for their course, but only their own
+  centre's hand-ins. Whole-Club work is admin-only.
+
 ### Watching the training fee
 
 **Dues & fees → Training fees** (needs `fees`; a centre-scoped admin sees their
@@ -995,6 +1510,13 @@ from which people may sign out. Leave one blank for no closing time.
   sign-out opens at 14:00") at the desk, the kiosk and the CACENTRE gate.
   Somebody who leaves early has no sign-out for the day, which the conduct
   policy counts.
+- **A sign-out that arrives late still counts.** The nightly check counts a
+  day with a sign-in and no sign-out as an absence. If the sign-out reaches NGG
+  afterwards (a CACENTRE gate departure delivered late, or CACENTRE's
+  **Send NGG the check-outs it missed … from the last 31 days**), it is stamped
+  at the time it happened and that day's "no sign-out" absence is voided, with
+  the reason kept. A member's record shows such a day once: **No sign-out ·
+  counted absent** until the sign-out arrives, then **Present** with its time.
 - An admin in the Control Room kiosk can **Let them go early…** with a written
   reason (a sick child collected by a parent). It is recorded in the audit
   trail as an early sign-out. A check-in desk cannot do this.
@@ -1048,6 +1570,91 @@ fines** (or Summer School → Policy).
 - Attendance rates count only scans on real programme days, so a visit on a
   day the centre does not meet never hides a missed session.
 
+### The Club portal (/club-admin)
+
+The NGG Club's own staff portal. It needs the **club** capability: admins and
+club admins see every NGG centre; a **centre lead** sees only their own centre,
+and every count, list, export and bulk action is held to it on the server.
+Summer School centres never appear here.
+
+- **Dashboard.** *Saturday readiness* (who is on the rota, desks, consents and
+  photos still missing), the things to clear before Saturday, and the **weekly
+  brief** — three short paragraphs (*Before Saturday*, *Slipping*, *This week*)
+  written by AI from the week's facts, or by a fixed template when AI isn't set
+  up, so it always works. *Send* emails it to the team.
+- **Ctrl K** (or the search box) opens the command palette: any section, any
+  member by name, any action.
+- **Members:** Roster (the student directory — search, filters, register, bulk
+  status/centre, messages), Promote (graduates into the Club; warns when a
+  guardian email is missing), Permissions (consents, recorded with how they were
+  given; Undo for a few seconds), Applications (accepting needs a photo),
+  Approvals, Member requests, Families, ID cards (Print opens the ID Card Studio).
+- **Care:** Check-ins (a low check-in can be sent to the child's mentor with
+  *Tell mentor*, or marked seen), Mentorship, Behaviour, **Conduct & fines**.
+- **Programme:** Timetable (clashes refused; export), Curriculum, Tournaments
+  (results come from the games played on the chess screen, so they are
+  read-only here).
+- **Comms:** Announcements (below). **New announcement** asks who gets it —
+  everyone, NGG members, Summer School, or any one centre — and shows how many
+  active members each reaches; the confirm repeats that number. A centre name
+  the system does not know is refused rather than sent to everyone. **Gate:** Check-in desks (a new desk's
+  password is shown once), Duty rota. **Team & centres:** Team, Centres,
+  Volunteers, Staff activity.
+- On a phone the bottom bar holds Home, Roster, Timetable, Check-ins and More.
+
+**Conduct & fines.** Each rule (late, absent, equipment …) has an amount, an
+on/off switch and an optional **cap per term**. A rule that is off posts
+nothing; a capped rule never takes a member past its cap in a term — the last
+fine is reduced to fit, and once the cap is reached nothing more is posted.
+Guardians see every line. Only admins and club admins change rules; a centre
+lead cannot.
+
+**Two leads per centre.** A centre has an **NGG lead** and, separately, a
+**Summer School lead** (Centres → the centre). The Club portal and NGG pages use
+the NGG lead; public Summer School pages use the Summer lead. When the two were
+split, a centre that runs Summer School started with its old lead in both
+places; change either one without touching the other.
+
+### Club announcements (Club portal → Announcements)
+
+A coordinator or centre lead writes an announcement; an **admin approves** it
+before anything goes out (an admin's own goes straight out, or at the time
+they set). The approver reads exactly what will be sent — including the text
+message version, below.
+
+**Channels.** A new announcement starts on **App** and **Email**, plus
+**Telegram** once the site has a Telegram bot (Settings → API keys → Telegram).
+SMS is never on by default: it costs money per text.
+
+| Channel | Members | Guardians |
+|---|---|---|
+| App | their notifications | their **family account** — a "From the Club" list at the top of /family, marked new until read |
+| Email | their email | every guardian email on the record and on family accounts, once each |
+| Telegram | their phone, if connected to the bot | their phone, if connected — the **whole** message, free |
+| SMS | — (members don't get SMS) | guardians' phones; a phone that already got it on Telegram is not texted too |
+
+**Too long for a text.** A text holds 306 characters ("NGG: " and all — two
+texts). When the message is longer and SMS is ticked, the editor asks for an
+**SMS version**:
+
+- **Shorten with AI** writes one. It is checked before you see it: every
+  number, date, day, time, amount of money, phone number, link and email in the
+  full message must still be in it. If the AI drops one it is asked once more,
+  naming what it left out; if it still can't, it says so and offers email and
+  Telegram instead. Nothing the AI writes is sent without the approver reading it.
+- You can write or edit the SMS version yourself. The editor names any fact it
+  leaves out ("Leaves out 10") as you type.
+- **Send by email and Telegram instead** turns SMS off; those channels carry the
+  whole message.
+- If an announcement is submitted with SMS, a long message and no faithful SMS
+  version, **SMS is dropped** and it goes by email (and Telegram) instead — and
+  the screen says so. A text is never cut off mid-sentence.
+
+**Nobody reached is refused.** An announcement whose channels reach nobody in
+its audience (for example App only, to guardians at a centre where no guardian
+has a family account yet) is refused with the reason, not "sent" to nobody. The
+reach line under the editor counts each person once.
+
 ### Approval notifications
 
 Nothing waits in a queue unseen any more. Each of these sends an in-app
@@ -1067,14 +1674,119 @@ notification **and** an email with a link straight to the right screen:
 ### Family accounts — parents and guardians
 
 **Control Room → People → Families.** Needs `people`; a centre-scoped admin
-sees and decides only their own centres' children.
+sees and decides only their own centres' children. Choose *Waiting*,
+*Connected*, *Refused*, *Disconnected* or *Left by the parent* above the list;
+tick the connections and use **Approve**, **Refuse** or **Disconnect** in the bar
+that appears. Refusing and disconnecting ask for the reason the parent is emailed.
 
 Parents sign in at **/family** with their own email — a six-digit code, no
-password. It is a separate account, not a member account: it cannot open
-any member page, and nothing in it can reach the Control Room. On it they see,
-for each child: today's sign-in (late, and by how much), attendance this term,
-conduct and fines, fees due, lesson progress and the weekly check-in. They
-**never** see the child's journal, reflections, coach chats or messages.
+password. The family app has five sections, the same on a phone (a bar at the
+bottom) and a computer (a sidebar): **Today** (how the child is today, what is
+owed, what needs the parent, the latest messages), **Saturdays** (the record,
+and *Coming up*: events to answer and a booked mentor meeting), **Growth** (the
+Leadership Index, school results and the session plan, lessons, the mentor),
+**Fees** (what is owed, the statement, the training place) and **Messages**
+(the household inbox and their requests to the centre). On a phone the top is
+one bar: the child (tap to switch), a bell with the number of things waiting,
+and their account. The address carries the child, section and sub-tab, so a
+shared link opens the same place. It is a separate account, not a member
+account: it cannot open any member page, and nothing in it can reach the
+Control Room. They **never** see the child's journal, reflections, coach chats
+or messages with their mentor.
+
+**What a parent can do there:** answer an event (*I'll come* / *Can't make
+it*); sign a monthly report and an approved session plan as read (the mentor
+sees it); remind a child whose school results are late, or upload a photo of
+the report for them (the child then checks the scores and writes the plan, as
+before); book one of the mentor's free times or ask the mentor a question; and
+tell the centre about an absence, appeal a charge or ask for a new ID card.
+
+**Anchor Circle is part of the family account (added 2026-10-28).** The old
+no-account portal at **/circle** is retired; it now says where each person goes.
+A child's *Anchor week* — the systems they held each day, the days they
+reflected, their streak, and the days an adult confirmed their conduct — is
+seen by their circle of adults:
+
+- **Parents** see it on *Growth* (a line of it on *Today*): they confirm the
+  days conduct met expectations at home and leave the child a note (five a
+  week). The child reads notes in their app.
+- **Mentors** do nothing: the children they are assigned are connected already.
+  In the mentor portal, open a mentee → *Growth and lessons* → *Anchor this
+  week*. When an assignment ends, so does the connection. A mentor also reads
+  the child's whole journal — see *The mentor reads the journal* below.
+
+Anybody connected through the old portal must reconnect this way; the days
+they confirmed and the notes they left stay on the child's record.
+
+**Mentor Messages: one conversation per person (changed 2026-10-28).** In
+the mentor portal, *Messages* lists people, not items. Each child is one
+conversation: what they wrote, the journal entries they sent and their
+check-ins, in time order, answered from one reply box that reaches their
+app (after 8pm it waits until 8am). Families and colleagues (the lead, or
+for a lead their mentors, both sides of the conversation) are conversations
+too. The list is grouped — *Needs a reply*, *Children*, *Families*,
+*Colleagues* — shows the last word and who said it, and has *Find a person*
+and *New message*. On a phone the conversation fills the screen, with *All*
+to go back. *Their page* opens the child's record.
+
+**The mentor reads the journal (added 2026-10-28).** Nothing in a child's
+journal is kept from their mentor. In the mentor portal, open a mentee →
+*Journal*: every entry they have written, newest first, with the mood, the
+date and whether they sent it — including the entries they did not send and
+their weekly reviews, which are now always saved to the journal in full
+(obstacles too). Each reading is recorded in the audit log
+(`mentor.journal.read`). A **peer mentor** — a young person mentoring — does
+not get the tab and the server refuses it: children's journals are for adult
+mentors. Parents do not see the journal. The member, journal and family apps
+now say "only you and your mentor" where they used to say "private".
+
+**Money, from the parent's side (added 2026-10-27).** Payments are the parent's,
+not the child's:
+
+- **Pay ahead.** *Fees → Pay ahead* offers 1, 3, 6 or 12 months of the
+  commitment fee, each priced by NGG with what is owed today and any membership
+  renewal that falls in those months. It is one invoice (*NGG-ADV-…*), paid
+  online or by transfer like any other. **Nothing is charged early**: the
+  payment waits on the account as a credit and meets each month's charge on the
+  1st, so no reminder goes out while it lasts and the account shows *Paid ahead
+  to <month>*. A fee changed in the meantime is charged at its new price
+  against the same credit. Paying ahead waits until the joining invoice is paid.
+- **"I've paid".** A parent who paid by transfer or at the desk tells you from
+  *Fees → Paid by transfer or at the desk?* with the amount, the reference and
+  the date. It arrives in **Member requests** as *Payment made*, marked *From
+  their family account*, and moves no money until you approve it against the
+  statement — exactly as a member's claim used to.
+- **The child asks.** The member's app no longer has *I've made a payment*. On
+  their account screen there is one button, **Ask my parent**: every connected
+  parent gets a message in their family account and an email asking them to
+  pay, or — if they already paid — to say so with the reference. Once a day; a
+  child with no connected parent is told how to connect one. The parent sees it
+  at the top of *Today* until it is paid or confirmed.
+
+Today also now shows, under the child's account: quick actions (an absence,
+the mentor, paying ahead, a replacement card), what is coming up at the centre,
+and the lessons the child is on.
+
+**What a parent cannot change:** their own name and phone, who may collect the
+child, and the five consents are **read-only** in the family app. *Ask to
+change* sends a request to the desk (*Change family details*, *Change who can
+collect*) — you check it and make the change. Who may collect a child is in
+their record: **People → Members**, open the member, *Who can collect…* (one
+person per line: name, relation, phone). A session plan is shown to the
+family only after the mentor has approved it.
+
+**Absences and fines (members).** An absence nobody asked about is fined (the
+*absence fine* in Settings → Policy, NGG member enforcement). If a request covers
+the day and you haven't answered it, nothing is charged until you do: **declining
+it issues the fine, approving excuses it.** Approving **academic leave** goes
+further — its days stop being absences altogether (logged ones are voided) and
+don't count towards the two.
+
+**The monthly report** is written for every connected child on the first days
+of the month and lands in the family inbox asking for a signature. Families
+expected at an event who haven't answered are reminded three days and one day
+before; both sides of a mentor meeting are reminded the day before. Mark an
+event *families expected* on the event itself.
 
 A parent connects to a child in one of two ways:
 
@@ -1090,21 +1802,87 @@ listed on their own Circle screen. A child cannot remove it themselves —
 **Disconnect…** here does, at once, and the parent is emailed your reason.
 Refusing a request also needs a reason.
 
-From the family account a parent can tell the centre a child will be away,
-appeal a charge, or ask for a replacement card. These arrive in **Member
-requests** marked *From their family account*, and your reply is emailed to
-the parent as well as the member. A parent cannot claim a payment — an
-offline payment needs a verified receipt, which is the member's path.
+From the family account a parent can tell the centre a child will be away (with
+the reason; a child has two absences in the programme, and a request past that is
+refused), ask for **academic leave** (exams or a school programme, up to ten weeks), appeal a charge, ask for a replacement card, ask the mentor a
+question, or ask for their details or the collectors to change. These arrive
+in **Member requests** marked *From their family account* (a question for the
+mentor also goes straight to the mentor), and your reply is emailed to the
+parent as well as the member. A payment made by transfer or at the desk is
+claimed by the **parent** (*Payment made*, from their family account); a member
+can no longer claim one from their own app and asks their parent instead.
 
-Parents choose per child which emails they get: every sign-in and sign-out,
-the Monday weekly summary, and an alert when a fine is issued.
+Every family email is **always on** and cannot be switched off: every sign-in
+and sign-out, the Saturday plan and close, the Monday weekly summary, alerts
+(a fine issued, a child not arrived) and mentors' family updates. They are part
+of membership. The family account lists them as *On*; preferences a parent set
+before this rule are ignored.
 
 ---
 
 ### Mentorship: Anchor Pods
 
 **Control Room → People → Mentorship** (`/control/mentorship`) is HQ's and the
-leads' workspace. Mentors use the **Mentor Portal** at `/mentor`.
+leads' workspace. Mentors use the **Mentor Portal** at `/mentor`, which has one
+address per programme so NGG members and Summer School participants never share a list:
+
+| Address | Who | What |
+|---|---|---|
+| `/mentor/ngg` | NGG pod, peer and lead mentors; coordinators and admins (as coordinator) | This week, Mentees, Goals, Sessions, Saturday (Before / During / After), Messages, Pod growth (Leadership Index), **Class** (Stars, School results, Curriculum) and **My role** (role, Projects, Academy, hub). The Saturday schedule sits under each page's own work, not above it |
+| `/mentor/summer` | Summer School mentors; admins | This edition's participants only: stars, notes, reviews, concerns |
+| `/mentor/class` | An NGG mentor: the portal's **Class** area (`?tab=results` / `?tab=curriculum` open those tabs). Anyone else with the class tools (an admin with no pod): the stand-alone class page | Stars, V3, notes, curriculum, school results |
+| `/instructor/ngg` | NGG instructors (Instructor Portal) | Today, Roll, Plan (hinge, exit, retrieval from earlier weeks), Teach, Exit ticket, Session log, Skills board (evidence to move a child up), Marking, Curriculum, Students, Community, School results, Report a concern |
+| `/instructor/summer` | Instructors who also teach Summer School | That edition's participants only |
+
+**An instructor's class** is every active member at their centre who takes
+one of the courses on their volunteer record — by the member's chosen
+courses, so a child on Robotics *and* Coding is in both classes, and a course
+typed in a different case still counts. Their roll, Marking, Analytics,
+Students and School results all read that one class.
+
+- **Marking:** a written answer waits under **Progress → Marking** with the
+  question and what the child wrote. Pick a mark, add a line, **Save and next**.
+  The child gets a notice with the lesson, their score and your words, and the
+  counts on Today and Analytics update at once.
+- **Analytics:** each lesson shows how many of the class finished it
+  ("3/12"), and the average score of those who did.
+
+`/mentor` sends a person with one portal straight to it and shows a chooser to anyone who
+covers both programmes. A coordinator over several centres switches centre at the top of every screen.
+
+**Messages with children.** In the portal's **Messages**, each child is one
+**conversation** with the whole exchange in it, whoever wrote first. **New
+message** starts one: a pod or peer mentor picks from their own mentees; a
+**lead mentor** (and a coordinator) can type the name of **any child at their
+centre**, mentee or not — not a colleague and not another centre's child. A
+mentee's profile also has **Message {name}**. Messages to children written
+between 8pm and 8am wait and go at 8am; the child answers in their own chat,
+and the answer comes back into the same conversation.
+
+**Saturday Formation Schedule** (Control Room → Learning → Saturday formation, `content`):
+the 8:00–2:00 day, block by block, with what members do, what mentors watch for, what
+instructors deliver, what admin must have ready and what families are told. Every portal
+and the Saturday reminders read this one table; edit a block and they all change. On the
+Saturday register a mentor ticks, per child, the values seen and the duties: On time
+(the gate's arrival time is shown), Assignment in, Checked out — and can **Add detail**: one line
+(up to 500 characters) of what they saw, saved with the register. It shows under the child's name,
+opens the weekly review ("Noted: …") and joins the child's timeline. A child's name on the register
+opens their profile; **Go to the weekly review** takes the mentor straight to After.
+
+**The Saturday plan (Before).** The mentor's part of the day is the
+**Musing & mentor breakout** block of the formation schedule (8:30–10:00 by
+default), so its window — and what follows it — come from Control Room →
+Learning → Saturday formation, never from a fixed number. The *Pod huddle*
+always opens it (the register is taken there) and the *Close* always ends it;
+between them the mentor times every item in five-minute steps, moves items up
+or down, renames them and says what happens (*Edit*), adds an activity from
+the library or one of their own, removes any but the huddle, one-to-ones and
+close, or puts back the standard plan. The summary line keeps count: *"85 of
+90 min planned · 5 min spare"*, or what an overrun runs into. **One-to-ones**
+are picked on the same screen (up to six; longest since their last first) and
+each child gets a time. It saves as they go and says so (*Saved*, or why not
+with *Retry*); *Share with {lead}* sends the lead the running order with times
+and names.
 
 **A pod** is one mentor and the members matched to them, at one centre: at
 least **five** (the Commitment Policy) and at most **eight**. Every match moves
@@ -1127,6 +1905,49 @@ record: screening (record it in **Mentors**), all **13 Mentor Academy modules**
 (the mentor takes them in the portal; answers are checked by the server; child
 safeguarding is renewed yearly), and the signed **NGGC Mentorship Commitment &
 Conduct Policy**.
+
+### "Start here": the portal guides, compulsory on first login
+
+Both staff Academies — the **Mentor Academy** (in `/mentor/ngg`) and the
+**Instructor Academy** (in `/instructor/ngg`, under Resources) — open with a
+group called **Start here: using the portal**: six short guides (three to five
+minutes each), one per part of the portal, each saying which tool does which
+job ("five families need an update → All mentees, filter, select, Family
+update"; "a child arrives after you closed the roll → reopen it"). Each ends
+with a few questions, checked by the server.
+
+- **Compulsory, but the portal stays open to look around.** Until somebody
+  has completed their **whole Academy** — the "Start here" guides and every
+  required module for the portals they work in (an NGG mentor 19, a Summer
+  School mentor 16, an instructor 9) — every screen of their portal opens, but
+  a banner on each one says *"Your Academy: N of M done … nothing you do here
+  saves until it's complete"*, and the server refuses that portal's writes
+  (sessions, reviews, the register, stars, messages to children). **Report a
+  concern always works.** The moment the last module is passed, saves go
+  through. A yearly renewal that lapses puts the banner back until it is renewed.
+- **Not clearance.** The guides are separate from the 13 modules that clear a
+  mentor to be matched; finishing them doesn't clear anybody, and adding a guide
+  never un-clears anybody.
+- **Who is exempt.** Staff with admin access, and a mentor whose Academy you
+  recorded as completed in person (Control Room → Mentorship → Mentors → the
+  mentor → *Academy completed in person*).
+- **Instructors** also have *Retrieval, hinge questions and exit tickets*,
+  *Feedback that moves learning* and *Safeguarding for instructors* (renewed
+  yearly). An instructor whose safeguarding check isn't recorded yet still gets
+  the portal — the Academy and Curriculum — with the class empty and the reason
+  said.
+- Three tries at one module a day; then it says when to come back.
+- **How children see them.** The Academy page opens with *How children see
+  you*: a mentor or instructor picks their title (Mr, Mrs, Ms, Miss, Dr, Prof,
+  Engr, Coach, Aunty, Uncle, Pastor). Children and families see every adult as
+  **title + surname** — "Mrs Adeyemi", never "Funmi" — in the chat, *My
+  mentor*, the timetable, courage marks, results notes, Saturday evaluations,
+  Community posts and the family's Saturday summary. With no title chosen it is
+  **Coach**. You can set it for them too: Control Room → Mentors → the mentor →
+  *Title*, or Volunteers → *Edit details* → *Title*. Staff screens keep full names.
+- The content is `api/_lib/seeds/mentor-academy.json` and
+  `api/_lib/seeds/instructor-academy.json`. When a portal screen changes, change
+  its guide in the same commit.
 
 **The adaptive rules** run every six hours (and on *Run the rules now*). They
 write a nudge; nothing is ever sent to a child.
@@ -1152,12 +1973,92 @@ The month also counts the pod (five or more), parent summaries and the Anthem
 and Pledge. The conduct commitments (values, accountability, feedback,
 leadership) are listed for the lead's own review and are not scored.
 
+**Projects and activities.** *My role → Projects* in the Mentor Portal. A lead
+or a coordinator sets a project for the mentors they lead and the children at
+their centre; any mentor, for the children in their own caseload. A project
+has a name, what to do, a start and a finish date (a year at most), and the
+people on it, optionally split into named groups (twenty at most, two hundred
+people). Everyone on it is told when it is set and sees the same countdown.
+A mentor marks their own part done; a child marks theirs from **Community**
+in their app, where they see the project, their group (other children by first
+name, adults by title) and who set it; a project finishing within a week is
+on their **Today**. The person who set it sees every group's tally and may set
+anyone's part — done, not done yet, or *excused* (an excused part is not
+counted). Taking someone off keeps them on the record if they had finished.
+The commitment *Support NGGC projects and activities* on My role counts the
+mentor's projects this month ("1 of 2 done · next finishes 20 Oct"), and turns
+into a to-do when a part is past its finish date — only while the project is
+open; a finished project is never "past its date". Saving and marking wait for
+the Academy, as the portal's other saves do.
+
+A mentor with no safeguarding screening recorded can be on a mentors-only
+project, but is refused (by name) on one with children, because everyone on
+it sees the children's names. Somebody already on a project who has since left
+— gone inactive, moved centre — stays on it until you take them off, so it can
+still be edited, finished or cancelled; they just cannot be *added* to a new
+one. Once a project is finished, only the person who set it (or the Control
+Room) can change a part.
+
+**Projects in the Control Room.** **Mentorship › Projects** shows every project
+at the centres in your scope — the ones leads and mentors set in the mentor
+portal and the ones set here — with how many are open, finishing this week and
+past their finish date, and each project's groups, progress and countdown.
+**New project** (People permission) picks a centre, then its mentors and
+children (or *every child at the centre*), the dates and the groups: name the
+groups ("Red, Blue") and everyone is shared out across them, mentors first, one
+to a group. Open a project to see each group, **Set part** for anyone (done, not
+done yet, excused), **Edit**, **Mark finished**, **Reopen** or **Cancel
+project**. The rules are the mentor portal's own: a finished part is never
+removed, at most 200 people and 20 groups, a year at most.
+
+**Supervision, written up.** In **Mentors**, *Book supervision* books the
+Tuesday after STS; the button then reads *Write up supervision* and the row
+shows the date. After the meeting, the lead (or a coordinator) writes what they
+told the mentor and up to five things agreed, and saves. That closes the
+booking (on the day it was written, if earlier than booked), the mentor is
+told, and in **My role** they read the feedback and the agreed points. The
+commitment *Feedback received professionally* dates from the last notes ("Last
+supervision notes 3 Oct"), says "No supervision written up yet" until there are
+some, and turns amber after four months without any. Notes can also be written
+for a supervision held without a booking.
+
 **Safeguarding.** *Report a concern* is in the Mentor Portal's header,
 for every mentor, cleared or not. A report goes to the safeguarding officer for
 that centre (the staff member holding `safeguarding` with the centre in scope),
 gets a case number, and cannot be edited by the reporter. The **Safeguarding**
 tab is drawn only for people holding that capability; notes and status changes
 sit beside the report, never over it, and every opening of a case is recorded.
+
+**A concern can also start from a conversation note.** On a child's record,
+ticking *This is a concern about the child* on a conversation opens the same
+kind of case for the safeguarding officer, and tells the centre's lead mentors.
+It works at a centre with no lead mentor too: the case is what makes sure
+somebody hears. Marking a note that is already a concern again does not open a
+second case.
+
+**Who reads what.** A mentor opens a child's record only once their
+safeguarding **screening** is recorded (they can still report a concern before
+then). In the portal's *Needs attention* list, a concern's wording is shown to
+the centre's lead mentors and staff, to the mentor who wrote it, and to the
+child's own mentor — not to every mentor at the centre.
+
+**Pairing by hand** (*Members → Mentor*) now behaves like a chosen match: it
+starts the relationship (with its cadence and the first-weeks goal lock), a
+reassignment closes the old relationship and starts a new one, and removing the
+mentor closes it. A child has one mentor at a time.
+
+**Goals in the record** start as a *draft*. Once the mentee has agreed it,
+press *They agreed · start it*; only then is it live. *✓ Done* marks it
+achieved and *Drop* pauses it.
+
+**Automations paused while the new portal is withdrawn.** Control Room →
+Settings → Mentorship automations shows some cards as *Paused in code*: the
+ones whose only result appeared in the Mentor Portal v14 screens that were
+withdrawn (Due now, the Family tab, Saturday planning, scorecards,
+commitments, the Academy). They come back on together if those screens
+return. Pushes that fall in quiet hours (8pm–8am) now wait and go at 8am
+instead of being lost; a child is asked their side of the relationship check
+once per cycle, not every morning.
 
 **Impact** shows six measures against fixed targets — match length (≥ 70%
 reach 12 months), contact (≥ 85% with a one-to-one in 14 days), weekly reviews
@@ -1175,9 +2076,56 @@ nightly jobs) still run.
 (**School results** tab), checks the scores and writes a plan for at most three
 subjects, each with a "when and where". It goes to their mentor, who approves it
 or sends it back with a note in the Mentor Portal's **School results** tab
-(`/mentor?tab=results`, where the email links). Approved, it is live; the family
+(`/mentor/class?tab=results`; the email's `/mentor?tab=results` lands there). Approved, it is live; the family
 hears only if the member chose that. Plans whose study sessions are mostly
 missed are listed there too.
+
+## The Community (/community)
+
+The members' community runs on the redesigned app (**Community v3**). The
+previous app is still one link away at `/community?classic=1` while everyone
+moves over.
+
+- **Home** leads with the week's quote, announcements, homework due and
+  featured posts. Channels hold posts of five kinds: post, **question** (can be
+  marked answered by its author or staff), **work** (a project, with photos,
+  video, files or **code** that runs in a live preview), **announcement** and
+  **homework** (set by staff, with a due date and hand-ins). Staff announcements
+  and homework are pinned.
+- **Video** plays in the page with chapters and captions, and remembers where
+  each member stopped. Posted media is resized in the browser before upload.
+- **The safety check** runs as a member types, with the same rules on the
+  server: phone numbers, social-media links, unkind words (with a kinder way to
+  say it), shouting in capitals, and a reminder before posting video. A
+  **student's** post that trips a rule is **held** for a moderator, and they are
+  told why; staff posts are not held.
+- **Reports** from members carry a reason. A *safety* report opens a
+  safeguarding case straight away.
+- **Moderation** (Control Room → Community): the queue filters by kind and
+  reason and shows the median time to a decision. For each item: *Approve*,
+  *Edit & approve* (fix a phone number or a word and let it through),
+  *Message author*, *Hide*, or *Escalate* (hides it and opens a safeguarding
+  case with a severity). Every decision is timed and recorded.
+- **Safeguarding cases** are seen and changed only by people with the
+  **safeguarding** capability — not by everyone with *content*. A case has a
+  severity (low → urgent), a lead, a status and notes.
+- Members also have their **journal**, the arcade, drafts that survive a
+  closed tab, `/poll` and `/shrug`, image paste, and an offline notice.
+- **Homework:** each child gets one private in-app notice when a task is set,
+  which opens the task's post. Their note and link are kept per task, and a
+  task counts as *seen* the first time its card is on screen, which is what
+  the tracker's "Not seen since…" line reads. A late task still says *Hand
+  in*. Homework is never set in Commons; the composer picks a course channel.
+- **Search** asks the server, in a channel as well as on Home. It matches the
+  words and the name on a post, and stays inside the channels the member
+  follows. *See their posts* on a profile card lists what that person wrote.
+- **Catch me up** lists the member's own unread posts, each one opens. A
+  member whose post or reply is hidden or taken down is told, privately.
+  Nobody but the author can reply to a post that is still waiting for a check,
+  and deleting the reply marked as the answer re-opens the question.
+- Counts and new posts refresh once a minute while the page is open. The
+  *People* tab lists everyone who has posted in the channel. Typing names a
+  child as "Ada N.", never by full name.
 
 ## Member records: from optional to required
 
@@ -1212,7 +2160,7 @@ be in the future, and the old date and your reason are kept.
 
 ## Applications, sign-ups and verification
 
-Three different queues, for three different things:
+Four different queues, for four different things:
 
 - **People → Applications** — year-round NGG applications. Accepting an NGG
   applicant sends the joining invoice (see *Joining fees* under The NGG Club).
@@ -1220,6 +2168,8 @@ Three different queues, for three different things:
 - **Content → Photo review** — photographs submitted by members,
   volunteers and Summer School participants, waiting on approval before
   they appear anywhere or print on a card.
+- **Inbox → Testimonials** — what members said about their own sessions. See
+  [What members say about a session](#what-members-say-about-a-session-testimonials).
 
 **The Club application** (`/join`, policy version 2026.10) replaced the
 Google Form. Seven steps: who is filling it in and the centre; the child;
@@ -1341,15 +2291,87 @@ rules, which work with no key at all. The result says which read it. It only
 selects from the people the studio already shows you and changes the studio's
 own settings: it never prints, sends or changes a record by itself.
 
+**Named lists, said plainly.** When you name people, the count says why it is
+short of the names (*"3 cards · 4 named: 1 no photo yet"*). Somebody kept off
+by the plan's own filter is named with the reason (*"Taiwo Ayomide is a Summer
+School participant, and this is NGG members only"* — *Put Taiwo on too*), not
+reported as missing. Somebody on two lists (an NGG member who was also at
+Summer School) is flagged, with *Keep the NGG member card* / *Keep the Summer
+School card*; you can also say it: *"Badmus should be NGG, not summer"* (that
+picks his record and filters nobody else). *"Exclude summer"* leaves Summer
+School out — it no longer reads as "Summer School only". A name nobody has
+shows the closest names on the lists, with *Use …*.
+
+**More ways to say who.** These are read even with no AI key (the studio's own rules):
+- *"The volunteers from Ijaiye and Ikorodu"* — several centres at once; each shows as its own chip.
+- *"Print 026-001 to 026-040"* — the forty in that block, and only 2026's (025-007 stays off). *"Cards 40 to 80"* without a prefix is every year's.
+- *"The last 20 members who joined"* — the twenty most recent, not the first twenty on the list. (*"The last 7 days"* is still a date.)
+- *"Everyone at Yaba except those already printed"*, *"who still needs a card in Ikorodu?"* — the people still waiting for a card.
+- *"Without a photo"* / *"only the ones with photos"* — a photo filter. *"…without a photo, ask them for one"* opens the photo request for exactly them.
+- *"Volunteers and members together, one sheet per centre"* — both lists, each centre on its own sheet. *"Print the backs too"* turns the backs on.
+- *"Ada Okafor's card"* means Ada Okafor; a two-word centre (*Yaba Hub*) is never read as a person.
+
+**Photo work in words, and photos in the chat.**
+- *"Improve the photos, remove their backgrounds"* opens **Improve photos** for
+  the people in that request (or the plan on screen) with *Plain grey
+  background* already on; you check the count and press Improve. Several acts
+  in one request run in order (*"…and ask the ones with no photo for theirs"*
+  then opens the photo request for just those people, not everyone waiting).
+- *"Help position the image"* opens the framing tool for the one card in
+  question, or lists the cards with *Position photo* / *Edit photo* buttons.
+- **The framing tool shows the photo as each card prints it** (fixed
+  2026-10-28). It used to preview a portrait box labelled "Member card" that no
+  card has, and called the volunteer card's box "Summer School". Now the
+  person's own card comes first, outlined and marked *prints on this*:
+  - a member card's wide photo, full bleed across the top (54 × 37.8 mm);
+  - a Summer School card's circle;
+  - a volunteer card's landscape box.
+
+  If that card type has a design assigned, the preview uses that design's
+  photo box instead. The other card types follow, each under its own name,
+  because one photograph can be on more than one card.
+- **📎 in the assistant** adds photos. Name each file after the person or
+  their ID (*Ada Obi.jpg*, *026-014.png*) and it matches them; one photo with
+  one card picked needs no name. Anyone not matched is chosen from a list (or
+  searched). *Save* checks each like any headshot and replaces the photo on
+  their record, with a verdict per photo; *Put them on the sheet* follows.
+  Saving photos needs the **Content** permission.
+
+**Which AI.** Say *"use Gemini"* (or Groq, Claude, OpenAI) to choose which
+reads your requests, *"which AI?"* to see what is set up, or *"use the rules"*
+for none. A provider that isn't set up is said so, and another reads it. If
+the AI is slow the studio's rules answer on their own after about 20 seconds,
+so a request never just times out.
+
 **Make cards.** The left column is everyone who needs a card: **New** (never
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
-*Ask for photo*, or *Ask everyone blocked* to ask up to 200 at once). A
-member is told how to add a photo (Edit profile on their dashboard), in the
-app and by email, and a child member's guardians are told too; a Summer
-School participant's guardian is emailed; a volunteer is emailed and asked to
-reply with one. The admins for their centre get one summary per press. The
-row then says when they were asked; asking again within 3 days needs *Ask
-again*. A member printed for the first time is given their ID number when you
+*Ask for photo*, or *Ask everyone blocked*).
+
+**The studio keeps your work, and keeps up.** The sheet, its settings, the
+filters and any uploaded images are kept on this computer: close the tab or
+refresh, and the sheet is as you left it (the studio says so). The records
+themselves are always read fresh. A change made anywhere else — a photo
+added in the Control Room, a reprint asked for in another tab, a card printed
+on another computer — shows in the studio on its own: soon after a change in
+another tab of the same browser, when you come back to the studio, and once
+a minute while it is open. It never refreshes in the middle of a print. If a
+card on your sheet was printed elsewhere in the meantime, the checks say so
+and offer to take it off, so nobody gets a second card by accident.
+
+**When an email can't be sent.** A photo request says what actually went. If
+the person has an email but the site's mail failed to send it, the studio
+says *"The email couldn't be sent"* and points you at the mail settings —
+it no longer says "no email on file" for someone who has one, and a request
+is only "all sent" when it all went.
+
+**Photo requests, for one person or two thousand.** One press asks everyone you chose (up to 2,000).
+- **Before anything goes**, the confirm shows how each person is reached: members by email and in the app, their parents or guardians by email (each greeted by name), volunteers by email, and Summer School parents with their re-shoot link. It names anyone with no email or guardian on file, who must be asked in person, and says who is left out and why. Open *What they get* to read the exact words.
+- **Each message is written to one person**: their name, their card, their centre, how to take a photo that passes, and a button that opens the photo page for exactly them. Nobody has to find Edit profile or reply to an email. The link works for 21 days; the photo is checked like any other.
+- **Big requests go out in batches.** The first 25 go at once and the rest over the next few minutes, so nothing piles up. The admins for those centres get **one** summary when it has all gone: counts by centre and who could not be reached, never a list of a thousand names.
+- **Afterwards**, ask the assistant *"how is the photo request going?"*: photos in, still waiting, and who could not be reached. You can send **one reminder** from two days after the request, to those who were reached and still have no photo. *"Download the list of who has no photo"* gives a spreadsheet.
+- The row says when they were asked; asking again within 3 days needs *Ask again*.
+
+A member printed for the first time is given their ID number when you
 print — it is theirs for good and never reissued. Tick
 people, or *Add N to the sheet*. The middle is the sheet exactly as it will
 print. Pick what you are doing at the top — *New intake*, *Reprints*, *One
@@ -1490,6 +2512,19 @@ Logging a print closes the requests it satisfied. A proof closes nothing.
 
 A replaced or edited photo replaces the old one. The old file is deleted at once and older versions keep no picture. The only exception is when another person's record still uses the same file; then it stays until that changes.
 
+### When a member asks to change their photo
+
+Members cannot change their own photo. It is the face on their printed ID, so they **ask**. On their profile they choose the photo they want, add a reason, and send it. Their photo stays as it is until someone decides.
+
+The ask arrives in **Inbox → Photos** as **Photo change** (needs the `content` capability; a centre-scoped desk sees only its centres). It shows the photo **Now** beside the one **Asked for**.
+
+- **Approve** puts it on their profile and on the next card printed. A card already printed is not reissued.
+- **Decline** needs a reason, because they see it. Their photo stays.
+
+Either way the member gets a notice. Only one ask per person waits: a newer one replaces the older. The member can **Withdraw** an ask while it waits.
+
+A reshoot that staff asked for (a guardian's retake link) is still applied directly, because staff asked for it.
+
 ## Quote of the week
 
 **Content → Quote of the week** (needs the `content` capability). The home page
@@ -1556,6 +2591,172 @@ Quotes**.
 Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
+
+## Free messages on Telegram
+
+Telegram messages cost nothing, on Android **and** iPhone. Once somebody
+connects, every text the site would send their number — sign-in codes,
+check-in alerts, guardian notices, volunteer IDs — goes to their Telegram
+instead. If Telegram can't reach them, the SMS goes as before, so nothing is
+ever lost.
+
+**Setting it up (once, about five minutes):**
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and pick a name (e.g.
+   *NGG Messages*) and a username ending in `bot` (e.g. `NGGMessagesBot`).
+2. Copy the token BotFather gives you into Control Room → Settings → API keys
+   → **Telegram**, and press **Test**. Test checks the token and connects the
+   bot to this site. The site must be on `https://`.
+
+**How people connect:** share **yoursite/telegram** (it has a button and a QR
+code) in parents' WhatsApp groups, on the noticeboard, or in a newsletter.
+Families also see it under *Emails & connection* in their family account.
+They open the bot, press **Start**, then **Share my phone number**. That's all.
+Telegram only lets them share their *own* number, so nobody can redirect
+somebody else's messages. They should use the number on their NGG record (or
+their child's record, for a guardian). `/stop` in the chat goes back to SMS;
+`/status` shows what is connected.
+
+## Text messages: the free way
+
+Control Room → Settings → API keys → **SMS Gateway for Android (free)**. It is
+open-source software (sms-gate.app): install the app on the programme's own
+Android phone, turn on **Cloud Server**, and paste the username and password
+the app shows. There is no monthly fee and no message cap, unlike textbee's
+300 a month on its free plan.
+
+**It does use the phone's airtime.** Every text message costs what the SIM's
+carrier charges, whichever app sends it; only the software and the relay are
+free. Put an SMS bundle on that SIM (it is far cheaper than paying per text),
+keep the phone charged, on Wi-Fi or data, and with battery saving off for the
+app. Nigerian numbers go to this phone first, then textbee, Termii and Twilio
+if they are set. Email and in-app alerts cost nothing and are always sent too.
+
+## File storage (any S3-compatible bucket)
+
+When Cloudinary's plan runs low, give the site a **storage bucket** instead.
+Once one is set in Control Room → Settings → **API keys → File storage**, every
+new upload (headshots, avatars, covers, proofs, hand-ins, community posts, school
+reports) goes to the bucket. **Nothing already on Cloudinary moves or breaks**:
+those photos keep showing from where they are.
+
+- **Which one.** **Cloudflare R2** is the recommendation: 10 GB free, and you
+  never pay for people viewing files (Cloudinary counts every view). **Backblaze
+  B2** works the same way (10 GB free, then about $6 per TB a month). Amazon S3,
+  Wasabi, DigitalOcean Spaces, Supabase Storage, IDrive e2 and any other
+  S3-compatible store work too.
+- **Setting it up.** Press **Set up** on the File storage row and pick your
+  provider: the guide shows its steps in order, what the endpoint, region and
+  public address look like, and a button that copies the one rule the bucket
+  needs (CORS) so browsers may upload to it — for Backblaze B2, whose website
+  cannot set that rule, it copies the B2 command instead. **Connect** opens the
+  form for that provider. It takes the endpoint, the bucket name, an access key
+  and its secret, and the bucket's **public address**. IDrive e2, other
+  providers and custom domains also need one line added to the site's
+  `.htaccess` (the guide says so; `docs/SETUP.md → File storage` has it).
+- **Test** writes a small file, reads it back from the public address, and
+  deletes it. If it fails it says which part: the keys, the bucket name, or a
+  bucket that is not public.
+- **Diagnostics** shows *File storage: new uploads go to the bucket* once it is
+  working. Cloudinary's usage warnings then stop pausing uploads.
+- **What a bucket does not do.** It stores files; it does not edit them. Images
+  are shrunk in the browser before they are sent, and the face-aware photo
+  framing still works (it is done by the AI framer). Cloudinary's one-click
+  photo edits only apply to photos still held on Cloudinary.
+- **Safety.** The browser is given a link that uploads **one** file, of **one**
+  type and **one** exact size, for 15 minutes. It cannot overwrite anyone else's
+  file. Web pages, SVGs and scripts are refused. The secret key never leaves the
+  server.
+- **Replacing a photo** deletes the old one from the bucket, unless another
+  record still uses it.
+
+### How the bucket saves space without losing quality
+
+- **The same file is stored once.** When somebody uploads a photo or a PDF the
+  bucket already holds (a picture shared by five people, a worksheet handed in
+  by a whole class), nothing is uploaded: the stored copy is used. The site
+  checks this by reading the stored file back itself, so nobody can trick it
+  into handing out a different file.
+- **Hidden photo data is removed, not the picture.** A phone photo carries
+  camera details and often the GPS position where it was taken. That is
+  stripped from every community photo and hand-in; the picture itself is kept
+  byte for byte.
+- **Large photos are stored as WebP** when that is smaller than JPEG at the same
+  quality setting — usually a quarter to a third fewer bytes for the same
+  picture. Headshots stay JPEG for printing.
+- **Unused files are deleted.** A photo picked and then abandoned, a deleted
+  post, a replaced hand-in: once nothing on any record has used a file for a
+  week, it is removed from the bucket overnight. Diagnostics → *Files in the
+  bucket* shows what is stored, what was saved, the largest files, and a
+  **Clean up now** button.
+
+## Image storage (Cloudinary)
+
+**More than one Cloudinary account.** One free plan holds about fifty people's
+photos a month. Control Room → Settings → **Diagnostics** → *Cloudinary
+accounts* lists the main account (the keys in Settings → API keys) and any you
+add with **Add an account…** — a free account signed up with another email
+address adds its own credits and storage. You need its cloud name, API key and
+API secret (Cloudinary console → Settings → API Keys); the keys are **checked
+with Cloudinary before they are kept**, and the secret is never shown again.
+
+- **Uploads go to the first account, in the order shown, that has room.** When
+  one passes 85% (or is full), new uploads move to the next by themselves, on
+  the next usage reading; when a plan resets or is upgraded it takes uploads
+  back. The list says where uploads go now.
+- **Photos already uploaded stay where they are and keep showing** — an image
+  link names its own account and needs no key. Removing an account from the
+  list only stops uploading to it, reading its usage and deleting from it; the
+  screen says how many photos on record still show from it.
+- Open an account to **check its usage now**, **move it up or down** (the main
+  account is always first), **pause** uploads to it, change its name or keys,
+  or remove it. Every change is recorded in the audit log (never a key).
+- Alerts name the account: "Cloudinary (Second plan) is full — new uploads now
+  go to Third plan". Only when every account is full are uploads paused.
+- **Free space…** frees the resized copies on every account.
+
+Photos and uploads are kept on **Cloudinary**, whose plan has a limit (credits,
+shared between storage, bandwidth — every time a page shows an image — and
+transformations). The site watches it for you:
+
+- **Checked every six hours.** Control Room → Settings → **Diagnostics** →
+  *Image storage* shows how much of the plan is used, part by part, and when it
+  was last checked. **Check now** reads it at once.
+- **You are told as it climbs**: at 70%, 85% and 95% the admissions inbox and
+  everyone with the `settings` permission get an email and an app alert, once
+  per level. At 85% and above it also appears first in **Home → Needs you**.
+- **What happens as it fills**: from 85% the paid AI photo edits stop. At 95%
+  (or when Cloudinary starts refusing work) **new uploads are paused** so the
+  account is not tipped over: photos are kept on the site's own storage
+  instead, and other uploads say why they can't go. Nothing already stored is
+  touched.
+- **Less is stored per upload**: every image (headshots, avatars, covers,
+  proofs, submissions, community posts) is resized and compressed by Cloudinary
+  *before* it is stored, so a 6 MB phone photo is kept at a fraction of that.
+  Documents and videos are not re-encoded.
+- **Free space…** (Diagnostics) deletes the resized copies Cloudinary made for
+  each page — every original is kept, and a copy is remade when a page next
+  needs it. Type FREE SPACE to confirm. If storage is still high afterwards,
+  the plan itself needs upgrading on cloudinary.com. It **refuses** while any
+  record still shows a photo as an edit with its background removed: deleting
+  those copies would make Cloudinary remove every background again (75
+  transformations each). Store them as plain images first (below).
+- **Where the credits went, and what changed.** A background removal costs
+  Cloudinary 75 transformations, and it used to run again for every card size,
+  crop and image format built from the edited photo — about 450–600 per person,
+  which is why the free plan ran out at roughly fifty people a month. Now:
+  - an approved or edited photo is **stored once as a plain image** as it
+    looks (the edit is kept on record), so every later size costs one
+    transformation, not 76;
+  - **Store edited photos…** (Diagnostics) converts the photos already on
+    records, 50 a press, counting first;
+  - card photos are delivered in one format (JPEG) instead of one per browser;
+  - community images come in four widths instead of twelve, resized after any
+    edit (a tiny avatar no longer re-runs the edit), and a video is delivered
+    as the one version made at upload instead of being transcoded twice.
+  Headshot uploads are deliberately **not** de-duplicated: they come through a
+  page that needs no sign-in, and telling a stranger "this exact photo is
+  already stored" would let anyone test for a child's picture.
 
 ## Settings and connected services
 
@@ -1633,8 +2834,20 @@ they all behave the same way. Worth knowing once:
 
 ## Searching and filtering
 
-- Search boxes match **partially** and ignore case. On the member roster,
-  the same box covers name, member ID and email.
+- Search boxes match **partially**, ignore case, and take **every word in
+  any order**: "bello amina" finds Amina Bello, and "amina egbeda" narrows
+  rather than finding nothing. A trailing space (which a phone keyboard adds)
+  changes nothing.
+- The member roster, the Club roster, the Summer roster, the registration
+  desk, the fees lookup and the security desk all find a person by the
+  **printed ID on their card** (026-014, EG-26-001) as well as by name, the
+  internal ID and email. Where there is a phone on file, a number is found
+  however it was written: "0803 111 2222" finds "+2348031112222".
+- A search that fails says so, keeps what you typed, and offers **Try
+  again** — it never shows an empty list as if nobody matched. In the
+  Control Room's tables the search box stays put while results load.
+- A centre lead's searches look only in their centres, and the whole search
+  runs inside them, so a match is never hidden behind other centres' rows.
 - The **public** Summer School page's search ignores accents as well as case,
   so "Iwaya" finds "Ìwàyà" — worth knowing when a family says they cannot
   find their centre.
@@ -1650,11 +2863,276 @@ they all behave the same way. Worth knowing once:
 
 ---
 
+## Signing in, and two-step sign-in
+
+### The first screen is the same for everyone
+
+On a phone or computer that has not signed in here before, every email or ID
+gets the same next screen: a password box, and **No password? Email me a
+sign-in code** under it. That is deliberate. The screen used to skip straight
+to "code sent" for people without a password and go to the password box for
+staff, which told anyone who typed an address whether it belonged to a member
+of staff. Most members simply press the code button. A device somebody has
+signed in on before is told what applies, a few times a day.
+
+A wrong password and "this account has no password" give the same message.
+Asking for a code for a staff account looks like any other request, but no
+code is sent: that inbox gets a note saying staff sign in with a password.
+Signing out only works from the app's own button, not from a link or an
+image somebody posts.
+
+### One email on several accounts
+
+Brothers and sisters on a parent's address, a family inbox: one email can be on
+several member accounts, and that is fine. The member editor, a member changing
+their own email and the roster import all accept it (the import notes "shares
+its email with N other members" on the row).
+
+- **A code or link** is emailed **once** to the address, naming who is on it
+  ("Tobi and Femi"). After it is typed or tapped, the screen asks **Who's
+  signing in?** with each account's name, card number and centre, and opens
+  the one chosen. Nobody is signed in before the choice, and the choice is good
+  for ten minutes, once. Escape or Cancel signs nobody in.
+- **A password** says whose it is: one child's own password opens that child
+  straight away. If the same password was set on several of the accounts, the
+  same question lists those.
+- **Forgot your password?** sends one email with a **Set {name}'s password**
+  link for each account.
+- A suspended account is never offered, and neither is a staff account that
+  signs in by password only (staff keep using their password).
+- Each child can always sign in with their own Member ID or card number.
+
+### Who signs in where
+
+- **Members** sign in with their email, Member ID or the number on their card
+  (`026-014`), and a code we email them (or a password, if they set one).
+- **Instructors, volunteers and mentors** use the same door. They type their
+  email or the number on their Vanguard card (`VOL-INS-26-001`) and get a code
+  at the address on their volunteer record. The card door (card number plus
+  their own phone) still works. When their record has no phone, the card door
+  says so and offers the emailed code instead.
+- **A mentor who only has a mentor record** (added in Mentors, with an email
+  and no member or volunteer account) can sign in with that email. The first
+  time they do, they are given a volunteer record linked to their mentor
+  record, so the portal and their ID card both find them.
+- **Guardians** sign in on the Family page with their email and a code.
+- **Staff** sign in with a password and then the Control Room's authenticator
+  app, as before.
+
+### The second step, by kind of person
+
+Each kind of person chooses one way. The first listed is the one suggested:
+
+| Who | Ways they may choose |
+|---|---|
+| Members (children and young people) | A private question · a 6-digit PIN · an authenticator app · a code by email · a code by text message |
+| Instructors, volunteers and mentors | An authenticator app · a code by email · a 6-digit PIN · a code by text message |
+| Guardians | A family PIN · an authenticator app · a private question · a code by text message |
+
+**A code by text message** is offered only while a text channel is set up
+(Telegram, the programme's own phone, or a paid SMS provider, under Settings →
+API keys). The person types a number or uses the one on their record; it is
+set only once a texted code reaches it. If they have connected Telegram, the
+code goes there, free. If texts stop working later, the sign-in screen says
+the text did not go through, and their backup codes still let them in.
+| Staff | The Control Room authenticator (managed in **Access & roles**) |
+
+Whatever they choose, they also get **eight one-time backup codes** when they
+set it up. They show once; the person saves, prints or downloads them. A
+backup code opens the portal in place of the usual step, for a lost phone or
+a forgotten answer, and each works once. New codes (from "Two-step sign-in" in
+the account menu) need the current step first, and replace the old ones.
+
+The desk can narrow the list for any kind (**Policy per kind of person →
+Ways they may choose**). It cannot leave a kind with no way. Taking a way
+away stops new set-ups with it; people already using it keep it until they
+change.
+
+A team member who chose the emailed code is not asked for a second email after
+signing in with an emailed code. That would be the same thing twice.
+
+Anybody without a second step sees an alert at the bottom of the screen until
+they add one. They can change or turn it off from the account menu ("Two-step
+sign-in"), or from the palette in the Member Portal. Changing it needs the
+current answer or code first. Where it is required, it cannot be turned off.
+
+### Members › Sign-in security
+
+- **The three cards** show how many of each kind have a second step. Click
+  one to list those people.
+- **Policy per kind of person** (needs Settings):
+  - **Off.**
+  - **Optional:** people are shown the alert.
+  - **Required:** anyone without one sets it up before their portal opens.
+- **Actions** on a row, or on a selection:
+  - **Let them in without it for 10 minutes.** This is for a child at the desk
+    who has forgotten their answer. Do it only with the person in front of
+    you. It is one person at a time, never a bulk action. If they are already
+    on the question screen, they press "I've been let in by staff" and they
+    are in. Every let-in is in the audit log.
+  - **Reset.** Clears what they set, so they choose a new one.
+  - **Require it** of one person, whatever the policy. **Back to the policy**
+    undoes that.
+  - **Email a reminder** to set it up. At most one every 3 days.
+- **Five wrong answers** pause that person's second step for 15 minutes. A
+  let-in also lifts the pause.
+
+---
+
+## The member portal on a phone, and for younger members
+
+**The simple view.** Members under 13 see a simpler My NGG: five places
+named in plain words (Today, My mentor, Learn, Me, Help), big buttons on
+Today for the four things they do most, and Money kept out of the menu (it
+is a guardian's business at that age; its page still opens from a link).
+Older members see the full view. Anyone can switch in **Profile → How your
+portal looks**, and the choice is theirs: it is not reset by a birthday.
+
+**Tabs on a phone.** Inside each place, the tabs (for example Lessons,
+Saturday, Timetable, Study tools) wrap onto a second line as buttons on a
+narrow screen, so every one is visible. They used to scroll sideways out of
+sight. The same is true in the mentor and instructor portals.
+
+**Notifications.** The bell opens a panel of what happened, grouped Today,
+Yesterday, This week and Earlier. Every item that goes somewhere has a button
+that says where ("Open the chat", "See today's plan", "Open the event"); the
+button opens it and marks the item read. Each item can be marked read or
+unread, and dismissed (with Undo). These marks are the member's own: when one
+member reads or dismisses an announcement sent to everybody, it stays unread
+for everyone else (until now, the first reader marked it read for all). On a
+Saturday the timetable no longer sends one alert per block: there is one
+"Now · …" item, updated as the day moves on.
+
+**Signing out.** Every portal now has its own **Sign out**: the member,
+mentor and instructor portals carry it at the foot of the sidebar (the icon
+next to your name). On a phone, the member portal's round initials button in
+the top bar opens **More**, where Sign out sits under Get help; in the mentor
+and instructor portals it is at the bottom of **More**. Signing out on a
+shared centre computer also clears any half-written community post.
+
+**Passwords, from inside the portal.** Me → **Sign-in and password** (also
+"Change my password" in the search box, and a button in Edit profile). It
+says whether the member has a password. **Change password** asks for the one
+they use now, then the new one, and they stay signed in; five wrong tries lock
+it for 15 minutes. A member who has forgotten it presses **Forgot it? Email me
+a code**: a 6-digit code goes to the email on their record (or their
+guardian's), and they set the new password with it without leaving the
+portal. Nobody needs to sign out, and nobody at the desk needs to reset it.
+
+**Ideas and feedback.** Help → **Share an idea** (also in the search box,
+and on My mentor → Community). A member picks *How NGG is going for me*,
+*An activity idea*, *Something NGG should change*, *Something I love* or
+*Something in the portal isn't working*. "How NGG is going" is a rating from
+*Not good* to *Great* (words are optional); the others need at least six
+characters. Any of them may be sent **without their name**. A rating of *Not
+good* or *Not great* reaches the desk titled as somebody to talk to, not as a
+suggestion. Ideas are their own kind
+of request, so a child with ideas waiting can still ask for help. "Something
+feels wrong?" is not an idea: the sheet sends it to Help, where it goes to
+safeguarding.
+
+In the Control Room, ideas arrive in **Inbox → Member requests** as *Idea or
+feedback*. They are not approved or declined:
+
+- **Thank and close** closes it with your reply, or a plain thank-you if you
+  write none. The member is told — unless they sent it without a name, in
+  which case the thank-you reaches nobody, and the inbox says so.
+- **Pass to centre lead** sends it, with your note, to whoever holds the
+  centre lead role for that centre, and leaves it open marked *Passed*. If no
+  one holds that role there, it says so.
+
+An idea sent without a name keeps only its centre, so it is seen by the staff
+of that centre (and by unscoped admins), never by another centre's.
+
+**The Mentor screen is a messaging screen.** The conversation fills the
+height of the screen, scrolls on its own, opens on the newest message, and
+keeps the message box at the bottom. Messages are grouped by day ("Today",
+"Yesterday") and by sender, with the mentor's initials beside theirs. On a
+computer a side panel shows the mentor, who else is helping, links to
+Prepare for Saturday / Next steps / How it's going, and what was agreed; on a
+phone the conversation takes the screen and the next session is one line at
+the top. The message box grows as you type (Enter sends, Shift+Enter starts a
+new line).
+
+**Community on a phone** has one navigation: the Community's own header, menu and tab bar. The menu has **My NGG** and **NGG website** to leave. Scroll past the post box at the top and a slim **Share something…** bar appears at the bottom; tap it to write.
+
+**Messages on a phone** keep only what is needed: the next session is one row (tap it to prepare), quick replies appear only when there is a message to answer, and the safety note is one line.
+
+**Rows of tabs scroll sideways on a phone** instead of wrapping onto a second
+line: the Mentor, Companion and area tabs (My mentor / Companion / Community)
+in all three portals, the mentor portal's Saturday tabs, the quick replies, and
+the Control Room's tab rows. A fade at the edge shows there is more to swipe
+to, and the chosen tab is scrolled into view.
+
+**Messages between a member and their mentor.** The Mentor screen refreshes
+by itself every 30 seconds while it is open (and when the member comes back
+to the tab), so a reply appears without reloading. Each of the member's own
+messages says **Sent** or **Seen**. A reply to a check-in or a journal entry
+is labelled as one. Quick replies ("Thank you!", "Can we talk on Saturday?")
+start the message in the box; they never send it on their own. "I need help
+with something" opens Help, not just a message to the mentor. After 8pm the
+box says the message is kept and the mentor will see it in the morning.
+
+**Voice notes and reading aloud.** A member can record a voice note (up to
+two minutes, small enough for mobile data) in the message box, listen to it,
+then send it; the mentor plays it in their inbox. The Anchor Journal records
+voice notes too. Mentor messages, the journal prompt, a lesson and a journal
+entry each have **Read aloud**, using the phone's own voices (it works
+offline). A voice note on its own has no words for the safeguarding check to
+read: the words "Voice note (0:42)" are what it carries, so a mentor should
+listen to one within the usual reply window.
+
+**The Anchor Journal and the portal are one journal.** The desktop sidebar
+has **Your apps → Anchor Journal / Community**; Today has **Write today's
+reflection**; the simple view has a **My journal** tile. All open in the same
+tab, and the journal has a **My NGG** link back. In the journal, **Share
+with [mentor]** (off by default) shares that entry with the mentor, who is
+told; their reply shows under the entry in the journal and on the portal's
+Journal screen, which lists recent entries as Private or Shared.
+
+**Me → Profile** shows the whole record: name, NGG ID, date of birth, centre,
+course, class, school, when they joined, email, phone, guardian and guardian
+phone. **Edit profile** changes the photo and bio; everything else is asked
+for through **Ask for a change**.
+
+**Getting started (Today).** A new member sees up to five first steps, each
+read from their record, never a box they tick: add a photo, say hello to
+their mentor (or "your centre will match you" while they have none), write a
+first reflection, answer the week's check-in, link a parent or guardian with
+the Anchor Circle code (their mentor is connected for them). Each has one button. The card disappears when all
+are done, and a member can hide it (Help → Show "Getting started" brings it
+back). Help also has **Take the tour again**.
+
+**Tours that know the device.** Every portal's first-visit tour is written for
+the device it opens on. On a phone it talks about the bar at the bottom and
+shows, in the phone's own words (iPhone or Android), how to put NGG on the
+home screen; on a computer it talks about the list on the left (and, in the
+Control Room, ⌘K). A step about a control **lights it up on the real page**,
+with the card moved out of its way; a step about another screen shows a
+**screenshot** of it, taken from the real portal on a phone and on a computer
+(`node tools/guide-shots.js` retakes them after a layout change). Somebody who
+took the tour on a phone and later signs in on a computer (or the other way
+round) gets a **short tour of what is different there**, once. The children's
+tour (My NGG) reads bigger and ends on the Getting started list.
+
+**Supporting mentors.** A member has one mentor, plus at most **two**
+supporting mentors, each for one thing (Coding, Exams) and optionally until a
+date. Add them in the member's record → Mentor → **Add a supporting mentor**;
+tap one to end it. Rules: the member must have a main mentor first; the main
+mentor cannot also be a supporter; a peer mentor never supports another child;
+an end date passes on its own. A supporting mentor writes in the child's one
+conversation, which the main mentor always sees, and gets nothing else of the
+child's: wellbeing, scores and family details stay with the main mentor, as do
+the relationship checks and alerts. Making a supporter the main mentor ends
+their supporting role. The child sees "Also helping you: … · Coding".
+
 ## Things that go wrong, and what they mean
 
 | What you see | What it means | What to do |
 |---|---|---|
 | A section is missing from the sidebar | You do not have its capability | Ask a super admin; check **Access & roles** |
+| "Nobody holds the centre lead role for …" when passing an idea | That centre has no centre lead account | Thank it yourself, or give someone the Centre lead role in **Access & roles** |
+| "Give them a mentor first" / "At most 2 supporting mentors" | A supporting mentor needs a main mentor, and there is a limit of two | Assign the main mentor, or end a supporting one |
 | "Out of scope" on a bulk run | Those rows are at centres you are not scoped to | Have someone unscoped do it, or get your scope widened |
 | "Centre in use" when deleting a centre | Members, participants, groups or volunteers still point at it | **Retire** it instead |
 | "Group not empty" when deleting a group | It still has participants | Reassign them, or unassign them explicitly |
@@ -1671,6 +3149,10 @@ they all behave the same way. Worth knowing once:
 | A card shows the wrong details | It was printed from an older published version | Check **ID cards → One person's cards**; reprint |
 | A card's QR will not scan | Flagged at publish time if the modules are too small | Fix the QR size in the Design Studio and republish |
 | "Backup code used — N left" | You signed in with a backup code, not your app | Re-enrol your authenticator soon |
+| A member sees lessons but no assignments | Older builds compared the member's status and centre exactly; an imported "Active", a blank status or "egbeda " matched nothing | Fixed: those compare the way the rest of the record does. A member still sees nothing if they are suspended, or their course is not the assignment's |
+| "Not a Member ID or email" at sign-in | Older builds refused card numbers | Card numbers (`VOL-INS-26-001`, `026-014`) are accepted now |
+| A child cannot remember their sign-in question | Their second step | **Members › Sign-in security** → their row → *Let them in for 10 minutes*, or *Reset* |
+| "No phone on your record" at the card door | The volunteer record has no phone, so the card can never be checked | Use *Email me a sign-in code instead*, or add their phone |
 | A screen looks empty | Almost always a filter | **Clear all filters** |
 
 ---
@@ -1716,3 +3198,307 @@ Short list. Everything on it is hard or impossible to undo.
 - `docs/POLICY.md` — programme policy, conduct thresholds, fines.
 - `docs/FORMS.md` — the form builder.
 - `CLAUDE.md` — for developers: architecture, invariants and conventions.
+
+### A backup Cloudinary account
+
+Settings → API keys → Photos → **Cloudinary · backup account** takes a second account's cloud name, API key and API secret. A free account is fine. **Test** checks it and shows how much of its credits are used.
+
+- **When the main account runs low** (the image-storage monitor reads it every 6 hours and it reaches *high*), or the moment it **refuses an upload for credits**, new photos and edits move to the backup on their own. You get an email and a Diagnostics entry, and AI photo edits start again.
+- **"Refuses an upload" includes uploads made from people's phones and browsers**, which go straight to Cloudinary. When Cloudinary turns one away for credits, the page tells this site, the site checks the main account itself (it reads the account and, if that doesn't settle it, tries a tiny upload of its own), and only then moves to the backup. The person's upload is then sent to the backup, so they see no error. A refusal for any other reason (a damaged file, say) is shown to them as it was and moves nothing.
+- **No web-cron on your host?** The 6-hourly reading is also taken when somebody uploads and the last reading is older than that, so the switch never waits on a cron job.
+- **When the main account passes 70% used** (checked every 6 hours, and straight away when the backup's keys pass **Test**), or the moment it **refuses an upload for credits**, new photos and edits move to the backup on their own. You get an email and a Diagnostics entry, and AI photo edits start again.
+- **Photos already on the main account keep showing.** One that is edited while the backup is in use is copied across once (editing it again reuses that copy), so the edit doesn't spend the main account. The optional **Upload preset** is for photos on the public application form; without it those go to this site while the backup is in use.
+- **When the main account renews** (back under 70%), work moves back to it with another email.
+- **You can choose.** Settings → Diagnostics → Image storage → **Cloudinary accounts**: open an account and press **Use for new uploads now**. The choice holds (even past 70%) until you press **Back to automatic**; only a full account is still skipped, so uploads never stop.
+- **What a backup can't save:** photos already stored on the main account still use its bandwidth every time a page shows them. Only new photos, and photos edited again, move to the backup.
+- **Photos on a spent account move only when they are needed.** Nothing is copied in bulk, so the new account holds only photos somebody actually used:
+  - **Printing** in the ID Card Studio first copies the photos on that run that sit on an account past 70% to the account in use. The studio says how many it copied.
+  - **Editing** a photo copies that one photo first.
+  - Each is copied once, so a second print or edit reuses the copy. The old file stays, so shared links keep working.
+  - Photos nobody prints or edits stay where they are. They still use the old account's bandwidth when a page shows them, but no new storage anywhere.
+- **An account Cloudinary has stopped** ("account disabled", over its limits) now counts as full when its usage is read, instead of keeping its last reading.
+
+
+## Community replies work like a chat
+
+A post's replies read like a chat thread:
+
+- **Layout:** your own replies sit on the right. Several replies in a row from one person share one name. Each new day starts under a day line. A "new replies" line marks where the replies you haven't seen begin.
+- **Reply to one reply:** press the curved arrow (or swipe the reply right on a phone). Your reply quotes the one you answered. Tap the quote to jump to the original. The person you quoted is notified.
+- **React:** press the smiley (or hold a reply on a phone) to react with one of the six community reactions. Pressing the same one again takes it back.
+- **Live replies:** new replies appear while the thread is open, checked every few seconds. If you have scrolled up, a button shows how many are new and takes you to the latest.
+- **Sending:** on a computer, Enter sends and Shift+Enter starts a new line. On a phone, the send button sends.
+
+Reporting and deleting a reply work as before. Every action has a button; nothing needs a gesture.
+
+## Assessing one child (Instructor Portal)
+
+**Students → a child → Assess** is where an instructor assesses one child:
+
+- **Skills:** every skill of the course being taught, on four levels (Not yet, Getting there, Can do it, Can teach it). Moving a child up needs one line of what you saw. One press saves all the changes.
+- **A note:** choose Progress, Strength, Concern or Tell the family, and write what you noticed. It goes on the child's record, where their mentor reads it. A worrying note is flagged to the safeguarding lead.
+- **Lesson answers:** shows how many of the child's answers are waiting for your mark, with a button straight to them.
+
+This works for a child who takes the course as their second course too.
+
+Someone who both teaches and mentors gets the **Instructor Portal** at `/instructor`. Before this fix they were shown the Mentor Portal there.
+
+## Study plans: targets of 85% and more, and what a mentor can do
+
+- **Targets:** every target is at least **85%**. The plan drafts 85, or the next band up (90, 95, 100) at least 5 points above where the child already is. A target under 85 is refused, whether the child or the mentor sets it.
+- **Making 85 realistic:** a bigger climb gets more study sessions a week (3, 4 or 5). Every subject shows a **mid-term mark**, halfway between the current score and the target, to check against at mid-term. A child scoring under 50 has their mentor drafted as the helper.
+- **When they study:** the child picks the **days**, a **time** (before school, in a free period, after school, in the evening, at the weekend) and a **place**, instead of typing a sentence. The plan reads, for example, "Mon, Wed, Fri · after school · at home". The number of days sets the sessions a week.
+- **A score of 0** is flagged to the child to check before sending, because it is usually a misread report.
+- **The mentor:** before approving, a mentor can change any subject's target (never under 85), its sessions a week and what the child will do. They then press **Approve with my changes**; the child is told what changed. Once a plan is live, the mentor can **write to the child about the plan** (praise a kept week, or ask what got in the way). It goes on the plan's record and reaches the child as a notice.
+
+## A child's lessons (instructors and mentors)
+
+- **Instructor:** Students → a child → **Work** shows every lesson of the course: done (with the score), waiting for your mark, started or not started, plus a line such as "4 of 9 lessons done · average 78% · Year 1".
+- **Mentor:** a mentee's **Growth and lessons** tab shows the same, for every course the child takes.
+- **A mentor's class:** it is their mentees whenever they have any, including mentees paired before the current session started.
+
+## Editing a mentor
+
+- **Role:** Mentor, Lead mentor or Peer mentor. Changing a lead back to Mentor steps them down. The change is in the audit log.
+- **Department:** a course, which narrows the children they see. Leave it empty for a mentor who works across courses.
+- The cursor now stays in the field you are editing. Before this fix it could jump back to Full name.
+
+## School results that read 0 everywhere
+
+- A report where every subject is 0 was not read; it is not a term of zeros. It is now refused when the child confirms it ("Every score says 0…").
+- Older ones show to the instructor as **Scores not read**, not "0% · Needs attention". Use **Remind** to ask the child to type the scores in.
+
+## Feedback in the Inbox
+
+Feedback that an older version saved as an ordinary request is now shown as feedback, with **Thank and close** and **Pass to centre lead**, never Approve or Decline.
+
+## Placing children in the curriculum, and checking off what they have done (Instructor Portal)
+
+- **Students → Place the class:**
+  - Every child is listed with the year they are placed in now, and a **suggested year** with the reason. The suggestion comes from how long they have been in NGG (their intake year) and how much of their lessons they have done.
+  - Press **Use every suggestion** or choose Year 1–3 per child, then save the whole class at once.
+- **A child → Assess → Tick what they've done:**
+  - Every lesson of the course is listed by week. Tick the ones the child has really done, or use **Done up to week N**.
+  - A lesson the child finished in the portal keeps its score and can't be unticked here.
+  - The portal's numbers are an estimate; the instructor's ticks are the validation.
+- **Mission proof review (Control Room):** a child's typed answer shows as their words, not as a broken "View proof" link. The Verify button is readable again.
+- **Reading report cards:** the AI now reads the full table (CA, exam, total, grade). It checks each total against CA + exam and the grade, and reads unclear cards a second time, more carefully.
+
+
+## Portal time (Analytics → Engagement → Portal time)
+
+Shows how long NGG members actually use the portals: who came, for how long, on which days and at what hour, which portal, and which centre.
+
+**How time is counted:**
+- Time counts only while a portal is open, on screen, and in use (touched in the last two minutes).
+- A tab left open overnight adds nothing.
+- Two open tabs do not double the time.
+- A day counts at most 12 hours per portal.
+
+**What you can do:**
+- Pick the window (7, 30 or 90 days) or a centre.
+- Search for a member.
+- Export the CSV.
+
+"Not seen" means no time was recorded in the window. Counting started with this release.
+
+## Backup AI keys (Settings → AI keys)
+
+There are six slots:
+- the main key;
+- three **backup Gemini keys**: create each in a separate Google account at aistudio.google.com;
+- a **Groq** key (console.groq.com), used last and never for photos or report cards;
+- a photo key.
+
+When one key hits its daily limit, the next one serves. Press **Test** on each key after saving it.
+
+
+## Instructors and courses
+
+- **An instructor's courses are their class.** In Mentors & volunteers → Volunteers → edit, type the courses they teach, separated by commas.
+  - Spelling and capitals are corrected to the catalogue's.
+  - A name that is not a course is refused, with the nearest course suggested.
+- **When you promote a member to staff,** they start with their own courses. Change them in the editor if they teach something else.
+- **Instructors do not see school results.** Results are for the child's mentor (Mentor portal), the family and NGG admin.
+- **Every course has its own Community channel,** created automatically, including courses added later. A course channel you archive stays archived.
+
+- **Lessons for a course.** An instructor can write a lesson for their own course from Resources → Curriculum → "Write a lesson for …". It arrives in Control Room → Curriculum → Lessons as a **draft**; publish it there and their class sees it. An instructor you have given the curriculum permission publishes directly.
+- **When a course has lessons of its own,** those are what its class sees. Lessons filed under related names (an instrument for Musical Instruments, "Drama" for Acting) are used only for a course with none of its own.
+
+## Making someone an instructor AND a mentor, and skipping the Academy
+
+Open the person in **Mentors & volunteers → Volunteers**, then go to the "Also" section of their record.
+
+- **A mentor as well:** tick it to add them to the mentor roster. Their role stays Instructor, and both the Instructor and Mentor portals open for them. Pair their mentees in Mentors & volunteers → Pairings. Untick it to take them off the mentor roster.
+- **Skip the online Academy** (instructors): tick it when they trained in person or need no training. Their portal stops asking for the modules. The waiver is recorded with the date and who granted it. You cannot set it on your own record.
+- **For a mentor's Academy,** use Mentors & volunteers → Pairings → the mentor → Academy "Completed in person".
+
+## Wi-Fi at the centres (Control Room → Wi-Fi, and the Club portal → Wi-Fi)
+
+Who can use it: anybody given the **network** capability (Access & roles) —
+the people who look after the centres' equipment. Super admins have it. Admins
+do not, unless it is given to them. In the Club portal it is under **Systems →
+Wi-Fi** and opens right there, the same screens as in the Control Room.
+
+**How it works.** Each centre has a *gateway* — its router or Wi-Fi controller.
+Every one to five minutes it fetches its centre's list from NGG with its own
+key. Members sign in with their **printed ID** (e.g. `026-014`) and a 6-digit
+**Wi-Fi PIN**, which they see in the app under **Me → Wi-Fi**. Nobody is added
+or removed by hand: Wi-Fi follows the record. Suspend somebody and they are
+signed out at the gateway's next fetch.
+
+**The four tabs.**
+- **Gateways** — each centre, its gateway, and whether it is working. What needs
+  a look is listed first, in words, with what to do. Open a gateway for what it
+  reported, what it holds, its setup guide, a line test, its key and removal.
+- **Speed & health** — each centre's line speed and, at the busiest hour this
+  week, about how much each person gets. **Test this connection** measures the
+  line from your own device: run it on the centre's Wi-Fi, from where people
+  sit. Every test is kept with who ran it and your note.
+- **Who gets on** — the access table (on / limited / off for each kind of
+  record), whether fees owing limits Wi-Fi, and each profile's speed, devices,
+  hours, *fast page loads* (burst) and priority. Edit in place, then **Save
+  changes**. **Why can't somebody get on?** looks a person up and says why.
+- **Setup guides** — which gateway a centre can use and what each can do.
+
+**Adding a gateway.** Add a gateway → choose what it is and its centre. Its
+**key is shown once**, in its setup guide, already inside the script. Follow
+the guide on the gateway. It shows as *Working* after its first fetch. Lost the
+key? **Rotate the key** and run the setup again with the new one.
+
+| Gateway | Status | Notes |
+|---|---|---|
+| MikroTik (RouterOS 7) | Pilot first | The fullest: speeds, burst, priority, devices, sign-out, 30-day remember, filtering, line tests |
+| RADIUS bridge (UniFi, Omada, pfSense, OPNsense) | Pilot first | A Raspberry Pi at the centre. Removal bites at the next sign-in (within a minute on pfSense with re-authentication on) |
+| OpenWrt with openNDS | Pilot first | The PIN sign-in page must be proven on one router |
+| Anything else (JSON feed) | Ready | For your own script or controller |
+
+"Pilot first" means: set it up at **one** centre and watch it for a week before
+the others. The scripts follow each maker's manual, but no router can be tested
+from NGG's own systems.
+
+**What the warnings mean.**
+
+| It says | What to do |
+|---|---|
+| Not connected yet | Run its setup guide on the gateway |
+| Silent for 3 hours | Check its power and internet. It keeps the people it had; nobody new gets on and nobody suspended is removed until it fetches again |
+| N fetches with the wrong key | After a rotation, run the setup again. If you didn't rotate it, rotate it now |
+| The gateway reported a problem | Read the message; certificate problems are usually the router's clock |
+| Slow line | Below 5 Mbit/s. Ask the provider; test at a quiet time to tell the line from the crowd |
+| More promised than the line can give | Members are allowed more than the line can share at busy times. Lower the member speed to the figure shown (keep burst on), or upgrade the line |
+| Working hard / Low on memory | The router is too small for the centre, or needs a restart out of hours |
+
+**Privacy.** Gateways tell NGG how many people are online, their CPU, memory
+and uptime, as hourly summaries, and how much data each signed-in person used
+(amounts per day, nothing else). Never what anybody visits. NGG keeps no
+browsing record (see docs/POLICY.md, Wi-Fi).
+
+**Data used and allowances (added 2026-10-28).** *Wi-Fi → Data used* (Control
+Room and Club portal) lists each person heaviest first: today, the period and
+this month, against their allowance. Members see their own under *Me → Wi-Fi*;
+families do not. Set allowances in *Who gets on → Speeds*: a daily and a
+monthly MB per profile (0 for none; a month counts from the 1st, across every
+centre). Over one, the *Used up their data allowance* row of the table applies:
+**Limited** (the slow profile) by default, **Off**, or **On** to watch without
+enforcing. It takes effect at the gateway's next fetch and lifts by itself at
+midnight or on the 1st. To let one person carry on, set their Wi-Fi to On by
+hand with a reason. Only MikroTik gateways (after their script is pasted again)
+and the JSON feed report data used; the RADIUS and OpenWrt setups don't yet.
+
+**Setup guides** read in the order the job is done: what it sets up and how
+long it takes, what you need, numbered steps with every command (and the
+script) inside the step that uses it, then each common problem beside its fix.
+
+**Overrides.** Someone who should have Wi-Fi but whose record says otherwise
+(an alumni mentor on Saturdays) can be set by hand from *Why can't somebody get
+on?* — by whoever looks after their record — with a reason. An override never
+undoes a suspension.
+
+**CACENTRE runs the Wi-Fi (added 2026-10-28).** CACENTRE is the authority for
+the Wi-Fi across the estate: it holds and hands out the PINs, the routers fetch from it, and
+its blocks and overrides win. NGG keeps its say. Every 15 minutes NGG sends
+CACENTRE everybody it speaks for: members, staff, mentors and instructors, and
+Summer School participants within their edition's dates. Each person goes with
+NGG's verdict (**on**, **limited** or **off**) and the reason, worked out from the
+table on *Who gets on*, from suspensions, and from the overrides set here.
+CACENTRE never gives anybody more than NGG does. Somebody suspended here is off
+at CACENTRE within the quarter hour; a record deleted here is withdrawn there.
+Data allowances are counted at CACENTRE now, not here.
+
+The Gateways page shows when the list was last sent, how many people were on
+it, and anything CACENTRE refused. A super admin can press **Send now**.
+
+- *"CACENTRE has no site for CP (12)"*: add a site at CACENTRE (Admin → Wi-Fi →
+  Sites & routers) whose code is the centre's card code, here `cp`. Until then
+  those 12 people can sign in only at the hubs.
+- *"doesn't recognise NGG's key"*: the Wi-Fi uses the connection NGG already
+  has with CACENTRE for the person directory, so the key is `DIR_PUSH_SECRET_NGG`.
+  It must be the same value in NGG's `api/config.php` (`dir_push_secret`) and in
+  CACENTRE's `includes/.env`. There is no separate Wi-Fi key.
+- *"NGG isn't sending its people there yet"*: that key isn't set. Until it is,
+  the gateways and the members' PINs stay NGG's, as before.
+
+**Moving a centre's router to CACENTRE.** Once NGG is connected, routers are
+added at CACENTRE: *Add a router at CACENTRE* opens it, and a centre with no
+router says which site code to use there (the centre's card code, in small
+letters). An NGG router moves in three steps, listed on its card under
+*Moving it to CACENTRE*:
+
+1. At CACENTRE, add the site and a router for it.
+2. Paste CACENTRE's one line on the router. This removes NGG's script.
+3. Press **It now runs from CACENTRE** here.
+
+From then on:
+- NGG stops watching that router and never reports it silent.
+- Members at that centre see CACENTRE's PIN in the app straight away.
+- If NGG's script is in fact still on the router, it keeps its people and logs
+  *moved_to_cacentre*.
+
+*Back to NGG* undoes it, and NGG sends the router a full list at its next fetch.
+
+**Members still get their PIN in the app.** CACENTRE holds the PINs and hands
+them out, but nobody goes to another site for one: *Me → Wi-Fi* asks CACENTRE
+for the member's username and PIN, and *Get a new PIN* changes it there. A
+centre whose router still fetches from NGG keeps showing NGG's PIN, the one
+that router knows. Once the router is pointed at CACENTRE (no fetch from NGG
+for a day), the app shows CACENTRE's. If CACENTRE can't be reached, the screen
+says so with *Try again* rather than showing a PIN that no longer works.
+
+### Wi-Fi in the Club portal, regions and analytics (added 2026-10-27)
+
+- **Who sees what.** You see the Wi-Fi of the centres you look after: your own
+  centre, the centres of a Wi-Fi region you lead, or — for a super admin —
+  every centre. A note at the top says which.
+- **Club portal → Wi-Fi** (for anybody holding `network`): **Overview** (who is
+  online per day, the busy hours, how much of the day gateways are there, line
+  speeds, each region's health, what needs you), **Gateways** (search and
+  filter every gateway; open one for its diagnosis and tools), **Regions**,
+  **Speed tests**, **Who gets on**, **Setup**. The Control Room's Wi-Fi page has
+  the same, including Analytics and Regions.
+- **Wi-Fi regions** group centres for their Wi-Fi. They are their own
+  capability, **Wi-Fi regions** (`wifi_regions`, the super admin's): an NGG
+  admin who holds `network` looks after their own centre's Wi-Fi but does not
+  see or manage regions. Whoever holds it makes regions, puts centres in them
+  and chooses their leads (staff who hold `network`). A lead sees and looks
+  after their region's centres.
+- **A whole region at once.** Open a region: *Line test, every gateway* asks
+  each of its gateways to measure its line at the next fetch; *New keys, every
+  gateway* rotates every key and lists the new ones once (copy them as CSV, then
+  run each router's setup again). The count is shown before you confirm, and if
+  the region's gateways changed meanwhile it is refused rather than done. Leads
+  can do this for their own region. *Gateways → Line test* does the same for
+  every gateway matching the filters.
+- **A gateway goes silent.** One that has not fetched for an hour is reported
+  once — one message and email per person listing all the silent gateways, never
+  one per gateway — to the region's leads; a centre with no region (or a region
+  with no lead) goes to the network staff who look after that centre, and failing
+  them to those who look after every centre. Its next fetch ends the silence, so
+  a later one is reported again.
+- **Server load.** Every fetch is timed. *Overview → Server load* (Wi-Fi regions
+  capability) shows the last 24 hours and what 2,000 gateways would cost this
+  host, with a verdict: *Within budget*, *Close to the budget* or *Over budget*.
+  **Do not put a second region live until it reads *Within budget*** after the
+  pilot region has run for a day.
+- **Speeds follow down**: the network's defaults, then a region's own, then a
+  centre's own. Set only what differs; "set here" switched off means "follow".

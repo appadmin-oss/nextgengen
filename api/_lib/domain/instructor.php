@@ -352,10 +352,11 @@ function remark_subject(array $g, string $subjectId): ?array {
     $s = null;
     if (mentor_covers($g, 'summer')) {
         $s = db_row("SELECT studentId, fullName, centre, track FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
-        if ($s) $s['kind'] = 'student';
+        if ($s) { $s['kind'] = 'student'; $s['courses'] = ''; }
     }
     if (!$s && mentor_covers($g, 'ngg')) {
-        $s = db_row("SELECT memberId studentId, fullName, centre, track FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$subjectId]);
+        // `courses` and `memberId` too: the scope check reads every course the member takes, not the old single track.
+        $s = db_row("SELECT memberId studentId, memberId, fullName, centre, track, courses FROM members WHERE memberId = ? AND lower(COALESCE(type,'NGG')) = 'ngg' LIMIT 1", [$subjectId]);
         if ($s) $s['kind'] = 'member';
     }
     if (!$s || !mentor_scope_ok($g, $s)) return null;
@@ -467,7 +468,10 @@ function instructor_skills_mark(array $p): array {
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     // The course has to be the child's own. Marking a Piano skill on a child
     // who takes Guitar is not a permission question, it is a nonsense record.
-    if (trim((string)($s['track'] ?? '')) !== $course) return ['ok' => false, 'error' => 'not_their_course'];
+    // Any of their chosen courses, in any case: an exact match on the old single
+    // track refused a child taking the course second, or spelt "coding".
+    if (!member_takes_any(['memberId' => (string)$s['studentId'], 'track' => (string)($s['track'] ?? '')] + (array_key_exists('courses', $s) ? ['courses' => $s['courses']] : []), [$course]))
+        return ['ok' => false, 'error' => 'not_their_course'];
 
     $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
     if (!$in) return ['ok' => false, 'error' => 'no_marks'];
@@ -528,18 +532,21 @@ function instructor_skills_board(array $p): array {
     /* The Club's class too: NGG members of this centre and course — children
      * only (results_in_loop), the same class the Saturday screens read. */
     if (mentor_covers($g, 'ngg') && function_exists('results_in_loop')) {
-        foreach (db_all("SELECT memberId, fullName, role, dob FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND centre = ? AND track = ? ORDER BY fullName LIMIT 200", [$centre, $course]) as $mm)
+        [$cSql, $cArgs] = member_course_sql($course);
+        foreach (db_all("SELECT memberId, fullName, role, dob FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND centre = ? AND $cSql ORDER BY fullName LIMIT 200", array_merge([$centre], $cArgs)) as $mm)
             if (results_in_loop($mm)) $roster[] = ['studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName']];
     }
     $ids = array_column($roster, 'studentId');
     // One read for the whole grid, not one per child — the same mistake the
     // roster made before it was batched.
-    $marks = []; $evid = [];
+    $marks = []; $evid = []; $prev = [];
     if ($ids) {
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT subjectId, skill, level, evidence FROM skill_marks WHERE course = ? AND subjectId IN $in",
+        foreach (db_all("SELECT subjectId, skill, level, prevLevel, evidence FROM skill_marks WHERE course = ? AND subjectId IN $in",
                         array_merge([$course], $ids)) as $r) {
             $marks[(string)$r['subjectId']][(string)$r['skill']] = (int)$r['level'];
+            // The level before the latest move, so the board can say who moved up this term.
+            if ($r['prevLevel'] !== null) $prev[(string)$r['subjectId']][(string)$r['skill']] = (int)$r['prevLevel'];
             if ((string)($r['evidence'] ?? '') !== '') $evid[(string)$r['subjectId']][(string)$r['skill']] = (string)$r['evidence'];
         }
     }
@@ -548,7 +555,7 @@ function instructor_skills_board(array $p): array {
         $id = (string)$r['studentId'];
         $mine = $marks[$id] ?? [];
         $students[] = ['studentId' => $id, 'fullName' => (string)$r['fullName'],
-            'marks' => $mine, 'evidence' => $evid[$id] ?? (object)[], 'marked' => count($mine), 'of' => count($skills)];
+            'marks' => $mine, 'prev' => $prev[$id] ?? (object)[], 'evidence' => $evid[$id] ?? (object)[], 'marked' => count($mine), 'of' => count($skills)];
     }
     return ['ok' => true, 'course' => $course, 'centre' => $centre,
             'skills' => $skills, 'levels' => SKILL_LEVELS, 'students' => $students];
@@ -595,7 +602,7 @@ function admin_staff_performance(array $p): array {
     $scope = $lead ? ($lead['centres'] ?? null) : admin_centre_names_in_scope($g['requester']);
     // A lead with no centre on their record supervises nobody in particular;
     // that must not silently widen to the whole programme.
-    if ($lead && $scope === null) return ['ok' => false, 'error' => 'no_centre'];
+    if ($lead && ($scope === null || $scope === [])) return ['ok' => false, 'error' => 'no_centre'];
 
     /* The staff list is mentors and instructors together, because the question
      * "who has gone quiet" does not care which table someone lives in. */

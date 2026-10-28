@@ -73,7 +73,7 @@ chk('no face found: shown whole', T.cphFrame(null, 600, 1800, 1) === null);
 console.log('the delivered URL');
 const whole = T.cphCardUrl(P, 638, 446, null);
 chk('shown whole: the stored edits, then padded to the box with the photo’s own edge colours',
-  whole === 'https://res.cloudinary.com/ngg/image/upload/e_improve,q_auto/c_pad,w_638,h_446,b_auto:predominant_gradient,f_auto,q_auto:good/v17/ngg/headshot/abc.jpg');
+  whole === 'https://res.cloudinary.com/ngg/image/upload/e_improve,q_auto/c_pad,w_638,h_446,b_auto:predominant_gradient,f_jpg,q_auto:good/v17/ngg/headshot/abc.jpg');
 chk('cropped: the crop in pixels, before the pad', T.cphCardUrl(P, 600, 600, { x: 1, y: 2, w: 300, h: 300 }).indexOf('/e_improve,q_auto/c_crop,x_1,y_2,w_300,h_300/c_pad,w_600,h_600,') !== -1);
 const urls = T.cphInfoUrls(P);
 chk('the face lookup asks for the landmarks only (no paid background removal re-run, no second request without a zoom)',

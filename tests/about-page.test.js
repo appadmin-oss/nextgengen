@@ -76,10 +76,17 @@ function doctrineSuite() {
      business 10, chess in each. A flat number here once caught the About page
      claiming a total the divisions did not hold — so the lists are pinned per
      division and the page's total is computed from them. */
-  ok('each division lists the programme\'s courses (10 · 8 · 8 · 10)',
-     D.NGGC_DIVISIONS.map(d => d.courses.length).join() === '10,8,8,10');
-  ok('the divisions hold 36 courses between them',
-     D.NGGC_DIVISIONS.reduce((n, d) => n + d.courses.length, 0) === 36);
+  /* Creative & Performing Arts grew from 10 to 14 when each instrument became
+     a course of its own: a child learning drums and a child learning piano
+     were on one course called "Musical Instruments" and could not both be
+     given the right lesson. */
+  ok('each division lists the programme\'s courses (14 · 8 · 8 · 10)',
+     D.NGGC_DIVISIONS.map(d => d.courses.length).join() === '14,8,8,10');
+  ok('the divisions hold 40 courses between them',
+     D.NGGC_DIVISIONS.reduce((n, d) => n + d.courses.length, 0) === 40);
+  ok('every instrument is named, not hidden behind one umbrella course',
+     ['Piano', 'Guitar', 'Drums', 'Violin', 'Saxophone'].every(i => D.NGGC_DIVISIONS[0].courses.includes(i))
+     && !D.NGGC_DIVISIONS.some(d => d.courses.includes('Musical Instruments')));
   ok('each division says which children it is for',
      D.NGGC_DIVISIONS.every(d => /^For children interested in /.test(d.audience || '')));
   ok('no division repeats a course',

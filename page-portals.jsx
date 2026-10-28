@@ -32,12 +32,18 @@ function useAdminDrawer(onClose, guard = true) {
         .then(ok => { if (ok) onClose(); });
     } else { onClose(); }
   }, [onClose, guard]);
+  /* The latest close, read by the key handler. The effect below runs ONCE: it
+     used to depend on `close`, which changes whenever the parent re-renders
+     with a fresh onClose — and each re-run focused the first field again, so
+     someone editing the Email of a mentor was thrown back to Full name. */
+  const closeRef = React.useRef(close);
+  closeRef.current = close;
   React.useEffect(() => {
     const prev = document.activeElement;
     const el = panelRef.current;
-    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { f.focus(); } catch (_) {} }, 40); }
+    if (el) { const f = el.querySelector('input,select,textarea,button:not(.admin-drawer-close)'); if (f) setTimeout(() => { try { if (!el.contains(document.activeElement)) f.focus(); } catch (_) {} }, 40); }
     const onKey = (e) => {
-      if (e.key === "Escape") { e.preventDefault(); close(); return; }
+      if (e.key === "Escape") { e.preventDefault(); closeRef.current(); return; }
       if (e.key === "Tab" && el) {
         const f = el.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
         if (!f.length) return;
@@ -48,7 +54,7 @@ function useAdminDrawer(onClose, guard = true) {
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
-  }, [close]);
+  }, []);
   return {
     panelRef, close, onInput: () => { touched.current = true; },
     titleProps: { "aria-labelledby": titleId },
@@ -176,7 +182,7 @@ function AdminTotpGate({ onPass, member }) {
                   {Array.isArray(setupData.backupCodes) && setupData.backupCodes.length > 0 && (
                     <div className="admin-gate-secret" style={{ marginTop: 10 }}>
                       <div className="mono" style={{ fontSize: 10, color: "var(--crimson-500, #E4155F)" }}>BACKUP CODES — SAVE THESE NOW (shown once). Each works once if you lose your authenticator.</div>
-                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
+                      <div className="mono" style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-16, 1fr 1fr)", gap: "2px 16px", marginTop: 6, fontSize: 13 }}>
                         {setupData.backupCodes.map((c, i) => <code key={i}>{c}</code>)}
                       </div>
                     </div>
@@ -674,7 +680,7 @@ function FormPreview({ fields, name }) {
       <h3 className="display" style={{ fontSize: 24, margin: "0 0 18px" }}>{name}</h3>
       {fields.map((f, i) => {
         if (f.type === "section") return <h4 key={i} style={{ fontFamily: "var(--font-display)", fontSize: 18, margin: "22px 0 6px", color: "var(--navy-900)" }}>{f.label}</h4>;
-        if (f.type === "info") return <p key={i} style={{ color: "var(--ink-500)", fontSize: 14, margin: "0 0 12px" }}>{f.label}</p>;
+        if (f.type === "info") return <p key={i} style={{ color: "var(--ink-700)", fontSize: 14, margin: "0 0 12px" }}>{f.label}</p>;
         return (
           <div key={i} style={{ marginBottom: 16 }}>
             <label style={{ display: "block", fontWeight: 600, fontSize: 14, marginBottom: 6 }}>{f.label}{f.required && <span style={{ color: "var(--coral)" }}> *</span>}</label>
@@ -1607,7 +1613,7 @@ function SummerCardsLink() {
   return (
     <div className="card" style={{ padding: 28, textAlign: "center", maxWidth: 560 }}>
       <h3 className="display" style={{ fontSize: 24, margin: "0 0 8px" }}>Card &amp; Design Studios</h3>
-      <p style={{ color: "var(--ink-500)", margin: "0 0 18px" }}>
+      <p style={{ color: "var(--ink-700)", margin: "0 0 18px" }}>
         Print and manage the 54×92mm ID cards in the Card Studio, or design new card
         templates, posters and batch runs in the full-screen Design Studio.
       </p>
@@ -1823,7 +1829,7 @@ function consentDocumentHtml(c) {
   .sign { margin-top: 26pt; display: flex; gap: 26pt; }
   .sign div { flex: 1; border-top: 0.5pt solid #14181f; padding-top: 4pt; font: 8.5pt "Helvetica Neue", Arial, sans-serif; color: #5a6488; }
   footer { margin-top: 20pt; border-top: 0.5pt solid #d7dbe6; padding-top: 6pt; font-size: 8pt; color: #6b7280; }
-  @media print { .noprint { display: none !important; } }
+  @media print { .noprint { display: none; } }
 </style></head><body>
   <div class="head">
     <div><div class="org">${esc(prog.name) || "Next Generation Genius"}</div>
@@ -2331,13 +2337,23 @@ function SummerRoster({ cohortId }) {
   const [meta, setMeta] = React.useState({ total: 0, matched: 0, truncated: false, facets: null, applied: {} });
   const [gaps, setGaps] = React.useState(null);
   const [bulk, setBulk] = React.useState(false);
-  const load = () => NGGApi.admin.summer.students(q, cohortId, facets)
-    .then(r => {
-      setList(r.students || []);
-      setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
-                truncated: !!r.truncated, facets: r.facets || null, applied: r.applied || {} });
-    })
-    .catch(() => setList([]));
+  /* Only the latest search may draw (answers can land out of order), and a
+     failed read is said, with a retry: it used to become an empty roster,
+     which reads as "nobody is enrolled" during an outage. */
+  const [loadErr, setLoadErr] = React.useState("");
+  const loadSeq = React.useRef(0);
+  const load = () => {
+    const n = ++loadSeq.current;
+    return NGGApi.admin.summer.students(q, cohortId, facets)
+      .then(r => {
+        if (n !== loadSeq.current) return;
+        setLoadErr("");
+        setList(r.students || []);
+        setMeta({ total: r.total || (r.students || []).length, matched: r.matched || 0,
+                  truncated: !!r.truncated, facets: r.facets || null, applied: r.applied || {} });
+      })
+      .catch(e => { if (n === loadSeq.current) setLoadErr((e && (e.code || e.message)) || "load_failed"); });
+  };
   const loadGaps = () => NGGApi.admin.registration.qrGaps().then(setGaps).catch(() => setGaps(null));
   /* One effect for all of them: any facet change is the same round trip, and
      debounced together so typing in the search box while a centre is selected
@@ -2527,8 +2543,9 @@ function SummerRoster({ cohortId }) {
           {gaps.awaitingConsent > 0 && <>{gaps.awaitingConsent} {gaps.awaitingConsent === 1 ? "child is" : "children are"} still awaiting consent — an ID cannot be issued until that is recorded.</>}
         </div>
       )}
-      {list === null ? <div className="dash-spinner"/> :
-        rows.length === 0 ? <div className="admin-empty">{(list || []).length ? "No child matches that filter." : "No students enrolled yet."}</div> :
+      {loadErr ? <ErrorState title="Couldn’t load the roster" message="The participants could not be read just now." code={loadErr} onRetry={load}/> :
+        list === null ? <div className="dash-spinner"/> :
+        rows.length === 0 ? <div className="admin-empty">{activeCount ? "No participant matches that search or filter." : "No participants enrolled yet."}</div> :
         <div className="admin-table-wrap"><table className="admin-table">
           <thead><tr><th>ID</th><th>Name</th><th>Guardian</th><th>Centre</th><th>Course</th><th>Present</th><th>Consent</th><th>Status</th><th></th></tr></thead>
           <tbody>{rows.map(s => (
@@ -2982,7 +2999,7 @@ function AcademyCatalogue({ source = "summer" }) {
       {inUse.length > 0 && (() => { const listed = new Set(rows.flatMap(r => r.courses)); const off = inUse.filter(c => !listed.has(c)); return off.length ? <p className="admin-hint" role="note">Still in use but not on this list: {off.join(", ")} — their lessons and classes keep working.</p> : null; })()}
       <div style={{ display: "grid", gap: 16 }}>
         {rows.map((r, i) => (
-          <div key={i} className="admin-card" style={{ padding: 16, border: "1px solid rgba(12,20,50,0.12)", borderRadius: 12 }}>
+          <div key={i} className="admin-card" style={{ padding: 16, border: "var(--rs-border-109, 1px solid rgba(12, 20, 50, 0.12))", borderRadius: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
               <input className="admin-input" value={r.faculty} placeholder="Faculty name (e.g. Music)" onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
               <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title="Remove this faculty">✕ Faculty</button>
@@ -4451,7 +4468,7 @@ function SummerPolicy() {
             return (
               <button key={n} type="button" onClick={() => toggleDow(Number(n))}
                 className={"chip " + (on ? "chip-gold" : "")}
-                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                style={{ cursor: "pointer", border: "var(--rs-border-110, 1px solid var(--line, rgba(0,0,0,.14)))", opacity: on ? 1 : .55 }}
                 aria-pressed={on}>{lbl}</button>
             );
           })}
@@ -4627,7 +4644,7 @@ function SummerPolicy() {
             return (
               <button key={n} type="button" onClick={() => toggleMDow(Number(n))}
                 className={"chip " + (on ? "chip-gold" : "")}
-                style={{ cursor: "pointer", border: "1px solid var(--line, rgba(0,0,0,.14))", opacity: on ? 1 : .55 }}
+                style={{ cursor: "pointer", border: "var(--rs-border-110, 1px solid var(--line, rgba(0,0,0,.14)))", opacity: on ? 1 : .55 }}
                 aria-pressed={on}>{lbl}</button>
             );
           })}
@@ -4685,10 +4702,14 @@ function SummerPolicy() {
           </label>
         </div>
         <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Stricter than Summer School</div>
-        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>Summer School participants have no account, so their ladder is warnings, dormancy and suspension. NGG members have a ledger and are held to more: every late is fined from the first, there is no "tardy" grace band, and a day with no sign-out (see Settings → Closing time) counts as an absence.</p>
+        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>Summer School participants have no account, so their ladder is warnings, dormancy and suspension. NGG members have a ledger and are held to more: every late is fined from the first, an absence nobody asked to be excused is fined, there is no "tardy" grace band, and a day with no sign-out (see Settings → Closing time) counts as an absence.</p>
         <div className="admin-fields">
           <label className="admin-field"><span>Fine for every late (₦, 0 = off)</span>
             <input type="number" min={0} step={100} className="admin-input" value={(pol.member || {}).lateFine ?? 500} onChange={e => setPol2("member", "lateFine", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Fine for an absence nobody asked about (₦, 0 = off)</span>
+            <input type="number" min={0} step={100} className="admin-input" value={(pol.member || {}).absenceFine ?? 1000} onChange={e => setPol2("member", "absenceFine", Number(e.target.value))}/>
+            <small className="admin-hint">An absence with a request still waiting is not fined until the desk decides it; approved leave is excused; approved academic leave is not an absence at all.</small>
           </label>
           <label className="admin-field admin-field-check"><input type="checkbox" checked={(pol.member || {}).tardyIsLate !== false} onChange={e => setPol2("member", "tardyIsLate", e.target.checked)}/>
             <span>No grace band — arriving after resumption is late</span>
@@ -5394,512 +5415,6 @@ function SummerAttendance() {
 }
 
 // ============================================================================
-// NGG Club manager (coordinator portal) — Summer→Club promotion + roster
-// ============================================================================
-
-/* ============================================================================
-   THE NGG CLUB DESK
-
-   A club coordinator holds the `club` capability and nothing else. Their job is
-   the Summer → Club bridge and the club roster, and both screens were built as
-   read-only lists with one exception:
-
-     · PROMOTION WAS ONE CHILD AT A TIME. A graduating edition of four hundred
-       was four hundred confirmations, so in practice it did not happen.
-     · A FAILED LOAD LOOKED LIKE AN EMPTY LIST. Both screens did
-       `.catch(() => setList([]))`, so a 403, a 500 or a dropped connection
-       rendered "No Summer students awaiting promotion." — the most reassuring
-       possible way to report that the screen is broken.
-     · THE ROSTER WAS HARD-WIRED TO status='active', so the two groups the
-       roster exists to track — who went inactive, who graduated — could not be
-       seen at all, and there was no way to find out somebody had been
-       deactivated.
-     · NO ACTIONS. Not one, on either screen, beyond the single promote.
-
-   The bulk actions here are deliberately NARROWER than the member desk's: a
-   club coordinator manages participation (active / graduated / inactive) and
-   posts members to centres. Suspension, membership type, levels and the dues
-   switch stay with `people` and `fees`, because handing them over here would
-   make `club` a quiet superset of the member desk.
-   ============================================================================ */
-function ClubManager() {
-  const [tab, setTab] = useAdminTab("promote", React.useCallback(t => t === "promote" || t === "members", []));
-  const [ov, setOv] = React.useState(null);
-  const [ovErr, setOvErr] = React.useState("");
-  const load = React.useCallback(() => {
-    setOvErr("");
-    return NGGApi.admin.club.overview().then(setOv).catch(e => setOvErr(e.code || e.message || "load_failed"));
-  }, []);
-  React.useEffect(() => { load(); }, [load]);
-  const o = (ov && ov.overview) || {};
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head"><h2 className="admin-h2">NGG Club</h2></div>
-      <p className="admin-hint">
-        Enrol Summer School graduates into the Club, and keep the member roster true. Promotion carries the child's
-        name, photograph, course and centre across, and mints them a way to sign in — so it is worth doing for a whole
-        graduating group at once rather than one at a time.
-      </p>
-      {ovErr
-        ? <p className="admin-form-err" role="alert">
-            Couldn't load the Club figures ({ovErr}). <button className="admin-bulk-link" onClick={load}>Try again</button>
-          </p>
-        : <div className="admin-tiles" style={{ marginBottom: 8 }}>
-            <AdminTile n={o.members ?? "—"} l="Club members" loading={!ov}/>
-            <AdminTile n={o.promotable ?? "—"} l="Ready to promote" loading={!ov}/>
-            <AdminTile n={o.promoted ?? "—"} l="Promoted" loading={!ov}/>
-            <AdminTile n={o.mentors ?? "—"} l="Active mentors" loading={!ov}/>
-          </div>}
-      <div className="admin-anchor-tabs" role="tablist" aria-label="NGG Club sections">
-        {[["promote", "Promote from Summer School"], ["members", "Club roster"]].map(([id, lbl]) => (
-          <button key={id} role="tab" id={"clubtab-" + id} aria-selected={tab === id} aria-controls="clubpanel"
-            tabIndex={tab === id ? 0 : -1}
-            className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
-        ))}
-      </div>
-      <div id="clubpanel" role="tabpanel" aria-labelledby={"clubtab-" + tab} tabIndex={-1}>
-        {tab === "promote" && <ClubPromote onChange={load}/>}
-        {tab === "members" && <ClubRoster onChange={load}/>}
-      </div>
-    </div>
-  );
-}
-
-/* The Summer → Club bridge.
- *
- * A graduating group is promoted in ONE action, and partially: the children who
- * cannot be promoted (already promoted, no longer in the roster) come back
- * named rather than aborting the run for everybody else. Whoever has no
- * guardian email on file is flagged BEFORE the run, because promoting them
- * works and produces a member nobody can email a way in to — which is a thing
- * to know now, not to discover in a support message.
- */
-function ClubPromote({ onChange }) {
-  const [list, setList] = React.useState(null);
-  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50, max: 200 });
-  const [page, setPage] = React.useState(1);
-  const [err, setErr] = React.useState("");
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [f, setF] = React.useState({ q: "", centre: "" });
-  const [result, setResult] = React.useState(null);
-  const [busy, setBusy] = React.useState(false);
-  /* The Club each would join. Preselected from the server's suggestion (the
-     nearest Club to their Summer venue); a coordinator's change is kept here
-     and sent with the run, so the bulk bar and the row button agree. */
-  const [picks, setPicks] = React.useState({});
-  const centreOpts = useCentreOptions("ngg");
-  const allCentres = useCentreOptions();
-  // The NGG centre they will join: a person's pick, else the nearest NGG centre — never their Summer venue.
-  const joinsFor = (s) => picks[s.studentId] ?? ((s.suggestedCentre && s.suggestedCentre.name) || "");
-
-  const load = React.useCallback((p) => {
-    setErr(""); setRefreshing(true);
-    return NGGApi.admin.club.promotable(Object.assign({}, f, { page: p || page, pageSize: meta.pageSize }))
-      .then(r => { setList(r.students || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize, max: r.max || m.max })); })
-      /* An error is an error. This used to be `.catch(() => setList([]))`,
-         which rendered a broken screen as "nobody is waiting" — the one
-         message that guarantees nobody investigates. */
-      .catch(e => setErr(e.code || e.message || "load_failed"))
-      .finally(() => setRefreshing(false));
-    // eslint-disable-next-line
-  }, [f, page, meta.pageSize]);
-  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.centre]);
-  React.useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [f.q]);
-
-  const rows = list || [];
-  const sel = useAdminSelection(rows, s => s.studentId);
-  const chosen = rows.filter(s => sel.has(s.studentId));
-  const noContact = chosen.filter(s => s.noContact).length;
-
-  const promoteMany = async () => {
-    const ids = sel.ids;
-    if (!ids.length) return;
-    const ok = await dialog.confirm({
-      title: "Promote " + ids.length + " into the Club?",
-      body: "Each becomes an active NGG member carrying their name, photograph, course and centre, and is emailed a "
-        + "link to set a password. Their Summer School record is marked promoted."
-        + (noContact ? "\n\n" + noContact + " of them have no guardian email on file. They'll still be promoted — "
-            + "but nobody can email them a way in, so somebody will have to set that up by hand." : ""),
-      cta: "Promote " + ids.length,
-    });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const chosen = {};
-      rows.filter(s => ids.includes(s.studentId)).forEach(s => { chosen[s.studentId] = joinsFor(s); });
-      const r = await NGGApi.admin.club.promoteBulk(ids, chosen);
-      setResult(r);
-      const failed = (r.results || []).filter(x => x && x.ok === false);
-      if (failed.length && r.promoted) {
-        toast.warn(r.promoted + " promoted · " + failed.length + " not ("
-          + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ").", "Promotion");
-      } else if (failed.length) {
-        toast.error("Nobody was promoted — " + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ".", "Promotion");
-      } else {
-        toast.success(r.promoted + " promoted into the Club.", "Promotion");
-      }
-      sel.clear();
-      await load();
-      if (onChange) await onChange();
-    } catch (e) {
-      const code = e.code || e.message;
-      toast.error(code === "too_many" ? "That's more than one run can cover — promote them in batches of " + meta.max + "."
-        : humanizeError(e.message, code), "Couldn't promote");
-    } finally { setBusy(false); }
-  };
-
-  const promoteOne = async (s) => {
-    const ok = await dialog.confirm({
-      title: "Promote " + s.fullName + " into the Club?",
-      body: "Creates an active NGG member from this Summer School record, carrying their course and photograph, "
-        + "and posts them to " + (joinsFor(s) || "their centre") + "."
-        + (s.noContact ? "\n\nThere is no guardian email on file, so no sign-in link can be sent — somebody will have to set that up by hand." : ""),
-      cta: "Promote",
-    });
-    if (!ok) return;
-    try { const r = await NGGApi.admin.club.promote(s.studentId, joinsFor(s)); toast.success("Promoted → " + r.memberId + (r.centre ? " · " + r.centre : ""), s.fullName); await load(); if (onChange) await onChange(); }
-    catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't promote " + s.fullName); }
-  };
-
-  if (err && list === null) return <ErrorState title="Couldn't load the promotion list" code={err} onRetry={() => load()}/>;
-  if (list === null) return <div className="dash-spinner"/>;
-  const filtered = !!(f.q || f.centre);
-
-  return (
-    <div>
-      {result && (
-        <div className="admin-callout" role="status">
-          <b>{result.promoted}</b> promoted · <b>{result.refused}</b> refused of {result.requested}.
-          {result.refused > 0 && (
-            <ul className="admin-callout-list">
-              {(result.results || []).filter(x => x && x.ok === false).slice(0, 12).map(x => (
-                <li key={x.id}>{x.name || x.id} — {String(x.error || "refused").replace(/_/g, " ")}</li>
-              ))}
-            </ul>
-          )}
-          <button className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>Dismiss</button>
-        </div>
-      )}
-      <div className="admin-filters">
-        <input className="admin-input" value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value }))}
-          placeholder="Search name or student ID…" aria-label="Search the promotion list"/>
-        <select className="admin-select" value={f.centre} onChange={e => setF(x => ({ ...x, centre: e.target.value }))}
-          aria-label="Filter the promotion list by centre">
-          <option value="">All Summer centres</option>{allCentres.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </div>
-
-      <AdminBulkBar selection={sel} noun="student" total={meta.total}
-        actions={[{ id: "promote", label: "Promote into the Club", confirm: false, open: () => promoteMany() }]}>
-        {noContact > 0 && (
-          <span className="chip chip-gold" title="Promoting them works; nobody can email them a sign-in link">
-            {noContact} with no guardian email
-          </span>
-        )}
-      </AdminBulkBar>
-
-      {rows.length === 0
-        ? (filtered
-            ? <EmptyState icon="⌕" title="Nobody matches" message="No Summer School record awaiting promotion fits these filters."
-                action={<button className="btn btn-ghost btn-sm" onClick={() => setF({ q: "", centre: "" })}>Clear the filters</button>}/>
-            : <EmptyState icon="☀" title="Nobody is waiting to be promoted"
-                message="Summer School records show up here while they are active or graduated, and drop off once promoted."/>)
-        : <div className={"admin-table-wrap" + (refreshing ? " is-refreshing" : "")} aria-busy={refreshing ? "true" : undefined}>
-            {err && <p className="admin-form-err" role="alert" style={{ margin: "0 0 10px" }}>
-              Couldn't refresh ({err}). These rows are from the last successful load.{" "}
-              <button className="admin-bulk-link" onClick={() => load()}>Try again</button>
-            </p>}
-            <table className="admin-table">
-              <caption className="sr-only">Summer School records awaiting promotion into the Club</caption>
-              <thead><tr>
-                <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all on this page"/></th>
-                <th scope="col">Student</th>
-                <th scope="col">Course</th>
-                <th scope="col">Summer centre</th>
-                <th scope="col">Joins (Club)</th>
-                <th scope="col" className="admin-num">Days present</th>
-                <th scope="col">Guardian email</th>
-                <th scope="col"><span className="sr-only">Actions</span></th>
-              </tr></thead>
-              <tbody>{rows.map(s => (
-                <tr key={s.studentId} className={sel.has(s.studentId) ? "is-selected" : ""}>
-                  <td style={{ width: 34 }}><AdminRowCheck selection={sel} id={s.studentId} label={"Select " + (s.fullName || s.studentId)}/></td>
-                  <td>
-                    <b>{s.fullName}</b>
-                    <div className="mono admin-cell-sub">{s.displayId || s.studentId}{s.status === "graduated" ? " · graduated" : ""}</div>
-                  </td>
-                  <td>{s.track || <span className="admin-cell-sub">—</span>}</td>
-                  <td>{s.centre || <span className="admin-cell-sub">—</span>}</td>
-                  <td>
-                    <select className="admin-select promote-joins" value={joinsFor(s)}
-                      onChange={e => setPicks(x => ({ ...x, [s.studentId]: e.target.value }))}
-                      aria-label={"Club centre " + (s.fullName || s.studentId) + " joins"}>
-                      {!joinsFor(s) && <option value="">Choose a centre…</option>}
-                      {(joinsFor(s) && !centreOpts.includes(joinsFor(s)) ? [joinsFor(s), ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    {s.suggestedCentre && (
-                      <div className="admin-cell-sub" title={s.suggestedCentre.reason}>
-                        {picks[s.studentId] && picks[s.studentId] !== s.suggestedCentre.name
-                          ? "Suggested: " + s.suggestedCentre.name
-                          : s.suggestedCentre.minutes != null ? "Nearest · ~" + s.suggestedCentre.minutes + " min drive" + (s.suggestedCentre.roadKm != null ? ", " + s.suggestedCentre.roadKm + " km by road" : "")
-                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km in a straight line" : s.suggestedCentre.reason}
-                      </div>
-                    )}
-                  </td>
-                  <td className="admin-num">{s.attendanceCount}</td>
-                  <td>{s.noContact
-                    ? <span className="chip chip-gold" title="They can be promoted, but no sign-in link can be emailed">none on file</span>
-                    : <span className="admin-cell-sub">{s.parentEmail}</span>}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => promoteOne(s)} disabled={busy}>Promote →</button>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-            <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={(p) => { setPage(p); load(p); }}/>
-          </div>}
-    </div>
-  );
-}
-
-/* The club roster.
- *
- * Read-only before, and only ever showing active members — so the two groups a
- * roster exists to track (who went quiet, who graduated) were invisible, and a
- * coordinator could not act on anybody. Now searched, filtered by status and
- * centre, sorted and paged server-side, with the club's own narrow bulk
- * actions and per-row menu built from one set of declarations.
- */
-function ClubRoster({ onChange }) {
-  const [list, setList] = React.useState(null);
-  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
-  const [page, setPage] = React.useState(1);
-  const [err, setErr] = React.useState("");
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [f, setF] = React.useState({ q: "", centre: "", status: "active" });
-  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
-  const [bulkForm, setBulkForm] = React.useState(null);
-  const [exporting, setExporting] = React.useState(false);
-  const centreOpts = useCentreOptions("ngg");
-
-  const load = React.useCallback((p, so) => {
-    setErr(""); setRefreshing(true);
-    const s0 = so || sort;
-    return NGGApi.admin.club.members(Object.assign({}, f, { page: p || page, pageSize: meta.pageSize, sort: s0.col, dir: s0.dir }))
-      .then(r => { setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
-      .catch(e => setErr(e.code || e.message || "load_failed"))
-      .finally(() => setRefreshing(false));
-    // eslint-disable-next-line
-  }, [f, page, sort, meta.pageSize]);
-  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.centre, f.status]);
-  React.useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [f.q]);
-  const onSort = (col, dir) => { const so = { col, dir }; setSort(so); setPage(1); load(1, so); };
-  const reload = () => load(page, sort);
-
-  const rows = list || [];
-  const sel = useAdminSelection(rows, m => m.memberId);
-
-  const ACTIONS = React.useMemo(() => [
-    { id: "status", label: "Set participation…", cap: "club",
-      hint: "Active, graduated or inactive — the three states a club roster tracks",
-      open: (ids) => setBulkForm({ op: "status", ids }) },
-    { id: "centre", label: "Post to centre…", cap: "club",
-      open: (ids) => setBulkForm({ op: "centre", ids }) },
-  ], []);
-
-  const exportCsv = async () => {
-    setExporting(true);
-    try {
-      const r = await NGGApi.admin.club.members(Object.assign({}, f, { all: 1, sort: sort.col, dir: sort.dir }));
-      downloadCsv("club-members", (r.members || []).map(m => ({
-        memberId: m.memberId, displayId: m.displayId || "", fullName: m.fullName,
-        email: m.email || "", centre: m.centre || "", track: m.track || "", status: m.status || "",
-      })));
-    } catch (e) { toast.error(humanizeError(e.message, e.code), "Export failed"); }
-    finally { setExporting(false); }
-  };
-
-  if (err && list === null) return <ErrorState title="Couldn't load the club roster" code={err} onRetry={reload}/>;
-  const filtered = !!(f.q || f.centre) || f.status !== "active";
-
-  return (
-    <div>
-      <div className="admin-filters admin-filters-5">
-        <input className="admin-input" value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value }))}
-          placeholder="Search name, member ID or email…" aria-label="Search the club roster"/>
-        <select className="admin-select" value={f.centre} onChange={e => setF(x => ({ ...x, centre: e.target.value }))}
-          aria-label="Filter the club roster by centre">
-          <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        {/* The filter that did not exist. The roster only ever showed active
-            members, so "who went quiet" and "who graduated" had no answer. */}
-        <select className="admin-select" value={f.status} onChange={e => setF(x => ({ ...x, status: e.target.value }))}
-          aria-label="Filter the club roster by participation">
-          <option value="active">Active</option>
-          <option value="graduated-ngg">Graduated · NGG</option>
-          <option value="inactive">Inactive</option>
-          <option value="all">Every status</option>
-        </select>
-        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total}>
-          {exporting ? "Exporting…" : "Export CSV"}
-        </button>
-      </div>
-
-      <AdminBulkBar selection={sel} noun="member" actions={ACTIONS} total={meta.total}/>
-
-      {list === null ? <div className="dash-spinner"/> :
-       rows.length === 0
-        ? (filtered
-            ? <EmptyState icon="⌕" title="No club member matches" message="Nothing in the roster fits every filter at once."
-                action={<button className="btn btn-ghost btn-sm" onClick={() => setF({ q: "", centre: "", status: "active" })}>Reset the filters</button>}/>
-            : <EmptyState icon="◈" title="No club members yet"
-                message="Promote a Summer School graduate from the other tab, and they appear here."/>)
-        : <div className={"admin-table-wrap" + (refreshing ? " is-refreshing" : "")} aria-busy={refreshing ? "true" : undefined}>
-            {err && <p className="admin-form-err" role="alert" style={{ margin: "0 0 10px" }}>
-              Couldn't refresh ({err}). These rows are from the last successful load.{" "}
-              <button className="admin-bulk-link" onClick={reload}>Try again</button>
-            </p>}
-            <table className="admin-table">
-              <caption className="sr-only">Club members — {fmtNum(meta.total)} matching, page {page}</caption>
-              <thead><tr>
-                <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all on this page"/></th>
-                <SortTh label="Member" col="fullName" sort={sort} onSort={onSort}/>
-                <SortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
-                <th scope="col">Track</th>
-                <SortTh label="Status" col="status" sort={sort} onSort={onSort}/>
-                <SortTh label="Joined" col="createdAt" sort={sort} onSort={onSort} defaultDir="desc"/>
-                <th scope="col"><span className="sr-only">Actions</span></th>
-              </tr></thead>
-              <tbody>{rows.map(m => (
-                <tr key={m.memberId} className={sel.has(m.memberId) ? "is-selected" : ""}>
-                  <td style={{ width: 34 }}><AdminRowCheck selection={sel} id={m.memberId} label={"Select " + (m.fullName || m.memberId)}/></td>
-                  <td><b>{m.fullName}</b><div className="mono admin-cell-sub">{m.memberId}{m.email ? " · " + m.email : ""}</div></td>
-                  <td>{m.centre || <span className="admin-cell-sub">— none</span>}</td>
-                  <td>{m.track || <span className="admin-cell-sub">—</span>}</td>
-                  <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
-                  <td className="mono admin-cell-sub">{fmtDate(m.createdAt)}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <AdminRowActions id={m.memberId} actions={ACTIONS} noun="member" reload={reload}/>
-                  </td>
-                </tr>
-              ))}</tbody>
-            </table>
-            <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={(p) => { setPage(p); load(p); }}/>
-          </div>}
-
-      {bulkForm && <ClubBulkForm form={bulkForm} centreOpts={centreOpts}
-        onClose={() => setBulkForm(null)}
-        onDone={() => { setBulkForm(null); sel.clear(); reload(); if (onChange) onChange(); }}/>}
-    </div>
-  );
-}
-
-/* The value a club bulk action needs. Same shape as the member desk's, and
-   deliberately a separate list of options: the club desk sets participation,
-   not suspension. */
-function ClubBulkForm({ form, centreOpts, onClose, onDone }) {
-  const drawer = useAdminDrawer(onClose, false);
-  const count = (form.ids || []).length;
-  const [value, setValue] = React.useState(form.op === "status" ? "active" : "");
-  const [busy, setBusy] = React.useState(false);
-  const [result, setResult] = React.useState(null);
-
-  const META = form.op === "status"
-    ? { title: "Set participation", label: "Participation", key: "status",
-        hint: "Suspension is not a club action — it belongs to the member desk, with the record of why.",
-        options: [
-          { value: "active", label: "Active" },
-          { value: "graduated-ngg", label: "Graduated · NGG" },
-          { value: "inactive", label: "Inactive — stopped coming" },
-        ] }
-    : { title: "Post to a centre", label: "Centre", key: "centre",
-        hint: "The record stores the centre NAME. “— no centre —” clears it.",
-        options: [{ value: "", label: "— no centre —" }].concat(centreOpts.map(c => ({ value: c, label: c }))) };
-
-  const REFUSALS = {
-    own_account: "your own account",
-    staff_account: "a staff account — staff are managed in the Control Room",
-    out_of_scope: "outside your centres",
-    not_found: "no longer in the roster",
-  };
-
-  const apply = async () => {
-    setBusy(true);
-    try {
-      const payload = {}; payload[META.key] = value;
-      const r = await NGGApi.admin.club.bulk(form.op, form.ids, payload);
-      setResult(r);
-      const refused = (r.results || []).filter(x => x && x.ok === false);
-      if (refused.length && r.applied) {
-        toast.warn(r.applied + " of " + count + " updated · " + refused.length + " refused ("
-          + adminFailSummary(refused.map(x => ({ ok: false, error: x.error }))) + ").", META.title);
-      } else if (refused.length) {
-        toast.error("Nothing changed — all " + refused.length + " refused.", META.title);
-      } else {
-        toast.success(r.applied + " member" + (r.applied === 1 ? "" : "s") + " updated.", META.title);
-      }
-    } catch (e) {
-      const code = e.code || e.message;
-      toast.error({ bad_status: "That isn't a participation state the club desk sets.",
-        centre_not_found: "That centre isn't in the directory any more.",
-        centre_out_of_scope: "That centre isn't one of yours.",
-        too_many: "Too many members for one action." }[code] || humanizeError(e.message, code), META.title);
-    } finally { setBusy(false); }
-  };
-
-  return (
-    <div className="admin-drawer" onMouseDown={drawer.close}>
-      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps}
-        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
-        <div className="admin-drawer-head">
-          <h3 {...drawer.headingProps}>{META.title} · {fmtNum(count)} member{count === 1 ? "" : "s"}</h3>
-          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
-        </div>
-        <div className="admin-drawer-scroll">
-          {!result ? (
-            <div className="admin-fields">
-              <FieldSelect label={META.label} value={value} onChange={setValue} options={META.options}/>
-              <p className="admin-hint" style={{ margin: 0 }}>{META.hint}</p>
-              <p className="admin-hint" style={{ margin: 0 }}>
-                Applies to the <b>{fmtNum(count)}</b> member{count === 1 ? "" : "s"} selected when you opened this.
-              </p>
-            </div>
-          ) : (
-            <div className="admin-fields">
-              <div className="admin-tiles">
-                <AdminTile n={result.applied} l="Updated"/>
-                <AdminTile n={(result.results || []).filter(x => x && x.ok && x.unchanged).length} l="Already set"/>
-                <AdminTile n={result.refused} l="Refused"/>
-              </div>
-              {result.refused > 0 && (
-                <>
-                  <h4 className="admin-h4">What was refused, and why</h4>
-                  <div className="admin-table-wrap"><table className="admin-table">
-                    <thead><tr><th scope="col">Member</th><th scope="col">Reason</th></tr></thead>
-                    <tbody>{(result.results || []).filter(x => x && x.ok === false).map(x => (
-                      <tr key={x.id}><td>{x.name || <span className="mono">{x.id}</span>}</td>
-                        <td className="admin-cell-sub">{REFUSALS[x.error] || String(x.error || "refused").replace(/_/g, " ")}</td></tr>
-                    ))}</tbody>
-                  </table></div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="admin-drawer-foot">
-          {!result
-            ? <>
-                <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Cancel</button>
-                <button className="btn btn-primary btn-sm" onClick={apply} disabled={busy}>{busy ? "Applying…" : "Apply to " + fmtNum(count)}</button>
-              </>
-            : <button className="btn btn-primary btn-sm" onClick={onDone}>Done</button>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Stand-alone coordinator portals — the Summer School and NGG Club managers
 // are two SEPARATE surfaces, each with its own URL, its own branded login
 // screen and its own 2FA gate. A summer_admin can only enter the Summer
@@ -5995,7 +5510,7 @@ function PortalLogin({ brand, onVerified }) {
 }
 
 // Wraps a single portal section with its own login → cap-lock → 2FA → chrome.
-function PortalGate({ cap, brand, setPage, children }) {
+function PortalGate({ cap, brand, setPage, children, bare }) {
   const { member, adminOk, loading, setAdminOk, hasCap, onVerified, signOut } = useAuth();
 
   if (loading) return <div className="page admin"><div className="container" style={{ padding: "120px 0" }}><div className="dash-spinner"/></div></div>;
@@ -6015,6 +5530,9 @@ function PortalGate({ cap, brand, setPage, children }) {
     </div></section></div>;
   }
   if (!adminOk) return <AdminTotpGate onPass={() => setAdminOk(true)} member={member}/>;
+  /* A portal that draws its own shell (the Club portal v3) gets the gate and
+     nothing else: a second header above its own would be two of everything. */
+  if (bare) return typeof children === "function" ? children({ member, signOut }) : children;
 
   return (
     <div className="page admin coord-portal" data-portal={brand.key} data-screen-label={brand.label}>
@@ -6027,7 +5545,7 @@ function PortalGate({ cap, brand, setPage, children }) {
           </div>
         </div>
         <div className="admin-topbar-r">
-          <span className="mono" style={{ color: "rgba(255,255,255,0.6)" }}>{member.fullName} · {member.role}</span>
+          <span className="mono" style={{ color: "rgba(255,255,255,0.72)" }}>{member.fullName} · {member.role}</span>
           {/* A super_admin can cross to the other portal; single-cap coordinators can't. */}
           {cap === "summer" && hasCap("club") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("club-admin")}>NGG Club ↗</button>}
           {cap === "club" && hasCap("summer") && <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>}
@@ -6042,16 +5560,21 @@ function PortalGate({ cap, brand, setPage, children }) {
 }
 
 function SummerAdminPortal({ setPage }) {
-  return <PortalGate cap="summer" setPage={setPage}
+  /* The Summer School portal v3 (src/modules/summer3/). The older AdminSummer
+     panels stay in the Control Room, which is where the season's settings,
+     gates and imports are administered. */
+  return <PortalGate cap="summer" setPage={setPage} bare
     brand={{ key: "summer", label: "Summer School", eyebrow: "SUMMER SCHOOL · STAFF PORTAL", icon: "☀" }}>
-    <AdminSummer/>
+    {({ signOut }) => <Ss3Portal setPage={setPage} signOut={signOut}/>}
   </PortalGate>;
 }
 
+/* /club-admin is the Club portal v3 (src/modules/club3/). It replaced the
+   two-tab ClubManager / ClubPromote / ClubRoster screen, removed since. */
 function ClubAdminPortal({ setPage }) {
-  return <PortalGate cap="club" setPage={setPage}
+  return <PortalGate cap="club" setPage={setPage} bare
     brand={{ key: "club", label: "NGG Club", eyebrow: "NGG CLUB · STAFF PORTAL", icon: "◈" }}>
-    <ClubManager/>
+    {({ signOut }) => <Cp3Portal setPage={setPage} signOut={signOut}/>}
   </PortalGate>;
 }
 

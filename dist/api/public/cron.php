@@ -68,6 +68,7 @@ $JOBS = [
     'reminders' => fn() => web_cron_reminders(),
     'maint'     => fn() => web_cron_maintenance(),
     'accrue'    => fn() => web_cron_accrue(),
+    'crm'       => fn() => function_exists('crm_push_run') ? crm_push_run() : null,
 ];
 
 $want = trim((string)($_GET['job'] ?? 'all'));

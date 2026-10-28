@@ -242,15 +242,16 @@ function ops_health(): array {
  * Cached for five minutes: this runs on every diagnostics load and on the health
  * probe, and an outbound HTTP call on a shared host is not free.
  */
-function ops_cloudinary_health(): array {
-    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+function ops_cloudinary_health(?array $cfg = null): array {
+    // Default: the account uploads go to now. Settings → API keys tests the main one by passing it.
+    $cfg = $cfg ?? ($GLOBALS['CONFIG']['cloudinary'] ?? []);
     $configured = !empty($cfg['cloud_name']) && !empty($cfg['api_key']) && !empty($cfg['api_secret']);
     if (!$configured) {
         return ['ok' => true, 'configured' => false, 'state' => 'not_configured',
                 'detail' => 'No Cloudinary keys on this host — photographs are stored locally.'];
     }
     $cached = cache_get('ops.cloudinary', 300);
-    if (is_array($cached)) return $cached;
+    if (is_array($cached) && ($cached['cloud'] ?? '') === (string)$cfg['cloud_name']) return $cached;
 
     $out = ['ok' => false, 'configured' => true, 'state' => 'unknown', 'cloud' => (string)$cfg['cloud_name']];
     // Test seam, so the states above can be exercised without a network.
@@ -280,14 +281,21 @@ function ops_cloudinary_health(): array {
         $d = json_decode((string)($res['body'] ?? ''), true);
         $pct = null;
         if (is_array($d)) {
-            foreach (['credits', 'storage', 'bandwidth'] as $k) {
-                if (isset($d[$k]['used_percent'])) { $pct = (float)$d[$k]['used_percent']; break; }
+            // The worst part decides, as in media_usage_refresh().
+            foreach (['credits', 'storage', 'bandwidth', 'transformations'] as $k) {
+                if (isset($d[$k]['used_percent'])) $pct = max($pct ?? 0.0, (float)$d[$k]['used_percent']);
             }
         }
-        $out['ok'] = true;
-        $out['state'] = 'ok';
+        /* Answering is not the same as healthy: at 99% the old line read
+           "Operational". The level is media-storage.php's, so the health line,
+           the alerts and the upload guard all agree. */
+        $level = function_exists('media_level_for') ? media_level_for($pct) : 'ok';
+        $out['ok'] = $level === 'ok' || $level === 'warn';
+        $out['state'] = ['ok' => 'ok', 'warn' => 'filling', 'high' => 'near_limit', 'critical' => 'full'][$level];
+        $out['level'] = $level;
         $out['usedPercent'] = $pct;
-        $out['detail'] = $pct === null ? 'Connected.' : 'Connected — ' . round($pct) . '% of the plan used.';
+        $out['detail'] = $pct === null ? 'Connected.' : 'Connected — ' . round($pct) . '% of the plan used'
+            . ($level === 'critical' ? '. New uploads are paused; photos are stored on the site.' : ($level === 'high' ? '. AI photo edits have stopped.' : '.'));
     } else {
         $out['state'] = 'unreachable';
         $out['detail'] = 'Could not reach Cloudinary' . ($res['error'] ? ': ' . substr((string)$res['error'], 0, 120) : ' (HTTP ' . $code . ').');

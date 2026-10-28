@@ -117,7 +117,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **135**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **195**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -509,7 +509,28 @@ npm run test:all          # build + build test + PHP suite + every node suite
 npm run test:routes       # route registry      npm run test:admbulk   # bulk actions
 npm run test:summered     # editions & groups   npm run test:sumpage   # /summer page
 npm run test:designer     # card studio         npm run test:ui        # ui smoke
+npm run test:a11y         # axe-core WCAG 2.1 A/AA across the portals and the journal
+npm run test:mysql        # the PHP suite again, on MySQL (see below)
 ```
+
+**The PHP suite runs twice: once on SQLite, once on MySQL.** The repository
+ships two schemas — the ladder in `api/_lib/db.php` and the hand-written
+mirror in `db/schema-mysql.sql` — and every deployment above a single site
+runs the second. Testing only the first hid two real defects of the same
+shape, SQLite tolerating what MySQL will not: `community.search` was a hard
+SQL syntax error on MySQL (a backslash `ESCAPE` that SQLite reads literally)
+and returned a 500 on every MySQL deployment; and a peer mentor could see
+children's shared journal entries, because the privacy guard ran its query
+with an empty parameter list instead of skipping it, which SQLite quietly
+returned nothing for. Neither was findable on SQLite at any effort.
+
+`tests/mysql-suite.js` is in `test:all`. Without a reachable server it prints
+a loud notice and passes — hard-failing every machine without MySQL would
+get `test:all` abandoned, and a suite nobody runs protects nothing. Set
+`NGG_REQUIRE_MYSQL=1` in CI or before a release to make the skip a failure.
+It recreates the database named in `NGG_TEST_DSN` and **refuses any name
+without "test" in it**, so a misdirected DSN stops there rather than
+somewhere irreversible.
 
 - Node E2E tests spawn `php -S`, write a **throwaway `api/config.php`**, and
   **refuse to run if one already exists**. Move a local dev config aside.

@@ -75,7 +75,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const open = async (w, h, at) => {
@@ -202,6 +202,84 @@ function cleanup() {
     await Q.waitForSelector('.cr-ib-view[aria-current="page"]', { timeout: 20000 });
     chk('/nextadmin?s=messages lands on Inbox › Messages at /control/inbox/messages', new URL(Q.url()).pathname === '/control/inbox/messages' && /Messages/.test(await Q.innerText('.cr-crumb')) && /^Messages/.test(await Q.getAttribute('.cr-ib-view[aria-current="page"]', 'aria-label')));
     await Q.context().close();
+
+    console.log('image storage');
+    /* A full Cloudinary plan, as the six-hourly check would have recorded it: the
+       Diagnostics page must say so with the numbers, and offer both remedies. */
+    php(`setting_set('media.usage', ['configured' => true, 'level' => 'critical', 'pct' => 97.0, 'plan' => 'Free', 'checkedAt' => gmdate('c'), 'error' => '',
+      'parts' => ['credits' => ['usage' => 24.2, 'limit' => 25, 'pct' => 97.0], 'storage' => ['usage' => 1, 'limit' => 0, 'pct' => 61.0]]], 'test');`, ['bootstrap']);
+    const D = await open(1280, 900, '/control/settings/ops');
+    await D.waitForSelector('text=Image storage', { timeout: 30000 });
+    const dtext = await D.evaluate(() => document.body.innerText);
+    chk('Diagnostics shows image storage as full, with each part of the plan', /Full — new uploads are paused/.test(dtext) && /Plan credits\s*97% used/.test(dtext) && /Storage\s*61% used/.test(dtext));
+    chk('…says what that does to uploads, and offers Check now and Free space', /photos are kept on this site instead/.test(dtext) && !!(await D.$('button:has-text("Check now")')) && !!(await D.$('button:has-text("Free space")')));
+    chk('…and says photos on a spent account move only when needed, never in bulk', /move only when they are needed/.test(dtext) && !(await D.$('button:has-text("Move photos")')));
+    await D.click('button:has-text("Free space")');
+    await D.waitForSelector('text=Type FREE SPACE', { timeout: 10000 });
+    chk('…and freeing space asks for the typed confirmation first', /Originals are not touched/.test(await D.evaluate(() => document.body.innerText)));
+    await D.context().close();
+
+    console.log('several Cloudinary accounts');
+    /* A second account whose plan has room while the main one is full: the list
+       says where uploads go, an account opens with its usage and its order
+       controls, and adding one asks for the three keys. */
+    php(`setting_set('media.accounts', [['id' => 'acc_t1', 'label' => 'Second plan', 'cloudName' => 'extra-one', 'apiKey' => '222222', 'secret' => ai_ui_seal('extrasecret1'), 'enabled' => true, 'addedAt' => now_iso(), 'addedBy' => 'x']], 'test');
+      setting_set('media.usage.accounts', ['acc_t1' => ['configured' => true, 'level' => 'ok', 'pct' => 20.0, 'plan' => 'Free', 'checkedAt' => gmdate('c'), 'error' => '', 'parts' => ['credits' => ['usage' => 5, 'limit' => 25, 'pct' => 20.0]]]], 'test');`, ['bootstrap']);
+    const MA = await open(1280, 900, '/control/settings/ops');
+    await MA.waitForSelector('text=Cloudinary accounts', { timeout: 30000 });
+    const mtext = await MA.evaluate(() => document.body.innerText);
+    chk('the accounts list names the extra account, its cloud, and that new uploads go to it', /Second plan/.test(mtext) && /extra-one/.test(mtext) && /Uploads go here/.test(mtext));
+    chk('…and never shows a secret', !/extrasecret1/.test(await MA.content()));
+    await MA.click('text=Second plan');
+    await MA.waitForSelector('button:has-text("Check usage now")', { timeout: 10000 });
+    chk('an account opens with its usage and its controls', /20% used/.test(await MA.evaluate(() => document.body.innerText)) && !!(await MA.$('button:has-text("Pause uploads to it")')) && !!(await MA.$('button:has-text("Remove…")')));
+    await MA.keyboard.press('Escape');
+    await MA.click('button:has-text("Add an account…")');
+    await MA.waitForSelector('text=Cloud name', { timeout: 10000 });
+    chk('adding an account asks for the cloud name, API key and secret, and says they are checked', /API secret/.test(await MA.evaluate(() => document.body.innerText)) && /checked with Cloudinary/.test(await MA.evaluate(() => document.body.innerText)));
+    await MA.context().close();
+    php(`setting_set('media.accounts', null, 'test'); setting_set('media.usage.accounts', null, 'test');`, ['bootstrap']);
+
+    console.log('testimonials waiting to be read');
+    /* Two members said something about their session. One guardian granted
+       "Feature on our website", the other never answered. The queue must make
+       that difference visible BEFORE anybody presses anything — and must not
+       draw a Publish button that the server would refuse. */
+    php(`db_insert('testimonials', ['tid'=>'TST-YES','memberId'=>'NGG-CR-1','unitId'=>'U-1','course'=>'Technology','centre'=>'Egbeda','body'=>'I built a calculator that actually works.','showAs'=>'first','status'=>'new','createdAt'=>now_iso()]);
+      db_insert('testimonials', ['tid'=>'TST-NO','memberId'=>'NGG-CR-2','unitId'=>'U-1','course'=>'Technology','centre'=>'Egbeda','body'=>'I was scared of the keyboard and now I am not.','showAs'=>'initials','status'=>'new','createdAt'=>now_iso()]);
+      consent_record('NGG-CR-1', 'site_visibility', 'granted', 'Paper form', 'Test');`, ['bootstrap']);
+    const T = await open(1280, 900, '/control/inbox/testimonials');
+    await T.waitForSelector('.cr-ib-row', { timeout: 20000 });
+    chk('the queue lists what members said, newest work first', (await T.$$('.cr-ib-row')).length === 2);
+    const openSay = async (who) => {
+      await T.click(`.cr-ib-row:has-text("${who}")`);
+      await T.waitForFunction(w => ((document.querySelector('.cr-ib-pane h2') || {}).innerText || '').indexOf(w) === 0, who, { timeout: 8000 });
+    };
+    await openSay('Member A');
+    const yes = await T.evaluate(() => document.querySelector('.cr-ib-pane').innerText);
+    chk('a consented one can be published, and says how it will be signed',
+      !!(await T.$('.cr-ib-pane button:has-text("Publish")')) && /first name and age/.test(yes) && /Guardian granted/.test(yes));
+    await openSay('Member B');
+    const no = await T.evaluate(() => document.querySelector('.cr-ib-pane').innerText);
+    chk('without that consent there is NO Publish button to press, and it says why',
+      !(await T.$('.cr-ib-pane button:has-text("Publish")')) && /has not granted/.test(no));
+    chk('…and the words are still readable, because they are useful to staff either way',
+      /scared of the keyboard/.test(no) && !!(await T.$('.cr-ib-pane button:has-text("Not this one")')));
+    await openSay('Member A');
+    await T.click('.cr-ib-pane button:has-text("Publish")');
+    chk('publishing says it is live and offers Undo', await toastHas(T, /home page[\s\S]*Undo/));
+    chk('…and the public page now carries it, signed the way the MEMBER chose',
+      php(`$r = public_testimonials(); echo count($r['testimonials']) . '|' . ($r['testimonials'][0]['from'] ?? '');`, ['bootstrap']) === '1|Member');
+    await T.context().close();
+    php(`db_exec("DELETE FROM testimonials"); db_exec("DELETE FROM consents");`, ['bootstrap']);
+
+    // One focus ring on a framed search field: the frame's, never a second on the bare input inside it.
+    const R = await open(1366, 768, '/control/members');
+    await R.waitForSelector('[role=search] input', { timeout: 30000 });
+    await R.focus('[role=search] input'); await R.keyboard.press('Shift+Tab'); await R.keyboard.press('Tab');
+    const ring = await R.$eval('[role=search] input', el => ({ focused: document.activeElement === el, inner: getComputedStyle(el).outlineStyle, frame: getComputedStyle(el.parentElement).boxShadow }));
+    chk('the members search draws one focus ring, on its frame, not a second on the input inside it', ring.focused && ring.inner === 'none' && ring.frame !== 'none');
+    await R.context().close();
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

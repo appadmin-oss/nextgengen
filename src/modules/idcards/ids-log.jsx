@@ -181,7 +181,7 @@ function IdsLookup({ lookup, design, onQueue }) {
 }
 
 /** The phone's Make tab (§6): who is ready and who is waiting on a photo — never the sheet. */
-function IdsPhoneQueue({ recs, isBlocked, onAsk }) {
+function IdsPhoneQueue({ recs, isBlocked, onAsk, askedOf }) {
   const [lim, setLim] = React.useState(40);
   const ready = recs.filter(r => !isBlocked(r) && r.reason === "new").length;
   const reprints = recs.filter(r => !isBlocked(r) && r.reason === "reprint").length;
@@ -197,8 +197,10 @@ function IdsPhoneQueue({ recs, isBlocked, onAsk }) {
       <ul className="ids-phone-list">
         {recs.slice(0, lim).map(r => (
           <li key={r.id} className="ids-phone-row">
-            <span className="ids-grow"><b>{r.name}</b><span className={isBlocked(r) ? "ids-bad-text" : "ids-muted"}>{isBlocked(r) ? "No photo yet" : r.reason === "reprint" ? "Reprint · " + r.why : "Ready to print"}</span></span>
-            {isBlocked(r) && <button type="button" className="ids-btn ids-btn--44" onClick={() => onAsk(r)}>Ask for photo</button>}
+            <span className="ids-grow"><b>{r.name}</b><span className={isBlocked(r) && !(askedOf && askedOf(r)) ? "ids-bad-text" : "ids-muted"}>{isBlocked(r) ? (askedOf && askedOf(r) ? "Photo requested · waiting for approval" : "No photo yet") : r.reason === "reprint" ? "Reprint · " + r.why : "Ready to print"}</span></span>
+            {isBlocked(r) && (askedOf && askedOf(r)
+              ? <span className="ids-asked" title="Asked in the last 3 days"><IdsIcon name="check"/>Asked</span>
+              : <button type="button" className="ids-btn ids-btn--44" onClick={() => onAsk(r)}>Ask for photo</button>)}
           </li>
         ))}
       </ul>

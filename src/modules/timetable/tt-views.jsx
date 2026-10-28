@@ -157,7 +157,8 @@ function TtPhone({ C }) {
   const w = ttWeekEx(C.ex, off, C.now), nCh = Object.keys(w.skip).length + w.once.length;
   const changes = nCh ? " · " + nCh + " change" + (nCh === 1 ? "" : "s") : "";
   const rel = off === 0 ? "This week" + changes : off === 1 ? "Next week · tap for this week" : off === -1 ? "Last week · tap for this week" : "Tap for this week";
-  const started = C.entries.length > 0 || !!C.s.mode;
+  // Building is free from the first second: the add box and the days are always there; presets only fill in suggestions (owner, 2026-10-28).
+  const started = true;
   const unsaved = C.saveInfo.state !== "saved" && C.saveInfo.state !== "saving";
 
   let head;
@@ -227,7 +228,7 @@ function TtPhone({ C }) {
               options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }]}/>
           </div>
         )}
-        {!started && <TtModePicker C={C}/>}
+        <TtStartSteps C={C}/>
         {started && (isDay ? [sel] : order).map(d => <TtPhoneDay key={d + ":" + off} C={C} d={d} titled={!isDay}/>)}
         {sugg.show && (
           <button type="button" className="tt-sugg tt-sugg--phone" onClick={() => C.open("plan")}>
@@ -343,7 +344,8 @@ function TtWide({ C }) {
 function TtListPane({ C }) {
   const { qDay } = ttSelDay(C);
   const qa = ttUseQuick(C, qDay);
-  const started = C.entries.length > 0 || !!C.s.mode;
+  // Building is free from the first second: the add box and the days are always there; presets only fill in suggestions (owner, 2026-10-28).
+  const started = true;
   const sugg = ttSuggView(C);
   const th = TT_THEMES[C.s.theme] || TT_THEMES.paper;
   const ov = ttOverlaps(C.entries);
@@ -378,7 +380,6 @@ function TtListPane({ C }) {
       <div className="tt-col tt-col--14 tt-col--list">
         <TtNotes C={C}/>
         <div className="tt-listhead"><h2 id="tt-week-h">Your week</h2><span>{ttSummary(C.entries)}</span></div>
-        {!started && <TtModePicker C={C}/>}
         {started && (
           <form className="tt-qa" aria-label="Quick add" onSubmit={qa.submit}>
             <div className="tt-qa-row">
@@ -391,6 +392,7 @@ function TtListPane({ C }) {
             )}
           </form>
         )}
+        <TtStartSteps C={C}/>
         {sugg.show && C.bp !== "desk3" && (
           <button type="button" className="tt-sugg tt-sugg--slim" onClick={() => C.open("plan")}>
             <TtIcon name="lightbulb" className="tt-sugg-icon"/>

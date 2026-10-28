@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS members (
   anchorCode VARCHAR(12),
   mouAt VARCHAR(40) DEFAULT '', mouBy VARCHAR(64) DEFAULT '',
   duesRemindOff TINYINT DEFAULT 0, duesRemindedAt VARCHAR(40) DEFAULT '',
-  ngvVolunteerId VARCHAR(40) DEFAULT '', ngvAt VARCHAR(40) DEFAULT '',
+  ngvVolunteerId VARCHAR(64) DEFAULT '', ngvAt VARCHAR(40) DEFAULT '',
   createdAt VARCHAR(40), updatedAt VARCHAR(40),
   INDEX idx_members_email (email), INDEX idx_members_centre (centre), INDEX idx_members_status (status),
   UNIQUE KEY idx_members_anchorcode (anchorCode)
@@ -428,7 +428,7 @@ CREATE TABLE IF NOT EXISTS volunteers (
   id INT AUTO_INCREMENT PRIMARY KEY,
   volunteerId VARCHAR(32) NOT NULL UNIQUE,
   applicationId INT,
-  memberId VARCHAR(40) DEFAULT '',
+  memberId VARCHAR(64) DEFAULT '',
   fullName VARCHAR(255), email VARCHAR(200), phone VARCHAR(24) DEFAULT '',
   firstName VARCHAR(80) DEFAULT '', lastName VARCHAR(80) DEFAULT '',
   otherName VARCHAR(80) DEFAULT '', dob VARCHAR(40) DEFAULT '',
@@ -2582,7 +2582,7 @@ CREATE TABLE IF NOT EXISTS courage_marks (
   subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
   score INT NOT NULL,
   prompt VARCHAR(160) DEFAULT '',
-  evidence TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
   markedById VARCHAR(64) NOT NULL,
   markedByName VARCHAR(190) DEFAULT '',
   centre VARCHAR(80) DEFAULT '',
@@ -2677,7 +2677,7 @@ CREATE TABLE IF NOT EXISTS member_promotions (
   memberId VARCHAR(64) NOT NULL,
   fromStage VARCHAR(24) NOT NULL DEFAULT 'NGG',
   toStage VARCHAR(24) NOT NULL DEFAULT 'NGV',
-  evidence TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
   readiness TEXT,
   volunteerId VARCHAR(40) DEFAULT '',
   byId VARCHAR(64) NOT NULL,
@@ -2777,7 +2777,7 @@ CREATE TABLE IF NOT EXISTS admin_approvals (
   id INT AUTO_INCREMENT PRIMARY KEY,
   approvalId VARCHAR(40) NOT NULL UNIQUE,
   op VARCHAR(80) NOT NULL,
-  args MEDIUMTEXT NOT NULL,
+  args MEDIUMTEXT NOT NULL DEFAULT '',
   summary VARCHAR(500) NOT NULL DEFAULT '',
   requesterId VARCHAR(64) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'pending',
@@ -2846,6 +2846,7 @@ CREATE TABLE IF NOT EXISTS curriculum_checks (
   points INT DEFAULT 1,
   position INT DEFAULT 1,
   source VARCHAR(16) DEFAULT 'manual',
+  videoUrl TEXT,
   KEY idx_ccheck_unit (unitId, position)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS curriculum_progress (
@@ -3031,7 +3032,7 @@ INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE versio
 CREATE TABLE IF NOT EXISTS contact_replies (
   id INT AUTO_INCREMENT PRIMARY KEY,
   messageId INT NOT NULL,
-  body TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
   sentBy VARCHAR(64) NOT NULL DEFAULT '',
   sentByName VARCHAR(255) NOT NULL DEFAULT '',
   sentAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3049,7 +3050,7 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   memberId VARCHAR(64) NOT NULL,
   applicationId INT NOT NULL DEFAULT 0,
   payToken VARCHAR(64) NOT NULL UNIQUE,
-  items TEXT NOT NULL,
+  items TEXT NOT NULL DEFAULT '[]',
   total INT NOT NULL DEFAULT 0,
   currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
   startDate VARCHAR(16) NOT NULL DEFAULT '',
@@ -3107,8 +3108,8 @@ CREATE TABLE IF NOT EXISTS photo_framing (
   urlKey CHAR(40) NOT NULL UNIQUE,
   url VARCHAR(500) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'none',
-  geomJson TEXT NOT NULL,
-  adjustJson TEXT NOT NULL,
+  geomJson TEXT NOT NULL DEFAULT '',
+  adjustJson TEXT NOT NULL DEFAULT '',
   model VARCHAR(80) NOT NULL DEFAULT '',
   error VARCHAR(80) NOT NULL DEFAULT '',
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -3641,3 +3642,943 @@ CREATE TABLE IF NOT EXISTS club_class_sessions (
   UNIQUE KEY idx_ccs_session (sessionId), UNIQUE KEY idx_ccs_slot (course, centre, date), INDEX idx_ccs_instr (instructorId, date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (145) ON DUPLICATE KEY UPDATE version = version;
+
+-- 146 · one active mentor per child. Data only: the UPDATE is in
+-- NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
+INSERT INTO schema_version (version) VALUES (146) ON DUPLICATE KEY UPDATE version = version;
+
+-- 147 · cover: a mentor opening another mentor's mentee's record, with a reason
+CREATE TABLE IF NOT EXISTS mentor_record_cover (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mentorMemberId VARCHAR(64) NOT NULL, mentorName VARCHAR(190) DEFAULT '',
+  subjectId VARCHAR(64) NOT NULL, centre VARCHAR(120) DEFAULT '', reason TEXT NOT NULL,
+  grantedAt VARCHAR(40) NOT NULL, expiresAt VARCHAR(40) NOT NULL, endedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mrc_mentor (mentorMemberId, subjectId, expiresAt), INDEX idx_mrc_centre (centre, grantedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (147) ON DUPLICATE KEY UPDATE version = version;
+
+-- 148: the Saturday Formation Schedule and its send ledger.
+CREATE TABLE IF NOT EXISTS saturday_formation (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  blockKey VARCHAR(40) NOT NULL UNIQUE, sort INT DEFAULT 0, startTime VARCHAR(5) NOT NULL, endTime VARCHAR(5) NOT NULL,
+  title VARCHAR(160) NOT NULL, flow VARCHAR(80) DEFAULT '', purpose TEXT, quote TEXT, forJson MEDIUMTEXT,
+  status VARCHAR(16) DEFAULT 'active', updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS saturday_formation_sends (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onDate VARCHAR(10) NOT NULL, slot VARCHAR(40) NOT NULL, recipient VARCHAR(190) NOT NULL, channel VARCHAR(16) NOT NULL, sentAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY uq_sfs (onDate, slot, recipient, channel)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (148) ON DUPLICATE KEY UPDATE version = version;
+
+-- 149: the Saturday register's mentor duties.
+ALTER TABLE mentor_register ADD COLUMN checks TEXT;
+INSERT INTO schema_version (version) VALUES (149) ON DUPLICATE KEY UPDATE version = version;
+
+-- 150: the Saturday register's detail line (what the mentor saw).
+ALTER TABLE mentor_register ADD COLUMN note TEXT;
+INSERT INTO schema_version (version) VALUES (150) ON DUPLICATE KEY UPDATE version = version;
+
+-- 151: what an invoice is for — 'joining', or 'balance' (the ledger's outstanding amount, paid online).
+ALTER TABLE membership_invoices ADD COLUMN purpose VARCHAR(16) NOT NULL DEFAULT 'joining';
+INSERT INTO schema_version (version) VALUES (151) ON DUPLICATE KEY UPDATE version = version;
+
+-- 152: every Academy quiz attempt (the retry limit reads it).
+CREATE TABLE IF NOT EXISTS mentor_academy_attempts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(64) NOT NULL,
+  moduleId VARCHAR(64) NOT NULL,
+  score INT NOT NULL DEFAULT 0,
+  passed TINYINT NOT NULL DEFAULT 0,
+  at VARCHAR(32) NOT NULL DEFAULT '',
+  INDEX idx_macad_att (mentorId, moduleId, at)
+);
+INSERT INTO schema_version (version) VALUES (152) ON DUPLICATE KEY UPDATE version = version;
+
+-- 153: the Saturday evaluation (formation criteria, strength, next step) on the week's review.
+ALTER TABLE mentor_reviews ADD COLUMN evalJson TEXT;
+INSERT INTO schema_version (version) VALUES (153) ON DUPLICATE KEY UPDATE version = version;
+
+-- 154: an assignment's lesson, and when its audience was last reminded.
+ALTER TABLE assignments ADD COLUMN unitId VARCHAR(64) DEFAULT '';
+ALTER TABLE assignments ADD COLUMN remindedAt VARCHAR(32) DEFAULT '';
+CREATE INDEX idx_sub_member ON assignment_submissions(memberId);
+INSERT INTO schema_version (version) VALUES (154) ON DUPLICATE KEY UPDATE version = version;
+
+-- 155: assignment hand-ins collect links, several files and ticked success-criteria steps.
+ALTER TABLE assignments ADD COLUMN steps TEXT;
+ALTER TABLE assignment_submissions ADD COLUMN linkUrl VARCHAR(1000) DEFAULT '';
+ALTER TABLE assignment_submissions ADD COLUMN filesJson TEXT;
+ALTER TABLE assignment_submissions ADD COLUMN stepsJson TEXT;
+INSERT INTO schema_version (version) VALUES (155) ON DUPLICATE KEY UPDATE version = version;
+
+-- 156: emails stored the way the sign-in door compares them — a data fix-up,
+-- so it lives in NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
+INSERT INTO schema_version (version) VALUES (156) ON DUPLICATE KEY UPDATE version = version;
+
+-- 157: texts by Telegram — a shared, Telegram-verified phone number and its chat.
+CREATE TABLE IF NOT EXISTS telegram_links (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  phone VARCHAR(20) NOT NULL,
+  chatId VARCHAR(32) NOT NULL,
+  tgUserId VARCHAR(32) DEFAULT '',
+  tgName VARCHAR(120) DEFAULT '',
+  linkedAt VARCHAR(32) DEFAULT '',
+  lastSentAt VARCHAR(32) DEFAULT '',
+  sent INT DEFAULT 0,
+  UNIQUE KEY idx_tg_phone (phone),
+  KEY idx_tg_chat (chatId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (157) ON DUPLICATE KEY UPDATE version = version;
+
+-- 158: files in the storage bucket — stored once (verified sha256), swept when nothing uses them.
+CREATE TABLE IF NOT EXISTS media_objects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  storeKey VARCHAR(300) NOT NULL,
+  url VARCHAR(600) NOT NULL,
+  sha256 VARCHAR(64) DEFAULT '',
+  bytes BIGINT DEFAULT 0,
+  mediaKind VARCHAR(16) DEFAULT '',
+  kind VARCHAR(40) DEFAULT '',
+  ownerId VARCHAR(64) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'signed',
+  reuses INT DEFAULT 0,
+  createdAt VARCHAR(32) DEFAULT '',
+  verifiedAt VARCHAR(32) DEFAULT '',
+  checkedAt VARCHAR(32) DEFAULT '',
+  deletedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_mo_key (storeKey),
+  KEY idx_mo_sha (sha256, status),
+  KEY idx_mo_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (158) ON DUPLICATE KEY UPDATE version = version;
+
+-- 159: study tools — flashcard decks and cards (spaced repetition), focus and typing sessions.
+CREATE TABLE IF NOT EXISTS study_decks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  deckId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  source VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_sd_deck (deckId),
+  KEY idx_sd_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS study_cards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  cardId VARCHAR(40) NOT NULL,
+  deckId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  ease DOUBLE DEFAULT 2.5,
+  intervalDays INT DEFAULT 0,
+  reps INT DEFAULT 0,
+  lapses INT DEFAULT 0,
+  dueAt VARCHAR(32) DEFAULT '',
+  reviewedAt VARCHAR(32) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_sc_card (cardId),
+  KEY idx_sc_due (memberId, deckId, dueAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS study_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  tool VARCHAR(16) NOT NULL,
+  label VARCHAR(120) DEFAULT '',
+  minutes INT DEFAULT 0,
+  wpm INT DEFAULT 0,
+  accuracy INT DEFAULT 0,
+  cards INT DEFAULT 0,
+  at VARCHAR(32) DEFAULT '',
+  day VARCHAR(10) DEFAULT '',
+  KEY idx_ss_member (memberId, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (159) ON DUPLICATE KEY UPDATE version = version;
+
+-- 160: one lead per programme (leadVolunteerId = NGG centre lead).
+-- NULL until set; the backfill is NGG_MYSQL_ROW_FIXUPS 'centres.summerLead' (db.php).
+ALTER TABLE centres ADD COLUMN summerLeadVolunteerId VARCHAR(64) NULL;
+INSERT INTO schema_version (version) VALUES (160) ON DUPLICATE KEY UPDATE version = version;
+
+-- 161: Club portal v3 — announcements with approval, check-in follow-up, fine rules, shift times.
+CREATE TABLE IF NOT EXISTS club_announcements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  annId VARCHAR(64) NOT NULL,
+  title VARCHAR(200) DEFAULT '',
+  body TEXT,
+  aud VARCHAR(16) DEFAULT 'guardians',
+  centre VARCHAR(120) DEFAULT 'all',
+  channels VARCHAR(64) DEFAULT '["app"]',
+  status VARCHAR(16) DEFAULT 'draft',
+  sendAt VARCHAR(32) DEFAULT '',
+  byId VARCHAR(64) DEFAULT '',
+  byName VARCHAR(160) DEFAULT '',
+  approvedById VARCHAR(64) DEFAULT '',
+  approvedByName VARCHAR(160) DEFAULT '',
+  note TEXT,
+  sentAt VARCHAR(32) DEFAULT '',
+  stats TEXT,
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cann_id (annId),
+  KEY idx_cann_status (status, sendAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS club_checkin_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  checkinKey VARCHAR(120) NOT NULL,
+  toldAt VARCHAR(32) DEFAULT '',
+  toldBy VARCHAR(64) DEFAULT '',
+  seenAt VARCHAR(32) DEFAULT '',
+  seenBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_ccs_key (checkinKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS conduct_rules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ruleId VARCHAR(64) NOT NULL,
+  reason VARCHAR(32) DEFAULT '',
+  name VARCHAR(160) DEFAULT '',
+  whenText VARCHAR(200) DEFAULT '',
+  amount INT DEFAULT 0,
+  capTerm INT DEFAULT 0,
+  active INT DEFAULT 1,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_crule_id (ruleId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE attendance_duty ADD COLUMN startTime VARCHAR(5) DEFAULT '';
+ALTER TABLE attendance_duty ADD COLUMN endTime VARCHAR(5) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (161) ON DUPLICATE KEY UPDATE version = version;
+
+-- 162: Community v3 — answers, homework posts, video meta and progress, code posts, review timing, safeguarding severity/lead.
+ALTER TABLE community_posts ADD COLUMN answerId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN homeworkId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN mediaMeta MEDIUMTEXT;
+ALTER TABLE community_posts ADD COLUMN mediaCode MEDIUMTEXT;
+ALTER TABLE community_posts ADD COLUMN reviewedAt VARCHAR(32) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN reviewedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE community_comments ADD COLUMN reviewedAt VARCHAR(32) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN severity VARCHAR(10) DEFAULT 'high';
+ALTER TABLE community_safeguarding ADD COLUMN leadId VARCHAR(64) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN leadName VARCHAR(160) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN postId VARCHAR(40) DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN source VARCHAR(20) DEFAULT 'screen';
+ALTER TABLE community_safeguarding ADD COLUMN note TEXT;
+CREATE TABLE IF NOT EXISTS community_video_progress (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  postId VARCHAR(40) NOT NULL,
+  pos INT DEFAULT 0,
+  dur INT DEFAULT 0,
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cvp_member_post (memberId, postId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (162) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS guardian_notices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  noticeId VARCHAR(40) NOT NULL UNIQUE,
+  guardianId VARCHAR(64) NOT NULL,
+  kind VARCHAR(30) DEFAULT 'announcement',
+  refId VARCHAR(64) DEFAULT '',
+  title VARCHAR(255) DEFAULT '',
+  body TEXT,
+  fromName VARCHAR(160) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  readAt VARCHAR(32) DEFAULT '',
+  KEY idx_gnotice_guardian (guardianId, createdAt),
+  UNIQUE KEY idx_gnotice_ref (guardianId, kind, refId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE club_announcements ADD COLUMN smsBody TEXT;
+INSERT INTO schema_version (version) VALUES (163) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS academy_passes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  track VARCHAR(20) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  moduleId VARCHAR(20) NOT NULL,
+  score INT DEFAULT 0,
+  passedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_acpass (track, personId, moduleId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS academy_attempts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  track VARCHAR(20) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  moduleId VARCHAR(20) NOT NULL,
+  score INT DEFAULT 0,
+  passed TINYINT DEFAULT 0,
+  at VARCHAR(32) DEFAULT '',
+  KEY idx_acatt (track, personId, moduleId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (164) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE mentors ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+ALTER TABLE members ADD COLUMN honorific VARCHAR(20) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (165) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS projects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  projectId VARCHAR(32) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  detail TEXT,
+  startOn VARCHAR(10) DEFAULT '',
+  dueOn VARCHAR(10) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  createdBy VARCHAR(64) DEFAULT '',
+  createdByName VARCHAR(200) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_projects_id (projectId),
+  KEY idx_projects_by (createdBy, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS project_people (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  projectId VARCHAR(32) NOT NULL,
+  kind VARCHAR(10) NOT NULL,
+  personId VARCHAR(64) NOT NULL,
+  groupName VARCHAR(60) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'assigned',
+  note TEXT,
+  doneAt VARCHAR(32) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY uq_project_person (projectId, kind, personId),
+  KEY idx_project_people_who (kind, personId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (166) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS ai_usage (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  at VARCHAR(32) NOT NULL,
+  month VARCHAR(7) NOT NULL,
+  profile VARCHAR(40) DEFAULT '',
+  job VARCHAR(10) DEFAULT '',
+  provider VARCHAR(20) DEFAULT '',
+  model VARCHAR(120) DEFAULT '',
+  tier VARCHAR(6) DEFAULT '',
+  inTokens INT DEFAULT 0,
+  outTokens INT DEFAULT 0,
+  costMicros BIGINT DEFAULT 0,
+  estimated TINYINT DEFAULT 0,
+  ok TINYINT DEFAULT 1,
+  error VARCHAR(60) DEFAULT '',
+  KEY idx_ai_usage_month (month, tier)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (167) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE members ADD COLUMN feesSettledThrough VARCHAR(10) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (168) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE member_requests ADD COLUMN topic VARCHAR(12) DEFAULT '';
+ALTER TABLE member_requests ADD COLUMN centre VARCHAR(120) DEFAULT '';
+ALTER TABLE member_requests ADD COLUMN passedAt VARCHAR(32) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (169) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE member_requests ADD COLUMN rating TINYINT DEFAULT 0;
+INSERT INTO schema_version (version) VALUES (170) ON DUPLICATE KEY UPDATE version = version;
+ALTER TABLE mentor_messages ADD COLUMN mediaJson TEXT;
+INSERT INTO schema_version (version) VALUES (171) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS mentor_supports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(40) NOT NULL,
+  mentorId VARCHAR(40) NOT NULL,
+  focus VARCHAR(60) DEFAULT '',
+  endsOn VARCHAR(10) DEFAULT '',
+  status VARCHAR(12) DEFAULT 'active',
+  startedAt VARCHAR(32) DEFAULT '',
+  endedAt VARCHAR(32) DEFAULT '',
+  createdBy VARCHAR(40) DEFAULT '',
+  KEY idx_mentor_supports_member (memberId, status),
+  KEY idx_mentor_supports_mentor (mentorId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (172) ON DUPLICATE KEY UPDATE version = version;
+CREATE TABLE IF NOT EXISTS id_photo_campaigns (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  campaignId VARCHAR(40) NOT NULL,
+  askedBy VARCHAR(40) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL,
+  total INT NOT NULL DEFAULT 0,
+  status VARCHAR(12) NOT NULL DEFAULT 'sending',
+  summaryAt VARCHAR(32) NOT NULL DEFAULT '',
+  remindedAt VARCHAR(32) NOT NULL DEFAULT '',
+  remindedBy VARCHAR(40) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_id_photo_campaigns (campaignId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE id_photo_asks ADD COLUMN campaignId VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE id_photo_asks ADD COLUMN status VARCHAR(12) NOT NULL DEFAULT 'sent';
+ALTER TABLE id_photo_asks ADD COLUMN sentAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE id_photo_asks ADD COLUMN reminders INT NOT NULL DEFAULT 0;
+ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_campaign (campaignId, status);
+ALTER TABLE id_photo_asks ADD KEY idx_id_photo_asks_status (status);
+INSERT INTO schema_version (version) VALUES (173) ON DUPLICATE KEY UPDATE version = version;
+
+-- 174: a member's chosen courses; photo changes as requests
+ALTER TABLE members ADD COLUMN courses TEXT NULL;
+CREATE TABLE IF NOT EXISTS photo_change_requests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  requestId VARCHAR(40) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  photoUrl TEXT NOT NULL,
+  oldPhotoUrl TEXT NULL,
+  reason VARCHAR(400) NOT NULL DEFAULT '',
+  via VARCHAR(16) NOT NULL DEFAULT '',
+  requestedBy VARCHAR(64) NOT NULL DEFAULT '',
+  requestedAt VARCHAR(32) NOT NULL,
+  status VARCHAR(12) NOT NULL DEFAULT 'pending',
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note VARCHAR(400) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_pcr_request (requestId),
+  KEY idx_pcr_subject (subjectType, subjectId, status),
+  KEY idx_pcr_status (status, requestedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (174) ON DUPLICATE KEY UPDATE version = version;
+
+-- 175: a reply quotes the reply it answers; reactions on replies
+ALTER TABLE community_comments ADD COLUMN replyTo VARCHAR(40) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS community_comment_reactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  commentId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  emoji VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(32) NOT NULL,
+  UNIQUE KEY uq_ccr (commentId, memberId),
+  KEY idx_ccr_comment (commentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (175) ON DUPLICATE KEY UPDATE version = version;
+
+-- 176: time on the portal (heartbeat while visible and in use)
+CREATE TABLE IF NOT EXISTS portal_time (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  day VARCHAR(10) NOT NULL,
+  portal VARCHAR(24) NOT NULL,
+  seconds INT NOT NULL DEFAULT 0,
+  beats INT NOT NULL DEFAULT 0,
+  firstAt VARCHAR(32) NOT NULL,
+  lastAt VARCHAR(32) NOT NULL,
+  UNIQUE KEY uq_pt (memberId, day, portal),
+  KEY idx_pt_day (day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (176) ON DUPLICATE KEY UPDATE version = version;
+
+-- 177: an instructor cleared of the online Academy by hand
+ALTER TABLE volunteers ADD COLUMN academyClearedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN academyClearedBy VARCHAR(64) NOT NULL DEFAULT '';
+INSERT INTO schema_version (version) VALUES (177) ON DUPLICATE KEY UPDATE version = version;
+
+-- Migration 178: phase 1 of the centre-key migration — a centreId beside the
+-- centre NAME in every table that carries one. Columns only; no reads change.
+
+ALTER TABLE activities ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_activities_centreid ON activities(centreId);
+ALTER TABLE arcade_scores ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_arcade_scores_centreid ON arcade_scores(centreId);
+ALTER TABLE attendance_duty ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_attendance_duty_centreid ON attendance_duty(centreId);
+ALTER TABLE awards ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_awards_centreid ON awards(centreId);
+ALTER TABLE club_announcements ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_club_announcements_centreid ON club_announcements(centreId);
+ALTER TABLE community_homework_state ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_community_homework_state_centreid ON community_homework_state(centreId);
+ALTER TABLE community_safeguarding ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_community_safeguarding_centreid ON community_safeguarding(centreId);
+ALTER TABLE courage_marks ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_courage_marks_centreid ON courage_marks(centreId);
+ALTER TABLE course_sessions ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_course_sessions_centreid ON course_sessions(centreId);
+ALTER TABLE engagement_snapshots ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_engagement_snapshots_centreid ON engagement_snapshots(centreId);
+ALTER TABLE insight_threads ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_insight_threads_centreid ON insight_threads(centreId);
+ALTER TABLE match_games ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_match_games_centreid ON match_games(centreId);
+ALTER TABLE member_requests ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_member_requests_centreid ON member_requests(centreId);
+ALTER TABLE member_stars ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_member_stars_centreid ON member_stars(centreId);
+ALTER TABLE members ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_members_centreid ON members(centreId);
+ALTER TABLE mentor_goals ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_goals_centreid ON mentor_goals(centreId);
+ALTER TABLE mentor_interventions ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_interventions_centreid ON mentor_interventions(centreId);
+ALTER TABLE mentor_matches ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_matches_centreid ON mentor_matches(centreId);
+ALTER TABLE mentor_meetings ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_meetings_centreid ON mentor_meetings(centreId);
+ALTER TABLE mentor_nudges ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_nudges_centreid ON mentor_nudges(centreId);
+ALTER TABLE mentor_reviews ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_reviews_centreid ON mentor_reviews(centreId);
+ALTER TABLE mentor_scorecards ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_scorecards_centreid ON mentor_scorecards(centreId);
+ALTER TABLE mentor_tasks ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_tasks_centreid ON mentor_tasks(centreId);
+ALTER TABLE photo_change_requests ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_photo_change_requests_centreid ON photo_change_requests(centreId);
+ALTER TABLE projects ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_projects_centreid ON projects(centreId);
+ALTER TABLE safeguarding_cases ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_safeguarding_cases_centreid ON safeguarding_cases(centreId);
+ALTER TABLE skill_marks ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_skill_marks_centreid ON skill_marks(centreId);
+ALTER TABLE student_remarks ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_student_remarks_centreid ON student_remarks(centreId);
+ALTER TABLE tournament_entrants ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_tournament_entrants_centreid ON tournament_entrants(centreId);
+ALTER TABLE tournament_invites ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_tournament_invites_centreid ON tournament_invites(centreId);
+ALTER TABLE tournament_pairings ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_tournament_pairings_centreid ON tournament_pairings(centreId);
+ALTER TABLE volunteers ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_volunteers_centreid ON volunteers(centreId);
+ALTER TABLE applications ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_applications_centreid ON applications(centreId);
+ALTER TABLE assignments ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_assignments_centreid ON assignments(centreId);
+ALTER TABLE club_class_sessions ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_club_class_sessions_centreid ON club_class_sessions(centreId);
+ALTER TABLE events ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_events_centreid ON events(centreId);
+ALTER TABLE mentor_record_cover ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentor_record_cover_centreid ON mentor_record_cover(centreId);
+ALTER TABLE mentors ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_mentors_centreid ON mentors(centreId);
+ALTER TABLE summer_students ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_summer_students_centreid ON summer_students(centreId);
+ALTER TABLE v3_scores ADD COLUMN centreId VARCHAR(48) NOT NULL DEFAULT '';
+CREATE INDEX idx_v3_scores_centreid ON v3_scores(centreId);
+-- Two width changes that ADD COLUMN can never make.
+--
+-- The mirror repeats `ALTER TABLE … ADD COLUMN` on purpose so it can be
+-- replayed over an existing schema, and db_apply_mysql_schema() swallows the
+-- resulting "Duplicate column name" errors (docs/SETUP.md). That works for
+-- ADDING a column. It does NOT work for changing one: the ADD errors, the
+-- error is swallowed, and the column keeps the type its CREATE TABLE gave it.
+--
+-- So `ALTER TABLE volunteers ADD COLUMN memberId VARCHAR(64)` has never once
+-- taken effect — volunteers.memberId is VARCHAR(40) on every MySQL deployment
+-- there has ever been, while members.memberId is VARCHAR(64). Two widths for
+-- one key, which is also why no foreign key can be declared between them.
+--
+-- MODIFY is the statement for a type change, and it is idempotent: re-running
+-- it against a column that is already VARCHAR(64) is a no-op, not an error.
+ALTER TABLE volunteers MODIFY COLUMN memberId VARCHAR(64) DEFAULT '';
+ALTER TABLE members MODIFY COLUMN ngvVolunteerId VARCHAR(64) DEFAULT '';
+
+-- 179: a 'watch' question carries the video it is about, so the learner
+-- watches it inside the exam instead of being sent off to find it.
+ALTER TABLE curriculum_checks ADD COLUMN videoUrl TEXT;
+
+-- 180: what a member says about a session, asked at the end of every one.
+-- Private until a person decides otherwise (domain/testimonials.php).
+CREATE TABLE IF NOT EXISTS testimonials (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tid VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  body TEXT,
+  showAs VARCHAR(16) NOT NULL DEFAULT 'initials',
+  status VARCHAR(16) NOT NULL DEFAULT 'new',
+  decidedBy VARCHAR(64) NOT NULL DEFAULT '',
+  decidedAt VARCHAR(32) NOT NULL DEFAULT '',
+  note TEXT,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_testi_status (status, createdAt),
+  KEY idx_testi_member (memberId, unitId),
+  KEY idx_testi_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (180) ON DUPLICATE KEY UPDATE version = version;
+
+-- 181: Family Portal v3 — inbox categories and signatures, family RSVPs,
+-- mentor meeting slots, and the centre's list of who may collect a child.
+ALTER TABLE guardian_notices ADD COLUMN cat VARCHAR(16) NOT NULL DEFAULT 'centre';
+ALTER TABLE guardian_notices ADD COLUMN memberId VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE guardian_notices ADD COLUMN sign TINYINT NOT NULL DEFAULT 0;
+ALTER TABLE guardian_notices ADD COLUMN signedAt VARCHAR(32) NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN familiesExpected TINYINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS guardian_rsvps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guardianId VARCHAR(64) NOT NULL, eventId VARCHAR(64) NOT NULL, answer VARCHAR(8) NOT NULL DEFAULT 'yes',
+  reminded TINYINT NOT NULL DEFAULT 0, updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_grsvp_one (guardianId, eventId)
+);
+CREATE TABLE IF NOT EXISTS mentor_slots (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  slotId VARCHAR(48) NOT NULL UNIQUE, mentorId VARCHAR(64) NOT NULL, startAt VARCHAR(32) NOT NULL, mode VARCHAR(16) NOT NULL DEFAULT 'centre',
+  bookedBy VARCHAR(64) NOT NULL DEFAULT '', memberId VARCHAR(64) NOT NULL DEFAULT '', bookedAt VARCHAR(32) NOT NULL DEFAULT '',
+  reminded TINYINT NOT NULL DEFAULT 0, createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mslot_mentor (mentorId, startAt), KEY idx_mslot_member (memberId, startAt)
+);
+CREATE TABLE IF NOT EXISTS member_collectors (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, name VARCHAR(160) NOT NULL, relation VARCHAR(60) NOT NULL DEFAULT '', phone VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_mcoll_member (memberId)
+);
+
+INSERT INTO schema_version (version) VALUES (181) ON DUPLICATE KEY UPDATE version = version;
+
+-- 182: Summer School Portal v3 — deferred bulk actions (the undo window),
+-- each staff member's recent children, the promoted member's Summer link,
+-- incidents and guardian messages.
+CREATE TABLE IF NOT EXISTS pending_actions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  pendingId VARCHAR(48) NOT NULL UNIQUE, op VARCHAR(80) NOT NULL, args MEDIUMTEXT,
+  requesterId VARCHAR(64) NOT NULL, label VARCHAR(160) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending', commitAt VARCHAR(32) NOT NULL,
+  result MEDIUMTEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '', doneAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_pend_due (status, commitAt)
+);
+CREATE TABLE IF NOT EXISTS summer_recent (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  staffId VARCHAR(64) NOT NULL, studentId VARCHAR(64) NOT NULL, at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_srecent_one (staffId, studentId)
+);
+ALTER TABLE members ADD COLUMN fromSummerId VARCHAR(64) NOT NULL DEFAULT '';
+CREATE INDEX idx_members_fromsummer ON members(fromSummerId);
+CREATE TABLE IF NOT EXISTS summer_incidents (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  incidentId VARCHAR(48) NOT NULL UNIQUE, cohortId VARCHAR(48) NOT NULL DEFAULT '', studentId VARCHAR(64) NOT NULL DEFAULT '',
+  childName VARCHAR(255) NOT NULL DEFAULT '', centre VARCHAR(120) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '', kind VARCHAR(32) NOT NULL DEFAULT '',
+  severity VARCHAR(16) NOT NULL DEFAULT 'low', note TEXT,
+  byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open', toldAt VARCHAR(32) NOT NULL DEFAULT '', toldBy VARCHAR(64) NOT NULL DEFAULT '',
+  closedAt VARCHAR(32) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_sinc_edition (cohortId, status)
+);
+CREATE TABLE IF NOT EXISTS summer_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  messageId VARCHAR(48) NOT NULL UNIQUE, cohortId VARCHAR(48) NOT NULL DEFAULT '', template VARCHAR(32) NOT NULL DEFAULT '',
+  title VARCHAR(160) NOT NULL DEFAULT '', body TEXT, audience VARCHAR(32) NOT NULL DEFAULT '',
+  channel VARCHAR(16) NOT NULL DEFAULT 'email', recipients INT NOT NULL DEFAULT 0,
+  delivered INT NOT NULL DEFAULT 0, failed INT NOT NULL DEFAULT 0,
+  byId VARCHAR(64) NOT NULL DEFAULT '', byName VARCHAR(160) NOT NULL DEFAULT '', createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_smsg_edition (cohortId, createdAt)
+);
+
+INSERT INTO schema_version (version) VALUES (182) ON DUPLICATE KEY UPDATE version = version;
+
+-- 183: one email, several member accounts — the accounts a verified challenge may open.
+ALTER TABLE auth_sessions ADD COLUMN pickIds TEXT;
+INSERT INTO schema_version (version) VALUES (183) ON DUPLICATE KEY UPDATE version = version;
+
+-- 184: notifications a person can act on — per-person read/dismiss state,
+-- one live item per running thing (groupKey), and a named action.
+CREATE TABLE IF NOT EXISTS notification_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, notifId VARCHAR(64) NOT NULL,
+  readAt VARCHAR(32) NOT NULL DEFAULT '', dismissedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY idx_nstate_one (memberId, notifId)
+);
+ALTER TABLE notifications ADD COLUMN groupKey VARCHAR(96) NOT NULL DEFAULT '';
+ALTER TABLE notifications ADD COLUMN actionLabel VARCHAR(60) NOT NULL DEFAULT '';
+CREATE INDEX idx_notif_group ON notifications(memberId, groupKey);
+
+INSERT INTO schema_version (version) VALUES (184) ON DUPLICATE KEY UPDATE version = version;
+
+-- 185: support cases — one problem a person brought, by priority and category,
+-- with its thread of messages (domain/support.php).
+CREATE TABLE IF NOT EXISTS support_cases (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo INT NOT NULL UNIQUE,
+  status VARCHAR(16) NOT NULL DEFAULT 'new', priority VARCHAR(4) NOT NULL DEFAULT 'P3',
+  category VARCHAR(32) NOT NULL DEFAULT 'other', subcategory VARCHAR(80) NOT NULL DEFAULT '',
+  subject VARCHAR(200) NOT NULL DEFAULT '',
+  requesterKind VARCHAR(16) NOT NULL DEFAULT 'visitor', requesterId VARCHAR(64) NOT NULL DEFAULT '',
+  name VARCHAR(160) NOT NULL DEFAULT '', email VARCHAR(190) NOT NULL DEFAULT '', phone VARCHAR(40) NOT NULL DEFAULT '',
+  memberId VARCHAR(64) NOT NULL DEFAULT '', centre VARCHAR(120) NOT NULL DEFAULT '', centreId VARCHAR(48) NOT NULL DEFAULT '',
+  assigneeId VARCHAR(64) NOT NULL DEFAULT '', source VARCHAR(16) NOT NULL DEFAULT 'web',
+  pageUrl VARCHAR(500) NOT NULL DEFAULT '', userAgent VARCHAR(300) NOT NULL DEFAULT '',
+  ipHash VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '', updatedAt VARCHAR(32) NOT NULL DEFAULT '', lastActivityAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastReplyBy VARCHAR(16) NOT NULL DEFAULT 'requester', respondBy VARCHAR(32) NOT NULL DEFAULT '',
+  firstResponseAt VARCHAR(32) NOT NULL DEFAULT '', solvedAt VARCHAR(32) NOT NULL DEFAULT '', closedAt VARCHAR(32) NOT NULL DEFAULT '',
+  rating INT NOT NULL DEFAULT 0, ratingNote VARCHAR(600) NOT NULL DEFAULT '', followUpOf INT NOT NULL DEFAULT 0,
+  KEY idx_scase_status (status, respondBy), KEY idx_scase_requester (requesterKind, requesterId), KEY idx_scase_assignee (assigneeId, status)
+);
+CREATE TABLE IF NOT EXISTS support_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo INT NOT NULL, authorKind VARCHAR(16) NOT NULL DEFAULT 'requester', authorId VARCHAR(64) NOT NULL DEFAULT '',
+  authorName VARCHAR(160) NOT NULL DEFAULT '', body TEXT, internal TINYINT NOT NULL DEFAULT 0,
+  files TEXT, createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_smsgs_case (caseNo, id)
+);
+
+INSERT INTO schema_version (version) VALUES (185) ON DUPLICATE KEY UPDATE version = version;
+
+-- 186 (was 181 on the community-audit branch): two questions, two rhythms. "How did today go?" after every LESSON —
+-- a tap, for the person teaching, never published. "What did this term give
+-- you?" after every SESSION, the twelve-week block — and that is the
+-- testimonial. testimonials.unitId stays, unread, so a deployment that
+-- already ran 180 keeps resolving.
+ALTER TABLE testimonials ADD COLUMN sessionId VARCHAR(40) NOT NULL DEFAULT '';
+CREATE INDEX idx_testi_session ON testimonials(memberId, sessionId);
+
+CREATE TABLE IF NOT EXISTS lesson_feedback (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  fid VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  unitId VARCHAR(40) NOT NULL DEFAULT '',
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  centre VARCHAR(120) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  `signal` VARCHAR(16) NOT NULL DEFAULT '',
+  body TEXT,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_lfb_one (memberId, unitId),
+  KEY idx_lfb_unit (unitId, `signal`),
+  KEY idx_lfb_centreid (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (186) ON DUPLICATE KEY UPDATE version = version;
+
+-- 187 (was 182 on the community-audit branch): studying for school in the Learn app (domain/study-drill.php). The
+-- growth plan already said WHAT to work on; a drill is one of its sessions,
+-- actually done — marked with reasons, ticking the week's check-in, and
+-- turning what was got wrong into spaced-repetition cards.
+CREATE TABLE IF NOT EXISTS study_drills (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  drillId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL DEFAULT '',
+  itemId VARCHAR(40) NOT NULL DEFAULT '',
+  subject VARCHAR(120) NOT NULL DEFAULT '',
+  topic VARCHAR(190) NOT NULL DEFAULT '',
+  level INT NOT NULL DEFAULT 2,
+  source VARCHAR(16) NOT NULL DEFAULT '',
+  asked INT NOT NULL DEFAULT 0,
+  correct INT NOT NULL DEFAULT 0,
+  questionsJson MEDIUMTEXT,
+  answersJson MEDIUMTEXT,
+  startedAt VARCHAR(32) NOT NULL DEFAULT '',
+  markedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_drill_member (memberId, subject, startedAt),
+  KEY idx_drill_marked (memberId, markedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (187) ON DUPLICATE KEY UPDATE version = version;
+
+-- 188: the Learn app's note, save and last-opened per member per lesson (domain/learn.php).
+CREATE TABLE IF NOT EXISTS learn_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  unitId VARCHAR(40) NOT NULL,
+  note MEDIUMTEXT,
+  noteAt VARCHAR(32) NOT NULL DEFAULT '',
+  saved TINYINT NOT NULL DEFAULT 0,
+  savedAt VARCHAR(32) NOT NULL DEFAULT '',
+  openedAt VARCHAR(32) NOT NULL DEFAULT '',
+  opens INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_learn_state (memberId, unitId),
+  KEY idx_learn_state_opened (memberId, openedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (188) ON DUPLICATE KEY UPDATE version = version;
+
+-- 189: Wi-Fi accounts and the centres' gateways (any platform) (domain/wifi.php). Access is
+-- derived (wifi_access_for), never stored; the PIN is sealed, not hashed,
+-- because the router must be handed it.
+CREATE TABLE IF NOT EXISTS wifi_accounts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  username VARCHAR(64) NOT NULL,
+  pinSealed VARCHAR(255) NOT NULL DEFAULT '',
+  pinSetAt VARCHAR(32) NOT NULL DEFAULT '',
+  pinResetDay VARCHAR(10) NOT NULL DEFAULT '',
+  pinResets INT NOT NULL DEFAULT 0,
+  override VARCHAR(16) NOT NULL DEFAULT '',
+  overrideWhy VARCHAR(255) NOT NULL DEFAULT '',
+  overrideBy VARCHAR(64) NOT NULL DEFAULT '',
+  overrideAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_subject (subjectType, subjectId),
+  UNIQUE KEY uq_wifi_username (username)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS wifi_gateways (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  platform VARCHAR(16) NOT NULL DEFAULT 'mikrotik',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  label VARCHAR(120) NOT NULL DEFAULT '',
+  keyHash VARCHAR(64) NOT NULL DEFAULT '',
+  keyTail VARCHAR(8) NOT NULL DEFAULT '',
+  keySetAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastSeenAt VARCHAR(32) NOT NULL DEFAULT '',
+  lastFullAt VARCHAR(32) NOT NULL DEFAULT '',
+  osVersion VARCHAR(64) NOT NULL DEFAULT '',
+  lastError VARCHAR(255) NOT NULL DEFAULT '',
+  lastVersion INT NOT NULL DEFAULT 0,
+  lastChangeAt VARCHAR(32) NOT NULL DEFAULT '',
+  ackedJson MEDIUMTEXT,
+  pendingJson MEDIUMTEXT,
+  pendingVersion INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_gateway (gatewayId),
+  KEY idx_wifi_gateways_centre (centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (189) ON DUPLICATE KEY UPDATE version = version;
+
+-- 190: Wi-Fi diagnosis: what gateways report (hourly summaries, never browsing),
+-- and speed tests from a gateway or a staff device at a centre.
+ALTER TABLE wifi_gateways ADD COLUMN testAsked INT NOT NULL DEFAULT 0;
+ALTER TABLE wifi_gateways ADD COLUMN lastStatsJson TEXT;
+CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  hour VARCHAR(13) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  activeMax INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  memFreeMin INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_stats (gatewayId, hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_speed_tests (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  gatewayId VARCHAR(40) NOT NULL DEFAULT '',
+  source VARCHAR(16) NOT NULL DEFAULT 'device',
+  downMbps DOUBLE NOT NULL DEFAULT 0,
+  upMbps DOUBLE NOT NULL DEFAULT 0,
+  rttMs INT NOT NULL DEFAULT 0,
+  byId VARCHAR(64) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_wifi_speed_centre (centre, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (190) ON DUPLICATE KEY UPDATE version = version;
+
+-- 191: Wi-Fi regions (a Wi-Fi grouping of centres, not a change to centres),
+-- their leads, speed/hours overrides per region or centre, and daily rollups.
+CREATE TABLE IF NOT EXISTS wifi_regions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  name VARCHAR(120) NOT NULL DEFAULT '',
+  code VARCHAR(16) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  removedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_centres (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  centre VARCHAR(191) NOT NULL,
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  regionId VARCHAR(40) NOT NULL,
+  assignedAt VARCHAR(32) NOT NULL DEFAULT '',
+  assignedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_rc_centre (centre),
+  KEY idx_wifi_rc_region (regionId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_region_leads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  addedAt VARCHAR(32) NOT NULL DEFAULT '',
+  addedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_lead (regionId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  regionId VARCHAR(40) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  profilesJson TEXT,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedBy VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_override (regionId, centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_gateway_daily (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  date VARCHAR(10) NOT NULL,
+  samples INT NOT NULL DEFAULT 0,
+  hoursUp INT NOT NULL DEFAULT 0,
+  activePeak INT NOT NULL DEFAULT 0,
+  activeSum INT NOT NULL DEFAULT 0,
+  activeSamples INT NOT NULL DEFAULT 0,
+  cpuMax INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_daily (gatewayId, date),
+  KEY idx_wifi_daily_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_wifi_stats_hour ON wifi_gateway_stats (hour);
+ALTER TABLE wifi_gateway_stats ADD COLUMN activeSamples INT NOT NULL DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (191) ON DUPLICATE KEY UPDATE version = version;
+
+-- 192: Wi-Fi silence alerts and the feed's measured cost.
+ALTER TABLE wifi_gateways ADD COLUMN silentAlertAt VARCHAR(32) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS wifi_feed_load (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  hour VARCHAR(13) NOT NULL,
+  fetches INT NOT NULL DEFAULT 0,
+  failed INT NOT NULL DEFAULT 0,
+  msTotal BIGINT NOT NULL DEFAULT 0,
+  msMax INT NOT NULL DEFAULT 0,
+  bytesTotal BIGINT NOT NULL DEFAULT 0,
+  memMaxKb INT NOT NULL DEFAULT 0,
+  b25 INT NOT NULL DEFAULT 0,
+  b50 INT NOT NULL DEFAULT 0,
+  b100 INT NOT NULL DEFAULT 0,
+  b250 INT NOT NULL DEFAULT 0,
+  b500 INT NOT NULL DEFAULT 0,
+  bOver INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_wifi_feed_load_hour (hour)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (192) ON DUPLICATE KEY UPDATE version = version;
+
+-- 193: Anchor Circle joins the family account and the mentor portal.
+-- (the old circle_links are marked 'moved' by NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php)
+
+INSERT INTO schema_version (version) VALUES (193) ON DUPLICATE KEY UPDATE version = version;
+
+-- 194: Wi-Fi data used per person, and each gateway's sessions.
+CREATE TABLE IF NOT EXISTS wifi_usage_daily (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  date VARCHAR(10) NOT NULL,
+  bytesDown BIGINT NOT NULL DEFAULT 0,
+  bytesUp BIGINT NOT NULL DEFAULT 0,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_usage (subjectType, subjectId, date, centre),
+  KEY idx_wifi_usage_centre (centre, date),
+  KEY idx_wifi_usage_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_usage_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  sessionKey VARCHAR(96) NOT NULL,
+  username VARCHAR(64) NOT NULL DEFAULT '',
+  bytesIn BIGINT NOT NULL DEFAULT 0,
+  bytesOut BIGINT NOT NULL DEFAULT 0,
+  seenAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_usess (gatewayId, sessionKey),
+  KEY idx_wifi_usess_seen (seenAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE wifi_gateways ADD COLUMN usageAt VARCHAR(32) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (194) ON DUPLICATE KEY UPDATE version = version;
+
+-- 195: a router that now runs from CACENTRE (domain/wifi-cacentre.php).
+ALTER TABLE wifi_gateways ADD COLUMN movedAt VARCHAR(32) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (195) ON DUPLICATE KEY UPDATE version = version;

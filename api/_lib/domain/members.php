@@ -7,7 +7,19 @@ function member_dashboard(array $p): array {
     if (function_exists('anchor_ensure_seed')) anchor_ensure_seed();
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-    if (!$member) return ['ok' => false, 'error' => 'not_found'];
+    if (!$member) {
+        /* A volunteer (instructor, mentor, centre ops) signed in with their ID
+           card has no member record. That was "not_found", shown as "off-line /
+           something went wrong". It is not an error: say who they are and send
+           them to their own portals. */
+        $v = db_row("SELECT volunteerId, fullName, role, centre, status, token, safeguarding, courses FROM volunteers WHERE volunteerId = ? LIMIT 1", [$memberId]);
+        if (!$v) return ['ok' => false, 'error' => 'not_found'];
+        $isMentor = (bool)db_row("SELECT mentorId FROM mentors WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$memberId]);
+        return ['ok' => true, 'volunteer' => ['volunteerId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName'], 'role' => (string)$v['role'],
+            'centre' => (string)$v['centre'], 'status' => (string)$v['status'], 'cleared' => (string)($v['safeguarding'] ?? '') === 'cleared',
+            'courses' => array_values(array_filter(array_map('strval', json_decode((string)($v['courses'] ?? ''), true) ?: []))),
+            'isMentor' => $isMentor, 'idPath' => (string)$v['token'] !== '' ? '/q/' . (string)$v['token'] : '']];
+    }
 
     $stats = db_row('SELECT * FROM member_stats WHERE memberId = ? LIMIT 1', [$memberId]) ?: [];
     $sc = session_current();
@@ -59,13 +71,19 @@ function member_dashboard(array $p): array {
     $notes = db_all("SELECT * FROM notifications WHERE (memberId = ? OR $bc) AND (readAt = '' OR readAt IS NULL) ORDER BY createdAt DESC LIMIT 8", array_merge([$memberId], $bcp));
     $notes = array_map('public_notification', $notes);
 
-    // Assigned mentor for the current session.
+    /* The member's mentor: the active pairing, this session's first. Reading
+       only this session's pairing told every child paired by a match, or in an
+       earlier term, that they had no mentor — the Anchor Journal hid its
+       "share with my mentor" from them because of it. */
     $mentor = null;
-    if ($session) {
-        $link = db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND sessionId = ? AND status='active' LIMIT 1", [$memberId, $sessionId]);
-        if ($link) {
-            $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$link['mentorId']]);
-            if ($m) $mentor = public_mentor($m);
+    $link = ($session ? db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND sessionId = ? AND status='active' ORDER BY id DESC LIMIT 1", [$memberId, $sessionId]) : null)
+        ?: db_row("SELECT * FROM mentor_assignments WHERE memberId = ? AND status='active' ORDER BY id DESC LIMIT 1", [$memberId]);
+    if ($link) {
+        $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$link['mentorId']]);
+        if ($m) {
+            $mentor = public_mentor($m);
+            // How a child addresses them ("Coach Eke"), never a bare first name.
+            if (function_exists('staff_public_name')) $mentor['displayName'] = staff_public_name((string)$m['mentorId'], (string)($mentor['fullName'] ?? ''));
         }
     }
 
@@ -111,6 +129,7 @@ function member_dashboard(array $p): array {
         // Assignments surfaced inline so the dashboard card renders without a
         // second round-trip.
         'assignments' => assignment_list_for_member(['memberId' => $memberId])['assignments'] ?? [],
+        'assignmentFilesMax' => defined('ASG_FILES_MAX') ? ASG_FILES_MAX : 5,
     ];
 }
 
@@ -167,7 +186,7 @@ function member_update(array $p): array {
      * programme's record — checked with the family and changed by the desk
      * through a "Correct my details" request — so a write of any of those is
      * refused, not silently dropped. */
-    $allowed = ['bio', 'photoUrl', 'socials'];
+    $allowed = ['bio', 'socials'];
     $managed = array_values(array_intersect(['phone', 'parentEmail', 'parentPhone', 'school', 'fullName', 'dob', 'centre', 'track', 'email'], array_keys($p)));
     if ($managed) return ['ok' => false, 'error' => 'managed_by_ngg', 'fields' => $managed];
     $patch = ['updatedAt' => now_iso()];
@@ -176,16 +195,20 @@ function member_update(array $p): array {
             $patch[$k] = ($k === 'socials' && is_array($p[$k])) ? json_encode($p[$k], JSON_UNESCAPED_SLASHES) : $p[$k];
         }
     }
-    // An inline photo is stored and replaced by its short URL (see admin_members_upsert).
-    if (isset($patch['photoUrl']) && is_string($patch['photoUrl']) && preg_match('#^data:#i', trim($patch['photoUrl']))) {
-        $patch['photoUrl'] = photo_intake_url($patch['photoUrl']);
-        if ($patch['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo'];
+    /* The photo is not theirs to change: it is the face on a printed ID. A
+     * different photo becomes a request the desk approves or declines
+     * (photo_change_request_create); the same photo sent back by a form that
+     * always posts every field is no change at all. */
+    $photoRequest = null;
+    $sent = array_key_exists('photoUrl', $p) ? trim((string)$p['photoUrl']) : '';
+    if ($sent !== '' && photo_store_relativise($sent) !== photo_store_relativise((string)($member['photoUrl'] ?? ''))) {
+        $req = photo_change_request_create(['memberId' => $memberId, 'photoUrl' => $sent, 'reason' => (string)($p['photoReason'] ?? ''), 'ip' => (string)($p['ip'] ?? '')]);
+        if (empty($req['ok'])) return $req;
+        $photoRequest = $req['request'];
     }
-    db_update('members', $patch, ['id' => $member['id']]);
-    // A new photo replaces the old one; it does not sit beside it.
-    if (isset($patch['photoUrl']) && function_exists('photo_supersede')) photo_supersede('member', $memberId, (string)($member['photoUrl'] ?? ''), (string)$patch['photoUrl'], $memberId);
-    audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    if (count($patch) > 1) db_update('members', $patch, ['id' => $member['id']]);
+    audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch), 'photoRequested' => (bool)$photoRequest], (string)($p['ip'] ?? ''));
+    return ['ok' => true] + ($photoRequest ? ['photoRequested' => true, 'photoRequest' => $photoRequest] : []);
 }
 
 /** Public, privacy-safe cohort leaderboard: top active NGG members by XP,
@@ -263,8 +286,38 @@ function member_notifications(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     [$bc, $bcp] = notif_broadcast_clause($member);
-    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 50", array_merge([$memberId], $bcp));
-    return ['ok' => true, 'notifications' => array_map('public_notification', $rows)];
+    $rows = db_all("SELECT * FROM notifications WHERE memberId = ? OR $bc ORDER BY createdAt DESC LIMIT 80", array_merge([$memberId], $bcp));
+    // This person's read and dismissed marks, in one read.
+    $state = [];
+    foreach (db_all('SELECT notifId, readAt, dismissedAt FROM notification_state WHERE memberId = ?', [$memberId]) as $st) $state[(string)$st['notifId']] = $st;
+    $out = [];
+    foreach ($rows as $r) {
+        $st = $state[(string)$r['notifId']] ?? null;
+        if ($st && (string)$st['dismissedAt'] !== '') continue;
+        /* A broadcast's own readAt is ignored: it was written by whoever read
+           it first, back when reading one marked it read for everybody. */
+        $own = (string)$r['memberId'] === '*' ? '' : (string)($r['readAt'] ?? '');
+        $r['readAt'] = $st ? (string)$st['readAt'] : $own;
+        if ($st && (string)$st['readAt'] === '' && $own !== '' && (string)$r['memberId'] !== '*') $r['readAt'] = $own;
+        $out[] = public_notification($r);
+        if (count($out) >= 50) break;
+    }
+    $unread = count(array_filter($out, static fn($n) => $n['readAt'] === ''));
+    return ['ok' => true, 'notifications' => $out, 'unread' => $unread];
+}
+
+/** One person's mark on one notification they can see. */
+function member_notification_mark(string $memberId, string $notifId, array $set): bool {
+    $member = db_row('SELECT centre, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    [$bc, $bcp] = notif_broadcast_clause($member);
+    $row = db_row("SELECT notifId, memberId FROM notifications WHERE notifId = ? AND (memberId = ? OR $bc) LIMIT 1", array_merge([$notifId, $memberId], $bcp));
+    if (!$row) return false;
+    $have = db_row('SELECT id FROM notification_state WHERE memberId = ? AND notifId = ?', [$memberId, $notifId]);
+    if ($have) db_update('notification_state', $set, ['id' => $have['id']]);
+    else db_insert('notification_state', array_merge(['memberId' => $memberId, 'notifId' => $notifId, 'readAt' => '', 'dismissedAt' => ''], $set));
+    // The member's own row keeps its readAt in step, for the readers that predate the state table.
+    if ((string)$row['memberId'] === $memberId && array_key_exists('readAt', $set)) db_update('notifications', ['readAt' => $set['readAt']], ['notifId' => $notifId]);
+    return true;
 }
 
 /**
@@ -284,7 +337,11 @@ function member_state_get(array $p): array {
     } else {
         $rows = db_all('SELECT stateKey, stateValue FROM member_state WHERE memberId = ?', [$memberId]);
     }
-    foreach ($rows as $r) $out[$r['stateKey']] = safe_json($r['stateValue']);
+    foreach ($rows as $r) {
+        // Second-step secrets are never handed back to a page (mfa.php).
+        if (function_exists('mfa_private_key') && mfa_private_key((string)$r['stateKey'])) continue;
+        $out[$r['stateKey']] = safe_json($r['stateValue']);
+    }
     return ['ok' => true, 'state' => $out];
 }
 
@@ -292,6 +349,15 @@ function member_state_set(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
     $key = trim((string)($p['key'] ?? ''));
     if ($key === '' || strlen($key) > 80) return ['ok' => false, 'error' => 'bad_key'];
+    /* The guards compare lower-cased: MySQL's default collation treats
+     * "MFA.bypass" and "mfa.bypass" as the same key, so a case-sensitive
+     * prefix check let a member write the second-step bypass (or reset an
+     * allowance, or place themselves in a year) by changing one letter's case. */
+    $lk = strtolower($key);
+    if (function_exists('mfa_private_key') && mfa_private_key($lk)) return ['ok' => false, 'error' => 'bad_key'];
+    // `staff.*` keys are set by staff (a member's programme year); a member cannot place themselves.
+    if (strncmp($lk, 'staff.', 6) === 0 || strncmp($lk, 'ai.', 3) === 0) return ['ok' => false, 'error' => 'bad_key'];   // ai.* is an allowance the server counts
+    if (preg_match('/[^\x20-\x7e]/', $key)) return ['ok' => false, 'error' => 'bad_key'];
     $value = $p['value'] ?? null;
     $json = is_string($value) ? $value : json_encode($value, JSON_UNESCAPED_SLASHES);
     if (strlen((string)$json) > 20000) return ['ok' => false, 'error' => 'too_large'];
@@ -311,7 +377,6 @@ function member_request_email_change(array $p): array {
     $new = strtolower(trim((string)($p['email'] ?? '')));
     if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
     if ($new === strtolower((string)$m['email'])) return ['ok' => false, 'error' => 'same_email'];
-    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
     $token = rand_hex(20);
     db_update('members', ['pendingEmail' => $new, 'emailChangeToken' => $token, 'emailChangeExpiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 86400), 'updatedAt' => now_iso()], ['id' => $m['id']]);
     $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/api/member/confirm-email.php?m=' . rawurlencode($mid) . '&t=' . $token;
@@ -335,7 +400,7 @@ function member_confirm_email_change(array $p): array {
     if (strtotime((string)$m['emailChangeExpiresAt']) < time()) return ['ok' => false, 'error' => 'expired'];
     $new = strtolower(trim((string)$m['pendingEmail']));
     if (!filter_var($new, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'invalid'];
-    if (db_row('SELECT id FROM members WHERE lower(email) = ? AND memberId != ? LIMIT 1', [$new, $mid])) return ['ok' => false, 'error' => 'email_taken'];
+    // Another member may already use this address (a family inbox): allowed — sign-in asks who (auth_pick).
     db_update('members', ['email' => $new, 'pendingEmail' => '', 'emailChangeToken' => '', 'emailChangeExpiresAt' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
     audit('member.email.changed', $mid, $mid, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'email' => $new];
@@ -440,9 +505,28 @@ function member_erase(string $mid, string $by, string $ip = ''): array {
     return ['ok' => true, 'volunteerRecordsKept' => count($volunteerIds)];
 }
 
+/**
+ * A member cannot end their own membership.
+ *
+ * This called member_erase() directly, and the member dashboard had a "Delete
+ * my account" button wired to it. So a child of ten to seventeen could scrub
+ * their profile, journal, missions and XP, revoke every session and blank
+ * their ledger's notes — irreversibly, in two confirmations, with nothing
+ * recoverable by anybody, including the people answerable for them.
+ *
+ * Whether a membership continues is settled by the MoU between NGG and the
+ * family. That is a document and a conversation, so there is no button and no
+ * request queue standing in for one — a queue is the same decision moved one
+ * screen along. The refusal names who to speak to instead of going quiet.
+ *
+ * What a member keeps is member_export(): a copy of everything held about
+ * them, one press. That half was never the problem. And admin_member_delete()
+ * still erases, from the desk, restricted to a super admin, for the
+ * obligations the programme itself carries.
+ */
 function member_delete_account(array $p): array {
-    $mid = (string)($p['memberId'] ?? '');
-    return member_erase($mid, $mid, (string)($p['ip'] ?? ''));
+    return ['ok' => false, 'error' => 'self_delete_disabled',
+            'detail' => 'Your membership is set by the agreement between NGG and your parent or guardian — speak to your centre lead or your mentor.'];
 }
 
 function admin_member_delete(array $p): array {
@@ -452,9 +536,22 @@ function admin_member_delete(array $p): array {
 
 function member_notification_read(array $p): array {
     $memberId = (string)($p['memberId'] ?? '');
-    $notifId = (string)($p['notifId'] ?? '');
-    $row = db_row("SELECT * FROM notifications WHERE notifId = ? AND (memberId = ? OR memberId = '*') LIMIT 1", [$notifId, $memberId]);
-    if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    db_update('notifications', ['readAt' => now_iso()], ['id' => $row['id']]);
+    $at = !empty($p['unread']) ? '' : now_iso();
+    if (!empty($p['all'])) {
+        $n = 0;
+        foreach (member_notifications(['memberId' => $memberId])['notifications'] as $x) {
+            if ($x['readAt'] === '' && member_notification_mark($memberId, (string)$x['notifId'], ['readAt' => $at])) $n++;
+        }
+        return ['ok' => true, 'marked' => $n];
+    }
+    if (!member_notification_mark($memberId, (string)($p['notifId'] ?? ''), ['readAt' => $at])) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true];
+}
+
+/** member.notificationDismiss — gone from this person's list (and read); `undo` brings it back. */
+function member_notification_dismiss(array $p): array {
+    $memberId = (string)($p['memberId'] ?? '');
+    $set = !empty($p['undo']) ? ['dismissedAt' => ''] : ['dismissedAt' => now_iso(), 'readAt' => now_iso()];
+    if (!member_notification_mark($memberId, (string)($p['notifId'] ?? ''), $set)) return ['ok' => false, 'error' => 'not_found'];
     return ['ok' => true];
 }

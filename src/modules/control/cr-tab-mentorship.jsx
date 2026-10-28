@@ -202,6 +202,110 @@ async function crMsCaseOpen(ctx, caseNo, statuses) {
   });
 }
 
+/* ── Projects (Mentorship › Projects; domain/projects.php) ──────────────
+   The same projects the mentor portal sets, seen and run from here: every
+   project at the centres in the admin's scope, set for any mentors and
+   children at a centre, in named groups, with the countdown to the finish.
+   The server's save is the portal's own (project_write). */
+const CR_PRJ_TONE = { ok: "ok", soon: "warn", due: "warn", over: "bad", done: "ok", neutral: "neutral" };
+const CR_PRJ_PART = { assigned: "Not done yet", done: "Done", excused: "Excused" };
+function crPrjCount(p) { return (p.people || []).length; }
+/** Share people out across groups, mentors first, one at a time, so each group gets a mentor before any gets two. */
+function crPrjSplit(people, groups) {
+  if (!groups.length) return people.map(x => Object.assign({}, x, { group: x.group || "" }));
+  const ms = people.filter(x => x.kind === "mentor"), ks = people.filter(x => x.kind === "member");
+  return ms.map((x, i) => Object.assign({}, x, { group: groups[i % groups.length] }))
+    .concat(ks.map((x, i) => Object.assign({}, x, { group: groups[i % groups.length] })));
+}
+async function crPrjForm(ctx, d, p) {
+  const editing = !!p;
+  let centre = p ? p.centre : (d.centres || []).length === 1 ? d.centres[0] : "";
+  if (!centre) {
+    const pick = await new Promise(res => ctx.form({ title: "New project", intro: "Projects are set at one centre: its mentors and its children.", submit: "Choose people",
+      values: { centre: "" }, fields: [{ id: "centre", l: "Centre", type: "select", req: true, opts: (d.centres || []).map(c => [c, c]) }],
+      onSubmit: async v => { res(v.centre); }, done: () => "" }));
+    if (!pick) return;
+    centre = pick;
+  }
+  let pool;
+  try { pool = await NGGApi.admin.projects.people(centre); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t read who is at " + centre + "."), null, true); return; }
+  const on = p ? p.people : [];
+  const groupsNow = Array.from(new Set(on.map(x => x.group).filter(Boolean)));
+  const kidsOn = on.filter(x => x.kind === "member").map(x => x.id);
+  const allKids = (pool.children || []).length > 0 && kidsOn.length === (pool.children || []).length;
+  ctx.form({
+    title: editing ? "Edit · " + p.title : "New project at " + centre,
+    intro: "Everyone on it is told, and sees the same countdown. A part someone already finished stays on the record if you take them off.",
+    submit: editing ? "Save the project" : "Set the project",
+    values: { title: p ? p.title : "", detail: p ? p.detail || "" : "", startOn: p ? p.startOn : "", dueOn: p ? p.dueOn : "",
+      mentors: on.filter(x => x.kind === "mentor").map(x => x.id), allKids, children: kidsOn, groups: groupsNow.join(", "), split: !editing },
+    fields: [
+      { id: "title", l: "Name", type: "text", req: true, max: 160, ph: "Clean-up day at the market" },
+      { id: "detail", l: "What to do", type: "textarea", rows: 4, max: 2000 },
+      { id: "startOn", l: "Starts", type: "date", help: "Today if left blank." },
+      { id: "dueOn", l: "Finishes", type: "date", req: true, help: "At most " + crNum(((d.max || {}).days) || 366) + " days after it starts.",
+        check: (v, all) => all.startOn && v && v < all.startOn ? "Finish on or after the start." : "" },
+      { id: "mentors", l: "Mentors", type: "multi", opts: (pool.mentors || []).map(m => [m.id, m.name]), help: (pool.mentors || []).length ? "" : "No active mentors at " + centre + "." },
+      { id: "allKids", l: "Every child at " + centre + " (" + crNum((pool.children || []).length) + ")", type: "switch" },
+      { id: "children", l: "Children", type: "multi", opts: (pool.children || []).map(k => [k.id, k.name + (k.displayId ? " · " + k.displayId : "")]), when: v => !v.allKids },
+      { id: "groups", l: "Groups", type: "text", ph: "Team A, Team B", help: "Names, separated by commas. Leave blank for one group." },
+      { id: "split", l: editing ? "Share everyone out across these groups again" : "Share everyone out across these groups", type: "switch",
+        help: "Mentors first, one to a group, then the children, in turn. Off keeps each person’s group as it is.", when: v => !!String(v.groups || "").trim() },
+    ],
+    onSubmit: async v => {
+      const kids = v.allKids ? (pool.children || []).map(k => k.id) : (v.children || []);
+      let people = (v.mentors || []).map(id => ({ kind: "mentor", id })).concat(kids.map(id => ({ kind: "member", id })));
+      if (!people.length) return { fieldErrors: { mentors: "Choose at least one person." } };
+      const max = ((d.max || {}).people) || 200;
+      if (people.length > max) return { fieldErrors: { children: "At most " + crNum(max) + " people on one project; this is " + crNum(people.length) + "." } };
+      const groups = Array.from(new Set(String(v.groups || "").split(",").map(x => x.trim().replace(/\s+/g, " ")).filter(Boolean)));
+      const was = Object.fromEntries(on.map(x => [x.kind + ":" + x.id, x.group]));
+      people = v.split && groups.length ? crPrjSplit(people, groups)
+        : people.map(x => ({ kind: x.kind, id: x.id, group: groups.includes(was[x.kind + ":" + x.id]) ? was[x.kind + ":" + x.id] : (groups.length === 1 ? groups[0] : "") }));
+      const r = await NGGApi.admin.projects.save({ projectId: p ? p.projectId : "", title: v.title, detail: v.detail, startOn: v.startOn, dueOn: v.dueOn,
+        status: p ? p.status : "open", centre, people });
+      ctx.reload();
+      return r;
+    },
+    done: (v, r) => (editing ? "Saved" : "Project set") + (r && r.added ? " · " + crPlural(r.added, "person") + " told" : "") + (r && r.kept ? " · " + crPlural(r.kept, "person") + " who finished kept on the record" : "") + ".",
+  });
+}
+async function crPrjStatus(ctx, p, status) {
+  if (status === "cancelled" && !(await ctx.confirm({ title: "Cancel “" + p.title + "”?", body: "It disappears for everyone on it, and from the mentors’ commitments. What people already did stays in the audit log.", cta: "Cancel the project", danger: true, cancel: "Keep it" }))) return;
+  try {
+    await NGGApi.admin.projects.save({ projectId: p.projectId, title: p.title, detail: p.detail || "", startOn: p.startOn, dueOn: p.dueOn, status, centre: p.centre,
+      people: p.people.map(x => ({ kind: x.kind, id: x.id, group: x.group })) });
+    ctx.closeDrawer(); ctx.reload();
+    ctx.toast(status === "closed" ? "Marked finished." : status === "open" ? "Reopened." : "Cancelled.");
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t change the project."), null, true); }
+}
+function crPrjPart(ctx, p, x) {
+  ctx.form({ title: x.name + " · " + p.title, submit: "Save", values: { status: x.status, note: x.note || "" },
+    fields: [{ id: "status", l: "Their part", type: "chips", req: true, opts: [["assigned", "Not done yet"], ["done", "Done"], ["excused", "Excused"]], help: "An excused part is not counted." },
+             { id: "note", l: "Note", type: "textarea", rows: 3, max: 500 }],
+    onSubmit: async v => { await NGGApi.admin.projects.mark({ projectId: p.projectId, kind: x.kind, personId: x.id, status: v.status, note: v.note }); ctx.closeDrawer(); ctx.reload(); },
+    done: "Saved." });
+}
+function crPrjOpen(ctx, p, d) {
+  const c = p.countdown || {};
+  ctx.drawer({
+    title: p.title, sub: p.centre + " · " + c.label,
+    stats: [["People", crNum(crPrjCount(p))], ["Done", p.tally.done + " of " + p.tally.of], ["Finishes", crDate(p.dueOn)]],
+    fields: [["Set by", p.by || "—"], ["Runs", crDate(p.startOn) + " – " + crDate(p.dueOn)], ["State", p.status === "closed" ? "Finished" : "Open"]],
+    sections: [p.detail ? { h: "What to do", text: p.detail } : null].concat((p.groups || []).map(g => ({
+      h: (g.name || "Not in a group") + " · " + g.tally.done + " of " + g.tally.of + " done",
+      list: g.people.map(x => ({ icon: x.kind === "mentor" ? "chalkboard-teacher" : "user", t: x.name, s: (x.kind === "mentor" ? "Mentor · " : "") + (CR_PRJ_PART[x.status] || x.status) + (x.note ? " · “" + x.note + "”" : ""),
+        m: x.doneAt ? crDate(x.doneAt) : "", act: ctx.can("people") ? { l: "Set part", run: () => crPrjPart(ctx, p, x) } : null })),
+      empty: "Nobody in this group." }))),
+    actions: ctx.can("people") ? [
+      { l: "Edit", primary: true, run: () => { ctx.closeDrawer(); crPrjForm(ctx, d, p); } },
+      p.status === "open" ? { l: "Mark finished", run: () => crPrjStatus(ctx, p, "closed") } : { l: "Reopen", run: () => crPrjStatus(ctx, p, "open") },
+      { l: "Cancel project", run: () => crPrjStatus(ctx, p, "cancelled") },
+    ] : [],
+  });
+}
+
 /* ── The tabs ──────────────────────────────────────────────────────────── */
 Object.assign(CR_TAB_DEFS, {
   "ms-overview": {
@@ -232,6 +336,33 @@ Object.assign(CR_TAB_DEFS, {
       out.push({ type: "list", span: 6, title: "Waiting for a mentor", action: "Open the queue", onAction: () => ctx.go("mentorship", "ms-queue"),
         rows: (d.waiting || []).map(w => ({ icon: "user", t: w.fullName, s: w.centre, m: w.waitingSince ? "since " + crDate(w.waitingSince) : "" })), empty: "Nobody is waiting." });
       return out;
+    },
+  },
+  "ms-projects": {
+    skeleton: ["kpis", "table"],
+    load: async () => NGGApi.admin.projects.list(),
+    actions: (d, ctx) => [{ l: "New project", icon: "flag", primary: true, disabled: !ctx.can("people") || !(d.centres || []).length,
+      why: !(d.centres || []).length ? "No centre in your scope." : "Setting a project needs the People permission.", run: () => crPrjForm(ctx, d, null) }],
+    facts: d => "Projects: " + d.stats.open + " open, " + d.stats.soon + " finishing within a week, " + d.stats.over + " past the finish date; parts done " + d.stats.done + " of " + d.stats.of + ".",
+    blocks: (d, ctx) => {
+      const st = d.stats || {};
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Open", v: crNum(st.open) }, { l: "Finishing this week", v: crNum(st.soon) },
+          { l: "Past the finish date", v: crNum(st.over) }, { l: "Parts done", v: st.of ? Math.round(st.done / st.of * 100) + "%" : "—", dn: crNum(st.done) + " of " + crNum(st.of) },
+        ] },
+        d.capped ? { type: "note", span: 6, icon: "info", tone: "warn", text: "Showing the first " + crNum((d.projects || []).length) + " of " + crNum(d.total) + " projects, open first and soonest to finish." } : null,
+        { type: "table", span: 6, title: "Projects", sub: "Set here or by leads and mentors in the mentor portal. Open one to see its groups and set anyone’s part.", nosel: true, filters: ["Centre", "Finish"],
+          cols: [{ l: "Project", wrap: true }, "Centre", "Set by", { l: "People", num: true }, { l: "Groups", wrap: true }, "Progress", "Finish"],
+          rows: (d.projects || []).map(p => ({ key: p.projectId, open: () => crPrjOpen(ctx, p, d), cells: [
+            { k: "strong", t: p.title, s: p.status === "closed" ? "Finished" : crDate(p.startOn) + " – " + crDate(p.dueOn) }, { k: "text", t: p.centre || "—" }, { k: "text", t: p.by || "—" },
+            { k: "num", t: crNum(crPrjCount(p)), v: crPrjCount(p) },
+            { k: "text", t: (p.groups || []).filter(g => g.name).map(g => g.name + " " + g.tally.done + "/" + g.tally.of).join(" · ") || "One group" },
+            { k: "progress", pct: p.tally.of ? Math.round(p.tally.done / p.tally.of * 100) : 0, t: p.tally.done + " of " + p.tally.of },
+            { k: "status", t: (p.countdown || {}).label, tone: CR_PRJ_TONE[(p.countdown || {}).tone] || "neutral" },
+          ] })),
+          emptyText: "No projects yet. Set one with New project, or a lead sets one in the mentor portal." },
+      ].filter(Boolean);
     },
   },
   "ms-queue": {

@@ -16,14 +16,14 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'session');
     if ($view === 'session') {
         $res = gs_call('instructor.session.get', [
-            'requesterId' => $s['mid'],
+            'requesterId' => $s['mid'], 'as' => 'instructor',
             'course' => (string)($_GET['course'] ?? ''),
             'centre' => (string)($_GET['centre'] ?? ''),
             'date'   => (string)($_GET['date'] ?? ''),
         ]);
     } elseif ($view === 'skills') {
         $res = gs_call('instructor.skills.board', [
-            'requesterId' => $s['mid'],
+            'requesterId' => $s['mid'], 'as' => 'instructor',
             'course' => (string)($_GET['course'] ?? ''),
             'centre' => (string)($_GET['centre'] ?? ''),
         ]);
@@ -38,8 +38,11 @@ if ($method === 'GET') {
             + array_intersect_key($_GET, array_flip(['course', 'centre', 'date', 'term'])));
     } elseif ($view === 'history') {
         $res = gs_call('instructor.class.history', ['requesterId' => $s['mid']] + array_intersect_key($_GET, array_flip(['course', 'centre'])));
+    } elseif ($view === 'academy') {
+        // The Instructor Academy: "Start here" (how to use this portal) and the training modules.
+        $res = gs_call('instructor.academy', ['requesterId' => $s['mid']]);
     } elseif ($view === 'student') {
-        $res = gs_call('instructor.student', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
+        $res = gs_call('instructor.student', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? ''), 'course' => (string)($_GET['course'] ?? '')]);
     } elseif ($view === 'results') {
         // The class's school results for a term — filtered and paged on the server.
         $res = gs_call('instructor.results', ['requesterId' => $s['mid']]
@@ -54,7 +57,7 @@ if ($method === 'GET') {
     $ip = client_ip();
     if ($action === 'session') {
         $res = gs_call('instructor.session.save', [
-            'requesterId' => $s['mid'],
+            'requesterId' => $s['mid'], 'as' => 'instructor',
             'course' => $b['course'] ?? '', 'centre' => $b['centre'] ?? '', 'date' => $b['date'] ?? '',
             'covered' => $b['covered'] ?? '', 'roomScore' => $b['roomScore'] ?? 0,
             'markedPresent' => $b['markedPresent'] ?? [], 'markedAbsent' => $b['markedAbsent'] ?? [],
@@ -62,13 +65,13 @@ if ($method === 'GET') {
         ]);
     } elseif ($action === 'remark') {
         $res = gs_call('member.remark.add', [
-            'requesterId' => $s['mid'],
+            'requesterId' => $s['mid'], 'as' => 'instructor',
             'subjectId' => $b['subjectId'] ?? '', 'kind' => $b['kind'] ?? '', 'body' => $b['body'] ?? '',
             'ip' => $ip,
         ]);
     } elseif ($action === 'skills') {
         $res = gs_call('instructor.skills.mark', [
-            'requesterId' => $s['mid'],
+            'requesterId' => $s['mid'], 'as' => 'instructor',
             'subjectId' => $b['subjectId'] ?? '', 'course' => $b['course'] ?? '',
             'marks' => $b['marks'] ?? [], 'evidence' => $b['evidence'] ?? [], 'ip' => $ip,
         ]);
@@ -79,6 +82,9 @@ if ($method === 'GET') {
         $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => $ip] + array_intersect_key($b, array_flip(['course', 'centre', 'date',
             'marks', 'close', 'awayRest', 'plan', 'question', 'options', 'correct', 'tally', 'trippedUp', 'results', 'misconception', 'feedback', 'done',
             'summary', 'remarks', 'file'])));
+    } elseif ($action === 'academyResult') {
+        rate_limit_check('results.write', $s['mid']);
+        $res = gs_call('instructor.academy.result', ['requesterId' => $s['mid'], 'moduleId' => (string)($b['moduleId'] ?? ''), 'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []]);
     } elseif (in_array($action, ['resultNote', 'resultSeen', 'resultRemind'], true)) {
         rate_limit_check($action === 'resultRemind' ? 'results.remind' : 'results.write', $s['mid']);
         $op = ['resultNote' => 'instructor.result.note', 'resultSeen' => 'instructor.result.seen', 'resultRemind' => 'instructor.result.remind'][$action];
