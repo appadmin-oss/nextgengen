@@ -45,8 +45,17 @@ function member_segment_sql(string $segment): ?array {
             return ["status = 'active' AND memberId NOT IN (
                        SELECT memberId FROM member_stats WHERE lastActiveAt >= ?)", [$dormantCut]];
         case 'no_consent':
+            /* The LATEST decision, not any granted row ever. This read
+               the whole ledger, so somebody who granted site visibility
+               and later declined or withdrew it did not appear here —
+               the segment that exists to find people whose photo may
+               not be shown was blind to everybody who had changed their
+               mind, which is the only group it really needed to find. */
             return ["role = 'member' AND memberId NOT IN (
-                       SELECT studentId FROM consents WHERE type = 'site_visibility' AND status = 'granted')", []];
+                       SELECT studentId FROM consents c
+                        WHERE c.type = 'site_visibility' AND c.status = 'granted'
+                          AND c.id = (SELECT MAX(id) FROM consents c2
+                                       WHERE c2.studentId = c.studentId AND c2.type = c.type))", []];
     }
     return member_conduct_segment_sql($segment);
 }

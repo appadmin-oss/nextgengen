@@ -117,7 +117,12 @@ function admin_members_bulk(array $p): array {
     } elseif ($action === 'consent') {
         $value = ['type' => (string)($p['consentType'] ?? ''), 'status' => (string)($p['consentStatus'] ?? '')];
         if (!function_exists('consent_record')) return ['ok' => false, 'error' => 'consent_unavailable'];
-        if ($value['type'] === '' || !in_array($value['status'], ['granted', 'withdrawn'], true)) {
+        /* The same three the ledger accepts. This listed granted and
+           withdrawn while consent_record() took granted and declined,
+           so a withdrawal passed here and was refused on every single
+           row as bad_status — the operator saw forty failures and no
+           reason. One list, named once. */
+        if ($value['type'] === '' || !in_array($value['status'], CONSENT_STATUSES, true)) {
             return ['ok' => false, 'error' => 'bad_consent'];
         }
     } elseif ($action === 'remindersOff') {

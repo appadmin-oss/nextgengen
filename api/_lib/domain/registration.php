@@ -2308,7 +2308,16 @@ function admin_registrations_list(array $p): array {
     if ($rows) {
         $ids = array_column($rows, 'studentId');
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT studentId, type FROM consents WHERE status = 'granted' AND studentId IN $in", $ids) as $cr) {
+        /* The LATEST row per type, not any granted row ever.
+           `consents` is an append-only ledger and every other reader
+           lets the last row win. This one did not, so a child whose
+           parent granted a consent and later declined or withdrew it
+           still read as granted here — the decision was recorded
+           correctly and then ignored by the screen that acts on it. */
+        foreach (db_all("SELECT studentId, type FROM consents c
+                          WHERE studentId IN $in AND status = 'granted'
+                            AND id = (SELECT MAX(id) FROM consents c2
+                                       WHERE c2.studentId = c.studentId AND c2.type = c.type)", $ids) as $cr) {
             $consents[(string)$cr['studentId']][] = (string)$cr['type'];
         }
     }
@@ -3768,9 +3777,32 @@ function consent_handle_for(string $subjectId): string {
  * how the decision was obtained and who recorded it is a checkbox, not
  * evidence, and this is the record the programme would have to stand behind.
  */
+/**
+ * Record a decision about a consent.
+ *
+ * THREE STATUSES, NOT TWO, AND THE THIRD IS NOT A SYNONYM.
+ *
+ *   granted    they agreed
+ *   declined   they were asked and said no
+ *   withdrawn  they agreed, and have since taken it back
+ *
+ * `withdrawn` used to be refused as a bad status, which made the bulk
+ * action that sends it fail on every row with no usable reason. The
+ * obvious repair — map it onto `declined` — writes down the wrong fact.
+ * "Never agreed" and "agreed and then withdrew" are different things to
+ * a family and different things in law: only the second means data was
+ * lawfully collected and must now stop being used. Collapsing them
+ * would leave the record unable to answer the one question anybody asks
+ * afterwards, which is when the permission stopped.
+ *
+ * Nothing downstream has to change to understand it: every reader tests
+ * for `granted`, and a withdrawal is not granted.
+ */
+const CONSENT_STATUSES = ['granted', 'declined', 'withdrawn'];
+
 function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName): array {
     if (!isset(CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
-    if (!in_array($status, ['granted', 'declined'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    if (!in_array($status, CONSENT_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
     $method = trim($method);
     if ($method === '') return ['ok' => false, 'error' => 'method_required'];
     db_insert('consents', [

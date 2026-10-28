@@ -26841,5 +26841,78 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
 })();
 
+/* ══ Consent: withdrawing one, and the ledger being READ the way it is
+      WRITTEN ══════════════════════════════════════════════════════════════
+
+   Two findings from the 27 October audit, and the second is the one that
+   mattered. The bulk action sent `withdrawn` while consent_record() took
+   only granted|declined, so a withdrawal failed on every row with no
+   usable reason. Fixing that alone would have been worse than leaving it:
+   `consents` is an append-only ledger, and two readers matched ANY granted
+   row ever rather than the latest — so a withdrawal would have been
+   accepted, recorded, and then ignored by the screens that act on it,
+   which is the one failure mode a consent system must not have. */
+(function () {
+    $mid = 'CW-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $mid, 'fullName' => 'Withdraw Test', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $latest = fn() => (string)(consent_state($mid)['site_visibility']['status'] ?? '');
+    $inNoConsentSegment = function () use ($mid): bool {
+        [$sql, $args] = member_segment_sql('no_consent');
+        $rows = db_all("SELECT memberId FROM members WHERE $sql", $args);
+        return in_array($mid, array_column($rows, 'memberId'), true);
+    };
+
+    chk('consent: a withdrawal is a status in its own right, not a synonym for declined',
+        consent_record($mid, 'site_visibility', 'granted', 'form', 'T')['ok']
+        && consent_record($mid, 'site_visibility', 'withdrawn', 'staff', 'T')['ok']
+        && $latest() === 'withdrawn');
+
+    /* "Never agreed" and "agreed and then took it back" are different
+       facts to a family and different facts in law — only the second
+       means data was lawfully collected and must now stop being used. */
+    chk('consent: declined and withdrawn are both kept, and are not the same row',
+        (int)db_row("SELECT COUNT(DISTINCT status) c FROM consents WHERE studentId = ?", [$mid])['c'] === 2);
+
+    chk('consent: a status the ledger does not know is still refused',
+        (consent_record($mid, 'site_visibility', 'maybe', 'staff', 'T')['error'] ?? '') === 'bad_status');
+
+    /* The real one. The segment that finds people whose photo may not be
+       shown read the whole ledger, so it was blind to everybody who had
+       ever granted — which is exactly the group that changes its mind. */
+    chk('consent: withdrawing puts somebody back into the "no consent" segment',
+        $inNoConsentSegment());
+
+    chk('consent: granting again takes them out of it', (function () use ($mid, $inNoConsentSegment) {
+        consent_record($mid, 'site_visibility', 'granted', 'form', 'T');
+        return !$inNoConsentSegment();
+    })());
+
+    chk('consent: and declining after that puts them back', (function () use ($mid, $inNoConsentSegment) {
+        consent_record($mid, 'site_visibility', 'declined', 'form', 'T');
+        return $inNoConsentSegment();
+    })());
+
+    /* The bulk action and the ledger name one list between them. They
+       named two, which is how a withdrawal cleared the first and was
+       refused by the second on every row. */
+    chk('consent: the bulk action accepts exactly what the ledger accepts',
+        str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/domain/members-bulk.php'), 'CONSENT_STATUSES')
+        && CONSENT_STATUSES === ['granted', 'declined', 'withdrawn']);
+
+    chk('consent: a bulk withdrawal is no longer refused before it starts', (function () use ($mid) {
+        $r = admin_members_bulk(['requesterId' => 'SUPER', 'action' => 'consent', 'ids' => [$mid],
+            'consentType' => 'media', 'consentStatus' => 'withdrawn']);
+        /* It may still refuse for a reason of its own — rights, scope —
+           but never again with bad_consent, which meant "that word is
+           not a word" for a word the screen itself sends. */
+        return ($r['error'] ?? '') !== 'bad_consent';
+    })());
+
+    db_exec('DELETE FROM consents WHERE studentId = ?', [$mid]);
+    db_exec('DELETE FROM members WHERE memberId = ?', [$mid]);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
