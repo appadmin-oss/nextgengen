@@ -670,6 +670,28 @@ function policy_log(string $personId, string $type, string $kind, string $date, 
     }
 }
 
+/**
+ * A sign-out that lands after the nightly sweep. The sweep judged the day
+ * incomplete (no_checkout, and an absence for it) because the sign-out had
+ * not arrived yet — a CACENTRE gate departure delivered late, a back-fill, a
+ * desk that was offline. The day was completed, so both are voided and the
+ * person's sanctions re-derived. Only the sweep's incomplete-day entries are
+ * touched: an absence for a day they never came is not this function's.
+ * Returns how many infractions it voided.
+ */
+function policy_checkout_landed(string $personId, string $type, string $date, string $byId = 'system'): int {
+    if ($personId === '' || $date === '') return 0;
+    $n = db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = 'Signed out; the sign-out arrived after the nightly check.'
+                  WHERE personId = ? AND date = ? AND (voidedAt IS NULL OR voidedAt = '')
+                    AND (kind = 'no_checkout' OR (kind = 'absence' AND note LIKE 'Incomplete%'))",
+                 [now_iso(), substr($byId, 0, 64), $personId, $date]);
+    if ($n > 0) {
+        audit('policy.checkout_landed', $byId, $personId, ['date' => $date, 'voided' => $n]);
+        policy_apply($personId, in_array($type, ['student', 'volunteer', 'member'], true) ? $type : 'student');
+    }
+    return $n;
+}
+
 /** Live (non-voided) infraction counts by kind for one person. */
 function policy_counts(string $personId): array {
     $out = array_fill_keys(POLICY_INFRACTIONS, 0);

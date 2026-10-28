@@ -1105,6 +1105,7 @@ function summer_checkout(array $p): array {
     if ($no = attendance_checkout_refusal($type, $at, $p)) return $no;
     $outIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
     db_update('attendance', ['checkOutAt' => $outIso], ['id' => $row['id']]);
+    policy_checkout_landed($sid, $type, $today, $byId);
     $early = trim((string)($p['earlyReason'] ?? ''));
     audit($early !== '' && attendance_close_time($type) !== '' ? 'attendance.early_checkout' : 'summer.checkout', $byId, $sid,
           ['date' => $today] + ($early !== '' ? ['reason' => mb_substr($early, 0, 200)] : []), (string)($p['ip'] ?? ''));

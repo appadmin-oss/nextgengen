@@ -305,6 +305,8 @@ function member_records(array $p): array
                     'revoked' => trim((string)($c['revokedAt'] ?? '')) !== ''];
     }
 
+    // A day with no sign-out was counted absent by the rule: say so, not "present".
+    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
     $present = count($days);
     return ['ok' => true, 'attendance' => [
         'present' => $present,
@@ -318,7 +320,7 @@ function member_records(array $p): array
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),
             'out' => substr((string)($d['checkOutAt'] ?? ''), 11, 5),
             'method' => (string)($d['method'] ?? ''),
-        ], $days),
+        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, counted absent'] : []), $days),
     ], 'certificates' => $certs, 'member' => [
         'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
         'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? ''),

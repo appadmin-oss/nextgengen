@@ -25619,6 +25619,54 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM centres WHERE centreId = 'CEN-PD-W'");
 })();
 
+/* ── A sign-out that arrives after the nightly check clears the absence it caused ── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $keep = []; foreach (['memberProgramme', 'policy', 'policy_member_swept_through', 'policy_member_checkout_since'] as $k) $keep[$k] = setting_raw($k);
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    $sat = ''; for ($i = 1; $i <= 7; $i++) { $d = $ago($i); if ((int)gmdate('N', strtotime($d . ' UTC')) === 6) $sat = $d; }
+    db_insert('members', ['memberId' => 'NGG-LO-1', 'fullName' => 'Lo Late', 'email' => 'lo1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(30), 'endDate' => $ago(-30), 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['member' => ['enabled' => true, 'checkoutRequired' => true]], 'test');
+    setting_set('policy_member_checkout_since', $ago(20), 'system');
+    // Came in through the CACENTRE gate on Saturday; the gate never sent the departure.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-LO-1', 'date' => $sat, 'checkInAt' => $sat . 'T07:34:00Z', 'checkOutAt' => '', 'method' => 'webhook', 'createdAt' => $now]);
+    setting_set('policy_member_swept_through', $ago(8), 'system');
+    policy_sweep_member_absences($ago(1));
+    $live = fn() => array_column(db_all("SELECT kind FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$sat]), 'kind');
+    chk('late sign-out: the sweep counts a day with no sign-out absent (the rule)', in_array('absence', $live(), true) && in_array('no_checkout', $live(), true));
+
+    $rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
+    $onSat = array_values(array_filter($rec['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the record shows that Saturday once, as no sign-out — not present AND absent', count($onSat) === 1 && $onSat[0]['kind'] === 'incomplete' && $onSat[0]['in'] === '07:34');
+    chk('late sign-out: …and counts it once, as the absence it is', ($rec['attendance']['present'] ?? -1) === 0 && ($rec['attendance']['absent'] ?? -1) === 1);
+    $own = backend_dispatch('member.records', ['memberId' => 'NGG-LO-1']);
+    $ownSat = array_values(array_filter($own['attendance']['days'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the member\'s own records say it was counted absent, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, counted absent');
+
+    // Days later the gate's back-fill delivers the departure, with its own time.
+    $tz = (int)attendance_settings()['tzOffset'];
+    $leftAt = gmdate('Y-m-d\TH:i:s\Z', strtotime($sat . ' 17:30:00 UTC') - $tz * 60);
+    $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-LO-1', 'action' => 'out', 'date' => $sat, 'scannedAt' => $leftAt]]]);
+    $row = db_row('SELECT checkOutAt FROM attendance WHERE studentId = ? AND date = ?', ['NGG-LO-1', $sat]);
+    chk('late sign-out: a departure re-sent days later is stamped at the time it happened, not now', ($h['results'][0]['status'] ?? '') === 'marked' && (string)$row['checkOutAt'] === $leftAt);
+    chk('late sign-out: …and the no-sign-out absence and its no_checkout are voided', $live() === []);
+    chk('late sign-out: …with the reason kept', (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND voidReason LIKE 'Signed out%'", [$sat]));
+    $rec2 = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
+    $onSat2 = array_values(array_filter($rec2['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the record now shows a present day with its sign-out time', count($onSat2) === 1 && $onSat2[0]['kind'] === 'present' && $onSat2[0]['out'] === gmdate('H:i', strtotime($leftAt)));
+    chk('late sign-out: a departure delivered for a past day sends the member no email today', !array_filter($GLOBALS['__mail_sink'] ?? [], fn($m) => $m['to'] === 'lo1@example.com'));
+
+    // A real absence (never came) is not this path's to clear.
+    $other = $ago(15); while ((int)gmdate('N', strtotime($other . ' UTC')) !== 6) $other = gmdate('Y-m-d', strtotime($other . ' UTC') - 86400);
+    policy_log('NGG-LO-1', 'member', 'absence', $other, 'No check-in on a member programme day.');
+    chk('late sign-out: an absence for a day they never came is untouched', policy_checkout_landed('NGG-LO-1', 'member', $other) === 0);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c = 'NGG-LO-1'");
+})();
+
 /* ── Approval notifications: the people who decide hear, and so does the asker ── */
 (function () {
     $now = now_iso();

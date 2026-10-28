@@ -669,7 +669,7 @@ function crMbImportBlocks(d, ctx) {
 const CR_MB_REC_TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["conduct", "Conduct"], ["fees", "Fees"], ["requests", "Requests"], ["curriculum", "Curriculum"],
   ["companion", "Companion"], ["family", "Family & mentor"], ["classes", "Classes"], ["card", "ID card"], ["history", "History"]];
 const CR_MB_RATING = { on_track: ["On track", "ok"], watch: ["Watch", "warn"], at_risk: ["At risk", "bad"] };
-const CR_MB_ATT = { present: ["Present", "ok"], late: ["Late", "warn"], absent: ["Absent", "bad"] };
+const CR_MB_ATT = { present: ["Present", "ok"], late: ["Late", "warn"], absent: ["Absent", "bad"], incomplete: ["No sign-out · counted absent", "bad"] };
 
 async function crMbRecFetch(id) {
   const soft = p => p.catch(e => ({ _err: e }));

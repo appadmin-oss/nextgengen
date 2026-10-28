@@ -4124,3 +4124,28 @@ SQLite suite never saw it. The fix:
   unchanged.
 
 Result: MySQL suite 5860 passed, 0 failed.
+
+
+## 2026-10-28 — Saturdays shown Present and Absent (CACENTRE check-outs)
+
+A member's record listed some Saturdays twice: Present at 07:34, and Absent.
+`member.checkoutRequired` makes the nightly sweep log a day with a sign-in and
+no sign-out as `no_checkout` plus an "Incomplete day" absence. The CACENTRE
+gate had check-outs to NGG switched off (`"checkouts": false` in its ISSUERS),
+so every gate arrival on a programme day became an absence; weekdays are not
+programme days, so only Saturdays showed it.
+
+- `policy_checkout_landed()` voids that day's `no_checkout` and incomplete-day
+  absence (only those; a never-came absence is untouched) and re-derives
+  sanctions. Called from the gate hook's `out` path, the desk and the summer
+  check-out.
+- The hook keeps a re-sent departure's own `scannedAt` when it falls on the
+  day it names, up to 45 days back (arrivals stay clamped to 24 h), and sends
+  no sign-out email for a past day.
+- `admin_member_record` shows one row a day (`kind: incomplete`, "No sign-out ·
+  counted absent") and counts it once; `member_records` marks the day too.
+- CACENTRE (branch `claude/gate-ngg-checkouts`): check-outs on, and the
+  back-fill takes `days` up to 31. Deploy NGG first, then the gate, then press
+  "…from the last 31 days".
+
+Result: PHP suite 5855 passed (SQLite), 5870 (MySQL), UI smoke 661, 0 failed.

@@ -1510,6 +1510,13 @@ from which people may sign out. Leave one blank for no closing time.
   sign-out opens at 14:00") at the desk, the kiosk and the CACENTRE gate.
   Somebody who leaves early has no sign-out for the day, which the conduct
   policy counts.
+- **A sign-out that arrives late still counts.** The nightly check counts a
+  day with a sign-in and no sign-out as an absence. If the sign-out reaches NGG
+  afterwards (a CACENTRE gate departure delivered late, or CACENTRE's
+  **Send NGG the check-outs it missed … from the last 31 days**), it is stamped
+  at the time it happened and that day's "no sign-out" absence is voided, with
+  the reason kept. A member's record shows such a day once: **No sign-out ·
+  counted absent** until the sign-out arrives, then **Present** with its time.
 - An admin in the Control Room kiosk can **Let them go early…** with a written
   reason (a sick child collected by a parent). It is recorded in the audit
   trail as an early sign-out. A check-in desk cannot do this.
