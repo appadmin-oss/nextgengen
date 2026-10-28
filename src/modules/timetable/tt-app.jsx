@@ -66,7 +66,7 @@ function ttSlotsToEntries(res, member) {
   return (res.slots || []).map((x, i) => ({
     id: ttUid(), title: String(x.course || "").slice(0, 60), days: [+x.weekday], start: x.startTime, end: x.endTime,
     place: String(x.room || "").slice(0, 60), color: i % 8, kind: ttKindOf({ title: x.course }),
-    official: true, source: res.centre || "", mine: !!track && String(x.course).toLowerCase() === track,
+    official: true, source: res.centre || "", mine: typeof x.mine === "boolean" ? x.mine : !!track && String(x.course).toLowerCase() === track,
   })).filter(e => e.title && e.days[0] >= 1 && e.days[0] <= 7 && ttMin(e.start) !== null && ttMin(e.end) > ttMin(e.start));
 }
 
@@ -300,7 +300,11 @@ function TtMaker({ setPage }) {
 
   /* ── A centre's sessions in, the visitor's own kept (§7.7) ── */
   const addCentre = React.useCallback(async (slug, quiet) => {
-    const r = await NGGApi.public.timetable(slug);
+    /* A member's own centre comes from their record, which marks the classes
+       that are theirs (member_timetable `mine`), not a guess from the track. */
+    let r = null;
+    if (member) { try { const own = await NGGApi.member.timetable(); if (own && own.slug === slug) r = own; } catch (_) {} }
+    if (!r) r = await NGGApi.public.timetable(slug);
     const fresh = ttSlotsToEntries(r, member);
     if (!fresh.length) throw new Error("no_sessions");
     commit(d => {
@@ -311,13 +315,16 @@ function TtMaker({ setPage }) {
     setDay(null);
     return r.centre;
   }, [commit, member]);
+  const centreBooted = React.useRef(false);
   React.useEffect(() => {
-    if (!boot.centre) return;
+    // After sign-in has settled, so a member's own classes are marked.
+    if (!boot.centre || auth.loading || centreBooted.current) return;
+    centreBooted.current = true;
     addCentre(boot.centre, true).then(name => setNote({ kind: "centre", centre: name }))
       .catch(() => setLayers(l => Object.assign({}, l, { import: { tab: "centre", slug: boot.centre, failed: true } })));
     // Once, for the centre in the address.
     // eslint-disable-next-line
-  }, []);
+  }, [auth.loading]);
 
   /* ── Official sync (§7.9): on load, a centre that changed a session is reported, never applied ── */
   const syncChecked = React.useRef(false);

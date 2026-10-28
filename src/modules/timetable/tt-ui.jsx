@@ -194,37 +194,50 @@ function TtPrintOptions({ C, variant }) {
   );
 }
 
-/* ── "What's your week like?" (§7.1) ── */
-
-function TtModePicker({ C }) {
+/* ── Making your week, in three steps ──
+   A child said "I am having trouble doing my timetable", and the owner found
+   creating one confusing: the maker opened on six equal choices and two more
+   buttons, and a member's own NGG classes were not in it. It now opens on the
+   three things a week is made of — your NGG classes, your school lessons, your
+   study time — each with one button and a tick once done. They are help, not
+   a gate: the add box is there from the start and anything can be built
+   freely. The kinds of week (§7.1) are presets that only change the
+   suggestions. The steps stay until the week has lessons and study time in
+   it, and can be hidden. */
+function TtStartSteps({ C }) {
+  const [hidden, setHidden] = React.useState(false);
+  const own = C.entries.filter(e => !e.official);
+  const done = { ngg: C.entries.some(e => e.official), school: own.some(e => ttKindOf(e) === "class" || ttKindOf(e) === "activity"), study: own.some(e => ttKindOf(e) === "study") };
+  if (hidden || (done.school && done.study)) return null;
+  const typeIn = () => setTimeout(() => C.qaRef.current && C.qaRef.current.focus(), 60);
+  const steps = [
+    ["ngg", "Your NGG classes", done.ngg ? "In your week, and kept in step with your centre." : "Your centre’s Saturday classes, with your own course marked.",
+      <button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" onClick={() => C.open("import", { tab: "centre" })}>{done.ngg ? "Change centre" : "Add my centre’s classes"}</button>],
+    ["school", "Your school lessons", done.school ? "Added. Add more any time in the add box." : "Type one at a time, like “Maths Mon Wed 8–8:40”, or paste the list from WhatsApp.",
+      done.school ? null : <span className="tt-row8"><button type="button" className="tt-btn tt-btn--primary tt-btn--ctl" onClick={typeIn}>Type a lesson</button><button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" onClick={() => C.open("import", { tab: "paste" })}>Paste a list</button></span>],
+    ["study", "Your study time", done.study ? "Planned." : "We fit study sessions into the free time around everything else.",
+      done.study ? null : <button type="button" className="tt-btn tt-btn--outline tt-btn--ctl" disabled={!C.entries.length} onClick={() => C.open("plan")}>Plan my study time</button>],
+  ];
   return (
-    <div className="tt-modes">
+    <section className="tt-steps" aria-labelledby="tt-steps-h">
       <div className="tt-modes-head">
-        <span className="tt-modes-title">What’s your week like?</span>
-        <span>Pick the closest. It sets lengths and suggestions; you can still add anything.</span>
+        <h3 className="tt-modes-title" id="tt-steps-h">Not sure where to start?</h3>
+        <span>Type anything into the add box, in your own words, or follow these steps. It saves as you go.</span>
       </div>
-      <div className="tt-modes-grid">
-        {TT_MODE_IDS.map(k => {
-          const m = TT_MODES[k];
-          return (
-            <button key={k} type="button" className="tt-mode" onClick={() => C.setMode(k)}>
-              <span className="tt-tile tt-tile--36 tt-tile--gold"><TtIcon name={m.icon}/></span>
-              <b>{m.label}</b>
-              <span>{m.sub}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="tt-card">
-        {[["map-pin", "My NGG centre", "Load Egbeda, Ayobo or Online sessions", "centre"], ["clipboard-text", "Paste a timetable", "From a spreadsheet or a WhatsApp message", "paste"]].map(([icon, l, d, tab]) => (
-          <button key={tab} type="button" className="tt-startrow" onClick={() => C.open("import", { tab })}>
-            <TtIcon name={icon} className="tt-startrow-icon"/>
-            <span className="tt-startrow-text"><b>{l}</b><span>{d}</span></span>
-            <TtIcon name="caret-right" className="tt-startrow-chev"/>
-          </button>
+      <ol className="tt-steps-list">
+        {steps.map(([k, title, sub, act], i) => (
+          <li key={k} className={"tt-step" + (done[k] ? " is-done" : "")}>
+            <span className="tt-step-n" aria-hidden="true">{done[k] ? <TtIcon name="check"/> : i + 1}</span>
+            <span className="tt-step-body"><b>{title}{done[k] ? <span className="tt-sr"> (done)</span> : null}</b><span>{sub}</span>{act}</span>
+          </li>
         ))}
+      </ol>
+      <div className="tt-steps-other" role="group" aria-label="Suggestions for">
+        <span>Suggestions for:</span>
+        {TT_MODE_IDS.map(k => <button key={k} type="button" aria-pressed={C.s.mode === k} className={"tt-chip tt-chip--36" + (C.s.mode === k ? " is-on" : "")} onClick={() => C.setMode(k)}>{TT_MODES[k].label}</button>)}
       </div>
-    </div>
+      {C.entries.length > 0 && <button type="button" className="tt-linkbtn" onClick={() => setHidden(true)}>Hide these steps</button>}
+    </section>
   );
 }
 

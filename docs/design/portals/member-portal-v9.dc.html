@@ -567,18 +567,40 @@ button,input,textarea,select{font:inherit;color:inherit}
   </section>
 </sc-if>
 <sc-if value="{{ onTimetable }}" hint-placeholder-val="{{ false }}">
-  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-    <span style="width:48px;height:48px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:24px;flex-shrink:0"><i class="ph ph-code"></i></span>
-    <span style="flex:1;min-width:200px"><span style="display:block;font-size:12.5px;color:#6b6b72;font-weight:600">Your division</span><span style="display:block;font-size:17px;font-weight:700">{{ division.name }} · {{ division.course }}</span><span style="display:block;font-size:13px;color:#4a4a50;margin-top:2px">{{ division.instructor }} · {{ division.room }}</span></span>
+  <sc-if value="{{ hasMine }}" hint-placeholder-val="{{ true }}">
+    <section aria-labelledby="tt-mine-h" style="background:#0b0b0c;color:#fff;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+      <h2 id="tt-mine-h" style="margin:0;font-size:13px;font-weight:600;color:#f5b026;letter-spacing:.02em">Your class</h2>
+      <sc-for list="{{ ttMine }}" as="c" hint-placeholder-count="1"><div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:20px;font-weight:700">{{ c.course }}</span><span style="font-size:15px">{{ c.day }} · <span style="font-family:'Geist Mono',monospace">{{ c.time }}</span></span><span style="font-size:13.5px;color:#d6d4cc">{{ c.where }}</span></div></sc-for>
+    </section>
+  </sc-if>
+  <sc-if value="{{ noMine }}" hint-placeholder-val="{{ false }}">
+    <div role="note" style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid #e8e5dd;font-size:14px;line-height:1.45"><i class="ph ph-info" style="font-size:18px;flex-shrink:0"></i>Your own class isn’t on your centre’s timetable yet. Ask your centre which class is yours.</div>
+  </sc-if>
+  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span style="width:44px;height:44px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:22px;flex-shrink:0"><i class="{{ division.icon }}"></i></span>
+    <span style="flex:1;min-width:180px"><span style="display:block;font-size:12.5px;color:#6b6b72;font-weight:600">Your division</span><span style="display:block;font-size:16px;font-weight:700">{{ division.name }}</span><span style="display:block;font-size:13.5px;color:#4a4a50;margin-top:2px">{{ division.course }}</span></span>
   </section>
-  <div style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45"><i class="ph ph-crown-simple" style="font-size:18px;flex-shrink:0"></i>{{ division.chess }}</div>
-  <sc-for list="{{ ttDays }}" as="d" hint-placeholder-count="3">
+  <sc-for list="{{ ttDays }}" as="d" hint-placeholder-count="1">
     <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
-      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">{{ d.d }}</h2>
-      <sc-for list="{{ d.rows }}" as="r" hint-placeholder-count="4"><div style="display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#6b6b72">{{ r.t }}</span><span style="font-size:15px">{{ r.a }}</span><span style="font-size:12.5px;color:#6b6b72">{{ r.w }}</span></div></sc-for>
+      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">Classes on {{ d.d }}</h2>
+      <sc-for list="{{ d.rows }}" as="r" hint-placeholder-count="3"><div style="display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea;background:{{ r.bg }}"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#4a4a50">{{ r.t }}</span><span style="font-size:15px;font-weight:{{ r.fw }}">{{ r.a }}<sc-if value="{{ r.mine }}" hint-placeholder-val="{{ false }}"><span style="margin-left:8px;padding:2px 8px;border-radius:999px;background:#0b0b0c;color:#fff;font-size:12px;font-weight:600">Yours</span></sc-if></span><span style="font-size:12.5px;color:#4a4a50">{{ r.w }}</span></div></sc-for>
     </section>
   </sc-for>
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button onClick="{{ openTimetableMaker }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c"><i class="ph ph-pencil-simple"></i>Design my own timetable</button><button onClick="{{ printPdf }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-printer"></i>Print</button></div>
+  <sc-if value="{{ noSlots }}" hint-placeholder-val="{{ false }}">
+    <p style="margin:0;padding:14px 16px;background:#fff;border:1px solid #e8e5dd;border-radius:18px;font-size:14px">Your centre hasn’t put its classes on the timetable yet.</p>
+  </sc-if>
+  <sc-if value="{{ hasSat }}" hint-placeholder-val="{{ false }}">
+    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
+      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">The rest of Saturday</h2>
+      <sc-for list="{{ ttSat }}" as="r" hint-placeholder-count="3"><div style="display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#4a4a50">{{ r.t }}</span><span style="font-size:15px">{{ r.a }}</span><span style="font-size:12.5px;color:#4a4a50">{{ r.w }}</span></div></sc-for>
+    </section>
+  </sc-if>
+  <div style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45"><i class="ph ph-crown-simple" style="font-size:18px;flex-shrink:0"></i>{{ division.chess }}</div>
+  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+    <h2 style="margin:0;font-size:16px;font-weight:700">Make your whole week</h2>
+    <p style="margin:0;font-size:14px;color:#4a4a50;line-height:1.45">Your NGG classes go in first. Then add your school lessons and we fit study time around them. Download it or print it.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button onClick="{{ openTimetableMaker }}" style="height:44px;padding:0 16px;border-radius:12px;border:1px solid #0b0b0c;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-pencil-simple"></i>Make my week</button><button onClick="{{ printPdf }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-printer"></i>Print this</button></div>
+  </section>
 </sc-if>
 
 <sc-if value="{{ onCompanion }}" hint-placeholder-val="{{ false }}">
@@ -1282,7 +1304,9 @@ class Component extends DCLogic {
     out.tally = { ...D.tally, xpW: D.tally.xp + "%" };
     // timetable + curriculum
     out.division = D.division;
-    out.ttDays = D.timetable.map(d => ({ d: d.d, rows: d.rows.map(([t, a, w]) => ({ t, a, w, mine: /Coding|mentor/.test(a) })) }));
+    out.ttDays = D.timetable.map(d => ({ d: d.d, rows: d.rows.map(([t, a, w]) => ({ t, a, w, mine: /Coding/.test(a), bg: /Coding/.test(a) ? "#fdf6e3" : "#fff", fw: /Coding/.test(a) ? "700" : "400" })) }));
+    out.ttMine = [{ day: "Saturday", time: "10:00–11:30", course: "Coding", where: "Lab 1 · Mr Bello" }]; out.hasMine = true; out.noMine = false; out.ttSat = []; out.hasSat = false; out.noSlots = false;
+    out.division = Object.assign({ icon: "ph ph-code" }, out.division || {});
     out.curWeeks = D.curriculum.map(c => ({ ...c, fg: c.s === "Done" ? "#1d6b30" : c.s === "In progress" ? "#7a5600" : "#6b6b72", icon: c.s === "Done" ? "ph-fill ph-check-circle" : c.s === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }));
     out.dlPdf = () => this.toast("Opening your curriculum as a PDF"); out.dlDoc = () => this.toast("Downloading your curriculum for Word");
     out.openTimetableMaker = () => this.toast("Opens the Timetable Maker");

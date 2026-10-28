@@ -11347,18 +11347,28 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-719e235{display:flex;align-items:center;gap:10px;min-height:44px}
 .m9-ad8ecd9{display:block;font-size:14.5px}
 .m9-7d189a6{height:40px;padding:0 12px;border-radius:10px;border:1px solid #d6d4cc;background:#fff;font-size:13.5px;font-weight:600;cursor:pointer}
-.m9-b5a2782{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.m9-0519418{width:48px;height:48px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:24px;flex-shrink:0}
-.m9-7b1dd1f{flex:1;min-width:200px}
-.m9-ab9f819{display:block;font-size:12.5px;color:#6b6b72;font-weight:600}
-.m9-0b228fb{display:block;font-size:17px;font-weight:700}
-.m9-11131fc{display:block;font-size:13px;color:#4a4a50;margin-top:2px}
-.m9-d04da5a{display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45}
+.m9-ce719ef{background:#0b0b0c;color:#fff;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.m9-f4150fe{margin:0;font-size:13px;font-weight:600;color:#f5b026;letter-spacing:.02em}
+.m9-6f06c77{font-family:'Geist Mono',monospace}
+.m9-71762ff{font-size:13.5px;color:#d6d4cc}
+.m9-8f1eca3{display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid #e8e5dd;font-size:14px;line-height:1.45}
 .m9-8b4f1dd{font-size:18px;flex-shrink:0}
+.m9-e0a58ca{background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.m9-3db7a31{width:44px;height:44px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:22px;flex-shrink:0}
+.m9-2f7ab6d{flex:1;min-width:180px}
+.m9-ab9f819{display:block;font-size:12.5px;color:#6b6b72;font-weight:600}
+.m9-345284d{display:block;font-size:16px;font-weight:700}
+.m9-268dd8e{display:block;font-size:13.5px;color:#4a4a50;margin-top:2px}
 .m9-63db936{margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea}
+.m9-dec1dd7{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea;background:var(--dc-background, unset)}
+.m9-ecb978c{font-family:'Geist Mono',monospace;font-size:13px;color:#4a4a50}
+.m9-d744d60{font-size:15px;font-weight:var(--dc-font-weight, unset)}
+.m9-86f3ab1{margin-left:8px;padding:2px 8px;border-radius:999px;background:#0b0b0c;color:#fff;font-size:12px;font-weight:600}
+.m9-1b3531a{margin:0;padding:14px 16px;background:#fff;border:1px solid #e8e5dd;border-radius:18px;font-size:14px}
 .m9-7ce6af3{display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea}
-.m9-fe4ece7{font-family:'Geist Mono',monospace;font-size:13px;color:#6b6b72}
-.m9-71c0028{height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c}
+.m9-d04da5a{display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45}
+.m9-bd3aa9d{margin:0;font-size:16px;font-weight:700}
+.m9-453db85{height:44px;padding:0 16px;border-radius:12px;border:1px solid #0b0b0c;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
 .m9-61f488c{height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
 .m9-c7b7d87{flex:1 0 auto;white-space:nowrap;scroll-snap-align:start;min-height:44px;border:0;border-radius:10px;background:var(--dc-background, unset);box-shadow:var(--dc-box-shadow, unset);font-size:14px;font-weight:var(--dc-font-weight, unset);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
 .m9-0a36c4c{width:7px;height:7px;border-radius:50%;background:#f5b026}
@@ -11443,6 +11453,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-2f14be6{display:block;font-size:11px;font-weight:600;letter-spacing:.04em;color:#6b6b72;margin-bottom:2px}
 .m9-2e17c17{align-self:flex-start;height:44px;padding:0 4px;border:0;background:none;font-size:13px;text-decoration:underline;cursor:pointer}
 .m9-441c48b{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;padding:8px 0;border-top:1px solid #f0efea}
+.m9-fe4ece7{font-family:'Geist Mono',monospace;font-size:13px;color:#6b6b72}
 .m9-5eb1e31{font-size:14.5px;color:#3a3a40;line-height:1.5}
 .m9-f3ea20c{height:26px;padding:0 10px;border-radius:999px;background:#f4f4f2;font-size:12.5px;display:inline-flex;align-items:center}
 .m9-a7dd7f3{font-size:15px;font-weight:600;margin-top:4px}
@@ -11453,6 +11464,7 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-9cfc317{display:flex;gap:10px;align-items:center;font-size:15px;padding:12px 14px;border-radius:12px;background:#f3faf4}
 .m9-1dc7244{display:flex;align-items:baseline;gap:8px;padding:14px 16px 6px}
 .m9-2a1e4aa{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid #f0efea;flex-wrap:wrap}
+.m9-7b1dd1f{flex:1;min-width:200px}
 .m9-c54e891{display:inline-flex;height:22px;padding:0 8px;border-radius:999px;background:var(--dc-background, unset);color:var(--dc-color, unset);font-size:11.5px;font-weight:600;align-items:center}
 .m9-ebb8146{display:block;font-size:15px;font-weight:500;margin-top:6px;line-height:1.35}
 .m9-fe048d0{height:44px;padding:0 14px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
@@ -11574,7 +11586,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-b9a9eb8{align-self:flex-start;height:44px;padding:0 16px;margin-top:4px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer}
 .m9-ebd7e1a{background:#0b0b0c;color:#fff;border-radius:18px;padding:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .m9-dbe4b85{width:56px;height:56px;border-radius:50%;background:#f5b026;color:#0b0b0c;display:grid;place-items:center;font-size:17px;font-weight:700}
-.m9-2f7ab6d{flex:1;min-width:180px}
 .m9-2a69945{display:block;font-size:18px;font-weight:700}
 .m9-61391df{display:block;font-family:'Geist Mono',monospace;font-size:11.5px;color:#9a9aa0;margin-top:4px}
 .m9-6a584b1{background:#fff;border:1px solid #e8e5dd;border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:center}
@@ -11591,7 +11602,6 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .m9-d870d4c{min-height:48px;padding:0 14px;border-radius:12px;border:var(--dc-border, unset);background:#fff;font-size:14.5px;font-weight:500;cursor:pointer;text-align:left}
 .m9-24301c5{font-size:14.5px}
 .m9-24f4cfc{display:flex;gap:10px;padding:14px;border-radius:12px;background:#f3faf4;font-size:15px;line-height:1.5}
-.m9-6f06c77{font-family:'Geist Mono',monospace}
 .m9-740d58a{align-self:flex-start;height:40px;padding:0 4px;border:0;background:none;font-size:14px;text-decoration:underline;cursor:pointer}
 .m9-593c6e4{align-self:flex-start;height:44px;padding:0 16px;margin-top:4px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px}
 .m9-b12971d{height:44px;padding:0 16px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px}

@@ -3867,3 +3867,29 @@ too."
   first, paging, audit) and both refusals; `tests/mentor-v15.test.js` opens
   the tab.
 
+## The timetable, for a child (2026-10-28)
+
+Closes "For the next agent: the timetable UX needs work" (2026-10-24). A child
+wrote to their mentor "I am having trouble doing my timetable"; the owner
+found creating one confusing and said the kinds of week are "just presets:
+they should be able to build freely".
+
+- **Member portal → Timetable** leads with **Your class** (course, day, time,
+  room, instructor) from the server's `mine`, then *Classes on <day>* with
+  theirs marked **Yours** in words, then *The rest of Saturday* (the
+  Formation day) on its own — it used to replace the course slots outright.
+  The division card no longer lists a whole division's courses as "yours",
+  and its icon follows the division (it was always a code icon).
+- **Make my week** opens the maker at `/timetable/me?centre=<slug>`: the
+  centre's classes are in, the child's own marked from `member_timetable`
+  (not a guess from the track), once sign-in has settled.
+- **The maker builds freely from the first second**: the add box and the
+  days are always there. "What's your week like?" (six equal tiles) is gone;
+  in its place an optional *Not sure where to start?* — your NGG classes,
+  your school lessons, your study time, each one button and a tick — and the
+  kinds of week as **Suggestions for:** chips that only change suggestions.
+  The import dialog offers a member's own centre first.
+- Tests: `tests/timetable-ui.test.js` was failing on `main` (it waited for the
+  retired member table); it now pins the member screen, the maker opening
+  with the classes in, and a first-time visitor typing a class with no preset.
+

@@ -7027,6 +7027,18 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 
 /* ── "What's your week like?" (§7.1) ── */
 .tt-modes { display: flex; flex-direction: column; gap: 12px; }
+.tt-steps { display: flex; flex-direction: column; gap: 12px; }
+.tt-steps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--tt-line-strong); border-radius: 16px; background: var(--tt-surface); overflow: hidden; }
+.tt-step { display: flex; gap: 12px; padding: 14px; }
+.tt-step + .tt-step { border-top: 1px solid var(--tt-hair); }
+.tt-step-n { flex: 0 0 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; background: var(--tt-ink); color: var(--tt-surface); }
+.tt-step.is-done .tt-step-n { background: #17663a; }
+.tt-step-body { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.tt-step-body b { font-size: 15px; font-weight: 600; }
+.tt-step-body > span:not(.tt-row8) { font-size: 13.5px; color: var(--tt-ink-2); }
+.tt-step.is-done .tt-step-body b { color: var(--tt-ink-2); }
+.tt-steps-other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; color: var(--tt-ink-2); }
+.tt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tt-modes-head { display: flex; flex-direction: column; gap: 4px; color: var(--tt-ink-2); }
 .tt-modes-title { font: 700 18px/1.3 var(--font-display); color: var(--tt-ink); }
 .tt-modes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

@@ -72,18 +72,27 @@ Object.assign(Mp9Portal.prototype, {
     const myCourses = (tt.courses || []).filter(Boolean), myL = myCourses.map(c => c.toLowerCase());
     const division = { name: tt.division || "Your division", course: myCourses.join(", ") || "No course chosen yet: ask your centre", instructor: "Your instructor", room: me.centre + " centre",
       chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
-    const slots = (tt.slots || []);
-    const byDay = {};
+    /* The week, as a child reads it (owner, 2026-10-28: "I am having trouble
+       doing my timetable"): THEIR class first — day, time, room, who — then
+       the centre's classes by day with theirs marked in words, then the rest
+       of Saturday (the Formation day) on its own, never mixed into the
+       classes. `mine` is the server's (member_timetable), not a name guess. */
+    const slots = (tt.slots || []).slice().sort((x, y) => ((x.weekday + 1) % 7) - ((y.weekday + 1) % 7) || String(x.startTime).localeCompare(String(y.startTime)));
     const DN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    slots.forEach(x => { const day = DN[x.weekday] || x.day || "Saturday"; (byDay[day] = byDay[day] || []).push([x.startTime || x.start || "", (x.course || x.title || "") + (x.level ? " · " + x.level : ""), x.room || x.where || ""]); });
-    // Who teaches the member's own course, named as a child addresses them (the server's title + surname).
-    const mySlot = slots.find(x => x.mine && x.instructor) || slots.find(x => x.instructor);
-    if (mySlot) division.instructor = mySlot.instructor;
-    if (slots[0] && slots[0].room) division.room = slots[0].room;
+    const hm = x => [x.startTime, x.endTime].filter(Boolean).join("–");
+    const mineSlots = slots.filter(x => x.mine);
+    const mySlot = mineSlots.find(x => x.instructor) || mineSlots[0];
+    if (mySlot && mySlot.instructor) division.instructor = mySlot.instructor;
+    if (mySlot && mySlot.room) division.room = mySlot.room;
+    if (myCourses.length > 3) division.course = "Your centre confirms your course";
+    const DIV_ICON = [[/tech|cod|comput/i, "ph ph-code"], [/art|music|perform|media|creative/i, "ph ph-music-notes"], [/sport|athlet/i, "ph ph-soccer-ball"], [/business|enterpr/i, "ph ph-briefcase"], [/science|stem/i, "ph ph-flask"]];
+    division.icon = (DIV_ICON.find(([re]) => re.test(division.name)) || [0, "ph ph-graduation-cap"])[1];
+    const ttMine = mineSlots.map(x => ({ day: DN[x.weekday] || x.day || "Saturday", time: hm(x), course: x.course + (x.level ? " · " + x.level : ""), where: [x.room, x.instructor].filter(Boolean).join(" · ") || me.centre + " centre" }));
+    const byDay = {};
+    slots.forEach(x => { const day = DN[x.weekday] || x.day || "Saturday"; (byDay[day] = byDay[day] || []).push(x); });
+    const ttDays = Object.keys(byDay).map(d => ({ d, rows: byDay[d].map(x => ({ t: hm(x), a: x.course + (x.level ? " · " + x.level : ""), w: x.room || "", mine: !!x.mine, bg: x.mine ? "#fdf6e3" : "#fff", fw: x.mine ? "700" : "400" })) }));
     const form = this.dd("form") || {};
-    const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
-    const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
-      .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: myL.some(c => String(a).toLowerCase().startsWith(c)) })) }));
+    const ttSat = (form.blocks || []).map(b => ({ t: b.start, a: b.title, w: (b.for && b.for.member && b.for.member[0]) || b.flow || "" }));
     const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : wk && u.week < wk ? "To catch up" : "Not started";
       /* The padlock is for a lesson that is not open yet, and only that: a
          past week the child has not started is open, and drawing it locked
@@ -91,10 +100,11 @@ Object.assign(Mp9Portal.prototype, {
       return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" || st === "To catch up" ? "#7a5600" : "#6b6b72",
         icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : /^Opens/.test(st) ? "ph ph-lock-simple" : st === "To catch up" ? "ph ph-arrow-counter-clockwise" : "ph ph-circle" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
-    return { lessons, assignments: asg, events: ev, division, ttDays, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
+    return { lessons, assignments: asg, events: ev, division, ttDays, ttMine, hasMine: ttMine.length > 0, noMine: !ttMine.length, ttSat, hasSat: ttSat.length > 0, noSlots: !slots.length, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
       oppsTop: oppsTop.length ? oppsTop : [{ t: "Nothing picked for you yet", why: "Staff add bootcamps and competitions here", close: "check back soon" }],
       dlPdf: () => this.printCurriculum(), dlDoc: () => this.printCurriculum(true),
-      openTimetableMaker: () => { location.href = "/timetable/me"; }, printPdf: () => window.print(),
+      // The maker opens with this centre's classes already in, theirs marked (?centre=, tt-app.jsx).
+      openTimetableMaker: () => { location.href = "/timetable/me" + (tt.slug ? "?centre=" + encodeURIComponent(tt.slug) : ""); }, printPdf: () => window.print(),
       lt: this.subTabs("ltab", [["week", "This week", "ph ph-book-open-text"], ["course", "My course", "ph ph-books"]].concat(this.older() ? [["forYou", "For you", "ph ph-sparkle"]] : [])) };
   },
   printCurriculum(word) {

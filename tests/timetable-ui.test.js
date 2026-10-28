@@ -135,14 +135,38 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     mp.on('pageerror', e => errs.push('member: ' + String(e).slice(0, 200)));
     await mp.goto(BASE + '/dashboard/timetable', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mp);
-    await mp.waitForSelector('.tt-table', { timeout: 40000 });
-    const mine = await mp.$eval('.tt-table tr.is-mine', el => el.innerText);
-    chk('the member\'s dashboard has a Timetable tab with their centre\'s week', (await mp.$$('.tt-table tbody tr')).length === 2);
-    chk('…their own course marked in words, not only colour', /Music/.test(mine) && /Your course/.test(mine));
+    /* The member portal (v9): THEIR class first, the centre's classes by day
+       with theirs marked in words, then one button into the maker. */
+    await mp.waitForFunction(() => /Your class/.test(document.body.innerText) && /Make my week/.test(document.body.innerText), null, { timeout: 60000 });
+    const mtxt = await mp.innerText('main');
+    chk('the member\'s timetable leads with their own class: course, day and time', /Your class\s*\n\s*Music\s*\n\s*Saturday · 10:00–11:30/.test(mtxt));
+    chk('…then the centre\'s classes, theirs marked in words, not only colour', /Classes on Saturday/.test(mtxt) && /Music\s*Yours/.test(mtxt) && /Acting/.test(mtxt) && !/Acting\s*Yours/.test(mtxt));
     chk('…readable on a phone without sideways scrolling', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-    chk('…and "Design my own timetable" opens the maker on their centre', await mp.$eval('a:has-text("Design my own timetable")', a => /\/timetable\?centre=egbeda$/.test(a.getAttribute('href'))).catch(() => false));
     await mp.screenshot({ path: path.join(SHOTS, 'member-phone.png'), fullPage: true });
-
+    await mp.click('button:has-text("Make my week")');
+    await mp.waitForURL(/\/timetable\/me/, { timeout: 20000 });
+    await waitForBoot(mp);
+    await mp.waitForFunction(() => /Not sure where to start\?/.test(document.body.innerText), null, { timeout: 40000 });
+    await mp.waitForFunction(() => /Your NGG classes \(done\)/.test(document.body.innerText) || /Change centre/.test(document.body.innerText), null, { timeout: 20000 });
+    const tx = await mp.innerText('body');
+    chk('"Make my week" opens the maker with their centre\'s classes already in, and three optional steps instead of six choices', /Change centre/.test(tx) && /Type a lesson/.test(tx) && /Plan my study time/.test(tx) && !/What’s your week like\?/.test(tx));
+    chk('…their own class is marked in the maker too', await mp.evaluate(() => /Music[\s\S]{0,40}Your course/i.test(document.body.innerText)));
+    await mp.screenshot({ path: path.join(SHOTS, 'maker-steps-phone.png'), fullPage: false });
+    await mp.click('button:has-text("Type a lesson")');
+    await mp.waitForTimeout(400);
+    chk('…"Type a lesson" puts the cursor in the add box', await mp.evaluate(() => !!document.activeElement && /tt-composer-input|tt-input--qa/.test(document.activeElement.className)));
+    /* Building is free: a first-time visitor on a desktop can type a class
+       at once, with no preset chosen; the presets only change suggestions. */
+    const fp = await (await browser.newContext({ viewport: { width: 1360, height: 900 } })).newPage();
+    fp.on('pageerror', e => errs.push('maker: ' + String(e).slice(0, 200)));
+    await fp.goto(BASE + '/timetable/me', { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await fp.waitForSelector('input[aria-label="Add in plain words"]', { timeout: 40000 });
+    chk('a fresh maker has the add box from the start, and the presets are optional suggestions', /Suggestions for:/.test(await fp.innerText('body')) && !/What’s your week like\?/.test(await fp.innerText('body')));
+    await fp.fill('input[aria-label="Add in plain words"]', 'Maths Mon Wed 8-9 Room 4');
+    await fp.press('input[aria-label="Add in plain words"]', 'Enter');
+    await fp.waitForFunction(() => /Maths/.test((document.querySelector('.tt-listpane') || {}).innerText || ''), null, { timeout: 10000 }).catch(() => {});
+    chk('…and a class typed in plain words goes straight into the week, no preset needed', /Maths/.test(await fp.innerText('.tt-listpane')));
+    await fp.screenshot({ path: path.join(SHOTS, 'maker-free-desktop.png') });
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {
