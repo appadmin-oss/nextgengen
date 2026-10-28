@@ -33000,6 +33000,16 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $pg = backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'before' => 2]);
     chk('journal · pages on from where the mentor is', array_column($pg['entries'], 'entryId') === ['ANC-J3'] && $pg['more'] === false);
     db_exec("DELETE FROM journal WHERE memberId LIKE 'ANC-%'");
+    $ls = backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('lessons · the assigned mentor gets the mentee\'s lessons, gated like Growth', !empty($ls['ok']) && array_key_exists('curriculum', $ls));
+    /* A mentor whose own record names another centre (they mentor across
+       centres) is refused by the older record gate (not_your_centre) while
+       Growth, gated by the assignment, opens: Lessons must follow Growth. */
+    db_exec("UPDATE mentors SET centre = 'Elsewhere' WHERE mentorId = 'ANCT-1'");
+    chk('lessons · a mentor based at another centre still gets their mentee\'s lessons, as Growth does', !empty(backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['ok'])
+        && !empty(backend_dispatch('member.mentor.growth', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['ok']));
+    db_exec("UPDATE mentors SET centre = 'Anchorville' WHERE mentorId = 'ANCT-1'");
+    chk('lessons · …and a mentor of another child does not', empty(backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['ok']));
     db_exec("UPDATE mentor_assignments SET status = 'ended' WHERE memberId = 'ANC-KID'");
     chk('anchor · when the assignment ends, so does the connection', (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload'
         && backend_dispatch('member.circle', ['requesterId' => 'ANC-KID'])['circle']['mentor'] === false);
