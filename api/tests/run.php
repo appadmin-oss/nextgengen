@@ -26914,5 +26914,65 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec('DELETE FROM members WHERE memberId = ?', [$mid]);
 })();
 
+/* ══ Erasing a member, and the one record it deliberately keeps ════════
+
+   The 27 October audit listed the surviving volunteer record as a gap.
+   It is not: a volunteer record is the record that this adult was vetted
+   and supervised children, and for safeguarding that has to outlive the
+   account. The right to erasure yields where there is an overriding
+   obligation, and deleting it on request would let somebody remove the
+   only evidence that they were ever there.
+
+   What WAS wrong is that the code said nothing, so a retention nobody
+   decided looks identical to one nobody noticed. These pin both halves:
+   the member really is erased, and the thing that is kept is counted and
+   named rather than left behind quietly. */
+(function () {
+    $mid = 'ER-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $mid, 'fullName' => 'Vee Teacher', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'email' => 'vee@example.org', 'phone' => '08030000000',
+        'photoUrl' => '/u/vee.jpg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'V-' . $mid, 'memberId' => $mid, 'fullName' => 'Vee Teacher',
+        'email' => 'vee@example.org', 'phone' => '08030000000', 'role' => 'Instructor', 'status' => 'active']);
+
+    $r = member_erase($mid, 'SUPER', '127.0.0.1');
+
+    chk('erase: the member record itself is scrubbed', !empty($r['ok']) && (function () use ($mid) {
+        $m = db_row('SELECT fullName, email, phone, photoUrl, status FROM members WHERE memberId = ?', [$mid]);
+        return $m && (string)$m['fullName'] === 'Deleted member' && (string)$m['email'] === ''
+            && (string)$m['phone'] === '' && (string)$m['photoUrl'] === '' && (string)$m['status'] === 'deleted';
+    })());
+
+    /* Kept on purpose. If somebody "fixes" this by deleting the row, this
+       is the test that should stop them and send them to the comment. */
+    chk('erase: a linked volunteer record SURVIVES — it is a safeguarding record, not a copy of the member',
+        (int)db_row('SELECT COUNT(*) c FROM volunteers WHERE memberId = ?', [$mid])['c'] === 1);
+
+    chk('erase: and the caller is told what was kept, rather than left to find out',
+        ($r['volunteerRecordsKept'] ?? 0) === 1);
+
+    /* So the person asking to be forgotten can be told exactly what was
+       kept and why, and an auditor sees a decision rather than a miss. */
+    chk('erase: the retention is on the audit trail, with its reason', (function () use ($mid) {
+        $row = db_row("SELECT meta FROM audit_log WHERE event = 'member.erase' AND subject = ? ORDER BY id DESC LIMIT 1", [$mid]);
+        $meta = $row ? json_decode((string)$row['meta'], true) : null;
+        return is_array($meta) && ($meta['volunteerRecordsKept'] ?? 0) === 1
+            && str_contains((string)($meta['why'] ?? ''), 'Safeguarding');
+    })());
+
+    /* A member who never volunteered has nothing kept, and the audit row
+       does not imply otherwise. */
+    $plain = 'ER2-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $plain, 'fullName' => 'Just Member', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r2 = member_erase($plain, 'SUPER', '127.0.0.1');
+    chk('erase: somebody who never volunteered has nothing kept and is not said to have',
+        ($r2['volunteerRecordsKept'] ?? null) === 0
+        && (string)(db_row("SELECT meta FROM audit_log WHERE event = 'member.erase' AND subject = ? ORDER BY id DESC LIMIT 1", [$plain])['meta'] ?? '') === '');
+
+    db_exec('DELETE FROM volunteers WHERE memberId = ?', [$mid]);
+    db_exec('DELETE FROM members WHERE memberId IN (?, ?)', [$mid, $plain]);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

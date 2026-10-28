@@ -399,8 +399,45 @@ function member_erase(string $mid, string $by, string $ip = ''): array {
            scrub that did not run is visible rather than assumed. */
         if (function_exists('ops_record')) ops_record('warn', 'member.erase', 'ledger scrub failed', $e->getMessage());
     }
-    audit('member.erase', $by ?: null, $mid, [], $ip);
-    return ['ok' => true];
+    /* ── The volunteer record, said explicitly ────────────────────────────
+     * A linked `volunteers` row is KEPT, with its name and contact details.
+     *
+     * That looks like an omission and is a decision. A volunteer record is
+     * not a copy of the member record wearing a different name: it is the
+     * record that this adult was vetted and supervised children, and for
+     * safeguarding that has to outlive their account. The right to erasure
+     * is not absolute — it yields where there is an overriding obligation,
+     * and "who was working with the children in 2026" is one. Deleting it
+     * on request would mean a person could remove the only evidence that
+     * they were ever there.
+     *
+     * So the erasure is honest about its own limit instead of quietly
+     * leaving the row behind. It is counted, journalled and audited, so
+     * the person asking to be forgotten can be told exactly what was kept
+     * and why, and an auditor sees a decision rather than something that
+     * was missed.
+     *
+     * Stated here for the same reason the ledger paragraph above is: for a
+     * table an erasure does not touch, silence is itself a decision, and
+     * this one should be readable. */
+    $volunteerIds = [];
+    try {
+        foreach (db_all('SELECT volunteerId FROM volunteers WHERE memberId = ?', [$mid]) as $v) {
+            $volunteerIds[] = (string)$v['volunteerId'];
+        }
+    } catch (Throwable $e) {
+        /* Never fail an erasure over the note about it. The member asked
+           to be forgotten and the rest has already happened. */
+        if (function_exists('ops_record')) ops_record('warn', 'member.erase', 'volunteer check failed', $e->getMessage());
+    }
+
+    audit('member.erase', $by ?: null, $mid, $volunteerIds ? [
+        'volunteerRecordsKept' => count($volunteerIds),
+        'volunteerIds' => $volunteerIds,
+        'why' => 'Safeguarding record of an adult who worked with children; retained deliberately.',
+    ] : [], $ip);
+
+    return ['ok' => true, 'volunteerRecordsKept' => count($volunteerIds)];
 }
 
 function member_delete_account(array $p): array {
