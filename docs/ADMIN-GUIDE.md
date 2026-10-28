@@ -3397,6 +3397,29 @@ script) inside the step that uses it, then each common problem beside its fix.
 on?* — by whoever looks after their record — with a reason. An override never
 undoes a suspension.
 
+**CACENTRE runs the Wi-Fi (added 2026-10-28).** CACENTRE is the authority for
+the Wi-Fi across the estate: it holds the PINs, the routers fetch from it, and
+its blocks and overrides win. NGG keeps its say. Every 15 minutes NGG sends
+CACENTRE everybody it speaks for: members, staff, mentors and instructors, and
+Summer School participants within their edition's dates. Each person goes with
+NGG's verdict (**on**, **limited** or **off**) and the reason, worked out from the
+table on *Who gets on*, from suspensions, and from the overrides set here.
+CACENTRE never gives anybody more than NGG does. Somebody suspended here is off
+at CACENTRE within the quarter hour; a record deleted here is withdrawn there.
+Data allowances are counted at CACENTRE now, not here.
+
+The Gateways page shows when the list was last sent, how many people were on
+it, and anything CACENTRE refused. A super admin can press **Send now**.
+
+- *"CACENTRE has no site for CP (12)"*: add a site at CACENTRE (Admin → Wi-Fi →
+  Sites & routers) whose code is the centre's card code, here `cp`. Until then
+  those 12 people can sign in only at the hubs.
+- *"doesn't recognise NGG's key"*: `WIFI_SECRET_NGG` must be the same value in
+  NGG's `api/config.php` (`wifi → cacentre_secret`) and in CACENTRE's
+  `includes/.env`.
+- *"NGG isn't sending its people there yet"*: no key is set. Until one is,
+  the gateways keep fetching from NGG as before.
+
 ### Wi-Fi in the Club portal, regions and analytics (added 2026-10-27)
 
 - **Who sees what.** You see the Wi-Fi of the centres you look after: your own

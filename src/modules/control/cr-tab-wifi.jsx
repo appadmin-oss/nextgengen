@@ -462,10 +462,43 @@ function crWfLoadBlocks(L) {
 const CR_WF_CAN = [["profiles", "Speeds"], ["devices", "Devices"], ["kick", "Signs out"], ["remember", "Remembers"], ["filter", "Filtering"], ["usage", "Data used"]];
 
 const crWfLoad = async () => {
-  const d = await NGGApi.admin.wifi.overview();
+  const [d, cac] = await Promise.all([NGGApi.admin.wifi.overview(), NGGApi.admin.wifi.cacentre().catch(() => null)]);
   d.forms = crWfForms(d);
+  d.cacentre = cac;
   return d;
 };
+
+/* CACENTRE runs the Wi-Fi for the estate; NGG sends its people and its say
+   about each (domain/wifi-cacentre.php). Why a push failed, in words. */
+const CR_WF_CAC_ERR = {
+  unreachable: "CACENTRE couldn’t be reached. It is tried again at the next push.",
+  bad_signature: "CACENTRE doesn’t recognise NGG’s key. WIFI_SECRET_NGG must be the same value here and in CACENTRE’s includes/.env.",
+  not_configured: "CACENTRE has no key for NGG yet. Put the same WIFI_SECRET_NGG in CACENTRE’s includes/.env.",
+  expired: "The two servers’ clocks disagree by more than five minutes.",
+  bad_window: "The two servers’ clocks disagree by more than five minutes.",
+  too_many: "The list was longer than one push may carry.",
+};
+async function crWfCacPush(ctx) {
+  try {
+    const r = await NGGApi.admin.wifi.cacentrePush();
+    ctx.toast(r.ok ? "Sent " + crNum(r.sent) + " people to CACENTRE" + (r.refused ? "; " + crNum(r.refused) + " refused." : ".") : (CR_WF_CAC_ERR[r.error] || "CACENTRE refused the list: " + r.error), null, !r.ok || r.refused > 0);
+    ctx.reload();
+  } catch (e) { ctx.toast(crWfErr(e, "Couldn’t send the list to CACENTRE."), null, true); }
+}
+function crWfCacBlock(ctx, c) {
+  if (!c) return null;
+  const act = c.canSend && c.configured ? { l: "Send now", run: () => crWfCacPush(ctx) } : undefined;
+  if (!c.configured) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi for the estate. NGG isn’t sending its people there yet.",
+    sub: "Put a 32+ character WIFI_SECRET_NGG in NGG’s api/config.php (wifi → cacentre_secret) and the same value in CACENTRE’s includes/.env. Until then the gateways keep fetching from NGG." };
+  const L = c.last;
+  if (!L) return { type: "note", span: 6, icon: "buildings", text: "CACENTRE runs the Wi-Fi. NGG’s people are sent there every " + Math.round(c.every / 60) + " minutes; nothing has been sent yet.", act };
+  const unknown = Object.keys(L.unknownSites || {});
+  if (!L.ok) return { type: "note", span: 6, icon: "warning", tone: "bad", text: "The last list didn’t reach CACENTRE (" + crAgo(L.at) + "). " + (CR_WF_CAC_ERR[L.error] || L.error), act };
+  return { type: "note", span: 6, icon: "buildings", tone: L.refused || unknown.length ? "warn" : "ok",
+    text: "CACENTRE runs the Wi-Fi. Sent " + crAgo(L.at) + ": " + crNum(L.sent) + " people with NGG’s say about each" + (L.gone ? ", " + crNum(L.gone) + " no longer on NGG’s list withdrawn" : "") + (L.refused ? "; " + crNum(L.refused) + " refused (" + (L.refusals || []).slice(0, 3).map(x => x.id + ": " + x.error).join(", ") + ")" : "") + ".",
+    sub: (unknown.length ? "CACENTRE has no site for " + unknown.map(k => k.toUpperCase() + " (" + crNum(L.unknownSites[k]) + ")").join(", ") + ": add each there with the centre’s card code; until then those people sign in at the hubs only. " : "")
+      + (L.full ? "" : "The list was sent in parts, so nobody was withdrawn. ") + "Suspensions, overrides and the access table here become NGG’s say; CACENTRE never gives more than NGG does.", act };
+}
 
 Object.assign(CR_TAB_DEFS, {
   wifi: {
@@ -503,6 +536,7 @@ Object.assign(CR_TAB_DEFS, {
           cards: (d.centres || []).map(c => byCentre[c] ? null : { icon: "wifi-slash", title: c, sub: "No gateway yet. Members here see “Wi-Fi isn’t set up at your centre yet”. Open to add one.", tag: "Not set up", tone: "neutral",
             onClick: () => crWfEdit(ctx, d, null, c) })
             .filter(Boolean).concat([].concat(...Object.keys(byCentre).sort().map(c => byCentre[c].map(card)))) },
+        crWfCacBlock(ctx, d.cacentre),
         { type: "note", span: 6, icon: "info", text: "Each gateway fetches its centre’s list from NGG every one to five minutes, with its own key. Somebody suspended is signed out at the next fetch; a gateway that can’t reach NGG keeps the people it already has.",
           sub: "Open a gateway for its health, what it holds, its setup guide and its key.", act: { l: "Setup guides", run: () => ctx.go("wifi", "wifi-guides") } },
       ].filter(Boolean);

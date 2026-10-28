@@ -33093,5 +33093,63 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Wi-Fi: NGG's people and its say, sent to CACENTRE (domain/wifi-cacentre.php) ──
+(function () {
+    $now = now_iso(); $C = 'Cac Push Centre';
+    db_insert('centres', ['centreId' => 'CEN-CACP', 'name' => $C, 'code' => 'CP', 'status' => 'active']);
+    $mem = fn(string $id, array $x) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cac ' . $id, 'email' => strtolower($id) . '@Example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now], $x));
+    $mem('NGG-CP-ACT', ['displayId' => '026-701']);
+    $mem('NGG-CP-SUS', ['displayId' => '026-702', 'status' => 'suspended']);
+    $mem('NGG-CP-OVR', ['displayId' => '026-703']);
+    $mem('NGG-CP-MEN', ['displayId' => '026-704', 'role' => 'mentor']);
+    $mem('SUM-CP-1', ['type' => 'Summer', 'role' => 'member']);
+    $today = attendance_today();
+    db_insert('summer_cohorts', ['cohortId' => 'CP-LIVE', 'name' => 'Cac live', 'status' => 'active', 'startDate' => gmdate('Y-m-d', strtotime($today . ' -2 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +10 days')), 'createdAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SS-CP-1', 'cohortId' => 'CP-LIVE', 'fullName' => 'Cac Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'CP-26-001']);
+    db_insert('wifi_accounts', ['subjectType' => 'member', 'subjectId' => 'NGG-CP-OVR', 'username' => '026-703', 'pinSealed' => wifi_pin_seal('123456'), 'override' => 'off',
+        'pinSetAt' => $now, 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $all = []; foreach (wifi_cac_people() as $r) $all[$r['id']] = $r;
+    $p = fn($id) => $all[$id] ?? [];
+    chk('wifi→cacentre · an active member goes as an NGG member, on, at their centre’s card code', ($p('NGG-CP-ACT')['kind'] ?? '') === 'member' && $p('NGG-CP-ACT')['verdict'] === 'on'
+        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701' && $p('NGG-CP-ACT')['why'] === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
+    chk('wifi→cacentre · a suspension here is NGG saying off, with the reason in words', ($p('NGG-CP-SUS')['verdict'] ?? '') === 'off' && $p('NGG-CP-SUS')['why'] === WIFI_CASE_WORDS['blocked']);
+    chk('wifi→cacentre · a hand-set override here travels as NGG’s say', ($p('NGG-CP-OVR')['verdict'] ?? '') === 'off' && $p('NGG-CP-OVR')['why'] === WIFI_CASE_WORDS['override']);
+    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)', ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && $p('NGG-CP-MEN')['homeSite'] === '');
+    chk('wifi→cacentre · a participant goes within their edition, until its end date', ($p('summer-SS-CP-1')['kind'] ?? '') === 'participant' && $p('summer-SS-CP-1')['verdict'] === 'on'
+        && $p('summer-SS-CP-1')['validUntil'] === gmdate('Y-m-d', strtotime($today . ' +10 days')) && $p('summer-SS-CP-1')['printedId'] === 'CP-26-001');
+    chk('wifi→cacentre · a Summer-type member record is not sent as a member', !isset($all['SUM-CP-1']));
+    $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
+    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money', array_keys($keys) == ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
+
+    // The envelope: what CACENTRE's WifiEnvelope::verify() checks, re-done here.
+    $sec = str_repeat('k', 40); $t0 = 1800000000;
+    $tok = wifi_cac_mint('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
+    [$v, $body, $mac] = explode('.', $tok);
+    $unb = fn($s) => base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4));
+    $c = json_decode($unb($body), true);
+    chk('wifi→cacentre · the roster is signed in the estate’s v1 envelope, as NGG, for wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
+        && $c['iss'] === 'ngg' && $c['typ'] === 'wifi.roster' && $c['exp'] - $c['iat'] === 300 && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+
+    // Not configured: nothing is sent, and the cron tick says so rather than failing.
+    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = '';
+    chk('wifi→cacentre · with no key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
+    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = 'changeme-changeme-changeme-changeme-12';
+    chk('wifi→cacentre · a placeholder key counts as no key', !wifi_cac_ready());
+    $GLOBALS['CONFIG']['wifi']['cacentre_secret'] = '';
+
+    // Who may: the status for anybody with network; sending only for somebody who sees every centre.
+    $mem('NGG-CP-SA', ['role' => 'super_admin']);
+    $mem('NGG-CP-ADM', ['role' => 'admin']);
+    $st = backend_dispatch('admin.wifi.cacentre', ['requesterId' => 'NGG-CP-SA']);
+    chk('wifi→cacentre · the status says whether it is set up, and that a super admin may send', !empty($st['ok']) && $st['configured'] === false && $st['canSend'] === true);
+    chk('wifi→cacentre · an admin without network sees neither', (backend_dispatch('admin.wifi.cacentre', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.wifi.cacentre.push', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden');
+    db_exec("DELETE FROM wifi_accounts WHERE subjectId = 'NGG-CP-OVR'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SS-CP-1'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'CP-LIVE'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CP-%' OR memberId = 'SUM-CP-1'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-CACP'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

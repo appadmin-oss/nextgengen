@@ -3980,3 +3980,43 @@ then version and clock, hotspot, the install line, the check, and a fix for
 each message the owner saw. Both screens' main button copies the install line;
 "Download the setup file" is there for a router that can't fetch.
 
+## Wi-Fi: NGG sends its roster to CACENTRE (2026-10-28)
+
+The owner moved the Wi-Fi's authority to CACENTRE ("CACENTRE controls it; the
+super admins still have a say"). CACENTRE's side is in the cacentre-site repo
+(`cac/docs/wifi.md`). This is NGG's side: `domain/wifi-cacentre.php`.
+
+- **What goes.** Every NGG member and every staff, mentor or instructor
+  account, plus participants of a live edition. Summer-type member rows are not
+  sent; those people go as participants. Each person carries their id, kind
+  (member | staff | participant), name, email, printed ID (their sign-in
+  name), home site (the centre's card code, lower-case; staff have none, so
+  they can sign in anywhere), NGG's verdict with WIFI_CASE_WORDS as the reason,
+  and a participant's edition end date. Nothing else: no phone, birthday,
+  guardian or money. A PHP check pins the field list.
+- **The verdict is the existing access table.** It uses `wifi_access_for` and
+  `_for_participant`, with this centre's settings, policy states, fees and the
+  hand overrides, all read in batches. NGG's own usage is left out of it
+  (`usage => null`), because CACENTRE counts allowances now and counting here
+  too would charge the same megabytes twice.
+- **Signed, pushed, every 15 minutes.** The token uses the directory push's
+  v1 envelope with typ `wifi.roster` and its own key, `WIFI_SECRET_NGG`
+  (environment variable or `config.wifi.cacentre_secret`). It is posted to
+  `/api/wifi-roster.php?issuer=ngg`. The web-cron tick `wifi_cac` does nothing
+  until a key is set. One push is `full` (anybody not sent is withdrawn), up
+  to 5,000 people. A longer list goes in partial pushes, which withdraw
+  nobody, and the screen says so. The cap is CACENTRE's: it now refuses an
+  oversize full list rather than cutting it.
+- **Screen.** A note on Control Room → Wi-Fi → Gateways shows the last push,
+  any refusals, any home sites CACENTRE has no site for, and errors in words.
+  A super admin has **Send now** (`admin.wifi.cacentre.push`; refused for a
+  centre-scoped network holder, because the push speaks for every centre).
+- **Proven end to end** against CACENTRE's real code on a throwaway MariaDB:
+  the people land, and the router at the site gets exactly the right sign-in
+  names. Suspending somebody at NGG and pushing gives `u;026-702;;;remove` at
+  the router's next fetch. A deleted record is withdrawn. An unknown centre
+  code is named back, and a wrong key is refused with `bad_signature`.
+- **Not yet.** The member app's Me → Wi-Fi still shows NGG's own PIN. The
+  next step is fetching the card from CACENTRE (`/api/wifi-card.php`,
+  `wifi.card`) once the routers have moved, then NGG's feed answers "moved".
+

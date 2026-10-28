@@ -231,6 +231,11 @@ function web_cron_run(): void {
                    revisited rather than how urgent any single row is, and
                    every row upserts on its source key so a missed tick costs
                    nothing. Does nothing at all until a push secret is set. */
+                /* NGG's people and NGG's say about each, to CACENTRE, which runs
+                   the Wi-Fi (domain/wifi-cacentre.php). Every 15 minutes, so a
+                   suspension here is off there within the quarter hour. Does
+                   nothing until WIFI_SECRET_NGG is set. */
+                if (web_cron_due('wifi_cac', web_cron_cfg('wifi_cac', WIFI_CAC_EVERY)) && function_exists('wifi_cac_tick')) web_cron_guard('wifi_cacentre', fn() => wifi_cac_tick());
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
             } finally { @flock($lock, LOCK_UN); }
         }

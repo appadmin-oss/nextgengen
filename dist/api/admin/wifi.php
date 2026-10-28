@@ -23,6 +23,7 @@ if ($method === 'GET') {
     elseif ($view === 'gatewayIds') $res = gs_call('admin.wifi.gateways.ids', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['q', 'region', 'platform', 'health'])));
     elseif ($view === 'load')     $res = gs_call('admin.wifi.load', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['plan', 'poll'])));
     elseif ($view === 'usage')    $res = gs_call('admin.wifi.usage', ['requesterId' => $mid] + array_intersect_key($_GET, array_flip(['period', 'centre', 'q', 'sort', 'page', 'pageSize'])));
+    elseif ($view === 'cacentre') $res = gs_call('admin.wifi.cacentre', ['requesterId' => $mid]);
     elseif ($view === 'setup')    $res = gs_call('admin.wifi.gateway.setup', ['requesterId' => $mid, 'gatewayId' => $_GET['gatewayId'] ?? '']);
     else                          $res = gs_call('admin.wifi.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -42,6 +43,7 @@ if ($method === 'GET') {
         'profiles'     => 'admin.wifi.profiles.set',
         // One op, two declared actions (test | rotate), over a selection or a region.
         'bulk'         => 'admin.wifi.gateways.bulk',
+        'cacentrePush' => 'admin.wifi.cacentre.push',
     ];
     $action = (string)($b['action'] ?? '');
     if (!isset($map[$action])) json_error('bad_action', 400);

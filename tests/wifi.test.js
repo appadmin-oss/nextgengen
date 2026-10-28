@@ -145,6 +145,7 @@ function cleanup() {
     chk('a silent gateway and one reporting a problem are listed as needing a look', /Silent for 3 hours/.test(body) && /reported a problem/i.test(body));
     chk('a centre without a gateway is shown, ready to add one', /Ajah/.test(body) && /No gateway yet/.test(body));
     chk('a working gateway with one wrong-key attempt is a warning, not “not working”', /Main hall router · 1 fetch with the wrong key/.test(body));
+    chk('CACENTRE runs the Wi-Fi: with no key set, the page says NGG isn’t sending its people there yet, and how to', /CACENTRE runs the Wi-Fi for the estate\. NGG isn’t sending its people there yet/.test(body) && /WIFI_SECRET_NGG/.test(body));
     await shot(P, 'wifi-1-gateways');
     await P.click('.cr-card:has-text("Main hall router")');
     await P.waitForSelector('.cr-sheet', { timeout: 10000 });

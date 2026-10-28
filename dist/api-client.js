@@ -1926,6 +1926,9 @@
         // Data used per person (domain/wifi-usage.php): period day | week | month.
         usage: (o) => request('/admin/wifi.php' + qs(Object.assign({ view: 'usage' }, o || {}))),
         lookup: (q) => request('/admin/wifi.php' + qs({ view: 'lookup', q })),
+        // CACENTRE runs the Wi-Fi; NGG sends its people and its say (domain/wifi-cacentre.php).
+        cacentre: () => request('/admin/wifi.php' + qs({ view: 'cacentre' })),
+        cacentrePush: () => request('/admin/wifi.php', { body: { action: 'cacentrePush' }, timeout: 120000 }),
         testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
         speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),
         regions: () => request('/admin/wifi.php' + qs({ view: 'regions' })),
