@@ -1923,6 +1923,8 @@
         gatewayRemove: (gatewayId) => request('/admin/wifi.php', { body: { action: 'remove', gatewayId } }),
         preview: (gatewayId, q) => request('/admin/wifi.php' + qs({ view: 'preview', gatewayId, q })),
         setup: (gatewayId) => request('/admin/wifi.php' + qs({ view: 'setup', gatewayId })),
+        // Data used per person (domain/wifi-usage.php): period day | week | month.
+        usage: (o) => request('/admin/wifi.php' + qs(Object.assign({ view: 'usage' }, o || {}))),
         lookup: (q) => request('/admin/wifi.php' + qs({ view: 'lookup', q })),
         testAtNextFetch: (gatewayId) => request('/admin/wifi.php', { body: { action: 'test', gatewayId } }),
         speedSave: (data) => request('/admin/wifi.php', { body: Object.assign({ action: 'speed' }, data) }),

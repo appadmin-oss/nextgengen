@@ -3919,3 +3919,64 @@ terrible … the structure of the messages … is too messy."
 - Tests: PHP pins the Lessons gate; `mentor-v15.test.js` pins one row per
   child, the merged timeline, the reply, and the phone layout (80/0).
 
+## Wi-Fi data used per person, allowances, clearer setup guides (2026-10-28)
+
+The owner: "Build the Wi-Fi usage tracking, staff and members only, with
+limits", and "improve the clarity of your guide".
+
+- **Migration 194**: `wifi_usage_daily` (bytes down/up per person, per local
+  day, per centre, with centreId; in CENTRE_NAME_TABLES), `wifi_usage_sessions`
+  (each gateway's last counters per session), `wifi_gateways.usageAt`.
+- **In**: `POST /api/hooks/wifi-usage.php` (`wifi.usage`, gateway key in the
+  headers, CSRF-exempt like every hook). Text lines `s;user;session;in;out` as
+  the router counts them, or JSON from the person's side. NGG adds only the
+  difference since a session's last report; a counter that goes down is a new
+  session; a jump over 50 GB is a broken counter. What a session moved after
+  its last report is lost (one poll interval). The MikroTik script posts its
+  `/ip hotspot active` counters before each fetch, 100 sessions a request.
+  RADIUS and OpenWrt don't report yet (`can.usage` false).
+- **Allowances**: `dayMb` / `monthMb` on each profile (layered like speeds;
+  the network forms edit them). `wifi_access_for` checks the profile a person
+  would have when on; over it, the new `overLimit` case (default Limited; Off;
+  On = watch only). Overrides still win. The centre list reads everybody's
+  month in one grouped query (`wifi_usage_totals`, by id in chunks); crossing
+  an allowance drops the centre's cached list so the next fetch applies it.
+- **Who sees it**: `admin.wifi.usage` (network, Wi-Fi scope; Control Room and
+  Club portal *Data used*) and the person's own `member.wifi.get` → `usage`.
+  Not families. Privacy copy that said "never who is online" now says what is
+  kept: amounts per person per day, never sites.
+- **Guides**: `admin.wifi.gateway.setup` now returns `summary`, `time`,
+  `before[]`, `steps[{h, text, cmd, script, tip}]`, `reports` and
+  `trouble[[problem, fix]]`. Both screens render the script and commands
+  inside their step; `check`/`diagnose` are gone.
+- Tests: PHP +21 (`usage ·`), `tests/wifi.test.js` 48/0 (HTTP report, guide
+  order, Data used in both portals with axe, the member's meter over an
+  allowance). It now waits for boot after every navigation.
+
+## MikroTik setup: one install line, not a pasted script (2026-10-28)
+
+The owner ran the guide on a real router (RB951Ui, gateway CACENTRE-EGBEDAX)
+and it failed in five places, all ours:
+
+1. The script still said `PASTE-THE-KEY-HERE` (the guide had been opened
+   without the key), so every fetch was refused: `fetch_failed`.
+2. `failure: not allowed by device-mode` — RouterOS 7.17+ refuses schedules
+   (and usually `/tool fetch`) until `/system device-mode update scheduler=yes
+   fetch=yes` is confirmed with a button press or power cycle.
+3. The WinBox terminal cut the long `source={…}` paste short (lines of empty
+   `{{{...`), leaving a broken sync script.
+4. `:local hs` does not survive to the next terminal line, so every
+   `in-interface=$hs` was empty: `ambiguous value of interface`.
+5. The guide asked anybody to paste 130 lines at all.
+
+Now: `GET /api/hooks/wifi-setup.php` (`wifi.setup.script`, gateway id + key in
+headers) returns the router's setup file with its key written in, and the
+guide's step 4 is ONE line that fetches it and `/import`s it. The file stops
+with the reason when there is no key (a key is 40 characters) or no hotspot;
+schedules are added inside `on-error` with the device-mode advice; the
+filtering block is one `:foreach` over every hotspot, so the interface is
+known on every line. The guide: device-mode first (with the button press),
+then version and clock, hotspot, the install line, the check, and a fix for
+each message the owner saw. Both screens' main button copies the install line;
+"Download the setup file" is there for a router that can't fetch.
+

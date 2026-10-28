@@ -50,28 +50,46 @@ const crWfDays = { current: 30 };   // the Analytics period, kept while the Cont
 
 /* The guide for one gateway: steps and a script from the server. With `key`
    (just added or rotated) the script carries it; otherwise it says where. */
+/* A setup file saved to the computer, for WinBox → Files and /import file-name=ngg-wifi.rsc. */
+function crWfSaveFile(text, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
 async function crWfGuide(ctx, g, key) {
   let s;
   try { s = await NGGApi.admin.wifi.setup(g.gatewayId); }
   catch (e) { ctx.toast(crWfErr(e, "Couldn’t open the setup guide."), null, true); return; }
   const fill = t => key ? String(t || "").split("PASTE-THE-KEY-HERE").join(key) : String(t || "");
   const script = fill(s.script);
+  /* The guide reads top to bottom as the job is done (owner, 2026-10-28: "not
+     very clear"): what this does and how long, what you need, numbered steps
+     with each command — and the script — inside the step that uses it, what
+     the gateway sends NGG, and each problem beside its fix. */
+  const steps = [];
+  (s.steps || []).forEach((st, i) => {
+    steps.push({ h: "Step " + (i + 1) + " · " + st.h, text: fill(st.text) || null, code: st.script ? script : (fill(st.cmd) || null), codeLabel: st.script ? s.scriptName : "Commands for step " + (i + 1), tip: st.tip || null });
+    if (st.script && st.cmd) steps.push({ text: "Then run:", code: fill(st.cmd), codeLabel: "Commands for step " + (i + 1) });
+  });
   ctx.drawer({
     title: key ? "Set up " + crWfName(g) + " now" : "Setup guide · " + crWfName(g), icon: "book-open",
-    sub: s.label + " · " + g.centre,
+    sub: s.label + " · " + g.centre + (s.time ? " · " + s.time : ""),
     sections: [
-      key ? { h: "This gateway’s key — shown once", text: key + "\n\nIt is already in the script below. Afterwards only its last four characters are shown; if it is lost, rotate it and run the setup again." }
-        : { h: "The key", text: "The script has PASTE-THE-KEY-HERE where the key goes. Keys are shown once; if this gateway’s is lost, rotate it and the guide opens again with the new one filled in." },
+      { h: "What this does", text: s.summary || s.needs },
+      key ? { h: "This gateway’s key — shown once", text: key + "\n\nIt is already in the script. Afterwards only its last four characters are shown; if it is lost, rotate it and this guide opens again with the new one filled in." }
+        : { h: "The key", text: "The script has PASTE-THE-KEY-HERE where the key goes. Keys are shown once: if this gateway’s is lost, rotate it and the guide opens again with the new one filled in." },
       s.pilot ? { h: "Pilot first", text: s.pilot } : null,
-      { h: "Before you start", text: s.needs },
-      ...(s.steps || []).map(st => ({ h: st.h, text: fill(st.text) })),
-      script ? { h: s.scriptName || "Script", text: script } : null,
-      s.diagnose ? { h: "What it tells NGG", text: s.diagnose } : null,
-      s.check ? { h: "Check it worked", text: s.check } : null,
-      s.trouble ? { h: "If it doesn’t work", text: s.trouble } : null,
+      (s.before || []).length ? { h: "You’ll need", list: s.before.map(t => ({ icon: "check", t })) } : null,
+      ...steps,
+      s.reports ? { h: "What it sends NGG", text: s.reports } : null,
+      (s.trouble || []).length ? { h: "If something goes wrong", rows: s.trouble } : null,
     ].filter(Boolean),
     actions: [
-      script ? { l: "Copy the script", primary: true, run: () => crSyCopy(ctx, script, "Script") } : null,
+      // MikroTik installs with ONE line (the router downloads its own file); the file is offered for a router that can't fetch.
+      s.oneLiner ? { l: "Copy the install line", primary: true, run: () => crSyCopy(ctx, fill(s.oneLiner), "Install line") } : null,
+      s.oneLiner && script ? { l: "Download the setup file", run: () => crWfSaveFile(script, "ngg-wifi.rsc") } : null,
+      script && !s.oneLiner ? { l: "Copy the script", primary: true, run: () => crSyCopy(ctx, script, "Script") } : null,
       key ? { l: "Copy the key", run: () => crSyCopy(ctx, key, "Key") } : null,
       { l: "Done", run: () => { ctx.closeDrawer(); ctx.reload(); } },
     ].filter(Boolean),
@@ -196,6 +214,18 @@ function crWfOpen(ctx, g) {
   });
 }
 
+const crWfUsePeriod = { current: "month" };   // the Data used period, kept while the Control Room is open
+const crWfBytes = b => { b = +b || 0; return b >= 1073741824 ? (Math.round(b / 107374182.4) / 10) + " GB" : b >= 1048576 ? Math.round(b / 1048576) + " MB" : b > 0 ? Math.max(1, Math.round(b / 1024)) + " KB" : "0"; };
+function crWfUseOpen(ctx, r, allowance) {
+  ctx.drawer({ title: r.name, sub: (r.id ? r.id + " · " : "") + (r.centre || ""), icon: "chart-bar",
+    stats: [["Today", crWfBytes(r.today)], ["This month", crWfBytes(r.month)], ["In this view", crWfBytes(r.bytes)]],
+    sections: [
+      { h: "Allowance", rows: [["Their allowance", allowance], ["Now", r.over ? "Over " + (r.over === "day" ? "today’s" : "this month’s") + " allowance" : "Within it"]] },
+      { h: "In this view", rows: [["Downloaded", crWfBytes(r.down)], ["Uploaded", crWfBytes(r.up)]] },
+      { text: "To let them carry on, look them up under “Why can’t somebody get on?” and set their Wi-Fi to On by hand, with a reason. It stays until you clear it." },
+    ],
+    actions: [{ l: "Why can’t somebody get on?", primary: true, run: () => { ctx.closeDrawer(); crWfLookup(ctx); } }] });
+}
 const crWfMbps = x => (x == null ? "—" : (Math.round(x * 10) / 10) + " Mbit/s");
 const crWfDur = s => s < 3600 ? Math.max(1, Math.round(s / 60)) + " min" : s < 172800 ? Math.round(s / 3600) + " h" : Math.round(s / 86400) + " days";
 
@@ -321,7 +351,7 @@ function crWfForms(d) {
   const hours = v => !String(v || "").trim() || /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(String(v).trim()) ? "" : "Blank for all day, or like 08:00-18:00.";
   const profiles = d.profiles || {};
   const speeds = {
-    type: "form", span: 6, key: "wifi-speeds", title: "Speeds, devices and hours",
+    type: "form", span: 6, key: "wifi-speeds", title: "Speeds, devices, hours and data allowances",
     groups: Object.keys(profiles).map(k => ({ h: CR_WF_PROFILE_WORDS[k] || k, help: k === "ngg-limited" ? "Anybody whose access is “Limited”." : k === "ngg-guest" ? "For day passes, which come later." : "",
       rows: [
         { id: k + "|down", l: "Download (Mbit/s)", c: "input", type: "number", value: String(profiles[k].down), check: n(1, 1000) },
@@ -330,10 +360,13 @@ function crWfForms(d) {
         { id: k + "|hours", l: "Hours", help: "Blank for all day. Kept by NGG: outside them, people are signed out at the next fetch.", c: "input", value: profiles[k].hours || "", check: hours },
         { id: k + "|burst", l: "Fast page loads (burst)", help: "Twice the speed for the first few seconds, so pages open quickly; long downloads settle at the steady rate. MikroTik.", c: "toggle", value: !!profiles[k].burst },
         { id: k + "|priority", l: "When the line is busy", c: "select", value: String(profiles[k].priority || 5), opts: [["1", "1 · first"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5 · middle"], ["6", "6"], ["7", "7"], ["8", "8 · last"]], help: "Who is served first when everybody wants the line at once. MikroTik." },
-      ] })),
+      ].concat(k === "ngg-limited" ? [] : [
+        { id: k + "|dayMb", l: "Data allowance a day (MB)", help: "0 for none. Over it, the “Used up their data allowance” setting in Who gets on applies (Limited, unless you change it). 1 GB is 1024 MB.", c: "input", type: "number", value: String(profiles[k].dayMb || 0), check: n(0, 10000000) },
+        { id: k + "|monthMb", l: "Data allowance a month (MB)", help: "0 for none. Counted across every centre, from the 1st.", c: "input", type: "number", value: String(profiles[k].monthMb || 0), check: n(0, 10000000) },
+      ]) })),
     save: async (patch, all) => {
       const out = { profiles: {} };
-      Object.keys(patch).forEach(id => { const k = id.split("|")[0]; out.profiles[k] = { down: +all[k + "|down"], up: +all[k + "|up"], devices: +all[k + "|devices"], hours: String(all[k + "|hours"] || "").trim(), burst: !!all[k + "|burst"], priority: +all[k + "|priority"] }; });
+      Object.keys(patch).forEach(id => { const k = id.split("|")[0]; out.profiles[k] = { down: +all[k + "|down"], up: +all[k + "|up"], devices: +all[k + "|devices"], hours: String(all[k + "|hours"] || "").trim(), burst: !!all[k + "|burst"], priority: +all[k + "|priority"], dayMb: +(all[k + "|dayMb"] || 0), monthMb: +(all[k + "|monthMb"] || 0) }; });
       try { await NGGApi.admin.wifi.accessSet(out); } catch (e) { throw new Error(crWfErr(e, "Couldn’t save.")); }
     },
     onSaved: () => crWfCtx.current && crWfCtx.current.reload(),
@@ -426,7 +459,7 @@ function crWfLoadBlocks(L) {
 
 /* ── Setup guides ─────────────────────────────────────────────────────────── */
 
-const CR_WF_CAN = [["profiles", "Speeds"], ["devices", "Devices"], ["kick", "Signs out"], ["remember", "Remembers"], ["filter", "Filtering"]];
+const CR_WF_CAN = [["profiles", "Speeds"], ["devices", "Devices"], ["kick", "Signs out"], ["remember", "Remembers"], ["filter", "Filtering"], ["usage", "Data used"]];
 
 const crWfLoad = async () => {
   const d = await NGGApi.admin.wifi.overview();
@@ -512,7 +545,7 @@ Object.assign(CR_TAB_DEFS, {
           rows: tests.map((t, i) => ({ key: t.at + i, cells: [{ k: "text", t: crDate(t.at, true) }, { k: "text", t: t.centre }, { k: "text", t: t.source === "gateway" ? "Its gateway" : (t.by || "A device") },
             { k: "num", t: crWfMbps(t.downMbps), v: t.downMbps }, { k: "num", t: crWfMbps(t.upMbps), v: t.upMbps }, { k: "num", t: t.rttMs ? t.rttMs + " ms" : "—", v: t.rttMs }, { k: "text", t: t.note || "" }] })),
           filters: ["Centre", "From"], emptyText: "No tests yet. Run one from a device at a centre with Test this connection." },
-        { type: "note", span: 6, icon: "eye-slash", text: "Gateways report how many people are online, their CPU, memory and uptime — as hourly summaries. Never who is online, and never what anybody visits.",
+        { type: "note", span: 6, icon: "eye-slash", text: "Gateways report how many people are online, their CPU, memory and uptime as hourly summaries, and how much data each signed-in person used (see Data used). Never what anybody visits.",
           sub: "A MikroTik gateway also tests its own line every night, or when asked from its card. Device tests measure the line to NGG from where people actually sit." },
       ];
     },
@@ -558,7 +591,7 @@ Object.assign(CR_TAB_DEFS, {
           rows: a.regions.map(r => ({ key: r.regionId || "_none", cells: [{ k: "strong", t: r.name }, { k: "num", t: crNum(r.centres), v: r.centres }, { k: "num", t: crNum(r.withWifi), v: r.withWifi }, { k: "num", t: crNum(r.working), v: r.working },
             { k: "num", t: crNum(r.warn), v: r.warn }, { k: "num", t: crNum(r.bad), v: r.bad }, { k: "num", t: crNum(r.online), v: r.online }] })) } : null,
         ...(d.load ? crWfLoadBlocks(d.load) : []),
-        { type: "note", span: 6, icon: "eye-slash", text: "Hourly and daily summaries only: how many were online, how much of the day each gateway was there, and the line tests. Never who was online, and never what anybody visited." },
+        { type: "note", span: 6, icon: "eye-slash", text: "These are hourly and daily summaries: how many were online, how much of the day each gateway was there, and the line tests. Each person’s data used is under Data used. Never what anybody visited." },
       ].filter(Boolean);
     },
   },
@@ -580,6 +613,40 @@ Object.assign(CR_TAB_DEFS, {
         emptyText: d.canShape ? "No regions yet. A region groups centres for their Wi-Fi, with its own leads and speeds." : "You don’t lead a Wi-Fi region." },
       d.canShape && d.unassigned.centres ? { type: "note", span: 6, icon: "info", text: crPlural(d.unassigned.centres, "centre is", "centres are") + " in no region.", act: d.regions.length ? { l: "Put them in one", run: () => crWfRegionAssign(ctx, d.regions) } : undefined } : null,
     ].filter(Boolean),
+  },
+
+  /* Data used (admin.wifi.usage): per person, against their allowance. Amounts
+     only — the gateways never send which sites. Staff with `network` see the
+     centres in their Wi-Fi scope; each person sees their own in their app. */
+  "wifi-usage": {
+    skeleton: ["kpis", "table"],
+    load: async () => { const period = crWfUsePeriod.current; return { u: await NGGApi.admin.wifi.usage({ period, pageSize: 500 }), period }; },
+    actions: (d, ctx) => [["day", "Today"], ["week", "Last 7 days"], ["month", "This month"]].map(([k, l]) => ({ l, icon: k === d.period ? "check" : "calendar-blank", primary: k === d.period, run: () => { crWfUsePeriod.current = k; ctx.reload(); } })),
+    blocks: (d, ctx) => {
+      const u = d.u, gw = u.gateways || { total: 0, counting: 0, canCount: 0 };
+      const when = { day: "today", week: "in the last 7 days", month: "this month" }[d.period];
+      const allow = r => [r.dayMb ? crWfBytes(r.dayMb * 1048576) + " a day" : "", r.monthMb ? crWfBytes(r.monthMb * 1048576) + " a month" : ""].filter(Boolean).join(" · ") || "No allowance";
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Data used " + when, v: crWfBytes(u.bytes), dn: crPlural(u.total, "person", "people") },
+          { l: "Over their allowance", v: crNum(u.over), dn: u.over ? "now on the slow profile, or off" : "nobody", tone: u.over ? "down" : "flat" },
+          { l: "Gateways reporting it", v: crNum(gw.counting) + " of " + crNum(gw.total), dn: gw.canCount < gw.total ? crNum(gw.total - gw.canCount) + " can’t report data used yet" : "in the last day" },
+          { l: "Centres", v: crNum((u.centres || []).length), dn: "with data used " + when },
+        ] },
+        (u.centres || []).length ? { type: "bars", span: 2, title: "By centre", sub: "In MB", rows: u.centres.map(c => [c.centre, Math.round(c.bytes / 1048576)]), empty: "" } : null,
+        { type: "table", span: (u.centres || []).length ? 4 : 6, title: "Each person", sub: "Heaviest first · " + when + (u.total > u.people.length ? " · the " + crNum(u.people.length) + " heaviest of " + crNum(u.total) : ""), nosel: true,
+          cols: ["Person", "Centre", { l: "Used", num: true }, { l: "Today", num: true }, { l: "This month", num: true }, "Allowance"],
+          rows: u.people.map(r => ({ key: r.subjectType + r.subjectId, open: () => crWfUseOpen(ctx, r, allow(r)), cells: [
+            { k: "strong", t: r.name, s: [r.id, r.who === "staff" ? "Staff" : r.who === "summer" ? "Summer School" : "Member"].filter(Boolean).join(" · ") },
+            { k: "text", t: r.centre || "—" },
+            { k: "num", t: crWfBytes(r.bytes), v: r.bytes }, { k: "num", t: crWfBytes(r.today), v: r.today }, { k: "num", t: crWfBytes(r.month), v: r.month },
+            r.over ? { k: "status", t: "Over " + (r.over === "day" ? "today’s" : "this month’s"), tone: "bad" } : { k: "text", t: allow(r) }] })),
+          filters: ["Centre"], emptyText: gw.counting ? "Nobody has used any data " + when + "." : "No gateway is reporting data used yet. A MikroTik gateway reports it once its setup script is run again (Setup guides)." },
+        { type: "note", span: 6, icon: "eye-slash", text: "Amounts only: how much each person downloaded and uploaded, per day. Never which sites, and never when in the day.",
+          sub: "Members see their own figures in the app (Me → Wi-Fi). Families don’t see them. Set allowances under Who gets on → Speeds; somebody over theirs gets the “Used up their data allowance” setting at the gateway’s next fetch.",
+          act: { l: "Set allowances", run: () => ctx.go("wifi", "wifi-access") } },
+      ].filter(Boolean);
+    },
   },
 
   "wifi-access": {

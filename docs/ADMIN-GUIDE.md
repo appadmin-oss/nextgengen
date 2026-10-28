@@ -3372,8 +3372,25 @@ from NGG's own systems.
 | Working hard / Low on memory | The router is too small for the centre, or needs a restart out of hours |
 
 **Privacy.** Gateways tell NGG how many people are online, their CPU, memory
-and uptime, as hourly summaries. Never who is online and never what anybody
-visits. NGG keeps no browsing record (see docs/POLICY.md, Wi-Fi).
+and uptime, as hourly summaries, and how much data each signed-in person used
+(amounts per day, nothing else). Never what anybody visits. NGG keeps no
+browsing record (see docs/POLICY.md, Wi-Fi).
+
+**Data used and allowances (added 2026-10-28).** *Wi-Fi → Data used* (Control
+Room and Club portal) lists each person heaviest first: today, the period and
+this month, against their allowance. Members see their own under *Me → Wi-Fi*;
+families do not. Set allowances in *Who gets on → Speeds*: a daily and a
+monthly MB per profile (0 for none; a month counts from the 1st, across every
+centre). Over one, the *Used up their data allowance* row of the table applies:
+**Limited** (the slow profile) by default, **Off**, or **On** to watch without
+enforcing. It takes effect at the gateway's next fetch and lifts by itself at
+midnight or on the 1st. To let one person carry on, set their Wi-Fi to On by
+hand with a reason. Only MikroTik gateways (after their script is pasted again)
+and the JSON feed report data used; the RADIUS and OpenWrt setups don't yet.
+
+**Setup guides** read in the order the job is done: what it sets up and how
+long it takes, what you need, numbered steps with every command (and the
+script) inside the step that uses it, then each common problem beside its fix.
 
 **Overrides.** Someone who should have Wi-Fi but whose record says otherwise
 (an alumni mentor on Saturdays) can be set by hand from *Why can't somebody get

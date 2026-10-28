@@ -114,6 +114,12 @@ function cleanup() {
     chk('a wrong key is a 401 with a word the router can log', fb.status === 401 && fb.text.trim() === '#error;bad_key');
     const fl = JSON.parse(php(`echo json_encode(db_row('SELECT SUM(fetches) f, SUM(failed) x, MAX(msMax) m FROM wifi_feed_load'));`, ['bootstrap']));
     chk('each fetch over HTTP is measured into the hour: its time, and whether it was refused', +fl.f >= 2 && +fl.x >= 1 && +fl.m > 0);
+    // The data each person used, posted by the router as its counters (in = sent, out = received).
+    const ur = await fetch(BASE + '/api/hooks/wifi-usage.php', { method: 'POST', headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': keys[0][1], 'Content-Type': 'text/plain' },
+      body: 's;026-101;*1|AA:BB;1048576;314572800\ns;026-103;*2|CC:DD;0;52428800\n' });
+    chk('a gateway posts the data each person used, over HTTP with its key, and no session', ur.status === 200 && (await ur.text()).trim() === '#ok;sessions=2;people=2');
+    const ub = await fetch(BASE + '/api/hooks/wifi-usage.php', { method: 'POST', headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': 'nope' }, body: 's;026-101;*1;1;1\n' });
+    chk('…and a wrong key is refused there too', ub.status === 401);
 
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
     browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
@@ -147,14 +153,34 @@ function cleanup() {
     await shot(P, 'wifi-2-gateway');
     await P.click('.cr-sheet button:has-text("Setup guide")');
     await P.waitForFunction(() => /ngg-wifi-sync/.test((document.querySelector('.cr-sheet') || {}).innerText || ''), null, { timeout: 10000 });
-    chk('its setup guide has the steps and the RouterOS script, key left out', /Paste the script/.test(await P.innerText('.cr-sheet')) && /PASTE-THE-KEY-HERE/.test(await P.innerText('.cr-sheet')));
+    const gd = await P.innerText('.cr-sheet');
+    chk('its setup guide installs with one short line, the key left out until it is known', /Step 4 · Install NGG’s setup — one line/.test(gd) && /wifi-setup\.php/.test(gd) && /PASTE-THE-KEY-HERE/.test(gd));
+    chk('…and reads in the order the job is done: device-mode first, then version and clock, hotspot, the one line, the check, then problems beside fixes',
+      gd.indexOf('What this does') < gd.indexOf('You’ll need') && gd.indexOf('You’ll need') < gd.indexOf('Step 1 · Let the router run NGG’s script')
+      && /device-mode update scheduler=yes fetch=yes/.test(gd) && gd.indexOf('Step 4') < gd.indexOf('Step 5 · Check it is working')
+      && gd.indexOf('Step 6') < gd.indexOf('If something goes wrong') && /not allowed by device-mode/.test(gd) && /ambiguous value of interface/.test(gd));
+    // The router's own download, over HTTP: the file with its key in it.
+    const sf = await fetch(BASE + '/api/hooks/wifi-setup.php', { headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': keys[0][1] } });
+    const sft = await sf.text();
+    chk('the router downloads its setup file over HTTP, with its key written in', sf.status === 200 && sft.includes(keys[0][1]) && /\/system script add name="ngg-wifi-sync"/.test(sft));
+    const sfb = await fetch(BASE + '/api/hooks/wifi-setup.php', { headers: { 'X-NGG-Gateway': keys[0][0], 'X-NGG-Key': 'nope' } });
+    chk('…a wrong key gets a file that stops with the reason', sfb.status === 401 && /^:error "NGG Wi-Fi: the key is wrong/.test(await sfb.text()));
     await shot(P, 'wifi-3-guide');
     await P.keyboard.press('Escape');
 
+    await P.goto(BASE + '/control/wifi/wifi-usage', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
+    await P.waitForFunction(() => /Each person/.test(document.body.innerText), null, { timeout: 30000 });
+    const uz = await P.innerText('body');
+    chk('Data used: each person heaviest first, against their allowance, with amounts only', /Member 1\b/.test(uz) && /301 MB/.test(uz) && /Member 3\b/.test(uz) && /50 MB/.test(uz) && /Never which sites/.test(uz)
+      && uz.indexOf('Member 1') < uz.indexOf('Member 3'));
+    await shot(P, 'wifi-usage');
     await P.goto(BASE + '/control/wifi/wifi-access', { waitUntil: 'domcontentloaded' });
-    await P.waitForFunction(() => /Speeds, devices and hours/.test(document.body.innerText), null, { timeout: 30000 });
+    await waitForBoot(P);
+    await P.waitForFunction(() => /Speeds, devices, hours and data allowances/.test(document.body.innerText), null, { timeout: 30000 });
     const acc = await P.innerText('body');
     chk('Who gets on shows the table and the speeds, edited in place', /From people’s records/.test(acc) && /Suspended, evicted or inactive/.test(acc) && /Download \(Mbit\/s\)/.test(acc));
+    chk('…with the data allowances and what happens over one', /Data allowance a day \(MB\)/.test(acc) && /Used up their data allowance/.test(acc));
     await shot(P, 'wifi-4-access');
     await P.click('button:has-text("Why can’t somebody get on?")');
     await P.fill('[role="dialog"] input', '026-112');
@@ -164,6 +190,7 @@ function cleanup() {
     await shot(P, 'wifi-5-lookup');
 
     await P.goto(BASE + '/control/wifi/wifi-guides', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
     await P.waitForFunction(() => /Which gateway/.test(document.body.innerText), null, { timeout: 30000 });
     await settle(P);
     chk('Setup guides compares the platforms, pilot status included', /Pilot first/i.test(await P.innerText('body')) && /OpenWrt with openNDS/.test(await P.innerText('body')));
@@ -171,6 +198,7 @@ function cleanup() {
 
     console.log('Speed & health');
     await P.goto(BASE + '/control/wifi/wifi-health', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
     await P.waitForFunction(() => /Each centre’s line/.test(document.body.innerText), null, { timeout: 30000 });
     await P.click('button:has-text("Test this connection")');
     await P.waitForSelector('[role="dialog"] select', { timeout: 10000 });
@@ -189,6 +217,7 @@ function cleanup() {
     if (process.env.WIFI_REF) { const R = await open(ADMIN, true, '/club-admin?s=centres'); await R.waitForTimeout(6000); await shot(R, 'ref-club-centres', false); const R2 = await open(ADMIN, true, '/club-admin?s=desks'); await R2.waitForTimeout(6000); await shot(R2, 'ref-club-desks', false); const R3 = await open(ADMIN, true, '/club-admin'); await R3.waitForTimeout(6000); await shot(R3, 'ref-club-home', false); }
     console.log('Control Room → Wi-Fi → Analytics and Regions');
     await P.goto(BASE + '/control/wifi/wifi-analytics', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
     await P.waitForFunction(() => /Most online at once/.test(document.body.innerText) && /Busiest centres/.test(document.body.innerText), null, { timeout: 60000 });
     chk('the Control Room has Wi-Fi analytics too', /People online/.test(await P.innerText('body')) && /Regions now/.test(await P.innerText('body')));
     await P.click('button:has-text("Last 7 days")');
@@ -196,6 +225,7 @@ function cleanup() {
     chk('…and its period changes', /in the last 7 days/.test(await P.innerText('body')));
     await shot(P, 'wifi-cr-analytics');
     await P.goto(BASE + '/control/wifi/wifi-regions', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(P);
     await P.waitForFunction(() => /Lagos Mainland/.test(document.body.innerText), null, { timeout: 60000 });
     chk('…and regions', /Lagos Mainland/.test(await P.innerText('body')) && /New region/.test(await P.innerText('body')));
     await shot(P, 'wifi-cr-regions');
@@ -214,7 +244,14 @@ function cleanup() {
     chk('Wi-Fi has its own sections in the Club sidebar', /Gateways/.test(await C.innerText('body')) && /Speed tests/.test(await C.innerText('body')) && /Regions/.test(await C.innerText('body')));
     await shot(C, 'wifi-club-1-overview');
     chk('the Club Wi-Fi overview passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw'));
+    await C.goto(BASE + '/club-admin?s=wifi-usage', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(C);
+    await C.waitForFunction(() => /Each person/.test((document.querySelector('.cw') || {}).innerText || ''), null, { timeout: 30000 });
+    chk('the Club portal has Data used too, in its own design', /Member 1\b/.test(await C.innerText('.cw')) && /301 MB/.test(await C.innerText('.cw')));
+    chk('the Data used page passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw'));
+    await shot(C, 'wifi-club-usage');
     await C.goto(BASE + '/club-admin?s=wifi-gateways', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(C);
     await C.waitForSelector('.cw-table.is-rows tbody tr', { timeout: 40000 });
     chk('Gateways is a server-paged table with search and filters', (await C.$$('.cw-table.is-rows tbody tr')).length === 4 && /1–4 of 4/.test(await C.innerText('.cw-pager')));
     await C.selectOption('.cw-tools select[aria-label="Status"]', 'bad');
@@ -232,6 +269,7 @@ function cleanup() {
     chk('the gateway panel passes WCAG 2.1 A/AA (axe)', await axeOk(C, '.cw-panel'));
     await C.keyboard.press('Escape');
     await C.goto(BASE + '/club-admin?s=wifi-regions', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(C);
     await C.waitForSelector('.cw-tile', { timeout: 40000 });
     chk('Regions shows each region with its health and leads', /Lagos Mainland/.test(await C.innerText('.cw')) && /3 centres/.test(await C.innerText('.cw')));
     await shot(C, 'wifi-club-4-regions');
@@ -251,6 +289,7 @@ function cleanup() {
       && /asked/.test(await C.innerText('.cw-toast')) && +php(`echo db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'wifi.gateway.bulk'")['c'];`, ['bootstrap']) === 1);
     await C.keyboard.press('Escape');
     await C.goto(BASE + '/club-admin?s=wifi-speed', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(C);
     await C.waitForSelector('.cw-test', { timeout: 40000 });
     await shot(C, 'wifi-club-6-speed');
     const K = await open(CLUB, true, '/club-admin');
@@ -270,7 +309,16 @@ function cleanup() {
     chk('a member sees their username, with the PIN hidden until asked', /026-101/.test(w) && /••••••/.test(w));
     await M.click('.m9x-wifi [aria-label="Show your PIN"]');
     chk('…and shown when asked', /\d{6}/.test(await M.innerText('.m9x-wifi')));
+    chk('…and the data they have used, which only they and the staff see', /Data you’ve used/.test(await M.innerText('.m9x-wifi')) && /301 MB/.test(await M.innerText('.m9x-wifi')));
     await shot(M, 'wifi-member-card');
+    // A monthly allowance of 200 MB: over it, the member is told, and their Wi-Fi is slow until the 1st.
+    php(`admin_wifi_access_set(['requesterId' => '${ADMIN}', 'profiles' => ['ngg-member' => ['monthMb' => 200]]]);`, ['bootstrap']);
+    await M.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(M);
+    await M.waitForFunction(() => /Data you’ve used/.test((document.querySelector('.m9x-wifi') || {}).innerText || ''), null, { timeout: 30000 });
+    const wo = await M.innerText('.m9x-wifi');
+    chk('over an allowance, the member is told what happens and until when', /this month’s allowance, so your Wi-Fi is slower until the 1st of next month/.test(wo) && /of 200 MB/.test(wo)
+      && await M.$eval('.m9x-wifi [role=meter]', el => el.getAttribute('aria-valuenow') === '100'));
+    await shot(M, 'wifi-member-over');
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

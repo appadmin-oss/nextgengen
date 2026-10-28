@@ -4179,7 +4179,7 @@ CREATE TABLE IF NOT EXISTS testimonials (
   unitId VARCHAR(40) NOT NULL DEFAULT '',
   course VARCHAR(120) NOT NULL DEFAULT '',
   centre VARCHAR(120) NOT NULL DEFAULT '',
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   body TEXT,
   showAs VARCHAR(16) NOT NULL DEFAULT 'initials',
   status VARCHAR(16) NOT NULL DEFAULT 'new',
@@ -4326,7 +4326,7 @@ CREATE TABLE IF NOT EXISTS lesson_feedback (
   unitId VARCHAR(40) NOT NULL DEFAULT '',
   course VARCHAR(120) NOT NULL DEFAULT '',
   centre VARCHAR(120) NOT NULL DEFAULT '',
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   signal VARCHAR(16) NOT NULL DEFAULT '',
   body TEXT,
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
@@ -4407,7 +4407,7 @@ CREATE TABLE IF NOT EXISTS wifi_gateways (
   gatewayId VARCHAR(40) NOT NULL,
   platform VARCHAR(16) NOT NULL DEFAULT 'mikrotik',
   centre VARCHAR(191) NOT NULL DEFAULT '',
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   label VARCHAR(120) NOT NULL DEFAULT '',
   keyHash VARCHAR(64) NOT NULL DEFAULT '',
   keyTail VARCHAR(8) NOT NULL DEFAULT '',
@@ -4448,7 +4448,7 @@ CREATE TABLE IF NOT EXISTS wifi_gateway_stats (
 CREATE TABLE IF NOT EXISTS wifi_speed_tests (
   id INT AUTO_INCREMENT PRIMARY KEY,
   centre VARCHAR(191) NOT NULL DEFAULT '',
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   gatewayId VARCHAR(40) NOT NULL DEFAULT '',
   source VARCHAR(16) NOT NULL DEFAULT 'device',
   downMbps DOUBLE NOT NULL DEFAULT 0,
@@ -4478,7 +4478,7 @@ CREATE TABLE IF NOT EXISTS wifi_regions (
 CREATE TABLE IF NOT EXISTS wifi_region_centres (
   id INT AUTO_INCREMENT PRIMARY KEY,
   centre VARCHAR(191) NOT NULL,
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   regionId VARCHAR(40) NOT NULL,
   assignedAt VARCHAR(32) NOT NULL DEFAULT '',
   assignedBy VARCHAR(64) NOT NULL DEFAULT '',
@@ -4497,7 +4497,7 @@ CREATE TABLE IF NOT EXISTS wifi_profile_overrides (
   id INT AUTO_INCREMENT PRIMARY KEY,
   regionId VARCHAR(40) NOT NULL DEFAULT '',
   centre VARCHAR(191) NOT NULL DEFAULT '',
-  centreId VARCHAR(64) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
   profilesJson TEXT,
   updatedAt VARCHAR(32) NOT NULL DEFAULT '',
   updatedBy VARCHAR(64) NOT NULL DEFAULT '',
@@ -4547,3 +4547,33 @@ INSERT INTO schema_version (version) VALUES (192) ON DUPLICATE KEY UPDATE versio
 -- (the old circle_links are marked 'moved' by NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php)
 
 INSERT INTO schema_version (version) VALUES (193) ON DUPLICATE KEY UPDATE version = version;
+
+-- 194: Wi-Fi data used per person, and each gateway's sessions.
+CREATE TABLE IF NOT EXISTS wifi_usage_daily (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  centreId VARCHAR(48) NOT NULL DEFAULT '',
+  date VARCHAR(10) NOT NULL,
+  bytesDown BIGINT NOT NULL DEFAULT 0,
+  bytesUp BIGINT NOT NULL DEFAULT 0,
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_usage (subjectType, subjectId, date, centre),
+  KEY idx_wifi_usage_centre (centre, date),
+  KEY idx_wifi_usage_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS wifi_usage_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  gatewayId VARCHAR(40) NOT NULL,
+  sessionKey VARCHAR(96) NOT NULL,
+  username VARCHAR(64) NOT NULL DEFAULT '',
+  bytesIn BIGINT NOT NULL DEFAULT 0,
+  bytesOut BIGINT NOT NULL DEFAULT 0,
+  seenAt VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uq_wifi_usess (gatewayId, sessionKey),
+  KEY idx_wifi_usess_seen (seenAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE wifi_gateways ADD COLUMN usageAt VARCHAR(32) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (194) ON DUPLICATE KEY UPDATE version = version;

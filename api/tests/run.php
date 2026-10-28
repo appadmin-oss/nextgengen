@@ -32961,6 +32961,83 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('wifi · the preview counts by profile and finds a person, without their PIN', $pv['byProfile']['ngg-member'] >= 1 && !isset($pv['matches'][0]['pin']) && count($pv['matches']) >= 1);
 })();
 
+// ── Wi-Fi: data used per person, and allowances (domain/wifi-usage.php) ──────
+(function () {
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    $now = now_iso(); $C = 'Wifi Use Centre';
+    db_insert('centres', ['centreId' => 'CEN-WUSE', 'name' => $C, 'code' => 'WU', 'status' => 'active']);
+    db_insert('centres', ['centreId' => 'CEN-WUSE-2', 'name' => 'Wifi Use Far', 'code' => 'WX', 'status' => 'active']);
+    foreach ([['NGG-WU-ADM', 'super_admin', 'Wifi Use Far', '026-950'], ['NGG-WU-A', 'member', $C, '026-951'], ['NGG-WU-B', 'member', $C, '026-952'], ['NGG-WU-FAR', 'member', 'Wifi Use Far', '026-953']] as [$id, $role, $c, $d])
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Use ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => $c, 'displayId' => $d, 'createdAt' => $now, 'updatedAt' => $now]);
+    $A = 'NGG-WU-ADM';
+    $gw = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C]);
+    $gid = $gw['gateway']['gatewayId']; $key = $gw['key'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0]);   // makes the accounts
+    $MB = 1048576;
+    $send = fn(string $body) => backend_dispatch('wifi.usage', ['gatewayId' => $gid, 'key' => $key, 'body' => $body]);
+    chk('usage · a wrong key is refused', (backend_dispatch('wifi.usage', ['gatewayId' => $gid, 'key' => 'nope', 'body' => "s;026-951;*1;1;1\n"])['error'] ?? '') === 'bad_key');
+    // The router's counters: in = what the person sent, out = what they received.
+    $r1 = $send("s;026-951;*1|AA:BB;" . (2 * $MB) . ";" . (30 * $MB) . "\ns;026-952;*2|CC:DD;0;" . (5 * $MB) . "\ns;nobody;*9;1;1\n");
+    $row = fn($id) => db_row("SELECT bytesDown, bytesUp FROM wifi_usage_daily WHERE subjectId = ? AND centre = ?", [$id, $C]);
+    chk('usage · a report is counted per person, the router’s out as their download', $r1['ok'] && $r1['people'] === 2
+        && (int)$row('NGG-WU-A')['bytesDown'] === 30 * $MB && (int)$row('NGG-WU-A')['bytesUp'] === 2 * $MB);
+    $send("s;026-951;*1|AA:BB;" . (3 * $MB) . ";" . (50 * $MB) . "\n");
+    chk('usage · a session reported again adds only what it moved since', (int)$row('NGG-WU-A')['bytesDown'] === 50 * $MB && (int)$row('NGG-WU-A')['bytesUp'] === 3 * $MB);
+    $send("s;026-951;*1|AA:BB;" . (3 * $MB) . ";" . (50 * $MB) . "\n");
+    chk('usage · the same counters twice count once', (int)$row('NGG-WU-A')['bytesDown'] === 50 * $MB);
+    $send("s;026-951;*1|AA:BB;0;" . (4 * $MB) . "\n");
+    chk('usage · a counter that goes down is a new session (a reboot), counted from zero', (int)$row('NGG-WU-A')['bytesDown'] === 54 * $MB);
+    $send('{"sessions":[{"username":"026-952","session":"j1","down":' . (1 * $MB) . ',"up":0}]}');
+    chk('usage · JSON reports are read from the person’s side', (int)$row('NGG-WU-B')['bytesDown'] === 6 * $MB);
+    $send("s;026-951;*7;0;" . (60 * 1024 ** 3) . "\n");
+    chk('usage · an impossible jump is a broken counter, not a download', (int)$row('NGG-WU-A')['bytesDown'] === 54 * $MB);
+
+    // Who sees it: the person themselves, and staff — never families.
+    $mine = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WU-A'])['wifi']['usage'] ?? null;
+    chk('usage · a member sees their own: today, this month and the days', $mine && $mine['today'] === 57 * $MB && $mine['month'] === 57 * $MB && count($mine['days']) === 1 && $mine['over'] === '');
+    $u = backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'period' => 'month']);
+    chk('usage · staff see each person heaviest first, with the centre’s total', $u['ok'] && $u['people'][0]['subjectId'] === 'NGG-WU-A' && $u['total'] === 2
+        && $u['bytes'] === 63 * $MB && $u['centres'][0]['centre'] === $C && $u['centres'][0]['people'] === 2);
+    chk('usage · the people list is searched and sorted on the server; an unknown sort falls back', array_column(backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'q' => '952'])['people'], 'subjectId') === ['NGG-WU-B']
+        && backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'sort' => 'DROP TABLE'])['sort'] === 'bytes');
+    chk('usage · a member cannot read the staff view', (backend_dispatch('admin.wifi.usage', ['requesterId' => 'NGG-WU-B'])['error'] ?? '') === 'forbidden');
+    $sf = backend_dispatch('wifi.setup.script', ['gatewayId' => $gid, 'key' => $key]);
+    chk('setup · the router fetches its own setup file with its key, the key written in, nothing to paste', !empty($sf['ok']) && strpos($sf['script'], $key) !== false
+        && strpos($sf['script'], 'PASTE-THE-KEY-HERE') === false && strpos($sf['script'], ':foreach h in=[/ip hotspot find]') !== false && strpos($sf['script'], 'device-mode') !== false);
+    chk('setup · …and a wrong key gets nothing', (backend_dispatch('wifi.setup.script', ['gatewayId' => $gid, 'key' => str_repeat('0', 40)])['error'] ?? '') === 'bad_key');
+    $gs = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('setup · the guide is one short install line, device-mode first', strpos($gs['oneLiner'], '/api/hooks/wifi-setup.php') !== false && strpos($gs['oneLiner'], '/import file-name=ngg-wifi.rsc') !== false
+        && strlen($gs['oneLiner']) < 400 && strpos($gs['steps'][0]['cmd'], 'device-mode') !== false);
+    chk('usage · the guide says which gateways can report it', backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid])['canUsage'] === true
+        && strpos(backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid])['script'], 'wifi-usage.php') !== false);
+
+    // Allowances: over one, the access table's overLimit case, at the next fetch.
+    chk('usage · an allowance is checked: a day can’t be more than the month', (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 500, 'monthMb' => 100]]])['error'] ?? '') === 'bad_profile');
+    $set = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 40, 'monthMb' => 0]]]);
+    chk('usage · a daily allowance is saved on the profile', !empty($set['ok']) && wifi_settings()['profiles']['ngg-member']['dayMb'] === 40);
+    $f = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'full' => 1]);
+    $prof = []; foreach ($f['users'] as $x) $prof[$x['username']] = $x['profile'];
+    chk('usage · over today’s allowance: the slow profile at the next fetch; under it: unchanged', ($prof['026-951'] ?? '') === 'ngg-limited' && ($prof['026-952'] ?? '') === 'ngg-member');
+    $v = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WU-A'])['wifi'];
+    chk('usage · and the member is told why, in their own view', $v['case'] === 'overLimit' && $v['access'] === 'limited' && $v['usage']['over'] === 'day' && $v['usage']['dayMb'] === 40);
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'off']]);
+    $f = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'full' => 1]);
+    chk('usage · the table can make it Off instead', !in_array('026-951', array_column($f['users'], 'username'), true));
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'on']]);
+    chk('usage · or On: watched, never enforced', wifi_view_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-WU-A'"), false)['access'] === 'on');
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'limited']]);
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WU-A', 'op' => 'override', 'access' => 'on', 'why' => 'Exam research']);
+    chk('usage · a hand-set override still wins, so staff can let somebody finish', wifi_view_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-WU-A'"), false)['access'] === 'on');
+    chk('usage · and the staff view marks who is over', (array_values(array_filter(backend_dispatch('admin.wifi.usage', ['requesterId' => $A])['people'], fn($r) => $r['subjectId'] === 'NGG-WU-A'))[0]['over'] ?? '') === 'day');
+    $ub = (int)$row('NGG-WU-A')['bytesDown'];
+    db_exec("UPDATE wifi_usage_daily SET date = ? WHERE subjectId LIKE 'NGG-WU-%'", [gmdate('Y-m-d', strtotime(wifi_local_date() . 'T12:00:00Z') - 86400)]);
+    chk('usage · a new day starts today’s count again', wifi_usage_totals(['member|NGG-WU-B'])['member|NGG-WU-B']['day'] === 0 && $ub > 0);
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 0, 'monthMb' => 0]]]);
+    db_exec("DELETE FROM wifi_usage_daily WHERE subjectId LIKE 'NGG-WU-%'");
+    db_exec("DELETE FROM wifi_usage_sessions WHERE gatewayId = ?", [$gid]);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gid]);
+})();
+
 // ── Anchor, mentor side: connected by the assignment, no code ──────────────────
 (function () {
     $now = now_iso(); $C = 'Anchorville';

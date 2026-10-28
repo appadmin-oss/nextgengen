@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 193;
+const NGG_SCHEMA_TARGET = 194;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -5654,6 +5654,37 @@ function db_migrate(PDO $db): void {
            stay on the child's record and keep counting. */
         193 => "
             UPDATE circle_links SET status = 'moved' WHERE status = 'active';
+        ",
+        /* Wi-Fi data used, per person per day per centre (wifi_usage_*), and
+           each gateway's last word on each session, so a counter that keeps
+           climbing is only counted once. */
+        194 => "
+            CREATE TABLE IF NOT EXISTS wifi_usage_daily (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectType TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              centre TEXT NOT NULL DEFAULT '',
+              centreId TEXT NOT NULL DEFAULT '',
+              date TEXT NOT NULL,
+              bytesDown INTEGER NOT NULL DEFAULT 0,
+              bytesUp INTEGER NOT NULL DEFAULT 0,
+              updatedAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (subjectType, subjectId, date, centre)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_usage_centre ON wifi_usage_daily(centre, date);
+            CREATE INDEX IF NOT EXISTS idx_wifi_usage_date ON wifi_usage_daily(date);
+            CREATE TABLE IF NOT EXISTS wifi_usage_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              gatewayId TEXT NOT NULL,
+              sessionKey TEXT NOT NULL,
+              username TEXT NOT NULL DEFAULT '',
+              bytesIn INTEGER NOT NULL DEFAULT 0,
+              bytesOut INTEGER NOT NULL DEFAULT 0,
+              seenAt TEXT NOT NULL DEFAULT '',
+              UNIQUE (gatewayId, sessionKey)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wifi_usess_seen ON wifi_usage_sessions(seenAt);
+            ALTER TABLE wifi_gateways ADD COLUMN usageAt TEXT NOT NULL DEFAULT '';
         ",
     ];
 

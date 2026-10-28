@@ -35,19 +35,19 @@ declare(strict_types=1);
    checks; `format` is what its feed is written in. */
 const WIFI_PLATFORMS = [
     'mikrotik' => ['label' => 'MikroTik (RouterOS 7)', 'format' => 'text', 'delta' => true, 'status' => 'pilot',
-        'can' => ['profiles' => true, 'kick' => true, 'devices' => true, 'remember' => true, 'filter' => true],
+        'can' => ['profiles' => true, 'kick' => true, 'devices' => true, 'remember' => true, 'filter' => true, 'usage' => true],
         'needs' => 'A MikroTik router on RouterOS 7 (7.19 or newer trusts NGG’s certificate with nothing to import) with its hotspot on the members’ network. The setup uses the router’s own hotspot users, not the User Manager package.',
         'pilot' => 'The script follows MikroTik’s RouterOS 7 manual. Run it on one centre’s router and watch it for a week before the others.'],
     'radius'   => ['label' => 'RADIUS bridge (UniFi, Omada, pfSense, OPNsense…)', 'format' => 'radius', 'delta' => false, 'status' => 'pilot',
-        'can' => ['profiles' => true, 'kick' => false, 'devices' => true, 'remember' => false, 'filter' => false],
+        'can' => ['profiles' => true, 'kick' => false, 'devices' => true, 'remember' => false, 'filter' => false, 'usage' => false],
         'needs' => 'A small always-on Linux machine at the centre (a Raspberry Pi is enough) running FreeRADIUS, and a Wi-Fi controller or firewall whose guest portal can check sign-ins against a RADIUS server.',
         'pilot' => 'Sign-in works with any controller that sends its portal sign-ins to RADIUS. Speed limits are confirmed for pfSense and Omada; test UniFi’s before relying on them. Removing somebody takes effect at their next sign-in, or within a minute on pfSense with re-authentication on.'],
     'openwrt'  => ['label' => 'OpenWrt with openNDS', 'format' => 'text', 'delta' => true, 'status' => 'pilot',
-        'can' => ['profiles' => true, 'kick' => true, 'devices' => false, 'remember' => false, 'filter' => true],
+        'can' => ['profiles' => true, 'kick' => true, 'devices' => false, 'remember' => false, 'filter' => true, 'usage' => false],
         'needs' => 'OpenWrt 23.05 or newer with the opennds, ca-bundle and libustream-mbedtls packages.',
         'pilot' => 'The list and the sign-out work as documented by openNDS; the sign-in page that asks for the ID and PIN must be proven on one router first.'],
     'generic'  => ['label' => 'Anything else (JSON feed)', 'format' => 'json', 'delta' => true, 'status' => 'ready',
-        'can' => ['profiles' => true, 'kick' => true, 'devices' => true, 'remember' => true, 'filter' => false],
+        'can' => ['profiles' => true, 'kick' => true, 'devices' => true, 'remember' => true, 'filter' => false, 'usage' => true],
         'needs' => 'Your own script or controller integration that can fetch HTTPS with two headers and apply a JSON list.',
         'pilot' => ''],
 ];
@@ -56,13 +56,15 @@ const WIFI_PROFILES = ['ngg-member', 'ngg-staff', 'ngg-limited', 'ngg-summer', '
 /* Speeds in Mbit/s, devices per person, an optional daily window, a short
    burst (twice the speed for the first seconds, so pages open fast while a
    long download still gets the steady rate), and a priority from 1 (first)
-   to 8 (last) for when the line is busy. */
+   to 8 (last) for when the line is busy. dayMb / monthMb: the data allowance
+   (0 for none); over it, the access table's "overLimit" case applies
+   (domain/wifi-usage.php). */
 const WIFI_PROFILE_DEFAULTS = [
-    'ngg-member'  => ['down' => 10, 'up' => 5,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 5],
-    'ngg-staff'   => ['down' => 25, 'up' => 10, 'devices' => 2, 'hours' => '', 'burst' => true,  'priority' => 2],
-    'ngg-limited' => ['down' => 1,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 8],
-    'ngg-summer'  => ['down' => 5,  'up' => 2,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 6],
-    'ngg-guest'   => ['down' => 2,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 7],
+    'ngg-member'  => ['down' => 10, 'up' => 5,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 5, 'dayMb' => 0, 'monthMb' => 0],
+    'ngg-staff'   => ['down' => 25, 'up' => 10, 'devices' => 2, 'hours' => '', 'burst' => true,  'priority' => 2, 'dayMb' => 0, 'monthMb' => 0],
+    'ngg-limited' => ['down' => 1,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 8, 'dayMb' => 0, 'monthMb' => 0],
+    'ngg-summer'  => ['down' => 5,  'up' => 2,  'devices' => 1, 'hours' => '', 'burst' => true,  'priority' => 6, 'dayMb' => 0, 'monthMb' => 0],
+    'ngg-guest'   => ['down' => 2,  'up' => 1,  'devices' => 1, 'hours' => '', 'burst' => false, 'priority' => 7, 'dayMb' => 0, 'monthMb' => 0],
 ];
 const WIFI_SLOW_MBPS = 5;              // a line measured below this is called slow
 const WIFI_SPEED_BYTES_MAX = 25000000; // the most one speed-test download may ask for
@@ -76,6 +78,7 @@ const WIFI_CASE_DEFAULTS = [
     'graduated' => 'off',
     'summer'    => 'on',
     'feesOwing' => 'limited',
+    'overLimit' => 'limited',
     'blocked'   => 'off',
 ];
 const WIFI_CASE_LOCKED = ['blocked'];
@@ -86,6 +89,7 @@ const WIFI_CASE_WORDS = [
     'graduated' => 'Graduated',
     'summer'    => 'A Summer School participant, within their edition’s dates',
     'feesOwing' => 'Fees owing (only when that rule is switched on)',
+    'overLimit' => 'Used up their data allowance (for today or this month)',
     'blocked'   => 'Suspended, evicted or inactive',
     'override'  => 'Set by hand for this person',
     'outside'   => 'Outside their edition’s dates',
@@ -190,7 +194,7 @@ function wifi_settings_base(): array {
 
 function wifi_profile_norm(array $v): array {
     return ['down' => (int)$v['down'], 'up' => (int)$v['up'], 'devices' => (int)$v['devices'], 'hours' => trim((string)($v['hours'] ?? '')),
-            'burst' => !empty($v['burst']), 'priority' => (int)($v['priority'] ?? 5)];
+            'burst' => !empty($v['burst']), 'priority' => (int)($v['priority'] ?? 5), 'dayMb' => (int)($v['dayMb'] ?? 0), 'monthMb' => (int)($v['monthMb'] ?? 0)];
 }
 /** '' when the profile is usable, else what is wrong with it. */
 function wifi_profile_check(array $v): string {
@@ -198,6 +202,8 @@ function wifi_profile_check(array $v): string {
     if (!isset($v['devices']) || !is_numeric($v['devices']) || (int)$v['devices'] < 1 || (int)$v['devices'] > 5) return 'Devices is 1 to 5.';
     $h = trim((string)($v['hours'] ?? ''));
     if (isset($v['priority']) && (!is_numeric($v['priority']) || (int)$v['priority'] < 1 || (int)$v['priority'] > 8)) return 'Priority is 1 (first) to 8 (last).';
+    foreach (['dayMb', 'monthMb'] as $k) if (isset($v[$k]) && (!is_numeric($v[$k]) || (int)$v[$k] < 0 || (int)$v[$k] > 10000000)) return 'A data allowance is whole MB from 0 (none) to 10,000,000.';
+    if ((int)($v['dayMb'] ?? 0) > 0 && (int)($v['monthMb'] ?? 0) > 0 && (int)$v['dayMb'] > (int)$v['monthMb']) return 'The daily allowance can’t be more than the monthly one.';
     if ($h !== '' && (!preg_match('/^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/', $h, $m) || $m[1] . $m[2] >= $m[3] . $m[4])) return 'Hours are blank (all day) or like 08:00-18:00.';
     return '';
 }
@@ -255,6 +261,12 @@ function wifi_access_for(array $m, array $ctx = []): array {
     elseif ($cfg['feesRule'] && !empty($ctx['feesOwing'])) $case = 'feesOwing';
     else $case = 'member';
     $access = $cfg['cases'][$case] ?? 'off';
+    // Over their data allowance (for the profile they would have): the table's overLimit case.
+    if ($access === 'on') {
+        $use = array_key_exists('usage', $ctx) ? $ctx['usage'] : (wifi_usage_totals(['member|' . $m['memberId']])['member|' . $m['memberId']] ?? null);
+        $over = wifi_usage_over($cfg['profiles'][wifi_profile('on', $staff ? 'staff' : 'member')] ?? null, $use);
+        if ($over !== '' && ($cfg['cases']['overLimit'] ?? 'limited') !== 'on') { $case = 'overLimit'; $access = $cfg['cases']['overLimit'] ?? 'limited'; }
+    }
     // A hand-set override wins, except over a block: a suspension is not undone from the Wi-Fi screen.
     if ($acc && in_array((string)$acc['override'], WIFI_ACCESS, true) && $case !== 'blocked') { $access = (string)$acc['override']; $case = 'override'; }
     return ['access' => $access, 'profile' => wifi_profile($access, $staff ? 'staff' : 'member'), 'case' => $case];
@@ -272,6 +284,11 @@ function wifi_access_for_participant(array $s, ?array $edition, array $ctx = [])
         || $today < (string)$edition['startDate'] || $today > (string)$edition['endDate']) $case = 'outside';
     else $case = 'summer';
     $access = $case === 'summer' ? $cfg['cases']['summer'] : 'off';
+    if ($access === 'on') {
+        $k = 'summer|' . (string)($s['studentId'] ?? '');
+        $use = array_key_exists('usage', $ctx) ? $ctx['usage'] : (wifi_usage_totals([$k])[$k] ?? null);
+        if (wifi_usage_over($cfg['profiles']['ngg-summer'] ?? null, $use) !== '' && ($cfg['cases']['overLimit'] ?? 'limited') !== 'on') { $case = 'overLimit'; $access = $cfg['cases']['overLimit'] ?? 'limited'; }
+    }
     if ($acc && in_array((string)$acc['override'], WIFI_ACCESS, true) && $case !== 'blocked') { $access = (string)$acc['override']; $case = 'override'; }
     return ['access' => $access, 'profile' => wifi_profile($access, 'summer'), 'case' => $case];
 }
@@ -387,14 +404,16 @@ function wifi_centre_lines_raw(string $centre, array $cfg): array {
         $parts = db_all("SELECT studentId, displayId, cohortId, status, regStatus, centre FROM summer_students WHERE centre = ? AND cohortId IN ($eph)", array_merge([$centre], array_keys($eds)));
     }
 
+    // Everybody's use this month, read once for the whole list (domain/wifi-usage.php).
+    $usage = wifi_usage_totals(array_merge(array_map(fn($m) => 'member|' . $m['memberId'], $members), array_map(fn($s) => 'summer|' . $s['studentId'], $parts)));
     $subjects = $decide = [];
     foreach ($members as $m) {
         $subjects[] = ['member', (string)$m['memberId'], wifi_username_for('member', $m)];
-        $decide['member|' . $m['memberId']] = fn($acc) => wifi_access_for($m, ['settings' => $cfg, 'policy' => $policy[(string)$m['memberId']] ?? null, 'feesOwing' => !empty($owing[(string)$m['memberId']]), 'account' => $acc]);
+        $decide['member|' . $m['memberId']] = fn($acc) => wifi_access_for($m, ['settings' => $cfg, 'policy' => $policy[(string)$m['memberId']] ?? null, 'feesOwing' => !empty($owing[(string)$m['memberId']]), 'account' => $acc, 'usage' => $usage['member|' . $m['memberId']] ?? null]);
     }
     foreach ($parts as $s) {
         $subjects[] = ['summer', (string)$s['studentId'], wifi_username_for('summer', $s)];
-        $decide['summer|' . $s['studentId']] = fn($acc) => wifi_access_for_participant($s, $eds[(string)$s['cohortId']] ?? null, ['settings' => $cfg, 'account' => $acc, 'today' => $today]);
+        $decide['summer|' . $s['studentId']] = fn($acc) => wifi_access_for_participant($s, $eds[(string)$s['cohortId']] ?? null, ['settings' => $cfg, 'account' => $acc, 'today' => $today, 'usage' => $usage['summer|' . $s['studentId']] ?? null]);
     }
     // Existing accounts first (an override may turn somebody on); only people who will be on the list are given one.
     $existing = wifi_accounts_existing($subjects);
@@ -637,7 +656,9 @@ function wifi_view_member(array $m, bool $withPin): array {
     $owing = $cfg['feesRule'] ? !empty(wifi_fees_owing([$id])[$id]) : false;
     $d = wifi_access_for($m, ['settings' => $cfg, 'policy' => $policy, 'feesOwing' => $owing, 'account' => $existing]);
     $acc = $d['access'] !== 'off' && $username !== '' ? wifi_account_one('member', $id, $username) : $existing;
-    return wifi_view($acc, $d, (string)($m['centre'] ?? ''), $withPin, $username === '' ? 'no_id' : '', $cfg, wifi_is_staff($m));
+    // What they have used, against the allowance of the profile they have when on.
+    return wifi_view($acc, $d, (string)($m['centre'] ?? ''), $withPin, $username === '' ? 'no_id' : '', $cfg, wifi_is_staff($m))
+        + ['usage' => wifi_usage_for('member', $id, $cfg['profiles'][wifi_profile('on', wifi_is_staff($m) ? 'staff' : 'member')] ?? null)];
 }
 
 function wifi_view(?array $acc, array $d, string $centre, bool $withPin, string $why = '', ?array $cfg = null, bool $staff = false): array {
@@ -723,7 +744,9 @@ function wifi_view_subject(string $type, array $row): array {
     $ed = db_row('SELECT cohortId, startDate, endDate FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [(string)($row['cohortId'] ?? '')]);
     $d = wifi_access_for_participant($row, $ed, ['account' => $existing]);
     $acc = $d['access'] !== 'off' && $username !== '' ? wifi_account_one('summer', $id, $username) : $existing;
-    return wifi_view($acc, $d, (string)($row['centre'] ?? ''), true, $username === '' ? 'no_id' : '');
+    $cfg = wifi_settings((string)($row['centre'] ?? ''));
+    return wifi_view($acc, $d, (string)($row['centre'] ?? ''), true, $username === '' ? 'no_id' : '')
+        + ['usage' => wifi_usage_for('summer', $id, $cfg['profiles']['ngg-summer'] ?? null)];
 }
 
 function admin_wifi_member(array $p): array {

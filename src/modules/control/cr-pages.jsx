@@ -132,6 +132,7 @@ const CR_PAGES = {
     { id: "wifi-analytics", label: "Analytics", desc: "Who is online and when, how much of the day each gateway is there, line speeds and each region’s health.", cap: "network" },
     { id: "wifi-regions", label: "Regions", desc: "Centres grouped for their Wi-Fi: their leads, their speeds and how they are doing.", cap: "wifi_regions" },
     { id: "wifi-health", label: "Speed & health", desc: "How fast each centre’s line is, how busy it gets, and testing it from where people sit.", cap: "network" },
+    { id: "wifi-usage", label: "Data used", desc: "How much data each person used, against their allowance, and who is over it.", cap: "network" },
     { id: "wifi-access", label: "Who gets on", desc: "Wi-Fi follows people’s records. Why somebody can’t get on, who gets what, and how fast.", cap: "network" },
     { id: "wifi-guides", label: "Setup guides", desc: "Which gateway a centre can use, what each does, and how it fits together.", cap: "network" },
   ] },

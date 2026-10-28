@@ -25,13 +25,14 @@
 
 const CW_VIEWS = [
   ["wifi", "Overview", "wifi-high", 1], ["wifi-gateways", "Gateways", "broadcast", 1], ["wifi-regions", "Regions", "map-trifold", 0],
-  ["wifi-speed", "Speed tests", "gauge", 1], ["wifi-access", "Who gets on", "user-check", 1], ["wifi-setup", "Setup", "book-open", 0],
+  ["wifi-speed", "Speed tests", "gauge", 1], ["wifi-usage", "Data used", "chart-bar", 1], ["wifi-access", "Who gets on", "user-check", 1], ["wifi-setup", "Setup", "book-open", 0],
 ];
 const CW_META = {
   wifi: ["Wi-Fi", "How the Wi-Fi at your centres is doing: who is online, how often gateways are there, how fast the lines are, and what needs you."],
   "wifi-gateways": ["Wi-Fi gateways", "Each centre’s router or controller: whether it is working, and the tools to fix it when it isn’t."],
   "wifi-regions": ["Wi-Fi regions", "Centres grouped for their Wi-Fi: who looks after each region, its speeds, and how it is doing."],
   "wifi-speed": ["Wi-Fi speed tests", "How fast each centre’s line is. Test from where people sit."],
+  "wifi-usage": ["Data used", "How much data each person used at your centres, against their allowance, and who is over it."],
   "wifi-access": ["Who gets on", "Wi-Fi follows people’s records. Why somebody can’t get on, and the speeds at your centres."],
   "wifi-setup": ["Wi-Fi setup", "Which gateway a centre can use, what each does, and the step-by-step guides."],
 };
@@ -238,7 +239,7 @@ function Cp3Wifi({ view, me, phone, go }) {
   if (baseErr) body = <CwError e={baseErr} retry={loadBase}/>;
   else if (!base) body = <CwLoading/>;
   else body = view === "wifi-gateways" ? <CwGateways ctx={ctx}/> : view === "wifi-regions" ? <CwRegions ctx={ctx}/> : view === "wifi-speed" ? <CwSpeed ctx={ctx}/>
-    : view === "wifi-access" ? <CwAccess ctx={ctx}/> : view === "wifi-setup" ? <CwSetup ctx={ctx}/> : <CwOverview ctx={ctx}/>;
+    : view === "wifi-usage" ? <CwUsage ctx={ctx}/> : view === "wifi-access" ? <CwAccess ctx={ctx}/> : view === "wifi-setup" ? <CwSetup ctx={ctx}/> : <CwOverview ctx={ctx}/>;
   return <div className={"cw" + (phone ? " is-phone" : "")}>
     {base && !base.scope.all ? <p className="cw-scope"><i className="ph ph-map-pin" aria-hidden="true"/>Showing the {base.centres.length === 1 ? "centre" : cwN(base.centres.length) + " centres"} you look after{base.centres.length === 1 ? ": " + base.centres[0] : ""}.</p> : null}
     {body}
@@ -304,7 +305,7 @@ function CwOverview({ ctx }) {
         <CwCard title="Least available" sub="Share of hours each gateway was there" flush>{a.leastAvailable.length ? <ol className="cw-rank">{a.leastAvailable.map(x => <li key={x.gatewayId}><span>{x.label} · {x.centre}</span><b className={x.availability < 90 ? "is-bad" : ""}>{cwPct(x.availability)}</b></li>)}</ol> : <CwEmpty>No gateways yet.</CwEmpty>}</CwCard>
       </div>
       {ld ? <CwLoad L={ld}/> : null}
-      <p className="cw-foot"><i className="ph ph-eye-slash" aria-hidden="true"/>Gateways report counts — how many are online, their load — as hourly summaries. Never who is online, and never what anybody visits.</p>
+      <p className="cw-foot"><i className="ph ph-eye-slash" aria-hidden="true"/>Gateways report how many are online and their load as hourly summaries, and how much data each signed-in person used (Data used). Never what anybody visits.</p>
     </>}
   </>;
 }
@@ -419,14 +420,21 @@ async function cwGuide(ctx, g, key) {
     body: <>
       {key ? <div className="cw-key"><b>This gateway’s key — shown once</b><code>{key}</code><p>It is already in the script below. Afterwards only its last four characters are shown.</p></div> : <p className="cw-note">The script has PASTE-THE-KEY-HERE where the key goes. Lost the key? Rotate it and this guide opens again with the new one filled in.</p>}
       {s.pilot ? <div className="cw-callout"><b>Pilot first</b><p>{s.pilot}</p></div> : null}
-      <h3 className="cw-h3">Before you start</h3><p className="cw-p">{s.needs}</p>
-      {(s.steps || []).map((st, i) => <React.Fragment key={i}><h3 className="cw-h3">{st.h}</h3><p className="cw-p cw-pre">{fill(st.text)}</p></React.Fragment>)}
-      {script ? <><h3 className="cw-h3">{s.scriptName}</h3><pre className="cw-code" tabIndex={0}>{script}</pre></> : null}
-      {s.diagnose ? <><h3 className="cw-h3">What it tells NGG</h3><p className="cw-p">{s.diagnose}</p></> : null}
-      {s.check ? <><h3 className="cw-h3">Check it worked</h3><p className="cw-p cw-pre">{s.check}</p></> : null}
-      {s.trouble ? <><h3 className="cw-h3">If it doesn’t work</h3><p className="cw-p cw-pre">{s.trouble}</p></> : null}
+      <p className="cw-p"><b>What this does.</b> {s.summary || s.needs}{s.time ? " " + s.time + "." : ""}</p>
+      {(s.before || []).length ? <><h3 className="cw-h3">You’ll need</h3><ul className="cw-need">{s.before.map((t, i) => <li key={i}><i className="ph ph-check" aria-hidden="true"/>{t}</li>)}</ul></> : null}
+      <ol className="cw-steps">{(s.steps || []).map((st, i) => <li key={i}>
+        <h3 className="cw-h3">{st.h}</h3>
+        {st.text ? <p className="cw-p cw-pre">{fill(st.text)}</p> : null}
+        {st.script ? <pre className="cw-code" tabIndex={0} aria-label={s.scriptName}>{script}</pre> : null}
+        {st.cmd ? <>{st.script ? <p className="cw-p">Then run:</p> : null}<pre className="cw-code" tabIndex={0} aria-label={"Commands for step " + (i + 1)}>{fill(st.cmd)}</pre></> : null}
+        {st.tip ? <p className="cw-tip"><i className="ph ph-lightbulb" aria-hidden="true"/>{st.tip}</p> : null}
+      </li>)}</ol>
+      {s.reports ? <><h3 className="cw-h3">What it sends NGG</h3><p className="cw-p">{s.reports}</p></> : null}
+      {(s.trouble || []).length ? <><h3 className="cw-h3">If something goes wrong</h3><dl className="cw-fix">{s.trouble.map(([q, a], i) => <React.Fragment key={i}><dt>{q}</dt><dd>{a}</dd></React.Fragment>)}</dl></> : null}
     </>,
-    actions: [script ? <CwBtn key="c" primary icon="copy" onClick={() => copy(script, "Script")}>Copy the script</CwBtn> : null, key ? <CwBtn key="k" icon="key" onClick={() => copy(key, "Key")}>Copy the key</CwBtn> : null,
+    actions: [s.oneLiner ? <CwBtn key="o" primary icon="copy" onClick={() => copy(fill(s.oneLiner), "Install line")}>Copy the install line</CwBtn> : null,
+      s.oneLiner && script ? <CwBtn key="f" icon="download-simple" onClick={() => crWfSaveFile(script, "ngg-wifi.rsc")}>Download the setup file</CwBtn> : null,
+      script && !s.oneLiner ? <CwBtn key="c" primary icon="copy" onClick={() => copy(script, "Script")}>Copy the script</CwBtn> : null, key ? <CwBtn key="k" icon="key" onClick={() => copy(key, "Key")}>Copy the key</CwBtn> : null,
       <CwBtn key="d" onClick={() => { ui.closePanel(); ctx.reload(); }}>Done</CwBtn>].filter(Boolean) });
 }
 
@@ -630,6 +638,47 @@ function CwSpeed({ ctx }) {
   </>;
 }
 
+
+/* Data used (admin.wifi.usage): per person, against their allowance. Amounts only. */
+const cwBytes = b => { b = +b || 0; return b >= 1073741824 ? (Math.round(b / 107374182.4) / 10) + " GB" : b >= 1048576 ? Math.round(b / 1048576) + " MB" : b > 0 ? Math.max(1, Math.round(b / 1024)) + " KB" : "0"; };
+function CwUsage({ ctx }) {
+  const { base, go } = ctx;
+  const [period, setPeriod] = React.useState("month"), [centre, setCentre] = React.useState(""), [q, setQ] = React.useState(""), [page, setPage] = React.useState(1);
+  const [u, setU] = React.useState(null), [err, setErr] = React.useState(null);
+  const load = () => { setErr(null); setU(null); NGGApi.admin.wifi.usage({ period, centre, q: q.trim(), page }).then(setU, setErr); };
+  React.useEffect(load, [period, centre, page, ctx.bump]);
+  const when = { day: "today", week: "in the last 7 days", month: "this month" }[period];
+  const allow = r => [r.dayMb ? cwBytes(r.dayMb * 1048576) + " a day" : "", r.monthMb ? cwBytes(r.monthMb * 1048576) + " a month" : ""].filter(Boolean).join(" · ") || "No allowance";
+  const pages = u ? Math.max(1, Math.ceil(u.total / u.pageSize)) : 1;
+  const gw = (u && u.gateways) || { total: 0, counting: 0, canCount: 0 };
+  return <>
+    <div className="cw-bar">
+      <div className="cw-bar-l">
+        <CwSelect label="Period" value={period} onChange={v => { setPeriod(v); setPage(1); }} opts={[["day", "Today"], ["week", "Last 7 days"], ["month", "This month"]]}/>
+        {base.centres.length > 1 ? <CwSelect label="Centre" value={centre} onChange={v => { setCentre(v); setPage(1); }} opts={[["", "Every centre"]].concat(base.centres.map(c => [c, c]))}/> : null}
+      </div>
+      <form className="cw-bar-r cw-lookup" role="search" onSubmit={e => { e.preventDefault(); setPage(1); load(); }}><CwSearch value={q} onChange={setQ} ph="Find a person"/><button type="submit" className="cw-btn">Find</button></form>
+    </div>
+    {err ? <CwError e={err} retry={load}/> : !u ? <CwLoading/> : <>
+      <div className="cw-stats">
+        <CwStat l={"Data used " + when} v={cwBytes(u.bytes)} s={cwN(u.total) + (u.total === 1 ? " person" : " people")}/>
+        <CwStat l="Over their allowance" v={cwN(u.over)} s={u.over ? "on the slow profile, or off" : "nobody"} tone={u.over ? "bad" : ""}/>
+        <CwStat l="Gateways reporting it" v={cwN(gw.counting) + " of " + cwN(gw.total)} s={gw.canCount < gw.total ? cwN(gw.total - gw.canCount) + " can’t report it yet" : "in the last day"}/>
+        <CwStat l="Centres" v={cwN(u.centres.length)} s={"with data used " + when}/>
+      </div>
+      <CwCard title="Each person" sub={"Heaviest first · " + when} flush right={<CwBtn onClick={() => go("wifi-access")}>Set allowances</CwBtn>}>
+        {!u.people.length ? <CwEmpty>{gw.counting ? "Nobody has used any data " + when + "." : "No gateway is reporting data used yet. A MikroTik gateway starts once its setup script is run again (Setup)."}</CwEmpty> :
+        <div className="cw-tablewrap"><table className="cw-table"><caption className="cw-sr">Data used by each person {when}</caption><thead><tr><th scope="col">Person</th><th scope="col">Centre</th><th scope="col">Used</th><th scope="col">Today</th><th scope="col">This month</th><th scope="col">Allowance</th></tr></thead>
+          <tbody>{u.people.map(r => <tr key={r.subjectType + r.subjectId}><td><b className="cw-w">{r.name}</b><small>{[r.id, r.who === "staff" ? "Staff" : r.who === "summer" ? "Summer School" : "Member"].filter(Boolean).join(" · ")}</small></td>
+            <td>{r.centre || "—"}</td><td>{cwBytes(r.bytes)}</td><td>{cwBytes(r.today)}</td><td>{cwBytes(r.month)}</td>
+            <td>{r.over ? <CwPill tone="bad" t={"Over " + (r.over === "day" ? "today’s" : "this month’s")}/> : allow(r)}</td></tr>)}</tbody></table></div>}
+        {pages > 1 ? <div className="cw-pager"><button type="button" className="cw-btn" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button><span role="status">Page {page} of {pages}</span><button type="button" className="cw-btn" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</button></div> : null}
+      </CwCard>
+      <p className="cw-foot"><i className="ph ph-eye-slash" aria-hidden="true"/>Amounts only, per day: never which sites, never when in the day. Members see their own in the app (Me → Wi-Fi); families don’t see them.</p>
+    </>}
+  </>;
+}
+
 /* Who gets on: the lookup, and the speeds at your level. */
 function CwAccess({ ctx }) {
   const { base, ui } = ctx;
@@ -687,14 +736,15 @@ function cwNetworkForm(ctx, cases) {
   const values = {}, fields = [];
   Object.keys(base.profiles || {}).forEach(k => {
     const p = base.profiles[k];
-    values[k + "|down"] = String(p.down); values[k + "|up"] = String(p.up); values[k + "|devices"] = String(p.devices); values[k + "|hours"] = p.hours || ""; values[k + "|burst"] = !!p.burst; values[k + "|priority"] = String(p.priority || 5);
+    values[k + "|down"] = String(p.down); values[k + "|up"] = String(p.up); values[k + "|devices"] = String(p.devices); values[k + "|hours"] = p.hours || ""; values[k + "|burst"] = !!p.burst; values[k + "|priority"] = String(p.priority || 5); values[k + "|dayMb"] = String(p.dayMb || 0); values[k + "|monthMb"] = String(p.monthMb || 0);
     const n = (lo, hi) => x => /^\d+$/.test(String(x).trim()) && +x >= lo && +x <= hi ? "" : "A whole number from " + lo + " to " + hi + ".";
     fields.push({ id: k + "|down", l: (CW_PROFILE[k] || k) + " · download (Mbit/s)", num: true, check: n(1, 1000) }, { id: k + "|up", l: "Upload (Mbit/s)", num: true, check: n(1, 1000) },
       { id: k + "|devices", l: "Devices at once", num: true, check: n(1, 5) }, { id: k + "|hours", l: "Hours", ph: "All day, or 08:00-18:00" },
       { id: k + "|burst", l: "Fast page loads (burst)", type: "switch", help: "Twice the speed for the first seconds. MikroTik." }, { id: k + "|priority", l: "When the line is busy", type: "select", opts: [["1", "1 · first"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5 · middle"], ["6", "6"], ["7", "7"], ["8", "8 · last"]] });
+    if (k !== "ngg-limited") fields.push({ id: k + "|dayMb", l: "Data allowance a day (MB)", num: true, check: n(0, 10000000), help: "0 for none. 1 GB is 1024 MB." }, { id: k + "|monthMb", l: "Data allowance a month (MB)", num: true, check: n(0, 10000000), help: "0 for none. Counted across every centre, from the 1st." });
   });
   ui.form({ title: "Network default speeds", submit: "Save", intro: "Every centre and region that sets nothing of its own uses these.", values, fields,
-    onSubmit: async v => { const out = { profiles: {} }; Object.keys(base.profiles || {}).forEach(k => { out.profiles[k] = { down: +v[k + "|down"], up: +v[k + "|up"], devices: +v[k + "|devices"], hours: String(v[k + "|hours"] || "").trim(), burst: !!v[k + "|burst"], priority: +v[k + "|priority"] }; });
+    onSubmit: async v => { const out = { profiles: {} }; Object.keys(base.profiles || {}).forEach(k => { out.profiles[k] = { down: +v[k + "|down"], up: +v[k + "|up"], devices: +v[k + "|devices"], hours: String(v[k + "|hours"] || "").trim(), burst: !!v[k + "|burst"], priority: +v[k + "|priority"], dayMb: +(v[k + "|dayMb"] || 0), monthMb: +(v[k + "|monthMb"] || 0) }; });
       try { return await NGGApi.admin.wifi.accessSet(out); } catch (e) { throw new Error(cwErr(e, "Couldn’t save.")); } },
     done: () => { ui.toast("Saved. Gateways pick it up at their next fetch."); ctx.reload(); } });
 }

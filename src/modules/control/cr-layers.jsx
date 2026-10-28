@@ -19,6 +19,8 @@ function crDrawerSec(s, i, phone) {
         ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{val(f)}</b></div>)}</div>
         : <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{val(f)}</dd></React.Fragment>)}</dl>)}
       {s.text && <p className="cr-prose" style={{ fontSize: phone ? 15 : 13.5 }}>{s.text}</p>}
+      {s.code && <pre className="cr-code" tabIndex={0} aria-label={s.codeLabel || "Commands"}>{s.code}</pre>}
+      {s.tip && <p className="cr-tip"><CrIcon n="lightbulb"/><span>{s.tip}</span></p>}
       {s.list && <div className={phone ? "cr-pbox cr-list" : "cr-box cr-list"}>{s.list.length ? s.list.map((r, j) => (
         <div key={j} className="cr-list-row">
           <span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span>

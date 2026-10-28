@@ -1056,11 +1056,27 @@ function Mp9Wifi({ toast }) {
   const copy = t => { try { navigator.clipboard.writeText(t); toast("Copied"); } catch (_) { toast("Couldn’t copy. Write it down instead."); } };
   const on = d && d.access !== "off";
   const lim = d && d.limits;
+  /* What they have used, against their allowance (domain/wifi-usage.php). Only
+     they and the staff see it. Over an allowance, say what happens and until when. */
+  const u = d && d.usage, gb = b => { b = +b || 0; return b >= 1073741824 ? (Math.round(b / 107374182.4) / 10) + " GB" : b >= 1048576 ? Math.round(b / 1048576) + " MB" : b > 0 ? Math.max(1, Math.round(b / 1024)) + " KB" : "nothing yet"; };
+  const overWhen = u && u.over === "day" ? "until tomorrow" : "until the 1st of next month";
+  const meter = (used, mb, label) => { const cap = mb * 1048576, pct = cap ? Math.min(100, Math.round(used / cap * 100)) : 0;
+    return <div className="m9x-wifi-use"><span className="m9x-wifi-use-l"><b>{label}</b>{gb(used)}{mb ? " of " + gb(cap) : ""}</span>
+      {mb ? <span className="m9x-wifi-meter" role="meter" aria-label={label + " used"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct} aria-valuetext={pct + "%"}><i className={pct >= 100 ? "is-full" : pct >= 80 ? "is-near" : ""} style={{ width: pct + "%" }}/></span> : null}</div>; };
+  const usage = u ? <div className="m9x-wifi-usage" aria-labelledby="m9x-wifi-u-h">
+    <h3 id="m9x-wifi-u-h" className="m9x-wifi-u-h">Data you’ve used</h3>
+    {meter(u.today, u.dayMb, "Today")}
+    {meter(u.month, u.monthMb, "This month")}
+    <p className="m9x-wifi-note">{u.over ? "You’ve used " + (u.over === "day" ? "today’s" : "this month’s") + " allowance" + (d.case !== "overLimit" ? "." : ", so " + (d.access === "off" ? "the Wi-Fi is off for you " : "your Wi-Fi is slower ") + overWhen + ".")
+      : u.dayMb || u.monthMb ? "When you reach an allowance your Wi-Fi slows down until it resets. Only you and the NGG team see these figures."
+      : "Only you and the NGG team see these figures. They count what you download and upload, never which sites."}</p>
+  </div> : null;
   return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
     <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
     {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>Your Wi-Fi details couldn’t load ({err}).</span><button type="button" onClick={load}>Try again</button></div>
       : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
-      : !on ? <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>
+      : !on ? <>{d.case === "overLimit" ? <p className="m9x-view-p">You’ve used your Wi-Fi data allowance, so the Wi-Fi is off for you {overWhen}.</p>
+        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
       : <>
         {!d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. These details will work as soon as it is.</p>
           : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use these.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
@@ -1071,6 +1087,7 @@ function Mp9Wifi({ toast }) {
             {show ? <button type="button" className="m9x-wifi-b" onClick={() => copy(d.pin)} aria-label="Copy your PIN"><i className="ph ph-copy" aria-hidden="true"/></button> : null}</dd></div>
           {lim ? <div><dt>Speed</dt><dd>Up to {lim.down} Mbit/s · {lim.devices === 1 ? "one device" : lim.devices + " devices"} at a time{lim.hours ? " · " + lim.hours.replace("-", "–") : ""}</dd></div> : null}
         </dl>
+        {usage}
         <p className="m9x-wifi-note">Your PIN is only for the Wi-Fi. Never tell anyone else your PIN — anything done on the Wi-Fi with it counts as you.</p>
         <button type="button" className="m9x-wifi-new" onClick={reset} disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Making a new PIN…" : "Get a new PIN"}</button>
         <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + " left today"}</span>

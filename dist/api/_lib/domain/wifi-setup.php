@@ -31,7 +31,31 @@ function admin_wifi_gateway_setup(array $p): array {
     $fn = 'wifi_setup_' . (string)$r['platform'];
     $guide = function_exists($fn) ? $fn($r, $url) : wifi_setup_generic($r, $url);
     return ['ok' => true, 'platform' => (string)$r['platform'], 'label' => $plat['label'], 'needs' => $plat['needs'],
-            'pilot' => $plat['status'] === 'pilot' ? $plat['pilot'] : '', 'feedUrl' => $url] + $guide;
+            'pilot' => $plat['status'] === 'pilot' ? $plat['pilot'] : '', 'feedUrl' => $url, 'canUsage' => !empty($plat['can']['usage'])] + $guide;
+}
+
+/**
+ * op wifi.setup.script — the router fetches its own setup file, with its key
+ * in the headers, and /imports it. One short command instead of pasting a
+ * long script, which the RouterOS terminal cuts short (owner's router,
+ * 2026-10-28: half the sync script arrived). The key is written into the file
+ * only because the router just proved it holds it.
+ */
+function wifi_setup_script(array $p): array {
+    $r = wifi_gateway_by_key((string)($p['gatewayId'] ?? ''), (string)($p['key'] ?? ''));
+    if (!$r) {
+        audit('wifi.setup.bad_key', null, substr(preg_replace('/[^\w]/', '', (string)($p['gatewayId'] ?? '')), 0, 16), [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'bad_key'];
+    }
+    if ((string)$r['platform'] !== 'mikrotik') return ['ok' => false, 'error' => 'not_mikrotik'];
+    audit('wifi.setup.fetched', null, (string)$r['gatewayId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'script' => wifi_setup_mikrotik($r, wifi_feed_url(), (string)$p['key'])['script']];
+}
+
+/** The one line a MikroTik router runs to fetch and import its setup. */
+function wifi_setup_oneliner(string $gw, string $url, string $key = WIFI_KEY_PLACEHOLDER): string {
+    $setup = preg_replace('/wifi-feed\.php$/', 'wifi-setup.php', $url);
+    return '/tool fetch url="' . $setup . '" http-header-field="X-NGG-Gateway: ' . $gw . ',X-NGG-Key: ' . $key . '" check-certificate=yes dst-path=ngg-wifi.rsc; :delay 2s; /import file-name=ngg-wifi.rsc';
 }
 
 /** A value safe inside a RouterOS double-quoted string. */
@@ -39,12 +63,19 @@ function wifi_ros_str(string $s): string { return str_replace(['\\', '"', '$'], 
 
 /* ── MikroTik RouterOS 7 ─────────────────────────────────────────────────── */
 
-function wifi_setup_mikrotik(array $r, string $url): array {
+function wifi_setup_mikrotik(array $r, string $url, string $key = ''): array {
     $gw = (string)$r['gatewayId'];
+    // The key goes into the file only when the router itself asked for it with that key (wifi.setup.script).
+    $keyHere = $key !== '' ? $key : WIFI_KEY_PLACEHOLDER;
     $script = <<<ROS
 # NGG Wi-Fi for {$r['label']} ({$r['centre']}) · gateway {$gw}
-# Paste into a RouterOS 7 terminal (WinBox → New Terminal). Safe to paste again.
-# What NGG adds carries the comment "ngg"; nothing else on the router is touched.
+# Installed with /import (the one-line command in the guide fetches this file and
+# imports it). Don't paste it into a terminal: the terminal cuts long pastes short.
+# Safe to run again. What NGG adds carries the comment "ngg"; nothing else is touched.
+
+# 0. Stop at once, with the reason, if this file can't work on this router.
+:if ([:len "{$keyHere}"] != 40) do={ :error "NGG Wi-Fi: this copy has no key. Open the gateway in NGG, press Rotate the key, and use the command the guide shows then." }
+:if ([:len [/ip hotspot find]] = 0) do={ :error "NGG Wi-Fi: this router has no hotspot yet. Do the guide's step 3 (IP > Hotspot > Hotspot Setup) first, then run this again." }
 
 # 1. The clock: certificates are checked against it.
 /system ntp client set enabled=yes servers=time.cloudflare.com,pool.ntp.org
@@ -61,7 +92,8 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :if (\$nggWifiBusy = true) do={ :error "NGG Wi-Fi: the last sync is still running" }
 :set nggWifiBusy true
 :local gw "{$gw}"
-:local key "PASTE-THE-KEY-HERE"
+:local key "{$keyHere}"
+:if ([:len \$key] != 40) do={ :set nggWifiBusy false; :set nggWifiErr "no_key"; :error "NGG Wi-Fi: no key in the script. Rotate the key in NGG and install again." }
 :local base "{$url}"
 :local hv do={ :local k (\$2 . "="); :local i [:find \$1 \$k]; :if ([:typeof \$i] = "nil") do={ :return "" }; :local a (\$i + [:len \$k]); :local b [:find \$1 ";" (\$a - 1)]; :if ([:typeof \$b] = "nil") do={ :set b [:len \$1] }; :return [:pick \$1 \$a \$b] }
 :local since 0
@@ -76,6 +108,20 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :global nggWifiDl
 :local tele ("&act=" . [:len [/ip hotspot active find]] . "&cpu=" . [/system resource get cpu-load] . "&mem=" . ([/system resource get free-memory] / 1048576) . "&up=" . [:tonum [/system resource get uptime]])
 :if ([:typeof \$nggWifiDl] = "str" && [:len \$nggWifiDl] > 0) do={ :set tele (\$tele . "&dl=" . \$nggWifiDl) }
+# The data each signed-in person has used so far this session, 100 sessions a report (NGG keeps the difference).
+:local uurl ([:pick \$base 0 [:find \$base "wifi-feed.php"]] . "wifi-usage.php")
+:local uhd ("X-NGG-Gateway: " . \$gw . ",X-NGG-Key: " . \$key . ",Content-Type: text/plain")
+:local ub ""
+:local un 0
+:foreach a in=[/ip hotspot active find] do={
+  :do {
+    :local x [/ip hotspot active get \$a]
+    :set ub (\$ub . "s;" . (\$x->"user") . ";" . \$a . "|" . (\$x->"mac-address") . ";" . (\$x->"bytes-in") . ";" . (\$x->"bytes-out") . "\\n")
+    :set un (\$un + 1)
+  } on-error={}
+  :if (\$un >= 100) do={ :do { /tool fetch url=\$uurl http-method=post http-data=\$ub http-header-field=\$uhd check-certificate=yes output=none } on-error={ :log warning "NGG Wi-Fi: data used not sent" }; :set ub ""; :set un 0 }
+}
+:if (\$un > 0) do={ :do { /tool fetch url=\$uurl http-method=post http-data=\$ub http-header-field=\$uhd check-certificate=yes output=none } on-error={ :log warning "NGG Wi-Fi: data used not sent" } }
 :local body ""
 :local head ""
 :local page 1
@@ -173,12 +219,15 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 }
 
 # 4. Run it every 2 minutes (NGG asks for sooner or later as things change), and now.
+#    Newer RouterOS refuses schedules until device-mode allows them (the guide's step 1).
 /system scheduler remove [find name="ngg-wifi"]
-/system scheduler add name="ngg-wifi" interval=2m start-time=startup on-event="/system script run ngg-wifi-sync" policy=read,write,test comment="ngg"
 /system scheduler remove [find name="ngg-wifi-test"]
-/system scheduler add name="ngg-wifi-test" interval=1d start-time=03:15:00 on-event=":global nggWifiTestNow true" policy=read,write,test comment="ngg"
+:do {
+  /system scheduler add name="ngg-wifi" interval=2m start-time=startup on-event="/system script run ngg-wifi-sync" policy=read,write,test comment="ngg"
+  /system scheduler add name="ngg-wifi-test" interval=1d start-time=03:15:00 on-event=":global nggWifiTestNow true" policy=read,write,test comment="ngg"
+} on-error={ :put "NGG Wi-Fi: this router's device-mode does not allow schedules. Do the guide's step 1, then install again." }
 :global nggWifiBusy false
-/system script run ngg-wifi-sync
+:do { /system script run ngg-wifi-sync; :put "NGG Wi-Fi: the first sync worked." } on-error={ :put "NGG Wi-Fi: the first sync failed. Run: /log print where message~\"NGG\"   to see why." }
 
 # 5. Filtering for under-18s on the hotspot's network: a family DNS service
 #    (adult content and malware), SafeSearch, YouTube Restricted, DNS forced
@@ -189,26 +238,57 @@ function wifi_setup_mikrotik(array $r, string $url): array {
 :foreach n in={"www.google.com";"www.google.com.ng"} do={ /ip dns static add name=\$n type=CNAME cname=forcesafesearch.google.com comment="ngg" }
 :foreach n in={"www.youtube.com";"m.youtube.com";"youtubei.googleapis.com";"youtube.googleapis.com";"www.youtube-nocookie.com"} do={ /ip dns static add name=\$n type=CNAME cname=restrict.youtube.com comment="ngg" }
 /ip dns static add name=www.bing.com type=CNAME cname=strict.bing.com comment="ngg"
-:local hs [/ip hotspot get [:pick [/ip hotspot find] 0] interface]
+# One block, so the hotspot's interface is still known on every line, and every hotspot is covered.
 /ip firewall nat remove [find comment="ngg"]
-/ip firewall nat add chain=dstnat in-interface=\$hs protocol=udp dst-port=53 action=redirect to-ports=53 comment="ngg"
-/ip firewall nat add chain=dstnat in-interface=\$hs protocol=tcp dst-port=53 action=redirect to-ports=53 comment="ngg"
 /ip firewall filter remove [find comment="ngg"]
-/ip firewall filter add chain=forward in-interface=\$hs protocol=tcp dst-port=853 action=reject comment="ngg"
-/ip firewall filter add chain=forward in-interface=\$hs protocol=udp dst-port=853 action=reject comment="ngg"
+:foreach h in=[/ip hotspot find] do={
+  :local hs [/ip hotspot get \$h interface]
+  /ip firewall nat add chain=dstnat in-interface=\$hs protocol=udp dst-port=53 action=redirect to-ports=53 comment="ngg"
+  /ip firewall nat add chain=dstnat in-interface=\$hs protocol=tcp dst-port=53 action=redirect to-ports=53 comment="ngg"
+  /ip firewall filter add chain=forward in-interface=\$hs protocol=tcp dst-port=853 action=reject comment="ngg"
+  /ip firewall filter add chain=forward in-interface=\$hs protocol=udp dst-port=853 action=reject comment="ngg"
+}
+:put "NGG Wi-Fi: installed. Check this gateway in NGG: it should say Working within two minutes."
 ROS;
+    $host = parse_url($url, PHP_URL_HOST) ?: 'the NGG site';
     return [
-        'scriptName' => 'RouterOS script — paste into New Terminal',
+        'scriptName' => 'The setup file (the one-line command downloads it for you)',
         'script' => $script,
-        'steps' => [
-            ['h' => '1. Update the router', 'text' => "System → Packages → Check for updates. RouterOS 7.19 or newer trusts NGG’s certificate with nothing to import.\nOn 7.1–7.18: download the certificate of " . (parse_url($url, PHP_URL_HOST) ?: 'this site') . "’s issuer (for Let’s Encrypt, ISRG Root X1 from letsencrypt.org/certificates), drag it into Files, then run:\n/certificate import file-name=isrgrootx1.pem trusted=yes"],
-            ['h' => '2. A hotspot on the members’ network', 'text' => "If the router has no hotspot yet: IP → Hotspot → Hotspot Setup, and choose the bridge or VLAN the members’ Wi-Fi is on. Skip the step that creates a user — NGG supplies them.\nKeep staff devices and the office on a different network: the filtering in step 5 applies to the hotspot’s network only."],
-            ['h' => '3. Paste the script', 'text' => "WinBox → New Terminal, paste the whole script, press Enter. It can be pasted again at any time — after rotating the key, or to repair the setup."],
-            ['h' => '4. Members sign in', 'text' => "Members join the Wi-Fi and the sign-in page opens. They type their printed ID (e.g. 026-014) as the username and their Wi-Fi PIN, which the app shows under Me → Wi-Fi. Their device is remembered for 30 days.\nPhones that use a private (rotating) Wi-Fi address forget the sign-in when the address changes; set that network to use the phone’s own address."],
+        'oneLiner' => wifi_setup_oneliner($gw, $url),
+        'summary' => 'Connects this centre’s MikroTik router to NGG. Every two minutes the router fetches who may use the Wi-Fi, signs out anybody removed, and reports how much data each person has used. You type five short commands; nothing long is pasted.',
+        'time' => 'About 15 minutes',
+        'before' => [
+            'A MikroTik router on RouterOS 7 that already gives devices internet.',
+            'WinBox on a computer, signed in to the router as admin. Commands go in WinBox → New Terminal: type or paste ONE line at a time and press Enter.',
+            'Somebody who can reach the router, for one button press in step 1.',
+            'This gateway’s key, which is shown once. If you don’t have it, press “Rotate the key” on this gateway: the guide opens again with the key already in step 4’s command.',
         ],
-        'diagnose' => "Each fetch also tells NGG how many people are online, the router’s CPU and free memory, and how long it has been up — as hourly summaries, never who visited what. Every night at 03:15, or when you press “Test the line” here, it downloads 8 MB from NGG and reports the speed (to the nearest second’s timing, so treat it as a guide).",
-        'check' => "In the terminal:\n/system script run ngg-wifi-sync\n/ip hotspot user print count-only where comment=\"ngg\"\nThe count should match “People on it” here, and this gateway shows as Working within two minutes. /log print where message~\"NGG\" shows any problem.",
-        'trouble' => "“fetch_failed”: the router cannot reach NGG — check its internet, DNS and clock.\n“certificate verify failed”: the clock is wrong, or RouterOS is older than 7.19 without the certificate imported (step 1).\n“truncated” or “incomplete”: a reply was cut short; nothing was applied and the router kept its users.\nA member can’t sign in: check them under “Who gets on” here first — it says why somebody is not on the list.",
+        'steps' => [
+            ['h' => 'Let the router run NGG’s script', 'text' => "New RouterOS versions block downloads and schedules until you allow them (“not allowed by device-mode”). Run this line. The router then waits up to 5 minutes for you to prove you are there: press its reset button once, briefly (under a second), or unplug its power and plug it back in.",
+             'cmd' => '/system device-mode update scheduler=yes fetch=yes',
+             'tip' => "To check it worked, run /system device-mode print — it should say scheduler: yes and fetch: yes. If it says “unknown command”, your RouterOS is older and doesn’t need this step: carry on."],
+            ['h' => 'Check the version and the clock', 'text' => "Run these two lines. The version should be 7.19 or newer, and the date and time should be right (a wrong clock makes every download fail).",
+             'cmd' => "/system resource print\n/system clock print",
+             'tip' => "Older than 7.19? System → Packages → Check For Updates → Download & Install, then come back. Clock wrong? Run: /system ntp client set enabled=yes servers=time.cloudflare.com"],
+            ['h' => 'Turn on the sign-in page', 'text' => "Skip this if the router already has a hotspot (IP → Hotspot lists one).\nIn WinBox: IP → Hotspot → Hotspot Setup. Choose the interface the members’ Wi-Fi is on (usually “bridge”) and press Next through the questions. When it asks for a user, leave it empty: NGG supplies every user.", 'cmd' => ''],
+            ['h' => 'Install NGG’s setup — one line', 'text' => "Copy this ONE line, paste it into New Terminal and press Enter. The router downloads its own setup file from NGG and runs it. It ends by printing “NGG Wi-Fi: installed”.", 'cmd' => wifi_setup_oneliner($gw, $url), 'oneLiner' => true,
+             'tip' => "It still says PASTE-THE-KEY-HERE? Then you don’t have the key on screen: press “Rotate the key” on this gateway and use the line the guide shows then."],
+            ['h' => 'Check it is working', 'text' => "Run these. The first should end without an error; the second prints how many people the router got from NGG. Within two minutes this gateway’s card in NGG says Working.",
+             'cmd' => "/system script run ngg-wifi-sync\n/ip hotspot user print count-only where comment=\"ngg\""],
+            ['h' => 'Tell members how to sign in', 'text' => "Join the centre’s Wi-Fi; the sign-in page opens by itself.\nUsername: their printed ID, like 026-014.\nPassword: their Wi-Fi PIN, from the NGG app under Me → Wi-Fi.\nThe phone is remembered for 30 days.", 'cmd' => '',
+             'tip' => 'A phone with “private Wi-Fi address” switched on forgets the sign-in when that address changes. For this network, set it to use the phone’s own address.'],
+        ],
+        'reports' => 'Each fetch tells NGG how many people are online, the router’s CPU, memory and uptime, and how much data each signed-in person has used (amounts only). Never which sites anybody visits. Every night at 03:15, or when you press “Test the line”, it downloads 8 MB from NGG and reports the speed.',
+        'trouble' => [
+            ['“failure: not allowed by device-mode”', 'Do step 1, including the button press (or power off and on) within 5 minutes, then step 4 again.'],
+            ['“NGG Wi-Fi: fetch_failed” or the download fails', 'In order: is the key in the command (not PASTE-THE-KEY-HERE)? Did step 1 allow fetch? Is the clock right (step 2)? Can the router reach the internet (/ping ' . $host . ')? Then run step 4 again.'],
+            ['“certificate verify failed” or “SSL” in the error', 'The clock is wrong, or RouterOS is older than 7.19. Fix either (step 2), then step 4 again.'],
+            ['“ambiguous value of interface”', 'That came from pasting the old long script. The one-line install (step 4) doesn’t have this problem: run it, it replaces everything the old paste left.'],
+            ['Lines like {{{... with nothing after them', 'The terminal cut a long paste short. Don’t paste long scripts: use step 4’s one line.'],
+            ['“the key is wrong or was rotated”', 'Press Rotate the key on this gateway in NGG and run the new step 4 line. Each wrong-key attempt is counted on the gateway’s card.'],
+            ['One member can’t sign in', 'Look them up under “Why can’t somebody get on?”: it says whether they are on the list, and why not.'],
+            ['To see the router’s own messages', 'Run: /log print where message~"NGG"'],
+        ],
     ];
 }
 
@@ -248,17 +328,34 @@ else
 fi
 SH;
     return [
-        'scriptName' => 'Sync script — save as /usr/local/bin/ngg-wifi-sync',
+        'scriptName' => 'The sync script — save as /usr/local/bin/ngg-wifi-sync',
         'script' => $script,
-        'steps' => [
-            ['h' => '1. The bridge', 'text' => "A Raspberry Pi (or any small Linux machine) on the centre’s network, always on, with a fixed address. Install Raspberry Pi OS Lite, then:\nsudo apt update && sudo apt install -y freeradius curl"],
-            ['h' => '2. Let the controller ask it', 'text' => "Add the controller (or firewall) to /etc/freeradius/3.0/clients.conf, with a long random secret you also give the controller:\nclient centre-wifi {\n  ipaddr = 192.168.1.2\n  secret = A-LONG-RANDOM-SECRET\n  require_message_authenticator = yes\n}\nIf the controller cannot sign in afterwards, set require_message_authenticator = no — some older controllers don’t send it."],
-            ['h' => '3. Read NGG’s list', 'text' => "In /etc/freeradius/3.0/mods-config/files/authorize add this line near the top:\n\$INCLUDE ngg-users\nThen create it empty: sudo touch /etc/freeradius/3.0/mods-config/files/ngg-users"],
-            ['h' => '4. The sync, every 2 minutes', 'text' => "Save the script below as /usr/local/bin/ngg-wifi-sync, then:\nsudo chmod 700 /usr/local/bin/ngg-wifi-sync\necho '*/2 * * * * root /usr/local/bin/ngg-wifi-sync' | sudo tee /etc/cron.d/ngg-wifi\nsudo /usr/local/bin/ngg-wifi-sync"],
-            ['h' => '5. Point the controller at the bridge', 'text' => "UniFi Network: the guest hotspot portal’s authentication set to RADIUS, with the bridge’s address and secret. Test that a member’s speed limit is applied before relying on it.\nTP-Link Omada: Site → Network Config → Authentication → Portal, authentication type “RADIUS Server”.\npfSense: Services → Captive Portal → the zone → RADIUS authentication; turn on “Reauthenticate connected users every minute” so somebody removed from NGG is signed out within a minute.\nOPNsense: Captive portal → the zone → authenticate with a RADIUS server (it does not apply per-person speeds)."],
+        'summary' => 'For Wi-Fi controllers that check sign-ins against a RADIUS server (UniFi, Omada, pfSense, OPNsense…). A small Linux machine at the centre keeps NGG’s list and answers the controller.',
+        'time' => 'About 45 minutes',
+        'before' => [
+            'A Raspberry Pi or any small Linux machine on the centre’s network, always on, with a fixed address.',
+            'Admin access to the Wi-Fi controller or firewall, and a way to type commands on the Linux machine.',
+            'This gateway’s key (already in the script if you opened this guide right after adding the gateway or rotating its key).',
         ],
-        'check' => "sudo /usr/local/bin/ngg-wifi-sync && grep -c Cleartext-Password /etc/freeradius/3.0/mods-config/files/ngg-users\nThe count should match “People on it” here. radtest 026-014 <their PIN> 127.0.0.1 0 testing123 checks one person against the bridge itself.",
-        'trouble' => "The bridge cannot take anybody off a controller by itself: a removal bites at that person’s next sign-in, within a minute on pfSense with re-authentication on, and at most after 8 hours otherwise (every session NGG allows is given that end).\n“Devices at once” needs FreeRADIUS’s session tracking (radutmp) switched on in sites-available/default, and even then it lets people in when it cannot check. Don’t rely on it as a limit.\n“reload_failed”: run sudo freeradius -XC to see why; the last good list was put back.",
+        'steps' => [
+            ['h' => 'Install the RADIUS server', 'text' => 'On the Linux machine (Raspberry Pi OS Lite is fine), run:', 'cmd' => 'sudo apt update && sudo apt install -y freeradius curl'],
+            ['h' => 'Let the controller ask it', 'text' => "Add the controller to /etc/freeradius/3.0/clients.conf. Put its address in ipaddr and make up a long secret; you will type the same secret into the controller.",
+             'cmd' => "client centre-wifi {\n  ipaddr = 192.168.1.2\n  secret = A-LONG-RANDOM-SECRET\n  require_message_authenticator = yes\n}",
+             'tip' => 'If the controller cannot sign anybody in afterwards, change require_message_authenticator to no: some older controllers don’t send it.'],
+            ['h' => 'Make it read NGG’s list', 'text' => 'Add this line near the top of /etc/freeradius/3.0/mods-config/files/authorize:', 'cmd' => "\$INCLUDE ngg-users",
+             'tip' => 'Then create the file empty: sudo touch /etc/freeradius/3.0/mods-config/files/ngg-users'],
+            ['h' => 'Save the sync script and run it every 2 minutes', 'text' => 'Click “Copy the script”, save it as /usr/local/bin/ngg-wifi-sync, then run:', 'script' => true,
+             'cmd' => "sudo chmod 700 /usr/local/bin/ngg-wifi-sync\necho '*/2 * * * * root /usr/local/bin/ngg-wifi-sync' | sudo tee /etc/cron.d/ngg-wifi\nsudo /usr/local/bin/ngg-wifi-sync"],
+            ['h' => 'Point the controller at the machine', 'text' => "In the controller’s guest portal, set sign-in to RADIUS with this machine’s address and the secret from step 2.\nUniFi: the hotspot portal → RADIUS. Test that a member’s speed limit applies before relying on it.\nOmada: Site → Network Config → Authentication → Portal → RADIUS Server.\npfSense: Services → Captive Portal → RADIUS, and turn on “Reauthenticate connected users every minute”.\nOPNsense: Captive portal → RADIUS (it does not apply per-person speeds).", 'cmd' => ''],
+            ['h' => 'Check it is working', 'text' => 'This prints the people on the list; it should match “People on it” here.', 'cmd' => 'sudo /usr/local/bin/ngg-wifi-sync && grep -c Cleartext-Password /etc/freeradius/3.0/mods-config/files/ngg-users'],
+        ],
+        'reports' => 'It fetches the list every two minutes. It does not report data used yet: per-person usage and data allowances need a MikroTik router or the JSON feed.',
+        'trouble' => [
+            ['Somebody removed can still get on', 'A RADIUS machine cannot sign anybody out by itself. A removal takes effect at their next sign-in: within a minute on pfSense with re-authentication on, otherwise within 8 hours.'],
+            ['“Devices at once” isn’t enforced', 'It needs FreeRADIUS session tracking (radutmp) switched on in sites-available/default, and even then it lets people in when it cannot check. Don’t rely on it.'],
+            ['“reload_failed”', 'Run sudo freeradius -XC to see why. The last good list was put back, so people kept working.'],
+            ['To test one person', 'radtest 026-014 <their PIN> 127.0.0.1 0 testing123'],
+        ],
     ];
 }
 
@@ -319,15 +416,30 @@ if [ "\$METHOD" = auth_client ]; then
 fi
 SH;
     return [
-        'scriptName' => 'Sync script — save as /usr/bin/ngg-wifi-sync',
+        'scriptName' => 'Two scripts — the sync, then the sign-in check',
         'script' => $script . "\n\n" . $binauth,
-        'steps' => [
-            ['h' => '1. Packages', 'text' => "opkg update && opkg install opennds ca-bundle libustream-mbedtls"],
-            ['h' => '2. The list', 'text' => "Save the first script as /usr/bin/ngg-wifi-sync (chmod 700), then run it every 2 minutes:\necho '*/2 * * * * /usr/bin/ngg-wifi-sync' >> /etc/crontabs/root && service cron restart"],
-            ['h' => '3. The sign-in check', 'text' => "Save the second script as /etc/ngg-wifi/custombinauth.sh (chmod 700) and point openNDS at it:\nuci set opennds.@opennds[0].custombinauth='/etc/ngg-wifi/custombinauth.sh' && uci commit opennds && service opennds restart\nThe sign-in page must ask for the ID and the PIN: use openNDS’s ThemeSpec login (login_option_enabled 3) with two fields. This is the step to prove on one router before any other."],
+        'summary' => 'For OpenWrt routers with openNDS. The router keeps NGG’s list, checks each sign-in against it and signs out anybody removed. A pilot: prove it on one router first.',
+        'time' => 'About 30 minutes',
+        'before' => [
+            'An OpenWrt 23.05 or newer router that already gives members’ devices internet, and SSH access to it.',
+            'This gateway’s key (already in the scripts if you opened this guide right after adding the gateway or rotating its key).',
         ],
-        'check' => "/usr/bin/ngg-wifi-sync && wc -l /etc/ngg-wifi/users — the count should match “People on it” here. logread -e ngg-wifi shows any problem.",
-        'trouble' => "Pilot: openNDS documents the sign-in hook and ndsctl deauth, but the PIN sign-in page has to be proven on a real router first. Until it is, use a MikroTik router or the RADIUS bridge at a centre.\nopenNDS keeps a person signed in for the session time (here 30 days) — that is its “remember this device”.",
+        'steps' => [
+            ['h' => 'Install the packages', 'text' => 'Over SSH on the router, run:', 'cmd' => 'opkg update && opkg install opennds ca-bundle libustream-mbedtls'],
+            ['h' => 'Save the two scripts', 'text' => "Click “Copy the script”. The first part goes in /usr/bin/ngg-wifi-sync, the second (from the line starting #!/bin/sh again) in /etc/ngg-wifi/custombinauth.sh. Make both runnable:", 'script' => true,
+             'cmd' => 'chmod 700 /usr/bin/ngg-wifi-sync /etc/ngg-wifi/custombinauth.sh'],
+            ['h' => 'Run the sync every 2 minutes', 'text' => '', 'cmd' => "echo '*/2 * * * * /usr/bin/ngg-wifi-sync' >> /etc/crontabs/root && service cron restart"],
+            ['h' => 'Use NGG’s list for sign-in', 'text' => 'Point openNDS at the sign-in check, and use its ThemeSpec login page (login_option_enabled 3) with two fields, the ID and the PIN.',
+             'cmd' => "uci set opennds.@opennds[0].custombinauth='/etc/ngg-wifi/custombinauth.sh' && uci commit opennds && service opennds restart",
+             'tip' => 'This is the part to prove on one router before any other.'],
+            ['h' => 'Check it is working', 'text' => 'This prints the people on the list; it should match “People on it” here.', 'cmd' => '/usr/bin/ngg-wifi-sync && wc -l /etc/ngg-wifi/users'],
+        ],
+        'reports' => 'It fetches the list every two minutes. It does not report data used yet: per-person usage and data allowances need a MikroTik router or the JSON feed.',
+        'trouble' => [
+            ['The sign-in page doesn’t accept the PIN', 'It is the pilot step: until it is proven, use a MikroTik router or the RADIUS machine at that centre.'],
+            ['To see what happened', 'logread -e ngg-wifi'],
+            ['People stay signed in a long time', 'openNDS keeps a sign-in for the session time (here 30 days): that is how it remembers a device. Removing somebody at NGG still signs them out at the next fetch.'],
+        ],
     ];
 }
 
@@ -335,15 +447,30 @@ SH;
 
 function wifi_setup_generic(array $r, string $url): array {
     $gw = (string)$r['gatewayId'];
+    $usage = preg_replace('/wifi-feed\.php$/', 'wifi-usage.php', $url);
     return [
-        'scriptName' => 'Example request',
+        'scriptName' => 'An example request',
         'script' => "curl -fsS -H 'X-NGG-Gateway: {$gw}' -H 'X-NGG-Key: PASTE-THE-KEY-HERE' '{$url}?since=0'",
-        'steps' => [
-            ['h' => 'The request', 'text' => "GET {$url}?since=<version>\nHeaders: X-NGG-Gateway: {$gw} and X-NGG-Key: <its key>. Never put the key in the address.\nsince is the version you last applied in full (0 the first time). Optional: os=<your platform and version>, error=<a short word for what went wrong last time>, full=1 to ask for everything."],
-            ['h' => 'The reply', 'text' => "{ \"version\": 12, \"full\": false, \"next\": 120, \"count\": 214,\n  \"profiles\": { \"ngg-member\": { \"down\": 10, \"up\": 5, \"devices\": 1, \"hours\": \"\" }, … },\n  \"users\": [ { \"username\": \"026-014\", \"pin\": \"482913\", \"profile\": \"ngg-member\", \"action\": \"add\" }, … ] }\nSpeeds are Mbit/s. hours is blank (all day) or like 08:00-18:00; NGG already leaves people off outside their hours."],
-            ['h' => 'Applying it', 'text' => "add and set: create or update the user with that PIN and profile. remove: delete the user and end their session.\nfull: true means the list is everybody — remove every user you made from NGG that is not on it.\nOnly after applying everything, send the version back as since next time. If you send an older one, NGG sends a full list again. Ask again after next seconds.\nOn any failure keep the users you have: NGG never assumes a list was applied until you confirm it."],
+        'summary' => 'For your own script or controller integration: fetch the list as JSON over HTTPS, apply it, and (optionally) report the data each person used.',
+        'time' => 'Depends on your system',
+        'before' => [
+            'Something that can make HTTPS requests with two headers and apply a list of users.',
+            'This gateway’s key. Send it in a header, never in the address.',
         ],
-        'check' => "The first request returns full: true with everybody. Request again with since=<that version>: an empty users list means nothing changed.",
-        'trouble' => "401 with “#error;bad_key”: the key is wrong or was rotated. Each wrong-key request is shown on this gateway here.",
+        'steps' => [
+            ['h' => 'Ask for the list', 'text' => "GET the address below with the headers X-NGG-Gateway: {$gw} and X-NGG-Key: <its key>.\nsince is the version you last applied completely (0 the first time). Optional: os=<your platform>, error=<a short word for the last problem>, full=1 for everything.",
+             'cmd' => "GET {$url}?since=<version>", 'script' => true],
+            ['h' => 'Read the reply', 'text' => 'Speeds are Mbit/s; dayMb and monthMb are data allowances NGG applies itself; hours is blank (all day) or like 08:00-18:00.',
+             'cmd' => "{ \"version\": 12, \"full\": false, \"next\": 120, \"count\": 214,\n  \"profiles\": { \"ngg-member\": { \"down\": 10, \"up\": 5, \"devices\": 1, \"hours\": \"\" }, … },\n  \"users\": [ { \"username\": \"026-014\", \"pin\": \"482913\", \"profile\": \"ngg-member\", \"action\": \"add\" }, … ] }"],
+            ['h' => 'Apply it', 'text' => "add and set: create or update the user with that PIN and profile. remove: delete the user and end their session.\nfull: true means this is everybody: remove every user you made from NGG that isn’t in it.\nOnly once everything is applied, send that version as since next time, and ask again after next seconds. If anything fails, keep the users you have.", 'cmd' => ''],
+            ['h' => 'Report data used (for usage figures and allowances)', 'text' => 'Before each fetch, POST each signed-in person’s running totals for their current session, from the person’s side, with the same two headers. NGG keeps the difference between reports.',
+             'cmd' => "POST {$usage}\nContent-Type: application/json\n{ \"sessions\": [ { \"username\": \"026-014\", \"session\": \"<your id for this session>\", \"down\": 52428800, \"up\": 3145728 } ] }"],
+            ['h' => 'Check it is working', 'text' => 'The first request returns full: true with everybody. Ask again with since=<that version>: an empty users list means nothing changed.', 'cmd' => ''],
+        ],
+        'reports' => 'Whatever you send: the list is confirmed by the version you send back, and data used by the usage report. Never which sites anybody visits.',
+        'trouble' => [
+            ['401 with “#error;bad_key”', 'The key is wrong or was rotated. Each wrong-key request is counted on this gateway’s card.'],
+            ['A full list every time', 'You are sending an older since than the version you were last handed. Send the version from the reply you applied.'],
+        ],
     ];
 }
