@@ -1711,6 +1711,17 @@ seen by their circle of adults:
 Anybody connected through the old portal must reconnect this way; the days
 they confirmed and the notes they left stay on the child's record.
 
+**Mentor Messages: one conversation per person (changed 2026-10-28).** In
+the mentor portal, *Messages* lists people, not items. Each child is one
+conversation: what they wrote, the journal entries they sent and their
+check-ins, in time order, answered from one reply box that reaches their
+app (after 8pm it waits until 8am). Families and colleagues (the lead, or
+for a lead their mentors, both sides of the conversation) are conversations
+too. The list is grouped — *Needs a reply*, *Children*, *Families*,
+*Colleagues* — shows the last word and who said it, and has *Find a person*
+and *New message*. On a phone the conversation fills the screen, with *All*
+to go back. *Their page* opens the child's record.
+
 **The mentor reads the journal (added 2026-10-28).** Nothing in a child's
 journal is kept from their mentor. In the mentor portal, open a mentee →
 *Journal*: every entry they have written, newest first, with the mood, the

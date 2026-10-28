@@ -1074,6 +1074,27 @@ function member_mp_messages(array $p): array {
     }
     foreach ($out as &$o) $o['replies'] = $replies[$o['threadId']] ?? [];
     unset($o);
+    // A conversation I started with my lead (or a lead with a mentor) that has no answer yet is still a conversation.
+    $haveT = array_flip(array_column($out, 'threadId'));
+    foreach (db_all("SELECT mm.threadId, mm.toId, mm.body, mm.createdAt, m.fullName FROM mentor_messages mm LEFT JOIN members m ON m.memberId = mm.toId
+                     WHERE mm.fromId = ? AND mm.threadId LIKE 'lead:%' AND mm.kind IN ('From your lead', 'From your mentor') ORDER BY mm.createdAt DESC, mm.id DESC LIMIT 60", [$g['me']]) as $r) {
+        if (isset($haveT[$r['threadId']])) continue;
+        $haveT[$r['threadId']] = true;
+        $out[] = ['id' => 'lt:' . $r['threadId'], 'threadId' => (string)$r['threadId'], 'kind' => 'Conversation', 'filter' => 'lead', 'fromId' => (string)$r['toId'], 'from' => (string)($r['fullName'] ?? ''),
+                  'subjectId' => '', 'at' => (string)$r['createdAt'], 'body' => (string)$r['body'], 'read' => true, 'replies' => []];
+    }
+    /* A conversation with a lead (or, for a lead, with a mentor) carries BOTH
+       sides, oldest first, so the inbox can show it as one conversation: the
+       rows above are only what reached me. */
+    $leadT = array_values(array_unique(array_map(static fn($o) => $o['threadId'], array_filter($out, static fn($o) => $o['filter'] === 'lead' && str_starts_with((string)$o['threadId'], 'lead:')))));
+    if ($leadT) {
+        $lp = implode(',', array_fill(0, count($leadT), '?'));
+        $lt = [];
+        foreach (db_all("SELECT id, threadId, fromId, fromName, body, createdAt FROM mentor_messages WHERE threadId IN ($lp) AND kind IN ('From your lead', 'From your mentor') AND (fromId = ? OR toId = ?) ORDER BY createdAt, id", array_merge($leadT, [$g['me'], $g['me']])) as $r)
+            $lt[$r['threadId']][] = ['mid' => (int)$r['id'], 'who' => (string)$r['fromId'] === $g['me'] ? 'You' : (string)$r['fromName'], 'mine' => (string)$r['fromId'] === $g['me'], 'body' => (string)$r['body'], 'at' => (string)$r['createdAt']];
+        foreach ($out as &$o) if ($o['filter'] === 'lead' && isset($lt[$o['threadId']])) $o['thread'] = $lt[$o['threadId']];
+        unset($o);
+    }
     return ['ok' => true, 'messages' => $out, 'peer' => $g['mpRole'] === 'peer'];
 }
 function member_mp_message_read(array $p): array {

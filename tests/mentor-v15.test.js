@@ -296,6 +296,34 @@ async function as(memberId, admin, viewport) {
       && /How did the maths test go/.test(await mt.innerText('main')));
     php(`db_exec("UPDATE mentor_messages SET status = 'sent', sendAfter = '' WHERE threadId = 'chat:NGG-MS-K2'");`); // past quiet hours
     chk('Messages: the mentee’s own chat carries it', q(`count(array_filter(member_mp_chat(['memberId' => 'NGG-MS-K2'])['messages'], fn($m) => str_contains($m['body'], 'maths test') && !$m['mine']))`) === 1);
+    /* One conversation per person: what Mariam wrote, the journal entry she
+       sent and her check-in are ONE row and one timeline, not three items. */
+    php(`db_exec("UPDATE journal SET visibility = 'mentor', title = '', body = 'I made a plan for revision.' WHERE entryId = 'MS-JR-1'");
+         db_insert('member_checkins', ['memberId' => 'NGG-MS-K1', 'week' => gmdate('o-\\WW'), 'wellbeing' => 'Struggling', 'note' => 'Exams are close', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 7200)]);`);
+    q(`member_mp_chat_send(['memberId' => 'NGG-MS-K1', 'body' => 'I am having trouble doing my timetable'])`);
+    await mt.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mt);
+    await mt.locator('.m15-app button', { hasText: /^Messages$/ }).first().click();
+    await mt.waitForSelector('.m15m-person', { timeout: 30000 });
+    const rowsM = await mt.$$eval('.m15m-person', els => els.map(e => e.innerText));
+    chk('Messages: each person is one conversation — Mariam once, not once per chat, journal entry and check-in', rowsM.filter(t => /Mariam Yusuf/.test(t)).length === 1);
+    chk('…and the list shows her last word and that it is waiting for me', rowsM.some(t => /Mariam Yusuf/.test(t) && /trouble doing my timetable/.test(t)));
+    await mt.click('.m15m-person:has-text("Mariam Yusuf")');
+    await mt.waitForSelector('.m15m-log .m15m-card', { timeout: 15000 });
+    const logM = await mt.innerText('.m15m-log');
+    chk('…her conversation holds her message, the journal entry she sent and her check-in, in time order', /Weekly check-in[\s\S]*Exams are close[\s\S]*Sent you a journal entry[\s\S]*I made a plan for revision[\s\S]*trouble doing my timetable/.test(logM));
+    await mt.fill('.m15m-compose textarea', 'Let’s do it together on Saturday. Bring your school timetable.');
+    await mt.click('.m15m-compose button[type=submit]');
+    await mt.waitForFunction(() => /Bring your school timetable/.test((document.querySelector('.m15m-log') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    chk('…one reply box answers her in her chat, and the reply shows in the conversation', q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-MS-K1' AND kind = 'Reply' AND body LIKE '%school timetable%'")['c']`) === 1
+      && /Bring your school timetable/.test(await mt.innerText('.m15m-log')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/messages.png' : path.join(TMP, 'messages.png') });
+    await mt.setViewportSize({ width: 390, height: 844 });
+    await mt.waitForTimeout(400);
+    chk('Messages on a phone: the conversation fills the screen, with a way back to the list', await mt.isVisible('.m15m-back') && !(await mt.isVisible('.m15m-people')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/messages-phone.png' : path.join(TMP, 'messages-phone.png') });
+    await mt.click('.m15m-back');
+    chk('…and back shows the list of people', await mt.isVisible('.m15m-people'));
+    await mt.setViewportSize({ width: 1280, height: 1000 });
     // Class: stars, presence, school results and curriculum are the portal's own screens — no embedded portal.
     await mt.locator('.m15-app button', { hasText: /^Class$/ }).first().click();
     await mt.waitForSelector('main .m15c table', { timeout: 30000 });

@@ -3893,3 +3893,29 @@ they should be able to build freely".
   retired member table); it now pins the member screen, the maker opening
   with the classes in, and a first-time visitor typing a class with no preset.
 
+## Mentor Messages restructured; Lessons gate (2026-10-28)
+
+The owner: "Improve the messages features of the mentors. The UX is currently
+terrible … the structure of the messages … is too messy."
+
+- **Was:** one flat list from `member.mentor.messages` in which a child
+  appeared once per chat, once per shared journal entry and once per
+  check-in, each with its own kind label and reply thread, under up to six
+  filter chips; a lead conversation showed only what reached you.
+- **Now:** `Mp15Inbox` (`mp15-app.jsx`, rendered from `slotEnd`; the design's
+  compiled list is switched off with `onMsg: false`) groups the same rows by
+  PERSON (`mp15InboxPeople`): a child's chat, sent journal entries and
+  check-ins are one time-ordered conversation, and one reply goes to
+  `chat:<memberId>` (old replies on `journal:`/`checkin:` threads stay in the
+  timeline). Groups: Needs a reply (the last word is not yours), Children,
+  Families, Colleagues. Two panes by container query (`.m15m-wrap`), one on
+  a phone. Opening a conversation marks all its parts read.
+- **Server:** lead threads now carry both sides (`thread`), and a lead
+  conversation you started with no answer yet is listed.
+- **Lessons on the mentee page** used the older record gate (screening,
+  centre, cohort): a mentor whose own record names another centre saw Growth
+  open and "Couldn't load their lessons" under it. A child in the caseload is
+  now enough, as for Growth (`mentor_child_lessons`).
+- Tests: PHP pins the Lessons gate; `mentor-v15.test.js` pins one row per
+  child, the merged timeline, the reply, and the phone layout (80/0).
+

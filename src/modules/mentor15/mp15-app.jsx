@@ -479,7 +479,7 @@ class Mp15Portal extends React.Component {
                ['Saturday evaluations', revDoneN + ' of ' + revTotal, revTotal ? 'Due Monday' : 'Nobody marked here', revDoneN === revTotal ? '#1d6b30' : '#0b0b0c', () => this.go('sat', { step: 'after' })]].map(([k, v, s, fg, go]) => ({ k, v, s, fg, go })),
       title: area.kids.length > 1 && !inDetail ? area.l : titles[S.scr], sub: S.scr === 'kid' ? '' : subs[S.scr], showBack: inDetail, back: () => this.back(), backL: S.scr === 'kid' ? 'Mentees' : S.scr === 'module' ? 'Academy' : 'Back',
       goConcern: () => this.go('concern'), lead, isPeer, notPeer: !isPeer,
-      onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: S.scr === 'msg', onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', acLocked: oriL,
+      onWeek: S.scr === 'week', onModule: S.scr === 'module', onGoals: S.scr === 'goals', onSess: S.scr === 'sess', onList: S.scr === 'list', onKid: S.scr === 'kid', onSat: S.scr === 'sat', onMsg: false, /* Messages is Mp15Inbox (slotEnd); the design's flat list is retired */ onGrowth: S.scr === 'growth', onAcademy: S.scr === 'academy', acLocked: oriL,
       acLockH: 'Your Academy: ' + (ori.done || 0) + ' of ' + (ori.required || 0) + ' done',
       acLockT: 'Start with the short guides under “Start here: using the portal” (' + ((ori.startHere || {}).done || 0) + ' of ' + ((ori.startHere || {}).required || 0) + ' done) — each shows the right tool for one part of the job — then the required modules. You can look around the whole portal meanwhile, but nothing you do there saves until the Academy is complete (about ' + (ori.mins || 0) + ' minutes left). Report a concern works the whole time.', onRole: S.scr === 'role', onMentors: S.scr === 'mentors' && isLead, onConcern: S.scr === 'concern',
       due: S.dueAll ? due : due.slice(0, 5), noDue: due.length === 0 && !!D.week, dueMore: due.length > 5 && !S.dueAll, dueRestL: 'Show ' + (due.length - 5) + ' more', seeAllDue: () => set({ dueAll: true }),
@@ -707,6 +707,9 @@ class Mp15Portal extends React.Component {
     if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
       if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}
         save={b => this.act('supervisionRecord', Object.assign({ mentorId: m.mentorId }, b), 'Supervision notes saved. ' + m.first + ' can read them in My role.').then(r => { if (r) { this.setState({ supFor: null, supBooked: Object.assign({}, S.supBooked, { [m.mentorId]: false }) }); this.refresh(['team']); } return r; })}/></div>; }
+    if (S.scr === 'msg') { const role = this.me().role || 'pod', kids = this.kids().map(k => ({ id: k.id, name: k.name }));
+      return <div className={cls}><Mp15Inbox rows={((S.d.msgs || {}).messages) || []} loaded={!!S.d.msgs} kids={kids} canSearch={role === 'lead' || role === 'coord'} centre={S.centre || ''} today={this.today()}
+        start={S.mNew} onStarted={() => this.setState({ mNew: null })} act={(a, b, ok) => this.act(a, b, ok)} refresh={() => this.refresh(['msgs', 'week', 'role'])} openKid={id => this.go('kid', { kid: id, ktab: 'overview', pBody: null })}/></div>; }
     if (S.scr === 'kid' && S.ktab === 'journal' && S.kid && this.me().role !== 'peer') return <div className={cls}><Mp15Journal key={'jr:' + S.kid} subjectId={S.kid}/></div>;
     if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
     return null;
@@ -1450,6 +1453,162 @@ function Mp15KidLessons({ subjectId }) {
    days reflected, streak, conduct days — never the child's words. The mentor
    confirms their own days and leaves their own notes; the child reads notes
    in their app. */
+/* ── Messages: one conversation per person ─────────────────────────────────
+   The owner, 2026-10-28: "The UX is currently terrible … the structure of the
+   messages is too messy." It was one flat list in which a child appeared once
+   per chat, once per shared journal entry and once per check-in, each with
+   its own label and its own reply box, under six filter chips. Now each
+   person is ONE conversation: a child's messages, the journal entries they
+   sent and their check-ins, in time order, with one reply box that reaches
+   their app. People are grouped — Needs a reply, Children, Families, and the
+   lead or mentors — and the list says what the last word was and who said it.
+   Built from member.mentor.messages as it is; replying uses messageReply on
+   the child's chat thread (journal and check-in replies made before stay in
+   the timeline). */
+const MP15_GROUPS = [['needs', 'Needs a reply'], ['kids', 'Children'], ['family', 'Families'], ['team', 'Colleagues']];
+function mp15InboxPeople(rows, kids, readMap) {
+  const P = {}, kidName = {}; (kids || []).forEach(k => { kidName[k.id] = k.name; });
+  const aud = list => (((list || []).find(y => y.type === 'audio') || {}).url) || '';
+  const add = (key, base) => (P[key] = P[key] || Object.assign({ key, items: [], rows: [], unread: false }, base));
+  (rows || []).forEach(r => {
+    let p;
+    if (r.filter === 'chat' || r.filter === 'journal' || r.filter === 'checkin' || /^journal:/.test(r.threadId || '')) {
+      p = add('kid:' + r.subjectId, { group: 'kids', name: r.filter === 'chat' ? r.from : (kidName[r.subjectId] || r.from), subjectId: r.subjectId, replyTo: 'chat:' + r.subjectId,
+        sub: r.supporting ? 'You support them with ' + r.supporting : r.mentee === false ? 'At your centre' : 'Your mentee' });
+      if (r.filter === 'chat') (r.thread || []).forEach((x, i) => p.items.push({ id: r.id + ':' + i, type: 'msg', mine: !!x.mine, who: x.who, body: x.body, at: x.at, queued: !!x.queued, audio: aud(x.media) }));
+      else p.items.push({ id: r.id, type: r.filter === 'checkin' ? 'checkin' : 'journal', mine: false, who: r.from, body: r.body, at: r.at, audio: aud(r.media) });
+    } else if (r.filter === 'family') {
+      p = add('fam:' + r.subjectId, { group: 'family', name: r.from || 'Family', subjectId: r.subjectId, sub: 'Family of ' + (kidName[r.subjectId] || 'your mentee'), replyTo: r.threadId });
+      p.items.push({ id: r.id, type: 'msg', mine: false, who: r.from, body: r.body, at: r.at });
+    } else {
+      p = add('team:' + (r.fromId || r.threadId), { group: 'team', name: r.from || 'Your lead', sub: /mentor/i.test(r.kind) && !/lead/i.test(r.kind) ? 'A mentor you lead' : r.kind === 'Conversation' ? 'Colleague' : r.kind, replyTo: /^lead:/.test(r.threadId || '') ? r.threadId : '' });
+      if (r.thread) r.thread.forEach(x => p.items.push({ id: 'mid:' + x.mid, type: 'msg', mine: x.mine, who: x.who, body: x.body, at: x.at }));
+      else p.items.push({ id: r.id, type: 'msg', mine: false, who: r.from, body: r.body, at: r.at });
+    }
+    // Replies made to a journal entry, a check-in or a family before the conversation was one.
+    (r.replies || []).forEach((x, i) => { if (r.filter !== 'chat' && r.filter !== 'lead') p.items.push({ id: r.id + ':r' + i, type: 'msg', mine: true, who: 'You', body: x.body, at: x.createdAt, queued: x.status === 'queued' }); });
+    p.rows.push(r);
+    if (!r.read && !readMap[r.id] && r.kind !== 'From your lead') p.unread = true;
+  });
+  return Object.values(P).map(p => {
+    const seen = {}; p.items = p.items.filter(x => (seen[x.id] ? false : (seen[x.id] = true))).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    p.last = p.items[p.items.length - 1] || null; p.at = p.last ? p.last.at : '';
+    p.needs = !!p.last && !p.last.mine && !!p.replyTo;
+    return p;
+  }).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+function Mp15Inbox({ rows, loaded, kids, canSearch, centre, today, start, onStarted, act, refresh, openKid }) {
+  const [read, setRead] = React.useState({});
+  const [sel, setSel] = React.useState(''), [group, setGroup] = React.useState('all'), [q, setQ] = React.useState(''), [text, setText] = React.useState(''), [busy, setBusy] = React.useState(false);
+  const [picking, setPicking] = React.useState(false), [pq, setPq] = React.useState(''), [pres, setPres] = React.useState([]), [fresh, setFresh] = React.useState(null);
+  const wrapRef = React.useRef(null), logRef = React.useRef(null), boxRef = React.useRef(null), pickT = React.useRef(null);
+  React.useEffect(() => { if (start && start.id) { setFresh(start); setSel('kid:' + start.id); setGroup('all'); onStarted && onStarted(); setTimeout(() => boxRef.current && boxRef.current.focus(), 60); } }, [start && start.id]);
+  let people = mp15InboxPeople(rows, kids, read);
+  if (fresh && !people.some(p => p.key === 'kid:' + fresh.id)) people = [{ key: 'kid:' + fresh.id, group: 'kids', name: fresh.name, subjectId: fresh.id, replyTo: 'chat:' + fresh.id, sub: 'Your mentee', items: [], rows: [], unread: false, needs: false, last: null, at: '' }].concat(people);
+  const counts = { all: people.length, needs: people.filter(p => p.needs).length };
+  MP15_GROUPS.slice(1).forEach(([g]) => { counts[g] = people.filter(p => p.group === g).length; });
+  const ql = q.trim().toLowerCase();
+  const shown = people.filter(p => (group === 'all' || (group === 'needs' ? p.needs : p.group === group)) && (!ql || p.name.toLowerCase().includes(ql)));
+  const cur = people.find(p => p.key === sel) || null;
+  React.useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [sel, cur && cur.items.length]);
+  const open = p => {
+    setSel(p.key); setText('');
+    const ids = {}; p.rows.forEach(r => { if (!r.read && !read[r.id]) { ids[r.id] = true; mp15Api.act('messageRead', { threadId: r.id.indexOf('m:') === 0 ? r.id : r.threadId }).catch(() => {}); } });
+    if (Object.keys(ids).length) setRead(x => Object.assign({}, x, ids));
+  };
+  const send = e => {
+    if (e) e.preventDefault();
+    if (!cur || !cur.replyTo || !text.trim() || busy) return;
+    setBusy(true);
+    const first = mp15First(cur.name);
+    act('messageReply', { threadId: cur.replyTo, subjectId: cur.subjectId || '', body: text.trim() }, r => r.queued ? 'Saved. It goes to ' + first + ' at 8am.' : 'Sent to ' + first)
+      .then(r => { if (r) { setText(''); setFresh(null); refresh(); } }).finally(() => setBusy(false));
+  };
+  const onPick = v => {
+    setPq(v); const l = v.trim().toLowerCase();
+    const local = l.length >= 2 ? (kids || []).filter(k => k.name.toLowerCase().includes(l)).map(k => ({ id: k.id, name: k.name, sub: 'Your mentee' })) : [];
+    setPres(local);
+    if (canSearch && l.length >= 2) { clearTimeout(pickT.current); pickT.current = setTimeout(() => mp15Api.view('messageSearch', { q: v.trim(), centre: centre || '' }).then(r => setPres(cur0 => cur0.concat((r.children || []).filter(c => !cur0.some(x => x.id === c.id)).map(c => ({ id: c.id, name: c.name, sub: c.mentee ? 'Your mentee' : 'At ' + c.centre }))))).catch(() => {}), 220); }
+  };
+  const choose = r => { setPicking(false); setPq(''); setPres([]); setFresh({ id: r.id, name: r.name }); setSel('kid:' + r.id); setGroup('all'); setTimeout(() => boxRef.current && boxRef.current.focus(), 60); };
+  const dayOf = at => mp15When(at, today) || '';
+  const lastLine = p => !p.last ? 'No messages yet' : (p.last.mine ? 'You: ' : '') + (p.last.type === 'journal' ? 'Sent you a journal entry: ' : p.last.type === 'checkin' ? 'Check-in: ' : '') + (p.last.body || (p.last.audio ? 'Voice note' : ''));
+  const items = cur ? cur.items : [];
+  let lastDay = '';
+  return (
+    <div ref={wrapRef} className="m15m-wrap"><div className={'m15m' + (cur ? ' has-sel' : '')}>
+      <div className="m15m-list" aria-label="Conversations">
+        <div className="m15m-tools">
+          {picking ? (
+            <div role="search" className="m15m-pick">
+              <div className="m15m-row"><input className="m15m-input" value={pq} onChange={e => onPick(e.target.value)} placeholder={canSearch ? 'Type a child’s name — any child at your centre' : 'Type a mentee’s name'} aria-label="Who to write to" autoFocus/>
+                <button type="button" className="m15c-btn" onClick={() => { setPicking(false); setPq(''); setPres([]); }}>Cancel</button></div>
+              <span role="status" aria-live="polite" className="m15c-sub">{pq.trim().length < 2 ? 'Type at least two letters.' : pres.length ? pres.length + ' found' : 'Nobody by that name you can write to.'}</span>
+              {pres.slice(0, 8).map(r => <button key={r.id} type="button" className="m15m-res" onClick={() => choose(r)}><b>{r.name}</b><span>{r.sub}</span></button>)}
+            </div>
+          ) : (
+            <div className="m15m-row">
+              <input className="m15m-input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Find a person" aria-label="Find a conversation by name"/>
+              <button type="button" className="m15c-btn is-primary" onClick={() => setPicking(true)}><i className="ph ph-pencil-simple-line" aria-hidden="true"/>New message</button>
+            </div>
+          )}
+          <div className="m15m-groups" role="tablist" aria-label="Show">
+            {[['all', 'All']].concat(MP15_GROUPS).filter(([g]) => g === 'all' || counts[g]).map(([g, l]) =>
+              <button key={g} type="button" role="tab" aria-selected={group === g ? 'true' : 'false'} className={'m15m-group' + (group === g ? ' is-on' : '')} onClick={() => setGroup(g)}>{l}{g !== 'all' ? <span className="m15m-n">{counts[g]}</span> : null}</button>)}
+          </div>
+        </div>
+        {!loaded ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading your messages</span></div>
+          : !shown.length ? <p className="m15m-empty">{ql ? 'Nobody by that name here.' : group === 'needs' ? 'Nobody is waiting for a reply.' : 'No conversations yet. Use New message to write to a mentee.'}</p>
+          : <ul className="m15m-people">{shown.map(p => (
+            <li key={p.key}><button type="button" className={'m15m-person' + (p.key === sel ? ' is-on' : '') + (p.unread ? ' is-unread' : '')} aria-current={p.key === sel ? 'true' : undefined} onClick={() => open(p)}>
+              <span className="m15m-av" aria-hidden="true">{mp15Initials(p.name)}</span>
+              <span className="m15m-pb">
+                <span className="m15m-pl"><b>{p.name}</b><small>{p.at ? dayOf(p.at) : ''}</small></span>
+                <span className="m15m-ps">{p.sub}</span>
+                <span className="m15m-pp">{lastLine(p)}</span>
+              </span>
+              {p.unread ? <span className="m15m-dot" aria-label="Unread"/> : p.needs ? <span className="m15m-tag">Reply</span> : null}
+            </button></li>))}</ul>}
+      </div>
+      <section className="m15m-thread" aria-label={cur ? 'Conversation with ' + cur.name : 'Conversation'}>
+        {!cur ? <p className="m15m-empty m15m-pickone">Choose a conversation.</p> : <>
+          <header className="m15m-head">
+            <button type="button" className="m15m-back" onClick={() => setSel('')}><i className="ph ph-caret-left" aria-hidden="true"/>All</button>
+            <span className="m15m-av" aria-hidden="true">{mp15Initials(cur.name)}</span>
+            <span className="m15m-pb"><b>{cur.name}</b><span className="m15m-ps">{cur.sub}</span></span>
+            {cur.group === 'kids' && openKid ? <button type="button" className="m15c-btn" onClick={() => openKid(cur.subjectId)}>Their page</button> : null}
+          </header>
+          <div className="m15m-log" role="log" aria-label="Messages" ref={logRef}>
+            {!items.length ? <p className="m15m-empty">No messages yet. Write the first one below: it goes to their app and is kept on record.</p> : items.map(x => {
+              const d = dayOf(x.at), sep = d !== lastDay; lastDay = d;
+              return <React.Fragment key={x.id}>
+                {sep ? <div className="m15m-day"><span>{d}</span></div> : null}
+                {x.type === 'msg' ? <div className={'m15m-b' + (x.mine ? ' is-mine' : '')}>
+                    <span className="m15m-bt">{x.body}</span>
+                    {x.audio ? <audio controls preload="none" src={x.audio} aria-label={'Voice note from ' + x.who}/> : null}
+                    <small>{x.mine ? 'You' : x.who} · {mp15Fmt(String(x.at).slice(0, 10), { day: 'numeric', month: 'short' })}{x.at && x.at.length > 15 ? ' ' + String(x.at).slice(11, 16) : ''}{x.queued ? ' · goes at 8am' : ''}</small>
+                  </div>
+                  : <div className={'m15m-card is-' + x.type}>
+                    <span className="m15m-ck"><i className={x.type === 'journal' ? 'ph ph-notebook' : 'ph ph-heartbeat'} aria-hidden="true"/>{x.type === 'journal' ? 'Sent you a journal entry' : 'Weekly check-in'}</span>
+                    <span className="m15m-bt">{x.body}</span>
+                    {x.audio ? <audio controls preload="none" src={x.audio} aria-label="Voice note"/> : null}
+                  </div>}
+              </React.Fragment>;
+            })}
+          </div>
+          {cur.replyTo ? <form className="m15m-compose" onSubmit={send}>
+            <label className="m15x-sr" htmlFor="m15m-box">{'Message to ' + cur.name}</label>
+            <textarea id="m15m-box" ref={boxRef} rows="3" value={text} maxLength={1200} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e); }}
+              placeholder={cur.last && cur.last.type === 'journal' ? 'Name what you noticed. One line is enough.' : 'Write to ' + mp15First(cur.name)}/>
+            <div className="m15m-row"><span className="m15c-sub">{cur.group === 'team' ? 'Kept on record.' : 'Reaches their app. After 8pm it waits until 8am. Kept on record.'}</span>
+              <button type="submit" className="m15c-btn is-primary" disabled={busy || !text.trim()}>{busy ? 'Sending…' : 'Send'}</button></div>
+          </form> : <p className="m15c-sub m15m-noreply">This one is for reading; answer it from My role.</p>}
+        </>}
+      </section>
+    </div></div>
+  );
+}
+
 /* ── A mentee's journal ───────────────────────────────────────────────────────
    Every entry the child has written, whatever they marked it (the owner,
    2026-10-28: nothing is kept from their mentor), with their weekly reviews
