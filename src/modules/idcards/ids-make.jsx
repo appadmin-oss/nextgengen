@@ -743,8 +743,31 @@ function IdsImproveResult({ res, onClose }) {
    the others. Every control is a button, and the arrow and +/− keys work
    too: nothing needs a drag. */
 const IDS_FRAME_STEP = { zoom: 0.08, move: 0.03 };
-const IDS_FRAME_SHAPES = [["Member card", 0.82], ["Summer School", 404 / 318], ["Round", 1]];
-function IdsPhotoFrame({ rec, say, onClose, onSaved }) {
+/* The photograph box each card type prints, read from its renderer — never a
+   list of its own. This list once said "Member card" for a portrait box no card
+   has, "Summer School" for the volunteer card's landscape box, and "Round" for
+   what is in fact the Summer School card, so a photo was framed against the
+   wrong card. A type with an assigned design prints that design's photo box. */
+function idsPhotoShape(kind, design) {
+  const box = design && design.published && typeof tplPhotoBox === "function" ? tplPhotoBox(design.published) : null;
+  if (box) return { ar: box.round ? 1 : box.w / box.h, round: box.round, design: true };
+  if (kind === "member") return { ar: NGGC_PHOTO_MM.w / NGGC_PHOTO_MM.h, round: false };
+  if (kind === "summer") return { ar: 1, round: !!CARD_FRONT_PHOTO.round };
+  if (kind === "volunteer") return { ar: VOL_CARD_PHOTO.w / VOL_CARD_PHOTO.h, round: false };
+  return null;
+}
+/* The person's own card first, as it prints; then the other standard cards a
+   shared photograph can also be on, each under its own name. */
+function idsFrameShapes(rec, designOfKind) {
+  const own = idsPhotoShape(rec.kind, designOfKind ? designOfKind(rec.kind) : null);
+  const out = own ? [{ key: rec.kind, label: (IDS_KINDS[rec.kind] || "This") + " card" + (own.design ? " · its design" : ""), own: true, ar: own.ar, round: own.round }] : [];
+  ["member", "summer", "volunteer"].filter(k => k !== rec.kind).forEach(k => {
+    const s = idsPhotoShape(k, designOfKind ? designOfKind(k) : null);
+    if (s) out.push({ key: k, label: IDS_KINDS[k] + " card" + (s.design ? " · its design" : ""), own: false, ar: s.ar, round: s.round });
+  });
+  return out;
+}
+function IdsPhotoFrame({ rec, say, onClose, onSaved, designOfKind }) {
   const url = nggPhotoSrc(rec.photoUrl);
   const start = React.useRef(undefined);
   const [adj, setAdj] = React.useState(null);
@@ -808,12 +831,12 @@ function IdsPhotoFrame({ rec, say, onClose, onSaved }) {
       sub={measured ? "Framed from Gemini’s measurement of the head and face. Adjust it here; it applies on every card this photo is on." : "This photo hasn’t been measured by Gemini yet, so it is framed by its face landmarks. Measure it, or adjust it by hand."}>
       <div className="ids-frame-body" onKeyDown={keys}>
         <div className="ids-frame-previews">
-          {IDS_FRAME_SHAPES.map(([label, ar]) => (
-            <figure key={label} className="ids-frame-fig">
-              <div className={"ids-frame-box" + (ar === 1 ? " is-round" : "")} style={{ aspectRatio: String(ar) }}>
-                {adj && <CardPhoto url={rec.photoUrl} wPx={Math.round(600 * Math.min(1, ar))} hPx={Math.round(600 * Math.min(1, ar) / ar)}/>}
+          {idsFrameShapes(rec, designOfKind).map(f => (
+            <figure key={f.key} className={"ids-frame-fig" + (f.own ? " is-own" : "")}>
+              <div className={"ids-frame-box" + (f.round ? " is-round" : "")} style={{ aspectRatio: String(f.ar) }}>
+                {adj && <CardPhoto url={rec.photoUrl} wPx={Math.round(600 * Math.min(1, f.ar))} hPx={Math.round(600 * Math.min(1, f.ar) / f.ar)}/>}
               </div>
-              <figcaption>{label}</figcaption>
+              <figcaption>{f.label}{f.own ? <span className="ids-frame-own"> · prints on this</span> : null}</figcaption>
             </figure>
           ))}
         </div>

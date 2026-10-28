@@ -1182,6 +1182,26 @@ function nggcName(m) {
   return { given: parts[0].toUpperCase(), family: parts.slice(1).join(" ").toUpperCase() };
 }
 
+/* The member card's photograph: full bleed across the ID-1 card, 54 × 37.8 mm.
+   Declared once, here, beside its renderer, so anything that frames a photo
+   for this card (the studio's framing dialog) reads the shape that prints —
+   it once previewed a portrait box no card has. */
+const NGGC_PHOTO_MM = { w: 54, h: 37.8 };
+
+/* The photograph box of a Design Studio template: its first visible image
+   bound to {{photo}}, as { w, h, round } in design units — or null. A design
+   assigned to a card type prints this box, not the standard card's. */
+function tplPhotoBox(t) {
+  var els = (t && t.elements) || [];
+  for (var i = 0; i < els.length; i++) {
+    var e = els[i];
+    if (e && e.type === "image" && !e.hidden && /\{\{\s*photo\s*\}\}/.test(String(e.src || "")) && e.w > 0 && e.h > 0) {
+      return { w: +e.w, h: +e.h, round: (+e.radius || 0) >= Math.min(+e.w, +e.h) / 2 };
+    }
+  }
+  return null;
+}
+
 function NggcMemberCard(props) {
   var React = window.React, h = React.createElement;
   var m = props.member || {};
@@ -1199,7 +1219,7 @@ function NggcMemberCard(props) {
   var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#6B7280", HAIR = "#E6E8EC", DIV = "#C9CCD4";
   var wallet = size === "wallet";
   var S = wallet
-    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 54, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
+    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: NGGC_PHOTO_MM.w, photoH: NGGC_PHOTO_MM.h, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
     : { W: 148, H: 210, padX: 14, padB: 12, photoW: 148, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
   var mm = function (v) { return v + "mm"; }, pt = function (v) { return v + "pt"; };
 

@@ -5071,6 +5071,13 @@ function CardCentreRing({ centre, size, px, radius, children }) {
   );
 }
 
+/* Each standard card's photograph, declared beside its renderer so whatever
+   frames a photo for it reads the shape that prints: the Summer School card's
+   is a circle; the volunteer card's is 404 × 318 design units (it scales on
+   that aspect on a shorter card). The member card's is NGGC_PHOTO_MM. */
+const CARD_FRONT_PHOTO = { round: true };
+const VOL_CARD_PHOTO = { w: 404, h: 318 };
+
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
@@ -5186,8 +5193,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      at a legibility floor and must not shrink. */
   const colH = H - 30 - 112 - 96 - 44;         // panel, less the column's padding
   const fixed = fnSize * 1.1 + snSize * 1.04 + 2 + 46 + 20 + 98 + 3 * 14;
-  const phH = Math.round(Math.max(150, Math.min(318, colH - fixed)));
-  const phW = Math.round(phH * 404 / 318);
+  const phH = Math.round(Math.max(150, Math.min(VOL_CARD_PHOTO.h, colH - fixed)));
+  const phW = Math.round(phH * VOL_CARD_PHOTO.w / VOL_CARD_PHOTO.h);
   const field = (label, value, big) => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(5) }}>
       <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: CARD_CAPTION_INK, lineHeight: 1 }}>{label}</span>

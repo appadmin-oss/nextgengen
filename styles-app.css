@@ -17121,3 +17121,6 @@ button.m9x-ev-sum { cursor: pointer; }
 
 /* A command line wraps, so the whole install line is visible to copy. */
 .cw-steps .cw-code { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The card this person prints on, first and marked: the others are the shapes a shared photo also appears in. */
+.ids-frame-fig.is-own .ids-frame-box { border: 2px solid var(--ids-ink); }
+.ids-frame-fig.is-own figcaption { color: var(--ids-ink); font-weight: 600; }

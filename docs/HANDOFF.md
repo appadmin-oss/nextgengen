@@ -4062,3 +4062,29 @@ reason. The key is still checked, and nothing but the error line is served. A
 left-in placeholder gets its own sentence, saying where the real line is
 (*Rotate the key* on the gateway). CACENTRE's `api/wifi-setup.php` has the same
 fix.
+
+## The framing tool previewed the wrong photo box for each ID (2026-10-28)
+
+The owner: "The card sizing uses the wrong photo size for the wrong IDs". The
+studio's *Frame photo* dialog kept its own list, `IDS_FRAME_SHAPES`, and it was
+wrong for every card:
+
+- "Member card" was a 0.82 portrait. The member card's photo is full bleed,
+  54 × 37.8 mm (≈1.43, landscape).
+- "Summer School" was 404 × 318, which is the volunteer card's box.
+- "Round" was unlabeled, but it is the Summer School card's circle.
+
+People framed photos against the wrong card. The shapes are now declared beside
+each renderer:
+
+- `NGGC_PHOTO_MM` in card-template.jsx, which the member card's `S` now reads;
+- `VOL_CARD_PHOTO` and `CARD_FRONT_PHOTO` in page-other.jsx;
+- `tplPhotoBox()` for a design's `{{photo}}` image.
+
+`idsPhotoShape(kind, design)` / `idsFrameShapes()` read those, with the
+person's own card (or its assigned design) first. tests/ids-photo-shape.test.js
+pins both ends, and the studio's browser test opens the real dialog.
+
+The Design Studio's "NGG member ID — front" preset (an inset 470 × 370 photo)
+is left alone. It is a separate starting design, not the card the studio
+prints.

@@ -2074,7 +2074,7 @@ function IdCardStudioPage({ setPage }) {
       {askConfirm && <IdsAskConfirm list={askConfirm} onCancel={() => setAskConfirm(null)} onSend={l => { setAskConfirm(null); askPhotos(l, false); }}/>}
       {after && <IdsAfterPrint items={after.items} renderFace={renderFace} onLater={() => { setAfter(null); say("You can mark failures from the print log later."); }} onDone={afterDone}/>}
       {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
-      {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
+      {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} designOfKind={designOfKind} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
           onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(true); }} onClose={() => setEditPhoto(null)}/>

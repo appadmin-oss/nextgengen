@@ -2312,6 +2312,17 @@ shows the closest names on the lists, with *Use …*.
   then opens the photo request for just those people, not everyone waiting).
 - *"Help position the image"* opens the framing tool for the one card in
   question, or lists the cards with *Position photo* / *Edit photo* buttons.
+- **The framing tool shows the photo as each card prints it** (fixed
+  2026-10-28). It used to preview a portrait box labelled "Member card" that no
+  card has, and called the volunteer card's box "Summer School". Now the
+  person's own card comes first, outlined and marked *prints on this*:
+  - a member card's wide photo, full bleed across the top (54 × 37.8 mm);
+  - a Summer School card's circle;
+  - a volunteer card's landscape box.
+
+  If that card type has a design assigned, the preview uses that design's
+  photo box instead. The other card types follow, each under its own name,
+  because one photograph can be on more than one card.
 - **📎 in the assistant** adds photos. Name each file after the person or
   their ID (*Ada Obi.jpg*, *026-014.png*) and it matches them; one photo with
   one card picked needs no name. Anyone not matched is chosen from a list (or
