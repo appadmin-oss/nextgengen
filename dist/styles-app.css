@@ -9102,7 +9102,7 @@ html:root :where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ng
      otherwise draws a second ring on the bare input inside the box — and the
      portals' scoped rings too (`.cr-app :focus-visible` is 0,2,0, which beat
      the plain `input:focus-visible` here and put a ring inside the Control
-     Room's search box). `html:root` lifts this to 0,2,2 without !important. */
+     Room's search box). `html:root` lifts this to 0,2,2 by specificity alone. */
   outline: none;
 }
 
@@ -10226,6 +10226,21 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
    counts — replacing the old dark portal that was embedded here whole. */
 .m15c { container-type: inline-size; display: flex; flex-direction: column; gap: 16px; color: #0b0b0c; font-family: var(--m15-font, "Geist", system-ui, sans-serif); font-variant-numeric: tabular-nums; }
 .m15c-card { background: #fff; border: 1px solid #e8e5dd; border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.m15c-anc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.m15c-anc-stats > div { display: grid; gap: 2px; padding: 10px 12px; border-radius: 12px; background: #f7f7f5; }
+.m15c-anc-stats b { font-size: 20px; font-weight: 650; }
+.m15c-anc-stats span { font-size: 12.5px; color: #5d5d63; }
+.m15c-anc-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.m15c-anc-day { display: grid; justify-items: center; gap: 4px; min-height: 84px; padding: 8px 2px; border-radius: 10px; border: 1px solid #e2e2df; background: #fff; color: #0b0b0c; font: 600 12.5px/1 inherit; cursor: pointer; }
+.m15c-anc-day.is-on { border-color: #17663a; background: #f3faf4; color: #17663a; }
+.m15c-anc-day:disabled { opacity: .55; cursor: default; }
+.m15c-anc-bar { width: 12px; height: 40px; border-radius: 6px; background: #efefed; display: flex; align-items: flex-end; overflow: hidden; }
+.m15c-anc-bar i { display: block; width: 100%; background: #0b0b0c; border-radius: 6px; }
+.m15c-anc-day.is-on .m15c-anc-bar i { background: #17663a; }
+.m15c-anc-form { display: grid; gap: 8px; }
+.m15c-anc-text { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid #d6d4cc; font: 400 14px/1.45 inherit; resize: vertical; }
+.m15c-jr > li.m15c-jr-e { display: grid; gap: 6px; padding: 14px 0; }
+.m15c-jr-body { margin: 0; white-space: pre-wrap; font-size: 15px; line-height: 1.55; color: #1c1c1f; }
 .m15c-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .m15c-h { margin: 0; font: 600 17px/1.3 inherit; display: flex; align-items: center; gap: 8px; }
 .m15c-h3 { margin: 0 0 8px; font: 600 14px/1.3 inherit; }
@@ -16513,6 +16528,26 @@ button.m9x-ev-sum { cursor: pointer; }
 .fp3x-bar span { display: block; height: 100%; background: #22a05a; }
 .fp3x-skel-in { padding: 0; }
 .fp3x-skel.fp3x-skel-in span { height: 56px; width: 100%; }
+.fp3x-form textarea { padding: 10px 12px; border-radius: 12px; border: 1px solid #c9c7bf; background: #fff; resize: vertical; min-height: 84px; font: inherit; }
+/* Anchor, in the family account (Fp3Anchor / Fp3Teaching) */
+.fp3x-anc-tag { font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.fp3x-anc-tag.is-ok, .fp3x-anc-note.is-ok { background: #e8f5ec; color: #17663a; }
+.fp3x-anc-tag.is-warn, .fp3x-anc-note.is-warn { background: #fdf2d8; color: #7a5600; }
+.fp3x-anc-line { margin: 0; color: #3a3a40; }
+.fp3x-anc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.fp3x-anc-stats > div { display: grid; gap: 2px; padding: 12px 14px; border-radius: 14px; background: #faf9f6; border: 1px solid #efede8; }
+.fp3x-anc-stats b { font: 650 22px/1.1 'Geist', system-ui, sans-serif; }
+.fp3x-anc-stats small { font-size: 14px; color: #5d5d63; font-weight: 500; }
+.fp3x-anc-stats span { font-size: 13px; color: #5d5d63; }
+.fp3x-anc-note { margin: 0; padding: 10px 14px; border-radius: 12px; }
+.fp3x-anc-h3 { margin: 0 0 8px; font: 600 15px/1.35 'Geist', system-ui, sans-serif; }
+.fp3x-anc-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.fp3x-anc-day { display: grid; justify-items: center; gap: 4px; min-height: 96px; padding: 8px 2px; border-radius: 12px; border: 1px solid #d9d6cd; background: #fff; color: #0b0b0c; font-size: 13px; font-weight: 600; }
+.fp3x-anc-day.is-on { border-color: #17663a; background: #e8f5ec; color: #17663a; }
+.fp3x-anc-day:disabled { opacity: .55; cursor: default; }
+.fp3x-anc-bar { width: 14px; height: 44px; border-radius: 7px; background: #efede8; display: flex; align-items: flex-end; overflow: hidden; }
+.fp3x-anc-bar i { display: block; width: 100%; background: #0b0b0c; border-radius: 7px; }
+.fp3x-anc-day.is-on .fp3x-anc-bar i { background: #17663a; }
 
 /* ── The public help centre (/support, HelpCentrePage) ── */
 .hc { background: #f6f4f0; color: #0b0b0c; min-height: 60vh; }

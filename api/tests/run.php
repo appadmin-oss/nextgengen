@@ -3206,7 +3206,14 @@ chk('a partial name does not match — the compare is exact, not a prefix', (fun
     return true;
 })());
 chk('lookup rejects an unknown code', backend_dispatch('circle.lookup', ['code' => '000000', 'name' => 'Tunde'])['error'] === 'not_found');
-chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent'])['error'] === 'consent_required');
+/* Anchor Circle joined the family account (2026-10-28). A parent connects a
+   child from the family account with the code AND the name — the same check,
+   guard and lockout as before, on the new door. $OTH is a second family
+   account that never links to this child. */
+db_exec("DELETE FROM guardians WHERE guardianId IN ('GDN-ACE0000001','GDN-ACE0000002')");
+db_insert('guardians', ['guardianId' => 'GDN-ACE0000001', 'email' => 'other.anchor@example.org', 'fullName' => 'Another Adult', 'status' => 'active', 'createdAt' => now_iso()]);
+db_insert('guardians', ['guardianId' => 'GDN-ACE0000002', 'email' => 'parent.anchor@example.org', 'fullName' => 'A Parent', 'status' => 'active', 'createdAt' => now_iso()]);
+$OTH = 'GDN-ACE0000001'; $PAR = 'GDN-ACE0000002';
 /* The block above deliberately walks every way a lookup can be refused, all
    against the same code — which is exactly the shape the guess ceiling exists
    to stop, and no real guardian ever does. Clear the count so what follows
@@ -3214,19 +3221,18 @@ chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $c
    test at the end of this section. */
 attempt_reset('circle.code', $code);
 
-/* connect is its own request and nothing stops it being called directly, so
-   skipping lookup must not skip the check. This is the one that actually
-   protects the dashboard. */
-chk('connect cannot be called straight through with a bare code', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'role' => 'parent', 'guardianName' => 'Not A Parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+/* Connecting is its own request and nothing stops it being called directly, so
+   skipping the lookup must not skip the check. */
+chk('a family account cannot connect a child with a bare code', (function () use ($code, $OTH) {
+    $r = backend_dispatch('family.ward.add', ['guardianId' => $OTH, 'code' => $code]);
+    return empty($r['ok']) && empty($r['link']);
 })());
-chk('…nor with the wrong name', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Wrong', 'role' => 'parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+chk('…nor with the wrong name', (function () use ($code, $OTH) {
+    $r = backend_dispatch('family.ward.add', ['guardianId' => $OTH, 'code' => $code, 'name' => 'Wrong']);
+    return empty($r['ok']) && empty($r['link']);
 })());
-chk('…and no link row is created by either refused attempt',
-    (int)db_row("SELECT COUNT(*) c FROM circle_links WHERE guardianName = 'Not A Parent'")['c'] === 0);
+chk('…and no link is made by either refused attempt', (int)db_row("SELECT COUNT(*) c FROM guardian_wards WHERE guardianId = ?", [$OTH])['c'] === 0);
+attempt_reset('circle.code', $code);
 
 /* ── The guess ceiling ────────────────────────────────────────────────────
  * Six digits resolving to a child's name needs a ceiling that does not depend
@@ -3238,9 +3244,9 @@ chk('guessing one code repeatedly locks that code, not the guesser', (function (
     for ($i = 0; $i < 10; $i++) backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
     return backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['error'] === 'too_many_attempts';
 })());
-chk('…and connect is shut too, not just lookup', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'too_many_attempts' && empty($r['token']);
+chk('…and connecting is shut too, not just the lookup', (function () use ($code, $PAR) {
+    $f = backend_dispatch('family.ward.add', ['guardianId' => $PAR, 'code' => $code, 'name' => 'Tunde']);
+    return ($f['error'] ?? '') === 'too_many_attempts';
 })());
 chk('…and the lockout is recorded without printing the code',
     (function () {
@@ -3261,39 +3267,36 @@ chk('a correct answer clears the count', (function () use ($code) {
     return !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['student']['name']);
 })());
 attempt_reset('circle.code', $code);
-$conn = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'guardianName' => 'A Parent', 'consent' => true]);
-chk('connect mints a portal token', !empty($conn['token']) && $conn['role'] === 'parent');
-$ctok = $conn['token'];
-chk('parent link now shows as linked for the student', backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['circle']['parent'] === true);
-$dash = backend_dispatch('circle.dashboard', ['token' => $ctok]);
-chk('portal dashboard returns read-only stats', !empty($dash['ok']) && isset($dash['stats']['weekBars']) && count($dash['stats']['weekBars']) === 7);
+// ── Anchor in the family account: parents; the old portal answers "moved" ──
+foreach (['circle.connect', 'circle.dashboard', 'circle.confirm', 'circle.remark', 'circle.report', 'circle.cohort'] as $op)
+    if ((backend_dispatch($op, ['token' => 'x'])['error'] ?? '') !== 'moved') { chk('the old /circle op ' . $op . ' answers moved', false); }
+chk('the old /circle portal\'s ops all answer "moved", with where to go', str_contains((string)(backend_dispatch('circle.dashboard', [])['detail'] ?? ''), '/family'));
+$pw = backend_dispatch('family.ward.add', ['guardianId' => $PAR, 'code' => $code, 'name' => 'Tunde']);
+$PL = (string)($pw['link']['linkId'] ?? '');
+$wk = backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL]);
+chk('a parent sees their child\'s Anchor week in the family account: seven days, the stats, a suggestion', !empty($wk['ok']) && count($wk['days']) === 7 && $wk['role'] === 'parent'
+    && isset($wk['stats']['streak'], $wk['stats']['atRisk']) && strlen((string)$wk['suggestion']) > 5);
 $today = gmdate('Y-m-d');
-chk('guardian can confirm a conduct day', !empty(backend_dispatch('circle.confirm', ['token' => $ctok, 'date' => $today, 'on' => true])['ok']));
-chk('confirmed day is reflected back', in_array($today, backend_dispatch('circle.dashboard', ['token' => $ctok])['confirmed'], true));
-chk('guardian remark is stored + visible to the student', (function () use ($ctok) {
-    backend_dispatch('circle.remark', ['token' => $ctok, 'text' => 'Proud of your consistency.']);
-    foreach (backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['remarks'] as $r) if (strpos((string)$r['text'], 'Proud') !== false) return true;
+chk('a parent confirms today, and it reads back as theirs', !empty(backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => $today, 'on' => true])['ok'])
+    && (array_values(array_filter(backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL])['days'], fn($d) => $d['date'] === $today))[0]['mine'] ?? false) === true);
+chk('…but not a day in the future, nor last week', (backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => gmdate('Y-m-d', time() + 8 * 86400), 'on' => true])['error'] ?? '') === 'not_this_week'
+    && (backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => gmdate('Y-m-d', strtotime(circle_monday()) - 86400), 'on' => true])['error'] ?? '') === 'not_this_week');
+chk('a parent\'s note reaches the child, in their app', (function () use ($PAR, $PL) {
+    backend_dispatch('family.anchor.remark', ['guardianId' => $PAR, 'linkId' => $PL, 'text' => 'Proud of your consistency.']);
+    foreach (backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['remarks'] as $r) if (strpos((string)$r['text'], 'Proud') !== false && $r['role'] === 'parent') return true;
     return false;
 })());
-chk('report carries stats + remarks', !empty(backend_dispatch('circle.report', ['token' => $ctok])['report']['stats']));
-chk('dashboard carries behavioral intelligence (trend/at-risk/suggestion)', (function () use ($ctok) {
-    $d = backend_dispatch('circle.dashboard', ['token' => $ctok]);
-    return isset($d['stats']['trend'], $d['stats']['atRisk']) && strlen((string)($d['suggestion'] ?? '')) > 5;
+chk('…a few notes a week, and the limit says so', (function () use ($PAR, $PL) {
+    for ($i = 0; $i < ANCHOR_REMARKS_PER_WEEK; $i++) $last = backend_dispatch('family.anchor.remark', ['guardianId' => $PAR, 'linkId' => $PL, 'text' => 'Note ' . $i]);
+    return ($last['error'] ?? '') === 'week_limit' && backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL])['remarksLeft'] === 0;
 })());
-// Cohort strip — summaries for every token a device holds; dupes collapse,
-// junk is skipped, and only that token's read-only aggregates come back.
-$cohort = backend_dispatch('circle.cohort', ['tokens' => [$ctok, $ctok, 'garbage', 42]]);
-chk('cohort summarises valid tokens once, skips junk', count($cohort['students']) === 1
-    && $cohort['students'][0]['token'] === $ctok
-    && isset($cohort['students'][0]['streak'], $cohort['students'][0]['atRisk'], $cohort['students'][0]['trend'])
-    && !isset($cohort['students'][0]['reflections0'])); // shape sanity
-chk('cohort never exposes private text', !preg_match('/body|musing|note/i', json_encode(array_keys($cohort['students'][0]))));
-chk('cohort with no tokens is empty, not an error', backend_dispatch('circle.cohort', [])['students'] === []);
+chk('another account cannot read the child\'s week through this link', (backend_dispatch('family.anchor', ['guardianId' => $OTH, 'linkId' => $PL])['error'] ?? '') === 'not_found');
 
-$rl = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['links'][0]['linkId'];
-chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001', 'linkId' => $rl])['ok']));
-chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
-chk('revoked token drops out of the cohort', backend_dispatch('circle.cohort', ['tokens' => [$ctok]])['students'] === []);
+$mc = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001']);
+chk('the member sees who follows them: the parent', $mc['circle']['parent'] === true && !isset($mc['circle']['teacher'])
+    && (bool)array_filter($mc['connected'], fn($x) => $x['name'] === 'A Parent'));
+chk('teachers are not part of the circle: no op connects one', (backend_dispatch('family.teach.add', ['guardianId' => $OTH])['error'] ?? '') === 'unknown_op'
+    && (backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'unknown_op');
 
 // ── Integration bus (mocked HTTP — no network) ──
 chk('bus: emit fans out only to subscribed destinations, dispatch delivers signed', (function () {
@@ -32956,6 +32959,51 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     foreach ([$gA, $gB, $gT] as $x) backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $x['gateway']['gatewayId']]);
     $pv = backend_dispatch('admin.wifi.gateway.preview', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId'], 'q' => '026-50']);
     chk('wifi · the preview counts by profile and finds a person, without their PIN', $pv['byProfile']['ngg-member'] >= 1 && !isset($pv['matches'][0]['pin']) && count($pv['matches']) >= 1);
+})();
+
+// ── Anchor, mentor side: connected by the assignment, no code ──────────────────
+(function () {
+    $now = now_iso(); $C = 'Anchorville';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'circle_confirmations' => 'memberId', 'circle_remarks' => 'memberId', 'notifications' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ANC-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'ANCT-%'");
+    };
+    $wipe();
+    foreach (['ANC-KID', 'ANC-OTHER', 'ANC-M', 'ANC-M2'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id === 'ANC-KID' ? 'Ada Anchor' : $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['ANCT-1', 'ANC-M'], ['ANCT-2', 'ANC-M2']] as [$tid, $mid]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => 'Mentor ' . $mid, 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => 'mentor', 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'ANC-KID', 'mentorId' => 'ANCT-1', 'status' => 'active', 'startedAt' => $now]);
+    $w = backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('anchor · an assigned mentor sees their mentee\'s Anchor week with no code', !empty($w['ok']) && $w['role'] === 'mentor' && count($w['days']) === 7 && $w['student']['first'] === 'Ada');
+    chk('anchor · …but not a child they are not assigned', (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-OTHER'])['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload');
+    $today = gmdate('Y-m-d');
+    $cf = backend_dispatch('member.mentor.anchor.confirm', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'date' => $today, 'on' => true]);
+    chk('anchor · the mentor confirms a day, and it counts towards the child\'s conduct', !empty($cf['ok']) && backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['stats']['conduct'] > 0);
+    backend_dispatch('member.mentor.anchor.remark', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'text' => 'Great week of reflections.']);
+    $mc = backend_dispatch('member.circle', ['requesterId' => 'ANC-KID']);
+    chk('anchor · the mentor\'s note reaches the child, who is told it came', (bool)array_filter($mc['remarks'], fn($r) => $r['role'] === 'mentor' && str_contains($r['text'], 'Great week'))
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ANC-KID' AND title = 'A note from your mentor'"));
+    chk('anchor · the child sees their mentor as connected, without having given a code', $mc['circle']['mentor'] === true && (bool)array_filter($mc['connected'], fn($x) => $x['relation'] === 'Mentor'));
+    // The mentor reads the whole journal — what the child kept to themselves too.
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'ANC-%'");
+    foreach ([['ANC-J1', 'private', 'I was scared at the exam.'], ['ANC-J2', 'mentor', 'My week: wins and a plan.'], ['ANC-J3', 'programme', 'Our team built a bridge.']] as $i => [$eid, $vis, $body])
+        db_insert('journal', ['entryId' => $eid, 'memberId' => 'ANC-KID', 'title' => '', 'body' => $body, 'visibility' => $vis, 'occurredOn' => gmdate('Y-m-d', time() - $i * 86400), 'createdAt' => $now, 'updatedAt' => $now]);
+    $jr = backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('journal · an assigned mentor reads every entry, the ones the child kept to themselves included, newest first', !empty($jr['ok']) && $jr['total'] === 3 && $jr['more'] === false
+        && array_column($jr['entries'], 'entryId') === ['ANC-J1', 'ANC-J2', 'ANC-J3'] && $jr['entries'][0]['body'] === 'I was scared at the exam.');
+    chk('journal · …and the reading is on the record', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'mentor.journal.read' AND subject = 'ANC-KID'"));
+    chk('journal · not a mentor of another child', (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-OTHER'])['error'] ?? '') === 'not_in_caseload');
+    db_exec("UPDATE mentors SET kind = 'peer' WHERE mentorId = 'ANCT-1'");
+    chk('journal · never a peer mentor, even an assigned one', (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'peer_no_journal');
+    db_exec("UPDATE mentors SET kind = '' WHERE mentorId = 'ANCT-1'");
+    $pg = backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'before' => 2]);
+    chk('journal · pages on from where the mentor is', array_column($pg['entries'], 'entryId') === ['ANC-J3'] && $pg['more'] === false);
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'ANC-%'");
+    db_exec("UPDATE mentor_assignments SET status = 'ended' WHERE memberId = 'ANC-KID'");
+    chk('anchor · when the assignment ends, so does the connection', (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload'
+        && backend_dispatch('member.circle', ['requesterId' => 'ANC-KID'])['circle']['mentor'] === false);
+    $wipe();
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

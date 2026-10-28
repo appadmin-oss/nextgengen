@@ -97,7 +97,7 @@ const ROUTES = [
   /* A parent's own account: their own sign-in (not a member session), every
      child they look after on one screen. Noindexed — it is a signed-in page. */
   { id: "family",       title: "Family account · NGG",                     desc: "For parents and guardians: attendance, conduct, fees and lesson progress for each child, and a way to tell the centre.", chrome: "own", index: false },
-  { id: "circle",       title: "Anchor Circle · Guardian & Mentor Portal", desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words.", chrome: "own", index: false },
+  { id: "circle",       title: "Anchor Circle has moved · NGG",            desc: "Parents and teachers now follow a child's Anchor week in the NGG family account; mentors in the mentor portal.", chrome: "own", index: false },
   { id: "gate",         title: "Check-in desk · NGG",                      desc: "", chrome: "own", index: false },
   { id: "enrol",        title: "Registration desk · Summer School · NGG",   desc: "", chrome: "own", index: false },
   { id: "review",       title: "Review desk · NGG",                        desc: "", chrome: "own", index: false },

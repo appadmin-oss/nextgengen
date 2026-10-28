@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 192;
+const NGG_SCHEMA_TARGET = 193;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -87,6 +87,9 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 193 — Anchor Circle joined the family account: the old code-and-token
+     * links stop opening anything; their days and notes stay on the record. */
+    'circle_links.moved' => "UPDATE circle_links SET status = 'moved' WHERE status = 'active'",
     /* 160 — the Summer School lead starts as the centre's existing lead. NULL
      * marks "never set", so a lead somebody cleared ('') is not refilled. */
     'centres.summerLead' => "
@@ -5645,6 +5648,12 @@ function db_migrate(PDO $db): void {
               b500 INTEGER NOT NULL DEFAULT 0,
               bOver INTEGER NOT NULL DEFAULT 0
             );
+        ",
+        /* Anchor Circle joins the family account and the mentor portal: the old
+           code-and-token links stop opening anything. Their days and remarks
+           stay on the child's record and keep counting. */
+        193 => "
+            UPDATE circle_links SET status = 'moved' WHERE status = 'active';
         ",
     ];
 

@@ -1694,6 +1694,34 @@ the report for them (the child then checks the scores and writes the plan, as
 before); book one of the mentor's free times or ask the mentor a question; and
 tell the centre about an absence, appeal a charge or ask for a new ID card.
 
+**Anchor Circle is part of the family account (added 2026-10-28).** The old
+no-account portal at **/circle** is retired; it now says where each person goes.
+A child's *Anchor week* — the systems they held each day, the days they
+reflected, their streak, and the days an adult confirmed their conduct — is
+seen by their circle of adults:
+
+- **Parents** see it on *Growth* (a line of it on *Today*): they confirm the
+  days conduct met expectations at home and leave the child a note (five a
+  week). The child reads notes in their app.
+- **Mentors** do nothing: the children they are assigned are connected already.
+  In the mentor portal, open a mentee → *Growth and lessons* → *Anchor this
+  week*. When an assignment ends, so does the connection. A mentor also reads
+  the child's whole journal — see *The mentor reads the journal* below.
+
+Anybody connected through the old portal must reconnect this way; the days
+they confirmed and the notes they left stay on the child's record.
+
+**The mentor reads the journal (added 2026-10-28).** Nothing in a child's
+journal is kept from their mentor. In the mentor portal, open a mentee →
+*Journal*: every entry they have written, newest first, with the mood, the
+date and whether they sent it — including the entries they did not send and
+their weekly reviews, which are now always saved to the journal in full
+(obstacles too). Each reading is recorded in the audit log
+(`mentor.journal.read`). A **peer mentor** — a young person mentoring — does
+not get the tab and the server refuses it: children's journals are for adult
+mentors. Parents do not see the journal. The member, journal and family apps
+now say "only you and your mentor" where they used to say "private".
+
 **Money, from the parent's side (added 2026-10-27).** Payments are the parent's,
 not the child's:
 
@@ -3042,7 +3070,7 @@ for through **Ask for a change**.
 read from their record, never a box they tick: add a photo, say hello to
 their mentor (or "your centre will match you" while they have none), write a
 first reflection, answer the week's check-in, link a parent or guardian with
-the Anchor Circle code. Each has one button. The card disappears when all
+the Anchor Circle code (their mentor is connected for them). Each has one button. The card disappears when all
 are done, and a member can hide it (Help → Show "Getting started" brings it
 back). Help also has **Take the tour again**.
 

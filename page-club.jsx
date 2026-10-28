@@ -2573,7 +2573,7 @@ function CmJournalMine({ auth, onWrite }) {
           ))}
         </div>
         <p className="cm-jm-note" role="status">
-          {moodNote || (todayMood ? cmMoodNote(todayMood) : "Tap one. It stays private.")}
+          {moodNote || (todayMood ? cmMoodNote(todayMood) : "Tap one. Only you and your mentor see it.")}
         </p>
       </section>
 
@@ -2585,7 +2585,7 @@ function CmJournalMine({ auth, onWrite }) {
 
       <CmChips label="Filter your entries" value={filter} onPick={setFilter}
                items={[{ id: "all", label: "All", count: d.filters.all },
-                       { id: "private", label: "🔒 Private", count: d.filters.private }]
+                       { id: "private", label: "🔒 Not sent", count: d.filters.private }]
                  .concat((d.filters.tags || []).map(t => ({ id: t.tag, label: "#" + t.tag, count: t.count })))
                  .concat(d.filters.voice ? [{ id: "voice", label: "🎙 Voice", count: d.filters.voice }] : [])}/>
 
@@ -2712,8 +2712,8 @@ function cmShortNum(n) {
      · "They can reply privately", not "He". A mentor's pronouns are not
        something this app is told. */
 const cmJwVis = (centre) => [
-  { id: "private",   name: "Only me",              why: "Default. Nobody is notified.", glyph: "🔒" },
-  { id: "mentor",    name: "Me and my mentor",     why: "They can reply privately." },
+  { id: "private",   name: "My journal",           why: "Default. Only you and your mentor can read it; nobody is notified.", glyph: "🔒" },
+  { id: "mentor",    name: "Send to my mentor",    why: "They are told, and can reply privately." },
   { id: "programme", name: "The programme record",
     why: "Visible to " + (centre ? centre + " members." : "everyone at your centre.") },
 ];

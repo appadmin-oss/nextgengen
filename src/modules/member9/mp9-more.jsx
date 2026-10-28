@@ -163,7 +163,7 @@ Object.assign(Mp9Portal.prototype, {
         wish, onWish: e => upd({ wish: e.target.value }), outcome: R.outcome || "", onOutcome: e => upd({ outcome: e.target.value }),
         obstacle, onObstacle: e => upd({ obstacle: e.target.value }), plan: R.plan || "", onPlan: e => upd({ plan: e.target.value }),
         planPh: obstacle ? "If " + obstacle.toLowerCase() + ", then I will…" : "If I’m tempted to skip, then I will do just 10 minutes", planBd: R.tried && !(R.plan || "").trim() ? "#b0361c" : "#d6d4cc",
-        shareA: R.share ? "true" : "false", track: R.share ? "#0b0b0c" : "#d6d4cc", knob: R.share ? "21px" : "3px", shareT: R.share ? "Share with " + mf + " (wins and plan, not the obstacles)" : "Keep this review to myself", toggleShare: () => upd({ share: !R.share }),
+        shareA: R.share ? "true" : "false", track: R.share ? "#0b0b0c" : "#d6d4cc", knob: R.share ? "21px" : "3px", shareT: R.share ? "Send it to " + mf + " to talk about" : "Just save it (" + mf + " can still read it)", toggleShare: () => upd({ share: !R.share }),
         canBack: step > 0, back: () => upd({ step: step - 1 }),
         nextL: step === 2 ? "Save my week" : "Next",
         next: () => {
@@ -171,9 +171,10 @@ Object.assign(Mp9Portal.prototype, {
           if (!(R.plan || "").trim()) { upd({ tried: true }); return this.toast("Write your if-then plan first."); }
           const fin = { ...R, period, done: true, tried: false, at: new Date().toISOString() };
           this.saveSt("mp9.review", fin); set({ cr: null, cpTab: "week" });
-          if (R.share) this.journalSave({ title: "My week", visibility: "mentor", tags: "review", body: (R.wins.length ? "Wins: " + R.wins.join(", ") + ". " : "") + (R.proud ? "Proud of: " + R.proud + ". " : "") + "Next week: " + (wish || "") + (R.outcome ? " (" + R.outcome + ")" : "") + ". Plan: " + R.plan })
-            .then(x => x && this.toast("Saved and shared with " + mf));
-          else this.toast("Saved. Only you can see it.");
+          /* Every review goes into the journal in full — obstacles too — because
+             the mentor reads the journal; sharing only sends it to them. */
+          this.journalSave({ title: "My week", visibility: R.share ? "mentor" : "private", tags: "review", body: (R.wins.length ? "Wins: " + R.wins.join(", ") + ". " : "") + (R.proud ? "Proud of: " + R.proud + ". " : "") + (R.blocks.length ? "Got in the way: " + R.blocks.join(", ") + ". " : "") + "Next week: " + (wish || "") + (R.outcome ? " (" + R.outcome + ")" : "") + (obstacle ? ". Obstacle: " + obstacle : "") + ". Plan: " + R.plan })
+            .then(x => x && this.toast(R.share ? "Saved and sent to " + mf : "Saved. Only you and " + mf + " can see it."));
         },
         doneT: (R.wins.length ? "Wins: " + R.wins.join(", ").toLowerCase() + ". " : "") + "Plan: " + (R.plan || "") + (R.share ? " Shared with " + mf + "." : ""),
         redo: () => set({ cr: { ...R, done: false, step: 2 } }),
@@ -241,7 +242,8 @@ Object.assign(Mp9Portal.prototype, {
   },
   meVals() {
     const s = this.state, d = this.dd("dash") || {}, m = d.member || {}, t = this.dd("today") || {}, p = t.profile || {}, cir = this.dd("circle") || {}, sec = this.dd("sec") || {};
-    const linked = (cir.family || cir.links || []).map(x => (x.name || x.fullName || "A guardian") + (x.relation ? " · " + x.relation : ""));
+    // Parents, teachers and mentors (member.circle): a mentor is connected by being assigned.
+    const linked = (cir.connected || cir.family || []).map(x => (x.name || x.fullName || "A guardian") + (x.relation ? " · " + x.relation : ""));
     const devices = (sec.sessions || []).map(x => ({ t: (x.device || x.ua || "A device") + (x.ip ? " · " + x.ip : ""), when: x.current ? "Now" : mp9When(x.lastSeenAt || x.createdAt), cur: !!x.current, notCur: !x.current,
       signOut: () => NGGApi.member.securityRevoke(x.sid || x.sessionId).then(() => { this.refresh(["sec"]); this.toast("Signed out of that device"); }).catch(e => this.toast(mp9Err(e))) }));
     const ngv = d.ngv || null;
@@ -256,7 +258,7 @@ Object.assign(Mp9Portal.prototype, {
       bioShown: p.bio || m.bio || "", hasBio: !!(p.bio || m.bio),
       openProfile: () => this.openSheet({ k: "profile" }),
       ngv: { on: !!ngv, note: ngv ? (ngv.note || ngv.status || "You’re on the NGV volunteer track.") : "You can apply to join NGV, the volunteer track, once your centre opens it." }, ngvOff: !ngv,
-      circle: { code: cir.code || "", linked: linked.length ? linked : ["Nobody linked yet"] },
+      circle: { code: cir.code || "", linked: linked.length ? linked : ["Nobody yet"] },
       codeText: s.codeShown ? (cir.code || "–") : "••••••", codeLabel: s.codeShown ? "Hide" : "Show code", toggleCode: () => this.setState({ codeShown: !s.codeShown }),
       devices: devices.length ? devices : [{ t: "This device", when: "Now", cur: true, notCur: false }],
       signOutAll: () => NGGApi.member.securityRevokeOthers().then(() => { this.refresh(["sec"]); this.toast("Signed out of every other device"); }).catch(e => this.toast(mp9Err(e))),
@@ -881,7 +883,7 @@ Object.assign(Mp9Portal.prototype, {
     const ent = (jm.entries || []).filter(e => (e.body || "").trim() || (e.title || "").trim()).slice(0, 6).map(e => {
       const shared = e.visibility === "mentor", rs = rep[e.entryId] || [];
       return { t: e.title || e.excerpt || "", when: mp9Date(e.occurredOn || e.createdAt, { weekday: "short", day: "numeric", month: "short" }),
-        visIcon: shared ? "ph-fill ph-users" : "ph-fill ph-lock-simple", visL: shared ? "Shared with " + M.first + (rs.length ? "" : " · waiting for a reply") : "Private: only you",
+        visIcon: shared ? "ph-fill ph-users" : "ph-fill ph-lock-simple", visL: shared ? "Shared with " + M.first + (rs.length ? "" : " · waiting for a reply") : "You and " + M.first,
         replies: rs, hasReplies: rs.length > 0 };
     });
     const jp = jm.prompt || "What did you try today that you couldn’t do last month?";

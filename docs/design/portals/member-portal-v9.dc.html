@@ -548,9 +548,9 @@ button,input,textarea,select{font:inherit;color:inherit}
     <span style="font-size:14px;color:#4a4a50;line-height:1.5">{{ ngv.note }} Volunteers get their own ID, a check-in QR and sessions to shadow.</span>
   </section>
   <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
-    <div style="display:flex;flex-direction:column;gap:4px"><h2 style="margin:0;font-size:16px;font-weight:600">Anchor Circle</h2><span style="font-size:13.5px;color:#4a4a50">Give this code to a parent or guardian so they can follow your progress in the family app. NGG checks every link first.</span></div>
+    <div style="display:flex;flex-direction:column;gap:4px"><h2 style="margin:0;font-size:16px;font-weight:600">Anchor Circle</h2><span style="font-size:13.5px;color:#4a4a50">Give this code, with your name, to a parent or guardian: they connect in the NGG family app and follow your week. Your mentor is connected for you.</span></div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-family:'Geist Mono',monospace;font-size:20px;font-weight:500;letter-spacing:.06em;padding:8px 14px;border-radius:12px;background:#f4f4f2">{{ codeText }}</span><button onClick="{{ toggleCode }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ codeLabel }}</button></div>
-    <sc-for list="{{ circle.linked }}" as="c" hint-placeholder-count="1"><span style="font-size:13.5px;display:flex;align-items:center;gap:6px"><i class="ph ph-house-line"></i>Linked: {{ c }}</span></sc-for>
+    <sc-for list="{{ circle.linked }}" as="c" hint-placeholder-count="1"><span style="font-size:13.5px;display:flex;align-items:center;gap:6px"><i class="ph ph-users-three"></i>Connected: {{ c }}</span></sc-for>
   </section>
   <section aria-labelledby="si-h" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
     <h2 id="si-h" style="margin:0;font-size:16px;font-weight:600">Sign-in and password</h2>

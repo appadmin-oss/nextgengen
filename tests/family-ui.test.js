@@ -319,6 +319,34 @@ const latestToken = () => php(`echo db_row("SELECT token FROM auth_sessions WHER
     chk('the parent confirms a transfer: a claim for the desk, marked as theirs, and the page says it is being checked',
       php(`echo json_encode(db_row("SELECT amount, reference, raisedBy <> '' fam FROM member_requests WHERE memberId = 'NGG-FU-KID' AND kind = 'payment'"));`) === '{"amount":2000,"reference":"TRF-FU-7781","fam":1}');
 
+    /* ── Anchor Circle, in the family account: a parent on Growth ── */
+    await fp.goto(BASE + '/family?view=growth&child=' + tobi, { waitUntil: 'domcontentloaded' }); await waitForBoot(fp);
+    await fp.waitForSelector('.fp3x-anc-day', { timeout: 40000 });
+    chk('a parent finds their child\'s Anchor week on Growth: the days and the stats', /Tobi’s Anchor week/.test(await bodyText(fp)) && (await fp.$$('.fp3x-anc-day')).length === 7);
+    await fp.locator('.fp3x-anc-day:not([disabled])').last().click();
+    await fp.waitForFunction(() => { const b = Array.from(document.querySelectorAll('.fp3x-anc-day:not([disabled])')).pop(); return b && b.getAttribute('aria-pressed') === 'true'; }, null, { timeout: 10000 }).catch(() => {});
+    chk('…confirms a day at home, saved as the parent\'s', php(`echo db_row("SELECT COUNT(*) c FROM circle_confirmations WHERE memberId = 'NGG-FU-KID' AND role = 'parent'")['c'];`) === '1');
+    await fp.fill('.fp3x-anc-day ~ * textarea, .fp3x-form textarea', 'Lovely to see you reflecting every evening.');
+    await fp.locator('.fp3x-form button[type=submit]', { hasText: 'Send to Tobi' }).click();
+    await waitText(fp, /Your notes/, 15000);
+    chk('…and leaves Tobi a note', php(`echo db_row("SELECT COUNT(*) c FROM circle_remarks WHERE memberId = 'NGG-FU-KID' AND role = 'parent'")['c'];`) === '1');
+    await settle(fp);
+    await fp.screenshot({ path: path.join(SHOTS, 'family-anchor-phone.png'), fullPage: true });
+
+
+
+    const cctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const cp = await cctx.newPage();
+    cp.on('pageerror', e => errs.push('circle: ' + String(e).slice(0, 200)));
+    await cp.goto(BASE + '/circle', { waitUntil: 'domcontentloaded' }); await waitForBoot(cp);
+    await waitText(cp, /Anchor Circle has moved/, 30000);
+    const cm = await bodyText(cp);
+    chk('/circle says it has moved, and sends parents and mentors each to their place', /Parents and guardians/.test(cm) && !/Teachers/.test(cm) && /Mentors/.test(cm)
+      && (await cp.$$('a[href="/family"]')).length >= 1 && (await cp.$$('a[href="/mentor"]')).length === 1);
+    await settle(cp);
+    await cp.screenshot({ path: path.join(SHOTS, 'circle-moved-phone.png'), fullPage: true });
+    await cctx.close();
+
     /* ── The emailed link, on another device ── */
     const lctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const lp = await lctx.newPage();

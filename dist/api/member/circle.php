@@ -1,5 +1,5 @@
 <?php
-/** Member (student) side of Anchor Circle — invite code + link management. */
+/** Member (student) side of Anchor Circle — their code, who follows their week, and their notes. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
 $mid = $s['mid'];
@@ -11,7 +11,6 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'rotate')      $res = gs_call('member.circle.rotate', ['requesterId' => $mid, 'ip' => client_ip()]);
-    elseif ($action === 'revoke')  $res = gs_call('member.circle.revoke', ['requesterId' => $mid, 'linkId' => $b['linkId'] ?? '', 'ip' => client_ip()]);
     else                           json_error('unknown_action', 400);
 } else {
     json_error('method_not_allowed', 405);

@@ -4542,3 +4542,8 @@ CREATE TABLE IF NOT EXISTS wifi_feed_load (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (192) ON DUPLICATE KEY UPDATE version = version;
+
+-- 193: Anchor Circle joins the family account and the mentor portal.
+-- (the old circle_links are marked 'moved' by NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php)
+
+INSERT INTO schema_version (version) VALUES (193) ON DUPLICATE KEY UPDATE version = version;

@@ -323,6 +323,8 @@ class Fp3Portal extends React.Component {
     const wl = active && loaded;
     out.mainSlotEnd = sec === "today" && wl ? <Fp3TodayMore key={w.linkId} c={this} w={w}/>
       : sec === "money" && wl && w.fees.enabled ? <div className="fp3x-more" key={w.linkId}><Fp3Ahead c={this} w={w}/><Fp3Paid c={this} w={w}/></div>
+      // Anchor Circle, in the family account: the child's week on Growth (domain/circle.php).
+      : sec === "progress" && wl ? <div className="fp3x-more" key={w.linkId}><Fp3Anchor c={this} linkId={w.linkId} first={w.member.first} role="parent"/></div>
       : sec === "account" ? <React.Fragment>
       {typeof NggSupportDesk === "function" ? <div className="fp3x-support"><NggSupportDesk api={NGGApi.family.support} initialCase={supCase} source="family"
         safeguard={supPhone ? { text: "Call " + supPhone, onClick: () => { location.href = "tel:" + String(supTel || supPhone).replace(/[^+\d]/g, ""); } } : null}
@@ -412,7 +414,7 @@ class Fp3Portal extends React.Component {
       const k = w.conduct;
       out.cd = k.state === "good" ? { icon: "ph ph-seal-check", ibg: T.ok[0], ifg: T.ok[1], h: "Conduct: in good standing", s: "No warnings or fines this term." }
         : { icon: "ph ph-warning", ibg: T.warn[0], ifg: T.warn[1], h: k.fines.length ? "Conduct: " + k.fines.length + " fine" + (k.fines.length === 1 ? "" : "s") + " to review" : "Conduct: a warning this month", s: (k.reason || (k.fines[0] ? k.fines[0].reason + "." : "")) + " A third one starts a review with the centre lead." };
-      out.priv = { h: "What stays with " + w.member.first, items: ["Journal", "Reflections", "Coach chats", "Messages with their mentor"], p: "Not even you can see these, so " + w.member.first + " can be honest with their mentor. If a mentor is ever worried about " + w.member.first + "’s safety, the centre calls you straight away." };
+      out.priv = { h: "Between " + w.member.first + " and their mentor", items: ["Journal", "Reflections", "Coach chats", "Messages with their mentor"], p: "Their mentor reads these; you don’t, so " + w.member.first + " can be honest. If a mentor is ever worried about " + w.member.first + "’s safety, the centre calls you straight away." };
     }
 
     if (active && loaded && sec === "money") {
@@ -799,6 +801,7 @@ function Fp3TodayMore({ c, w }) {
   const evs = S.events ? c.events().slice(0, 3) : null;
   return (
     <div className="fp3x-more">
+      <Fp3Anchor c={c} linkId={w.linkId} first={first} role="parent" compact/>
       <section className="fp3x-card" aria-labelledby="fp3x-qa">
         <h2 id="fp3x-qa" className="fp3x-h">For {first}</h2>
         <div className="fp3x-acts">
@@ -822,3 +825,93 @@ function Fp3TodayMore({ c, w }) {
     </div>
   );
 }
+
+
+/* ── Anchor, in the family account ──────────────────────────────────────────
+   The child's week as their circle of adults sees it (family.anchor): the
+   systems they held, the days they reflected, the streak, and the days an
+   adult confirmed their conduct. Their words go to their mentor, not here. A
+   parent and the mentor each confirm their own days and leave their own
+   notes; the conduct figure counts anyone's. `compact` is the line on Today. */
+const FP3_ANCHOR_WHERE = { parent: "at home", mentor: "this week" };
+function fp3Esc(t) { return String(t == null ? "" : t).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]); }
+function Fp3Anchor({ c, linkId, first, role, compact }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [note, setNote] = React.useState(""), [busy, setBusy] = React.useState("");
+  const load = () => { setErr(""); NGGApi.family.anchor(linkId).then(setD, e => setErr(fp3Err(e, "Couldn’t load the Anchor week."))); };
+  React.useEffect(load, [linkId]);
+  const today = new Date().toISOString().slice(0, 10);
+  const toggle = day => {
+    if (busy || day.future || !c.can()) return;
+    setBusy(day.date);
+    setD(x => Object.assign({}, x, { days: x.days.map(y => y.date === day.date ? Object.assign({}, y, { mine: !y.mine, any: !y.mine || y.any }) : y) }));
+    NGGApi.family.act("anchor.confirm", { linkId, date: day.date, on: !day.mine }).then(load, e => { c.toast(fp3Err(e)); load(); }).finally(() => setBusy(""));
+  };
+  const send = e => {
+    e.preventDefault();
+    if (busy || note.trim().length < 2 || !c.can()) return;
+    setBusy("note");
+    NGGApi.family.act("anchor.remark", { linkId, text: note.trim() }).then(() => { setNote(""); c.toast("Sent to " + first + ". They read it in their app."); load(); }, er => c.toast(fp3Err(er))).finally(() => setBusy(""));
+  };
+  const print = () => {
+    const S = d.stats, w = window.open("", "_blank"); if (!w) return;
+    const days = d.days.map(x => "<td>" + fp3Esc(x.label) + "<br><b>" + x.held + "</b>" + (x.any ? " ✓" : "") + "</td>").join("");
+    w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>Anchor week · " + fp3Esc(d.student.name) + "</title><style>body{font:15px/1.5 system-ui,sans-serif;color:#111;margin:32px;max-width:680px}h1{font-size:22px;margin:0}table{border-collapse:collapse;width:100%;margin:16px 0}td{border:1px solid #ccc;text-align:center;padding:8px}.k{display:flex;gap:12px}.k div{flex:1;border:1px solid #ccc;border-radius:10px;padding:10px;text-align:center}.k b{display:block;font-size:22px}</style></head><body>"
+      + "<h1>Anchor week · " + fp3Esc(d.student.name) + "</h1><p>Week of " + fp3Esc(fp3Date(d.weekStart)) + "</p>"
+      + "<div class='k'><div><b>" + S.streak + "</b>day streak</div><div><b>" + S.reflections + "</b>days reflected</div><div><b>" + S.avgSystems + "/" + S.systemsTotal + "</b>systems a day</div><div><b>" + S.conduct + "%</b>conduct confirmed</div></div>"
+      + "<table><tr>" + days + "</tr></table><p><b>" + (S.atRisk ? "Needs support" : "On track") + "</b> · " + fp3Esc(S.trend) + ". " + fp3Esc(d.suggestion) + "</p>"
+      + "<p style='color:#555;font-size:13px'>Systems held each day, ✓ where an adult confirmed conduct.</p><script>window.onload=function(){print()}</script></body></html>");
+    w.document.close();
+  };
+  if (err) return <section className="fp3x-card" aria-label="Anchor"><div className="fp3x-state" role="alert"><p>{err}</p><button type="button" className="fp3x-retry" onClick={load}>Try again</button></div></section>;
+  if (!d) return <section className="fp3x-card" aria-label="Anchor"><div className="fp3x-skel fp3x-skel-in" role="status" aria-label="Loading the Anchor week"><span/></div></section>;
+  const S = d.stats, todayRow = d.days.find(x => x.date === today);
+  const tone = S.atRisk ? "is-warn" : "is-ok";
+  if (compact) return (
+    <section className="fp3x-card fp3x-anc-mini" aria-labelledby={"fp3x-anc-m-" + linkId}>
+      <div className="fp3x-h-row"><h2 id={"fp3x-anc-m-" + linkId} className="fp3x-h">Anchor this week</h2><span className={"fp3x-anc-tag " + tone}>{S.atRisk ? "Needs support" : "On track"}</span></div>
+      <p className="fp3x-anc-line"><b>{S.streak}</b>-day streak · reflected <b>{S.reflections}</b> {S.reflections === 1 ? "day" : "days"} · conduct <b>{S.conduct}%</b></p>
+      <div className="fp3x-row">
+        {todayRow && !todayRow.future ? <button type="button" className={todayRow.mine ? "fp3x-ghost" : "fp3x-go"} aria-pressed={todayRow.mine ? "true" : "false"} onClick={() => toggle(todayRow)} disabled={!!busy}>
+          {todayRow.mine ? "Confirmed today ✓" : "Confirm today " + FP3_ANCHOR_WHERE[role]}</button> : null}
+        <button type="button" className="fp3x-link" onClick={() => c.go("progress")}>The whole week<i className="ph ph-arrow-right" aria-hidden="true"/></button>
+      </div>
+    </section>
+  );
+  const total = S.systemsTotal || 6;
+  return (
+    <section className="fp3x-card" aria-labelledby={"fp3x-anc-" + linkId}>
+      <div className="fp3x-card-h">
+        <span className="fp3x-ic" aria-hidden="true"><i className="ph ph-anchor-simple"/></span>
+        <div><h2 id={"fp3x-anc-" + linkId}>{d.student.first}’s Anchor week</h2>
+          <p>Week of {fp3Date(d.weekStart)}. What {d.student.first} did this week. Their journal and reflections are read by their mentor.</p></div>
+      </div>
+      <div className="fp3x-anc-stats">
+        <div><b>{S.streak}</b><span>day streak · best {S.longestStreak}</span></div>
+        <div><b>{S.reflections}</b><span>{S.reflections === 1 ? "day" : "days"} reflected</span></div>
+        <div><b>{S.avgSystems}<small>/{total}</small></b><span>systems a day</span></div>
+        <div><b>{S.conduct}%</b><span>conduct confirmed</span></div>
+      </div>
+      <p className={"fp3x-anc-note " + tone}><b>{S.atRisk ? "Needs support" : "On track"}</b> · {S.trend}. {d.suggestion}</p>
+      <div>
+        <h3 className="fp3x-anc-h3">Confirm the days {d.student.first}’s conduct met expectations {FP3_ANCHOR_WHERE[role]}</h3>
+        <div className="fp3x-anc-days" role="group" aria-label="Days this week">
+          {d.days.map(x => <button key={x.date} type="button" className={"fp3x-anc-day" + (x.mine ? " is-on" : "")} aria-pressed={x.mine ? "true" : "false"} disabled={x.future || busy === x.date}
+            onClick={() => toggle(x)} aria-label={x.label + " " + fp3Date(x.date) + ": " + x.held + " of " + total + " systems held" + (x.future ? ", still to come" : x.mine ? ", you confirmed it" : "")}>
+            <span className="fp3x-anc-bar" aria-hidden="true"><i style={{ height: Math.round(Math.min(1, x.held / total) * 100) + "%" }}/></span>
+            <span>{x.label.slice(0, 3)}</span>{x.mine ? <i className="ph ph-check" aria-hidden="true"/> : null}
+          </button>)}
+        </div>
+        <p className="fp3x-fine">Bars are the systems {d.student.first} held each day. Tap a day to confirm it; tap again to take it back.</p>
+      </div>
+      <form className="fp3x-form" onSubmit={send}>
+        <label><span>A note to {d.student.first}</span>
+          <textarea rows="3" value={note} maxLength={600} onChange={e => setNote(e.target.value)} placeholder="A word of encouragement, or something you noticed this week" disabled={!d.remarksLeft}/></label>
+        <div className="fp3x-row"><button type="submit" className="fp3x-go" disabled={busy === "note" || note.trim().length < 2 || !d.remarksLeft}>{busy === "note" ? "Sending…" : "Send to " + d.student.first}</button>
+          <span className="fp3x-fine">{d.remarksLeft ? d.remarksLeft + " left this week" : "That’s this week’s notes. More from Monday."}</span>
+          <button type="button" className="fp3x-ghost" onClick={print}>Print the week</button></div>
+      </form>
+      {d.remarks.length ? <div><h3 className="fp3x-anc-h3">Your notes</h3><ul className="fp3x-evs">{d.remarks.map((r, i) => <li key={i}><span className="fp3x-ic" aria-hidden="true"><i className="ph ph-note-pencil"/></span><span><b>{r.text}</b><small>{fp3Date(r.at)}</small></span></li>)}</ul></div> : null}
+    </section>
+  );
+}
+

@@ -1094,7 +1094,6 @@
       dutiesSnooze: (hours) => request('/member/duties.php', { body: { action: 'snooze', hours: hours || 4 } }),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
-      circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
       react:               (post, emoji) => request('/member/engage.php', { body: { action: 'react', post, emoji } }),
       comment:             (post, body) => request('/member/engage.php', { body: { action: 'comment', post, body } }),
       /* The Programme Journal — the programme's durable record, living as a
@@ -1351,17 +1350,6 @@
       photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
       membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
-      circle: {
-        // The child's name is required, not optional: the code alone no longer
-        // resolves to anything, so a guessed code cannot reveal who it belongs to.
-        lookup:    (code, name) => request('/public/circle.php' + qs({ view: 'lookup', code, name })),
-        connect:   (data) => request('/public/circle.php', { body: Object.assign({ action: 'connect' }, data) }),
-        dashboard: (token) => request('/public/circle.php' + qs({ view: 'dashboard', token })),
-        report:    (token) => request('/public/circle.php' + qs({ view: 'report', token })),
-        confirm:   (token, date, on) => request('/public/circle.php', { body: { action: 'confirm', token, date, on } }),
-        remark:    (token, text) => request('/public/circle.php', { body: { action: 'remark', token, text } }),
-        cohort:    (tokens) => request('/public/circle.php', { body: { action: 'cohort', tokens } }),
-      },
     },
     /* Family accounts — a parent's own sign-in (its own cookie; never a member session). */
     family: {
@@ -1372,6 +1360,8 @@
       verify:   (data) => request('/family/verify.php', { body: data }),
       logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
       ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      // A child's Anchor week, for a parent's link; writes go through act('anchor.confirm' | 'anchor.remark').
+      anchor:   (linkId) => request('/family/anchor.php' + qs({ link: linkId })),
       pay:      (linkId) => request('/family/pay.php', { body: { link: linkId } }),
       act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
       inbox:    (cat, cursor) => request('/family/inbox.php' + qs({ cat: cat || '', cursor: cursor || '' })),

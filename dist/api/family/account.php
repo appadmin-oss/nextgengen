@@ -17,6 +17,9 @@ switch ($action) {
                                                           'body' => $b['body'] ?? '', 'fromDate' => $b['fromDate'] ?? '', 'toDate' => $b['toDate'] ?? '',
                                                           'refEntryId' => $b['refEntryId'] ?? '', 'proofUrl' => (string)($b['proofUrl'] ?? ''),
                                                           'amount' => $b['amount'] ?? null, 'reference' => (string)($b['reference'] ?? ''), 'paidAt' => (string)($b['paidAt'] ?? '')]); break;
+    // Anchor: the week for a parent's link (domain/circle.php).
+    case 'anchor.confirm': $res = gs_call('family.anchor.confirm', $base + ['linkId' => $b['linkId'] ?? '', 'date' => (string)($b['date'] ?? ''), 'on' => !empty($b['on'])]); break;
+    case 'anchor.remark': $res = gs_call('family.anchor.remark', $base + ['linkId' => $b['linkId'] ?? '', 'text' => (string)($b['text'] ?? '')]); break;
     case 'fees.advance': $res = gs_call('family.fees.advance', $base + ['linkId' => $b['linkId'] ?? '', 'months' => (int)($b['months'] ?? 0)]); break;
     case 'notices.read': $res = gs_call('family.notices.read', $base + ['noticeId' => (string)($b['noticeId'] ?? '')]); break;
     case 'withdraw':    $res = gs_call('family.request.withdraw', $base + ['requestId' => $b['requestId'] ?? '']); break;

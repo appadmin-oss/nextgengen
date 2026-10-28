@@ -664,7 +664,7 @@ class Mp9Portal extends React.Component {
         addPhoto: e => { const f = e.target.files && e.target.files[0]; if (!f) return; upC(k, { busy: true }); NGGApi.uploadOrInline(f, "journal").then(u => upC(k, { busy: false, photoUrl: mp9Abs(u.url) })).catch(er => { upC(k, { busy: false }); this.toast(mp9Err(er)); }); },
         removePhoto: () => upC(k, { photoUrl: "" }),
         shareAria: x.priv ? "false" : "true", toggleShare: () => upC(k, { priv: !x.priv }), track: x.priv ? "#d6d4cc" : "#0b0b0c", knob: x.priv ? "4px" : "24px",
-        shareT: x.priv ? "Only me" : "Shared with " + mf, shareHelp: x.priv ? "Saved to your journal. Nobody else sees it." : mf + " can read this. Turn off to keep it to yourself.",
+        shareT: x.priv ? "Just my journal" : "Sent to " + mf, shareHelp: x.priv ? "Saved to your journal. Only you and " + mf + " can read it." : mf + " is sent this to reply to. Off, it stays in your journal, where " + mf + " can still read it.",
         cantA: ok ? "false" : "true", sendBg: ok ? "#0b0b0c" : "#efefed", sendFg: ok ? "#fff" : "#6b6b72", sendL: x.busy ? "Saving…" : x.priv ? sendPriv : sendShared,
         send: () => { if (!ok) return; const body = x.fmt === "hln" ? [x.h && (older ? "High: " : "Best: ") + x.h, x.l && (older ? "Low: " : "Hard: ") + x.l, x.n && "Next: " + x.n].filter(Boolean).join("\n") : x.fmt === "voice" ? "Voice note (" + Math.floor(x.recSecs / 60) + ":" + String(x.recSecs % 60).padStart(2, "0") + ")" : x.text.trim() || "A photo";
           const media = x.fmt === "photo" && x.photoUrl ? [{ type: "image", url: x.photoUrl, alt: x.text || "Photo", caption: x.text || "" }] : x.fmt === "voice" && x.recUrl ? [{ type: "audio", url: x.recUrl, alt: "Voice note", caption: "" }] : [];
@@ -714,7 +714,7 @@ class Mp9Portal extends React.Component {
         journal({ title: "Courage dare: " + dare.dare, body, visibility: shared ? "mentor" : "private", tags: "dare courage", media }).then(r => {
           if (r) { this.saveSt("mp9.dare", { ...dare, stage: "done", priv: !shared, count: (dare.count || 0) + 1 }); this.toast(shared ? "Sent to " + mf : "Saved to your journal"); }
           return r; })),
-      drDoneText: dare.priv ? "Saved to your journal. Only you can see it." : "Sent to " + mf + ". You’ll talk about it on Saturday.",
+      drDoneText: dare.priv ? "Saved to your journal. Only you and " + mf + " can see it." : "Sent to " + mf + ". You’ll talk about it on Saturday.",
       drAck: false, drAckText: "",
       drCount: "You’ve taken " + (dare.count || 0) + (dare.count === 1 ? " dare" : " dares") + " so far. A new set comes on Monday.",
       lb, lbOpen: !lbDoneNow && !!lbE, lbDone: lbDoneNow, lbPrompt: older ? "What’s different now?" : "Is it still true? What changed?",
@@ -723,7 +723,7 @@ class Mp9Portal extends React.Component {
         journal({ title: "Looking back at " + lb.date, body, prompt: lb.t, visibility: shared ? "mentor" : "private", tags: "lookback", media }).then(r => {
           if (r) { this.saveSt("mp9.lb", { entryId: lbE.entryId || lbE.id, shared }); this.toast("Saved next to your old entry"); this.refresh(["jm"]); }
           return r; })),
-      lbDoneText: lbS.shared ? "Saved next to your old entry. " + mf + " can see both." : "Saved next to your old entry. Only you can see it.",
+      lbDoneText: lbS.shared ? "Saved next to your old entry. " + mf + " can see both." : "Saved next to your old entry. Only you and " + mf + " can see it.",
       goJournal: go("journal"),
     };
   }

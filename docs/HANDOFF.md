@@ -3813,3 +3813,57 @@ but nudge a parent to pay or to confirm they paid — with one button, not two.
   (`.cr-app :focus-visible`, 0,2,0, beat the exemption's 0,1,1). The exemption
   is `html:root …` now (0,2,2); `tests/control-room.test.js` checks one ring.
 
+## Anchor Circle merged into the family account and the mentor portal (2026-10-28)
+
+The owner: merge the two parent portals; the mentor part of Anchor Circle
+goes to the mentors, and assigned mentors are connected automatically. Teachers
+were first moved into the family account, then dropped on the owner's word:
+the circle is a child's parents and their mentor.
+
+- **One Anchor core** (`domain/circle.php`): `anchor_week`, `anchor_confirm`,
+  `anchor_remark`, keyed by the adult's link. Three doors call it:
+  `family.anchor*` for a parent's family link (`anchor_family_link`), and `member.mentor.anchor*` for a child in the
+  mentor's caseload (`anchor_mentor_ctx` → `mp_caseload_ids`: active
+  assignments, and a lead's team). No code for a mentor; the assignment is the
+  connection, and ending it ends the connection.
+- **What each adult sees**: the week and the conduct figure (any adult's
+  confirmations count), but only their OWN confirmations and notes — another
+  adult's words to the child are the child's. Days are this week up to today
+  (the old portal took any date). Five notes per adult per child per week; the
+  child is told each one came.
+- **The old portal** (`/circle`, `api/public/circle.php`, the token ops) is
+  retired: the ops answer `moved` with where to go, the route answers 410, and
+  the page says where parents and mentors go now and forgets the
+  browser's old tokens. `circle.lookup` stays internal: it is the code-and-name
+  check every connection runs, and the tests that pin its guard still call it.
+- The member's *Anchor Circle* card lists everyone connected (parents and
+  mentors); its copy came from
+  the design (`member-portal-v9.dc.html`), recompiled.
+
+## Teachers dropped; the mentor reads the whole journal (2026-10-28)
+
+The owner: "Drop teacher. … The mentors need to see the child's journal",
+and, asked how far: "Nothing is private. Their reflections should be visible
+too."
+
+- **Teachers are gone** before they shipped: no `family_teacher_links` (taken
+  out of migration 193, which now only marks the old `circle_links` moved),
+  no `family.teach.*` ops, no *Students you teach*, no teacher home, no
+  teacher card on /circle, no `member.circle.revoke` (it only ended teacher
+  links). Old `circle_*` rows may still carry `role = 'teacher'`; they count
+  and are never shown as a link.
+- **`member.mentor.journal`** (`domain/mentor-portal.php`, view `journal`):
+  every entry of one mentee, any visibility, 30 a page, gated on the caseload
+  (`mp_caseload_ids`) and **refused to a peer mentor** (`peer_no_journal`) —
+  the one rule kept, because a peer mentor is a minor and the existing
+  safeguarding line already kept shared entries from them. One audit row per
+  read. The mentor portal's mentee page has a *Journal* tab (not for peers).
+- **Weekly reviews** are always saved to the journal in full, obstacles
+  included; "share" now only decides whether the mentor is sent it.
+- `private` now means "not sent", and the copy says so: "only you and your
+  mentor" in the journal app, the member app, the Club journal and the family
+  app's card (parents still do not see the journal).
+- Tests: the PHP suite pins the mentor read (private entries included, newest
+  first, paging, audit) and both refusals; `tests/mentor-v15.test.js` opens
+  the tab.
+

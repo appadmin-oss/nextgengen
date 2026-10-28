@@ -148,6 +148,24 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /What changed/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     const grTxt = await mt.innerText('main');
     chk('Growth: the mentee’s Saturdays, Leadership Index, evaluations and what changed, from the server', /What changed/.test(grTxt) && /Saturdays/.test(grTxt) && /Leadership Index/.test(grTxt) && /Saturday evaluations/.test(grTxt));
+    // Anchor Circle's mentor side: on Growth, connected because she is their mentor — no code.
+    await mt.waitForSelector('.m15c-anc-day', { timeout: 20000 });
+    chk('Growth: the mentee’s Anchor week is here, connected by the assignment (no code)', /Anchor this week/.test(await mt.innerText('main')) && /Connected because you are their mentor/.test(await mt.innerText('main')));
+    const todayBtn = mt.locator('.m15c-anc-day:not([disabled])').last();
+    await todayBtn.click();
+    await mt.waitForFunction(() => { const b = Array.from(document.querySelectorAll('.m15c-anc-day:not([disabled])')).pop(); return b && b.getAttribute('aria-pressed') === 'true'; }, null, { timeout: 10000 }).catch(() => {});
+    chk('…she confirms a day, saved on the server as the mentor’s', Number(q(`(int)db_row("SELECT COUNT(*) c FROM circle_confirmations WHERE role = 'mentor'")['c']`)) === 1);
+    await mt.fill('.m15c-anc-text', 'Five days of reflections in a row. Keep it going.');
+    await mt.click('.m15c-anc-form button[type=submit]');
+    await mt.waitForFunction(() => /Five days of reflections/.test((document.querySelector('.m15c-anc-form') || {}).parentElement.innerText), null, { timeout: 10000 }).catch(() => {});
+    chk('…and leaves a note the child will read', Number(q(`(int)db_row("SELECT COUNT(*) c FROM circle_remarks WHERE role = 'mentor' AND text LIKE 'Five days%'")['c']`)) === 1);
+    // Journal: the mentee's whole journal, the entries she kept to herself included.
+    q(`db_insert('journal', ['entryId' => 'MS-JR-1', 'memberId' => 'NGG-MS-K1', 'title' => 'Before the exam', 'body' => 'I was scared but I kept going.', 'visibility' => 'private', 'mood' => 2, 'occurredOn' => gmdate('Y-m-d'), 'createdAt' => now_iso(), 'updatedAt' => now_iso()])`);
+    await mt.click('main [role="tab"]:has-text("Journal")');
+    await mt.waitForSelector('.m15c-jr-e', { timeout: 20000 });
+    const jrTxt = await mt.innerText('main');
+    chk('Journal: the mentor reads the entry Mariam did not send, marked as written for herself', /Mariam’s journal/.test(jrTxt) && /I was scared but I kept going/.test(jrTxt) && /Written for themselves/.test(jrTxt));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/journal.png' : path.join(TMP, 'journal.png') });
     await mt.click('main >> text=Scorecard');
     await mt.waitForFunction(() => /Communication/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
     const up = await mt.$$('main button[aria-label^="Raise"], main button[aria-label*="up" i]');

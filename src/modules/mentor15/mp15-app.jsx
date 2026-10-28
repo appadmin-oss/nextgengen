@@ -504,10 +504,11 @@ class Mp15Portal extends React.Component {
       facts: [['Last one-to-one', mp15Ago(ck0.contact), B.contact(ck0) ? '#7a5600' : '#0b0b0c'], ['This week', ck0.wb, B.wellbeing(ck0) ? '#b0361c' : '#0b0b0c'],
               ['Relationship', ck0.relC === null ? 'Not asked yet' : ck0.relC + ' / 5 from ' + ck0.first, ck0.relC !== null && ck0.relC <= 2 ? '#b0361c' : '#0b0b0c'],
               ['Active goal', ck0.ag ? (ck0.ag.lastCheckAt ? ck0.ag.progress + ' of 5 · ' + ck0.ag.area : 'Not checked yet') : 'None yet', ck0.ag && !ck0.ag.stalled ? '#1d6b30' : '#7a5600']].map(([k, v, fg]) => ({ k, v, fg })),
-      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth and lessons']].filter(t => !(isPeer && t[0] === 'family')).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
+      // Journal: the child's whole journal, for their mentor; never a peer mentor's (member.mentor.journal).
+      kTabs: [['overview', 'Overview'], ['goals', 'Goals'], ['score', 'Scorecard'], ['sess', 'Sessions'], ['rel', 'Relationship'], ['family', 'Family'], ['prog', 'Growth and lessons'], ['journal', 'Journal']].filter(t => !(isPeer && (t[0] === 'family' || t[0] === 'journal'))).map(([id, l]) => ({ l, on: S.ktab === id, fw: S.ktab === id ? 600 : 500, fg: S.ktab === id ? '#0b0b0c' : '#6b6b72', line: S.ktab === id ? '#0b0b0c' : 'transparent', go: () => set({ ktab: id }) })),
       kOverview: S.ktab === 'overview', kGoals: S.ktab === 'goals', kScore: S.ktab === 'score', kSess: S.ktab === 'sess', kRel: S.ktab === 'rel', kFamily: S.ktab === 'family' && !isPeer, kProg: S.ktab === 'prog',
       // Growth: the whole record as a trend (mp_growth), loaded when the tab opens; the four series below it stay.
-      growthBox: S.ktab === 'prog' && S.kid ? <><GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/><Mp15KidLessons key={S.kid} subjectId={S.kid}/></> : null,
+      growthBox: S.ktab === 'prog' && S.kid ? <><Mp15Anchor key={'anc:' + S.kid} subjectId={S.kid} act={(a, b, ok) => this.act(a, b, ok)}/><GrowthReport data={D['grw:' + S.kid]} err={S.er['grw:' + S.kid]} retry={() => this.load('grw:' + S.kid, 'growth', { subjectId: S.kid })}/><Mp15KidLessons key={S.kid} subjectId={S.kid}/></> : null,
       noTimeline: !!kd && !((kd.timeline || []).length), tlLog: () => this.go('sess', { logOpen: true, lf: { ...this.lfBlank(), kid: ck0.id, goalId: ck0.ag ? ck0.ag.id : '' } }),
       timeline: ((kd && kd.timeline) || []).map(x => ({ icon: 'ph ph-' + x.icon, fg: x.icon === 'binoculars' ? '#1d6b30' : x.icon === 'flame' ? '#a07400' : '#4a4a50', t: x.text, w: mp15Fmt(x.at, { day: 'numeric', month: 'short' }) + ' · ' + x.source })),
       relQs: MP15_REL_Q.map((qq, i) => { const relA = S.rel[ck0.id] || ((kd && kd.rel && kd.rel.mentor && kd.rel.mentor.answers) || {}); return { q: qq, opts: [1, 2, 3, 4, 5].map(n => ({ l: String(n), on: relA[i] === n, ...pill(relA[i] === n), go: () => set({ rel: { ...S.rel, [ck0.id]: { ...relA, [i]: n } } }) })) }; }),
@@ -706,6 +707,7 @@ class Mp15Portal extends React.Component {
     if (S.scr === 'mentors' && S.supFor) { const m = ((S.d.team || {}).mentors || []).find(x => x.mentorId === S.supFor);
       if (m) return <div className={cls}><Mp15SupNotes key={m.mentorId} m={m} onClose={() => this.setState({ supFor: null })}
         save={b => this.act('supervisionRecord', Object.assign({ mentorId: m.mentorId }, b), 'Supervision notes saved. ' + m.first + ' can read them in My role.').then(r => { if (r) { this.setState({ supFor: null, supBooked: Object.assign({}, S.supBooked, { [m.mentorId]: false }) }); this.refresh(['team']); } return r; })}/></div>; }
+    if (S.scr === 'kid' && S.ktab === 'journal' && S.kid && this.me().role !== 'peer') return <div className={cls}><Mp15Journal key={'jr:' + S.kid} subjectId={S.kid}/></div>;
     if (S.scr === 'growth') return <div className={cls}><Mp15PodGrowth key={S.centre || ''} centre={S.centre || ''} open={id => this.go('kid', { kid: id, ktab: 'prog', pBody: null })}/></div>;
     return null;
   }
@@ -1435,6 +1437,105 @@ function Mp15KidLessons({ subjectId }) {
           <ul className="m15c-list">{d.lessons.map(l => (
             <li key={l.unitId} className="m15c-row-static"><span><b>Week {l.week}</b> · {l.title}<small className="m15c-sub"> {l.course}{l.stage === "catchup" ? " · catch-up" : ""}</small></span>
               <span className={"m15c-pill " + ((ST[l.state] || ST.not_started)[1])}>{(ST[l.state] || ST.not_started)[0]}{l.state === "done" && l.pct != null ? " · " + l.pct + "%" : ""}</span></li>))}</ul>
+        </>}
+    </section>
+  );
+}
+
+
+/* ── A mentee's Anchor week ────────────────────────────────────────────────
+   Anchor Circle's mentor side, in the mentor portal (it was a code-paired
+   page at /circle). No code: a child in the mentor's caseload is connected
+   because they were assigned (member.mentor.anchor). The week — systems held,
+   days reflected, streak, conduct days — never the child's words. The mentor
+   confirms their own days and leaves their own notes; the child reads notes
+   in their app. */
+/* ── A mentee's journal ───────────────────────────────────────────────────────
+   Every entry the child has written, whatever they marked it (the owner,
+   2026-10-28: nothing is kept from their mentor), with their weekly reviews
+   among them. Read-only here; replying stays in Messages. Never shown to a
+   peer mentor — the server refuses it too (member.mentor.journal). */
+const MP15_MOODS = ['', 'Low', 'Flat', 'Okay', 'Good', 'Great'];
+const MP15_VIS = { private: 'Written for themselves', mentor: 'Shared with you', programme: 'Shared with the programme' };
+function Mp15Journal({ subjectId }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(null), [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => { setErr(null); setD(null); return mp15Api.view('journal', { subjectId }).then(setD).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const more = () => {
+    if (busy || !d) return;
+    setBusy(true);
+    mp15Api.view('journal', { subjectId, before: d.entries.length }).then(r => setD(x => Object.assign({}, r, { entries: x.entries.concat(r.entries) })), setErr).finally(() => setBusy(false));
+  };
+  return (
+    <section className="m15c-card" aria-labelledby={'jr-' + subjectId}>
+      <div className="m15c-head"><div><h2 className="m15c-h" id={'jr-' + subjectId}><i className="ph ph-notebook" aria-hidden="true"/>{d ? d.student.first + '’s journal' : 'Journal'}</h2>
+        <p className="m15c-sub">Everything they write, their weekly reviews among it. They know their mentor reads it.</p></div>
+        {d ? <span className="m15c-pill" role="status">{d.total === 1 ? '1 entry' : d.total + ' entries'}</span> : null}</div>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their journal.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their journal</span></div>
+        : !d.entries.length ? <p className="m15c-sub">{d.student.first} hasn’t written anything yet.</p>
+        : <>
+          <ul className="m15c-list m15c-jr">{d.entries.map(e => <li key={e.entryId} className="m15c-jr-e">
+            <div className="m15c-head"><b>{e.title || mp15Fmt(e.occurredOn, { weekday: 'long', day: 'numeric', month: 'short' })}</b>
+              <small className="m15c-sub">{[mp15Fmt(e.occurredOn, { day: 'numeric', month: 'short', year: 'numeric' }), MP15_MOODS[e.mood || 0], MP15_VIS[e.visibility]].filter(Boolean).join(' · ')}</small></div>
+            {e.prompt ? <p className="m15c-sub">{e.prompt}</p> : null}
+            <p className="m15c-jr-body">{e.body}</p>
+            {e.tags.length ? <p className="m15c-sub">{e.tags.map(t => '#' + t).join(' ')}</p> : null}
+            {(e.media || []).filter(x => x && x.url).map((x, i) => <a key={i} href={x.url} target="_blank" rel="noopener" className="m15c-btn">{x.kind === 'audio' ? 'Voice note' : 'Attachment'} {i + 1}</a>)}
+          </li>)}</ul>
+          {d.more ? <button type="button" className="m15c-btn" onClick={more} disabled={busy}>{busy ? 'Loading…' : 'Show older entries'}</button> : null}
+        </>}
+    </section>
+  );
+}
+
+function Mp15Anchor({ subjectId, act }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(null), [note, setNote] = React.useState(''), [busy, setBusy] = React.useState('');
+  const load = React.useCallback(() => { setErr(null); return mp15Api.view('anchor', { subjectId }).then(setD).catch(setErr); }, [subjectId]);
+  React.useEffect(() => { load(); }, [load]);
+  const toggle = x => {
+    if (busy || x.future) return;
+    setBusy(x.date);
+    act('anchorConfirm', { subjectId, date: x.date, on: !x.mine }).then(load).finally(() => setBusy(''));
+  };
+  const send = e => {
+    e.preventDefault();
+    if (busy || note.trim().length < 2) return;
+    setBusy('note');
+    act('anchorRemark', { subjectId, text: note.trim() }, 'Sent. ' + ((d && d.student.first) || 'They') + ' reads it in their app.').then(r => { if (r) { setNote(''); load(); } }).finally(() => setBusy(''));
+  };
+  const S = d && d.stats, total = (S && S.systemsTotal) || 6;
+  return (
+    <section className="m15c-card" aria-labelledby={'anc-' + subjectId}>
+      <div className="m15c-head"><div><h2 className="m15c-h" id={'anc-' + subjectId}><i className="ph ph-anchor-simple" aria-hidden="true"/>Anchor this week</h2>
+        <p className="m15c-sub">Connected because you are their mentor. Their own words are under Journal.</p></div>
+        {S ? <span className={'m15c-pill ' + (S.atRisk ? 'is-warn' : 'is-ok')}>{S.atRisk ? 'Needs support' : 'On track'}</span> : null}</div>
+      {err ? <div className="m15c-msg" role="alert"><span>Couldn't load their Anchor week.</span><button type="button" className="m15c-btn" onClick={load}>Retry</button></div>
+        : !d ? <div className="m15c-msg" role="status"><span className="m15x-bar"/><span className="m15x-sr">Loading their Anchor week</span></div>
+        : <>
+          <div className="m15c-anc-stats">
+            <div><b>{S.streak}</b><span>day streak · best {S.longestStreak}</span></div>
+            <div><b>{S.reflections}</b><span>days reflected</span></div>
+            <div><b>{S.avgSystems}/{total}</b><span>systems a day</span></div>
+            <div><b>{S.conduct}%</b><span>conduct confirmed</span></div>
+          </div>
+          <p className="m15c-sub">{S.trend}. {d.suggestion}</p>
+          <div>
+            <h3 className="m15c-h3">Confirm the days their discipline held</h3>
+            <div className="m15c-anc-days" role="group" aria-label="Days this week">
+              {d.days.map(x => <button key={x.date} type="button" className={'m15c-anc-day' + (x.mine ? ' is-on' : '')} aria-pressed={x.mine ? 'true' : 'false'} disabled={x.future || busy === x.date} onClick={() => toggle(x)}
+                aria-label={x.label + ': ' + x.held + ' of ' + total + ' systems held' + (x.future ? ', still to come' : x.mine ? ', you confirmed it' : '')}>
+                <span className="m15c-anc-bar" aria-hidden="true"><i style={{ height: Math.round(Math.min(1, x.held / total) * 100) + '%' }}/></span>{x.label.slice(0, 3)}</button>)}
+            </div>
+          </div>
+          <form onSubmit={send} className="m15c-anc-form">
+            <label className="m15c-h3" htmlFor={'anc-note-' + subjectId}>A note to {d.student.first}</label>
+            <textarea id={'anc-note-' + subjectId} className="m15c-anc-text" rows="3" maxLength={600} value={note} onChange={e => setNote(e.target.value)} disabled={!d.remarksLeft}
+              placeholder="Something specific they did well, or a nudge to begin again"/>
+            <div className="m15c-head"><span className="m15c-sub">{d.remarksLeft ? d.remarksLeft + ' left this week' : 'That is this week’s notes. More from Monday.'}</span>
+              <button type="submit" className="m15c-btn is-primary" disabled={busy === 'note' || note.trim().length < 2 || !d.remarksLeft}>{busy === 'note' ? 'Sending…' : 'Send to ' + d.student.first}</button></div>
+          </form>
+          {d.remarks.length ? <ul className="m15c-list">{d.remarks.map((r, i) => <li key={i} className="m15c-row-static"><span>{r.text}</span><small className="m15c-sub">{mp15Fmt(r.at.slice(0, 10), { day: 'numeric', month: 'short' })}</small></li>)}</ul> : null}
         </>}
     </section>
   );

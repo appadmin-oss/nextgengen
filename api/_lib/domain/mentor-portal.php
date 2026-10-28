@@ -19,8 +19,10 @@ declare(strict_types=1);
  * the commitment statuses — with thresholds the NGG admin owns
  * (Settings › Mentorship automations), never the mentor.
  *
- * PRIVACY (README §Global behaviour): private journal entries are never read
- * here; a child's own relationship answers reach the mentor only as a score;
+ * PRIVACY (README §Global behaviour): a child's mentor reads their whole
+ * journal (member.mentor.journal, 2026-10-28 — the owner: nothing in it is
+ * kept from the mentor); a PEER mentor, a minor, never does. A child's own
+ * relationship answers reach the mentor only as a score;
  * concerns go to the safeguarding queue and never onto the child's record;
  * guardian phones are masked; family messages wait for 8am–8pm Lagos.
  */
@@ -1228,6 +1230,33 @@ function mp_supporting_public(string $memberId): array {
     $s = ms_supports_of($memberId);
     $names = $s && function_exists('staff_public_names') ? staff_public_names(array_column($s, 'mentorId')) : [];
     return array_map(static fn($x) => ['name' => $names[$x['mentorId']] ?? $x['fullName'], 'focus' => $x['focus'], 'until' => $x['endsOn']], $s);
+}
+
+/**
+ * view=journal — one mentee's whole journal, every entry whatever its
+ * visibility, newest first, 30 a page (`before` = how many already shown).
+ * The assignment is the permission: the child must be in this mentor's
+ * caseload, and a peer mentor (a minor) is refused outright. Opening it is
+ * recorded once per read, not per page, so "who read this child's journal"
+ * has an answer.
+ */
+const MP_JOURNAL_PAGE = 30;
+function member_mp_journal(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    if ($g['mpRole'] === 'peer') return ['ok' => false, 'error' => 'peer_no_journal'];
+    $id = trim((string)($p['subjectId'] ?? ''));
+    if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
+    $m = db_row('SELECT fullName FROM members WHERE memberId = ?', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $skip = max(0, (int)($p['before'] ?? 0));
+    $total = (int)(db_row('SELECT COUNT(*) c FROM journal WHERE memberId = ?', [$id])['c'] ?? 0);
+    $rows = db_all("SELECT * FROM journal WHERE memberId = ? ORDER BY
+                     CASE WHEN occurredOn IS NULL OR occurredOn = '' THEN createdAt ELSE occurredOn END DESC, createdAt DESC
+                     LIMIT " . MP_JOURNAL_PAGE . " OFFSET " . $skip, [$id]);
+    if ($skip === 0) audit('mentor.journal.read', $g['me'], $id, ['entries' => $total], (string)($p['ip'] ?? ''));
+    $name = (string)$m['fullName'];
+    return ['ok' => true, 'student' => ['memberId' => $id, 'name' => $name, 'first' => explode(' ', trim($name))[0] ?: $name],
+        'entries' => array_map('jm_shape', $rows), 'total' => $total, 'more' => $skip + count($rows) < $total];
 }
 
 function mp_media(string $json): array {

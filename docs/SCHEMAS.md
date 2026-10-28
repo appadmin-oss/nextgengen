@@ -595,3 +595,11 @@ b250 / b500 / bOver in milliseconds; 30 days).
 Paying ahead needs no table: `membership_invoices.purpose` takes `advance`
 (invoiceId `NGG-ADV-…`), and its payment is an ordinary `payment` credit on
 `member_ledger`. A child's ask is a `guardian_notices` row of kind `nudge`.
+
+## Anchor Circle in the family account (migration 193)
+
+No new table. `circle_links` (the old code-and-token portal) are all
+`moved`. `circle_confirmations` and `circle_remarks` carry on, keyed by the
+adult's link: a family link (`GW-…`) or a mentor (`MT-<mentorId>`), with
+`role` parent | mentor (old rows may still say `teacher`).
+

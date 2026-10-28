@@ -2,46 +2,19 @@
 declare(strict_types=1);
 
 /**
- * Anchor Circle — the consent-based, READ-ONLY link between a member (student)
- * and their parent / teacher / mentor.
+ * Anchor — the week a member's circle of adults can see and support: the
+ * systems they held each day, how many days they reflected, their streak, and
+ * the days an adult confirmed their conduct. Not their words: a parent never
+ * sees those, and a mentor reads them in the journal (member.mentor.journal).
  *
- *  - The student reads out a 6-digit invite code (members.anchorCode).
- *  - A guardian enters it in the Anchor Circle portal → we mint a signed,
- *    revocable portal token scoping {linkId, memberId, role}. No guardian
- *    account required (mentors may also just use a code per student).
- *  - Guardians can: see streak/systems/progress, confirm conduct days, leave a
- *    weekly remark, download a report. They can NEVER read reflections, notes,
- *    goals or coach chats — those ops simply don't exist on this surface.
- *
- * Member-side ops are session-gated by the route; portal ops are public and
- * authenticate purely via the signed token they pass in.
+ * Who is in a member's circle (2026-10-28; it used to be a no-account portal
+ * at /circle, paired with a code and kept in a browser token):
+ *   - their PARENTS, through the family account's own link (guardian_wards);
+ *   - their MENTORS, connected by being assigned: the mentor portal shows it
+ *     for every child in the mentor's caseload, with no code.
+ * The member's six-digit code (members.anchorCode) is what a parent types,
+ * with the child's name, to connect (circle_match).
  */
-
-// ── Signed portal token (HMAC, same key as sessions, distinct purpose tag) ──
-function circle_token_sign(array $p): string {
-    global $CONFIG;
-    $now = time();
-    $payload = ['k' => 'circle', 'lid' => $p['linkId'], 'mid' => $p['memberId'], 'role' => $p['role'], 'iat' => $now, 'exp' => $now + 180 * 24 * 3600];
-    $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
-    $sig = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
-    return $body . '.' . $sig;
-}
-function circle_token_verify(string $token): ?array {
-    global $CONFIG;
-    $dot = strpos($token, '.');
-    if ($dot === false) return null;
-    $body = substr($token, 0, $dot); $sig = substr($token, $dot + 1);
-    $expected = b64url(hash_hmac('sha256', $body, $CONFIG['cookie_secret'], true));
-    if (!hash_equals($expected, $sig)) return null;
-    $p = json_decode(b64url_decode($body), true);
-    if (!is_array($p) || ($p['k'] ?? '') !== 'circle') return null;
-    if (($p['exp'] ?? 0) < time()) return null;
-    // The link must still be active.
-    $link = db_row('SELECT * FROM circle_links WHERE linkId = ? LIMIT 1', [(string)($p['lid'] ?? '')]);
-    if (!$link || $link['status'] !== 'active') return null;
-    $p['link'] = $link;
-    return $p;
-}
 
 function circle_monday(): string {
     $t = time();
@@ -138,24 +111,24 @@ function circle_suggestion(string $role, array $stats): string {
         return "They're consistent right now — a specific word of praise reinforces it.";
     }
     switch ($role) {
-        case 'teacher': return "Attendance to reflection is slipping. A quiet word of encouragement in class can restart it.";
         case 'mentor':  return "Momentum is dipping — a short check-in call this week can help them begin again.";
         default:        return "Reflection has slowed. Ask warmly about their study time today, without pressure.";
     }
 }
 
 // ── Member (student) side ────────────────────────────────────────────────────
+/** member.circle — the member's code, who follows their Anchor, and what they wrote to them. */
 function member_circle(array $p): array {
     $mid = (string)($p['requesterId'] ?? '');
     if (!db_row('SELECT id FROM members WHERE memberId = ?', [$mid])) return ['ok' => false, 'error' => 'member_gone'];
     $code = circle_ensure_code($mid);
-    $links = db_all("SELECT linkId, role, guardianName, status, lastSeenAt, createdAt FROM circle_links WHERE memberId = ? AND status = 'active' ORDER BY id DESC", [$mid]);
+    $family = function_exists('family_links_for_member') ? family_links_for_member($mid) : [];
+    $mentors = array_map(static fn($r) => ['name' => (string)$r['fullName'], 'relation' => 'Mentor', 'since' => (string)$r['startedAt']],
+        db_all("SELECT m.fullName, a.startedAt FROM mentor_assignments a JOIN mentors m ON m.mentorId = a.mentorId WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id", [$mid]));
     $remarks = db_all("SELECT role, text, weekStart, createdAt FROM circle_remarks WHERE memberId = ? ORDER BY id DESC LIMIT 20", [$mid]);
-    // Circle summary for the "Your Circle" rows (home/school/mentor linked?).
-    $has = fn($role) => (bool)db_row("SELECT id FROM circle_links WHERE memberId = ? AND role = ? AND status = 'active' LIMIT 1", [$mid, $role]);
-    return ['ok' => true, 'code' => $code, 'links' => $links, 'remarks' => $remarks,
-        'family' => function_exists('family_links_for_member') ? family_links_for_member($mid) : [],
-        'circle' => ['parent' => $has('parent'), 'teacher' => $has('teacher'), 'mentor' => $has('mentor')]];
+    $family = array_map(static fn($f) => $f + ['relation' => $f['relationship']], $family);
+    return ['ok' => true, 'code' => $code, 'connected' => array_merge(array_map(static fn($f) => ['name' => $f['name'], 'relation' => $f['relation'], 'since' => $f['since']], $family), $mentors),
+        'remarks' => $remarks, 'family' => $family, 'circle' => ['parent' => (bool)$family, 'mentor' => (bool)$mentors]];
 }
 
 function member_circle_rotate(array $p): array {
@@ -164,21 +137,6 @@ function member_circle_rotate(array $p): array {
     $code = circle_ensure_code($mid);
     audit('circle.rotate', $mid, $mid, [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'code' => $code];
-}
-
-function member_circle_revoke(array $p): array {
-    $mid = (string)($p['requesterId'] ?? '');
-    $linkId = (string)($p['linkId'] ?? '');
-    $n = db_update('circle_links', ['status' => 'revoked', 'revokedAt' => now_iso()], ['linkId' => $linkId, 'memberId' => $mid]);
-    if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    // Rotate the invite code so a revoked adult who memorised it cannot silently
-    // re-pair — this is what "they lose access immediately" actually requires.
-    // Existing active links authenticate via their signed linkId token, not the
-    // code, so they are unaffected; only fresh pairing needs the new code.
-    db_update('members', ['anchorCode' => null], ['memberId' => $mid]);
-    $newCode = circle_ensure_code($mid);
-    audit('circle.revoke', $mid, $linkId, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'code' => $newCode];
 }
 
 // ── Portal (guardian) side — code-based, no account ─────────────────────────
@@ -278,113 +236,122 @@ function circle_lookup(array $p): array {
     return ['ok' => true, 'student' => ['name' => $m['fullName'], 'memberId' => $m['memberId']]];
 }
 
-function circle_connect(array $p): array {
-    $role = (string)($p['role'] ?? '');
-    if (!in_array($role, ['parent', 'teacher', 'mentor'], true)) return ['ok' => false, 'error' => 'bad_role'];
-    if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
-    // Checked here too, not just on lookup. `connect` is a separate request and
-    // nothing stops it being called directly — a gate that only guards the
-    // step before it is not a gate. The attempt guard likewise: a ceiling that
-    // only covers the read half is a ceiling with a door beside it.
-    $code = (string)($p['code'] ?? '');
-    if ($blocked = circle_guess_guard($code)) return $blocked;
-    $m = circle_match($code, (string)($p['name'] ?? ''));
-    if (!$m) { circle_guess_failed($code, (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'not_found']; }
-    attempt_reset('circle.code', preg_replace('/\D/', '', $code));
-    $linkId = 'CL-' . strtoupper(rand_hex(6));
-    db_insert('circle_links', [
-        'linkId' => $linkId, 'memberId' => $m['memberId'], 'role' => $role,
-        'guardianName' => substr((string)($p['guardianName'] ?? ''), 0, 120),
-        'status' => 'active', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso(),
-    ]);
-    audit('circle.connect', $m['memberId'], $linkId, ['role' => $role], (string)($p['ip'] ?? ''));
-    $token = circle_token_sign(['linkId' => $linkId, 'memberId' => $m['memberId'], 'role' => $role]);
-    return ['ok' => true, 'token' => $token, 'student' => ['name' => $m['fullName'], 'memberId' => $m['memberId']], 'role' => $role];
+/**
+ * The old Anchor Circle portal's ops (connect, dashboard, confirm, remark,
+ * cohort, report). Its tokens and links are retired (migration 193); an old
+ * page still open somewhere is told where things went, not given an error it
+ * cannot act on. circle.lookup stays internal: it is the code-and-name check
+ * itself, which the family connection runs.
+ */
+function circle_moved(array $p): array {
+    return ['ok' => false, 'error' => 'moved', 'detail' => 'Anchor Circle is now part of the NGG family account. Parents: sign in at /family. Mentors: your mentees are in the mentor portal.'];
 }
 
-/** Resolve + touch a portal token, or return an error array. */
-function circle_portal_ctx(array $p) {
-    $ctx = circle_token_verify((string)($p['token'] ?? ''));
-    if (!$ctx) return ['ok' => false, 'error' => 'link_invalid'];
-    db_update('circle_links', ['lastSeenAt' => now_iso()], ['linkId' => $ctx['lid']]);
-    return $ctx;
-}
+// ── The Anchor week, for whoever is in the circle ───────────────────────────
 
-function circle_dashboard(array $p): array {
-    $ctx = circle_portal_ctx($p);
-    if (isset($ctx['ok']) && $ctx['ok'] === false) return $ctx;
-    $mid = $ctx['mid']; $lid = $ctx['lid'];
-    $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+const ANCHOR_REMARKS_PER_WEEK = 5;      // per adult per child: a word, not a stream
+
+/**
+ * One child's Anchor week as `$key` (the adult's link: a family link or the
+ * mentor) sees it. Each adult sees the days THEY
+ * confirmed and the remarks THEY wrote; the conduct figure counts any adult's
+ * confirmation. Another adult's words to the child are the child's, not theirs.
+ */
+function anchor_week(string $mid, string $key, string $role): array {
+    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $stats = circle_student_stats($mid);
-    $mine = db_all("SELECT date FROM circle_confirmations WHERE linkId = ? ORDER BY date DESC LIMIT 60", [$lid]);
-    return ['ok' => true, 'role' => $ctx['role'], 'student' => ['name' => $m['fullName']],
-        'stats' => $stats, 'suggestion' => circle_suggestion($ctx['role'], $stats),
-        'confirmed' => array_map(fn($r) => $r['date'], $mine),
-        'weekStart' => circle_monday()];
-}
-
-function circle_confirm(array $p): array {
-    $ctx = circle_portal_ctx($p);
-    if (isset($ctx['ok']) && $ctx['ok'] === false) return $ctx;
-    $date = (string)($p['date'] ?? '');
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
-    $on = !empty($p['on']);
-    $exists = db_row('SELECT id FROM circle_confirmations WHERE linkId = ? AND date = ?', [$ctx['lid'], $date]);
-    if ($on && !$exists) {
-        db_insert('circle_confirmations', ['linkId' => $ctx['lid'], 'memberId' => $ctx['mid'], 'role' => $ctx['role'], 'date' => $date, 'createdAt' => now_iso()]);
-    } elseif (!$on && $exists) {
-        db_exec('DELETE FROM circle_confirmations WHERE linkId = ? AND date = ?', [$ctx['lid'], $date]);
+    $mon = circle_monday(); $today = gmdate('Y-m-d');
+    $mine = array_flip(array_column(db_all('SELECT date FROM circle_confirmations WHERE linkId = ? AND date >= ?', [$key, $mon]), 'date'));
+    $any = array_flip(array_column(db_all('SELECT DISTINCT date FROM circle_confirmations WHERE memberId = ? AND date >= ?', [$mid, $mon]), 'date'));
+    $days = [];
+    for ($i = 0; $i < 7; $i++) {
+        $d = gmdate('Y-m-d', (int)strtotime($mon . ' 12:00:00 UTC') + $i * 86400);
+        $days[] = ['date' => $d, 'label' => gmdate('D', (int)strtotime($d . ' 12:00:00 UTC')), 'mine' => isset($mine[$d]), 'any' => isset($any[$d]), 'future' => $d > $today,
+                   'held' => (int)($stats['weekBars'][$i]['held'] ?? 0)];
     }
-    return ['ok' => true, 'date' => $date, 'on' => $on];
+    $remarks = array_map(static fn($r) => ['text' => (string)$r['text'], 'at' => (string)$r['createdAt']],
+        db_all('SELECT text, createdAt FROM circle_remarks WHERE linkId = ? ORDER BY id DESC LIMIT 6', [$key]));
+    $left = ANCHOR_REMARKS_PER_WEEK - (int)(db_row('SELECT COUNT(*) c FROM circle_remarks WHERE linkId = ? AND weekStart = ?', [$key, $mon])['c'] ?? 0);
+    return ['ok' => true, 'role' => $role, 'student' => ['name' => (string)$m['fullName'], 'first' => explode(' ', trim((string)$m['fullName']))[0] ?? ''],
+        'stats' => $stats, 'suggestion' => circle_suggestion($role, $stats), 'weekStart' => $mon, 'days' => $days,
+        'remarks' => $remarks, 'remarksLeft' => max(0, $left)];
 }
 
-function circle_remark(array $p): array {
-    $ctx = circle_portal_ctx($p);
-    if (isset($ctx['ok']) && $ctx['ok'] === false) return $ctx;
-    $text = trim((string)($p['text'] ?? ''));
-    if (strlen($text) < 2) return ['ok' => false, 'error' => 'empty'];
-    db_insert('circle_remarks', ['linkId' => $ctx['lid'], 'memberId' => $ctx['mid'], 'role' => $ctx['role'], 'weekStart' => circle_monday(), 'text' => substr($text, 0, 1000), 'createdAt' => now_iso()]);
-    audit('circle.remark', $ctx['mid'], $ctx['lid'], ['role' => $ctx['role']], (string)($p['ip'] ?? ''));
+/** Confirm (or take back) a day this week, up to today. */
+function anchor_confirm(string $mid, string $key, string $role, string $date, bool $on): array {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
+    if ($date < circle_monday() || $date > gmdate('Y-m-d')) return ['ok' => false, 'error' => 'not_this_week', 'detail' => 'Only this week’s days, up to today, can be confirmed.'];
+    $exists = db_row('SELECT id FROM circle_confirmations WHERE linkId = ? AND date = ?', [$key, $date]);
+    if ($on && !$exists) db_insert('circle_confirmations', ['linkId' => $key, 'memberId' => $mid, 'role' => $role, 'date' => $date, 'createdAt' => now_iso()]);
+    elseif (!$on && $exists) db_exec('DELETE FROM circle_confirmations WHERE linkId = ? AND date = ?', [$key, $date]);
+    return ['ok' => true, 'date' => $date, 'on' => $on, 'unchanged' => (bool)$exists === $on];
+}
+
+/** A word to the child. They read it in their app (member.circle) and are told it came. */
+function anchor_remark(string $mid, string $key, string $role, string $text, string $by, string $ip = ''): array {
+    $text = trim($text);
+    if (mb_strlen($text) < 2) return ['ok' => false, 'error' => 'empty', 'detail' => 'Write a few words first.'];
+    if (mb_strlen($text) > 600) return ['ok' => false, 'error' => 'too_long', 'detail' => 'Keep it under 600 characters.'];
+    $mon = circle_monday();
+    if ((int)(db_row('SELECT COUNT(*) c FROM circle_remarks WHERE linkId = ? AND weekStart = ?', [$key, $mon])['c'] ?? 0) >= ANCHOR_REMARKS_PER_WEEK)
+        return ['ok' => false, 'error' => 'week_limit', 'detail' => 'That is ' . ANCHOR_REMARKS_PER_WEEK . ' notes this week. Save the next for Monday.'];
+    db_insert('circle_remarks', ['linkId' => $key, 'memberId' => $mid, 'role' => $role, 'weekStart' => $mon, 'text' => $text, 'createdAt' => now_iso()]);
+    $from = ['parent' => 'your family', 'mentor' => 'your mentor'][$role] ?? 'your circle';
+    if (function_exists('push_notification')) {
+        try { push_notification($mid, ['kind' => 'anchor', 'title' => 'A note from ' . $from, 'body' => mb_substr($text, 0, 140), 'linkPage' => 'dashboard']); } catch (Throwable $e) {}
+    }
+    audit('circle.remark', $by, $mid, ['role' => $role], $ip);
     return ['ok' => true];
 }
 
-/**
- * Cohort strip — summarise every student this DEVICE holds a valid portal
- * token for (mentors/teachers pair with several mentees, one code each).
- * The tokens themselves are the authority: no account, no extra scope —
- * each summary is exactly what that token's dashboard already exposes,
- * minus anything private. Invalid/revoked tokens are silently skipped so
- * the client can prune them.
- */
-function circle_cohort(array $p): array {
-    $tokens = is_array($p['tokens'] ?? null) ? array_slice($p['tokens'], 0, 30) : [];
-    $out = []; $seen = [];
-    foreach ($tokens as $t) {
-        if (!is_string($t) || $t === '') continue;
-        $ctx = circle_token_verify($t);
-        if (!$ctx) continue;
-        $mid = (string)$ctx['mid'];
-        if (isset($seen[$mid])) continue;
-        $seen[$mid] = true;
-        $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$mid]);
-        if (!$m) continue;
-        $s = momentum_signals($mid);
-        $atRisk = $s['streak'] === 0 || $s['consistency'] < 40 || $s['trend'] === 'dipping';
-        $out[] = [
-            'token' => $t, 'name' => (string)$m['fullName'], 'role' => (string)$ctx['role'],
-            'streak' => $s['streak'], 'trend' => $s['trend'], 'consistency' => $s['consistency'],
-            'reflectedToday' => $s['reflectedToday'], 'atRisk' => $atRisk,
-        ];
-    }
-    return ['ok' => true, 'students' => $out];
+/** A parent's family link — the family account's way into one child's Anchor. */
+function anchor_family_link(string $gid, string $linkId): ?array {
+    if ($gid === '' || $linkId === '' || !function_exists('family_link')) return null;
+    $l = family_link($gid, $linkId);
+    return $l ? ['memberId' => (string)$l['memberId'], 'key' => $linkId, 'role' => 'parent'] : null;
 }
 
-function circle_report(array $p): array {
-    $ctx = circle_portal_ctx($p);
-    if (isset($ctx['ok']) && $ctx['ok'] === false) return $ctx;
-    $m = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$ctx['mid']]);
-    $stats = circle_student_stats($ctx['mid']);
-    $remarks = db_all("SELECT role, text, createdAt FROM circle_remarks WHERE memberId = ? ORDER BY id DESC LIMIT 10", [$ctx['mid']]);
-    return ['ok' => true, 'report' => ['student' => $m['fullName'] ?? '', 'weekStart' => circle_monday(), 'stats' => $stats, 'suggestion' => circle_suggestion($ctx['role'], $stats), 'remarks' => $remarks, 'role' => $ctx['role']]];
+/** family.anchor — the week, for a parent of this child. */
+function family_anchor(array $p): array {
+    $l = anchor_family_link((string)($p['guardianId'] ?? ''), (string)($p['linkId'] ?? ''));
+    if (!$l) return ['ok' => false, 'error' => 'not_found'];
+    return anchor_week($l['memberId'], $l['key'], $l['role']);
+}
+function family_anchor_confirm(array $p): array {
+    $l = anchor_family_link((string)($p['guardianId'] ?? ''), (string)($p['linkId'] ?? ''));
+    if (!$l) return ['ok' => false, 'error' => 'not_found'];
+    return anchor_confirm($l['memberId'], $l['key'], $l['role'], (string)($p['date'] ?? ''), !empty($p['on']));
+}
+function family_anchor_remark(array $p): array {
+    $l = anchor_family_link((string)($p['guardianId'] ?? ''), (string)($p['linkId'] ?? ''));
+    if (!$l) return ['ok' => false, 'error' => 'not_found'];
+    return anchor_remark($l['memberId'], $l['key'], $l['role'], (string)($p['text'] ?? ''), 'guardian:' . (string)$p['guardianId'], (string)($p['ip'] ?? ''));
+}
+
+// ── Mentors: connected by being assigned ────────────────────────────────────
+
+/**
+ * The mentor portal's door into a mentee's Anchor. No code: a child in the
+ * mentor's caseload (mp_caseload_ids — their active assignments, and a lead's
+ * team) is connected because the programme assigned them. One key per mentor,
+ * so two mentors of one child each see their own confirmations and notes.
+ */
+function anchor_mentor_ctx(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    $id = trim((string)($p['subjectId'] ?? ''));
+    if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
+    return ['ok' => true, 'mid' => $id, 'key' => 'MT-' . (string)(($g['mentorId'] ?? '') ?: $g['me']), 'by' => (string)$g['me']];
+}
+function member_mp_anchor(array $p): array {
+    $c = anchor_mentor_ctx($p); if (empty($c['ok'])) return $c;
+    return anchor_week($c['mid'], $c['key'], 'mentor');
+}
+function member_mp_anchor_confirm(array $p): array {
+    $c = anchor_mentor_ctx($p); if (empty($c['ok'])) return $c;
+    return anchor_confirm($c['mid'], $c['key'], 'mentor', (string)($p['date'] ?? ''), !empty($p['on']));
+}
+function member_mp_anchor_remark(array $p): array {
+    $c = anchor_mentor_ctx($p); if (empty($c['ok'])) return $c;
+    return anchor_remark($c['mid'], $c['key'], 'mentor', (string)($p['text'] ?? ''), $c['by'], (string)($p['ip'] ?? ''));
 }
