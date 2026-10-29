@@ -738,6 +738,8 @@ function humanizeAuthError(code) {
     bad_member_id: "Check your Member ID (like NGG-2025-0042), or use your email.",
     expired: "Link or code expired. They're only good for 15 minutes — request a new one.",
     already_used: "That code was already used. Request a fresh one.",
+    pick_cancelled: "Choose who is signing in to continue. Request a fresh code if this one has run out.",
+    not_on_this_email: "That account isn’t on this email. Sign in with its own Member ID.",
     too_many_attempts: "Too many wrong tries on that code. Request a new one.",
     no_credentials: "Enter your code or click your magic link.",
     no_identifier: "Tell us your Member ID or email.",

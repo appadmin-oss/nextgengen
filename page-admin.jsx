@@ -1958,7 +1958,7 @@ function CurriculumLessons() {
     try { const r = await NGGApi.admin.curriculum.get(u.unitId); setEdit(r.unit); }
     catch (e) { toast.error(humanizeError(e.code, e.code)); }
   };
-  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
+  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} divisions={(d && d.divisions) || []} examRefs={(d && d.examRefs) || {}} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
     onClose={() => setEdit(null)} onSaved={(u) => { setEdit(u); load(); }}/>;
   return (
     <div>
@@ -2001,13 +2001,22 @@ function CurriculumLessons() {
   );
 }
 
-const CUR_EMPTY_CHECK = { kind: "mcq", prompt: "", options: ["", ""], answer: "0", rubric: "", points: 1 };
+/* A new question is a PRACTICAL one, not a multiple choice.
+   The default is the answer most people give: four options is the quickest
+   thing to type, and a review made of them measures whether a child can
+   recognise the right words a week later, not whether they can do the
+   thing. The server refuses to publish a review that is multiple choice
+   alone, so defaulting to mcq was defaulting to a lesson that would be
+   refused. Multiple choice is one press away, and worth having — alongside
+   something they did. */
+const CUR_EMPTY_CHECK = { kind: "task", prompt: "", options: ["", ""], answer: "", rubric: "", points: 3, videoUrl: "" };
 /* The kinds of question, as CURR_CHECK_KINDS has them. Only multiple choice is
    marked by the computer; the rest are marked by a capable AI model against
    the rubric when one is configured for marking, and by the instructor if not
    — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
 const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
-  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"]];
+  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"],
+  ["watch", "Watch a video and tell me"]];
 const CUR_MARK_HINT = {
   short: "Marked against the model answer — any wording that has the ideas earns the points.",
   essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
@@ -2015,121 +2024,210 @@ const CUR_MARK_HINT = {
   project: "Marked from the learner's description against the rubric; a bare link waits for the instructor.",
   code: "Marked on whether it does what was asked and the logic is sound.",
   task: "Marked from the learner's account of what they did, against the rubric.",
+  watch: "Marked on what only watching could produce — a detail, an example, a moment from the video — in their own words. Nothing can check that play was pressed, and a keyword gate would only check that they guessed the words.",
 };
 
-/* ── The lesson text editor ───────────────────────────────────────────────────
-   A toolbar over a plain textarea, writing the small formatting language
-   CurriculumText renders (headings, bold, lists, links, images, video, code).
-   Plain text underneath, so an import, the AI draft and a hand edit all speak
-   the same language and nothing a lesson says can become HTML. Every button
-   has a keyboard route (Ctrl/⌘+B, I, K) and Preview shows exactly what a
-   member will see. */
-const LESSON_TOOLS = [
-  { id: "h2", label: "Heading", icon: "H", line: "## " },
-  { id: "h3", label: "Subheading", icon: "h", line: "### " },
-  { id: "b", label: "Bold (Ctrl+B)", icon: "B", wrap: ["**", "**"], key: "b" },
-  { id: "i", label: "Italic (Ctrl+I)", icon: "I", wrap: ["*", "*"], key: "i" },
-  { id: "ul", label: "Bulleted list", icon: "•", line: "- " },
-  { id: "ol", label: "Numbered list", icon: "1.", line: "1. " },
-  { id: "q", label: "Callout", icon: "❝", line: "> " },
-  { id: "code", label: "Code block", icon: "</>", block: ["```\n", "\n```"] },
-  { id: "hr", label: "Divider", icon: "—", insert: "\n\n---\n\n" },
+/* The markdown toolbar that used to live here — eighteen buttons over a
+   textarea, inserting "## " and ```` ```keys ```` for an instructor to get
+   right — is gone. Writing a lesson is now lesson-editor.jsx, where a
+   heading is drawn as a heading and the piano is drawn as the piano. The
+   markdown it produces is byte-for-byte what this toolbar produced, because
+   the member's renderer did not change and must not. */
+
+/**
+ * What the programme asks of every lesson, checked while it is being written.
+ *
+ * These are the rules in api/tests/curriculum-shape.php, which fail the build
+ * for the bundled courses. An instructor writing a new lesson had no way to
+ * know any of them existed, so the standard lived in a test file and nowhere
+ * a person could read it. Shown here, with the reason beside each — a rule
+ * whose reason is not given is a rule people route around.
+ *
+ * ADVISORY, NEVER BLOCKING. The same shape as the Design Studio's preflight:
+ * it tells you what is missing and lets you save anyway, because an
+ * instructor part-way through a lesson is not writing a defect. The server
+ * still validates what it validates.
+ */
+function lessonShape(f) {
+  const body = String(f.body || ""), text = (body + " " + (f.title || "") + " " + (f.summary || "") + " " + (f.objectives || "")).toLowerCase();
+  const has = (...w) => w.every(x => text.includes(x));
+  return [
+    { id: "review", ok: (f.checks || []).length >= 3,
+      want: "Questions for next week", why: "Your class sits these at the start of the next session. Pulling a week-old lesson back out of a cold memory is what fixes it there — three questions is the floor." },
+    { id: "routes", ok: has("if this is new") && has("if you already can"),
+      want: "Two routes through it", why: "Ten- and seventeen-year-olds sit in the same room. A worked example that helps one of them slows the other." },
+    { id: "made", ok: (f.checks || []).some(c => c.kind === "project" || c.kind === "task"),
+      want: "Something made or done", why: "These are practical subjects and they are marked that way: the observed work is worth six, the written check one." },
+    { id: "back", ok: /earlier|back to|again|revisit/.test(text),
+      want: "The lesson itself reaches back", why: "Not only the review: the teaching should pick something up from an earlier week and use it, or the weeks never join into a skill." },
+    { id: "ai", ok: /\bai\b|chatgpt|copilot/.test(text),
+      want: "AI, where it is true", why: "Optional, and deliberately rare — about one lesson in four, one in eight for an instrument. Nothing can hear a child play." },
+  ];
+}
+
+/**
+ * The parts of an NGG Saturday, in the order they happen, read out of the
+ * headings the instructor has actually written. A generic editor cannot do
+ * this: it is the programme's own shape, and knowing which part is missing
+ * at a glance is most of what a curriculum lead is looking for.
+ *
+ * Matching is loose on purpose — "Warm-up", "Warm up (10 minutes)" and
+ * "Warm-up and tuning" are all the warm-up. A spine that only recognised one
+ * spelling would report a part missing that is plainly there, and an
+ * instructor who is told something false once stops reading it.
+ */
+const LESSON_SPINE = [
+  { id: "review", label: "Opening review", note: "last week, before anything new" },
+  { id: "warm",   label: "Warm-up",        re: /^##+\s*warm[\s-]?up/im },
+  { id: "learn",  label: "Learn",          re: /^##+\s*(learn|what to do|today'?s tool|essentials|guided)/im },
+  { id: "play",   label: "Play or do",     re: /^##+\s*(play|do it|practice|practise|hands[\s-]?on|workshop|make)/im },
+  { id: "home",   label: "Practise at home", re: /^##+\s*(practise at home|practice at home|at home|this week'?s assignment|independent assignment)/im },
+  { id: "fit",    label: "Make it fit you", re: /^##+\s*make it fit/im },
 ];
-function LessonTextEditor({ value, onChange, labelledBy, disabled }) {
-  const ref = React.useRef(null);
-  const [preview, setPreview] = React.useState(false);
-  const [busy, setBusy] = React.useState(false);
-  const edit = (fn) => {
-    const ta = ref.current; if (!ta) return;
-    const v = value || "", a = ta.selectionStart, b = ta.selectionEnd;
-    const r = fn(v, a, b);
-    onChange(r.text);
-    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(r.a, r.b); });
-  };
-  const apply = (t) => edit((v, a, b) => {
-    const sel = v.slice(a, b);
-    if (t.wrap) { const ins = t.wrap[0] + (sel || "text") + t.wrap[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.wrap[0].length, b: a + ins.length - t.wrap[1].length }; }
-    if (t.block) { const ins = t.block[0] + (sel || "") + t.block[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.block[0].length, b: a + t.block[0].length + sel.length }; }
-    if (t.insert) return { text: v.slice(0, a) + t.insert + v.slice(b), a: a + t.insert.length, b: a + t.insert.length };
-    // A line prefix: every selected line (or the current one) gets it; a numbered list counts up.
-    const ls = v.lastIndexOf("\n", a - 1) + 1, leRaw = v.indexOf("\n", b), le = leRaw === -1 ? v.length : leRaw;
-    const lines = v.slice(ls, le).split("\n").map((l, n) => (t.id === "ol" ? (n + 1) + ". " : t.line) + l.replace(/^(#{1,3}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)/, ""));
-    const joined = lines.join("\n");
-    return { text: v.slice(0, ls) + joined + v.slice(le), a: ls, b: ls + joined.length };
-  });
-  const link = async () => {
-    const url = await dialog.prompt({ title: "Add a link", label: "Web address (https://…)", placeholder: "https://", cta: "Add link" });
-    if (!url) return;
-    if (!/^https:\/\//i.test(url.trim())) { toast.error("Links must start with https://"); return; }
-    edit((v, a, b) => { const txt = v.slice(a, b) || "link text"; const ins = "[" + txt + "](" + url.trim() + ")"; return { text: v.slice(0, a) + ins + v.slice(b), a: a + 1, b: a + 1 + txt.length }; });
-  };
-  const video = async () => {
-    const url = await dialog.prompt({ title: "Embed a video", label: "YouTube or Vimeo link", placeholder: "https://www.youtube.com/watch?v=…", cta: "Embed" });
-    if (!url) return;
-    if (!curVideoEmbed(url.trim())) { toast.error("That is not a YouTube or Vimeo link — add it as a link or a material instead."); return; }
-    edit((v, a) => { const ins = "\n\n" + url.trim() + "\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
-  };
-  const image = async (file) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const r = await NGGApi.admin.curriculum.upload(file);
-      if (r.kind !== "image") { toast.error("That is not an image — add it as a material instead."); return; }
-      const cap = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
-      edit((v, a) => { const ins = "\n\n![" + cap + "](" + r.url + ")\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
-    } catch (e) { toast.error(e.code === "too_large" ? "That image is over 25 MB." : humanizeError(e.code, e.code)); }
-    finally { setBusy(false); }
-  };
-  const onKey = (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    const k = e.key.toLowerCase();
-    if (k === "k") { e.preventDefault(); link(); return; }
-    const t = LESSON_TOOLS.find(x => x.key === k);
-    if (t) { e.preventDefault(); apply(t); }
-  };
+
+/* The two words that send an operator to the wrong screen (CLAUDE.md §11).
+   Not a ban on the English words — "cohort completion rate" is fine. What is
+   flagged is the EDITION called a cohort and a Summer PARTICIPANT called a
+   student, because those two are the ones that mislead. */
+const LESSON_WORDS = [
+  { re: /\b(archive|close|activate|start|end|this|the|next|last)\s+(the\s+)?cohort\b/i,
+    say: "“cohort” for a season", use: "A season of Summer School is an edition. A cohort, to a coordinator, means a group." },
+  { re: /\bsummer(\s+school)?\s+students?\b/i,
+    say: "“Summer student”", use: "Summer School has participants. Students belong to the Club." },
+];
+
+function lessonSpine(f) {
+  const body = String(f.body || "");
+  return LESSON_SPINE.map(p => ({
+    id: p.id, label: p.label, note: p.note,
+    ok: p.id === "review" ? (f.checks || []).length >= 3 : p.re.test(body),
+  }));
+}
+function lessonWords(f) {
+  const text = String(f.body || "") + " " + (f.title || "") + " " + (f.summary || "");
+  return LESSON_WORDS.filter(w => w.re.test(text));
+}
+
+function CurriculumShape({ f }) {
+  const rows = lessonShape(f);
+  const met = rows.filter(r => r.ok).length;
+  const spine = lessonSpine(f);
+  const here = spine.filter(p => p.ok).length;
+  const words = lessonWords(f);
   return (
-    <div className="cur-rte">
-      <div className="cur-rte-bar" role="toolbar" aria-label="Format the lesson" aria-controls="cur-rte-ta">
-        {LESSON_TOOLS.map(t => (
-          <button key={t.id} type="button" className={"cur-rte-btn is-" + t.id} aria-label={t.label} title={t.label} disabled={disabled || preview} onClick={() => apply(t)}>{t.icon}</button>
-        ))}
-        <button type="button" className="cur-rte-btn" aria-label="Link (Ctrl+K)" title="Link (Ctrl+K)" disabled={disabled || preview} onClick={link}>🔗</button>
-        <label className={"cur-rte-btn" + (disabled || preview || busy ? " is-disabled" : "")} title="Insert an image" aria-label="Insert an image">{busy ? "…" : "🖼"}
-          <input type="file" className="sr-only" accept=".png,.jpg,.jpeg,.webp,.gif" disabled={disabled || preview || busy} onChange={e => { image(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
-        <button type="button" className="cur-rte-btn" aria-label="Embed a YouTube or Vimeo video" title="Embed a video" disabled={disabled || preview} onClick={video}>▶</button>
-        <span className="cur-rte-sp"/>
-        <button type="button" className="cur-rte-btn is-preview" aria-pressed={preview} onClick={() => setPreview(p => !p)}>{preview ? "Edit" : "Preview"}</button>
-      </div>
-      {preview
-        ? <div className="cur-rte-preview">{(value || "").trim() ? <CurriculumText text={value}/> : <p className="admin-cell-sub">Nothing written yet.</p>}</div>
-        : <textarea id="cur-rte-ta" ref={ref} className="admin-input cur-ed-body" rows={12} value={value || ""} aria-labelledby={labelledBy}
-            onChange={e => onChange(e.target.value)} onKeyDown={onKey} disabled={disabled}
-            placeholder={"Write the lesson. Use the toolbar for headings, lists, links, pictures and videos.\n\n## A heading\nA paragraph — **bold** and *italic* work too.\n\n- a bulleted point\n- another"}/>}
-      <p className="admin-cell-sub cur-rte-hint">Blank lines make paragraphs. A line that is just a YouTube or Vimeo link plays the video in the lesson.</p>
+    <div className="cur-check">
+      <section className="cur-spine-wrap" aria-label="The session, part by part">
+        <h3 className="admin-h3">The session <span className="admin-cell-sub">{here} of {spine.length} parts</span></h3>
+        <ol className="cur-spine">
+          {spine.map(p => (
+            <li key={p.id} className={"cur-spine-p " + (p.ok ? "is-here" : "is-gone")}>
+              <span className="cur-spine-dot" aria-hidden="true"/>
+              <span className="cur-spine-l">{p.label}</span>
+              <span className="cur-spine-s">{p.ok ? "written" : (p.note || "not written yet")}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {!!words.length && (
+        <section className="cur-words" aria-label="Words to change">
+          <h3 className="admin-h3">Words to change</h3>
+          {words.map((w, i) => (
+            <p key={i} className="cur-word-row"><b>{w.say}</b> — {w.use}</p>
+          ))}
+        </section>
+      )}
+
+      <section className="cur-shape" aria-label="What the programme asks of a lesson">
+        <h3 className="admin-h3">What the programme asks <span className="admin-cell-sub">{met} of {rows.length}</span></h3>
+        <p className="admin-hint">Guidance, not a gate — you can save a lesson that does not meet all of these.</p>
+        <ul className="cur-shape-list">
+          {rows.map(r => (
+            <li key={r.id} className={"cur-shape-row " + (r.ok ? "is-met" : "is-unmet")}>
+              <span className="cur-shape-mark" aria-hidden="true">{r.ok ? "✓" : "○"}</span>
+              <span className="cur-shape-want"><b>{r.want}</b> <span className="sr-only">{r.ok ? "— done" : "— not yet"}</span></span>
+              <span className="cur-shape-why">{r.why}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
 
-function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved }) {
+/* Real glyphs, not emoji. An emoji is drawn by the operating system, so the
+   same toolbar is a flat pictogram on one machine and a glossy 3-D sticker on
+   another — and on a Saturday at a centre those are different machines. These
+   are 16px line icons on the current colour, so they inherit state. */
+const LED_ICONS = {
+  back:  "M10 3 4.5 8 10 13",
+  x:     "M4 4l8 8M12 4l-8 8",
+  eye:   "M1.6 8S4 3.6 8 3.6 14.4 8 14.4 8 12 12.4 8 12.4 1.6 8 1.6 8Z M8 9.9a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z",
+  alert: "M8 2.2 15 13.6H1L8 2.2Z M8 6.6v3.1 M8 11.6v.01",
+  keys:  "M2 3h12v10H2z M5.2 3v6.2 M8 3v6.2 M10.8 3v6.2",
+  chord: "M3 3v10 M6 3v10 M9 3v10 M12 3v10 M3 5.4h9 M3 8.2h9 M3 11h9",
+  staff: "M2 4h12 M2 6.5h12 M2 9h12 M2 11.5h12 M11.4 8.6a1.5 1.2 0 1 0 0-2.4 1.5 1.2 0 0 0 0 2.4Z",
+  swatch:"M3 3h4.4v10H3z M8.6 3H13v10H8.6z M3 7.6h4.4 M8.6 10.1H13",
+  steps: "M2 4.5h4 M2 8h8 M2 11.5h11",
+};
+function LedIcon({ name }) {
+  const d = LED_ICONS[name];
+  if (!d) return null;
+  return (
+    <svg className="led-i" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"
+         fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      {d.split(" M").map((seg, i) => <path key={i} d={(i ? "M" : "") + seg}/>)}
+    </svg>
+  );
+}
+
+/**
+ * `desk` is how the SAME editor serves two portals.
+ *
+ * The Control Room and an instructor's own screen were two different things:
+ * a full editor here, a four-field box there. That is the wrong axis to
+ * differ on — what an instructor may do is narrower than what a curriculum
+ * lead may do, but what they are WRITING is the same lesson, to the same
+ * standard, with the same opening review and the same two routes. A smaller
+ * editor did not make the standard smaller; it just hid it.
+ *
+ * So the screen is one screen, and the portal supplies three things: how a
+ * lesson is saved, how a file is uploaded, and whether this person may
+ * publish. Every actual permission is still decided on the server.
+ */
+const CUR_DESK_ADMIN = {
+  save: (d) => NGGApi.admin.curriculum.upsert(d).then(r => r.unit),
+  upload: (f) => NGGApi.admin.curriculum.upload(f),
+  ai: (d) => NGGApi.admin.curriculum.ai(d),
+  canPublish: true,
+};
+
+function CurriculumEditor({ unit, courses, divisions, examRefs, canWrite, aiEnabled, desk, onClose, onSaved }) {
+  const api = desk || CUR_DESK_ADMIN;
+  const canPublish = api.canPublish !== false;
   const isNew = !unit.unitId;
   const [f, setF] = React.useState(() => ({
     unitId: unit.unitId || "", course: unit.course || "", level: unit.level || "", week: unit.week || 1, position: unit.position || 1,
     title: unit.title || "", summary: unit.summary || "", objectives: (unit.objectives || []).join("\n"), body: unit.body || "",
     durationMins: unit.durationMins || "", passMark: unit.passMark ?? 60, status: unit.status || "draft",
     materials: (unit.materials || []).map(m => ({ ...m })),
-    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? "") })),
+    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? ""), videoUrl: c.videoUrl || "" })),
   }));
   const [busy, setBusy] = React.useState("");
+  const examRef = (examRefs || {})[f.course] || null;
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const setCheck = (i, k, v) => setF(x => ({ ...x, checks: x.checks.map((c, j) => j === i ? { ...c, [k]: v } : c) }));
   const setMat = (i, k, v) => setF(x => ({ ...x, materials: x.materials.map((m, j) => j === i ? { ...m, [k]: v } : m) }));
   const save = async () => {
     setBusy("save");
     try {
-      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [] })) };
-      const r = await NGGApi.admin.curriculum.upsert(data);
-      toast.success(isNew ? "Lesson created." : "Lesson saved.", r.unit.title);
-      onSaved(r.unit);
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [], videoUrl: c.kind === "watch" ? (c.videoUrl || "") : "" })) };
+      const saved = await api.save(data);
+      toast.success(
+        canPublish ? (isNew ? "Lesson created." : "Lesson saved.")
+                   : (isNew ? "Saved as a draft." : "Draft saved."),
+        canPublish ? (saved && saved.title) : "A curriculum lead publishes it; your class sees it then.");
+      onSaved(saved);
     } catch (e) {
       toast.error(e.code === "unknown_course" ? "That course isn't in the academy catalogue" + (e.detail ? " — " + e.detail : "") + "."
         : e.code === "slot_taken" ? "Another lesson already holds week " + f.week + ", position " + f.position + " of this course."
@@ -2140,7 +2238,7 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
     if (!f.title.trim() && !f.body.trim()) { toast.error("Give the lesson a title or some notes for the AI to work from."); return; }
     setBusy("ai");
     try {
-      const r = await NGGApi.admin.curriculum.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
+      const r = await api.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
       // With only a title the AI writes the whole lesson in the NGG Saturday standard; real notes are never replaced.
       setF(x => ({ ...x, body: x.body.trim().length < 80 && r.draft.body ? r.draft.body : x.body, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
         checks: x.checks.concat(r.draft.checks.map(c => ({ ...c, answer: String(c.answer), options: c.options && c.options.length ? c.options : ["", ""] }))) }));
@@ -2152,7 +2250,7 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
     if (!file) return;
     setBusy("upload");
     try {
-      const r = await NGGApi.admin.curriculum.upload(file);
+      const r = await api.upload(file);
       setF(x => ({ ...x, materials: x.materials.concat([{ title: file.name.replace(/\.[^.]+$/, ""), url: r.url, kind: r.kind }]) }));
       toast.success("Uploaded — save the lesson to keep it.", file.name);
     } catch (e) { toast.error(e.code === "bad_type" ? "That file type isn't allowed (" + (e.detail || "") + ")." : e.code === "too_large" ? "That file is larger than 25 MB." : humanizeError(e.code, e.code), "Upload failed"); }
@@ -2160,116 +2258,280 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
   };
   const ro = !canWrite;
   return (
-    <div className="cur-ed">
-      <div className="cur-ed-bar">
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>← All lessons</button>
-        <span className="admin-cell-sub">{isNew ? "New lesson" : unit.unitId + " · v" + unit.version + (unit.publishedAt ? " · published " + fmtDate(unit.publishedAt) : "")}</span>
-      </div>
-      <fieldset className="cur-ed-grid" disabled={ro}>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">Title</span>
-          <input className="admin-input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Finding middle C"/></label>
-        <label className="admin-field"><span className="admin-label">Course</span>
-          <select className="admin-select" value={f.course} onChange={e => set("course", e.target.value)}>
-            <option value="">Whole Club (every member)</option>
-            {(f.course && !courses.includes(f.course) ? [f.course, ...courses] : courses).map(c => <option key={c} value={c}>{c}</option>)}
-          </select></label>
-        <label className="admin-field"><span className="admin-label">Level (optional)</span>
-          <input className="admin-input" value={f.level} onChange={e => set("level", e.target.value)} placeholder="e.g. Foundation"/></label>
-        <label className="admin-field"><span className="admin-label">Week</span>
-          <input className="admin-input" type="number" min={1} max={104} value={f.week} onChange={e => set("week", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Position in week</span>
-          <input className="admin-input" type="number" min={1} max={50} value={f.position} onChange={e => set("position", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Minutes</span>
-          <input className="admin-input" type="number" min={0} max={600} value={f.durationMins} onChange={e => set("durationMins", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Pass mark %</span>
-          <input className="admin-input" type="number" min={0} max={100} value={f.passMark} onChange={e => set("passMark", e.target.value)}/></label>
-        <label className="admin-field"><span className="admin-label">Status</span>
-          <select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}>
-            <option value="draft">Draft — only staff see it</option><option value="published">Published — members see it</option><option value="retired">Retired</option>
-          </select></label>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">Summary</span>
-          <textarea className="admin-input" rows={2} value={f.summary} onChange={e => set("summary", e.target.value)} placeholder="Two or three sentences a member reads first."/></label>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">What they'll learn — one per line</span>
-          <textarea className="admin-input" rows={3} value={f.objectives} onChange={e => set("objectives", e.target.value)} placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
-        <div className="admin-field cur-ed-wide"><span className="admin-label" id="cur-ed-body-l">The lesson</span>
-          <LessonTextEditor value={f.body} onChange={v => set("body", v)} labelledBy="cur-ed-body-l" disabled={ro}/></div>
-      </fieldset>
+    <div className={"led" + (ro ? " is-readonly" : "")}>
 
-      <section className="cur-ed-sec" aria-label="Materials">
-        <h3 className="admin-h3">Materials</h3>
-        {f.materials.map((m, i) => (
-          <div key={i} className="cur-ed-mat">
-            <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label="Material title" disabled={ro}/>
-            <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label="Material link" placeholder="https://…" disabled={ro}/>
-            <span className="chip">{m.kind || "link"}</span>
-            {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove " + (m.title || "material")} onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}>✕</button>}
-          </div>
-        ))}
-        {!ro && <div className="cur-ed-row">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>+ Add a link</button>
-          <label className="btn btn-ghost btn-sm cur-ed-upload">{busy === "upload" ? "Uploading…" : "↑ Upload a file"}
-            <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT}
-              onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
-          <span className="admin-cell-sub">PDF, slides, documents, sheets, e-books, images, audio, video, Scratch and code files, zip packs · up to 25 MB</span>
-        </div>}
-      </section>
-
-      <section className="cur-ed-sec" aria-label="Checks">
-        <div className="cur-ed-row cur-ed-row-between">
-          <h3 className="admin-h3">Checks</h3>
-          {!ro && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
-            title={aiEnabled ? "Drafts a summary, objectives and five checks from the title and lesson text" : "No AI provider is configured (Settings → AI)"}>
-            {busy === "ai" ? "Writing…" : f.body.trim().length < 80 ? "✦ Write the lesson with AI" : "✦ Draft checks with AI"}</button>}
+      {/* One bar, always in reach: where you are, what state it is in, and
+          the only two actions that matter. It used to be a back link at the
+          top and a save button somewhere in the middle of the page. */}
+      <header className="led-top">
+        <button type="button" className="led-back" onClick={onClose} aria-label="Back to all lessons">
+          <LedIcon name="back"/><span>All lessons</span>
+        </button>
+        <div className="led-ident">
+          <input className="led-title" value={f.title} disabled={ro} aria-label="Lesson title"
+                 onChange={e => set("title", e.target.value)} placeholder="Name this lesson"/>
+          <p className="led-sub">{isNew ? "New lesson" : unit.unitId + " · version " + unit.version + (unit.publishedAt ? " · published " + fmtDate(unit.publishedAt) : "")}</p>
         </div>
-        {!f.checks.length && <p className="admin-hint">No checks — the lesson completes when it is opened and submitted. Add questions, or draft them with the AI.</p>}
-        {f.checks.map((c, i) => (
-          <div key={c.checkId || i} className="cur-ed-check">
-            <div className="cur-ed-row">
-              <span className="cur-check-n">{i + 1}.</span>
-              <select className="admin-select" value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} aria-label="Question type" disabled={ro}>
-                {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
-              <input className="admin-input cur-ed-pts" type="number" min={1} max={20} value={c.points} onChange={e => setCheck(i, "points", e.target.value)} aria-label="Points" disabled={ro}/>
-              {c.source === "ai" && <span className="chip chip-gold" title="Written by the AI — read it before publishing">AI</span>}
-              {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove question " + (i + 1)} onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}>✕</button>}
-            </div>
-            <textarea className="admin-input" rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} placeholder="The question" aria-label="Question" disabled={ro}/>
-            {c.kind === "mcq" ? (
-              <div className="cur-ed-opts" role="radiogroup" aria-label="Options — choose the right one">
-                {c.options.map((o, k) => (
-                  <div key={k} className="cur-ed-opt">
-                    <input type="radio" name={"ans-" + i} checked={String(k) === String(c.answer)} onChange={() => setCheck(i, "answer", String(k))} aria-label={"Option " + (k + 1) + " is correct"} disabled={ro}/>
-                    <input className="admin-input" value={o} onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))} placeholder={"Option " + (k + 1)} disabled={ro}/>
-                    {!ro && c.options.length > 2 && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove option " + (k + 1)}
-                      onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}>✕</button>}
-                  </div>
-                ))}
-                {!ro && c.options.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCheck(i, "options", c.options.concat([""]))}>+ Option</button>}
-              </div>
-            ) : (
-              <div className="cur-ed-grid2">
-                <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)}
-                  placeholder={c.kind === "short" ? "A model answer (what full marks looks like)" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (optional — there is no right answer)" : "What a strong answer includes"} aria-label="Model answer" disabled={ro}/>
-                <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} placeholder="Rubric — what a marker should look for, and how the points are earned" aria-label="Rubric" disabled={ro}/>
-                <p className="admin-cell-sub cur-ed-markhint">{CUR_MARK_HINT[c.kind] || ""}</p>
-              </div>
-            )}
-          </div>
-        ))}
-        {!ro && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>+ Add a question</button>}
-      </section>
+        {!ro && <div className="led-act">
+          {canPublish
+            ? <label className="led-status">
+                <span className="sr-only">Status</span>
+                <select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}>
+                  <option value="draft">Draft — staff only</option>
+                  <option value="published">Published — members see it</option>
+                  <option value="retired">Retired</option>
+                </select>
+              </label>
+            /* Not a disabled select saying "Published" they cannot choose —
+               a control that cannot act is not left on the screen. */
+            : <span className="led-draftnote">Saves as a draft · a curriculum lead publishes it</span>}
+          <button className="btn btn-primary" disabled={!!busy} onClick={save}>
+            {busy === "save" ? "Saving…" : canPublish ? (isNew ? "Create lesson" : "Save lesson") : (isNew ? "Save for review" : "Save draft")}
+          </button>
+        </div>}
+      </header>
 
-      {!ro && <div className="cur-ed-foot">
-        <button className="btn btn-primary" disabled={!!busy} onClick={save}>{busy === "save" ? "Saving…" : isNew ? "Create lesson" : "Save lesson"}</button>
-        <span className="admin-cell-sub">{f.status === "published" ? "Members see it as soon as it is saved." : "Drafts are visible to staff only."}</span>
-      </div>}
+      <div className="led-work">
+        <div className="led-write">
+
+          {/* Who it is for, and where it sits. Three fields that are always
+              decided; the rest are folded away because they are almost always
+              already right. Nine fields in a row was the whole of the old
+              screen's first impression. */}
+          <section className="led-card" aria-label="Placement">
+            <div className={"led-row3" + (canPublish ? "" : " is-two")}>
+              <label className="led-f"><span>Who it is for</span>
+                <select className="admin-select" value={f.course} disabled={ro} onChange={e => set("course", e.target.value)}>
+                  <option value="">Whole Club — every member</option>
+                  {!!(divisions || []).length && <optgroup label="A whole division">
+                    {(divisions || []).map(dv => <option key={dv} value={dv}>{dv}</option>)}
+                  </optgroup>}
+                  <optgroup label="One course">
+                    {(f.course && !courses.includes(f.course) && !(divisions || []).includes(f.course) ? [f.course, ...courses] : courses)
+                      .map(c => <option key={c} value={c}>{c}</option>)}
+                  </optgroup>
+                </select></label>
+              <label className="led-f"><span>Week</span>
+                <input className="admin-input" type="number" min={1} max={104} value={f.week} disabled={ro} onChange={e => set("week", e.target.value)}/></label>
+              {/* Placing a lesson inside a week is a curriculum lead's act, and
+                  the server chooses it for anyone else — so for them the field
+                  cannot act, and is not drawn. */}
+              {canPublish && <label className="led-f"><span>Session in that week</span>
+                <input className="admin-input" type="number" min={1} max={50} value={f.position} disabled={ro} onChange={e => set("position", e.target.value)}/></label>}
+            </div>
+            <details className="led-more">
+              <summary>Level, length and pass mark</summary>
+              <div className="led-row3">
+                <label className="led-f"><span>Level</span>
+                  <input className="admin-input" value={f.level} disabled={ro} onChange={e => set("level", e.target.value)} placeholder="Year 1 · Foundation"/></label>
+                <label className="led-f"><span>Minutes</span>
+                  <input className="admin-input" type="number" min={0} max={600} value={f.durationMins} disabled={ro} onChange={e => set("durationMins", e.target.value)}/></label>
+                <label className="led-f"><span>Pass mark %</span>
+                  <input className="admin-input" type="number" min={0} max={100} value={f.passMark} disabled={ro} onChange={e => set("passMark", e.target.value)}/></label>
+              </div>
+            </details>
+          </section>
+
+          <section className="led-card" aria-label="Summary and objectives">
+            <label className="led-f"><span>The two sentences a member reads first</span>
+              <textarea className="admin-input" rows={2} value={f.summary} disabled={ro}
+                        onChange={e => set("summary", e.target.value)} placeholder="What this session is, in plain words."/></label>
+            <label className="led-f"><span>What they will be able to do — one per line</span>
+              <textarea className="admin-input" rows={3} value={f.objectives} disabled={ro}
+                        onChange={e => set("objectives", e.target.value)}
+                        placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
+            <p className="led-hint">These three become the exam's marking rubric, two marks each.</p>
+          </section>
+
+          /* THE OPENING REVIEW.
+           *
+           * Written HERE, with this lesson, by the person who knows what it
+           * taught — and sat at the START OF THE NEXT SESSION, a week later,
+           * before anything new is taught.
+           *
+           * Those are two different moments on purpose, and it is worth
+           * being plain about why, because the obvious design is to ask at
+           * the end of the hour. A test at the end measures the hour that
+           * just happened, with everything still in the room and still on
+           * the whiteboard. A test a week later measures what survived the
+           * week — and the act of pulling it back out of a cold memory is
+           * itself the thing that fixes it there.
+           *
+           * So the questions belong to THIS lesson, the sitting belongs to
+           * the next one, and an empty set is drawn as a problem because it
+           * means a week's teaching will never be asked about again. */
+          <section className={"led-card led-exam" + (f.checks.length ? "" : " is-missing")} aria-label="The opening review">
+            <h3 className="led-h">The opening review <span className="led-count">{f.checks.length}</span></h3>
+            <p className="led-hint">Written here, with this lesson. Your class sits it at the <b>start of the next session</b>, a week later, before anything new is taught.</p>
+            {/* The standard, named. An instructor writing by hand is held to
+                what the AI drafter is held to — the same map, one source. */}
+            {!!examRef && <p className="led-ref">
+              <b>{examRef.body}</b> assesses {f.course} by {examRef.assesses}. For a question here, {examRef.ask}.
+              {" "}<a href={examRef.link} target="_blank" rel="noopener noreferrer">{examRef.award}</a>
+            </p>}
+            {!f.checks.length ? null : !f.checks.some(c => c.kind !== "mcq") && (
+              <p className="led-warn"><LedIcon name="alert"/> Every question here is multiple choice. A week later that shows whether they can recognise an answer, not whether they can do it — add one that asks them to make, play or explain something. This will not publish as it is.</p>
+            )}
+            {!f.checks.length
+              ? <p className="led-warn"><LedIcon name="alert"/> No questions yet — so nothing from this session is ever asked about again. A week later your class walks into the next one with this one already fading.</p>
+              : <p className="led-hint">{f.checks.reduce((n, c) => n + (Number(c.points) || 1), 0)} marks · passes at {f.passMark}%</p>}
+            {/* A QUESTION IS A BLOCK, like everything else in this editor.
+                What was here was a form: a full-width native dropdown, a bare
+                number beside a bare ×, and two textareas whose placeholders
+                were doing the work of labels — so the lesson above was a
+                writing surface and the exam below it was a 2014 admin panel
+                on the same screen. Placeholders are not labels (they vanish
+                when you type, and a screen reader is left with nothing), so
+                every field here has one. */}
+            {f.checks.map((c, i) => {
+              const marking = CUR_MARK_HINT[c.kind] || "";
+              const kindLabel = (CUR_CHECK_KIND_OPTS.find(([k]) => k === c.kind) || [, c.kind])[1];
+              const badVideo = c.kind === "watch" && c.videoUrl && !curVideoEmbed(c.videoUrl);
+              return (
+                <article key={c.checkId || i} className={"lq" + (c.kind === "mcq" ? " is-mcq" : "")} aria-label={"Question " + (i + 1) + " — " + kindLabel}>
+                  <header className="lq-top">
+                    <span className="lq-n" aria-hidden="true">{i + 1}</span>
+                    <label className="lq-kind">
+                      <span className="sr-only">{"What question " + (i + 1) + " asks for"}</span>
+                      <select value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} disabled={ro}>
+                        {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                      </select>
+                    </label>
+                    <label className="lq-pts">
+                      <span>Marks</span>
+                      <input type="number" min={1} max={20} value={c.points}
+                             onChange={e => setCheck(i, "points", e.target.value)} disabled={ro}
+                             aria-label={"Marks for question " + (i + 1)}/>
+                    </label>
+                    {c.source === "ai" && <span className="lq-ai" title="Written by the AI — read it before publishing">AI</span>}
+                    {!ro && <button type="button" className="lq-del" aria-label={"Remove question " + (i + 1)}
+                      onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
+                  </header>
+
+                  <label className="lq-f lq-ask">
+                    <span>What you are asking</span>
+                    <textarea rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} disabled={ro}
+                              placeholder={c.kind === "watch" ? "What did her thumb do before the hand moved?" : "Ask it the way you would say it out loud"}/>
+                  </label>
+
+                  {c.kind === "mcq" ? (
+                    <div className="lq-opts">
+                      <span className="lq-label" id={"lqo-" + i}>The options — tick the right one</span>
+                      <ul role="radiogroup" aria-labelledby={"lqo-" + i}>
+                        {c.options.map((o, k) => {
+                          const right = String(k) === String(c.answer);
+                          return (
+                            <li key={k} className={"lq-opt" + (right ? " is-right" : "")}>
+                              <label className="lq-tick">
+                                <input type="radio" name={"ans-" + i} checked={right} disabled={ro}
+                                       onChange={() => setCheck(i, "answer", String(k))}
+                                       aria-label={"Option " + (k + 1) + " is the right answer"}/>
+                                <span aria-hidden="true"/>
+                              </label>
+                              <input className="lq-opt-text" value={o} disabled={ro}
+                                     onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))}
+                                     placeholder={"Option " + (k + 1)} aria-label={"Option " + (k + 1)}/>
+                              {!ro && c.options.length > 2 && <button type="button" className="lq-del" aria-label={"Remove option " + (k + 1)}
+                                onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}><LedIcon name="x"/></button>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {!ro && c.options.length < 8 && <button type="button" className="lq-add" onClick={() => setCheck(i, "options", c.options.concat([""]))}>Add an option</button>}
+                    </div>
+                  ) : (
+                    <div className="lq-mark">
+                      {/* Only a 'watch' question carries a video, and it must:
+                          a question about a film nobody was shown is a question
+                          nobody can answer, so it is refused on save. */}
+                      {c.kind === "watch" && (
+                        <label className="lq-f lq-video">
+                          <span>The video they watch</span>
+                          <input value={c.videoUrl || ""} inputMode="url" disabled={ro}
+                                 placeholder="https://www.youtube.com/watch?v=…"
+                                 aria-invalid={badVideo ? "true" : undefined}
+                                 aria-label={"Video for question " + (i + 1)}
+                                 onChange={e => setCheck(i, "videoUrl", e.target.value.trim())}/>
+                          {badVideo
+                            ? <em className="lq-bad" role="alert">That is not a YouTube or Vimeo link — the exam can only play those.</em>
+                            : <em className="lq-note">It plays inside the exam, so they never leave the question to find it.</em>}
+                        </label>
+                      )}
+                      <label className="lq-f lq-model">
+                        <span>{c.kind === "reflection" ? "What a thoughtful answer touches on" : "What full marks looks like"}</span>
+                        <textarea rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)} disabled={ro}
+                          placeholder={c.kind === "short" ? "The ideas it has to contain, in any wording"
+                            : c.kind === "reflection" ? "There is no right answer here — say what an honest one would mention"
+                            : c.kind === "watch" ? "Something only somebody who actually watched it could say"
+                            : "What a strong answer includes"}/>
+                      </label>
+                      <label className="lq-f lq-rubric">
+                        <span>How the marks are earned</span>
+                        <textarea rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} disabled={ro}
+                          placeholder={"Up to " + (Number(c.points) || 1) + ": what earns each one"}/>
+                      </label>
+                      {!!marking && <p className="lq-hint">{marking}</p>}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!ro && <div className="led-add">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>Add a question</button>
+              {!!api.ai && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
+                title={aiEnabled ? "Drafts a summary, objectives and five review questions from the title and the lesson" : "No AI provider is configured (Settings → AI)"}>
+                {busy === "ai" ? "Writing…" : f.body.trim().length < 80 ? "Write the lesson with AI" : "Draft the review with AI"}</button>}
+            </div>}
+          </section>
+
+          <section className="led-card led-card-wide" aria-label="The lesson">
+            <h3 className="led-h" id="led-lesson-h">The lesson</h3>
+            <LessonBlockEditor value={f.body} onChange={v => set("body", v)} readOnly={ro} labelledBy="led-lesson-h"
+                               onUpload={async (file) => {
+                                 try { const r = await api.upload(file); return r.url; }
+                                 catch (e) { toast.error(e.code === "too_large" ? "That image is over 25 MB." : humanizeError(e.code, e.code)); return ""; }
+                               }}/>
+          </section>
+
+          <section className="led-card" aria-label="Materials">
+            <h3 className="led-h">Materials <span className="led-count">{f.materials.length}</span></h3>
+            {!f.materials.length && <p className="led-hint">Nothing attached. Lessons work without materials — a link or a worksheet is a bonus, not a requirement.</p>}
+            {f.materials.map((m, i) => (
+              <div key={i} className="led-mat">
+                <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label={"Material " + (i + 1) + " title"} placeholder="What it is" disabled={ro}/>
+                <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label={"Material " + (i + 1) + " link"} placeholder="https://…" disabled={ro}/>
+                <span className="chip">{m.kind || "link"}</span>
+                {!ro && <button type="button" className="led-x" aria-label={"Remove " + (m.title || "material " + (i + 1))}
+                  onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}><LedIcon name="x"/></button>}
+              </div>
+            ))}
+            {!ro && <div className="led-add">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>Add a link</button>
+              <label className="btn btn-ghost btn-sm led-upload">{busy === "upload" ? "Uploading…" : "Upload a file"}
+                <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT}
+                  onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
+              <span className="led-hint">Documents, sheets, images, audio, video, code · up to 25 MB</span>
+            </div>}
+          </section>
+
+        </div>
+
+        {/* There was a live copy of the member's page here, beside the text.
+            It is gone because the editor now DRAWS the lesson rather than its
+            markup — a heading is a heading and the piano is the piano — so a
+            second rendering of the same words showed nothing the first one
+            did not, and re-ran the whole renderer on every keystroke.
+            What the rail holds instead is the part the writing surface
+            genuinely cannot show you: whether the lesson meets the standard
+            the programme asks of it. */}
+        <aside className="led-see" aria-label="How this lesson is shaping up">
+          <CurriculumShape f={f}/>
+        </aside>
+      </div>
     </div>
   );
 }
 
-/* A CSV parser that understands quotes — a cell holding "Lagos, Nigeria" or
-   a line break stays one cell. The Summer import splits on commas and shifts
-   every column after the first quoted comma; this is the version that doesn't. */
 function curriculumParseCsv(text) {
   const rows = []; let row = [], cell = "", q = false;
   const s = String(text || "").replace(/^﻿/, "");
@@ -2561,9 +2823,14 @@ function CurriculumSchedule({ onSaved }) {
   return (
     <details className="cur-sched" open={!!startOpen}>
       <summary>Deadlines, reminders and fines{s.startDate ? " — term began " + s.startDate : " — not set: nothing is due yet"}</summary>
-      <p className="admin-hint">A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
+      <p className="admin-hint">With the review on, a member opening a session sits the previous session&rsquo;s questions first, from memory, before today&rsquo;s teaching — they can always skip to the lesson. A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
       <div className="admin-fields cur-sched-grid">
         <label className="admin-field admin-field-check"><input type="checkbox" checked={!!s.enabled} onChange={e => set("enabled", e.target.checked)}/><span>Deadlines on</span></label>
+        {/* The opening review, on or off for the whole Club. On is the
+            programme's position; off is for a short holiday course, or a
+            term whose rota has nobody to mark. The questions stay on the
+            lessons either way — only the sitting moves. */}
+        <label className="admin-field admin-field-check"><input type="checkbox" checked={s.reviewAtStart !== false} onChange={e => set("reviewAtStart", e.target.checked)}/><span>Open each session with last week&rsquo;s review</span></label>
         <label className="admin-field"><span>Term starts</span><input type="date" className="admin-input" value={s.startDate || ""} onChange={e => set("startDate", e.target.value)}/></label>
         <label className="admin-field"><span>Remind from (days before due)</span><input type="number" min={0} max={30} className="admin-input" value={s.remindBeforeDays} onChange={e => set("remindBeforeDays", Number(e.target.value))}/></label>
         <label className="admin-field"><span>Remind every (days)</span><input type="number" min={1} max={30} className="admin-input" value={s.remindEveryDays} onChange={e => set("remindEveryDays", Number(e.target.value))}/></label>

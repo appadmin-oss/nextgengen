@@ -32,6 +32,12 @@ const MEMBER_REQUEST_KINDS = [
     'payment' => 'Payment made',
     'appeal'  => 'Appeal a charge',
     'leave'   => 'Leave of absence',
+    /* Academic leave: weeks away for school exams or a school programme,
+       approved by the desk with the school's letter where there is one. Its
+       days are not absences — not logged, not fined, and not counted against
+       the absence limit — unlike a leave of absence, which excuses an absence
+       but still counts. */
+    'academic' => 'Academic leave',
     'idcard'  => 'Replacement ID card',
     /* The member portal's profile is read-only ("Managed by NGG"): a wrong
        name, school or guardian number is asked for here, checked with the
@@ -44,6 +50,13 @@ const MEMBER_REQUEST_KINDS = [
        child sent — "something happened at school" — was refused. Raised only
        through member_feedback_create(), never member_request_create(). */
     'feedback' => 'Idea or feedback',
+    /* Raised by a parent through the family account only (FAMILY_REQUEST_KINDS):
+       a question for the mentor, a change to the family's own details, and a
+       change to who may collect the child. Profile and collectors are
+       read-only to a family, so these are how they change. */
+    'askmentor'     => 'Question for the mentor',
+    'familydetails' => 'Change family details',
+    'collect'       => 'Change who can collect',
 ];
 
 /** What a piece of feedback is about, and what the desk sees for each. */
@@ -60,6 +73,67 @@ const MEMBER_FEEDBACK_OPEN_MAX = 6;
 const MEMBER_FEEDBACK_MIN = 6;
 
 const MEMBER_REQUEST_STATUSES = ['open', 'approved', 'declined', 'withdrawn'];
+
+/* Absences, as the policy engine already counts them (docs/POLICY.md §1.1:
+ * "Maximum two (2) absences for the whole program … valid, verified
+ * emergencies only"). The allowance is the member band's `absenceLimit`
+ * (Settings → Policy, 2 by default) and the count is the engine's own
+ * (policy_state: absences logged, two half-days as one). A leave request is
+ * an absence announced in advance, so its programme days still ahead count
+ * too — or several could be filed at once and all approved. */
+
+/** The member's programme days from $from to $to — their centre's meeting days, on the calendar when it is set. */
+function member_excuse_days(array $m, string $from, string $to): array {
+    if ($from === '' || $to === '' || $from > $to) return [];
+    $cfg = function_exists('member_calendar_for') ? member_calendar_for($m) : [];
+    if (!empty($cfg['enabled']) && function_exists('programme_days_between')) return programme_days_between($from, $to, $cfg);
+    // No calendar set: the meeting weekdays (Saturday by default), so a weekday is not a programme absence.
+    $wd = array_map('intval', (array)($cfg['weekdays'] ?? [])) ?: [6];
+    $out = [];
+    for ($t = (int)strtotime($from . ' 00:00:00 UTC'), $end = (int)strtotime($to . ' 00:00:00 UTC'), $i = 0; $t <= $end && $i < 400; $t += 86400, $i++) {
+        if (in_array((int)gmdate('N', $t), $wd, true)) $out[] = gmdate('Y-m-d', $t);
+    }
+    return $out;
+}
+
+/** The longest academic leave one request may cover, in days (a school's exam season, not a term out). */
+const MEMBER_ACADEMIC_MAX_DAYS = 70;
+
+/**
+ * What covers a member's absence on $date: 'academic' (approved academic
+ * leave — not an absence), 'approved' (excused), 'open' (asked, not yet
+ * decided — no fine until it is), 'declined' (asked and refused), or ''
+ * (nobody asked). The strongest cover wins when requests overlap.
+ */
+function member_absence_cover(string $memberId, string $date): string {
+    $best = '';
+    $rank = ['' => 0, 'declined' => 1, 'open' => 2, 'approved' => 3, 'academic' => 4];
+    foreach (db_all("SELECT kind, status FROM member_requests WHERE memberId = ? AND kind IN ('leave', 'academic') AND status IN ('open', 'approved', 'declined')
+                     AND fromDate <> '' AND fromDate <= ? AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [$memberId, $date, $date]) as $r) {
+        $c = (string)$r['status'] === 'approved' && (string)$r['kind'] === 'academic' ? 'academic' : (string)$r['status'];
+        if ($rank[$c] > $rank[$best]) $best = $c;
+    }
+    return $best;
+}
+
+/** {used, max, left, recorded, ahead, days[]}: the engine's absences plus the days still ahead on open or approved leave. */
+function member_excuses(array $m): array {
+    $today = function_exists('attendance_today') ? attendance_today() : gmdate('Y-m-d');
+    $st = function_exists('policy_state') ? policy_state((string)$m['memberId'], 'member') : ['absences' => 0, 'absenceLimit' => 2];
+    $limit = (int)($st['absenceLimit'] ?? (function_exists('policy_for') ? (int)policy_for('member')['absenceLimit'] : 2));
+    $recorded = (int)($st['absences'] ?? 0);
+    $logged = array_flip(array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND (voidedAt IS NULL OR voidedAt = '')", [(string)$m['memberId']]), 'date'));
+    $ahead = [];
+    foreach (db_all("SELECT fromDate, toDate FROM member_requests WHERE memberId = ? AND kind = 'leave' AND status IN ('open', 'approved') AND fromDate <> ''
+                     AND (CASE WHEN toDate = '' THEN fromDate ELSE toDate END) >= ?", [(string)$m['memberId'], $today]) as $r) {
+        $to = (string)$r['toDate'] !== '' ? (string)$r['toDate'] : (string)$r['fromDate'];
+        foreach (member_excuse_days($m, max((string)$r['fromDate'], $today), $to) as $d) if (!isset($logged[$d])) $ahead[$d] = true;
+    }
+    $used = $recorded + count($ahead);
+    $fine = function_exists('policy_enabled_for') && policy_enabled_for('member') ? (int)(policy_for('member')['absenceFine'] ?? 0) : 0;
+    return ['used' => $used, 'max' => $limit, 'left' => max(0, $limit - $used), 'recorded' => $recorded, 'ahead' => count($ahead), 'days' => array_keys($ahead),
+            'fine' => $fine];   // ₦ for an absence nobody asked about; 0 when member enforcement is off
+}
 
 /** Body length. Long enough to explain a circumstance, short enough that the
  *  column is a request and not a correspondence archive. */
@@ -231,6 +305,8 @@ function member_records(array $p): array
                     'revoked' => trim((string)($c['revokedAt'] ?? '')) !== ''];
     }
 
+    // A day with no sign-out was counted absent by the rule: say so, not "present".
+    $incomplete = array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence' AND note LIKE 'Incomplete%' AND (voidedAt IS NULL OR voidedAt = '')", [$id]), 'date', 'date');
     $present = count($days);
     return ['ok' => true, 'attendance' => [
         'present' => $present,
@@ -244,7 +320,7 @@ function member_records(array $p): array
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),
             'out' => substr((string)($d['checkOutAt'] ?? ''), 11, 5),
             'method' => (string)($d['method'] ?? ''),
-        ], $days),
+        ] + (isset($incomplete[(string)$d['date']]) ? ['status' => 'no sign-out, counted absent'] : []), $days),
     ], 'certificates' => $certs, 'member' => [
         'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
         'centre' => (string)($m['centre'] ?? ''), 'level' => (string)($m['level'] ?? ''),
@@ -260,8 +336,11 @@ function member_requests_list(array $p): array
     $id = (string)($p['memberId'] ?? '');
     if ($id === '') return ['ok' => false, 'error' => 'not_found'];
     $rows = db_all('SELECT * FROM member_requests WHERE memberId = ? ORDER BY id DESC LIMIT ' . MEMBER_REQUEST_PAGE, [$id]);
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     return ['ok' => true, 'requests' => array_map('member_request_public', $rows),
-            'kinds' => MEMBER_REQUEST_KINDS];
+            'kinds' => MEMBER_REQUEST_KINDS,
+            // Excused absences this session, of the two allowed (POLICY §1.1).
+            'excuses' => $m ? array_diff_key(member_excuses($m), ['days' => 1]) : null];
 }
 
 /**
@@ -281,6 +360,12 @@ function member_request_create(array $p): array
     $kind = (string)($p['kind'] ?? '');
     if (!isset(MEMBER_REQUEST_KINDS[$kind])) return ['ok' => false, 'error' => 'unknown_kind'];
     if ($kind === 'feedback') return member_feedback_create($p);
+    /* A payment is confirmed by the parent who made it, from the family
+       account. From their own app a member asks their parent instead
+       (member_family_nudge): a child is not the one who knows the reference. */
+    if ($kind === 'payment' && !empty($p['fromMember'])) {
+        return ['ok' => false, 'error' => 'ask_parent', 'detail' => 'Your parent confirms a payment from their family account. Ask them from Money → Ask my parent.'];
+    }
 
     $open = (int)(db_row("SELECT COUNT(*) c FROM member_requests WHERE memberId = ? AND kind = ? AND status = 'open'",
                          [$id, $kind])['c'] ?? 0);
@@ -316,17 +401,42 @@ function member_request_create(array $p): array
         $u = trim((string)($p['proofUrl'] ?? ''));
         $row['proofUrl'] = preg_match('#^https?://#i', $u) || str_starts_with($u, '/api/public/photo.php') ? $u : '';
         if ($row['subject'] === '') $row['subject'] = 'Payment of ' . fees_money_text($amount);
+    } elseif ($kind === 'academic') {
+        $row['fromDate'] = substr(trim((string)($p['fromDate'] ?? '')), 0, 10);
+        $row['toDate'] = substr(trim((string)($p['toDate'] ?? '')), 0, 10);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['fromDate']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['toDate'])) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'Academic leave needs a first and a last day.'];
+        if ($row['toDate'] < $row['fromDate']) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'The last day can’t be before the first.'];
+        $span = (int)((strtotime($row['toDate']) - strtotime($row['fromDate'])) / 86400) + 1;
+        if ($span > MEMBER_ACADEMIC_MAX_DAYS) return ['ok' => false, 'error' => 'too_long', 'detail' => 'Academic leave covers at most ' . intdiv(MEMBER_ACADEMIC_MAX_DAYS, 7) . ' weeks at a time. Ask again for the rest.'];
+        if (mb_strlen($body) < 10) return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say what it is for — the exams or the school programme, and the school.'];
+        $u = trim((string)($p['proofUrl'] ?? ''));
+        $row['proofUrl'] = preg_match('#^https?://#i', $u) || str_starts_with($u, '/api/public/photo.php') ? $u : '';
+        if ($row['subject'] === '') $row['subject'] = 'Academic leave from ' . $row['fromDate'] . ' to ' . $row['toDate'];
     } elseif ($kind === 'leave') {
         $row['fromDate'] = substr(trim((string)($p['fromDate'] ?? '')), 0, 10);
         $row['toDate'] = substr(trim((string)($p['toDate'] ?? '')), 0, 10);
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $row['fromDate'])) return ['ok' => false, 'error' => 'bad_dates', 'detail' => 'When does the leave start?'];
         if ($row['toDate'] !== '' && $row['toDate'] < $row['fromDate']) [$row['fromDate'], $row['toDate']] = [$row['toDate'], $row['fromDate']];
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, so the desk can answer without asking.'];
+        /* The allowance: two excused absences a session, counted in programme
+           days. A request that would take it past two is refused whole, with
+           what is left, rather than half-granted by the desk later. */
+        $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]) ?: $m;
+        $asked = member_excuse_days($full, $row['fromDate'], $row['toDate'] !== '' ? $row['toDate'] : $row['fromDate']);
+        if (!$asked) return ['ok' => false, 'error' => 'no_programme_day', 'detail' => 'There is no NGG day between those dates, so there is nothing to excuse.'];
+        $ex = member_excuses($full);
+        $new = array_values(array_diff($asked, $ex['days']));
+        if ($ex['used'] + count($new) > $ex['max']) {
+            return ['ok' => false, 'error' => 'excuse_limit', 'excuses' => array_diff_key($ex, ['days' => 1]),
+                'detail' => 'Only ' . $ex['max'] . ' absences are allowed in the programme, and ' . $ex['used'] . ' ' . ($ex['used'] === 1 ? 'is' : 'are') . ' already counted. '
+                    . ($ex['left'] ? 'These dates cover ' . count($new) . '.' : 'There are none left.') . ' Speak to the centre if this is an emergency.'];
+        }
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
-    } elseif (in_array($kind, ['details', 'mentor', 'help'], true)) {
-        if (mb_strlen($body) < 6) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
+    } elseif (in_array($kind, ['details', 'mentor', 'help', 'askmentor', 'familydetails', 'collect'], true)) {
+        if (mb_strlen($body) < (in_array($kind, ['askmentor', 'familydetails', 'collect'], true) ? 5 : 6)) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
             'details' => 'Say what is wrong and what it should be.', 'mentor' => 'Say what is not working, so the coordinator can help.',
-            'help' => 'Tell us what happened.'][$kind]];
+            'help' => 'Tell us what happened.', 'askmentor' => 'Write your question first.', 'familydetails' => 'Say what has changed.',
+            'collect' => 'Give the name, how they are related and their phone number.'][$kind]];
         if ($row['subject'] === '') $row['subject'] = MEMBER_REQUEST_KINDS[$kind];
     } elseif ($kind === 'appeal') {
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'An appeal needs the reason it is being appealed.'];
@@ -731,6 +841,18 @@ function admin_request_decide(array $p): array
     }
 
     db_update('member_requests', $patch, ['id' => (int)$r['id']]);
+    /* An absence request decides a fine that was being held (policy_apply's
+       absence rule): declined, the absences it covered are fined now; approved,
+       they are not. Approved academic leave goes further — its days were never
+       the member's to attend, so absences already logged on them are voided,
+       which lifts anything they caused. */
+    if (in_array((string)$r['kind'], ['leave', 'academic'], true) && (string)$r['memberId'] !== '' && function_exists('policy_apply')) {
+        if ($approve && (string)$r['kind'] === 'academic') {
+            db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = ? WHERE personId = ? AND kind IN ('absence', 'no_checkout') AND date >= ? AND date <= ? AND (voidedAt IS NULL OR voidedAt = '')",
+                [now_iso(), $by, 'Academic leave ' . $rid . ' approved', (string)$r['memberId'], (string)$r['fromDate'], (string)($r['toDate'] ?: $r['fromDate'])]);
+        }
+        policy_apply((string)$r['memberId'], 'member');
+    }
     audit('member.request.' . ($approve ? 'approve' : 'decline'), $by, $rid,
           ['kind' => (string)$r['kind'], 'memberId' => (string)$r['memberId'],
            'ledgerEntryId' => (string)($patch['ledgerEntryId'] ?? '')], (string)($p['ip'] ?? ''));

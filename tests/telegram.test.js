@@ -63,7 +63,7 @@ const hook = (secret, body) => fetch(BASE + '/api/hooks/telegram.php', { method:
     if (!chromium) { console.log('⏭  browser half skipped (playwright not installed)'); }
     else {
       const d = fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-      browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/' + d + '/chrome-linux/chrome' });
+      browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || require('./_responsive-probe').chromiumPath(require('fs')) });
       const p = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
       const errs = []; p.on('pageerror', e => errs.push(String(e).slice(0, 200)));
       await p.goto(BASE + '/telegram', { waitUntil: 'domcontentloaded' });

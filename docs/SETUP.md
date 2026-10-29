@@ -150,9 +150,9 @@ have their own addresses, so a member can be sent straight to one:
 
 | | |
 |---|---|
-| `/dashboard/account` | The statement: every line with a running total, and "I've made a payment" |
+| `/dashboard/account` | The statement: every line with a running total, and "Ask my parent" (the parent pays, or confirms a payment, from /family) |
 | `/dashboard/records` | Attendance, the rate (withheld if no term calendar is set), certificates |
-| `/dashboard/requests` | Payment claims, appeals, leave, replacement ID — and what the desk replied |
+| `/dashboard/requests` | Appeals, leave, replacement ID — and what the desk replied (payment claims come from the parent's family account) |
 
 What a member raises lands in **Control Room → People → Member requests**.
 Approving a payment claim posts it through the ordinary ledger path, so money
@@ -388,18 +388,30 @@ image bytes out of your database backups.
 
 ### AI providers and the analyst panel
 
-Five providers are supported and every one is optional: **Groq**, **Google
-Gemini**, **Anthropic**, **OpenAI** and **OpenRouter**. Keys can be entered in
-Control Room → System → Service keys or in `api/config.php` (`ai.openai_api_key`,
-`ai.openai_model`, default `gpt-4.1-mini`; reasoning models such as `o4-mini`
-or `gpt-5-mini` work too). Anything you leave blank is skipped,
-and each acts as a fallback for the others — one exhausted key costs speed, not
-capability. With none set, every AI feature degrades to deterministic behaviour
-and says so; nothing invents an answer.
+Eleven providers are supported and every one is optional. Keys can be entered
+in Control Room → System → Service keys or in `api/config.php`. Anything you
+leave blank is skipped, and **each acts as a fallback for the others** — one
+exhausted key costs speed, not capability. With none set, every AI feature
+degrades to deterministic behaviour and says so; nothing invents an answer.
 
-OpenRouter is worth a key on its own: one credential reaches hundreds of models
-from every major lab, so trying a different model is a config line rather than a
-deploy.
+| Provider | Config key | Free tier | Worth knowing |
+|---|---|---|---|
+| **Groq** | `ai.groq_api_key` | yes | Fast, generous, the sensible first key |
+| **Google Gemini** | `ai.gemini_api_key` | yes | Leave the model blank and the best one the key can use is asked of Google |
+| **Cerebras** | `ai.cerebras_api_key` | yes | The fastest of these by a distance |
+| **Mistral** | `ai.mistral_api_key` | yes | European, good at the smaller sizes |
+| **Together AI** | `ai.together_api_key` | yes | Free Llama 70B, useful where a bigger model matters |
+| **GitHub Models** | `ai.github_api_key` | yes | A GitHub personal access token is the key |
+| **Anthropic** | `ai.anthropic_api_key` | no | The capable tier; required for marking open answers |
+| **OpenAI** | `ai.openai_api_key` | no | Default `gpt-4.1-mini`; reasoning models such as `o4-mini` work too |
+| **DeepSeek** | `ai.deepseek_api_key` | no | Inexpensive |
+| **OpenRouter** | `ai.openrouter_api_key` | some | One credential reaches hundreds of models from every major lab, so trying a different one is a config line rather than a deploy |
+| **Self-hosted / other** | `ai.custom_base_url` | — | Anything speaking the OpenAI chat-completions shape: llama.cpp, Ollama, a university endpoint. No key needed |
+
+Six of the eleven have a free tier that does not expire into a card, which is
+what a programme running on shared hosting actually needs. **Set two or three
+of those** rather than one: the fallback chain is what keeps a feature working
+on the afternoon one provider is rate-limiting.
 
 **Analytics → Level 7 · Analyst panel** is the one feature that uses several
 models at once. Four lenses (mechanism, action, scepticism, equity) read the same
@@ -614,6 +626,25 @@ due. If you wire the host cron you can switch the web-cron off in `config.php`:
 ```php
 'webcron' => ['enabled' => false],
 ```
+
+## The bundled curriculum
+
+NGG's own courses ship with the code, in `api/_lib/seeds/curriculum-*.json`,
+and seed themselves into live, published lessons on the first request after a
+deploy. Each file is imported once, nothing already in `curriculum_units` is
+touched, and a lesson somebody else put at the same week and position stays
+theirs.
+
+That is right for NGG and wrong for anyone running this codebase for a
+different programme, or for a deployment that imports its own curriculum and
+does not want several hundred lessons arriving unasked. Decline them:
+
+```php
+'seed_bundled_curriculum' => false,
+```
+
+Absent, they seed. Already-seeded lessons are not removed by setting it — it
+stops the next file from loading, it does not undo the last one.
 
 Note the one thing neither path can do: a gate set to rotate but with **no
 notification address** is never rolled unattended — it is reported as due and

@@ -3008,6 +3008,1148 @@ Open decisions for the owner:
 - Do Media Lab and Practical Coding join the catalogue (Media, Technology), or do their lessons move under existing courses?
 - Until confirmed, do children see their proposed courses marked unconfirmed (recommended), or nothing?
 
+## The Control Room on a phone: old panels rebuilt, not reskinned (2026-10-25)
+
+The owner's reading: "the control room is not phone first — just build a mobile version." The new
+Control Room (`src/modules/control/`) already had a phone tree (app bar, page pills, tab bar, blocks
+that draw as lists). What was not mobile was everything mounted through `CrPanelMount`: twenty-five
+`page-admin.jsx` panels drawing their desktop layout inside the phone shell, in the old UI's look.
+
+- **Rebuilt as blocks (mobile by construction):** Centres, Families, Accounts (People); Companion
+  check-ins (Mentors & volunteers); Announcements and Newsletter (Announcements). Same ops, same
+  guards and refusals, same words. Centres' map and Summer-venue editors are real widgets and stay as a
+  `custom` block on their own sub-page (`/control/members/centres/<id>/map`).
+- **Still mounted (next):** Data quality, ID cards, Sign-in security, Anchor,
+  Timetable, Curriculum, Mentors, Pairings, Volunteers, Threads, Site, Status pages, Forms,
+  Promotions, Quote of the week, Summer. Until each is rebuilt, `.cr-app .cr-panel` in styles-app.css
+  draws the old classes with the new components' exact values, and on a phone long panel intros fold
+  to three lines (`crFoldHints`, cr-ui.jsx).
+- **Shell and blocks fixed on the way:** the drawer dropped `list` sections on a phone (now one
+  renderer, `crDrawerSec`, with optional per-row actions); KPI columns follow the count (no holes); the
+  phone KPI panel is one joined box at half the height; the secondary-actions row could be crushed by a
+  tall page (`flex-shrink: 0`); `.cr-app :where(button…)` stops the colour reset beating
+  `.cr-btn.is-primary` and the selected page tab (ink on ink, 1.00:1).
+- **A server fault found on the way:** `admin_broadcast` knew two centres by name, and stamped any other
+  audience '' — which the feed reads as everyone, while email went to every active member. One resolver
+  now (`admin_broadcast_audience`): everyone, a programme, or a real centre; anything else is refused.
+- **Server tables in a native tab:** build the `server` object in `load`, never in `blocks()` — a table
+  refetches when `server` changes identity, so one made per render never leaves its skeleton.
+- **Second pass, same day:** Sessions, Missions (Learning) and Posts (Content) rebuilt as blocks.
+  Sessions keeps the year in the address (`/control/learning/sessions/2027`); changing year fetches
+  and sets the tab's data, because `useCrLoad` memoises `load` with the first render's ctx and so
+  sees a deep-linked year but never one picked afterwards. Missions' "return for another pass" asked
+  for feedback through `window.prompt`, which a phone draws as a system dialog with no room to write;
+  it is a form now. Posts opens each post from the server (`admin.posts.get`) before editing, so the
+  editor holds the stored body rather than a list row's excerpt.
+
+## Nothing on the site is invented: members say it themselves (2026-10-26)
+
+The home page carried four testimonials attributed to named people — a
+fifteen-year-old from Egbeda, a parent, a mentor of four years. Nobody said
+any of them. They were written to show what the section would look like and
+they shipped to a live site about real children. Six "media items" were the
+same, one of them claiming 12.4k views.
+
+Both are gone (`data.js` keeps the empty constants and the reason). What
+replaces the first is the real thing: **at the end of every session a member
+is asked, in one line, what today gave them** (`domain/testimonials.php`,
+migration 180, `DashSessionSay` on the lesson page). Over a term that is a
+record of what the programme did for somebody, in their own words, written the
+day it happened rather than reconstructed for a funder eighteen months later.
+
+The rules ARE the feature, and each one is a test in `api/tests/run.php`:
+
+1. **Private until a person decides otherwise.** Nothing a child writes
+   reaches the public site because they wrote it.
+2. **The child chooses how they are signed**, and the quietest option is the
+   default: initials and age, first name and age, or not named. A full name is
+   not on the list. The byline is **derived on every read**, never stored, so
+   a change of mind actually changes it.
+3. **Publishing asks the consent ledger** — `consent_may_publish()`, the same
+   gate that decides whether a child may be named anywhere else on the public
+   site. Not a second consent flag of this feature's own, which is how the
+   community showcase once ended up with no gate at all. Read live, so
+   withdrawing the consent takes the words down on the next request.
+4. **It is never required.** Skipping is a press; nothing depends on it.
+5. **The member can take it back**, published or not, by clearing the box.
+   Consent that cannot be withdrawn was not consent.
+
+Publishing is a **`content`** act, not a curriculum one: the Club coordinator
+who runs the lessons can read the queue and cannot put anything on the site.
+The queue is **Inbox → Testimonials**, a source in `cr-tab-inbox.jsx` — and
+where there is no consent it draws **no Publish button at all** rather than one
+that refuses (CLAUDE.md §11).
+
+Three repo guards caught this work on the way in, which is what they are for:
+a cache topic that named an op the shipped `config.example.php` did not cache;
+a new table with a `memberId` that had not said what a member-merge does to it;
+and a new table carrying a centre name that was not in `CENTRE_NAME_TABLES`.
+A fourth was found by the suite rather than a guard: the first cut invented a
+`members.visibilityConsent` column, which exists on `applications` and
+`volunteers` and has never existed on `members`.
+
+## Family Portal v3 (2026-10-26)
+
+The handoff `design_handoff_family_portal_v3` (README, SCREENS, UX_SPEC,
+API_DATA) built on live data. `/family` is now `src/modules/family3/`: the
+design compiled (`fp3-view.jsx` from `docs/design/portals/family-portal-v3.dc.html`),
+an adapter from the real reads (`fp3-data.jsx`) and the design's logic ported
+onto them (`fp3-app.jsx`). `page-family.jsx` is a one-line wrapper; the v2
+screens are gone. `fp3-subs.json` is the reviewable list of every change made
+to the design's markup.
+
+- **Server** (`domain/family-portal.php`, migration 180): `family.ward` gains
+  the Leadership Index (the mentor's, never the child's self-score), school
+  results per term with the plan only once a mentor approved it, collectors,
+  consents, the mentor's free times, a booked meeting, and `fees3` — the Fees
+  page worked out on the server (the client adds no money up). New ops:
+  `family.inbox`, `family.report.sign`, `family.plan.sign` (a `plan_acks` row
+  the mentor sees), `family.results.remind` (once a day), `family.results.upload`
+  (a photo through the family's own piece store, `api/family/upload-chunk.php`),
+  `family.events` / `family.rsvp` (`guardian_rsvps`, the family's own row),
+  `family.mentor.book` (`mentor_slots`; the claim is the UPDATE). Request kinds
+  `askmentor`, `familydetails`, `collect`. `family.profile` now answers 403
+  `read_only`. Jobs: the monthly report and the event / meeting reminders in
+  `webcron.php`.
+- **Found on the way:** `family.ward`'s appealable charges filtered the ledger
+  on `direction = 'debit'`, which nothing writes, so a parent was never offered
+  a charge to appeal. It reads `'charge'` and leaves the training place out.
+- **Deviations from the handoff, deliberately:** the phone's top is one bar
+  (child switcher, a bell for what needs you, the account) instead of a logo row
+  plus a switcher card, and the page header no longer repeats the child; the
+  sub-tabs stay pinned while a section scrolls; the active bottom tab is an ink
+  icon and label with a short gold rule, not a gold blob; Today's account card
+  is a status chip, one full-width Pay, the facts as a list and the statement as
+  its last row; the report upload takes a photo, not a PDF (this host's family
+  path stores images), and has no `capture` so a parent can pick the photo the
+  school sent on WhatsApp; a day with no class says "No class today" rather
+  than "Not in yet"; every control in the page is 44px on a touch screen.
+- **Collectors in the Control Room:** a member's drawer shows *Who can collect*
+  and *Who can collect…* edits the list (one per line), through
+  `admin.member.collectors` — `people`, centre-scoped.
+- **Still to build:** the mentor portal's "times
+  families can book" (`member.mentor.slots` / `slotAdd` / `slotRemove` exist).
+  Until mentors publish times, a family's *Book a meeting* says there are none
+  and offers *Ask a question*.
+
+- **Correction, same day (owner):** an absence needs a reason, from a parent as
+  from a member. The family sheet asks *Why {child} will be away* and refuses an
+  empty one; the server no longer fills in "No reason given". The handoff's
+  "reason (optional)" is overruled.
+
+## Absences: a count, a fine, a review, and academic leave (2026-10-26)
+
+The owner's rules, built on the policy engine rather than beside it:
+
+- **The count is the engine's.** The allowance is the member band's
+  `absenceLimit` (two) and "used" is `policy_state`'s absences plus programme
+  days still ahead on open or approved leave (`member_excuses`, member-self.php).
+  A leave request past the limit is refused (`excuse_limit`) with what is left;
+  the family app and the member portal show "N of 2".
+- **An unasked absence is fined**, once per day, at the new member-band setting
+  `absenceFine` (₦1,000 default, Settings → Policy). `member_absence_cover()`
+  decides: an OPEN request holds the fine until the desk decides; approved
+  excuses it; declined or withdrawn fines it. `admin_request_decide` re-runs
+  `policy_apply` so a decision takes effect at once.
+- **Academic leave** (`academic` request kind, ≤ 70 days, reason required,
+  optional school letter): approved, the sweep skips its days, absences already
+  logged on them are voided, and they never count towards the limit.
+- An absence always needs a reason (the handoff's "optional" is overruled).
+
+## Supervision notes: the last fixed row on My role (2026-10-26)
+
+The owner's screenshot of *My role* ("Support NGGC projects and activities ·
+None assigned") was answered by the projects work (76c641ab). The same list had
+one more row that read fixed text: *Feedback received professionally* always
+said "Up to date", and `mentor_supervision.feedback` / `feedbackAt` were read
+but nothing ever wrote them.
+
+- `member.mentor.supervision.record` (mentor-portal.php, action
+  `supervisionRecord`): a lead or coordinator, for a mentor in `mp_team_rows`,
+  writes the feedback (10+ characters) and up to five agreed points
+  (`MP_SUPERVISION_AGREED_MAX`). It closes the open booking — `onDate` becomes
+  the day it was written if that is earlier than booked — or records a
+  supervision held without one. The mentor is notified; Academy-gated like the
+  portal's other saves.
+- `member_mp_role`: the coming supervision is one not yet written up; "agreed
+  last time" includes one written up today.
+- `member_mp_team`: `booked` now means an open booking (any date, not yet
+  written up), with `bookedOn` and `notesAt`; the Mentors row's button is
+  *Book supervision* or *Write up supervision* (`Mp15SupNotes`).
+- The `feedback` commitment row is derived: "No supervision written up yet",
+  or "Last supervision notes {date}", amber after 120 days.
+- Tests: PHP "supervision notes: …" (7 checks); mentor-v15 books, writes up and
+  reads it back through the screen.
+
+
+## 2026-10-26 — Summer v3 server, the undo window, and notifications a member can act on
+
+- **Summer School Portal v3, server** (`domain/summer-portal.php`): one read per
+  screen (`admin.summer.portal` with `view` boot | today | people | register |
+  child | graduates), the palette's search (`admin.summer.search`, name, printed
+  ID or last 4+ card digits, six at most) and per-staff recent children
+  (`admin.summer.recent`). Every count is taken from one roster derivation per
+  request, so "9 stopped" on Today and the list behind it are the same nine.
+  Centre scope is applied on the way in.
+- **The undo window is real** (`domain/pending.php`, migration 182). Move to NGG
+  (one or many), the joining invoices and the bulk guardian alert accept
+  `defer` and return a `pendingId`; nothing is created or sent until the row
+  commits — the client when its countdown ends, any portal read, or the webcron
+  tick, each claiming the row so it commits once, re-run as the requester so the
+  gate is asked again. `admin.pending.cancel` inside the window leaves nothing
+  done. Joining invoices for many graduates are one op
+  (`admin.summer.graduates.invoice`, ≤200) rather than the handoff's client
+  loop, so the whole press has one undo.
+- `members.fromSummerId` links a promoted member to the participant they were
+  (it was only in a free-text note); Into NGG reads stages from it.
+- **Member notifications** (migration 184): per-person read and dismissed marks
+  in `notification_state` — reading a broadcast used to write `readAt` on the
+  shared row, i.e. read it for everybody; a broadcast's own `readAt` is now
+  ignored. `groupKey` keeps one live item for a running thing (Saturday's
+  timetable sent one alert per block, which is what filled the panel in the
+  report). Every item carries an `action` (label + page), from `actionLabel` or
+  the kind. The panel (`Mp9Notifications`) replaced the compiled one: groups,
+  actions, read/unread, dismiss with undo, loading and error-with-retry,
+  Escape returns focus to the bell. Its rows used to shrink below their text in
+  the flex column and overlap.
+- **Fonts and scrollbars in every compiled portal**: buttons and fields inherit
+  the portal font (a `<button>` takes the system face by default), at zero
+  specificity so a designed face still wins; one thin scrollbar, no steppers.
+- **/family was unstyled on any non-touch screen.** An `@media (pointer: coarse) {`
+  block for the lesson-quiz editor lost its closing `}` during the Family Portal
+  v3 edit, and a browser does not reject that: every rule after it in
+  styles-app.css — the whole Family Portal, and everything added since — was
+  read as nested inside the touch-only query. Phones looked right; laptops got
+  a near-bare page. Fixed, and `build.js` now refuses a stylesheet whose braces
+  do not balance (`validateCssBraces`), naming the line the open block starts on.
+## Two questions, two rhythms — and a font that was two fonts (2026-10-26)
+
+**The testimonial was being asked after every lesson.** That was wrong, and the
+owner said so: a session here is the twelve-week block (TONI, MEDI, SUMMER,
+DOMI), not a Saturday. A child asked for something quotable twenty-four times
+a term answers twice, and what comes back is a diary.
+
+It is two features now.
+
+- **How did today go** (`domain/lesson-feedback.php`, migration 181) — after
+  every LESSON. Three taps: *I could do it · I could follow but I'd need help ·
+  I could not follow*. Words optional, asked second, and only of the child who
+  struggled. **Never published, by anybody** — there is no op in that file that
+  could, and a test asserts there never is one. Seen by the instructor for
+  their own courses and centre, and by admins holding `curriculum` or `club`.
+- **What did this term give you** (`domain/testimonials.php`) — after every
+  SESSION, in its last three weeks and for two months after it ends
+  (`testi_session_ask`). Consent, byline and withdrawal are unchanged.
+
+The feedback has to pay for itself or it is worse than nothing: it costs the
+child a tap and buys them nothing. So `lfb_board()` does not hand back rows to
+read — it answers the question an instructor actually has, **which lessons are
+not landing**, worst first, with the words from the children who were lost
+attached to the lesson they were lost in. A "needed help" counts as half a
+miss, because a class that could only follow with help was not taught either.
+Control Room → Learning → **How lessons land**.
+
+### The font was two fonts
+
+`styles-app.css` declared Geist as seven static faces (400/500/600) while
+`assets/fonts/fonts.css` declared it as one variable file covering 100–900.
+The member portal sets every heading at **700** — a weight the statics did not
+have — so headings resolved to the variable file and the body text beside them
+to the static cut. **One screen, two physical fonts.** Before the variable file
+was added, 700 was a faux-bold of the static 600: fake, but consistent, which
+is why this appeared as a regression.
+
+One source now. Measured after: every weight 400–800 comes from
+`geist-variable.woff2`, one request instead of five, and Latin Extended
+actually renders where it previously fell back to the system face.
+
+### Read aloud, and the study helper
+
+Both were reported as bad, and both were bad for findable reasons.
+
+- **Read aloud** called `getVoices()` synchronously — empty on the first call
+  in Chrome and on Android, so the first press got no voice at all. It read
+  the raw Markdown ("hash hash warm dash up"). It stopped after ~15 seconds
+  (Chrome kills a long utterance) and truncated at 3,000 characters. It now
+  waits for `voiceschanged`, speaks `mp9Speakable()` output — headings as
+  sentences, links as their words, code announced rather than recited — in
+  sentence-sized chunks with a `resume()` heartbeat.
+- **The study helper** sent only the latest question. There was no thread, and
+  the previous answer was wiped on each press, so "I still don't get it" was a
+  cold start — which is the one thing being stuck is never like. It carries
+  the conversation now (`CURR_TUTOR_TURNS`), and is given the member's
+  programme year and **what they actually got wrong on that lesson's review**
+  (`curriculum_ask_gaps`, never the model answer), so it can teach the gap
+  instead of re-explaining the part they already had.
+
+## The curriculum stops being a modal; the division becomes the enrolment (2026-10-26)
+
+The owner, on the member portal: *"The LMS is not really what I want it to be.
+It is currently just a modal. The structure of the member portal is also not
+good."* And: *"The use of the course in division feature is not available yet?"*
+
+Both were fair, and both had findable causes.
+
+### It really was a modal
+
+`openLesson()` called `openSheet({ k: "lesson" })` — the SAME overlay the
+portal uses for *Edit profile* and *Gate pass*. The whole of a Saturday's
+teaching was paginated inside a sheet (`lPart`: read → materials → check) on
+top of a dashboard tab. No address, nothing to bookmark or send to a mentor,
+and the browser's Back closed it instead of going back.
+
+**`/learn` is its own app now** (`page-learn.jsx`), the way the Anchor Journal
+and the Study tools are:
+
+    /learn                  This week — what to do now
+    /learn/courses          My courses
+    /learn/course/<slug>    One course, week by week
+    /learn/lesson/<unitId>  A lesson, FULL SCREEN
+    /learn/review           How the review works
+    /learn/helper           The study helper
+
+Every one is real: `app.jsx` gained `inLearnSubtree` so a deep lesson address
+is not rewritten back to `/learn` on mount, which is precisely what made a
+lesson unbookmarkable. `tests/learn-app.test.js` pins the thing that changed —
+that it is a PLACE: cold-loading `/learn/lesson/<id>` opens that lesson, Back
+goes back, and signed out the address is kept so signing in lands on it.
+
+**There is still only one lesson renderer.** The portal's `openLesson()` now
+hands over to `/learn/lesson/<id>` rather than drawing its own; the app reuses
+`CurriculumText`, `CurriculumMaterials`, `CurCheckField`, `DashOpeningReview`
+and `DashLessonFeedback` rather than forking them (CLAUDE.md §11). What is new
+is the place, not the parts.
+
+**A container cannot be styled by its own container query.** `.lrn-app` carried
+both `container-type: inline-size` and the responsive grid, so at desktop width
+the grid stayed in its phone shape while the rail took its desktop one — and
+the two overlapped, swallowing every click. The container is `.lrn-app`; the
+grid is `.lrn-shell` inside it.
+
+### The division as the enrolment
+
+There was no such feature — only a last-resort FALLBACK, and a bad one: a
+member with no courses on record was handed *every* course in their division,
+which is why one screen showed Automation, Coding, Cybersecurity and Practical
+Coding side by side at week 8. That is a wall, not a curriculum.
+
+`courseSource` on the curriculum schedule now names which half runs:
+
+- **`member`** (default) — unchanged.
+- **`division`** — the member takes their division's OWN shared curriculum,
+  the spine every course inside it shares
+  (`curriculum-divisions-2026.json`, already in the box), and nothing from the
+  strands. Club-wide lessons and Chess still reach everyone; a member with no
+  division gets those and never somebody else's curriculum.
+
+**The spine ships for Year 1 only**, so turning the mode on would strand every
+Year 2 and 3 member. That is a number on a screen now, not something a child
+discovers: `admin_curriculum_divisions()` reports every division against every
+year and counts exactly how many members each gap would strand.
+
+### School inside Learn: the half of the growth plan that was never built
+
+A coordinator agreed a growth plan with a member after every report card —
+subjects, where they are, where they are going, and *three sessions a week* —
+and then nothing in the product let them do a session. `plan_checkins` counted
+practice the programme had no way of providing. The plan was a promise with no
+second half.
+
+`/learn/plan` is that half, and it is deliberately **not a new plan**: it reads
+`growth_plan_items` as they already are. A subject gives five questions; the
+marking shows the working, not a tick; and one marking closes three loops at
+once — the plan's own weekly counter via `member_results_tick()`, a flashcard
+in `School · <subject>` for everything missed (the SM-2 schedule that already
+existed), and the next level. Five levels, 80% up, under 40% down, eight drills
+a day.
+
+Questions come from a past-questions bank first (`study_bank`, optional), then
+the AI layer, and **with neither it refuses in words** and points at their
+flashcards. A child is never handed a blank paper, and never a question the
+screen cannot explain the working for.
+
+The bank could not be verified from this container — the network is closed to
+it — so it is strictly optional, bounded (6s, 256KB, no redirects) and can only
+ever fail *silently into AI*. Nothing claims it works until a deployment points
+it at a real endpoint.
+
+**`e.message` is the raw code; `e.data.message` is the sentence.** `api-client`
+builds its error as `new Error(data.error)`, so the server's human wording
+lands on `err.data.message` and `err.message` is `no_questions`. Reading the
+wrong one put that literal string in front of a child. The idiom in this
+codebase is `(e.data && e.data.message) || fallback`.
+
+### Six more free AI providers, one branch
+
+Cerebras, Mistral, Together, GitHub Models, DeepSeek and a self-hosted
+`custom` endpoint all speak the OpenAI chat-completions shape, so the
+groq-only branch in `ai.php` became **one** generic branch over `AI_OAI_COMPAT`
+rather than one branch each. Six of the eleven providers now have a free tier
+that does not expire into a card — which, on shared hosting with no budget, is
+the difference between a feature and a disabled feature. They all join the same
+fallback chain, so two or three keys is the configuration that survives an
+afternoon of rate limits.
+
+### A lesson is not a sheet any more, and the suites say so
+
+`member-v9.test.js` drove `[role="dialog"] button:has-text("I've done")` —
+the lesson sheet that was removed when the lesson became a place. It pins the
+**handoff** now (the portal opens `/learn/lesson/<id>`), and the answering is
+owned by `tests/learn-app.test.js`, which already covers it end to end. One
+behaviour, one suite.
+
+`curriculum-ui.test.js` and `responsive-staff.test.js` were never broken by
+that change: those runs had collided on `api/config.php`, which every node E2E
+suite writes and refuses to start beside. **They cannot be run concurrently** —
+run one at a time they are 66/0 and 4/0, and always were.
+
+## Summer School portal v3 on live data (27 Oct 2026)
+
+`/summer-admin` now mounts `Ss3Portal` (`src/modules/summer3/ss3-app.jsx`), the
+v3 design compiled (`ss3-view.jsx`, sample copy rebound by `ss3-subs.json`) and
+driven by `domain/summer-portal.php`. The older `AdminSummer` workspace is
+unchanged and still lives in the Control Room, where the season's settings,
+links and imports are administered.
+
+What changed, and why:
+
+- **Only screens with a backend are offered.** Timetable, Demo Day, pickup,
+  volunteers, incidents and messages are in the design but have no data here
+  yet; they are left out of the nav, palette and shortcuts rather than drawn on
+  the design's sample data. Incidents and messages are the next piece of work.
+- **"Right now" on Today is the door rules**, not a day plan: doors, grace,
+  the programme day and sign-out, read from `attendance_settings()` and sent
+  as `rules` at boot (`ss3_rules()`), so the portal's 09:00 is the 09:00 the
+  check-in op grades lateness against.
+- **New reads:** `part=consent` (per-type answers and who is missing a required
+  one), `part=cards` (stock by batch, confirmed children with no card, one card
+  looked up by code, centre-scoped), `part=desk` (latest scans, scans by
+  centre). **New op:** `admin.summer.desk` takes a code, printed ID or name and
+  runs the one `summer_checkin`/`summer_checkout` on the child's card — the
+  card's token never reaches the browser.
+- **The bulk absence alert was not centre-scoped**, and counted children whose
+  registration was not confirmed. A scoped coordinator pressing "alert all"
+  emailed every centre's guardians while the button showed their own count. It
+  is scoped now, and a single child's alert refuses `out_of_scope`.
+- **Undo is the server's.** Moving children into NGG, sending joining invoices
+  and the bulk alert are parked by `pending.php` for 8 seconds; Undo cancels
+  them there, and a closed tab does not lose or double them.
+- Copy the design promised and this portal cannot keep was rebound: the
+  desk's "hold the card up to the camera… works offline" (it has neither),
+  "Blank cards at each desk" (cards have no desk; stock is per batch), and
+  "₦0" when fees are off (it read as joining being free).
+
+`tests/summer-portal-v3.test.js` (`npm run test:ss3`, in `test:all`) drives it
+end to end; `api/tests/run.php` holds the new reads, the desk op and the scoped
+alert.
+
+## Summer School portal v3: incidents and messages (27 Oct 2026)
+
+`domain/summer-incidents.php` (new, in the bootstrap list) backs the two
+screens the portal had left out. The tables are migration 182's; no migration.
+
+- **A Safeguarding incident is a safeguarding case**, filed through
+  `sg_case_open()` — extracted from `sg_report()` so a mentor's report, a
+  child's own and a Summer School incident open a case the same way, with the
+  same officer routing, email and daily cap. The incident row keeps only the
+  case number: no child, no details, so the portal, the child's drawer and the
+  incident list cannot show what only the lead may read. Tell and close are
+  refused (`lead_decides`), and it never counts as "guardian not told".
+- **Told means a message left.** `incident.tell` sends email and/or SMS, never
+  the staff note, and stamps `toldAt` only if one went; otherwise it returns
+  `not_delivered` with the number to call.
+- **Messages** come from one server-side template list (`SS3_MSG_TEMPLATES`);
+  a template whose placeholder cannot be filled truthfully is not offered (the
+  pickup time needs a sign-out time; Demo Day was dropped — there is no Demo
+  Day data). Audiences are `ss3_in_view()` over the scoped roster, so the
+  count on the button is the count sent. A send is parked by `pending.php`,
+  capped at `SS3_MSG_MAX` (500), recorded as one `summer_messages` row and one
+  audit event with delivered / failed / no-contact.
+- The incidents badge is now centre-scoped like every other badge.
+
+## Shared emails, the Analyst's empty answers, projects for admins (2026-10-26)
+
+Three things the owner reported.
+
+**One email, several member accounts** (siblings on a parent's address). Sign-in
+looked members up with `… OR lower(email) = ? LIMIT 1`, so the address always
+opened the same child and the others never could; the editor refused a shared
+email for that reason. Now (auth.php):
+- `auth_email_accounts()` lists the accounts an email may open (not suspended,
+  merged or deleted; never a password-only staff account). Two or more make the
+  address *shared*.
+- A code or link for a shared address is ONE challenge keyed by
+  `auth_shared_key($email)` (`@shared:` + a hash), with the accounts in
+  `auth_sessions.pickIds` (migration 183). Verifying it returns
+  `{pick, pickToken}` instead of a session; `auth/pick.php` (`auth.pick`) opens
+  the chosen account within `AUTH_PICK_MINUTES` (10), once, re-checking it is
+  still on the address and not suspended.
+- A password on a shared address is tried against each account
+  (`auth_login_shared`): one match signs in, several offer a pick of those,
+  none counts one failure against the address (`auth.pwshared`).
+- A reset to a shared address sends one link per account (`auth_reset_shared`).
+- The picker is in `api-client.js` (`authPickDialog`, under `auth.verify` and
+  `auth.login`), so the site, the journal, the portals and the timetable all
+  get it. CSS `.ngg-pick*` in styles.css and journal/app.css.
+- Shared emails are allowed again in `admin_member_validate` and the member's
+  own email change; the import notes them.
+- Tests: PHP "shared email: …" (16); `tests/shared-email.test.js` (10, in
+  test:all).
+
+**The Analyst said "No answer came back"** for "send me an export of the
+members grouped by their divisions". It reads aggregates only; every lens
+returned no points, compose returned `''`, and the server called that success.
+`insight_chat_ask` now always answers (the lenses' points when composing
+failed, what it can read when nothing was found, or that the service did not
+answer); `CrAsk` falls back to the claims too. A request for a member export
+is recognised in the browser (`crAskExportIntent`) and done through
+`admin.members.list` (People, centre-scoped, capped 5000), grouped by
+division/centre/level/status/programme — names never reach the AI.
+
+**Admins could not see or run projects.** `admin.projects`,
+`admin.projects.people`, `admin.project.save`, `admin.project.mark` (People,
+centre-scoped by the project's centre) and the tab **Mentorship › Projects**
+(`ms-projects`, cr-tab-mentorship.jsx). The save is `project_write`, pulled out
+of `member_mp_project_save`, so the portal and the Control Room share one set of
+rules; only the reach differs (`admin_project_reach`). Tests: PHP "control room:
+…" (7); tests/projects.test.js drives the tab.
+
+## Projects: audited end to end, six defects fixed, the Control Room screen built (27 Oct 2026)
+
+A read-through of `domain/projects.php` against every caller found the mentor
+and child paths wired correctly, and these wrong. Each now has a test.
+
+1. **There was no Control Room screen** when the audit ran. The other session
+   built *Mentorship › Projects* (`ms-projects` in cr-tab-mentorship.jsx) at
+   the same time; this session's duplicate was dropped at the merge, so there
+   is one screen and one set of `NGGApi.admin.projects` wrappers.
+2. **Every Control Room save would have failed** as `bad_status`:
+   `api/admin/projects.php` cast a missing `status` to `''`, and the domain
+   defaults only an absent one. The PHP tests called the op directly and never
+   saw the route. It forwards only the keys sent now.
+3. **A lead could not finish, cancel or edit a project once anyone on it had
+   left their reach** (inactive, moved centre), because every person was
+   re-checked against today's reach. Reach now decides who may be added, not
+   who may stay; the mentor portal's Edit form lists such people so they can be
+   taken off.
+4. **An unscreened mentor could be grouped with children** and see their full
+   names, contrary to the file's own rule. Refused now (`not_screened`, by
+   name) on any project with children; a mentors-only project is allowed.
+5. **My role could warn "past the finish date" for a finished project** for the
+   rest of the month. Only an open project counts as overdue.
+6. **A mentor could change their part on a closed project** (a child could
+   not). Refused now, as for a child, unless they set it.
+7. The Control Room's mark wiped a note when marking a part done without one;
+   it keeps it now, as the mentor path did.
+
+## 27 Oct 2026 — Learn: coming back, keeping, going deeper
+
+Asked: improve /learn and enrich it, from good sources.
+
+- **`learn_state`** (migration 188): one row per member per lesson — a private
+  note, *saved for later*, and when it was last opened. Merge policy
+  `MOVE_UNIQUE`. Every write is checked against the member's own lessons, so a
+  note cannot be kept on (or a title learned of) a lesson that is not theirs.
+- **The figures are derived, not stored** (`learn_stats`): a stored streak is
+  a second copy of `curriculum_progress` that drifts from it. A week not yet
+  over does not break the run.
+- **Go deeper** (`member.learn.sources`): a Wikipedia summary chosen by title
+  word overlap, never the first search hit (the first hit for a lesson title
+  is often about something else), with CC BY-SA attribution as the licence
+  requires; then a hand-checked list per course. Fetched server-side with the
+  User-Agent Wikimedia's API policy asks for, cached a month, a miss cached a
+  day so a rate limit is not hit again on every view. Every listed URL answered
+  when added; Canva and Adobe were dropped because they refuse non-browser
+  clients (403), which is also what a school proxy would see. The test seam is
+  `$GLOBALS['__learn_http']`; the browser suite plants the cache file instead.
+- A lesson with no questions can be **marked done** (`curriculum_submit` with
+  no answers completes at 100%). Before this, it could never be finished.
+- New: `/learn/notes`, search on *My courses*, Previous/Next, *Lesson N of M*.
+
+### Wi-Fi gateways: built (2026-10-27) — replaces the plan above
+
+The plan of 2026-10-23 ("PLANNED, not built: MikroTik Wi-Fi accounts…") was
+built with these changes, each for a reason found while building it:
+
+- **Not only MikroTik.** A centre's *gateway* has a platform: `mikrotik`,
+  `radius` (a FreeRADIUS bridge on a Raspberry Pi for UniFi, Omada, pfSense,
+  OPNsense…), `openwrt` (openNDS), or `generic` (JSON). `WIFI_PLATFORMS` in
+  `domain/wifi.php` says what each can do; the screens and the diagnosis read it.
+- **MikroTik uses the router's own hotspot users, not User Manager.** Verified
+  against the RouterOS 7 manual: hotspot user profiles carry `rate-limit`,
+  `shared-users`, `add-mac-cookie`/`mac-cookie-timeout`; removing somebody is
+  `/ip hotspot active remove`, `cookie remove`, `user remove`. User Manager
+  needs its own package, localhost RADIUS and accounting for the same result.
+- **`/tool fetch` cuts a reply at 64,512 bytes without an error**, so the text
+  feed pages (`WIFI_TEXT_PAGE_BYTES`) and every page ends `#end`; a script
+  applies nothing until it has every page.
+- **Hours are kept by NGG**: hotspot profiles have no time-of-day window, so
+  people outside their profile's hours are left off the list (`wifi_in_hours`)
+  and the next fetch signs them out; `next` is shortened to land on a boundary.
+- **No feed version is "bumped".** Each fetch computes the centre's list and
+  diffs it against what that gateway *confirmed* (`ackedJson`); the gateway
+  confirms by sending the version back as `since`. Nothing else in the codebase
+  had to learn about Wi-Fi to keep it right.
+- **Activity logging was dropped** (plan stage 4, the `wifi_activity` cap and
+  tables). NDPA 2023 s.31 needs guardian consent for processing a child's data
+  on that basis and s.28 a privacy impact assessment; filtering does not need
+  the record. Gateways report counts only (`wifi_gateway_stats`, hourly).
+- **Capability `network`**, never bundled into Admin (like `fees`/`journal`).
+  The person lookup is a read on any of people/summer/network; changing one
+  person's Wi-Fi stays with whoever owns their record (people / summer).
+- **The Club portal hosts the Control Room's Wi-Fi page in place** (`CrEmbed`
+  in `cr-shell.jsx`): the same tabs and blocks, with its own drawer, form,
+  confirm and toast layers. Not a second drawing; not a redirect.
+- **Diagnosis** (`wifi_gateway_diagnose`): never connected, silent, wrong-key
+  fetches (a warning while it still fetches), the gateway's own error put into
+  words, RouterOS too old, slow line, more promised than the line can give (fair
+  share from the measured line and the week's peak), CPU, memory, restarts.
+- **Speed**: profiles carry `burst` and `priority` (MikroTik rate-limit). Lines
+  are measured by staff devices (`/api/admin/wifi-speed.php`, timed in the
+  browser by `NGGApi.admin.wifi.speedTest`) and by MikroTik gateways nightly or
+  when asked (`/api/hooks/wifi-speed.php`, second-resolution: a guide).
+
+Status: every platform but `generic` is **pilot first** — the scripts follow
+the makers' manuals but cannot be run here. Pilot MikroTik at one centre. Still
+open from the plan: the owner's decisions (hours, fees rule, pilot centre,
+optional categories); day passes (`ngg-guest` exists as a profile only); a
+branded hotspot login page. Migrations 189–190. Tests: the Wi-Fi block in
+`api/tests/run.php`, `tests/wifi.test.js` (`npm run test:wifi`).
+
+### PLANNED, not built: Wi-Fi at 2,000 centres, in regions (owner, 2026-10-27)
+
+**The requirement.** NGG projects about **2,000 centres**, grouped in
+**regions**. An NGG admin manages Wi-Fi **for their own centre(s)**, never
+the whole network. What was built on 2026-10-27 assumes a handful of centres
+seen by one systems person, so it does not meet this yet:
+
+- the `network` gates in `domain/wifi.php` (overview, gateways, access table,
+  speed tests) ignore `centreScope`. Only the person lookup and the speed-test
+  save are scoped;
+- `admin_wifi_overview` returns every gateway, every centre and the latest 40
+  tests in one reply, and `wifi_health_context` reads every speed test from the
+  last 30 days. At 2,000 centres that is a list problem (CLAUDE.md §6: filter
+  above the page cap, page on the server);
+- the access table and the profiles are one global setting. A region may need
+  its own speeds (its lines differ), and a centre its own hours.
+
+**Regions first (a centre-management change, not a Wi-Fi one).** There is no
+region in the schema today. Plan:
+- a `regions` table (id, name, code, status) and `centres.regionId`, managed in
+  Members → Centres (People capability, like centres; CLAUDE.md §4 "ownership
+  follows the data");
+- staff scope gains regions: `centreScope` may name a region, and
+  `admin_centre_names_in_scope()` expands it to its centres. That is the one
+  place scope is resolved, so every scoped screen gets regions at once;
+- a **regional lead** role (scoped, like `centre_lead`) whose scope is a region;
+- the centre directory and every centre picker become server-side search with
+  region and status facets and paging, not a 2,000-row select.
+
+**Then Wi-Fi at scale.**
+- **Scope every Wi-Fi op by centre**, on the way in and per row
+  (`admin_centre_allowed`): a centre's admin holding `network` sees and acts on
+  their centre's gateways only; a regional lead their region's; a super admin
+  everything. Add/edit/rotate/remove refuse `out_of_scope`.
+- **The Gateways tab becomes a server-side list**: search, facets (region,
+  centre, platform, health), sort, paging and a true total, with
+  `admin.wifi.gateways` replacing the all-in-one overview. The overview keeps
+  only counts, by region (working / need a look / silent / not set up).
+- **Health by region**: a region roll-up (how many centres working, the
+  slowest lines, the busiest) and a drill-down to its centres. Silent gateways
+  are counted, never listed in full, above the page cap.
+- **Settings inherit**: network default → region → centre for the access
+  table, speeds, burst, priority and hours. Store only overrides
+  (`wifi_settings_overrides`: scopeType, scopeId, json), resolve in
+  `wifi_settings($centre)`, and show where each value comes from. The feed
+  already reads settings per gateway, so this is one change in one function.
+- **Speed tests** read per centre, paged. `wifi_health_context` takes the page's
+  gateway ids, never "everything from 30 days".
+- **Bulk acts** through the admin action layer (CLAUDE.md §6): rotate keys for
+  a region's gateways, ask for line tests, each capped, with the count read
+  before the confirm and one audit event per run.
+- **Load**: 2,000 gateways each fetching every 2–5 minutes is about 7–17
+  requests a second on shared hosting. Before rollout: cache each centre's
+  computed list for 60 s (keyed on the centre and the settings version), and
+  measure a fetch's cost. If it is too much, serve the feed from a small
+  separate host, or move the default poll to 5 minutes.
+- **Alerts**: one digest per region lead when a gateway is silent for an hour,
+  not one email per gateway.
+
+**Order.** (1) regions and region scope, with tests; (2) Wi-Fi scope on every
+op, with tests; (3) the server-side gateway list and the region roll-up;
+(4) settings inheritance; (5) load caching, measured, before more than a pilot
+region goes live.
+
+## Focus rings on the public site (2026-10-27)
+
+The owner reported a focus-ring problem. Measured with a keyboard walk of 16
+public pages (761 Tab stops), 728 had one:
+- **Contrast.** The ring was gold — `rgba(245,176,38,.5–.6)` in most rules,
+  solid `--gold-500` in the safety net — which is 1.3–1.9:1 on cream and 1:1 on
+  a gold button. A focus indicator needs 3:1 (WCAG 1.4.11).
+- **Shape.** Two global rules (styles.css and an older duplicate in
+  styles-app.css) set `border-radius: 6px` on whatever had focus, so pills,
+  round buttons and cards changed shape when tabbed to.
+- **Clipping.** Accordion rows inside `overflow: hidden` cards (Parents FAQ,
+  About, Timetable start rows, Community tabs, Blog hero chips) lost the ring.
+- **Containers.** The newsletter field and the Summer School search drew no
+  ring of their own and their container's was faint.
+
+Now there is one token, `--focus-ring` (styles.css `:root`): navy on light
+surfaces, lime inside dark ones (`.dark-surface, .hero, .footer, .prefooter,
+.page-hero-dark, .marquee, …`; a light `.card` inside a dark section goes back
+to navy). Every public-site ring uses it; the global rules no longer touch
+`border-radius` (outline follows the element's own corners). Navy sections
+that were only an inline style now carry `className="dark-surface"` (home,
+about/anchor, blog, club community hero, other pages). Clipped controls use an
+inset ring (`outline-offset: -3px`). The public Community search had its chrome
+— and `outline: none` — in an inline style; it is `.cm-pub-search` /
+`.cm-pub-search-in` now, and the box takes the ring ("one ring for one field"). The sticky top bar no longer covers a focused
+control: `html:has(.topnav) { scroll-padding-top: 96px }` (WCAG 2.4.11). The Design Studio, a dark room, re-points
+the token to its gold.
+
+`tests/focus-ring.test.js` (in test:all, `npm run test:focus`) walks the main
+pages and fails on a stop with no ring, a ring under 3:1 against what is behind
+it, a shape change, or a clipped or covered ring. A new dark section that
+forgets `dark-surface` fails there as navy-on-navy.
+
+
+### Wi-Fi at scale: built (2026-10-27) — the Wi-Fi half of the plan above
+
+The owner's direction: build the Wi-Fi side now; **NGG-wide regions and
+centre management stay planned** (the "Regions first" part of the plan above
+is unchanged and still to do).
+
+- **Scope (`wifi_scope`, `wifi_gate`).** Every Wi-Fi op is limited on the way
+  in: a super admin sees every centre; a **Wi-Fi region lead** their regions'
+  centres; anybody else holding `network` the centres in their `centreScope`,
+  or — with none — **their own centre only**. The network's access table and
+  default speeds, and the shaping of regions, are for somebody who sees every
+  centre (`network_wide_only`).
+- **Wi-Fi regions** (`domain/wifi-regions.php`, migration 191): `wifi_regions`,
+  `wifi_region_centres` (one region per centre), `wifi_region_leads` (staff who
+  hold `network`). A Wi-Fi grouping only — `centres` is untouched. **When
+  NGG-wide regions are built, migrate these into them** (one region concept,
+  CLAUDE.md §11) and keep `wifi_region_of()` as the one place that resolves it.
+- **Speeds inherit** network → region → centre (`wifi_profile_overrides`, only
+  overrides stored; `wifi_settings($centre)` resolves and says where each value
+  came from). Each gateway's feed carries its centre's.
+- **Lists at 2,000 centres**: `admin.wifi.gateways` and `admin.wifi.centres` are
+  searched, faceted, sorted and paged on the server with true totals and
+  "select every match" ids; health is derived per gateway over the whole scope
+  before the page is cut.
+- **Load**: a centre's computed list is kept 60 s (`WIFI_LIST_TTL`, config
+  `wifi.list_ttl`), PINs sealed in the cache; a change made in Wi-Fi drops it
+  at once, a record change elsewhere reaches it within the minute.
+- **Analytics** (`admin.wifi.analytics`): every fetch is a heartbeat
+  (`wifi_gateway_daily`, kept 400 days; hourly rows 14), so availability is
+  measurable on every platform. People online per day (peak/average),
+  availability, line speed, the week's busy hours, busiest/slowest/least
+  available, health by region. Gateways never connected are counted apart.
+- **The Club portal's Wi-Fi is its own** (`src/modules/club3/cp3-wifi.jsx`,
+  `.cw-*` in the Club's design: Overview, Gateways, Regions, Speed tests, Who
+  gets on, Setup in the sidebar). The embedded Control Room (`CrEmbed`) was
+  removed: the owner found a Control Room inside the Club portal out of place.
+  The Control Room keeps its own Wi-Fi page (now with Analytics and Regions).
+  Both call the same ops; neither owns logic the other lacks.
+- Still open: alerts (a digest per region lead when a gateway is silent), bulk
+  acts per region (rotate keys, ask for line tests), the load measurement
+  before more than one pilot region.
+
+## Parents pay; children ask (2026-10-27)
+
+The owner: parents should be able to pay in advance for membership and dues,
+their dashboard felt empty, and a child should not record "I've made a payment"
+but nudge a parent to pay or to confirm they paid — with one button, not two.
+
+- **Paying ahead** is an invoice of a new purpose, `advance`
+  (`membership_advance_invoice`). Settling posts only the payment: the charges
+  arrive on their own dates through the accrual and meet the credit. Pre-posting
+  the months was rejected: it would charge a fee at today's price for a month
+  that may be priced differently, and a parent who paid "three months" would
+  see three charges and no balance. `membership_advance_plan` walks the
+  upcoming charges in date order and spends the credit on them, so "paid ahead
+  to March" is what the accrual will do, renewal included. Quotes (1/3/6/12
+  months) are priced by the server; the page sends only the number of months.
+  A new advance or balance invoice voids the other's open one, so a family
+  never holds two links for overlapping money.
+- **A payment claim moved from the member to the parent.** The member route
+  passes `fromMember` and `member_request_create` refuses `payment` with
+  `ask_parent`; the family route accepts it (FAMILY_REQUEST_KINDS). This
+  reverses "a parent cannot claim a payment" — the old reason (a verified
+  receipt is the member's path) no longer holds once the member has no path.
+  The desk's check is unchanged: a claim moves no money until approved.
+- **Ask my parent** (`member_family_nudge`): one ask, to every active parent, a
+  `guardian_notices` row (kind `nudge`, tied to the child) and an email; once a
+  day by the notice's unique key. It is refused when nothing is owed.
+- **The family Today** gained quick actions, Coming up and the child's
+  lessons, below the compiled design (`mainSlotEnd`), and the child's ask in
+  the to-do list. Fees gained Pay ahead and "Paid by transfer or at the desk?".
+- The member app's two buttons were recompiled from the design
+  (`member-portal-v9.dc.html`: `openAsk`); the compile was checked to be
+  byte-identical before the edit.
+
+## Wi-Fi: the three open items (2026-10-27)
+
+- **Silent gateways** (`wifi_silent_digest`, web cron `wifi_silent`, every 15
+  minutes): one digest per person, region leads first, then the staff whose
+  Wi-Fi scope names the centre, then those who see every centre. Told once per
+  silence (`silentAlertAt`, cleared by the next fetch).
+- **Bulk acts** (`admin.wifi.gateways.bulk`, actions `test` | `rotate`, over a
+  selection or a region): capped at `WIFI_BULK_MAX` 500, validated before any
+  write, scope refused per row, `unchanged` for a test already asked, `expect`
+  must equal the count, one audit event. A region needs the Wi-Fi regions
+  capability or to be its lead. Rotated keys are returned once, as a list to
+  copy. `admin.wifi.gateways.ids` gives "all N matching".
+- **Load** (`wifi_load_record` from the feed route, `admin.wifi.load`): wall
+  time from the request's start, bytes, peak memory and time buckets per hour.
+  The projection is gateways ÷ poll × average time against a budget of a
+  quarter of one worker (`WIFI_LOAD_BUDGET`); fewer than 100 fetches reads
+  "not measured". This is the gate the plan named: a second region goes live
+  only once it reads *Within budget*.
+- Router scripts stay **pilot first** on real hardware; nothing here changes
+  that.
+- Also: the members search box drew a second focus ring on its input
+  (`.cr-app :focus-visible`, 0,2,0, beat the exemption's 0,1,1). The exemption
+  is `html:root …` now (0,2,2); `tests/control-room.test.js` checks one ring.
+
+## Anchor Circle merged into the family account and the mentor portal (2026-10-28)
+
+The owner: merge the two parent portals; the mentor part of Anchor Circle
+goes to the mentors, and assigned mentors are connected automatically. Teachers
+were first moved into the family account, then dropped on the owner's word:
+the circle is a child's parents and their mentor.
+
+- **One Anchor core** (`domain/circle.php`): `anchor_week`, `anchor_confirm`,
+  `anchor_remark`, keyed by the adult's link. Three doors call it:
+  `family.anchor*` for a parent's family link (`anchor_family_link`), and `member.mentor.anchor*` for a child in the
+  mentor's caseload (`anchor_mentor_ctx` → `mp_caseload_ids`: active
+  assignments, and a lead's team). No code for a mentor; the assignment is the
+  connection, and ending it ends the connection.
+- **What each adult sees**: the week and the conduct figure (any adult's
+  confirmations count), but only their OWN confirmations and notes — another
+  adult's words to the child are the child's. Days are this week up to today
+  (the old portal took any date). Five notes per adult per child per week; the
+  child is told each one came.
+- **The old portal** (`/circle`, `api/public/circle.php`, the token ops) is
+  retired: the ops answer `moved` with where to go, the route answers 410, and
+  the page says where parents and mentors go now and forgets the
+  browser's old tokens. `circle.lookup` stays internal: it is the code-and-name
+  check every connection runs, and the tests that pin its guard still call it.
+- The member's *Anchor Circle* card lists everyone connected (parents and
+  mentors); its copy came from
+  the design (`member-portal-v9.dc.html`), recompiled.
+
+## Teachers dropped; the mentor reads the whole journal (2026-10-28)
+
+The owner: "Drop teacher. … The mentors need to see the child's journal",
+and, asked how far: "Nothing is private. Their reflections should be visible
+too."
+
+- **Teachers are gone** before they shipped: no `family_teacher_links` (taken
+  out of migration 193, which now only marks the old `circle_links` moved),
+  no `family.teach.*` ops, no *Students you teach*, no teacher home, no
+  teacher card on /circle, no `member.circle.revoke` (it only ended teacher
+  links). Old `circle_*` rows may still carry `role = 'teacher'`; they count
+  and are never shown as a link.
+- **`member.mentor.journal`** (`domain/mentor-portal.php`, view `journal`):
+  every entry of one mentee, any visibility, 30 a page, gated on the caseload
+  (`mp_caseload_ids`) and **refused to a peer mentor** (`peer_no_journal`) —
+  the one rule kept, because a peer mentor is a minor and the existing
+  safeguarding line already kept shared entries from them. One audit row per
+  read. The mentor portal's mentee page has a *Journal* tab (not for peers).
+- **Weekly reviews** are always saved to the journal in full, obstacles
+  included; "share" now only decides whether the mentor is sent it.
+- `private` now means "not sent", and the copy says so: "only you and your
+  mentor" in the journal app, the member app, the Club journal and the family
+  app's card (parents still do not see the journal).
+- Tests: the PHP suite pins the mentor read (private entries included, newest
+  first, paging, audit) and both refusals; `tests/mentor-v15.test.js` opens
+  the tab.
+
+## The timetable, for a child (2026-10-28)
+
+Closes "For the next agent: the timetable UX needs work" (2026-10-24). A child
+wrote to their mentor "I am having trouble doing my timetable"; the owner
+found creating one confusing and said the kinds of week are "just presets:
+they should be able to build freely".
+
+- **Member portal → Timetable** leads with **Your class** (course, day, time,
+  room, instructor) from the server's `mine`, then *Classes on <day>* with
+  theirs marked **Yours** in words, then *The rest of Saturday* (the
+  Formation day) on its own — it used to replace the course slots outright.
+  The division card no longer lists a whole division's courses as "yours",
+  and its icon follows the division (it was always a code icon).
+- **Make my week** opens the maker at `/timetable/me?centre=<slug>`: the
+  centre's classes are in, the child's own marked from `member_timetable`
+  (not a guess from the track), once sign-in has settled.
+- **The maker builds freely from the first second**: the add box and the
+  days are always there. "What's your week like?" (six equal tiles) is gone;
+  in its place an optional *Not sure where to start?* — your NGG classes,
+  your school lessons, your study time, each one button and a tick — and the
+  kinds of week as **Suggestions for:** chips that only change suggestions.
+  The import dialog offers a member's own centre first.
+- Tests: `tests/timetable-ui.test.js` was failing on `main` (it waited for the
+  retired member table); it now pins the member screen, the maker opening
+  with the classes in, and a first-time visitor typing a class with no preset.
+
+## Mentor Messages restructured; Lessons gate (2026-10-28)
+
+The owner: "Improve the messages features of the mentors. The UX is currently
+terrible … the structure of the messages … is too messy."
+
+- **Was:** one flat list from `member.mentor.messages` in which a child
+  appeared once per chat, once per shared journal entry and once per
+  check-in, each with its own kind label and reply thread, under up to six
+  filter chips; a lead conversation showed only what reached you.
+- **Now:** `Mp15Inbox` (`mp15-app.jsx`, rendered from `slotEnd`; the design's
+  compiled list is switched off with `onMsg: false`) groups the same rows by
+  PERSON (`mp15InboxPeople`): a child's chat, sent journal entries and
+  check-ins are one time-ordered conversation, and one reply goes to
+  `chat:<memberId>` (old replies on `journal:`/`checkin:` threads stay in the
+  timeline). Groups: Needs a reply (the last word is not yours), Children,
+  Families, Colleagues. Two panes by container query (`.m15m-wrap`), one on
+  a phone. Opening a conversation marks all its parts read.
+- **Server:** lead threads now carry both sides (`thread`), and a lead
+  conversation you started with no answer yet is listed.
+- **Lessons on the mentee page** used the older record gate (screening,
+  centre, cohort): a mentor whose own record names another centre saw Growth
+  open and "Couldn't load their lessons" under it. A child in the caseload is
+  now enough, as for Growth (`mentor_child_lessons`).
+- Tests: PHP pins the Lessons gate; `mentor-v15.test.js` pins one row per
+  child, the merged timeline, the reply, and the phone layout (80/0).
+
+## Wi-Fi data used per person, allowances, clearer setup guides (2026-10-28)
+
+The owner: "Build the Wi-Fi usage tracking, staff and members only, with
+limits", and "improve the clarity of your guide".
+
+- **Migration 194**: `wifi_usage_daily` (bytes down/up per person, per local
+  day, per centre, with centreId; in CENTRE_NAME_TABLES), `wifi_usage_sessions`
+  (each gateway's last counters per session), `wifi_gateways.usageAt`.
+- **In**: `POST /api/hooks/wifi-usage.php` (`wifi.usage`, gateway key in the
+  headers, CSRF-exempt like every hook). Text lines `s;user;session;in;out` as
+  the router counts them, or JSON from the person's side. NGG adds only the
+  difference since a session's last report; a counter that goes down is a new
+  session; a jump over 50 GB is a broken counter. What a session moved after
+  its last report is lost (one poll interval). The MikroTik script posts its
+  `/ip hotspot active` counters before each fetch, 100 sessions a request.
+  RADIUS and OpenWrt don't report yet (`can.usage` false).
+- **Allowances**: `dayMb` / `monthMb` on each profile (layered like speeds;
+  the network forms edit them). `wifi_access_for` checks the profile a person
+  would have when on; over it, the new `overLimit` case (default Limited; Off;
+  On = watch only). Overrides still win. The centre list reads everybody's
+  month in one grouped query (`wifi_usage_totals`, by id in chunks); crossing
+  an allowance drops the centre's cached list so the next fetch applies it.
+- **Who sees it**: `admin.wifi.usage` (network, Wi-Fi scope; Control Room and
+  Club portal *Data used*) and the person's own `member.wifi.get` → `usage`.
+  Not families. Privacy copy that said "never who is online" now says what is
+  kept: amounts per person per day, never sites.
+- **Guides**: `admin.wifi.gateway.setup` now returns `summary`, `time`,
+  `before[]`, `steps[{h, text, cmd, script, tip}]`, `reports` and
+  `trouble[[problem, fix]]`. Both screens render the script and commands
+  inside their step; `check`/`diagnose` are gone.
+- Tests: PHP +21 (`usage ·`), `tests/wifi.test.js` 48/0 (HTTP report, guide
+  order, Data used in both portals with axe, the member's meter over an
+  allowance). It now waits for boot after every navigation.
+
+## MikroTik setup: one install line, not a pasted script (2026-10-28)
+
+The owner ran the guide on a real router (RB951Ui, gateway CACENTRE-EGBEDAX)
+and it failed in five places, all ours:
+
+1. The script still said `PASTE-THE-KEY-HERE` (the guide had been opened
+   without the key), so every fetch was refused: `fetch_failed`.
+2. `failure: not allowed by device-mode` — RouterOS 7.17+ refuses schedules
+   (and usually `/tool fetch`) until `/system device-mode update scheduler=yes
+   fetch=yes` is confirmed with a button press or power cycle.
+3. The WinBox terminal cut the long `source={…}` paste short (lines of empty
+   `{{{...`), leaving a broken sync script.
+4. `:local hs` does not survive to the next terminal line, so every
+   `in-interface=$hs` was empty: `ambiguous value of interface`.
+5. The guide asked anybody to paste 130 lines at all.
+
+Now: `GET /api/hooks/wifi-setup.php` (`wifi.setup.script`, gateway id + key in
+headers) returns the router's setup file with its key written in, and the
+guide's step 4 is ONE line that fetches it and `/import`s it. The file stops
+with the reason when there is no key (a key is 40 characters) or no hotspot;
+schedules are added inside `on-error` with the device-mode advice; the
+filtering block is one `:foreach` over every hotspot, so the interface is
+known on every line. The guide: device-mode first (with the button press),
+then version and clock, hotspot, the install line, the check, and a fix for
+each message the owner saw. Both screens' main button copies the install line;
+"Download the setup file" is there for a router that can't fetch.
+
+## Wi-Fi: NGG sends its roster to CACENTRE (2026-10-28)
+
+The owner moved the Wi-Fi's authority to CACENTRE ("CACENTRE controls it; the
+super admins still have a say"). CACENTRE's side is in the cacentre-site repo
+(`cac/docs/wifi.md`). This is NGG's side: `domain/wifi-cacentre.php`.
+
+- **What goes.** Every NGG member and every staff, mentor or instructor
+  account, plus participants of a live edition. Summer-type member rows are not
+  sent; those people go as participants. Each person carries their id, kind
+  (member | staff | participant), name, email, printed ID (their sign-in
+  name), home site (the centre's card code, lower-case; staff have none, so
+  they can sign in anywhere), NGG's verdict with WIFI_CASE_WORDS as the reason,
+  and a participant's edition end date. Nothing else: no phone, birthday,
+  guardian or money. A PHP check pins the field list.
+- **The verdict is the existing access table.** It uses `wifi_access_for` and
+  `_for_participant`, with this centre's settings, policy states, fees and the
+  hand overrides, all read in batches. NGG's own usage is left out of it
+  (`usage => null`), because CACENTRE counts allowances now and counting here
+  too would charge the same megabytes twice.
+- **Signed, pushed, every 15 minutes.** The token uses the directory push's
+  v1 envelope with typ `wifi.roster` and its own key, `WIFI_SECRET_NGG`
+  (environment variable or `config.wifi.cacentre_secret`). It is posted to
+  `/api/wifi-roster.php?issuer=ngg`. The web-cron tick `wifi_cac` does nothing
+  until a key is set. One push is `full` (anybody not sent is withdrawn), up
+  to 5,000 people. A longer list goes in partial pushes, which withdraw
+  nobody, and the screen says so. The cap is CACENTRE's: it now refuses an
+  oversize full list rather than cutting it.
+- **Screen.** A note on Control Room → Wi-Fi → Gateways shows the last push,
+  any refusals, any home sites CACENTRE has no site for, and errors in words.
+  A super admin has **Send now** (`admin.wifi.cacentre.push`; refused for a
+  centre-scoped network holder, because the push speaks for every centre).
+- **Proven end to end** against CACENTRE's real code on a throwaway MariaDB:
+  the people land, and the router at the site gets exactly the right sign-in
+  names. Suspending somebody at NGG and pushing gives `u;026-702;;;remove` at
+  the router's next fetch. A deleted record is withdrawn. An unknown centre
+  code is named back, and a wrong key is refused with `bad_signature`.
+- **Not yet.** The member app's Me → Wi-Fi still shows NGG's own PIN. The
+  next step is fetching the card from CACENTRE (`/api/wifi-card.php`,
+  `wifi.card`) once the routers have moved, then NGG's feed answers "moved".
+
+### Correction, same day: one connection, and PINs stay on the dashboards
+
+The owner: "Use the existing connection between CACENTRE and the websites. Do
+not recreate a new one", and "The members should still get their pins from
+their dashboards. CACENTRE just controls and distributes."
+
+- **The separate Wi-Fi key and envelope are gone, on both sides.**
+  `WIFI_SECRET_NGG/_AVG`, `config.wifi.cacentre_*` and CACENTRE's
+  `WifiEnvelope` are removed. The Wi-Fi rides the directory push's connection:
+  `dirpush_secret()` / `dirpush_ready()` / `dirpush_base()` here, factored into
+  `dirpush_sign($typ, …)` and `dirpush_post()`, which `dirpush_mint`/`_send`
+  now call too. At CACENTRE, `DirectoryEnvelope` with
+  `DIR_PUSH_SECRET_<APP>` gains the document types `wifi.roster` and
+  `wifi.card` (and a size limit per type). `typ` keeps the three documents
+  apart, so a roster is never a directory push, nor the reverse.
+- **Me → Wi-Fi asks CACENTRE** (`wifi_cac_member_view`, op `wifi.card`
+  show | newPin) once NGG is connected and no NGG gateway still serves where
+  the member signs in (`wifi_cac_serves`: their centre, or any centre for
+  staff, heard from within a day). The view has the same shape as
+  `wifi_view()`, so the screen is unchanged. CACENTRE's card now carries
+  `resetsLeft`, `pinSetAt` and `hasRouter`. When CACENTRE can't be reached,
+  the screen says `cacentre_unreachable` with a retry, never NGG's stale PIN.
+  No new PIN is given to somebody who is off (`wifi_off`).
+- Proven again end to end on MariaDB over `DIR_PUSH_SECRET_NGG`: the member's
+  dashboard shows 026-701 with a six-digit PIN from CACENTRE, *Get a new PIN*
+  changes it there (3 left → 2), a suspended member gets no PIN and NGG's own
+  reason, and a wrong key is `bad_signature`.
+- The Control Room desk (*Why can't somebody get on?*) still shows NGG's say
+  and NGG's PIN; it is NGG's side of the decision.
+
+
+### The router's setup file answers with 200 (2026-10-28)
+
+The owner pasted the install line with `PASTE-THE-KEY-HERE` still in it, and
+RouterOS printed only `ERROR parsing http: 401 should contain www-authenticate
+header`. `/tool fetch` saves nothing on a 401 without that header, so the
+`:error "NGG Wi-Fi: …"` file we sent never reached the terminal. The hook now
+answers a refused key with 200 and that file, which `/import` stops on, with the
+reason. The key is still checked, and nothing but the error line is served. A
+left-in placeholder gets its own sentence, saying where the real line is
+(*Rotate the key* on the gateway). CACENTRE's `api/wifi-setup.php` has the same
+fix.
+
+## The framing tool previewed the wrong photo box for each ID (2026-10-28)
+
+The owner: "The card sizing uses the wrong photo size for the wrong IDs". The
+studio's *Frame photo* dialog kept its own list, `IDS_FRAME_SHAPES`, and it was
+wrong for every card:
+
+- "Member card" was a 0.82 portrait. The member card's photo is full bleed,
+  54 × 37.8 mm (≈1.43, landscape).
+- "Summer School" was 404 × 318, which is the volunteer card's box.
+- "Round" was unlabeled, but it is the Summer School card's circle.
+
+People framed photos against the wrong card. The shapes are now declared beside
+each renderer:
+
+- `NGGC_PHOTO_MM` in card-template.jsx, which the member card's `S` now reads;
+- `VOL_CARD_PHOTO` and `CARD_FRONT_PHOTO` in page-other.jsx;
+- `tplPhotoBox()` for a design's `{{photo}}` image.
+
+`idsPhotoShape(kind, design)` / `idsFrameShapes()` read those, with the
+person's own card (or its assigned design) first. tests/ids-photo-shape.test.js
+pins both ends, and the studio's browser test opens the real dialog.
+
+The Design Studio's "NGG member ID — front" preset (an inset 470 × 370 photo)
+is left alone. It is a separate starting design, not the card the studio
+prints.
+
+## Moving NGG's routers to CACENTRE; refusals RouterOS can read; `signal` on MySQL (2026-10-28)
+
+**The move.** Migration 195 adds `wifi_gateways.movedAt`.
+`admin.wifi.gateway.moved {gatewayId, undo}` is refused until NGG is connected
+(`cacentre_not_connected`). A moved router:
+- is answered `#error;moved_to_cacentre` by the feed, never an empty list, which
+  would sign everybody out of a router that hadn't really moved;
+- gets one diagnosis line, *Runs from CACENTRE*;
+- is left out of the silent digest and of the data-used "counting" list;
+- no longer holds its centre on NGG's PINs (`wifi_cac_serves`), so members flip
+  to CACENTRE's PIN at once.
+
+Undo clears the acked state, so the next fetch is a full list. Once connected,
+the Control Room's primary action is *Add a router at CACENTRE*, so there is one
+place a router is set up. The router's sheet lists the three steps with the
+centre's site code.
+
+**Refusals.** RouterOS's `/tool fetch` keeps no body from a 4xx. The feed now
+answers a MikroTik (by User-Agent) with 200 and its `#error;` line, and NGG's
+and CACENTRE's scripts read that line and log it (`bad_key`,
+`moved_to_cacentre`) instead of `incomplete` or `fetch_failed`. Other platforms
+keep their status codes. CACENTRE has the same fix (`wifi_router_refusal()`).
+
+**MySQL.** Running the suite on MySQL (MariaDB 10.11) for migration 195 found
+that `lesson_feedback.signal` is a reserved word there. The table could not be
+created and every read was a syntax error, on every MySQL deployment since
+lesson feedback shipped. SQLite accepts the name unquoted, which is why the
+SQLite suite never saw it. The fix:
+- the mirror quotes the column;
+- the two raw queries quote it;
+- `db_insert`, `db_update` and `db_upsert` quote names on
+  `DB_RESERVED_COLUMNS` through `db_ident()`, so every other statement is
+  unchanged.
+
+Result: MySQL suite 5860 passed, 0 failed.
+
+
+## 2026-10-28 — Saturdays shown Present and Absent (CACENTRE check-outs)
+
+A member's record listed some Saturdays twice: Present at 07:34, and Absent.
+`member.checkoutRequired` makes the nightly sweep log a day with a sign-in and
+no sign-out as `no_checkout` plus an "Incomplete day" absence. The CACENTRE
+gate had check-outs to NGG switched off (`"checkouts": false` in its ISSUERS),
+so every gate arrival on a programme day became an absence; weekdays are not
+programme days, so only Saturdays showed it.
+
+- `policy_checkout_landed()` voids that day's `no_checkout` and incomplete-day
+  absence (only those; a never-came absence is untouched) and re-derives
+  sanctions. Called from the gate hook's `out` path, the desk and the summer
+  check-out.
+- The hook keeps a re-sent departure's own `scannedAt` when it falls on the
+  day it names, up to 45 days back (arrivals stay clamped to 24 h), and sends
+  no sign-out email for a past day.
+- `admin_member_record` shows one row a day (`kind: incomplete`, "No sign-out ·
+  counted absent") and counts it once; `member_records` marks the day too.
+- CACENTRE (branch `claude/gate-ngg-checkouts`): check-outs on, and the
+  back-fill takes `days` up to 31. Deploy NGG first, then the gate, then press
+  "…from the last 31 days".
+
+Result: PHP suite 5855 passed (SQLite), 5870 (MySQL), UI smoke 661, 0 failed.
+
 ## Courses as a stored fact: placement and course health (2026-10-28)
 
 The structural fix proposed on 2026-10-24, built. Owner's decisions:

@@ -142,6 +142,7 @@ function checkin_member_checkout(array $p, array $hit): array {
     if ($no = attendance_checkout_refusal('member', $at, $p)) return $no + ['student' => checkin_member_public($hit['member'])];
     $outIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
     db_update('attendance', ['checkOutAt' => $outIso], ['id' => $row['id']]);
+    policy_checkout_landed($mid, 'member', $today, $a['byId']);
     $early = trim((string)($p['earlyReason'] ?? ''));
     audit($early !== '' && attendance_close_time('member') !== '' ? 'attendance.early_checkout' : 'member.checkout', $a['byId'], $mid,
           ['date' => $today] + ($early !== '' ? ['reason' => mb_substr($early, 0, 200)] : []), (string)($p['ip'] ?? ''));

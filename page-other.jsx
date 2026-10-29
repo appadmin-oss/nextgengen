@@ -84,11 +84,20 @@ function MediaPage({ setPage }) {
       <section className="section">
         <div className="container">
           {items.length === 0 ? (
+            /* Two different empty states, because they mean different things.
+               Nothing at all is "we have not published any yet", and the
+               filter button would be a dead control. The six items that used
+               to fill this page were invented — one of them claimed 12.4k
+               views for a film nobody made (data.js). */
             <div style={{textAlign:"center", padding:"var(--rs-p-44, 48px 0px)", color:"var(--ink-700)"}}>
-              No media in this category yet.
-              <div style={{marginTop:14}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
-              </div>
+              {MEDIA_ITEMS.length === 0
+                ? "Nothing published yet. The first cohort's reels, documentaries and showcase cuts land here."
+                : "No media in this category yet."}
+              {MEDIA_ITEMS.length > 0 && (
+                <div style={{marginTop:14}}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setFilter("All")}>Show everything</button>
+                </div>
+              )}
             </div>
           ) : (
             <React.Fragment>
@@ -479,7 +488,7 @@ function MentorApplySection() {
   };
 
   return (
-    <section id="mentor-apply" className="section" style={{background:"var(--navy-900)", color:"white"}}>
+    <section id="mentor-apply" className="section dark-surface" style={{background:"var(--navy-900)", color:"white"}}>
       <div className="container" style={{maxWidth:760}}>
         <div style={{textAlign:"center", marginBottom:36}}>
           <span className="eyebrow" style={{color:"var(--lime)"}}>APPLY · VOLUNTEER TEAM</span>
@@ -814,7 +823,7 @@ function ContactPage({ setPage }) {
                   <b>CACENTRE Ayobo</b><br/>Alimosho · Lagos<br/>Saturdays · 09:00 – 13:00
                 </div>
               </div>
-              <div className="card" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
+              <div className="card dark-surface" style={{padding:24, background:"var(--navy-900)", color:"white"}}>
                 <div className="eyebrow" style={{color:"var(--gold-400)"}}>LOOKING TO APPLY?</div>
                 <p style={{fontSize:14, color:"rgba(255,255,255,0.8)", margin:"12px 0 16px", lineHeight:1.5}}>
                   You don't need to email — start your application in about six minutes.
@@ -851,7 +860,7 @@ function DonateWidget() {
   };
   if (hidden) return null;
   return (
-    <div className="card" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
+    <div className="card dark-surface" style={{ padding: 24, background: "var(--navy-900)", color: "#fff" }}>
       <div className="eyebrow" style={{ color: "var(--gold-400)" }}>SUPPORT THE MISSION</div>
       <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
       <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -988,7 +997,7 @@ function ProfileCommunityCTA({ token, name }) {
     catch (e) { setErr("Couldn't sign you in from this card."); setBusy(false); }
   };
   return (
-    <div className="card" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+    <div className="card dark-surface" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18 }}>Enter the Community</div>
         <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span role="alert" style={{ color: "#ffb3b3" }}>{err}</span>}</div>
@@ -1128,7 +1137,9 @@ function MembershipPayPage({ setPage }) {
           <div className="mpay-msg"><h1>We couldn’t load your invoice</h1><p>Check your connection and try again.</p><button className="btn btn-primary" onClick={load}>Try again</button></div>
         ) : (
           <>
-            <h1 className="mpay-title">{inv.purpose === "balance"
+            <h1 className="mpay-title">{inv.purpose === "advance"
+              ? (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is paid ahead." : "Pay ahead for " + (inv.firstName || "your child"))
+              : inv.purpose === "balance"
               ? (inv.status === "paid" ? "Thank you — " + (inv.firstName ? inv.firstName + "’s" : "the") + " account is paid." : "Pay " + (inv.firstName ? inv.firstName + "’s" : "the") + " account balance")
               : (inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is fully enrolled." : "Complete " + (inv.firstName ? inv.firstName + "’s" : "your") + " membership")}</h1>
             <p className="mpay-sub">Invoice <span className="mpay-mono">{inv.invoiceId}</span>{inv.displayId ? <> · member <span className="mpay-mono">{inv.displayId}</span></> : null}{inv.centre ? " · " + inv.centre : ""}</p>
@@ -1145,7 +1156,7 @@ function MembershipPayPage({ setPage }) {
                 <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
               </div>
             ) : inv.status === "void" ? (
-              <div className="mpay-msg"><p>{inv.purpose === "balance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
+              <div className="mpay-msg"><p>{inv.purpose === "balance" || inv.purpose === "advance" ? "This amount is out of date because the account changed. Open the account again and press Pay online for the current figure." : "This invoice was cancelled. Contact your centre if you think that is a mistake."}</p></div>
             ) : inv.pendingOffline ? (
               <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
             ) : (
@@ -1162,7 +1173,8 @@ function MembershipPayPage({ setPage }) {
                 {!inv.paystack && !inv.bank && <p className="mpay-fine">Pay at your centre; you’ll get a receipt once it is recorded and checked.</p>}
               </div>
             )}
-            {inv.purpose !== "balance" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
+            {inv.purpose === "advance" && <p className="mpay-fine">Nothing is charged early. The payment waits on the account and meets each month’s commitment fee, and any renewal, on the day it falls due.</p>}
+            {inv.purpose === "joining" && <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>}
           </>
         )}
       </div>
@@ -1351,7 +1363,7 @@ function SummerProfilePage({ setPage }) {
 
           {/* Mentor notes — only notes an admin marked public reach this page. */}
           {(m.notes || []).length > 0 && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--gold-400)" }}>Mentor notes</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 18 }}>
                 {m.notes.map((n, i) => (
@@ -1367,7 +1379,7 @@ function SummerProfilePage({ setPage }) {
           {/* Gamified attendance standing — the in-app award surface (levels,
               points, streak, awards). Mirrors the emailed awards. */}
           {m.kind === "volunteer" && m.game && (
-            <div className="card" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+            <div className="card dark-surface" style={{ padding: 28, marginTop: 20, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
                 <div>
                   <div className="eyebrow" style={{ color: "var(--gold-400)" }}>ATTENDANCE STANDING</div>
@@ -1579,7 +1591,7 @@ function HandbookSummary() {
     ["Purpose Development", "Life vision aligned with Afrocentric impact."],
   ];
   return (
-    <div className="card handbook-summary" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
+    <div className="card handbook-summary dark-surface" style={{ padding: "28px 30px", marginTop: 36, background: "var(--navy-900)", color: "#fff", border: "var(--rs-border-87, none)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span className="eyebrow" style={{ color: "var(--gold-400)" }}>BEFORE YOU REGISTER · THE OPERATIONS MANUAL</span>
       </div>
@@ -1969,292 +1981,38 @@ function VolunteerRegisterPage({ setPage }) {
 }
 
 /* ============================================================================
-   Anchor Circle — the consent-based, READ-ONLY guardian / teacher / mentor
-   portal. Role → code → verify → consent → dashboard. Own chrome (blue/teal),
-   no member session; a signed portal token is kept in localStorage.
+   /circle — Anchor Circle has moved. It was a no-account portal paired with
+   the child's code; it is now part of the NGG family account (parents,
+   /family) and the mentor portal (mentors, connected by being
+   assigned). Kept as a route because it is in bookmarks and on printed
+   slips: it says where each person goes now, and forgets the old tokens this
+   browser held, which no longer open anything.
    ============================================================================ */
-const CIRCLE_TOKEN_KEY = "ngg_circle_token";
-// Every portal token this device has paired (mentors/teachers hold several —
-// one per student). The active token stays in CIRCLE_TOKEN_KEY.
-const CIRCLE_TOKENS_KEY = "ngg_circle_tokens";
-const circleTokens = {
-  all() { try { return JSON.parse(localStorage.getItem(CIRCLE_TOKENS_KEY)) || []; } catch (_) { return []; } },
-  save(list) { try { localStorage.setItem(CIRCLE_TOKENS_KEY, JSON.stringify(list.slice(0, 30))); } catch (_) {} },
-  add(t) { const l = circleTokens.all(); if (t && l.indexOf(t) === -1) { l.push(t); circleTokens.save(l); } },
-  remove(t) { circleTokens.save(circleTokens.all().filter(x => x !== t)); },
-};
-const CIRCLE_ROLES = [
-  { key: "parent", label: "Parent / Guardian", desc: "Confirm home discipline & encourage", icon: "🏠" },
-  { key: "teacher", label: "Teacher", desc: "Verify school conduct & effort", icon: "🎓" },
-  { key: "mentor", label: "Afrovanguard Mentor", desc: "Guide your mentee's journey", icon: "🧭" },
+const CIRCLE_MOVED = [
+  { icon: "ph-house-line", who: "Parents and guardians", what: "Sign in to the family account with your email. Add your child with the six-digit code from their app and their name: their Anchor week is under Growth, beside attendance, fees and their mentor.", go: "/family", cta: "Open the family account" },
+  { icon: "ph-compass", who: "Mentors", what: "Nothing to do. The children you are assigned are connected already: open one in the mentor portal and their Anchor week is under Growth and lessons.", go: "/mentor", cta: "Open the mentor portal" },
 ];
-const CIRCLE_CAN = ["See streaks, systems held & progress", "Confirm daily / school conduct", "Leave weekly remarks & encouragement"];
-const CIRCLE_CANNOT = ["Read private journal reflections", "Open personal notes or goals", "See AI coach conversations"];
-
 function CirclePortal({ setPage }) {
-  const [step, setStep] = React.useState("role");
-  const [role, setRole] = React.useState(null);
-  const [code, setCode] = React.useState("");
-  const [guardianName, setGuardianName] = React.useState("");
-  const [student, setStudent] = React.useState(null);
-  const [consent, setConsent] = React.useState(false);
-  const [token, setToken] = React.useState(() => { try { return localStorage.getItem(CIRCLE_TOKEN_KEY) || ""; } catch (_) { return ""; } });
-  const [dash, setDash] = React.useState(null);
-  const [busy, setBusy] = React.useState(false);
-  const [err, setErr] = React.useState("");
-  const [childName, setChildName] = React.useState("");
-  const [remark, setRemark] = React.useState("");
-  const [toast, setToastMsg] = React.useState("");
-  const flash = (m) => { setToastMsg(m); setTimeout(() => setToastMsg(""), 2400); };
-
-  const [cohort, setCohort] = React.useState(null);
-
-  const loadDash = React.useCallback((tok) => {
-    setBusy(true); setErr("");
-    return NGGApi.public.circle.dashboard(tok)
-      .then(d => { setDash(d); setStep("dashboard"); })
-      .catch(e => {
-        if ((e.code || e.message) === "link_invalid") {
-          // This student revoked (or the token expired) — fall over to the
-          // next paired student on this device, or back to the start.
-          circleTokens.remove(tok);
-          const rest = circleTokens.all();
-          if (rest.length) { try { localStorage.setItem(CIRCLE_TOKEN_KEY, rest[0]); } catch (_) {} setToken(rest[0]); return loadDash(rest[0]); }
-          try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {}
-          setToken(""); setDash(null); setStep("role");
-        } else setErr(humanizeError(e.message, e.code));
-      })
-      .finally(() => setBusy(false));
-  }, []);
-  React.useEffect(() => { if (token) loadDash(token); /* eslint-disable-next-line */ }, []);
-
-  // Cohort strip — one summary chip per student this device holds a valid
-  // token for. The server silently skips revoked tokens; we prune to match.
-  const refreshCohort = React.useCallback((activeTok) => {
-    const list = circleTokens.all();
-    if (activeTok && list.indexOf(activeTok) === -1) { list.push(activeTok); circleTokens.save(list); }
-    if (!list.length) { setCohort([]); return; }
-    NGGApi.public.circle.cohort(list)
-      .then(r => { const students = r.students || []; circleTokens.save(students.map(s => s.token)); setCohort(students); })
-      .catch(() => {});
-  }, []);
-  React.useEffect(() => { if (step === "dashboard" && token) refreshCohort(token); }, [step, token, refreshCohort]);
-
-  const switchStudent = (tok) => {
-    if (tok === token) return;
-    try { localStorage.setItem(CIRCLE_TOKEN_KEY, tok); } catch (_) {}
-    setToken(tok); loadDash(tok);
-  };
-  const addStudent = () => { setRole((dash && dash.role) || role || "mentor"); setStudent(null); setCode(""); setChildName(""); setErr(""); setStep("code"); };
-
-  const roleWord = role === "teacher" ? "student" : (role === "mentor" ? "mentee" : "child");
-  const submitCode = async () => {
-    setBusy(true); setErr("");
-    try { const r = await NGGApi.public.circle.lookup(code, childName.trim()); setStudent(r.student); setStep("verify"); }
-    /* One message for a wrong code AND a wrong name, matching the server. Telling
-       someone "right code, wrong name" would confirm the code is live, which is
-       most of what the name check was added to prevent. */
-    catch (e) { setErr((e.code === "not_found")
-      ? "That code and name don't match a student. Check both and try again."
-      : humanizeError(e.message, e.code)); }
-    finally { setBusy(false); }
-  };
-  const connect = async () => {
-    setBusy(true); setErr("");
-    try {
-      const r = await NGGApi.public.circle.connect({ code, name: childName.trim(), role, guardianName, consent: true });
-      try { localStorage.setItem(CIRCLE_TOKEN_KEY, r.token); } catch (_) {}
-      circleTokens.add(r.token);
-      setToken(r.token); await loadDash(r.token); flash("Connected securely ✓");
-    } catch (e) { setErr(humanizeError(e.message, e.code)); } finally { setBusy(false); }
-  };
-  const unlink = () => { try { localStorage.removeItem(CIRCLE_TOKEN_KEY); } catch (_) {} circleTokens.save([]); setCohort(null); setToken(""); setDash(null); setRole(null); setCode(""); setChildName(""); setConsent(false); setStep("role"); flash("Signed out of this device"); };
-  const weekDates = () => { const out = []; const base = dash && dash.weekStart ? new Date(dash.weekStart + "T00:00:00Z") : new Date(); for (let i = 0; i < 7; i++) { const d = new Date(base); d.setUTCDate(d.getUTCDate() + i); out.push(d.toISOString().slice(0, 10)); } return out; };
-  const toggleDay = async (date) => {
-    const on = !(dash.confirmed || []).includes(date);
-    setDash(d => ({ ...d, confirmed: on ? [...(d.confirmed || []), date] : (d.confirmed || []).filter(x => x !== date) }));
-    try { await NGGApi.public.circle.confirm(token, date, on); } catch (e) { flash("Couldn't save — try again"); loadDash(token); }
-  };
-  const sendRemark = async () => {
-    if (!remark.trim()) return;
-    try { await NGGApi.public.circle.remark(token, remark.trim()); setRemark(""); flash("Remark sent to " + (dash.student.name.split(" ")[0])); }
-    catch (e) { flash(humanizeError(e.message, e.code)); }
-  };
-  const downloadReport = async () => {
-    try {
-      const r = await NGGApi.public.circle.report(token); const rep = r.report; const s = rep.stats;
-      const w = window.open("", "_blank"); if (!w) return;
-      const remarks = (rep.remarks || []).map(x => `<li><b>${x.role}</b>: ${x.text}</li>`).join("") || "<li>None yet.</li>";
-      w.document.write(`<html><head><title>Anchor weekly report — ${rep.student}</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:32px;color:#111;max-width:640px}h1{font-size:22px}.k{display:flex;gap:16px;margin:18px 0}.k div{flex:1;border:1px solid #ddd;border-radius:12px;padding:14px;text-align:center}.k b{display:block;font-size:26px}small{color:#666}</style></head><body><h1>Anchor weekly report</h1><p><b>${rep.student}</b> · week of ${rep.weekStart} · ${rep.role} view</p><div class="k"><div><b>${s.avgSystems}</b><small>avg systems</small></div><div><b>${s.reflections}</b><small>reflections</small></div><div><b>${s.conduct}%</b><small>conduct</small></div></div><p><b>Trend:</b> ${s.trend} · <b>Consistency:</b> ${s.consistency}% · <b>Streak:</b> ${s.streak} (best ${s.longestStreak})</p><p><b>Suggested focus:</b> ${rep.suggestion}</p><h3>Recent remarks</h3><ul>${remarks}</ul><script>window.onload=function(){print()}</script></body></html>`);
-      w.document.close();
-    } catch (e) { flash("Couldn't prepare the report"); }
-  };
-
-  const bg = { position: "absolute", inset: 0, background: "radial-gradient(92% 60% at 15% 4%,rgba(56,120,220,.5) 0%,transparent 60%),radial-gradient(80% 55% at 92% 8%,rgba(94,224,192,.32) 0%,transparent 55%),linear-gradient(175deg,#173056 0%,#122240 55%,#0d1830 100%)" };
-  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 18 };
-  const teal = "#5ee0c0";
-  const wrap = (children) => (
-    <div className="circle-portal" style={{ minHeight: "100vh", background: "#0d1830", color: "#fff", position: "relative", overflow: "hidden" }}>
-      <div style={bg} aria-hidden="true"/>
-      <div style={{ position: "relative", maxWidth: 460, margin: "0 auto", padding: "32px 22px 60px" }}>{children}</div>
-      {toast && <div className="circle-toast" role="status">{toast}</div>}
-    </div>
-  );
-
-  if (step === "role") return wrap(<>
-    <div style={{ width: 66, height: 66, borderRadius: 20, background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", fontSize: 30 }}>🛡️</div>
-    <h1 style={{ font: "800 30px/1.05 var(--font-display,sans-serif)", margin: "20px 0 0" }}>Anchor <span style={{ color: teal }}>Circle</span></h1>
-    <div className="mono" style={{ letterSpacing: ".28em", color: "rgba(255,255,255,.6)", fontSize: 11, marginTop: 6 }}>GUARDIAN &amp; MENTOR PORTAL</div>
-    <p style={{ color: "rgba(255,255,255,.78)", lineHeight: 1.55, marginTop: 16 }}>Support their twelve-week journey — confirm conduct, leave encouragement, and track growth <b>without ever reading their private words.</b></p>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: "rgba(255,255,255,.6)", margin: "26px 0 12px" }}>I AM CONNECTING AS A…</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-      {CIRCLE_ROLES.map(r => (
-        <button key={r.key} onClick={() => { setRole(r.key); setErr(""); setStep("code"); }} style={{ ...card, display: "flex", alignItems: "center", gap: 14, textAlign: "left", padding: "15px 16px", cursor: "pointer", color: "#fff" }}>
-          <span style={{ fontSize: 24 }}>{r.icon}</span>
-          <span style={{ flex: 1 }}><span style={{ display: "block", fontWeight: 700, fontSize: 16 }}>{r.label}</span><span style={{ fontSize: 12, color: "rgba(255,255,255,.66)" }}>{r.desc}</span></span>
-          <span aria-hidden="true" style={{ color: "rgba(255,255,255,.5)" }}>›</span>
-        </button>
-      ))}
-    </div>
-    <div style={{ ...card, display: "flex", gap: 11, padding: "14px 16px", marginTop: 20, alignItems: "flex-start" }}>
-      <span aria-hidden="true">🔒</span><span style={{ fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,.72)" }}>Anchor Link is a consent-based, read-only connection. It can be revoked by the student at any time.</span>
-    </div>
-    <button className="btn btn-ghost btn-sm" style={{ marginTop: 22, color: "rgba(255,255,255,.7)" }} onClick={() => setPage("home")}>← Back to site</button>
-  </>);
-
-  if (step === "code") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("role")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 1 OF 3 · PAIR</div>
-    <h1 style={{ font: "800 28px/1.05 var(--font-display,sans-serif)", margin: "12px 0 0" }}>Enter the Anchor Link code</h1>
-    <p style={{ color: "rgba(255,255,255,.76)", lineHeight: 1.55, marginTop: 12 }}>Ask your {roleWord} to open Anchor → <b>You → Your Circle</b>. They'll read you a 6-digit code.</p>
-    <input value={code} onChange={e => setCode((e.target.value || "").replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="••••••"
-      aria-label="6-digit Anchor Link code"
-      style={{ width: "100%", marginTop: 24, textAlign: "center", letterSpacing: ".5em", background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 18, color: "#fff", font: "700 34px var(--font-mono,monospace)", padding: "20px 0 20px .5em", outline: "none" }}/>
-    {/* Required, and it is the actual security control on this page: without
-        it a six-digit code was enough to pull back a child's name and then a
-        guardian's-eye view of them. Asking for a name the guardian obviously
-        knows costs them one field and makes a guessed code worth nothing.
-        It also stops a mistyped code quietly pairing you to another child. */}
-    <input value={childName} onChange={e => setChildName(e.target.value)} placeholder={"Your " + roleWord + "'s name"}
-      aria-label={"Your " + roleWord + "'s name"} autoComplete="off"
-      style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.16)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
-    <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 7 }}>First name or surname — whichever is on their record.</div>
-    <input value={guardianName} onChange={e => setGuardianName(e.target.value)} placeholder="Your name (optional)"
-      aria-label="Your name (optional)"
-      style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
-    {err && <div role="alert" className="circle-err">{err}</div>}
-    {(() => {
-      const ready = code.length === 6 && childName.trim().length >= 2;
-      return <button className="btn btn-lg" disabled={!ready || busy} onClick={submitCode} style={{ width: "100%", marginTop: 18, background: ready ? teal : "rgba(255,255,255,.12)", color: ready ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Checking…" : "Find student →"}</button>;
-    })()}
-  </>);
-
-  if (step === "verify") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("code")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 2 OF 3 · VERIFY</div>
-    <h1 style={{ font: "800 28px/1.05 var(--font-display,sans-serif)", margin: "12px 0 18px" }}>Is this your {roleWord}?</h1>
-    <div style={{ ...card, padding: 24, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
-      <div style={{ width: 74, height: 74, borderRadius: "50%", background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 30px var(--font-display,sans-serif)" }}>{((student && student.name) || "?").charAt(0)}</div>
-      <div style={{ font: "800 22px var(--font-display,sans-serif)", marginTop: 14 }}>{student && student.name}</div>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12, padding: "6px 13px", borderRadius: 99, background: "rgba(94,224,192,.14)", border: "1px solid rgba(94,224,192,.3)" }}><span style={{ color: teal, fontSize: 11, fontWeight: 700 }} className="mono">✓ CODE + NAME MATCHED</span></div>
-    </div>
-    <button className="btn btn-lg" onClick={() => setStep("consent")} style={{ width: "100%", marginTop: 20, background: teal, color: "#06231d", border: "none", fontWeight: 800 }}>Yes, continue →</button>
-    <button className="btn btn-ghost" style={{ width: "100%", marginTop: 10, color: "rgba(255,255,255,.7)" }} onClick={() => { setStep("code"); setStudent(null); }}>No, re-enter code</button>
-  </>);
-
-  if (step === "consent") return wrap(<>
-    <button className="circle-back" onClick={() => setStep("verify")} aria-label="Back">←</button>
-    <div className="mono" style={{ letterSpacing: ".2em", color: teal, fontSize: 11, marginTop: 20 }}>STEP 3 OF 3 · PERMISSIONS</div>
-    <h1 style={{ font: "800 26px/1.05 var(--font-display,sans-serif)", margin: "12px 0 6px" }}>A transparent connection</h1>
-    <p style={{ fontSize: 13, color: "rgba(255,255,255,.74)" }}>Anchor Link is deliberately limited. Here's exactly what you can and can't do.</p>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: teal, margin: "20px 0 10px" }}>✓ YOU CAN</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CAN.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(94,224,192,.08)", border: "1px solid rgba(94,224,192,.2)" }}><span style={{ color: teal }}>✓</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "#ff8a8a", margin: "20px 0 10px" }}>✕ YOU CAN NOT</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>{CIRCLE_CANNOT.map((c, i) => <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 15px", borderRadius: 14, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.2)" }}><span style={{ color: "#ff8a8a" }}>⃠</span><span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span></div>)}</div>
-    <button type="button" role="checkbox" aria-checked={consent} aria-label="I agree to Anchor's guardian terms and the student's privacy" onClick={() => setConsent(v => !v)} style={{ display: "flex", gap: 12, width: "100%", textAlign: "left", marginTop: 20, padding: 15, borderRadius: 14, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", cursor: "pointer", color: "#fff", alignItems: "center" }}>
-      <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
-      <span style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>I agree to Anchor's guardian terms &amp; the student's privacy.</span>
-    </button>
-    {err && <div role="alert" className="circle-err">{err}</div>}
-    <button className="btn btn-lg" disabled={!consent || busy} onClick={connect} style={{ width: "100%", marginTop: 14, background: consent ? teal : "rgba(255,255,255,.12)", color: consent ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Connecting…" : "Connect securely 🔗"}</button>
-  </>);
-
-  // Dashboard
-  if (err) return wrap(<ErrorState title="Couldn't load the dashboard" code={err} onRetry={() => loadDash(token)}/>);
-  if (!dash) return wrap(<div style={{ textAlign: "center", padding: "80px 0" }}><div className="dash-spinner"/></div>);
-  const s = dash.stats || {}; const confirmed = dash.confirmed || []; const dates = weekDates();
-  const dayLabels = ["M", "T", "W", "T", "F", "S", "S"];
-  const roleLabel = (dash.role || role || "guardian").toUpperCase();
-  const first = (dash.student.name || "").split(" ")[0];
-  const confirmTitle = dash.role === "teacher" ? "Verify school conduct" : (dash.role === "mentor" ? "Confirm weekly discipline" : "Confirm home discipline");
-  return wrap(<>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div><div className="mono" style={{ fontSize: 10, letterSpacing: ".18em", color: teal }}>{roleLabel} PORTAL</div><h2 style={{ font: "800 22px var(--font-display,sans-serif)", margin: "3px 0 0" }}>Anchor Circle</h2></div>
-      <button className="circle-back" onClick={unlink} aria-label="Sign out">⎋</button>
-    </div>
-    {cohort && (cohort.length > 1 || dash.role === "mentor") && (
-      <div style={{ marginTop: 18 }}>
-        <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 8 }}>{dash.role === "mentor" ? "YOUR MENTEES" : "YOUR STUDENTS"}</div>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }} role="tablist" aria-label="Linked students">
-          {cohort.map(s => {
-            const active = s.token === token;
-            return (
-              <button key={s.token} role="tab" aria-selected={active} onClick={() => switchStudent(s.token)}
-                title={s.atRisk ? "Needs support — " + (s.trend || "") : "On track — " + (s.trend || "")}
-                style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "9px 13px", borderRadius: 99, cursor: "pointer",
-                  background: active ? "rgba(94,224,192,.16)" : "rgba(255,255,255,.06)",
-                  border: "1px solid " + (active ? teal : "rgba(255,255,255,.14)"), color: "#fff" }}>
-                {s.atRisk && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff8a8a", boxShadow: "0 0 8px rgba(255,120,120,.8)" }}/>}
-                <span style={{ fontWeight: 700, fontSize: 13 }}>{(s.name || "?").split(" ")[0]}</span>
-                <span className="mono" style={{ fontSize: 11, color: "#ffce54" }}>🔥{s.streak}</span>
-              </button>
-            );
-          })}
-          <button onClick={addStudent} style={{ flex: "none", padding: "9px 13px", borderRadius: 99, background: "transparent", border: "1px dashed rgba(255,255,255,.3)", color: "rgba(255,255,255,.75)", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>+ Add</button>
-        </div>
+  React.useEffect(() => { try { localStorage.removeItem("ngg_circle_token"); localStorage.removeItem("ngg_circle_tokens"); } catch (_) {} }, []);
+  return (
+    <main className="circle-portal circle-moved" id="main">
+      <div className="circle-moved-in">
+        <p className="circle-moved-eyebrow">Anchor Circle</p>
+        <h1>Anchor Circle has moved</h1>
+        <p className="circle-moved-lead">Following a child’s Anchor week — the systems they held, the days they reflected, their streak, the conduct days you confirm and the notes you leave — is now part of the NGG family account and the mentor portal. A child’s mentor reads their journal and reflections in the mentor portal.</p>
+        <ul className="circle-moved-list">
+          {CIRCLE_MOVED.map(x => (
+            <li key={x.who} className="circle-moved-card">
+              <i className={"ph " + x.icon} aria-hidden="true"/>
+              <div><h2>{x.who}</h2><p>{x.what}</p><a className="btn btn-gold" href={x.go}>{x.cta}</a></div>
+            </li>
+          ))}
+        </ul>
+        <p className="circle-moved-note">Connected here before? That link has ended. The days you confirmed and the notes you left are still on the child’s record.</p>
+        <button type="button" className="btn btn-ghost btn-sm circle-moved-back" onClick={() => setPage("home")}>← Back to the site</button>
       </div>
-    )}
-    <div style={{ ...card, display: "flex", alignItems: "center", gap: 14, padding: 18, marginTop: 20 }}>
-      <div style={{ width: 54, height: 54, borderRadius: 16, background: "radial-gradient(circle at 35% 28%,#7fb0ff,#2f6fd0)", display: "grid", placeItems: "center", font: "800 24px var(--font-display,sans-serif)" }}>{(dash.student.name || "?").charAt(0)}</div>
-      <div style={{ flex: 1 }}><div style={{ font: "800 19px var(--font-display,sans-serif)" }}>{dash.student.name}</div><div style={{ fontSize: 12, color: "rgba(255,255,255,.68)" }}>Streak {s.streak} · best {s.longestStreak}</div></div>
-      <div style={{ textAlign: "right" }}><div style={{ font: "700 16px var(--font-mono,monospace)", color: "#ffce54" }}>🔥 {s.streak}</div><div className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>DAY STREAK</div></div>
-    </div>
-    <div style={{ display: "grid", gridTemplateColumns: "var(--rs-gcolumns-90, 1fr 1fr 1fr)", gap: 10, marginTop: 14 }}>
-      {[[s.avgSystems, "avg systems", teal], [s.reflections, "reflections", "#7fb0ff"], [(s.conduct || 0) + "%", "conduct", "#ffce54"]].map((t, i) => (
-        <div key={i} style={{ ...card, padding: "15px 12px", textAlign: "center" }}><div style={{ font: "800 22px var(--font-display,sans-serif)", color: t[2] }}>{t[0]}</div><div style={{ fontSize: 10, color: "rgba(255,255,255,.66)", marginTop: 2 }}>{t[1]}</div></div>
-      ))}
-    </div>
-    <div style={{ borderRadius: 18, padding: 16, marginTop: 16, background: s.atRisk ? "rgba(255,120,120,.1)" : "rgba(94,224,192,.1)", border: "1px solid " + (s.atRisk ? "rgba(255,120,120,.3)" : "rgba(94,224,192,.3)") }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".14em", color: s.atRisk ? "#ff8a8a" : teal }}>{s.atRisk ? "⚠ NEEDS SUPPORT" : "✓ ON TRACK"} · {String(s.trend || "").toUpperCase()}</div>
-      <p style={{ fontSize: 14, lineHeight: 1.5, margin: "8px 0 0", color: "rgba(255,255,255,.85)" }}>{dash.suggestion}</p>
-    </div>
-    <div style={{ marginTop: 20 }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 10 }}>SYSTEMS HELD THIS WEEK</div>
-      <div style={{ display: "flex", gap: 8 }}>{(s.weekBars || []).map((b, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <div style={{ width: "100%", height: 60, borderRadius: 9, background: "rgba(255,255,255,.07)", display: "flex", alignItems: "flex-end", overflow: "hidden" }}><div style={{ width: "100%", height: b.pct + "%", background: "linear-gradient(180deg,#5ee0c0,#2f6fd0)", borderRadius: 9 }}/></div>
-          <span className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>{dayLabels[i]}</span>
-        </div>
-      ))}</div>
-    </div>
-    <div style={{ ...card, padding: 18, marginTop: 20, background: "linear-gradient(140deg,rgba(94,224,192,.14),rgba(47,111,208,.16))" }}>
-      <div style={{ fontWeight: 700, fontSize: 15 }}>{confirmTitle}</div>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,.72)", marginTop: 3 }}>Mark the days conduct met expectations.</div>
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>{dates.map((date, i) => { const on = confirmed.includes(date); return (
-        <button key={date} onClick={() => toggleDay(date)} className="mono" style={{ flex: 1, aspectRatio: "1", borderRadius: 11, background: on ? teal : "rgba(255,255,255,.06)", border: "1px solid " + (on ? teal : "rgba(255,255,255,.12)"), color: on ? "#06231d" : "rgba(255,255,255,.6)", cursor: "pointer", fontWeight: 700 }}>{dayLabels[i]}</button>
-      ); })}</div>
-    </div>
-    <div style={{ marginTop: 20 }}>
-      <div className="mono" style={{ fontSize: 10, letterSpacing: ".16em", color: "rgba(255,255,255,.6)", marginBottom: 10 }}>LEAVE A WEEKLY REMARK</div>
-      <textarea value={remark} onChange={e => setRemark(e.target.value)} placeholder="A word of encouragement or an honest observation…" style={{ width: "100%", minHeight: 84, resize: "none", background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 16, color: "#fff", font: "500 14px/1.5 var(--font-body,sans-serif)", padding: "14px 15px", outline: "none" }}/>
-      <button className="btn btn-lg" onClick={sendRemark} disabled={!remark.trim()} style={{ width: "100%", marginTop: 10, background: teal, color: "#06231d", border: "none", fontWeight: 800 }}>Send to {first} →</button>
-    </div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
-      <button onClick={downloadReport} style={{ ...card, display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", cursor: "pointer", color: "#fff" }}><span>📄</span><span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14 }}>Download weekly report</span><span aria-hidden="true">↓</span></button>
-      <button onClick={unlink} style={{ display: "flex", alignItems: "center", gap: 12, padding: "15px 16px", borderRadius: 15, background: "rgba(255,90,90,.08)", border: "1px solid rgba(255,120,120,.22)", cursor: "pointer", color: "#ff8a8a" }}><span>⛓️‍💥</span><span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14 }}>Sign out of this device</span></button>
-    </div>
-    <p style={{ textAlign: "center", fontSize: 11, lineHeight: 1.5, color: "rgba(255,255,255,.55)", margin: "20px 0 0" }}>Read-only connection · private reflections, notes &amp; coach chats are never shared.</p>
-  </>);
+    </main>
+  );
 }
 
 /* ============================================================================
@@ -5313,6 +5071,13 @@ function CardCentreRing({ centre, size, px, radius, children }) {
   );
 }
 
+/* Each standard card's photograph, declared beside its renderer so whatever
+   frames a photo for it reads the shape that prints: the Summer School card's
+   is a circle; the volunteer card's is 404 × 318 design units (it scales on
+   that aspect on a shorter card). The member card's is NGGC_PHOTO_MM. */
+const CARD_FRONT_PHOTO = { round: true };
+const VOL_CARD_PHOTO = { w: 404, h: 318 };
+
 function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const lockup = (program && program.logoLockup) || "/assets/idcard/logo-lockup.png";
@@ -5428,8 +5193,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      at a legibility floor and must not shrink. */
   const colH = H - 30 - 112 - 96 - 44;         // panel, less the column's padding
   const fixed = fnSize * 1.1 + snSize * 1.04 + 2 + 46 + 20 + 98 + 3 * 14;
-  const phH = Math.round(Math.max(150, Math.min(318, colH - fixed)));
-  const phW = Math.round(phH * 404 / 318);
+  const phH = Math.round(Math.max(150, Math.min(VOL_CARD_PHOTO.h, colH - fixed)));
+  const phW = Math.round(phH * VOL_CARD_PHOTO.w / VOL_CARD_PHOTO.h);
   const field = (label, value, big) => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(5) }}>
       <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: CARD_CAPTION_INK, lineHeight: 1 }}>{label}</span>

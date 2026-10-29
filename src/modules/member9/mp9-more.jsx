@@ -1,7 +1,11 @@
 /* The Anchor Journal app. Opened in the same tab, always. */
 const MP9_JOURNAL_URL = "/journal/";
 /* The apps beside the portal, in the desktop sidebar: [label, icon, address]. */
-const MP9_APPS = [["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
+/* The places a member goes OUTSIDE the portal shell. Learn joined them when
+   the curriculum stopped being a sheet over this tab and became its own app
+   at /learn — a lesson has an address now, and the portal links into it
+   rather than drawing a second copy of it. */
+const MP9_APPS = [["Learn", "ph ph-book-open-text", "/learn"], ["Anchor Journal", "ph ph-notebook", MP9_JOURNAL_URL], ["Community", "ph ph-users-three", "/community"]];
 /* The idea sheet's chips, and the topic the server keeps for each (MEMBER_FEEDBACK_TOPICS). */
 const MP9_IDEA_TOPICS = { "How NGG is going for me": "experience", "An activity idea": "idea", "Something NGG should change": "change", "Something I love": "love", "Something in the portal isn’t working": "app" };
 /* The experience scale, 1 to 5, as MEMBER_FEEDBACK_RATINGS words it. Faces as well as words: the youngest members read the face first. */
@@ -18,11 +22,11 @@ function mp9SimpleAreas(older) {
     ["My mentor", "ph ph-handshake", [["mentor", "Talk to my mentor"], ["companion", "How my week went"], ["community", "My club"]]],
     ["Learn", "ph ph-book-open-text", [["learn", "My lessons"], ["sat", "This Saturday"], ["timetable", "My week"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
     ["Me", "ph ph-star", [["growth", "My goals"], ["passport", "My badges"], ["journal", "My journal"], ["results", "My school report"]]],
-    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
+    ["Help", "ph ph-lifebuoy", [["help", "Get help"], ["support", "Ask the NGG team"], ["me", "My profile"], ["records", "My requests"]].concat(older ? [["money", "Money"]] : [])]];
 }
 const MP9_SIMPLE_SUBS = { mentor: "Send a message or a voice note", companion: "Tell us about your week", community: "See what your club is sharing", learn: "Your lessons and homework", sat: "What happens this Saturday",
   timetable: "When to come to the centre", tools: "Flashcards, quizzes and a focus timer", growth: "What you’re working towards", passport: "Badges you’ve earned", journal: "Write about your day",
-  results: "Add your school report", help: "Ask a grown-up at NGG for help", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
+  results: "Add your school report", help: "Ask a grown-up at NGG for help", support: "When something isn’t working", me: "Your name, photo and settings", records: "Things you’ve asked us for", opps: "Things you can apply for" };
 /* Today's big buttons in the simple view: the four things a child comes to do,
    one press each, before the full Today screen below. */
 const MP9_SIMPLE_TILES = [["mentor", "Talk to my mentor", "ph ph-chat-circle-text"], ["learn", "My lessons", "ph ph-book-open-text"], ["sat", "This Saturday", "ph ph-calendar-star"], ["growth", "My goals", "ph ph-target"], ["journal", "My journal", "ph ph-notebook"]];
@@ -68,18 +72,27 @@ Object.assign(Mp9Portal.prototype, {
     const myCourses = (tt.courses || []).filter(Boolean), myL = myCourses.map(c => c.toLowerCase());
     const division = { name: tt.division || "Your division", course: myCourses.length ? myCourses.join(", ") + (tt.coursesConfirmed === false ? " · not confirmed yet" : "") : "No course chosen yet: ask your centre", instructor: "Your instructor", room: me.centre + " centre",
       chess: "Chess is part of every division · Saturdays, and online in the Arcade" };
-    const slots = (tt.slots || []);
-    const byDay = {};
+    /* The week, as a child reads it (owner, 2026-10-28: "I am having trouble
+       doing my timetable"): THEIR class first — day, time, room, who — then
+       the centre's classes by day with theirs marked in words, then the rest
+       of Saturday (the Formation day) on its own, never mixed into the
+       classes. `mine` is the server's (member_timetable), not a name guess. */
+    const slots = (tt.slots || []).slice().sort((x, y) => ((x.weekday + 1) % 7) - ((y.weekday + 1) % 7) || String(x.startTime).localeCompare(String(y.startTime)));
     const DN = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    slots.forEach(x => { const day = DN[x.weekday] || x.day || "Saturday"; (byDay[day] = byDay[day] || []).push([x.startTime || x.start || "", (x.course || x.title || "") + (x.level ? " · " + x.level : ""), x.room || x.where || ""]); });
-    // Who teaches the member's own course, named as a child addresses them (the server's title + surname).
-    const mySlot = slots.find(x => x.mine && x.instructor) || slots.find(x => x.instructor);
-    if (mySlot) division.instructor = mySlot.instructor;
-    if (slots[0] && slots[0].room) division.room = slots[0].room;
+    const hm = x => [x.startTime, x.endTime].filter(Boolean).join("–");
+    const mineSlots = slots.filter(x => x.mine);
+    const mySlot = mineSlots.find(x => x.instructor) || mineSlots[0];
+    if (mySlot && mySlot.instructor) division.instructor = mySlot.instructor;
+    if (mySlot && mySlot.room) division.room = mySlot.room;
+    if (myCourses.length > 3) division.course = "Your centre confirms your course";
+    const DIV_ICON = [[/tech|cod|comput/i, "ph ph-code"], [/art|music|perform|media|creative/i, "ph ph-music-notes"], [/sport|athlet/i, "ph ph-soccer-ball"], [/business|enterpr/i, "ph ph-briefcase"], [/science|stem/i, "ph ph-flask"]];
+    division.icon = (DIV_ICON.find(([re]) => re.test(division.name)) || [0, "ph ph-graduation-cap"])[1];
+    const ttMine = mineSlots.map(x => ({ day: DN[x.weekday] || x.day || "Saturday", time: hm(x), course: x.course + (x.level ? " · " + x.level : ""), where: [x.room, x.instructor].filter(Boolean).join(" · ") || me.centre + " centre" }));
+    const byDay = {};
+    slots.forEach(x => { const day = DN[x.weekday] || x.day || "Saturday"; (byDay[day] = byDay[day] || []).push(x); });
+    const ttDays = Object.keys(byDay).map(d => ({ d, rows: byDay[d].map(x => ({ t: hm(x), a: x.course + (x.level ? " · " + x.level : ""), w: x.room || "", mine: !!x.mine, bg: x.mine ? "#fdf6e3" : "#fff", fw: x.mine ? "700" : "400" })) }));
     const form = this.dd("form") || {};
-    const satRows = (form.blocks || []).map(b => [b.start, b.title, (b.for && b.for.member && b.for.member[0]) || b.flow || ""]);
-    const ttDays = [{ d: "Saturday", rows: satRows.length ? satRows : (byDay.Saturday || []) }].concat(Object.keys(byDay).filter(k => k !== "Saturday").map(k => ({ d: k, rows: byDay[k] })))
-      .map(x => ({ d: x.d, rows: x.rows.map(([t, a, w]) => ({ t, a, w, mine: myL.some(c => String(a).toLowerCase().startsWith(c)) })) }));
+    const ttSat = (form.blocks || []).map(b => ({ t: b.start, a: b.title, w: (b.for && b.for.member && b.for.member[0]) || b.flow || "" }));
     const curWeeks = units.map(u => { const pr = u.progress, st = pr && pr.status === "completed" ? "Done" : pr ? "In progress" : u.year > ((cur.placement || {}).year || 1) ? "Open early" : u.week > wk && u.stage !== "catchup" ? "Opens week " + u.week : wk && u.week < wk ? "To catch up" : "Not started";
       /* The padlock is for a lesson that is not open yet, and only that: a
          past week the child has not started is open, and drawing it locked
@@ -87,20 +100,22 @@ Object.assign(Mp9Portal.prototype, {
       return { w: u.path ? u.path.week : u.week, t: u.title, div: mp9CourseLine(u), s: st, score: pr && pr.bestPct ? pr.bestPct + "%" : "", fg: st === "Done" ? "#1d6b30" : st === "In progress" || st === "To catch up" ? "#7a5600" : "#6b6b72",
         icon: st === "Done" ? "ph-fill ph-check-circle" : st === "In progress" ? "ph-fill ph-circle-half" : /^Opens/.test(st) ? "ph ph-lock-simple" : st === "To catch up" ? "ph ph-arrow-counter-clockwise" : "ph ph-circle" }; });
     const oppsTop = this.older() ? this.oppItems().slice(0, 3).map(o => ({ t: o.t, why: o.why || o.org, close: o.close })) : [];
-    return { lessons, assignments: asg, events: ev, division, ttDays, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
+    return { lessons, assignments: asg, events: ev, division, ttDays, ttMine, hasMine: ttMine.length > 0, noMine: !ttMine.length, ttSat, hasSat: ttSat.length > 0, noSlots: !slots.length, curWeeks: curWeeks.length ? curWeeks : [{ w: "–", t: "No lessons published yet", div: "", s: "", score: "", fg: "#6b6b72", icon: "ph ph-hourglass" }],
       oppsTop: oppsTop.length ? oppsTop : [{ t: "Nothing picked for you yet", why: "Staff add bootcamps and competitions here", close: "check back soon" }],
       dlPdf: () => this.printCurriculum(), dlDoc: () => this.printCurriculum(true),
-      openTimetableMaker: () => { location.href = "/timetable/me"; }, printPdf: () => window.print(),
+      // The maker opens with this centre's classes already in, theirs marked (?centre=, tt-app.jsx).
+      openTimetableMaker: () => { location.href = "/timetable/me" + (tt.slug ? "?centre=" + encodeURIComponent(tt.slug) : ""); }, printPdf: () => window.print(),
       lt: this.subTabs("ltab", [["week", "This week", "ph ph-book-open-text"], ["course", "My course", "ph ph-books"]].concat(this.older() ? [["forYou", "For you", "ph ph-sparkle"]] : [])) };
   },
   printCurriculum(word) {
     NGGApi.member.curriculumDocument ? NGGApi.member.curriculumDocument().catch(() => null) : null;
     window.open("/api/member/curriculum-doc.php" + (word ? "?format=doc" : ""), "_blank", "noopener");
   },
+  /* A lesson is a PLACE now (page-learn.jsx), so this hands it over rather
+     than drawing it in a sheet. Two renderers for one lesson is the forked
+     renderer CLAUDE.md §11 names; there is one, and it is the Learn app's. */
   openLesson(unitId) {
-    this.openSheet({ k: "lesson", id: unitId });
-    this.setState({ lesson: null, lessonErr: null, lPart: 0 });
-    NGGApi.member.curriculumUnit(unitId).then(r => this.setState({ lesson: r })).catch(e => this.setState({ lessonErr: mp9Err(e) }));
+    try { location.assign("/learn/lesson/" + encodeURIComponent(unitId)); } catch (_) {}
   },
   oppItems() {
     const o = this.dd("opps") || {}, s = this.state;
@@ -158,7 +173,7 @@ Object.assign(Mp9Portal.prototype, {
         wish, onWish: e => upd({ wish: e.target.value }), outcome: R.outcome || "", onOutcome: e => upd({ outcome: e.target.value }),
         obstacle, onObstacle: e => upd({ obstacle: e.target.value }), plan: R.plan || "", onPlan: e => upd({ plan: e.target.value }),
         planPh: obstacle ? "If " + obstacle.toLowerCase() + ", then I will…" : "If I’m tempted to skip, then I will do just 10 minutes", planBd: R.tried && !(R.plan || "").trim() ? "#b0361c" : "#d6d4cc",
-        shareA: R.share ? "true" : "false", track: R.share ? "#0b0b0c" : "#d6d4cc", knob: R.share ? "21px" : "3px", shareT: R.share ? "Share with " + mf + " (wins and plan, not the obstacles)" : "Keep this review to myself", toggleShare: () => upd({ share: !R.share }),
+        shareA: R.share ? "true" : "false", track: R.share ? "#0b0b0c" : "#d6d4cc", knob: R.share ? "21px" : "3px", shareT: R.share ? "Send it to " + mf + " to talk about" : "Just save it (" + mf + " can still read it)", toggleShare: () => upd({ share: !R.share }),
         canBack: step > 0, back: () => upd({ step: step - 1 }),
         nextL: step === 2 ? "Save my week" : "Next",
         next: () => {
@@ -166,9 +181,10 @@ Object.assign(Mp9Portal.prototype, {
           if (!(R.plan || "").trim()) { upd({ tried: true }); return this.toast("Write your if-then plan first."); }
           const fin = { ...R, period, done: true, tried: false, at: new Date().toISOString() };
           this.saveSt("mp9.review", fin); set({ cr: null, cpTab: "week" });
-          if (R.share) this.journalSave({ title: "My week", visibility: "mentor", tags: "review", body: (R.wins.length ? "Wins: " + R.wins.join(", ") + ". " : "") + (R.proud ? "Proud of: " + R.proud + ". " : "") + "Next week: " + (wish || "") + (R.outcome ? " (" + R.outcome + ")" : "") + ". Plan: " + R.plan })
-            .then(x => x && this.toast("Saved and shared with " + mf));
-          else this.toast("Saved. Only you can see it.");
+          /* Every review goes into the journal in full — obstacles too — because
+             the mentor reads the journal; sharing only sends it to them. */
+          this.journalSave({ title: "My week", visibility: R.share ? "mentor" : "private", tags: "review", body: (R.wins.length ? "Wins: " + R.wins.join(", ") + ". " : "") + (R.proud ? "Proud of: " + R.proud + ". " : "") + (R.blocks.length ? "Got in the way: " + R.blocks.join(", ") + ". " : "") + "Next week: " + (wish || "") + (R.outcome ? " (" + R.outcome + ")" : "") + (obstacle ? ". Obstacle: " + obstacle : "") + ". Plan: " + R.plan })
+            .then(x => x && this.toast(R.share ? "Saved and sent to " + mf : "Saved. Only you and " + mf + " can see it."));
         },
         doneT: (R.wins.length ? "Wins: " + R.wins.join(", ").toLowerCase() + ". " : "") + "Plan: " + (R.plan || "") + (R.share ? " Shared with " + mf + "." : ""),
         redo: () => set({ cr: { ...R, done: false, step: 2 } }),
@@ -199,18 +215,23 @@ Object.assign(Mp9Portal.prototype, {
       mou: { done: true, cost: a.trainingFee ? mp9Naira(a.trainingFee) : "Covered", note: "Covered by NGG. This is not something you are asked to pay.", status: "Active" },
       finesList: fines.length ? fines.map(f => ({ d: mp9Date(f.issuedAt), t: f.reason, a: mp9Naira(f.amount), st: f.status === "pending" ? "Being reviewed" : "Owed", fg: "#b0361c", strike: "none" }))
         : [{ d: "", t: "No fines. Keep it that way.", a: "", st: "", fg: "#1d6b30", strike: "none" }],
-      openPaid: () => this.go("records", { rKind: "I've made a payment", rF: {} }),
+      /* A member does not record payments: their parent does, from the family
+         account. "Ask my parent" opens the panel below the money screen. */
+      openAsk: () => this.state.scr === "money" ? mp9FocusAsk() : this.go("money", { askFocus: true }),
     };
   },
   recordsVals() {
     const s = this.state, r = this.dd("rec") || {}, att = r.attendance || {}, q = this.dd("reqs") || {};
     const days = (att.days || []).map(x => ({ d: mp9Date(x.date, { weekday: "short", day: "numeric", month: "short" }), st: x.status ? x.status[0].toUpperCase() + x.status.slice(1) : x.in ? "Present" : "Absent", i: x.in || "—", o: x.out || "—" }))
       .map(x => ({ ...x, fg: x.st === "Present" ? "#1d6b30" : x.st === "Late" ? "#7a5600" : "#b0361c" }));
-    const KINDS = [["I've made a payment", "payment", ["How much", "Transfer reference, if you have one", "When you paid (YYYY-MM-DD)"]], ["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"]],
+    const ex = q.excuses;   // two excused absences a session (POLICY §1.1); the server refuses a third
+    const away = "I'll be away" + (ex ? " · " + ex.left + " of " + ex.max + " absences left" : "");
+    const KINDS = [["I'll be away", "leave", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD, blank if you do not know)", "Why"], away],
+      ["Academic leave (exams or a school programme)", "academic", ["From (YYYY-MM-DD)", "Until (YYYY-MM-DD)", "What it’s for, and the school"]],
       ["Ask for a replacement ID", "idcard", ["Say why"]], ["Correct my details", "details", ["What needs changing"]], ["Appeal a charge", "appeal", ["Which charge, and why"]], ["Something else", "help", ["Anything else the desk should know"]]];
     const K = KINDS.find(k => k[0] === s.rKind);
     const f = s.rF || {};
-    const rOk = !!K && (K[1] === "payment" ? Number(f[K[2][0]]) > 0 : K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") : !!(f[K[2][0]] || "").trim());
+    const rOk = !!K && (K[1] === "leave" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && !!(f[K[2][2]] || "").trim() : K[1] === "academic" ? /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][0]] || "") && /^\d{4}-\d{2}-\d{2}$/.test(f[K[2][1]] || "") && (f[K[2][2]] || "").trim().length >= 10 : !!(f[K[2][0]] || "").trim());
     const ST = { open: ["Waiting for a reply", "#7a5600"], approved: ["Approved", "#1d6b30"], declined: ["Declined", "#b0361c"], withdrawn: ["Withdrawn", "#6b6b72"] };
     const list = (q.requests || []).map(x => { const st = x.kind === "feedback" && x.status === "approved" ? ["Thanked", "#1d6b30"] : ST[x.status] || [x.status, "#4a4a50"];
       return { t: x.subject || x.kindLabel, key: x.requestId, gone: x.status === "withdrawn", hasReply: !!x.decision, reply: x.decision || "", canWithdraw: x.status === "open", sFg: st[1], sText: st[0], when: mp9Date(x.createdAt),
@@ -219,11 +240,11 @@ Object.assign(Mp9Portal.prototype, {
       rec: { attended: att.present || 0, ran: att.daysRan || 0, pct: att.rateKnown ? att.rate + "%" : "no term calendar set" },
       certs: (r.certificates || []).map(c => ({ t: c.certId + (c.revoked ? " · revoked" : ""), d: String(c.issuedAt || "").slice(0, 10), url: "/cert/" + c.certId })),
       days: days.length ? (s.daysAll ? days : days.slice(0, 6)) : [{ d: "No days recorded yet", st: "", i: "—", o: "—", fg: "#6b6b72" }], daysMore: !s.daysAll && days.length > 6, showDays: () => this.setState({ daysAll: true }),
-      reqKinds: KINDS.map(k => ({ k: k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
+      reqKinds: KINDS.map(k => ({ k: k[3] || k[0], on: s.rKind === k[0] ? "true" : "false", ring: s.rKind === k[0] ? "#0b0b0c" : "#d6d4cc", bw: s.rKind === k[0] ? "2px" : "1px", pick: () => this.setState({ rKind: k[0], rF: {} }) })),
       rHas: !!K, rFields: K ? K[2].map(fl => ({ f: fl, v: f[fl] || "", on: e => this.setState({ rF: { ...this.state.rF, [fl]: e.target.value } }) })) : [],
       rCant: !rOk, rOp: rOk ? 1 : 0.4, rCancel: () => this.setState({ rKind: null, rF: {} }),
       rSend: () => { if (!rOk) return; const v = i => (f[K[2][i]] || "").trim();
-        const body = K[1] === "payment" ? { kind: "payment", amount: Number(v(0)), reference: v(1), paidAt: v(2), body: "" } : K[1] === "leave" ? { kind: "leave", fromDate: v(0), toDate: v(1), body: v(2) }
+        const body = (K[1] === "leave" || K[1] === "academic") ? { kind: K[1], fromDate: v(0), toDate: v(1), body: v(2) }
           : { kind: K[1], subject: f.subject || "", body: v(0) };
         NGGApi.member.raiseRequest(body).then(() => { this.setState({ rKind: null, rF: {} }); this.refresh(["reqs"]); this.toast("Sent. You’ll see the reply here."); }).catch(e => this.toast(mp9Err(e))); },
       reqList: list.length ? list : [{ t: "You haven’t asked the desk anything yet", key: "none", gone: false, hasReply: false, reply: "", canWithdraw: false, sFg: "#6b6b72", sText: "", when: "–", withdraw: () => {} }],
@@ -231,7 +252,8 @@ Object.assign(Mp9Portal.prototype, {
   },
   meVals() {
     const s = this.state, d = this.dd("dash") || {}, m = d.member || {}, t = this.dd("today") || {}, p = t.profile || {}, cir = this.dd("circle") || {}, sec = this.dd("sec") || {};
-    const linked = (cir.family || cir.links || []).map(x => (x.name || x.fullName || "A guardian") + (x.relation ? " · " + x.relation : ""));
+    // Parents, teachers and mentors (member.circle): a mentor is connected by being assigned.
+    const linked = (cir.connected || cir.family || []).map(x => (x.name || x.fullName || "A guardian") + (x.relation ? " · " + x.relation : ""));
     const devices = (sec.sessions || []).map(x => ({ t: (x.device || x.ua || "A device") + (x.ip ? " · " + x.ip : ""), when: x.current ? "Now" : mp9When(x.lastSeenAt || x.createdAt), cur: !!x.current, notCur: !x.current,
       signOut: () => NGGApi.member.securityRevoke(x.sid || x.sessionId).then(() => { this.refresh(["sec"]); this.toast("Signed out of that device"); }).catch(e => this.toast(mp9Err(e))) }));
     const ngv = d.ngv || null;
@@ -246,7 +268,7 @@ Object.assign(Mp9Portal.prototype, {
       bioShown: p.bio || m.bio || "", hasBio: !!(p.bio || m.bio),
       openProfile: () => this.openSheet({ k: "profile" }),
       ngv: { on: !!ngv, note: ngv ? (ngv.note || ngv.status || "You’re on the NGV volunteer track.") : "You can apply to join NGV, the volunteer track, once your centre opens it." }, ngvOff: !ngv,
-      circle: { code: cir.code || "", linked: linked.length ? linked : ["Nobody linked yet"] },
+      circle: { code: cir.code || "", linked: linked.length ? linked : ["Nobody yet"] },
       codeText: s.codeShown ? (cir.code || "–") : "••••••", codeLabel: s.codeShown ? "Hide" : "Show code", toggleCode: () => this.setState({ codeShown: !s.codeShown }),
       devices: devices.length ? devices : [{ t: "This device", when: "Now", cur: true, notCur: false }],
       signOutAll: () => NGGApi.member.securityRevokeOthers().then(() => { this.refresh(["sec"]); this.toast("Signed out of every other device"); }).catch(e => this.toast(mp9Err(e))),
@@ -695,7 +717,7 @@ Object.assign(Mp9Portal.prototype, {
     const areas = (simple ? mp9SimpleAreas(older) : [["Today", "ph ph-sun-horizon", [["today", "Today"]]], ["Mentor", "ph ph-handshake", [["mentor", "My mentor"], ["companion", "Companion"], ["community", "Community"]]],
       ["Grow", "ph ph-plant", [["growth", "Scorecard & goals"], ["results", "School results"], ["passport", "Passport"], ["journal", "Journal"]]],
       ["Learn", "ph ph-book-open-text", [["learn", "Lessons"], ["sat", "Saturday"], ["timetable", "Timetable"], ["tools", "Study tools"]].concat(older ? [["opps", "Opportunities"]] : [])],
-      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["help", "Help"]]]])
+      ["Account", "ph ph-user-circle", [["me", "Profile"], ["money", "Money"], ["records", "Records"], ["support", "Support"], ["help", "Help"]]]])
       .map(([label, icon, kids]) => { const bb = kids.map(([id]) => bdg(id)).filter(Boolean); return { label, icon, kids, ids: kids.map(k => k[0]), badge: bb.length === 1 ? bb[0] : bb.length ? String(bb.length) : "" }; });
     const area = areas.find(a => a.ids.includes(cur)) || areas[0];
     const acc = a => MP9_ACCENT[MP9_AREA_OF[a.ids[0]] || "today"] || "#0b0b0c", accOn = acc(area);
@@ -706,15 +728,15 @@ Object.assign(Mp9Portal.prototype, {
         go: () => { try { location.assign(url); } catch (_) {} } })) }];
     const areaTabs = area.kids.map(([id, l]) => { const on = cur === id; const bb = bdg(id); return { l, on: on ? "true" : "false", fg: on ? accOn : "#5a5a60", fw: on ? 600 : 500, bar: on ? accOn : "transparent", badge: bb, hasBadge: !!bb, go: () => this.go(id) }; });
     const tabbar = areas.map(a => { const on = a === area; return { label: a.label, icon: on ? a.icon.replace("ph ", "ph-fill ") : a.icon, cur: on ? "page" : undefined, fw: on ? 600 : 500, fg: on ? acc(a) : "#626a6e", go: () => this.go(a.ids[0]), hasBadge: !!a.badge }; });
-    const subs = { sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
+    const subs = { support: "Cases you’ve opened with the NGG team", sat: "This week's plan and mission", journal: "Opens in its own app", tools: "Flashcards, focus timer, typing, maths · its own app", growth: "Courage, scores and goals", results: "Upload every term · plan · promises", passport: "Achievements and portfolio", learn: "Lessons and assignments", timetable: "Your week at the centre", companion: "How your week went", opps: "Matched to you", community: "Feed and team projects", me: "Card, profile and devices", money: "Dues, fines and payments", records: "Attendance and requests", help: "You can always talk to us" };
     if (simple) Object.assign(subs, MP9_SIMPLE_SUBS);
     const flat = [].concat(...areas.map(a => a.kids.map(([id, l]) => ({ id, label: l, icon: a.icon }))));
     const moreGroups = areas.slice(1).map(a => ({ h: a.label, items: a.kids.map(([id, label]) => ({ label, icon: a.icon, badge: bdg(id), hasBadge: !!bdg(id), d: subs[id] || "", go: () => this.go(id) })) }));
     const actions = [["Write in my journal", "ph ph-pencil-simple-line", () => { location.href = "/journal/"; }], ["Upload my school results", "ph ph-exam", () => this.go("results")], ["Add proof for a mission", "ph ph-camera", () => this.go("sat")],
-      ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["I've made a payment", "ph ph-currency-ngn", () => this.go("records", { rKind: "I've made a payment", rF: {} })],
+      ["Message my mentor", "ph ph-chat-circle-text", () => this.go("mentor")], ["Show my gate pass", "ph ph-qr-code", () => this.openSheet({ k: "gate" })], ["Ask my parent to pay", "ph ph-hand-waving", () => this.go("money", { askFocus: true })],
       ["Ask for a change of mentor", "ph ph-arrows-left-right", () => this.openSheet({ k: "change" })], ["Share an idea or tell us what to improve", "ph ph-lightbulb", () => this.openSheet({ k: "idea" })], ["Change my password", "ph ph-key", () => this.openSheet({ k: "password" })], ["Sign out", "ph ph-sign-out", () => nggPortalSignOut(this.props.onSignOut)], ["Edit my profile", "ph ph-user", () => this.openSheet({ k: "profile" })], ["Take the tour again", "ph ph-compass", () => window.nggGuide("member")], ["Two-step sign-in", "ph ph-shield-check", () => window.nggMfa && window.nggMfa("manage")], ["Tell us about something", "ph ph-lifebuoy", () => this.go("help")],
       simple ? ["Switch to the full view", "ph ph-squares-four", () => this.setView("full")] : ["Switch to the simple view", "ph ph-hand-pointing", () => this.setView("simple")]]
-      .filter(a => !(simple && /payment/.test(a[0])));
+      .filter(a => !(simple && /parent to pay/.test(a[0])));
     const q = s.palQ.trim().toLowerCase();
     const items = flat.map(x => ({ t: x.label, k: "Go to", icon: x.icon, run: () => this.go(x.id) })).concat(actions.map(([t2, icon, run]) => ({ t: t2, k: "Do", icon, run }))).filter(x => !q || x.t.toLowerCase().includes(q));
     const pi = Math.min(s.palI, Math.max(0, items.length - 1));
@@ -730,18 +752,49 @@ Object.assign(Mp9Portal.prototype, {
   },
   notifVals() {
     const s = this.state, n = (this.dd("notifs") || {}).notifications || [];
-    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable" };
-    const unreadL = n.filter(x => !x.readAt && !(s.readIds || {})[x.notifId]);
-    const shown = s.nUnread ? unreadL : n;
-    const markOne = id => { this.setState({ readIds: { ...(this.state.readIds || {}), [id]: true } }); NGGApi.member.markRead(id).catch(() => {}); };
+    const unread = n.filter(x => !mp9NotifRead(x, s)).length;
     return {
-      notifOpen: !!s.notif, toggleNotif: () => this.setState({ notif: !s.notif }), closeNotif: () => this.setState({ notif: false }),
-      nFilters: [["Everything", false], ["Unread only", true]].map(([l, v]) => ({ l, on: s.nUnread === v ? "true" : "false", bg: s.nUnread === v ? "#fff" : "transparent", sh: s.nUnread === v ? "0 1px 2px rgba(11,11,12,.1)" : "none", pick: () => this.setState({ nUnread: v }) })),
-      nEmpty: shown.length === 0, unread: unreadL.length, hasUnread: unreadL.length > 0,
-      notifs: shown.slice(0, 30).map(x => ({ icon: "ph ph-" + (/mentor|chat/.test(x.kind) ? "chat-circle-text" : /badge|award|mission/.test(x.kind) ? "medal" : /event/.test(x.kind) ? "calendar-check" : "bell"), t: x.title + (x.body ? " · " + x.body : ""), when: mp9When(x.createdAt),
-        dot: !x.readAt && !(s.readIds || {})[x.notifId] ? "#f5b026" : "transparent", open: () => { markOne(x.notifId); this.setState({ notif: false }); const to = PAGE[x.linkPage]; if (to) this.go(to); } })),
-      markRead: () => { unreadL.forEach(x => markOne(x.notifId)); },
+      notifOpen: !!s.notif, notifLegacy: false,
+      toggleNotif: e => { if (!s.notif) this._notifFrom = e && e.currentTarget; this.setState({ notif: !s.notif }); if (!s.notif) this.load("notifs"); },
+      closeNotif: () => this.setState({ notif: false }),
+      unread, hasUnread: unread > 0,
     };
+  },
+
+  /* The notification panel (Mp9Notifications). Read, unread and dismissed are
+     the member's own marks on the server (notification_state); the panel
+     shows them at once and saves behind, and puts the item back if the save
+     fails rather than pretending. */
+  notifPanel() {
+    const s = this.state;
+    if (!s.notif) return null;
+    const PAGE = { mentor: "mentor", journal: "journal", community: "community", results: "results", dashboard: "today", learn: "learn", curriculum: "learn", money: "money", account: "money", records: "records", events: "learn", timetable: "timetable", support: "support" };
+    const close = () => { this.setState({ notif: false }); const t = this._notifFrom; if (t && t.focus) setTimeout(() => t.focus(), 0); };
+    const mark = (x, read) => {
+      this.setState(st => ({ readIds: { ...(st.readIds || {}), [x.notifId]: read ? 1 : -1 } }));
+      return NGGApi.member.markRead(x.notifId, !read).catch(() => this.setState(st => ({ readIds: { ...(st.readIds || {}), [x.notifId]: read ? -1 : 1 } })));
+    };
+    return <Mp9Notifications
+      items={((this.dd("notifs") || {}).notifications || []).filter(x => !(s.goneIds || {})[x.notifId])}
+      loading={!!(s.ld || {}).notifs && !this.dd("notifs")} error={(s.er || {}).notifs && !this.dd("notifs")}
+      retry={() => this.load("notifs")} isRead={x => mp9NotifRead(x, s)} unreadOnly={!!s.nUnread} setUnreadOnly={v => this.setState({ nUnread: v })}
+      narrow={this.state.w < 760} onClose={close}
+      onAct={x => { if (!mp9NotifRead(x, s)) mark(x, true); this.setState({ notif: false }); const a = x.action || {}, to = PAGE[a.page];
+        if (to === "support" && a.ref) { try { history.pushState({ page: "dashboard" }, "", "/dashboard/support?case=" + encodeURIComponent(a.ref)); } catch (_) {} this.setState({ scr: "support" }); return; }
+        if (to) this.go(to); }}
+      onToggleRead={x => mark(x, !mp9NotifRead(x, s))}
+      onAllRead={() => {
+        const left = ((this.dd("notifs") || {}).notifications || []).filter(x => !mp9NotifRead(x, s));
+        const ids = {}; left.forEach(x => { ids[x.notifId] = 1; });
+        this.setState(st => ({ readIds: { ...(st.readIds || {}), ...ids } }));
+        NGGApi.member.markAllRead().catch(() => this.load("notifs"));
+      }}
+      onDismiss={x => {
+        this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 1 }, notifGone: x }));
+        NGGApi.member.dismissNotif(x.notifId).catch(() => this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 0 }, notifGone: null })));
+      }}
+      gone={s.notifGone}
+      onUndoDismiss={x => { this.setState(st => ({ goneIds: { ...(st.goneIds || {}), [x.notifId]: 0 }, notifGone: null })); NGGApi.member.dismissNotif(x.notifId, true).catch(() => {}); }}/>;
   },
 
   /* Today, under the greeting: the record drive when it is asking, then the
@@ -840,7 +893,7 @@ Object.assign(Mp9Portal.prototype, {
     const ent = (jm.entries || []).filter(e => (e.body || "").trim() || (e.title || "").trim()).slice(0, 6).map(e => {
       const shared = e.visibility === "mentor", rs = rep[e.entryId] || [];
       return { t: e.title || e.excerpt || "", when: mp9Date(e.occurredOn || e.createdAt, { weekday: "short", day: "numeric", month: "short" }),
-        visIcon: shared ? "ph-fill ph-users" : "ph-fill ph-lock-simple", visL: shared ? "Shared with " + M.first + (rs.length ? "" : " · waiting for a reply") : "Private: only you",
+        visIcon: shared ? "ph-fill ph-users" : "ph-fill ph-lock-simple", visL: shared ? "Shared with " + M.first + (rs.length ? "" : " · waiting for a reply") : "You and " + M.first,
         replies: rs, hasReplies: rs.length > 0 };
     });
     const jp = jm.prompt || "What did you try today that you couldn’t do last month?";
@@ -893,11 +946,20 @@ Object.assign(Mp9Portal.prototype, {
       onDone={(msg) => { this.setState({ handIn: null }); this.refresh(["dash", "today"]); this.toast(msg); }}/> : null;
     const rest = this.slotEndInner();
     // The view switch goes after the profile, never above the area's tabs: on a phone it pushed them off the first screen.
-    const view = s.scr === "me" ? this.viewSwitch() : null;
+    const view = s.scr === "me" ? <>{typeof Mp9Wifi === "function" ? <Mp9Wifi toast={t => this.toast(t)}/> : null}{this.viewSwitch()}</> : null;
     return handEl || view ? <>{view}{rest}{handEl}</> : rest;
   },
   slotEndInner() {
     const s = this.state;
+    /* Support cases (support-desk.jsx): the open case lives in the URL
+       (/dashboard/support?case=N), which is where a reply's email points. */
+    if (s.scr === "support" && typeof NggSupportDesk === "function") {
+      const q = new URLSearchParams(location.search), no = Number(q.get("case")) || 0;
+      return <div className="m9x-slot"><NggSupportDesk api={NGGApi.member.support} initialCase={no} source="portal"
+        safeguard={{ text: "Tell " + this.sgInfo().name + " instead", onClick: () => this.go("help") }}
+        onCase={n => { try { history.replaceState(history.state, "", "/dashboard/support" + (n ? "?case=" + n : "")); } catch (_) {} }}/></div>;
+    }
+    if (s.scr === "money") return <div className="m9x-slot"><Mp9AskParent toast={t => this.toast(t)} focus={!!s.askFocus} onFocused={() => this.setState({ askFocus: false })}/></div>;
     if (s.scr === "learn" && typeof CurStudyHelper === "function" && ((this.dd("cur") || {}).units || []).length)
       return <div className="m9x-slot"><CurStudyHelper units={(this.dd("cur") || {}).units}/></div>;
     const evals = (s.scr === "growth" || s.scr === "sat")
@@ -962,7 +1024,7 @@ Object.assign(Mp9Portal.prototype, {
   render() {
     const dutyGo = d => { const scr = MP9_ROUTE[d.route] || (/results/.test(d.route) ? "results" : /money|account/.test(d.route) ? "money" : /learn/.test(d.route) ? "learn" : /mentor/.test(d.route) ? "mentor" : "today"); this.go(scr); return true; };
     const pv = this.state.pdfView;
-    return <>{Mp9View(this.renderVals())}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/>
+    return <>{Mp9View(this.renderVals())}{this.notifPanel()}<GuideTour portal="member" name={this.me().first}/><DutyPopup role="member" onGo={dutyGo}/>
       {pv ? <NggPdf open src={pv.src} name={pv.name} onClose={() => this.setState({ pdfView: null })}/> : null}</>;
   },
 });
@@ -976,6 +1038,95 @@ function mp9Greeting() { const h = new Date().getHours(); return h < 12 ? "morni
    criterion on the growth scale, the strength their mentor saw and one next
    step. The ratings and the mentor's staff note never reach this screen. */
 const MP9_EVAL_TONE = { "Not yet": "is-0", "Emerging": "is-1", "Demonstrated": "is-2", "Strong": "is-3" };
+/* Me → Wi-Fi (domain/wifi.php): the member's sign-in name and Wi-Fi PIN for
+   their centre, and in plain words why access is limited or off. The PIN is
+   hidden until asked for — this screen is shown on phones in a room full of
+   people. Three new PINs a day; loading, an honest error with a retry, and
+   the state where the centre has no Wi-Fi yet are all said. */
+function Mp9Wifi({ toast }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [show, setShow] = React.useState(false), [busy, setBusy] = React.useState(false);
+  const load = () => { setErr(""); NGGApi.member.wifi().then(r => setD(r.wifi || null)).catch(e => setErr((e && (e.code || e.message)) || "error")); };
+  React.useEffect(load, []);
+  const reset = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.member.wifiReset(); setD(r.wifi); setShow(true); toast("New Wi-Fi PIN ready. Devices signed in with the old one stay signed in until they leave."); }
+    catch (e) { toast((e && e.data && e.data.message) || "Couldn’t change your PIN. Try again later."); }
+    finally { setBusy(false); }
+  };
+  const copy = t => { try { navigator.clipboard.writeText(t); toast("Copied"); } catch (_) { toast("Couldn’t copy. Write it down instead."); } };
+  const on = d && d.access !== "off";
+  const lim = d && d.limits;
+  /* What they have used, against their allowance (domain/wifi-usage.php). Only
+     they and the staff see it. Over an allowance, say what happens and until when. */
+  const u = d && d.usage, gb = b => { b = +b || 0; return b >= 1073741824 ? (Math.round(b / 107374182.4) / 10) + " GB" : b >= 1048576 ? Math.round(b / 1048576) + " MB" : b > 0 ? Math.max(1, Math.round(b / 1024)) + " KB" : "nothing yet"; };
+  const overWhen = u && u.over === "day" ? "until tomorrow" : "until the 1st of next month";
+  const meter = (used, mb, label) => { const cap = mb * 1048576, pct = cap ? Math.min(100, Math.round(used / cap * 100)) : 0;
+    return <div className="m9x-wifi-use"><span className="m9x-wifi-use-l"><b>{label}</b>{gb(used)}{mb ? " of " + gb(cap) : ""}</span>
+      {mb ? <span className="m9x-wifi-meter" role="meter" aria-label={label + " used"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct} aria-valuetext={pct + "%"}><i className={pct >= 100 ? "is-full" : pct >= 80 ? "is-near" : ""} style={{ width: pct + "%" }}/></span> : null}</div>; };
+  const usage = u ? <div className="m9x-wifi-usage" aria-labelledby="m9x-wifi-u-h">
+    <h3 id="m9x-wifi-u-h" className="m9x-wifi-u-h">Data you’ve used</h3>
+    {meter(u.today, u.dayMb, "Today")}
+    {meter(u.month, u.monthMb, "This month")}
+    <p className="m9x-wifi-note">{u.over ? "You’ve used " + (u.over === "day" ? "today’s" : "this month’s") + " allowance" + (d.case !== "overLimit" ? "." : ", so " + (d.access === "off" ? "the Wi-Fi is off for you " : "your Wi-Fi is slower ") + overWhen + ".")
+      : u.dayMb || u.monthMb ? "When you reach an allowance your Wi-Fi slows down until it resets. Only you and the NGG team see these figures."
+      : "Only you and the NGG team see these figures. They count what you download and upload, never which sites."}</p>
+  </div> : null;
+  return <section className="m9x-slot m9x-view m9x-wifi" aria-labelledby="m9x-wifi-h">
+    <h2 id="m9x-wifi-h" className="m9x-view-h"><i className="ph ph-wifi-high" aria-hidden="true"/> Wi-Fi at the centre</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err === "cacentre_unreachable" ? "CACENTRE, which runs the Wi-Fi, couldn’t be reached just now." : "Your Wi-Fi details couldn’t load (" + err + ")."}</span><button type="button" onClick={load}>Try again</button></div>
+      : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : !on ? <>{d.case === "overLimit" ? <p className="m9x-view-p">You’ve used your Wi-Fi data allowance, so the Wi-Fi is off for you {overWhen}.</p>
+        : <p className="m9x-view-p">{d.case === "no_id" ? "You get Wi-Fi once your NGG ID number is printed." : d.case === "not_listed" ? "Your Wi-Fi details are on their way from CACENTRE, which runs the Wi-Fi. Look again in a quarter of an hour." : "You don’t have Wi-Fi access right now" + (d.why ? ": " + d.why.toLowerCase() + "." : ".")} Ask the team at your centre if you think this is wrong.</p>}{usage}</>
+      : <>
+        {!d.centreHasWifi ? <p className="m9x-view-p">Wi-Fi isn’t set up at your centre yet. These details will work as soon as it is.</p>
+          : <p className="m9x-view-p">Join the centre’s Wi-Fi, and when the sign-in page opens, use these.{d.access === "limited" ? " Your access is limited for now" + (d.why ? " (" + d.why.toLowerCase() + ")" : "") + "." : ""}</p>}
+        <dl className="m9x-wifi-dl">
+          <div><dt>Username</dt><dd className="m9x-wifi-v">{d.username}<button type="button" className="m9x-wifi-b" onClick={() => copy(d.username)} aria-label="Copy your Wi-Fi username"><i className="ph ph-copy" aria-hidden="true"/></button></dd></div>
+          <div><dt>PIN</dt><dd className="m9x-wifi-v">{show ? d.pin : "••••••"}
+            <button type="button" className="m9x-wifi-b" onClick={() => setShow(x => !x)} aria-pressed={show ? "true" : "false"} aria-label={show ? "Hide your PIN" : "Show your PIN"}><i className={"ph " + (show ? "ph-eye-slash" : "ph-eye")} aria-hidden="true"/></button>
+            {show ? <button type="button" className="m9x-wifi-b" onClick={() => copy(d.pin)} aria-label="Copy your PIN"><i className="ph ph-copy" aria-hidden="true"/></button> : null}</dd></div>
+          {lim ? <div><dt>Speed</dt><dd>Up to {lim.down} Mbit/s · {lim.devices === 1 ? "one device" : lim.devices + " devices"} at a time{lim.hours ? " · " + lim.hours.replace("-", "–") : ""}</dd></div> : null}
+        </dl>
+        {usage}
+        <p className="m9x-wifi-note">Your PIN is only for the Wi-Fi. Never tell anyone else your PIN — anything done on the Wi-Fi with it counts as you.</p>
+        <button type="button" className="m9x-wifi-new" onClick={reset} disabled={busy || d.resetsLeft < 1} aria-describedby="m9x-wifi-left">{busy ? "Making a new PIN…" : "Get a new PIN"}</button>
+        <span id="m9x-wifi-left" className="m9x-wifi-left">{d.resetsLeft < 1 ? "You’ve changed it three times today. Try again tomorrow." : d.resetsLeft + " left today"}</span>
+      </>}
+  </section>;
+}
+
+/* ── Ask my parent ─────────────────────────────────────────────────────────
+   A member asks; the parent acts in the family account (member_family_nudge).
+   Once a kind a day, to every connected parent. A child with no connected
+   parent is told how to connect them, not shown a button that cannot act. */
+function mp9FocusAsk() { const el = document.getElementById("m9x-ask-h"); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); } }
+function Mp9AskParent({ toast, focus, onFocused }) {
+  const [d, setD] = React.useState(null), [err, setErr] = React.useState(""), [busy, setBusy] = React.useState(false);
+  const load = () => { setErr(""); NGGApi.member.familyAsks().then(setD).catch(e => setErr(mp9Err(e))); };
+  React.useEffect(load, []);
+  React.useEffect(() => { if (focus && d) { mp9FocusAsk(); onFocused(); } }, [focus, d]);
+  const ask = () => {
+    if (busy) return;
+    setBusy(true);
+    NGGApi.member.askParent()
+      .then(r => { toast(r.parents === 1 ? "Sent to your parent." : "Sent to your " + r.parents + " parents."); load(); })
+      .catch(e => toast((e && e.detail) || mp9Err(e)))
+      .finally(() => setBusy(false));
+  };
+  const a = d && d.asked;
+  return <section className="m9x-view m9x-ask" aria-labelledby="m9x-ask-h">
+    <h2 id="m9x-ask-h" className="m9x-view-h" tabIndex={-1}><i className="ph ph-hand-waving" aria-hidden="true"/> Ask my parent</h2>
+    {err ? <div className="m9x-err" role="alert"><i className="ph ph-warning-circle" aria-hidden="true"/><span>{err}</span><button type="button" onClick={load}>Try again</button></div>
+      : !d ? <div className="m9x-load" role="status" aria-live="polite"><span className="m9x-bar"/><span className="m9x-sr">Loading</span></div>
+      : !d.parents ? <p className="m9x-view-p">No parent is connected to your account yet. Give them the family code on your Me page, so they can connect at <b>/family</b> and pay from there.</p>
+      : <>
+        <p className="m9x-view-p">Your parent pays from their family account, or confirms a payment they already made. Ask them here, and they get a message and an email.</p>
+        <button type="button" className="m9x-ask-b" onClick={ask} disabled={busy}>{busy ? "Sending…" : "Ask my parent"}</button>
+        {a ? <span className="m9x-ask-when" role="status">{a.seen ? "They’ve seen it." : "Asked " + mp9Date(a.at, { day: "numeric", month: "short" }) + "."}</span> : null}
+      </>}
+  </section>;
+}
+
 function Mp9Evals({ data, err, busy, retry, latestOnly, mentor }) {
   const list = (data && data.evals) || [];
   const [open, setOpen] = React.useState(0);
@@ -1115,4 +1266,88 @@ function mp9PlanWhen(x, upd, tried) {
     whenSay: mp9WhenOk(x.whenWhere) ? "Your plan: " + mp9WhenLine(w) + ". A set time and place makes you far more likely to do it."
       : String(x.whenWhere || "").trim() && !w.days.length ? "You wrote: “" + x.whenWhere + "”. Pick the days and a time instead." : "Pick the days and a time. A set time and place makes you far more likely to do it.",
   };
+}
+
+/** Read, by the member's mark on this screen first, then the server's. */
+function mp9NotifRead(x, s) { const m = ((s || {}).readIds || {})[x.notifId]; return m === 1 ? true : m === -1 ? false : !!x.readAt; }
+
+function mp9NotifIcon(kind) {
+  return /mentor|chat/.test(kind) ? "chat-circle-text" : /badge|award|mission/.test(kind) ? "medal" : /event/.test(kind) ? "calendar-check"
+    : /formation|timetable/.test(kind) ? "clock" : /duty/.test(kind) ? "list-checks" : /curriculum|assign/.test(kind) ? "book-open-text"
+    : /safeguard/.test(kind) ? "shield-check" : /fee|money/.test(kind) ? "wallet" : "bell";
+}
+/** Today · Yesterday · This week · Earlier, by the device's own calendar. */
+function mp9NotifGroup(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "Earlier";
+  const day = x => { const y = new Date(x); y.setHours(0, 0, 0, 0); return y.getTime(); };
+  const diff = Math.round((day(Date.now()) - day(d)) / 864e5);
+  return diff <= 0 ? "Today" : diff === 1 ? "Yesterday" : diff < 7 ? "This week" : "Earlier";
+}
+
+/**
+ * The member's notifications: what happened, and the one thing to do about
+ * it. Every item that goes somewhere has a named action; each can be marked
+ * read or unread and dismissed (with undo). A dialog: Escape closes and focus
+ * goes back to the bell; Tab stays inside.
+ */
+function Mp9Notifications({ items, loading, error, retry, isRead, unreadOnly, setUnreadOnly, narrow, onClose, onAct, onToggleRead, onAllRead, onDismiss, gone, onUndoDismiss }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const el = ref.current; if (el) { const f = el.querySelector("[data-autofocus]") || el; f.focus(); }
+    const key = e => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+      if (e.key !== "Tab" || !ref.current) return;
+      const f = Array.from(ref.current.querySelectorAll("button:not([disabled])")); if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
+  const unread = items.filter(x => !isRead(x)).length;
+  const shown = unreadOnly ? items.filter(x => !isRead(x)) : items;
+  const groups = [];
+  shown.slice(0, 50).forEach(x => { const g = mp9NotifGroup(x.createdAt); let last = groups[groups.length - 1]; if (!last || last.g !== g) { last = { g, items: [] }; groups.push(last); } last.items.push(x); });
+  return <>
+    <div className="m9n-scrim" onClick={onClose} aria-hidden="true"/>
+    <div ref={ref} className={"m9n-panel" + (narrow ? " is-narrow" : "")} role="dialog" aria-modal="true" aria-labelledby="m9n-h" tabIndex={-1}>
+      <div className="m9n-head">
+        <h2 id="m9n-h" className="m9n-title">Notifications</h2>
+        <span className="m9n-count" role="status" aria-live="polite">{unread ? unread + " unread" : "All read"}</span>
+        <button type="button" className="m9n-icon" onClick={onClose} aria-label="Close notifications" data-autofocus><i className="ph ph-x" aria-hidden="true"/></button>
+      </div>
+      <div className="m9n-tools">
+        <div className="m9n-seg" role="radiogroup" aria-label="Show">
+          {[["Everything", false], ["Unread", true]].map(([l, v]) =>
+            <button key={l} type="button" role="radio" aria-checked={unreadOnly === v ? "true" : "false"} className={"m9n-seg-b" + (unreadOnly === v ? " is-on" : "")} onClick={() => setUnreadOnly(v)}>{l}</button>)}
+        </div>
+        <button type="button" className="m9n-link" onClick={onAllRead} disabled={!unread}>Mark all read</button>
+      </div>
+      {gone ? <div className="m9n-undo" role="status"><span>Removed “{String(gone.title || "").slice(0, 40)}”.</span><button type="button" className="m9n-link" onClick={() => onUndoDismiss(gone)}>Undo</button></div> : null}
+      <div className="m9n-list">
+        {loading ? <p className="m9n-state">Loading your notifications…</p>
+        : error ? <div className="m9n-state"><p>We could not load your notifications.</p><button type="button" className="m9n-btn" onClick={retry}>Try again</button></div>
+        : !shown.length ? <p className="m9n-state">{unreadOnly && items.length ? "Nothing unread. You are up to date." : "You’re all caught up."}</p>
+        : groups.map(gr => <section key={gr.g} className="m9n-group" aria-label={gr.g}>
+            <h3 className="m9n-gh">{gr.g}</h3>
+            <ul className="m9n-ul">{gr.items.map(x => { const read = isRead(x); return <li key={x.notifId} className={"m9n-item" + (read ? "" : " is-unread")}>
+              <span className={"m9n-ic m9n-ic-" + (x.kind || "bell")} aria-hidden="true"><i className={"ph ph-" + mp9NotifIcon(x.kind || "")}/></span>
+              <div className="m9n-body">
+                <p className="m9n-t">{read ? null : <span className="m9n-sr">Unread: </span>}{x.title}</p>
+                {x.body ? <p className="m9n-b">{x.body}</p> : null}
+                <div className="m9n-row">
+                  <time className="m9n-when" dateTime={x.createdAt}>{mp9When(x.createdAt)}</time>
+                  {x.action ? <button type="button" className="m9n-act" onClick={() => onAct(x)}>{x.action.label}<i className="ph ph-arrow-right" aria-hidden="true"/></button> : null}
+                </div>
+              </div>
+              <div className="m9n-side">
+                <button type="button" className="m9n-icon" onClick={() => onToggleRead(x)} aria-label={read ? "Mark as unread: " + x.title : "Mark as read: " + x.title} title={read ? "Mark as unread" : "Mark as read"}>
+                  <i className={read ? "ph ph-envelope-simple" : "ph ph-envelope-simple-open"} aria-hidden="true"/></button>
+                <button type="button" className="m9n-icon" onClick={() => onDismiss(x)} aria-label={"Dismiss: " + x.title} title="Dismiss"><i className="ph ph-trash" aria-hidden="true"/></button>
+              </div>
+            </li>; })}</ul>
+          </section>)}
+      </div>
+    </div>
+  </>;
 }

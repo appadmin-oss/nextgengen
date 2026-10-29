@@ -33,13 +33,19 @@ function CrKpis({ b, phone }) {
       {!phone && <CrIcon n={k.tone === "up" ? "arrow-up-right" : k.tone === "down" ? "arrow-down-right" : "minus"}/>}{k.d}
     </span>
   ) : null;
+  /* Columns follow the count, so a row is never left with a hole in it: six are 3 × 2
+     (and 6 × 1 on a desktop), five are 3 + 2 on a phone, four are 2 × 2. The value is
+     geometry from data, so it travels as a custom property. */
+  const n = b.items.length;
+  const pcols = n === 1 ? 1 : (n === 2 || n === 4) ? 2 : 3;
+  const dcols = n <= 6 ? n : Math.ceil(n / 2);
   if (phone) return (
-    <div className="cr-pkpis">
+    <div className="cr-pkpis" style={{ "--cols": pcols }}>
       {b.items.map((k, i) => <div key={i} className="cr-pkpi"><span>{k.l}</span><b>{k.v}</b>{k.d ? <span className={"cr-kpi-d" + (k.tone === "up" ? " is-up" : k.tone === "down" ? " is-down" : "")}>{k.d} <em>{k.dn}</em></span> : k.dn ? <span className="cr-hint">{k.dn}</span> : null}</div>)}
     </div>
   );
   return (
-    <div className="cr-kpis">
+    <div className="cr-kpis" style={{ "--cols": dcols }}>
       {b.items.map((k, i) => <div key={i} className="cr-kpi"><span className="cr-kpi-l">{k.l}</span><span className="cr-kpi-v">{k.v}</span><span className="cr-kpi-n">{d(k)}{k.dn}</span></div>)}
     </div>
   );

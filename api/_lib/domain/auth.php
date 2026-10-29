@@ -87,7 +87,17 @@ function auth_find_member(string $identifier, string $ip, string $via, string $d
         return ['ok' => false, 'error' => 'too_many_misses'];
     }
     // trim() on the stored side too: a record typed with a trailing space is still that person.
-    $member = db_row("SELECT * FROM members WHERE lower(trim(memberId)) = ? OR lower(trim(email)) = ? OR (displayId <> '' AND lower(trim(displayId)) = ?) LIMIT 1", [$identifier, $identifier, $identifier]);
+    if (strpos($identifier, '@') !== false) {
+        /* An email is often on several accounts — brothers and sisters on a
+         * parent's address. It used to open whichever row the database
+         * returned first, every time, and the others could never sign in by
+         * it. Now the inbox proves itself and the person picks (auth_pick). */
+        $acc = auth_email_accounts($identifier);
+        if (count($acc) > 1) return ['ok' => true, 'member' => null, 'shared' => $acc];
+        $member = $acc[0] ?? db_row("SELECT * FROM members WHERE lower(trim(email)) = ? ORDER BY id LIMIT 1", [$identifier]);
+    } else {
+        $member = db_row("SELECT * FROM members WHERE lower(trim(memberId)) = ? OR (displayId <> '' AND lower(trim(displayId)) = ?) LIMIT 1", [$identifier, $identifier]);
+    }
     if ($member) return ['ok' => true, 'member' => $member];
     /* Not a member account: the Volunteer Vanguard. Instructors, mentors and
      * coordinators hold a volunteers row (or only a mentors row), and this
@@ -286,6 +296,80 @@ function auth_codes_last_hour(string $memberId, string $purpose): int {
     return (int)($r['n'] ?? 0);
 }
 
+/* ── One email, several member accounts ─────────────────────────────────
+ * Shared addresses are normal here: a parent's email on each of their
+ * children, a family inbox. A code or link sent to that address proves the
+ * INBOX, not a person, so after it is proven the browser is shown the
+ * accounts behind it — "Who's signing in?" — and opens the one chosen
+ * (auth_pick). Nothing about who is behind an address is shown before the
+ * inbox is proven; the list is only ever what that inbox could already open.
+ *
+ *  - The challenge is keyed by auth_shared_key($email), not a memberId, and
+ *    keeps the accounts it may open in auth_sessions.pickIds (migration 183).
+ *  - A pick is good for AUTH_PICK_MINUTES after the code is checked, and once.
+ *  - By password: every account on the address whose password matches is a
+ *    candidate. One match signs straight in; several (one password set for
+ *    all the children) are offered to pick from, and only those.
+ *  - Suspended, merged and deleted accounts are not offered, and a staff
+ *    account that signs in by password only is never opened by a code.
+ *  - A password reset to a shared address sends one link per account. */
+const AUTH_PICK_MINUTES = 10;
+function auth_shared_key(string $email): string { return '@shared:' . substr(sha1(strtolower(trim($email))), 0, 24); }
+function auth_is_shared_key(string $id): bool { return strncmp($id, '@shared:', 8) === 0; }
+/** The member accounts an email may open, oldest first. */
+function auth_email_accounts(string $email): array {
+    $email = strtolower(trim($email));
+    if ($email === '' || strpos($email, '@') === false) return [];
+    return array_values(array_filter(db_all('SELECT * FROM members WHERE lower(trim(email)) = ? ORDER BY id', [$email]),
+        static fn($m) => !in_array(strtolower(trim((string)($m['status'] ?? ''))), ['suspended', 'merged', 'deleted'], true) && !auth_password_only($m)));
+}
+/** What the picker shows: who each account is, enough to tell brothers and sisters apart. */
+function auth_pick_people(array $rows): array {
+    return array_map(static function ($m) {
+        $name = trim((string)$m['fullName']);
+        $parts = preg_split('/\s+/', $name) ?: [];
+        return ['memberId' => (string)$m['memberId'], 'name' => $name, 'first' => (string)($parts[0] ?? ''),
+            'initials' => strtoupper(mb_substr((string)($parts[0] ?? '?'), 0, 1) . (count($parts) > 1 ? mb_substr((string)end($parts), 0, 1) : '')),
+            'photoUrl' => normalize_image_url((string)($m['photoUrl'] ?? '')), 'displayId' => (string)($m['displayId'] ?? ''),
+            'centre' => (string)($m['centre'] ?? ''), 'staff' => is_admin_role((string)($m['role'] ?? ''))];
+    }, $rows);
+}
+/** A verified challenge, ready to be picked from: the accounts it may still open. */
+function auth_pick_offer(array $ch, array $ids, string $ip): array {
+    $live = array_column(auth_email_accounts((string)$ch['email']), null, 'memberId');
+    $rows = array_values(array_filter(array_map(static fn($id) => $live[$id] ?? null, $ids)));
+    if (!$rows) return ['ok' => false, 'error' => 'member_gone'];
+    db_update('auth_sessions', ['pickIds' => implode(',', array_column($rows, 'memberId'))], ['id' => (int)$ch['id']]);
+    audit('login.shared.proven', null, (string)$ch['memberId'], ['accounts' => count($rows)], $ip);
+    return ['ok' => true, 'pick' => auth_pick_people($rows), 'pickToken' => (string)$ch['token'], 'pickMinutes' => AUTH_PICK_MINUTES];
+}
+
+/** auth.pick — open the account chosen on "Who's signing in?". */
+function auth_pick(array $p): array {
+    $ip = (string)($p['ip'] ?? '');
+    $token = trim((string)($p['pickToken'] ?? '')); $mid = trim((string)($p['memberId'] ?? ''));
+    if ($token === '' || $mid === '') return ['ok' => false, 'error' => 'no_credentials'];
+    $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? LIMIT 1", [$token]);
+    if (!$ch || !auth_is_shared_key((string)$ch['memberId']) || (string)($ch['verifiedAt'] ?? '') === '') return ['ok' => false, 'error' => 'invalid'];
+    if ((string)$ch['purpose'] === 'login_picked') return ['ok' => false, 'error' => 'already_used'];
+    if ((string)$ch['purpose'] !== 'login') return ['ok' => false, 'error' => 'invalid'];
+    if (strtotime((string)$ch['verifiedAt']) < time() - AUTH_PICK_MINUTES * 60) return ['ok' => false, 'error' => 'expired'];
+    if (!in_array($mid, array_filter(explode(',', (string)($ch['pickIds'] ?? ''))), true)) {
+        audit('login.shared.refused', null, (string)$ch['memberId'], ['memberId' => $mid], $ip);
+        return ['ok' => false, 'error' => 'not_on_this_email'];
+    }
+    // Re-read: an account suspended, merged or moved to another address since the code was checked is not opened.
+    $m = null; foreach (auth_email_accounts((string)$ch['email']) as $r) if ((string)$r['memberId'] === $mid) $m = $r;
+    if (!$m) return ['ok' => false, 'error' => 'member_gone'];
+    if (auth_locked($m)) return ['ok' => false, 'error' => 'account_locked'];
+    if (db_exec("UPDATE auth_sessions SET purpose = 'login_picked' WHERE id = ? AND purpose = 'login'", [(int)$ch['id']]) !== 1) return ['ok' => false, 'error' => 'already_used'];
+    auth_fail_reset($m);
+    $byCode = (string)($ch['otp'] ?? '') !== '';
+    audit('login.success', $mid, $mid, ['via' => $byCode ? 'code+pick' : 'password+pick'], $ip);
+    return ['ok' => true, 'member' => public_member($m),
+        'mfa' => function_exists('mfa_need') ? mfa_need($mid, 'member', $byCode ? ['email'] : []) : ''];
+}
+
 function auth_gateway(array $p): array {
     $identifier = auth_clean_identifier((string)($p['identifier'] ?? ''));
     if ($identifier === '') return ['ok' => false, 'error' => 'no_identifier'];
@@ -307,6 +391,10 @@ function auth_gateway(array $p): array {
     attempt_fail('auth.honest', $device, AUTH_HONEST_PER_DAY, 86400);
     $member = $found['member'];
     $methods = ['code'];
+    if (!$member && !empty($found['shared'])) {
+        if (array_filter($found['shared'], static fn($m) => !empty($m['passwordHash']))) $methods[] = 'password';
+        return ['ok' => true, 'methods' => $methods, 'shared' => true];
+    }
     if ($member && !empty($member['passwordHash']) && (string)$member['status'] !== 'suspended') {
         // Staff/admin accounts are password-only: the config-provisioned password
         // is required and the emailed-code path is not offered to them, so the
@@ -349,6 +437,7 @@ function auth_request(array $p): array {
         if ($email === '') return ['ok' => false, 'error' => 'no_email_use_card'];
         $member = ['memberId' => $st['id'], 'email' => $email, 'fullName' => (string)($st['row']['fullName'] ?? ''), 'status' => 'active', 'role' => 'volunteer'];
     }
+    if (!$member && !empty($found['shared'])) return auth_request_shared($found['shared'], $identifier, $masked, $ip, (string)($p['userAgent'] ?? ''));
     if (!$member && !empty($found['ambiguous'])) {
         // Two different people's volunteer records share this inbox: say so, to that inbox only.
         auth_notify_shared_email($identifier, $ip);
@@ -409,6 +498,35 @@ function auth_request(array $p): array {
     return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
 }
 
+/** A sign-in code for an address several accounts share: one code, and the person picks after it is checked. */
+function auth_request_shared(array $acc, string $email, string $masked, string $ip, string $ua): array {
+    $key = auth_shared_key($email);
+    if (auth_codes_last_hour($key, 'login') >= AUTH_CODES_PER_HOUR) {
+        audit('login.request.capped', null, $key, ['shared' => count($acc)], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    $token = rand_hex(32); $otp = new_otp(); $now = time();
+    db_insert('auth_sessions', ['token' => $token, 'memberId' => $key, 'email' => strtolower(trim($email)), 'otp' => $otp, 'attempts' => 0, 'purpose' => 'login',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 15 * 60), 'verifiedAt' => '', 'ip' => $ip, 'userAgent' => $ua,
+        'pickIds' => implode(',', array_column($acc, 'memberId'))]);
+    global $CONFIG;
+    $link = ($CONFIG['app_origin'] ?? '') . '/?signin=' . rawurlencode($token);
+    $firsts = array_column(auth_pick_people($acc), 'first');
+    $who = count($firsts) > 1 ? implode(', ', array_slice($firsts, 0, -1)) . ' and ' . end($firsts) : (string)($firsts[0] ?? '');
+    $html = email_template([
+        'eyebrow'  => 'Secure sign-in',
+        'title'    => 'Sign in to NGG',
+        'intro'    => 'This email address is on ' . count($acc) . ' NGG accounts (' . $who . '). Tap the button — or use the code below — and then choose who is signing in. Both are good for 15 minutes.',
+        'ctaLabel' => 'Sign in',
+        'ctaUrl'   => $link,
+        'otp'      => $otp,
+        'footNote' => 'You requested a sign-in to Next Generation Genius. Didn\'t request this? Ignore this email — every account stays secure.',
+    ]);
+    $delivered = send_mail(strtolower(trim($email)), 'Your sign-in to Next Generation Genius', $html);
+    audit($delivered ? 'login.request' : 'login.mail_fail', null, $key, ['shared' => count($acc)], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
+}
+
 /**
  * Standard email/ID + password sign-in. Passwords are opt-in — a member who
  * hasn't set one gets `no_password`, nudging them to the magic-link/OTP flow.
@@ -420,7 +538,13 @@ function auth_login(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     if ($identifier === '' || $password === '') return ['ok' => false, 'error' => 'missing_credentials'];
 
-    $member = db_row('SELECT * FROM members WHERE lower(trim(memberId)) = ? OR lower(trim(email)) = ? LIMIT 1', [$identifier, $identifier]);
+    if (strpos($identifier, '@') !== false) {
+        $rows = db_all("SELECT * FROM members WHERE lower(trim(email)) = ? AND COALESCE(status,'') NOT IN ('merged','deleted') ORDER BY id", [$identifier]);
+        if (count($rows) > 1) return auth_login_shared($rows, $identifier, $password, $ip);
+        $member = $rows[0] ?? null;
+    } else {
+        $member = db_row('SELECT * FROM members WHERE lower(trim(memberId)) = ? OR (displayId <> \'\' AND lower(trim(displayId)) = ?) LIMIT 1', [$identifier, $identifier]);
+    }
     // Uniform failure so we never reveal which accounts exist or have passwords.
     if (!$member || empty($member['passwordHash'])) {
         // Spend a hash cycle to keep timing roughly constant.
@@ -451,6 +575,41 @@ function auth_login(array $p): array {
     return ['ok' => true, 'member' => public_member($member),
         // The second sign-in step still owed, if any (mfa.php); the route marks the session with it.
         'mfa' => function_exists('mfa_need') ? mfa_need((string)$member['memberId'], 'member', []) : ''];
+}
+
+/** Password sign-in by an address several accounts share: the password says whose. */
+function auth_login_shared(array $rows, string $email, string $password, string $ip): array {
+    $key = auth_shared_key($email);
+    if (attempt_locked('auth.pwshared', $key)) return ['ok' => false, 'error' => 'account_locked'];
+    $matched = [];
+    foreach ($rows as $m) {
+        if (empty($m['passwordHash'])) continue;
+        if (password_verify($password, (string)$m['passwordHash'])) $matched[] = $m;
+    }
+    if (!$matched) {
+        // Wrong for every account on it: one count for the address, so guessing across siblings is still capped.
+        if (attempt_fail('auth.pwshared', $key, 8, AUTH_LOCK_MINUTES * 60)) audit('login.lockout', null, $key, ['shared' => count($rows)], $ip);
+        audit('login.pw.fail', null, $key, ['reason' => 'bad_password', 'shared' => count($rows)], $ip);
+        return ['ok' => false, 'error' => 'invalid_login'];
+    }
+    $open = array_values(array_filter($matched, static fn($m) => (string)$m['status'] !== 'suspended' && !auth_locked($m)));
+    if (!$open) return ['ok' => false, 'error' => (string)$matched[0]['status'] === 'suspended' ? 'suspended' : 'account_locked'];
+    attempt_reset('auth.pwshared', $key);
+    foreach ($open as $m) if (password_needs_rehash((string)$m['passwordHash'], password_algo_best()))
+        db_update('members', ['passwordHash' => password_hash_best($password), 'updatedAt' => now_iso()], ['id' => $m['id']]);
+    if (count($open) === 1) {
+        $m = $open[0];
+        auth_fail_reset($m);
+        audit('login.pw.success', $m['memberId'], (string)$m['memberId'], ['shared' => count($rows)], $ip);
+        return ['ok' => true, 'member' => public_member($m), 'mfa' => function_exists('mfa_need') ? mfa_need((string)$m['memberId'], 'member', []) : ''];
+    }
+    // One password on several accounts: the password is proven, the person picks among those it opens.
+    $now = time();
+    $id = db_insert('auth_sessions', ['token' => rand_hex(32), 'memberId' => $key, 'email' => strtolower(trim($email)), 'otp' => '', 'attempts' => 0, 'purpose' => 'login',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + AUTH_PICK_MINUTES * 60), 'verifiedAt' => now_iso(), 'ip' => $ip, 'userAgent' => 'password',
+        'pickIds' => '']);
+    $ch = db_row('SELECT * FROM auth_sessions WHERE id = ?', [$id]);
+    return auth_pick_offer($ch, array_column($open, 'memberId'), $ip);
 }
 
 /**
@@ -503,6 +662,7 @@ function auth_resolve_member_id(string $idOrEmail): string {
         $st = auth_find_volunteer($v);
         return $st && $st['id'] !== '' ? (string)$st['id'] : $v;
     }
+    if (count(auth_email_accounts($lv)) > 1) return auth_shared_key($lv);
     $m = db_row('SELECT memberId FROM members WHERE lower(trim(email)) = ? ORDER BY id LIMIT 1', [$lv]);
     if ($m) return (string)$m['memberId'];
     $st = auth_find_volunteer($v);
@@ -552,6 +712,10 @@ function auth_verify(array $p): array {
         return ['ok' => false, 'error' => 'already_used'];
     }
 
+    if (auth_is_shared_key((string)$ch['memberId'])) {
+        attempt_reset('auth.staff', (string)$ch['memberId']);
+        return auth_pick_offer($ch, array_filter(explode(',', (string)($ch['pickIds'] ?? ''))), $ip);
+    }
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) {
         // A staff code: a volunteer, or a mentor about to be given a volunteer record.
@@ -596,6 +760,7 @@ function auth_reset_request(array $p): array {
     if (empty($found['ok'])) return $found;
     $member = $found['member'];
     $masked = auth_masked_for($identifier);
+    if (!$member && !empty($found['shared'])) return auth_reset_shared($found['shared'], $identifier, $masked, $ip, (string)($p['userAgent'] ?? ''));
     if (!$member) {
         if (!empty($found['honest'])) return ['ok' => false, 'error' => 'no_account'];
         auth_notify_no_account($identifier, $ip, 'reset');
@@ -635,6 +800,38 @@ function auth_reset_request(array $p): array {
     ]);
     $delivered = send_mail((string)$member['email'], 'Set your Next Generation Genius password', $html);
     audit($delivered ? 'password.reset.request' : 'password.reset.mail_fail', $member['memberId'], (string)$member['memberId'], [], $ip);
+    return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
+}
+
+/** A password reset to an address several accounts share: one email, one link per person (token-only, each its own account). */
+function auth_reset_shared(array $acc, string $email, string $masked, string $ip, string $ua): array {
+    $key = auth_shared_key($email);
+    if (auth_codes_last_hour($key, 'reset') >= AUTH_CODES_PER_HOUR) {
+        audit('password.reset.capped', null, $key, ['shared' => count($acc)], $ip);
+        return ['ok' => true, 'masked' => $masked, 'delivery' => true];
+    }
+    global $CONFIG;
+    $now = time(); $rows = [];
+    // The cap counts the address once per request, whoever's links it carries.
+    db_insert('auth_sessions', ['token' => rand_hex(32), 'memberId' => $key, 'email' => strtolower(trim($email)), 'otp' => '', 'attempts' => 0, 'purpose' => 'reset',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'verifiedAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'ip' => $ip, 'userAgent' => 'shared-count']);
+    foreach ($acc as $m) {
+        $token = rand_hex(32);
+        db_insert('auth_sessions', ['token' => $token, 'memberId' => (string)$m['memberId'], 'email' => (string)$m['email'], 'otp' => '', 'attempts' => 0, 'purpose' => 'reset',
+            'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now), 'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + 30 * 60), 'verifiedAt' => '', 'ip' => $ip, 'userAgent' => $ua]);
+        $link = ($CONFIG['app_origin'] ?? '') . '/?reset=' . rawurlencode($token);
+        $rows[] = '<p style="margin:0 0 10px"><a href="' . htmlspecialchars($link, ENT_QUOTES) . '" style="display:inline-block;padding:10px 16px;border-radius:10px;background:#0b0b0c;color:#ffffff;text-decoration:none;font-weight:600">Set ' . htmlspecialchars(explode(' ', trim((string)$m['fullName']))[0] ?: 'this', ENT_QUOTES) . '\'s password</a>'
+            . ($m['displayId'] ? ' <span style="color:#4a4a50;font-size:13px">' . htmlspecialchars((string)$m['displayId'], ENT_QUOTES) . '</span>' : '') . '</p>';
+    }
+    $html = email_template([
+        'eyebrow'  => 'Password reset',
+        'title'    => 'Set an NGG password',
+        'intro'    => 'This email address is on ' . count($acc) . ' NGG accounts, and each has its own password. Choose whose password to set. Each link is good for 30 minutes and works once.',
+        'bodyHtml' => implode('', $rows),
+        'footNote' => 'Didn\'t request this? Ignore this email — every password stays unchanged.',
+    ]);
+    $delivered = send_mail(strtolower(trim($email)), 'Set your Next Generation Genius password', $html);
+    audit($delivered ? 'password.reset.request' : 'password.reset.mail_fail', null, $key, ['shared' => count($acc)], $ip);
     return ['ok' => true, 'masked' => $masked, 'delivery' => $delivered];
 }
 

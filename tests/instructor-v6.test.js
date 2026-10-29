@@ -103,7 +103,7 @@ async function as(memberId, admin, viewport) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const shot = (pg, n) => pg.screenshot({ path: (process.env.IP6_SHOTS || TMP) + '/' + n + '.png' });
     const sess = () => q(`db_row("SELECT * FROM club_class_sessions WHERE course = 'Coding' AND centre = 'Egbeda' ORDER BY id DESC LIMIT 1")`) || {};
@@ -117,6 +117,7 @@ async function as(memberId, admin, viewport) {
     chk('/instructor sends an NGG instructor to /instructor/ngg', new URL(ip.url()).pathname === '/instructor/ngg');
     const t = await ip.innerText('.i6-app');
     chk('Today: the course, its room and time from the timetable, and the Saturday formation day', /Coding/.test(t) && /Lab 1/.test(t) && /11:00/.test(t) && /Musing/.test(t));
+    if (!(/Coding/.test(t) && /Lab 1/.test(t) && /11:00/.test(t) && /Musing/.test(t))) console.error('  Today read: ' + JSON.stringify({ coding: /Coding/.test(t), lab: /Lab 1/.test(t), time: /11:00/.test(t), musing: /Musing/.test(t) }) + ' ' + t.slice(0, 700).replace(/\s+/g, ' '));
     await shot(ip, 'today');
     // Roll
     await ip.click('nav >> text=Saturday');
@@ -185,10 +186,22 @@ async function as(memberId, admin, viewport) {
     const curTxt = await ip.innerText('main');
     chk('Curriculum: lessons grouped by term with the week the Club is on and this week’s lesson first, never a made-up class size',
       /Term 1/.test(curTxt) && /the Club is on week 3/.test(curTxt) && /This week[\s\S]*Coding week 3/.test(curTxt) && !/of 12 students/.test(curTxt));
-    // Write a lesson for their own course, from the portal: a draft for the curriculum lead.
+    /* Write a lesson for their own course, from the portal — in the SAME
+       editor the Control Room uses. What was here was a four-field form; an
+       instructor now gets objectives, materials, diagrams and the opening
+       review, and the difference between the two portals is what they are
+       allowed to do with it, not what they are shown. */
     await ip.click('main >> text=Write a lesson for Coding');
-    await ip.fill('form[aria-label="Write a lesson for Coding"] input[placeholder="e.g. Finding middle C"]', 'Loops with a robot');
-    await ip.click('form[aria-label="Write a lesson for Coding"] button[type=submit]');
+    await ip.waitForSelector('.led .le-start', { timeout: 20000 });
+    chk('Curriculum: the instructor gets the real lesson editor, not a four-field box',
+      await ip.$eval('.led', el => !!el.querySelector('.le') && !!el.querySelector('.led-exam') && !!el.querySelector('.cur-spine')));
+    chk('Curriculum: …and it says plainly that they cannot publish, instead of offering a status they cannot set',
+      /Saves as a draft/.test(await ip.$eval('.led-top', el => el.innerText)) && !(await ip.$('.led-status')));
+    await ip.fill('.led-title', 'Loops with a robot');
+    await ip.click('.le-start-alt:has-text("Start from nothing")');
+    await ip.click('.le-row:last-child .le-ed');
+    await ip.keyboard.type('Make the robot go round the square four times.');
+    await ip.click('.led-top button:has-text("Save for review")');
     await ip.waitForFunction(() => /Saved as a draft for Coding/.test(document.querySelector('main').innerText), null, { timeout: 15000 }).catch(() => {});
     const drafted = q(`db_row("SELECT course, status, createdBy FROM curriculum_units WHERE title = 'Loops with a robot'")`) || {};
     chk('Curriculum: an instructor writes a lesson for their course from the portal; it is a draft for the curriculum lead',

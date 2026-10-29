@@ -106,7 +106,7 @@ async function as(memberId, admin, viewport) {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
 
     // ── /mentor as Ngozi, a pod mentor: straight to /mentor/ngg, the v15 portal, on real data ──
@@ -148,6 +148,24 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /What changed/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(() => {});
     const grTxt = await mt.innerText('main');
     chk('Growth: the mentee’s Saturdays, Leadership Index, evaluations and what changed, from the server', /What changed/.test(grTxt) && /Saturdays/.test(grTxt) && /Leadership Index/.test(grTxt) && /Saturday evaluations/.test(grTxt));
+    // Anchor Circle's mentor side: on Growth, connected because she is their mentor — no code.
+    await mt.waitForSelector('.m15c-anc-day', { timeout: 20000 });
+    chk('Growth: the mentee’s Anchor week is here, connected by the assignment (no code)', /Anchor this week/.test(await mt.innerText('main')) && /Connected because you are their mentor/.test(await mt.innerText('main')));
+    const todayBtn = mt.locator('.m15c-anc-day:not([disabled])').last();
+    await todayBtn.click();
+    await mt.waitForFunction(() => { const b = Array.from(document.querySelectorAll('.m15c-anc-day:not([disabled])')).pop(); return b && b.getAttribute('aria-pressed') === 'true'; }, null, { timeout: 10000 }).catch(() => {});
+    chk('…she confirms a day, saved on the server as the mentor’s', Number(q(`(int)db_row("SELECT COUNT(*) c FROM circle_confirmations WHERE role = 'mentor'")['c']`)) === 1);
+    await mt.fill('.m15c-anc-text', 'Five days of reflections in a row. Keep it going.');
+    await mt.click('.m15c-anc-form button[type=submit]');
+    await mt.waitForFunction(() => /Five days of reflections/.test((document.querySelector('.m15c-anc-form') || {}).parentElement.innerText), null, { timeout: 10000 }).catch(() => {});
+    chk('…and leaves a note the child will read', Number(q(`(int)db_row("SELECT COUNT(*) c FROM circle_remarks WHERE role = 'mentor' AND text LIKE 'Five days%'")['c']`)) === 1);
+    // Journal: the mentee's whole journal, the entries she kept to herself included.
+    q(`db_insert('journal', ['entryId' => 'MS-JR-1', 'memberId' => 'NGG-MS-K1', 'title' => 'Before the exam', 'body' => 'I was scared but I kept going.', 'visibility' => 'private', 'mood' => 2, 'occurredOn' => gmdate('Y-m-d'), 'createdAt' => now_iso(), 'updatedAt' => now_iso()])`);
+    await mt.click('main [role="tab"]:has-text("Journal")');
+    await mt.waitForSelector('.m15c-jr-e', { timeout: 20000 });
+    const jrTxt = await mt.innerText('main');
+    chk('Journal: the mentor reads the entry Mariam did not send, marked as written for herself', /Mariam’s journal/.test(jrTxt) && /I was scared but I kept going/.test(jrTxt) && /Written for themselves/.test(jrTxt));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/journal.png' : path.join(TMP, 'journal.png') });
     await mt.click('main >> text=Scorecard');
     await mt.waitForFunction(() => /Communication/.test(document.querySelector('main').innerText), null, { timeout: 15000 });
     const up = await mt.$$('main button[aria-label^="Raise"], main button[aria-label*="up" i]');
@@ -278,6 +296,34 @@ async function as(memberId, admin, viewport) {
       && /How did the maths test go/.test(await mt.innerText('main')));
     php(`db_exec("UPDATE mentor_messages SET status = 'sent', sendAfter = '' WHERE threadId = 'chat:NGG-MS-K2'");`); // past quiet hours
     chk('Messages: the mentee’s own chat carries it', q(`count(array_filter(member_mp_chat(['memberId' => 'NGG-MS-K2'])['messages'], fn($m) => str_contains($m['body'], 'maths test') && !$m['mine']))`) === 1);
+    /* One conversation per person: what Mariam wrote, the journal entry she
+       sent and her check-in are ONE row and one timeline, not three items. */
+    php(`db_exec("UPDATE journal SET visibility = 'mentor', title = '', body = 'I made a plan for revision.' WHERE entryId = 'MS-JR-1'");
+         db_insert('member_checkins', ['memberId' => 'NGG-MS-K1', 'week' => gmdate('o-\\WW'), 'wellbeing' => 'Struggling', 'note' => 'Exams are close', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 7200)]);`);
+    q(`member_mp_chat_send(['memberId' => 'NGG-MS-K1', 'body' => 'I am having trouble doing my timetable'])`);
+    await mt.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(mt);
+    await mt.locator('.m15-app button', { hasText: /^Messages$/ }).first().click();
+    await mt.waitForSelector('.m15m-person', { timeout: 30000 });
+    const rowsM = await mt.$$eval('.m15m-person', els => els.map(e => e.innerText));
+    chk('Messages: each person is one conversation — Mariam once, not once per chat, journal entry and check-in', rowsM.filter(t => /Mariam Yusuf/.test(t)).length === 1);
+    chk('…and the list shows her last word and that it is waiting for me', rowsM.some(t => /Mariam Yusuf/.test(t) && /trouble doing my timetable/.test(t)));
+    await mt.click('.m15m-person:has-text("Mariam Yusuf")');
+    await mt.waitForSelector('.m15m-log .m15m-card', { timeout: 15000 });
+    const logM = await mt.innerText('.m15m-log');
+    chk('…her conversation holds her message, the journal entry she sent and her check-in, in time order', /Weekly check-in[\s\S]*Exams are close[\s\S]*Sent you a journal entry[\s\S]*I made a plan for revision[\s\S]*trouble doing my timetable/.test(logM));
+    await mt.fill('.m15m-compose textarea', 'Let’s do it together on Saturday. Bring your school timetable.');
+    await mt.click('.m15m-compose button[type=submit]');
+    await mt.waitForFunction(() => /Bring your school timetable/.test((document.querySelector('.m15m-log') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+    chk('…one reply box answers her in her chat, and the reply shows in the conversation', q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-MS-K1' AND kind = 'Reply' AND body LIKE '%school timetable%'")['c']`) === 1
+      && /Bring your school timetable/.test(await mt.innerText('.m15m-log')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/messages.png' : path.join(TMP, 'messages.png') });
+    await mt.setViewportSize({ width: 390, height: 844 });
+    await mt.waitForTimeout(400);
+    chk('Messages on a phone: the conversation fills the screen, with a way back to the list', await mt.isVisible('.m15m-back') && !(await mt.isVisible('.m15m-people')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/messages-phone.png' : path.join(TMP, 'messages-phone.png') });
+    await mt.click('.m15m-back');
+    chk('…and back shows the list of people', await mt.isVisible('.m15m-people'));
+    await mt.setViewportSize({ width: 1280, height: 1000 });
     // Class: stars, presence, school results and curriculum are the portal's own screens — no embedded portal.
     await mt.locator('.m15-app button', { hasText: /^Class$/ }).first().click();
     await mt.waitForSelector('main .m15c table', { timeout: 30000 });
@@ -296,8 +342,11 @@ async function as(memberId, admin, viewport) {
     await mt.click('.m15c-drawer [aria-labelledby="m15c-verbal"] [role="radio"]:has-text("5")');
     await mt.click('.m15c-drawer button:has-text("Save · 11 of 15")');
     await mt.waitForSelector('.m15c-drawer', { state: 'detached', timeout: 15000 });
+    // The drawer closes on save; the row's total comes with the list's re-read.
+    await mt.waitForFunction(() => Array.from(document.querySelectorAll('main .m15c tr')).some(tr => /Daniel Okafor/.test(tr.innerText) && /11 of 15/.test(tr.innerText)), null, { timeout: 15000 }).catch(() => {});
     chk('Presence (verbal, vocal, visual) is saved for the week and shown as a total', /11 of 15/.test(await starRow.innerText())
-      && Number(q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`)) === 5);
+      && Number(q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`)) === 5,
+      (await starRow.innerText()).replace(/\n/g, ' | ') + ' · verbal=' + q(`(int)(db_row("SELECT verbal FROM v3_scores WHERE subjectId = 'NGG-MS-K2' ORDER BY id DESC LIMIT 1")['verbal'] ?? 0)`));
     await mt.keyboard.press('Escape');
     await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/class-inside.png' : path.join(TMP, 'class-inside.png') });
     // The old email link (?tab=results) lands on Class › School results, inside the portal
@@ -406,6 +455,28 @@ async function as(memberId, admin, viewport) {
       !!rq && /centre=Egbeda/.test(rq.url()) && !/Pick a centre|Couldn't load/.test(await ad.innerText('main')), (rq ? rq.url() : 'no roster request') + ' | ' + (await ad.innerText('main')).slice(0, 300).replace(/\n/g, ' '));
     await ad.click('nav >> text=Mentees');
     chk('/mentor/ngg as an admin: the coordinator view of NGG members, no Summer participant', !/Peace Summer/.test(await ad.innerText('main')) && /Centre coordinator/.test(await ad.innerText('.m15-app')));
+    // Mentors → book a supervision, then write it up: the mentor's My role reads the notes.
+    await ad.click('nav >> text=Mentors');
+    await ad.waitForFunction(() => /Ngozi Eke/.test(document.querySelector('main').innerText), null, { timeout: 30000 });
+    const ngRow = ad.locator('main tr', { hasText: 'Ngozi Eke' }).first();
+    await ngRow.locator('button', { hasText: 'Book supervision' }).click();
+    await ngRow.locator('button', { hasText: 'Write up supervision' }).waitFor({ timeout: 20000 });
+    // The button turns at once; the date comes with the list's re-read.
+    await ad.waitForFunction(() => Array.from(document.querySelectorAll('main tr')).some(tr => /Ngozi Eke/.test(tr.innerText) && /supervision \d+ [A-Z][a-z]{2}/.test(tr.innerText)), null, { timeout: 20000 }).catch(() => {});
+    chk('Mentors: a booked supervision becomes “Write up supervision”, with its date on the row', /supervision \d+ [A-Z][a-z]{2}/.test(await ngRow.innerText()), (await ngRow.innerText()).replace(/\n/g, ' | '));
+    await ngRow.locator('button', { hasText: 'Write up supervision' }).click();
+    await ad.waitForSelector('form[aria-labelledby="mp15-sup-h"] textarea', { timeout: 20000 });
+    chk('…the write-up opens with Save held back until there is feedback', await ad.isDisabled('form[aria-labelledby="mp15-sup-h"] button[type="submit"]'));
+    await ad.fill('form[aria-labelledby="mp15-sup-h"] textarea', 'Your huddles are well run; keep the family calls going.');
+    await ad.fill('input[aria-label="Agreed 1"]', 'Call two families before Saturday');
+    await ad.click('form[aria-labelledby="mp15-sup-h"] button[type="submit"]');
+    await ad.waitForSelector('form[aria-labelledby="mp15-sup-h"]', { state: 'detached', timeout: 20000 }).catch(() => {});
+    const supRole = q(`member_mp_role(['requesterId' => 'NGG-MS-M1'])`);
+    const fbC = (supRole.commitments || []).find(r => r.key === 'feedback') || {};
+    chk('…saved: the mentor reads the feedback and what was agreed, and the feedback commitment dates from it',
+      (supRole.feedback || {}).text === 'Your huddles are well run; keep the family calls going.' && JSON.stringify((supRole.agreedLast || {}).items) === '["Call two families before Saturday"]'
+      && /^Last supervision notes /.test(fbC.statusText || ''), JSON.stringify([supRole.feedback, supRole.agreedLast, fbC.statusText]));
+    chk('…and the row offers the next booking again', await ngRow.locator('button', { hasText: 'Book supervision' }).isVisible().catch(() => false));
     // Control Room → Learning → Saturday formation: edit a block, every portal reads it
     await ad.goto(BASE + '/control/learning/formation', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ad);

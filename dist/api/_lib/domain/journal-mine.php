@@ -2,17 +2,18 @@
 /* ============================================================================
    "Mine" — the personal journal (handoff §8a and §8b).
 
-   This is the most private surface in the product, so the rules come first:
+   Who reads it, so the rules come first:
 
-     · Everything defaults to private. A child's journal is theirs unless they
-       choose otherwise, on every write, with no exception for convenience.
-     · A private entry is never readable by a mentor. Not in a list, not in a
-       count, not in a search — journal_mine_* only ever reads the caller's own
-       rows, and the mentor-facing path is a different function that filters on
-       visibility rather than trusting a caller-supplied id.
-     · Choosing a wider visibility is a deliberate act with the consequence
-       spelled out beside it ("He can reply privately.", "Visible to Egbeda
-       members."), and it can always be narrowed again.
+     · The child and their MENTOR (2026-10-28, the owner: nothing in a child's
+       journal is kept from their mentor). The mentor reads every entry,
+       whatever its visibility, through member.mentor.journal — gated on the
+       child being in that mentor's caseload, never on a caller-supplied
+       list, and refused to a peer mentor, who is a minor.
+     · `private` (the default) means "not sent": the mentor can read it but is
+       not asked to reply. `mentor` sends it to their Messages to reply to.
+       `programme` shows it to the child's centre. Widening is a deliberate
+       act with the consequence spelled out beside it, and can be narrowed.
+     · journal_mine_* only ever reads the caller's own rows.
 
    The numbers on the screen — streak, entries, words, the week strip — are all
    derived here rather than on the client, because two surfaces showing a

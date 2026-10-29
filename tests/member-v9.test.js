@@ -70,6 +70,9 @@ async function as(memberId, admin, viewport) {
     'maps' => ['offline' => true],
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]], 'cache_ttl' => ['default' => 0],
     'session_ttl' => 604800, 'kiosk_ttl' => 43200, 'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    /* The bundled curricula seed themselves on first boot. This suite
+       counts what IT writes, so it declines them (docs/SETUP.md). */
+    'seed_bundled_curriculum' => false,
     'webcron' => ['enabled' => false], 'ai' => ['enabled' => false], 'debug' => false,
   ];\n`);
   try {
@@ -107,11 +110,13 @@ async function as(memberId, admin, viewport) {
         ['oppId' => 'OPP-SHUT', 'title' => 'Closed competition', 'org' => 'NGG', 'type' => 'Competition', 'closesOn' => '2020-01-01', 'why' => '', 'ageMin' => 0, 'ageMax' => 0, 'status' => 'active'],
       ]);
       db_insert('notifications', ['notifId' => 'N-MV-1', 'memberId' => 'NGG-MV-K1', 'kind' => 'mentor', 'title' => 'Ngozi replied to you', 'body' => '', 'linkPage' => 'mentor', 'readAt' => '', 'createdAt' => $now]);
+      db_insert('notifications', ['notifId' => 'N-MV-BC', 'memberId' => '*', 'kind' => 'announcement', 'title' => 'Parents’ evening is on Friday', 'body' => 'Bring a guardian; the hall opens at five.', 'linkPage' => 'events', 'readAt' => '', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 90000), 'audience' => '']);
+      for ($i = 0; $i < 9; $i++) db_insert('notifications', ['notifId' => 'N-MV-L' . $i, 'memberId' => 'NGG-MV-K1', 'kind' => 'system', 'title' => '12:30 · Break · Interact positively, build relationships and practise responsible communal behaviour ' . $i, 'body' => 'Division 1 · Creative & Performing Arts · Division 2 · Media & Content Strategy · Division 3 · Technology & Applied Engineering', 'linkPage' => '', 'readAt' => '', 'createdAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 864000 - $i * 60)]);
       echo 'ok';`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const shot = (pg, n) => pg.screenshot({ path: (process.env.MP9_SHOTS || TMP) + '/' + n + '.png' });
     const main = pg => pg.innerText('main');
@@ -133,6 +138,39 @@ async function as(memberId, admin, viewport) {
     await mb.click('main [role="radiogroup"][aria-label="How are you doing"] button:has-text("Okay")');
     await mb.waitForTimeout(1200);
     chk('Today: the wellbeing answer is this week’s check-in', q(`db_row("SELECT wellbeing FROM member_checkins WHERE memberId = 'NGG-MV-K1'")['wellbeing'] ?? ''`) === 'Okay');
+
+    // ── Notifications: actions, per-person read, dismiss + undo, no overlap ──
+    await mb.click('button[aria-label="Notifications"]:visible');
+    await mb.waitForSelector('.m9n-panel .m9n-item', { timeout: 15000 });
+    const geo = await mb.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('.m9n-item')).map(li => li.getBoundingClientRect());
+      const list = document.querySelector('.m9n-list');
+      const btn = document.querySelector('.m9n-act');
+      return { overlap: items.some((r, i) => i && r.top < items[i - 1].bottom - 0.5), sideways: list.scrollWidth > list.clientWidth + 1,
+               scrolls: list.scrollHeight > list.clientHeight, font: btn ? getComputedStyle(btn).fontFamily : '', panelFont: getComputedStyle(document.querySelector('.m9n-panel')).fontFamily };
+    });
+    chk('Notifications: long items stack without overlapping', !geo.overlap);
+    chk('Notifications: the list scrolls up and down only, never sideways', geo.scrolls && !geo.sideways);
+    chk('Notifications: buttons use the portal’s font, not the system one', /Geist/.test(geo.font) && /Geist/.test(geo.panelFont));
+    const ptxt = await mb.innerText('.m9n-panel');
+    chk('Notifications: grouped by day, with a named action', /Today/.test(ptxt) && /Earlier/.test(ptxt) && /Open the chat/.test(ptxt));
+    await mb.click('.m9n-item:has-text("Parents’ evening") button[aria-label^="Dismiss"]');
+    chk('Notifications: dismissing offers undo', /Removed/.test(await mb.innerText('.m9n-panel')));
+    await mb.waitForTimeout(800);
+    chk('Notifications: a dismissed broadcast is gone for this member only', q(`db_row("SELECT dismissedAt FROM notification_state WHERE memberId = 'NGG-MV-K1' AND notifId = 'N-MV-BC'")['dismissedAt'] ?? ''`) !== ''
+      && q(`(int)db_row("SELECT COUNT(*) c FROM notification_state WHERE notifId = 'N-MV-BC' AND memberId <> 'NGG-MV-K1'")['c']`) === 0);
+    await mb.click('.m9n-undo button:has-text("Undo")');
+    await mb.waitForTimeout(800);
+    chk('Notifications: undo brings it back', /Parents’ evening/.test(await mb.innerText('.m9n-panel')) && q(`db_row("SELECT dismissedAt FROM notification_state WHERE memberId = 'NGG-MV-K1' AND notifId = 'N-MV-BC'")['dismissedAt'] ?? 'x'`) === '');
+    await mb.keyboard.press('Escape');
+    chk('Notifications: Escape closes the panel and returns focus to the bell', !(await mb.isVisible('.m9n-panel')) && await mb.evaluate(() => (document.activeElement || {}).getAttribute && document.activeElement.getAttribute('aria-label') === 'Notifications'));
+    await mb.click('button[aria-label="Notifications"]:visible');
+    await mb.click('.m9n-item:has-text("Ngozi replied") .m9n-act');
+    await mb.waitForTimeout(1200);
+    chk('Notifications: the action marks it read', q(`array_values(array_filter(backend_dispatch('member.notifications', ['memberId' => 'NGG-MV-K1'])['notifications'], fn($n) => $n['notifId'] === 'N-MV-1'))[0]['readAt'] ?? ''`) !== '');
+    chk('Notifications: and opens where it points (the mentor chat)', !(await mb.isVisible('.m9n-panel')) && /Coach Eke|Mentor/i.test(await mb.innerText('main')) && await mb.isVisible('main [aria-label="Message"]'));
+    await shot(mb, 'notifications');
+    await mb.click('aside nav button:has-text("Today")').catch(() => {}); await settle(mb);
 
     // ── My mentor ──
     await nav(mb, 'Mentor');
@@ -189,20 +227,29 @@ async function as(memberId, admin, viewport) {
     await mb.waitForTimeout(1200);
     chk('Growth: a line for the record is a journal entry shared with the mentor', q(`(int)db_row("SELECT COUNT(*) c FROM journal WHERE memberId = 'NGG-MV-K1' AND visibility = 'mentor' AND body LIKE 'Built my first page%'")['c']`) === 1);
 
-    // ── Learn: a lesson and its check ──
+    // ── Learn: the portal hands the lesson over to the Learn app ──
+    /* A lesson used to be a sheet over this portal: no address, nothing to
+       send somebody, and Back closing it instead of going back. It is a
+       PLACE now, at /learn/lesson/<id>, and the answering of it belongs to
+       that app's own suite (tests/learn-app.test.js). What the portal still
+       owes is the handoff — so that is what this pins, rather than driving a
+       sheet that no longer exists. */
     await nav(mb, 'Learn');
     await mb.waitForFunction(() => /Web pages, part/.test(document.querySelector('main').innerText), null, { timeout: 20000 }).catch(async e => { console.error('DEBUG', mb.errs && mb.errs.join('\n'), (await mb.innerText('main')).slice(0, 1200)); throw e; });
     await mb.click('main button:has-text("Web pages, part")');
-    await mb.waitForSelector('[role="dialog"] button:has-text("I\'ve done")', { timeout: 20000 });
-    await mb.click('[role="dialog"] button:has-text("I\'ve done")');
-    await mb.click('[role="dialog"] button:has-text("<h1>")');
-    await mb.click('[role="dialog"] button:has-text("Check answers")');
-    await mb.waitForTimeout(1500);
-    chk('Learn: the lesson’s check is marked by the server', q(`(int)db_row("SELECT COUNT(*) c FROM curriculum_progress WHERE memberId = 'NGG-MV-K1' AND attempts >= 1")['c']`) >= 1);
+    await mb.waitForFunction(() => /^\/learn\/lesson\//.test(location.pathname), null, { timeout: 20000 });
+    await waitForBoot(mb);
+    await mb.waitForSelector('.lrn-lesson', { timeout: 60000 });
+    chk('Learn: a lesson opens the Learn app AT that lesson, not a sheet over the portal',
+      /^\/learn\/lesson\/CU-MV-\d+$/.test(new URL(mb.url()).pathname) && /Web pages, part/.test(await mb.innerText('.lrn-lesson')));
     await shot(mb, 'lesson');
-    await mb.keyboard.press('Escape');
 
     // ── Opportunities ──
+    /* Back out of the Learn app to the portal. It is a real navigation now,
+       not an overlay closing, so the portal boots again. */
+    await mb.goBack({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(mb);
+    await mb.waitForSelector('.m9-app main', { timeout: 60000 });
     await nav(mb, 'Learn', 'Opportunities');
     await mb.waitForFunction(() => /Girls in Tech/.test(document.querySelector('main').innerText), null, { timeout: 20000 });
     const opp = await main(mb);

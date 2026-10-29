@@ -247,6 +247,47 @@ function crCurBulk(ctx, status, verb) {
 }
 
 Object.assign(CR_TAB_DEFS, {
+  /* HOW LESSONS LAND (domain/lesson-feedback.php).
+     A child taps one of three words after every lesson. This is the only
+     reason that tap is worth asking for: the lesson most of a class could
+     not follow, at the top, with their own words on it. A board that just
+     listed the taps back would cost the child the tap and buy them nothing. */
+  feedback: {
+    skeleton: ["kpis", "cards"],
+    load: async () => NGGApi.admin.curriculum.feedback(),
+    facts: d => {
+      const bad = (d.lessons || []).filter(l => l.enough && l.missPct >= 50);
+      return "Lesson feedback: " + crNum(d.voices || 0) + " answers; " + bad.length + " lessons most of the class could not follow"
+        + (bad[0] ? ", worst: " + bad[0].title + " (" + bad[0].missPct + "% miss)" : "");
+    },
+    blocks: (d) => {
+      const rows = d.lessons || [];
+      const enough = rows.filter(l => l.enough);
+      const bad = enough.filter(l => l.missPct >= 50);
+      const out = [{ type: "kpis", span: 6, items: [
+        { l: "Answers", v: crNum(d.voices || 0), dn: "taps from members" },
+        { l: "Lessons with enough to judge", v: crNum(enough.length), dn: d.minVoices + "+ answers each" },
+        { l: "Not landing", v: crNum(bad.length), dn: "half the class or more", tone: bad.length ? "down" : "flat" },
+      ] }];
+      if (!rows.length) {
+        out.push({ type: "note", icon: "chat-circle", text: "Nothing yet.",
+          sub: "Members are asked how a lesson went at the end of it. Answers appear here as they come in \u2014 nobody is made to answer, so a quiet week is not a fault." });
+        return out;
+      }
+      out.push({ type: "cards", span: 6, title: "Worst first", sub: "A lesson under " + d.minVoices + " answers is shown last \u2014 too few to judge",
+        empty: "Nothing yet.",
+        cards: rows.map(l => ({
+          icon: l.missPct >= 50 ? "warning" : l.missPct >= 25 ? "eye" : "check",
+          title: l.title,
+          sub: (l.course || "Whole Club") + " \u00b7 week " + l.week,
+          tag: l.enough ? l.missPct + "% missed" : l.voices + " answer" + (l.voices === 1 ? "" : "s"),
+          tone: !l.enough ? "flat" : l.missPct >= 50 ? "down" : l.missPct >= 25 ? "warn" : "up",
+          meta: [["Could do it", String(l.got)], ["Needed help", String(l.mostly)], ["Could not follow", String(l.lost)]]
+            .concat(l.said.length ? [["They said", l.said.map(x => "\u201c" + x.body + "\u201d").join("  \u00b7  ")]] : []),
+        })) });
+      return out;
+    },
+  },
   curriculum: {
     skeleton: ["table"],
     load: async ctx => {
@@ -348,8 +389,6 @@ Object.assign(CR_TAB_DEFS, {
 /* The rest of Learning mounts the v1 panels (crPanel) until each is rebuilt as
    blocks. The Timetable Maker itself is /timetable; this is v1's slot desk. */
 Object.assign(CR_TAB_DEFS, {
-  sessions: crPanel(() => <AdminSessions/>),
-  missions: crPanel(() => <AdminMissions/>),
   assignments: crPanel(() => <AssignmentDesk api={NGGApi.admin.assignments.desk()}/>),
   anchor: crPanel(() => <AdminAnchor/>),
   timetable: crPanel(() => <AdminTimetable/>),
@@ -629,6 +668,143 @@ Object.assign(CR_TAB_DEFS, {
           search: "Search courses", filters: ["State"],
           emptyText: "No courses yet. Add them in Divisions & courses." },
       ].filter(Boolean);
+    },
+  },
+});
+
+/* ── Sessions, native ────────────────────────────────────────────────────────
+   Was AdminSessions: a year of 12-week sessions as cards, each opening a drawer
+   editor. Same op (admin.sessions list / upsert). The year is the sub-address
+   (/control/learning/sessions/2027), so the year being looked at survives a
+   refresh and a shared link. */
+function crSesEdit(ctx, s) {
+  ctx.form({
+    title: (s.code || s.sessionId) + " · " + s.year, submit: "Save session", busyLabel: "Saving…",
+    values: { name: s.name || "", startDate: s.startDate || "", endDate: s.endDate || "", theme: s.theme || "", coverUrl: s.coverUrl || "", notes: s.notes || "" },
+    fields: [
+      { id: "name", l: "Display name", max: 80 },
+      { id: "startDate", l: "Starts", type: "date", req: true },
+      { id: "endDate", l: "Ends", type: "date", req: true, check: (v, all) => !all.startDate || v >= all.startDate ? "" : "It ends before it starts." },
+      { id: "theme", l: "Theme", max: 120, ph: "“Build the room.”" },
+      { id: "coverUrl", l: "Cover image link", max: 400, ph: "https://" },
+      { id: "notes", l: "Internal notes", type: "textarea", rows: 3 },
+    ],
+    onSubmit: async v => {
+      const r = await NGGApi.admin.sessions.upsert(Object.assign({}, s, v));
+      const l = await NGGApi.admin.sessions.list(s.year); ctx.setData({ year: s.year, sessions: l.sessions || [] });
+      return r;
+    },
+    done: () => "Session saved.",
+  });
+}
+/* ── Missions, native ───────────────────────────────────────────────────────
+   Was AdminMissions: twelve weeks of Anchor missions and, above them, the proof
+   review queue. Same ops. Returning a submission asks for the feedback in a
+   form (it was window.prompt, which a phone renders as a system dialog with no
+   room to write). */
+const CR_MIS_TYPES = ["Make", "Read", "Speak", "Reflect", "Serve", "Move"];
+const CR_MIS_PROOF = ["photo", "text", "audio", "video", "link", "none"];
+function crMisEdit(ctx, m) {
+  const isNew = !m.missionId;
+  ctx.form({
+    title: isNew ? "New mission" : "Edit mission", submit: isNew ? "Add mission" : "Save mission", busyLabel: "Saving…",
+    values: { week: m.week ? String(m.week) : "", order: String(m.order || 1), theme: m.theme || "", title: m.title || "", prompt: m.prompt || "",
+              type: m.type || "Make", proof: m.proof || "text", xp: String(m.xp || 60), estimatedMin: String(m.estimatedMin || 15), bookPage: m.bookPage ? String(m.bookPage) : "",
+              isActive: isNew ? true : m.isActive !== false },
+    fields: [
+      { id: "week", l: "Week (1–12)", req: true, im: "numeric", check: v => /^\d+$/.test(String(v)) && +v >= 1 && +v <= 12 ? "" : "A week from 1 to 12." },
+      { id: "order", l: "Order in the week", im: "numeric" },
+      { id: "theme", l: "Theme", ph: "Identity, Discipline…", max: 60 },
+      { id: "title", l: "Title", req: true, max: 120 },
+      { id: "prompt", l: "What the member has to do", type: "textarea", rows: 4 },
+      { id: "type", l: "Kind", type: "chips", req: true, opts: CR_MIS_TYPES },
+      { id: "proof", l: "Proof", type: "chips", req: true, opts: CR_MIS_PROOF.map(p => [p, p === "none" ? "None" : p[0].toUpperCase() + p.slice(1)]) },
+      { id: "xp", l: "XP", im: "numeric" },
+      { id: "estimatedMin", l: "Time (minutes)", im: "numeric" },
+      { id: "bookPage", l: "Book page", im: "numeric" },
+      { id: "isActive", l: "Active — assignable to members now", type: "switch" },
+    ],
+    onSubmit: async v => {
+      const num = x => (x === "" || x == null) ? "" : Number(x);
+      const r = await NGGApi.admin.missions.upsert(Object.assign({}, m, v, { week: Number(v.week), order: Number(v.order) || 1, xp: Number(v.xp) || 0, estimatedMin: Number(v.estimatedMin) || 0, bookPage: num(v.bookPage) }));
+      ctx.reload(); return r;
+    },
+    done: v => (isNew ? "Added: " : "Saved: ") + v.title + ".",
+  });
+}
+async function crMisVerify(ctx, s, approve, note) {
+  try {
+    await NGGApi.admin.missions.verify(s.memberId, s.missionId, approve, note || "");
+    ctx.toast(approve ? "Verified · +" + crNum(s.xp || 0) + " XP awarded" : "Returned for another pass");
+    ctx.closeDrawer(); ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t record that."), null, true); }
+}
+function crMisProof(ctx, s) {
+  const link = s.proofUrl && /^https?:\/\//i.test(String(s.proofUrl).trim());
+  ctx.drawer({
+    title: s.fullName || s.memberId, sub: [s.centre, "Week " + s.week, s.title].filter(Boolean).join(" · "),
+    stats: [["XP on verify", "+" + crNum(s.xp || 0)]], fields: [],
+    sections: [
+      s.note ? { h: "Their note", text: "“" + s.note + "”" } : null,
+      s.proofUrl ? { h: "Proof", text: link ? s.proofUrl : s.proofUrl } : { h: "Proof", text: "Nothing attached." },
+    ].filter(Boolean),
+    actions: [
+      { l: "Verify +" + crNum(s.xp || 0), primary: true, run: () => crMisVerify(ctx, s, true) },
+      link ? { l: "Open the proof", run: () => window.open(s.proofUrl, "_blank", "noopener") } : null,
+      { l: "Return with feedback", run: () => { ctx.closeDrawer(); ctx.form({
+          title: "Return to " + (s.fullName || "the member"), submit: "Return", busyLabel: "Returning…",
+          intro: "They see this and can try again.", values: { note: "" },
+          fields: [{ id: "note", l: "Feedback (optional)", type: "textarea", rows: 4, max: 500 }],
+          onSubmit: async v => { await crMisVerify(ctx, s, false, v.note.trim()); }, done: () => null }); } },
+    ].filter(Boolean),
+  });
+}
+Object.assign(CR_TAB_DEFS, {
+  sessions: {
+    skeleton: ["cards"],
+    load: async ctx => {
+      const year = /^\d{4}$/.test(String(ctx.sub || "")) ? +ctx.sub : new Date().getFullYear();
+      const r = await NGGApi.admin.sessions.list(year);
+      return { year, sessions: r.sessions || [] };
+    },
+    /* Another year is fetched here and put in the tab's data: `load` keeps the ctx of
+       the first render (useCrLoad memoises it), so it reads a deep-linked year but not
+       one chosen afterwards. The address follows, so a refresh lands on the same year. */
+    actions: (d, ctx) => {
+      const go = y => NGGApi.admin.sessions.list(y).then(r => { ctx.setData({ year: y, sessions: r.sessions || [] }); ctx.setSub(String(y)); },
+                                                       e => ctx.toast(crErr(e, "Couldn’t load " + y + "."), null, true));
+      return d ? [
+        { l: String(d.year - 1), icon: "caret-left", run: () => go(d.year - 1) },
+        { l: String(d.year + 1), icon: "caret-right", run: () => go(d.year + 1) },
+      ] : [];
+    },
+    blocks: (d, ctx) => [
+      { type: "cards", span: 6, title: "Sessions · " + d.year, sub: "Each session is twelve weeks.",
+        empty: "No sessions for " + d.year + ".",
+        cards: d.sessions.map(s => ({ icon: "calendar-blank", title: s.name || s.code, sub: crDate(s.startDate) + " — " + crDate(s.endDate),
+          tag: s.isActive ? "Live now" : "", tone: s.isActive ? "ok" : "neutral",
+          meta: [["Code", s.code], s.theme ? ["Theme", "“" + s.theme + "”"] : null].filter(Boolean), onClick: () => crSesEdit(ctx, s) })) },
+    ],
+  },
+  missions: {
+    skeleton: ["queue", "list"],
+    load: async () => {
+      const [l, q] = await Promise.all([NGGApi.admin.missions.list(), NGGApi.admin.missions.submissions().catch(() => ({ submissions: [] }))]);
+      return { missions: l.missions || [], subs: q.submissions || [] };
+    },
+    actions: (d, ctx) => [{ l: "New mission", icon: "plus", primary: true, run: () => crMisEdit(ctx, {}) }],
+    blocks: (d, ctx) => {
+      const out = [{ type: "list", span: 6, title: "Proof to review", sub: d.subs.length ? crPlural(d.subs.length, "submission") + " waiting" : "",
+        empty: "Nothing waiting. Missions that need proof land here for a mentor or admin to verify.",
+        rows: d.subs.map(s => ({ icon: "seal-check", t: (s.fullName || s.memberId) + " · week " + s.week, s: s.title + (s.note ? " — “" + s.note + "”" : ""), m: "+" + crNum(s.xp || 0) + " XP", onClick: () => crMisProof(ctx, s) })) }];
+      for (let w = 1; w <= 12; w++) {
+        const ms = d.missions.filter(m => Number(m.week) === w).sort((a, b) => (a.order || 0) - (b.order || 0));
+        out.push({ type: "list", span: 6, title: "Week " + w + (ms[0] && ms[0].theme ? " · " + ms[0].theme : ""), sub: crPlural(ms.length, "mission"),
+          action: "Add", onAction: () => crMisEdit(ctx, { week: w }),
+          empty: "No mission this week yet.",
+          rows: ms.map(m => ({ icon: m.isActive === false ? "pause-circle" : "target", t: m.title, s: [m.type, m.proof && m.proof !== "none" ? "proof: " + m.proof : "no proof", m.isActive === false ? "inactive" : ""].filter(Boolean).join(" · "), m: "+" + crNum(m.xp || 0) + " XP", onClick: () => crMisEdit(ctx, m) })) });
+      }
+      return out;
     },
   },
 });

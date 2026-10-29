@@ -174,7 +174,7 @@ function admin_clubp_boot(array $p): array {
                  'caps' => $caps, 'scoped' => $x['scoped'], 'centres' => $x['names'], 'isAdmin' => $isAdm,
                  'canControl' => $isAdm || in_array('rbac', $caps, true), 'canSummer' => in_array('summer', $caps, true),
                  'canCurriculum' => in_array('curriculum', $caps, true), 'canCheckin' => in_array('checkin', $caps, true),
-                 'canPeople' => in_array('people', $caps, true), 'canAudit' => in_array('audit', $caps, true) || in_array('rbac', $caps, true)],
+                 'canPeople' => in_array('people', $caps, true), 'canNetwork' => in_array('network', $caps, true), 'canWifiRegions' => in_array('wifi_regions', $caps, true), 'canAudit' => in_array('audit', $caps, true) || in_array('rbac', $caps, true)],
         'access' => ['caps' => implode(' · ', array_map(static fn($c) => $c === 'checkin' ? 'check-in' : $c, $caps)), 'can' => $can, 'cannot' => $cannot],
         'centres' => $centres, 'courses' => $courses, 'instructors' => $instructors,
         'clauses' => CP_CLAUSES, 'methods' => CP_CONSENT_METHODS, 'sections' => CP_SECTIONS];

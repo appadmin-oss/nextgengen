@@ -131,8 +131,8 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.waitForFunction(() => /Every course/.test(document.body.innerText) && /Coding/.test(document.body.innerText), null, { timeout: 60000 }).catch(() => {});
     txt = await page.evaluate(() => document.body.innerText);
     if (process.env.CPLACE_SHOTS) await page.screenshot({ path: process.env.CPLACE_SHOTS + '/health.png' });
-    chk('Course health names courses with children and nothing to teach them', /Coding/.test(txt) && /No instructor teaches it/.test(txt) && /No lessons published/.test(txt) && /Missing something/.test(txt));
-    await page.evaluate(() => { const r = Array.from(document.querySelectorAll('tbody tr')).find(x => /Musical Instruments/.test(x.innerText)); r.click(); });
+    chk('Course health names courses with children and nothing to teach them', /Coding/.test(txt) && /No instructor teaches it/.test(txt) && /No class time/.test(txt) && /Missing something/.test(txt));
+    await page.evaluate(() => { const r = Array.from(document.querySelectorAll('tbody tr')).find(x => /^\s*Piano/.test(x.innerText)); r.click(); });
     await page.waitForFunction(() => /proposed/.test(document.body.innerText) && Array.from(document.querySelectorAll('button')).some(b => /Give it an instructor/.test(b.innerText)), null, { timeout: 10000 }).catch(() => {});
     txt = await page.evaluate(() => document.body.innerText);
     chk('A course opens with what is missing and a button to where each is fixed; a proposed child is counted apart', /1 proposed/.test(txt) && /Give it an instructor/.test(txt) && /Put it on the timetable/.test(txt));

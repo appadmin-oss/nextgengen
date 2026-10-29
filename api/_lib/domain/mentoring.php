@@ -164,10 +164,23 @@ function mentoring_periods(int $n): array {
  */
 /** member.mentor.child.lessons — where a mentee is in their lessons (the same gate as their record). */
 function mentor_child_lessons(array $p): array {
-    $o = mentoring_open($p);
-    if (empty($o['ok'])) return $o;
-    if ((string)$o['subject']['kind'] !== 'member') return ['ok' => true, 'curriculum' => null];
-    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [(string)$o['subject']['id']]);
+    /* The mentor portal's mentee page shows this beside Growth, which is gated
+     * by the assignment (mp_gate + caseload). Gating Lessons on the older
+     * record gate instead (screening, centre, cohort) refused mentors whose
+     * Growth tab opened fine: "Couldn't load their lessons" under a working
+     * page. A child in the caseload is enough; the older gate still serves
+     * everyone else (instructors, cover). */
+    $id = trim((string)($p['subjectId'] ?? ''));
+    $g = function_exists('mp_gate') ? mp_gate($p) : [];
+    if (!empty($g['ok']) && $id !== '' && in_array($id, mp_caseload_ids($g), true)) {
+        $subject = $id;
+    } else {
+        $o = mentoring_open($p);
+        if (empty($o['ok'])) return $o;
+        if ((string)$o['subject']['kind'] !== 'member') return ['ok' => true, 'curriculum' => null];
+        $subject = (string)$o['subject']['id'];
+    }
+    $m = db_row('SELECT memberId, fullName, centre, track, courses, disciplines, division FROM members WHERE memberId = ? LIMIT 1', [$subject]);
     return ['ok' => true, 'curriculum' => $m && function_exists('curriculum_child_state') ? curriculum_child_state($m) : null];
 }
 

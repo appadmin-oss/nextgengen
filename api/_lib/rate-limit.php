@@ -40,11 +40,20 @@ function rate_limit_default(string $op): ?array {
         'timetable.load'     => ['max' => 30, 'window' => 60],    // a link token is a bearer secret; slows guessing
         'family.verify'      => ['max' => 10, 'window' => 60],
         'family.write'       => ['max' => 30, 'window' => 60],
+        // A report photo arrives in up to 80 pieces; one upload must fit, ten in a minute must not.
+        'family.upload'      => ['max' => 160, 'window' => 60],
+        // A case emails its owner and can page staff (P1/P2): per signed-in person.
+        'support.open'       => ['max' => 6,  'window' => 3600],
+        'support.write'      => ['max' => 30, 'window' => 600],   // replies, solve, rate
         'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
         'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
         'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still
         'upload.sign'        => ['max' => 30, 'window' => 60],    // mints a cloud upload signature
         'hook'               => ['max' => 120, 'window' => 60],   // inbound webhook bursts
+        'wifi.feed'          => ['max' => 20, 'window' => 60],
+        'wifi.usage'         => ['max' => 30, 'window' => 60],    // a router reports its sessions in pages of 100 each fetch    // a router fetches every 5 minutes; a key guess is slowed
+        'wifi.speed'         => ['max' => 40, 'window' => 600],   // a speed test is a handful of downloads; slows anybody using it as a pipe
+        'wifi.pin'           => ['max' => 6,  'window' => 600],   // a member's own PIN reset (3 a day is the domain's rule)
         'member.coach'       => ['max' => 20, 'window' => 600],   // each reply is a paid model call
         'member.chat'        => ['max' => 20, 'window' => 600],   // a child's messages to their mentor; each one notifies an adult
         'results.read'       => ['max' => 6,  'window' => 600],   // reads a report card with a vision model — a paid call

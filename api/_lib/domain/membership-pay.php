@@ -229,12 +229,13 @@ function membership_balance_invoice(array $m, string $by): array {
     }
     $due = (int)(fees_balance($m, $cfg)['payable'] ?? 0);
     if ($due <= 0) return ['ok' => false, 'error' => 'nothing_to_pay'];
-    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'balance' ORDER BY id DESC", [$mid]);
+    // An open advance invoice covers today's balance too, so it is replaced like a stale balance one.
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance') ORDER BY id DESC", [$mid]);
     foreach ($open as $o) {
         if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
     }
     foreach ($open as $o) {
-        if ((int)$o['total'] === $due) return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $due, 'existed' => true];
+        if ((string)$o['purpose'] === 'balance' && (int)$o['total'] === $due) return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $due, 'existed' => true];
     }
     foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: the balance changed'], ['id' => $o['id']]);
     $terms = membership_fee_terms();
@@ -264,6 +265,156 @@ function family_fees_pay(array $p): array {
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     return membership_balance_invoice($m, 'guardian:' . $gid);
+}
+
+/* ── Paying ahead ────────────────────────────────────────────────────────
+ *
+ * A family may pay months of the commitment fee ahead, and the membership
+ * renewal that falls in those months with them. Nothing is charged early:
+ * the invoice (purpose 'advance') posts only the PAYMENT when it settles, and
+ * the charges arrive on the ledger on their own dates through the accrual,
+ * where the credit already waiting meets them. So `payable` stays the real
+ * figure owed today, a reminder never goes to a family that is paid ahead,
+ * and a fee changed in the meantime is charged at its new price against the
+ * same credit — never re-priced on an invoice already paid.
+ *
+ * The plan walks the months to come in date order, spending the credit on
+ * each charge as it would fall, so "paid ahead to March" is what the accrual
+ * will actually do, renewal included.
+ */
+const MPAY_ADVANCE_MONTHS = [1, 3, 6, 12];
+const MPAY_ADVANCE_HORIZON = 36;
+
+/** The charges still to come, in date order: every dues month and renewal not yet on the ledger. */
+function membership_upcoming_charges(array $m, array $cfg, int $months, ?string $asOf = null): array {
+    $today = $asOf ?? gmdate('Y-m-d');
+    $ten = fees_tenure($m, $cfg, $today);
+    $start = (string)$ten['start'];
+    if ($start === '') return [];
+    $on = [];
+    foreach (fees_entries((string)$m['memberId']) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '' || (string)$e['direction'] !== 'charge') continue;
+        $on[(string)$e['kind'] . '|' . (string)$e['periodKey']] = true;
+    }
+    $settled = substr(trim((string)($m['feesSettledThrough'] ?? '')), 0, 10);
+    $from = max($start, gmdate('Y-m-01', (int)strtotime($today . ' 00:00:00 UTC')));
+    $upto = gmdate('Y-m-t', (int)strtotime(substr($from, 0, 7) . '-01 00:00:00 UTC +' . ($months - 1) . ' months'));
+    $out = [];
+    if ((int)$cfg['monthlyDues'] > 0) {
+        foreach (fees_due_months($from, $upto, $months) as $mk) {
+            if (isset($on['dues|' . $mk]) || ($settled !== '' && $mk <= substr($settled, 0, 7))) continue;
+            $out[] = ['kind' => 'dues', 'key' => $mk, 'due' => $mk . '-01', 'amount' => (int)$cfg['monthlyDues']];
+        }
+    }
+    if ((int)$cfg['membershipFee'] > 0 && (int)$cfg['membershipEveryMonths'] > 0) {
+        foreach (fees_membership_periods($start, $upto, (int)$cfg['membershipEveryMonths']) as $per) {
+            if (isset($on['membership|' . $per['key']]) || (string)$per['due'] < $from || ($settled !== '' && (string)$per['due'] <= $settled)) continue;
+            $out[] = ['kind' => 'membership', 'key' => (string)$per['key'], 'due' => (string)$per['due'], 'amount' => (int)$cfg['membershipFee']];
+        }
+    }
+    usort($out, static fn($a, $b) => strcmp($a['due'], $b['due']) ?: strcmp($a['kind'], $b['kind']));
+    return $out;
+}
+
+/**
+ * Where a member's account stands for paying ahead: the credit already on it,
+ * the month it is paid to, and a priced quote for each choice of months.
+ */
+function membership_advance_plan(array $m, ?string $asOf = null): array {
+    $cfg = fees_settings();
+    $bal = fees_balance($m, $cfg, $asOf);
+    $credit = max(0, (int)$bal['realCredited'] - (int)$bal['realCharged']);
+    $coming = membership_upcoming_charges($m, $cfg, MPAY_ADVANCE_HORIZON, $asOf);
+    // Spend the credit on the charges in the order they will fall.
+    $left = $credit; $through = ''; $i = 0;
+    for (; $i < count($coming); $i++) {
+        if ($left < $coming[$i]['amount']) break;
+        $left -= $coming[$i]['amount'];
+        if ($coming[$i]['kind'] === 'dues') $through = $coming[$i]['key'];
+    }
+    $rest = array_slice($coming, $i);
+    $quotes = [];
+    foreach (MPAY_ADVANCE_MONTHS as $n) {
+        $q = membership_advance_quote($rest, $left, (int)$bal['payable'], $n);
+        if ($q) $quotes[] = $q;
+    }
+    return ['credit' => $credit, 'paidThrough' => $through, 'payable' => (int)$bal['payable'],
+        'monthly' => (int)$cfg['monthlyDues'], 'membershipFee' => (int)$cfg['membershipFee'], 'quotes' => $quotes];
+}
+
+/** One priced choice: what is owed today, then n months of dues and any renewal among them, less a part-month credit. */
+function membership_advance_quote(array $rest, int $leftover, int $payable, int $months): ?array {
+    $dues = []; $renew = []; $count = 0;
+    foreach ($rest as $c) {
+        if ($c['kind'] === 'dues') { if ($count >= $months) break; $count++; $dues[] = $c; }
+        else $renew[] = $c;
+    }
+    if ($count < $months) return null;
+    $lastDue = end($dues)['due'];
+    $renew = array_values(array_filter($renew, static fn($r) => $r['due'] <= $lastDue));
+    $label = static fn($mk) => gmdate('M Y', (int)strtotime($mk . '-01 12:00:00 UTC'));
+    $items = [];
+    if ($payable > 0) $items[] = ['kind' => 'balance', 'label' => 'Owed today', 'detail' => 'Dues and fees already on the account', 'amount' => $payable, 'periodKey' => ''];
+    $sum = array_sum(array_column($dues, 'amount'));
+    $items[] = ['kind' => 'advance', 'label' => 'Commitment fee · ' . $label($dues[0]['key']) . ($months > 1 ? ' – ' . $label(end($dues)['key']) : ''),
+        'detail' => $months . ' month' . ($months === 1 ? '' : 's') . ' ahead', 'amount' => $sum, 'periodKey' => ''];
+    foreach ($renew as $r) $items[] = ['kind' => 'advance', 'label' => 'Membership renewal', 'detail' => 'Due ' . gmdate('j M Y', (int)strtotime($r['due'] . ' 12:00:00 UTC')), 'amount' => $r['amount'], 'periodKey' => ''];
+    $total = $payable + $sum + array_sum(array_column($renew, 'amount'));
+    if ($leftover > 0) { $use = min($leftover, $total); $items[] = ['kind' => 'credit', 'label' => 'Already paid ahead', 'detail' => 'Credit on the account', 'amount' => -$use, 'periodKey' => '']; $total -= $use; }
+    if ($total <= 0) return null;
+    return ['months' => $months, 'through' => end($dues)['key'], 'throughL' => $label(end($dues)['key']), 'total' => $total, 'items' => $items];
+}
+
+/**
+ * An invoice for paying ahead. The quote is priced here, from the plan, never
+ * from a figure the page sent; an open balance or advance invoice is replaced
+ * so a family never holds two links for overlapping money.
+ */
+function membership_advance_invoice(array $m, int $months, string $by): array {
+    if (!member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
+    if (!in_array($months, MPAY_ADVANCE_MONTHS, true)) return ['ok' => false, 'error' => 'bad_months', 'detail' => 'Choose 1, 3, 6 or 12 months.'];
+    $cfg = fees_settings();
+    if (empty($cfg['enabled'])) return ['ok' => false, 'error' => 'fees_off'];
+    $terms = membership_fee_terms();
+    if (!$terms['paystack'] && !$terms['bank']) return ['ok' => false, 'error' => 'payments_unavailable'];
+    if (membership_contact($m) === '') return ['ok' => false, 'error' => 'no_email'];
+    $mid = (string)$m['memberId'];
+    if (db_row("SELECT 1 FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$mid])) {
+        return ['ok' => false, 'error' => 'joining_open', 'detail' => 'Pay the joining invoice first. Paying ahead opens once membership is complete.'];
+    }
+    $plan = membership_advance_plan($m);
+    $q = null;
+    foreach ($plan['quotes'] as $x) if ($x['months'] === $months) $q = $x;
+    if (!$q) return ['ok' => false, 'error' => 'nothing_to_pay', 'detail' => 'There is nothing to pay ahead for that many months.'];
+    $open = db_all("SELECT * FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose IN ('balance','advance') ORDER BY id DESC", [$mid]);
+    foreach ($open as $o) {
+        if (db_row("SELECT id FROM offline_payments WHERE invoiceId = ? AND status = 'pending' LIMIT 1", [(string)$o['invoiceId']])) return ['ok' => false, 'error' => 'offline_pending'];
+    }
+    foreach ($open as $o) {
+        if ((string)$o['purpose'] === 'advance' && (int)$o['total'] === $q['total'] && (string)$o['items'] === json_encode($q['items'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) {
+            return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode((string)$o['payToken']), 'invoiceId' => (string)$o['invoiceId'], 'total' => $q['total'], 'through' => $q['through'], 'existed' => true];
+        }
+    }
+    foreach ($open as $o) db_update('membership_invoices', ['status' => 'void', 'voidReason' => 'superseded: a new payment was asked for'], ['id' => $o['id']]);
+    $row = [
+        'invoiceId' => 'NGG-ADV-' . strtoupper(rand_hex(5)), 'memberId' => $mid, 'applicationId' => 0, 'payToken' => rand_hex(20),
+        'items' => json_encode($q['items'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        'total' => $q['total'], 'currency' => (string)$terms['currency'], 'startDate' => gmdate('Y-m-d'),
+        'status' => 'open', 'purpose' => 'advance', 'createdBy' => substr($by, 0, 64), 'createdAt' => now_iso(),
+    ];
+    db_insert('membership_invoices', $row);
+    audit('membership.advance.invoice', $by, $mid, ['invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'months' => $months, 'through' => $q['through'], 'superseded' => count($open)]);
+    return ['ok' => true, 'payUrl' => '/pay/' . rawurlencode($row['payToken']), 'invoiceId' => $row['invoiceId'], 'total' => $q['total'], 'through' => $q['through']];
+}
+
+/** family.fees.advance — a guardian paying ahead for one of their own, active links. */
+function family_fees_advance(array $p): array {
+    $gid = (string)($p['guardianId'] ?? '');
+    $l = function_exists('family_link') ? family_link($gid, (string)($p['linkId'] ?? '')) : null;
+    if (!$l) return ['ok' => false, 'error' => 'not_found'];
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    return membership_advance_invoice($m, (int)($p['months'] ?? 0), 'guardian:' . $gid);
 }
 
 /** The invoice's lines as an email table. */
@@ -332,13 +483,16 @@ function membership_settle(string $invoiceId, string $via, string $reference, st
         if ((string)$inv['status'] === 'paid') return ['ok' => true, 'already' => true, 'invoice' => $inv];
         if ((string)$inv['status'] !== 'open') return ['ok' => false, 'error' => 'not_open'];
         $memberId = (string)$inv['memberId'];
-        $balance = (string)($inv['purpose'] ?? 'joining') === 'balance';
-        // A balance invoice's charges are already on the ledger: only the payment is posted.
-        if (!$balance) foreach (membership_items($inv) as $it) {
+        $purpose = (string)($inv['purpose'] ?? 'joining');
+        $balance = $purpose === 'balance';
+        /* A balance invoice's charges are already on the ledger, and an advance
+           invoice's arrive on their own dates through the accrual: for both,
+           only the payment is posted. */
+        if ($purpose === 'joining') foreach (membership_items($inv) as $it) {
             fees_post($memberId, (string)$it['kind'], (int)$it['amount'], ['periodKey' => (string)$it['periodKey'], 'note' => (string)$it['label'], 'by' => 'invoice:' . $invoiceId]);
         }
         $credit = fees_post($memberId, 'payment', (int)$inv['total'], ['periodKey' => 'minv:' . $invoiceId,
-            'note' => ($balance ? 'Balance payment ' : 'Joining invoice ') . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
+            'note' => ($balance ? 'Balance payment ' : ($purpose === 'advance' ? 'Paid ahead ' : 'Joining invoice ')) . $invoiceId . ' — ' . (MPAY_METHODS[$via] ?? ($via === 'paystack' ? 'Paystack' : $via)),
             'method' => $via, 'reference' => $reference, 'by' => $by]);
         if (!$credit) throw new RuntimeException('ledger_failed');
         db_update('membership_invoices', ['status' => 'paid', 'paidVia' => $via, 'paidAt' => now_iso(),
@@ -399,11 +553,13 @@ function membership_send_receipt(array $inv): array {
     if ($to === '') return ['ok' => false, 'error' => 'no_email'];
     $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'your child';
     $ok = @send_mail($to, 'Thank you — payment received · receipt ' . $inv['receiptNo'], email_template([
-        'title' => 'Thank you. ' . $first . ' is fully enrolled.',
+        'title' => ['advance' => 'Thank you. ' . $first . ' is paid ahead.', 'balance' => 'Thank you. ' . $first . '’s account is paid.'][(string)($inv['purpose'] ?? '')] ?? 'Thank you. ' . $first . ' is fully enrolled.',
         'intro' => 'We have received your payment of ' . fees_money_text((int)$inv['total']) . '. Your support keeps the programme running.',
         'bodyHtml' => membership_items_html($inv, true)
             . '<p style="margin:16px 0 0;font-size:14px"><b>Receipt</b> ' . esc_html($inv['receiptNo']) . ' · <b>Invoice</b> ' . esc_html($inv['invoiceId']) . '</p>'
-            . '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>',
+            . ((string)($inv['purpose'] ?? '') === 'advance'
+                ? '<p style="margin:12px 0 0;font-size:14px">The payment is held on ' . esc_html($first) . '’s account and meets each charge on the day it falls due, so there is nothing more to pay until it is used up. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'
+                : '<p style="margin:12px 0 0;font-size:14px">From next month the commitment fee is ' . esc_html(fees_money_text((int)fees_settings()['monthlyDues'])) . ' a month. We look forward to seeing ' . esc_html($first) . ' at the centre.</p>'),
         'ctaLabel' => 'View and print the receipt',
         'ctaUrl' => membership_receipt_url($inv),
         'footNote' => 'With thanks from the Next Generation Genius team.',

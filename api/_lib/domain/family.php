@@ -42,7 +42,10 @@ const FAMILY_NOTIFY_KEYS = ['checkin', 'weekly', 'alerts'];
 const FAMILY_NOTIFY_DEFAULT = ['checkin' => true, 'weekly' => true, 'alerts' => true];
 /* The requests a guardian may raise for a ward. Not `payment`: an offline
    payment claim needs a verified receipt, and that path is the member's. */
-const FAMILY_REQUEST_KINDS = ['leave', 'appeal', 'idcard'];
+/* `payment` is a parent telling the desk they paid offline (transfer, cash at
+   the desk): a claim the desk checks against the statement, never money on its
+   own. It moved here from the member's app — the parent made the payment. */
+const FAMILY_REQUEST_KINDS = ['leave', 'academic', 'appeal', 'idcard', 'askmentor', 'familydetails', 'collect', 'payment'];
 const FAMILY_WEEKLY_BATCH = 40;
 
 function family_email_norm(string $e): string {
@@ -224,17 +227,13 @@ function family_notices_read(array $p): array {
     return ['ok' => true, 'unread' => (int)(db_row("SELECT COUNT(*) c FROM guardian_notices WHERE guardianId = ? AND readAt = ''", [$gid])['c'] ?? 0)];
 }
 
-/** family.profile — the guardian's own name and phone. The email IS the sign-in, so it is not editable here. */
+/** family.profile — refused: a guardian's details are read-only to the family (403 read_only at the route). */
 function family_profile(array $p): array {
-    $gid = (string)($p['guardianId'] ?? '');
-    $name = trim(preg_replace('/\s+/', ' ', (string)($p['fullName'] ?? '')));
-    $phone = trim((string)($p['phone'] ?? ''));
-    if (mb_strlen($name) > 120) return ['ok' => false, 'error' => 'name_too_long'];
-    if ($phone !== '' && !preg_match('/^[+0-9 ()-]{7,24}$/', $phone)) return ['ok' => false, 'error' => 'bad_phone'];
-    db_update('guardians', ['fullName' => $name, 'phone' => $phone, 'updatedAt' => now_iso()], ['guardianId' => $gid]);
-    return family_me(['guardianId' => $gid]);
+    /* Read-only since Family Portal v3: family details are kept as they were
+       checked at registration, so reports, evaluations and alerts reach the
+       right person. A change is a `familydetails` request the desk decides. */
+    return ['ok' => false, 'error' => 'read_only', 'detail' => 'Your details can’t be edited here. Ask the centre to change them.'];
 }
-
 /**
  * family.ward.add — two ways in.
  *   code:   the child's Anchor code + a part of their name. The child gave the
@@ -379,10 +378,15 @@ function family_ward(array $p): array {
         // Growth over the term, written to a parent (no staff-only records): mp_growth in mentor-portal.php.
         'growth' => function_exists('mp_growth') ? mp_growth($mid, 'family') : null,
         'requests' => array_map('member_request_public', $reqs),
+        // Excused absences this session, of the two allowed (member_excuses, POLICY §1.1).
+        'excuses' => function_exists('member_excuses') ? array_diff_key(member_excuses($m), ['days' => 1]) : null,
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
         'charges' => array_map(static fn($e) => ['entryId' => (string)$e['entryId'], 'note' => (string)$e['note'], 'amount' => (int)$e['amount'], 'createdAt' => (string)$e['createdAt']],
-            db_all("SELECT entryId, note, amount, createdAt FROM member_ledger WHERE memberId = ? AND direction = 'debit' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 10", [$mid])),
-    ];
+            /* 'charge', which is what the ledger writes. This read said 'debit' and so
+               offered a parent nothing to appeal, ever. The training place is not a
+               bill (FEES_SPEC_v2 §4), so it is not offered either. */
+            db_all("SELECT entryId, note, amount, createdAt FROM member_ledger WHERE memberId = ? AND direction = 'charge' AND kind NOT IN ('training', 'writeoff') AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id DESC LIMIT 10", [$mid])),
+    ] + (function_exists('family_v3_ward') ? family_v3_ward($m, $gid) : []);
 }
 
 /**
@@ -397,14 +401,25 @@ function family_request_create(array $p): array {
     $kind = (string)($p['kind'] ?? '');
     if (!in_array($kind, FAMILY_REQUEST_KINDS, true)) return ['ok' => false, 'error' => 'unknown_kind'];
     $g = db_row('SELECT fullName, email FROM guardians WHERE guardianId = ? LIMIT 1', [$gid]);
-    return member_request_create([
+    $res = member_request_create([
         'memberId' => (string)$l['memberId'], 'kind' => $kind,
         'subject' => (string)($p['subject'] ?? ''), 'body' => (string)($p['body'] ?? ''),
         'fromDate' => (string)($p['fromDate'] ?? ''), 'toDate' => (string)($p['toDate'] ?? ''),
-        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
+        'refEntryId' => (string)($p['refEntryId'] ?? ''), 'proofUrl' => (string)($p['proofUrl'] ?? ''), 'ip' => (string)($p['ip'] ?? ''),
+        'amount' => $p['amount'] ?? null, 'reference' => (string)($p['reference'] ?? ''), 'paidAt' => (string)($p['paidAt'] ?? ''),
         'raisedBy' => 'guardian:' . $gid,
         'raisedByName' => trim((string)($g['fullName'] ?? '')) !== '' ? (string)$g['fullName'] : 'A parent (' . mask_email((string)($g['email'] ?? '')) . ')',
     ]);
+    /* A question for the mentor reaches the mentor, not only the desk's queue
+       (the centre lead can read it there). */
+    if (!empty($res['ok']) && $kind === 'askmentor' && function_exists('results_mentor_of')) {
+        $mentor = results_mentor_of((string)$l['memberId']);
+        $child = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [(string)$l['memberId']]);
+        if ($mentor && (string)($mentor['mentorMember'] ?? '') !== '') notify_people([['memberId' => (string)$mentor['mentorMember']]], ['kind' => 'mentor',
+            'title' => 'A question from ' . mp_first((string)($child['fullName'] ?? '')) . '’s family', 'intro' => trim((string)($p['body'] ?? '')),
+            'body' => 'Reply from the requests queue; the family sees it in their account.', 'linkPage' => 'mentor', 'ctaPath' => '/mentor/ngg', 'ctaLabel' => 'Open the mentor portal →']);
+    }
+    return $res;
 }
 
 /** family.request.withdraw — only one this guardian raised, only while open. */
@@ -588,4 +603,64 @@ function family_links_for_member(string $memberId): array {
             'relationship' => FAMILY_RELATIONSHIPS[(string)$r['relationship']] ?? 'Parent', 'since' => (string)$r['decidedAt']],
         db_all("SELECT g.fullName, g.email, w.relationship, w.decidedAt FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
                  WHERE w.memberId = ? AND w.status = 'active' ORDER BY w.id", [$memberId]));
+}
+
+/* ── A child asks their parent ──────────────────────────────────────────────
+ * The member's app used to let a child record "I've made a payment" — a claim
+ * about money a child rarely holds, with a reference they rarely know. Now the
+ * child has one button, "Ask my parent", and the parent acts in the family
+ * account: they pay (or pay ahead), or, if they already paid by transfer or at
+ * the desk, they confirm it there with the reference (FAMILY_REQUEST_KINDS
+ * payment). One ask covers both, because the child cannot tell which it is.
+ *
+ * It reaches every active parent on the account: a notice in their family
+ * inbox, tied to the child, and an email. Once a day — the notice's own unique
+ * key (guardian, kind, ref) is the limit, so a second press the same day
+ * changes nothing and says so.
+ */
+function family_nudges_of(string $memberId, int $days = 30): ?array {
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - $days * 86400);
+    $r = db_row("SELECT createdAt, readAt FROM guardian_notices WHERE memberId = ? AND kind = 'nudge' AND createdAt >= ? ORDER BY id DESC LIMIT 1", [$memberId, $since]);
+    return $r ? ['at' => (string)$r['createdAt'], 'seen' => (string)$r['readAt'] !== ''] : null;
+}
+
+/** member.family.nudges — how many parents can be asked, and when they were last asked. */
+function member_family_nudges(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $n = (int)(db_row("SELECT COUNT(*) c FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$mid])['c'] ?? 0);
+    return ['ok' => true, 'parents' => $n, 'asked' => family_nudges_of($mid)];
+}
+
+/** member.family.nudge — ask the parents to pay, or to confirm a payment they already made. */
+function member_family_nudge(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if (function_exists('member_is_ngg') && !member_is_ngg($m)) return ['ok' => false, 'error' => 'not_ngg'];
+    $gs = db_all("SELECT g.guardianId, g.email, g.fullName FROM guardian_wards w JOIN guardians g ON g.guardianId = w.guardianId
+                  WHERE w.memberId = ? AND w.status = 'active' AND g.status = 'active'", [$mid]);
+    if (!$gs) return ['ok' => false, 'error' => 'no_family', 'detail' => 'No parent is connected to your account yet. Give them your family code from Me, so they can connect at /family.'];
+    $owed = function_exists('fees_balance') ? (int)(fees_balance($m)['payable'] ?? 0) : 0;
+    $joining = (bool)db_row("SELECT 1 FROM membership_invoices WHERE memberId = ? AND status = 'open' AND purpose = 'joining' LIMIT 1", [$mid]);
+    if ($owed <= 0 && !$joining) return ['ok' => false, 'error' => 'nothing_owed', 'detail' => 'Nothing is owed on your account right now.'];
+    $first = explode(' ', trim((string)$m['fullName']))[0] ?: 'Your child';
+    $amt = $owed > 0 && function_exists('fees_money_text') ? fees_money_text($owed) : '';
+    $title = $first . ' asks about their NGG fees';
+    $body = $first . ' asked you to pay' . ($amt !== '' ? ' the ' . $amt . ' on their account' : ' their NGG fees')
+        . ". Open Fees to pay online, by transfer, or ahead for the months to come. If you have already paid by transfer or at the desk, press I’ve paid there and give the reference, so the centre can match it.";
+    $ref = 'nudge:pay:' . $mid . ':' . gmdate('Y-m-d');
+    $sent = 0; $emailed = 0;
+    foreach ($gs as $g) {
+        if (!family_notice_add((string)$g['guardianId'], 'nudge', $ref, $title, $body, $first)) continue;
+        db_exec("UPDATE guardian_notices SET cat = 'alert', memberId = ? WHERE guardianId = ? AND kind = 'nudge' AND refId = ?", [$mid, (string)$g['guardianId'], $ref]);
+        $sent++;
+        if (family_email_norm((string)$g['email']) !== '') {
+            family_mail((string)$g['email'], $title, ['title' => $title, 'intro' => $body,
+                'ctaLabel' => 'Open Fees →', 'ctaUrl' => family_origin() . '/family?view=fees', 'footNote' => 'Sent because ' . $first . ' asked from their NGG app.']);
+            $emailed++;
+        }
+    }
+    if (!$sent) return ['ok' => false, 'error' => 'too_soon', 'detail' => 'You asked today already. They’ll see it in their family account.'];
+    audit('family.nudge', $mid, $mid, ['parents' => $sent, 'emailed' => $emailed, 'owed' => $owed]);
+    return ['ok' => true, 'parents' => $sent, 'emailed' => $emailed];
 }

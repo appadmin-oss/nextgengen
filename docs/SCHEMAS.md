@@ -550,3 +550,56 @@ One row per AI call (`api/_lib/ai.php` `ai_log_usage`): `at`, `month` (`YYYY-MM`
 `mentor_messages.mediaJson` (migration 171) — a voice note on a chat message: `journal_media_clean`'s shape, audio only, one clip. `journal.mediaJson` now accepts `type: audio` (it was coerced to image) and site paths under `/api/public|member/` as well as https URLs.
 
 `mentor_supports` (migration 172) — supporting mentors: memberId, mentorId, focus, endsOn (YYYY-MM-DD, '' = until ended), status active|ended, startedAt, endedAt, createdBy. The primary stays in `mentor_assignments`. Merge policy: MOVE.
+
+## `wifi_accounts`, `wifi_gateways` (migration 189)
+
+`wifi_accounts`: one per person with Wi-Fi — `subjectType` (`member` |
+`summer`), `subjectId`, `username` (the printed ID; unique), `pinSealed`
+(AES-256-GCM, not a hash: the gateway is handed it), `pinSetAt`,
+`pinResetDay`/`pinResets` (three a day), and an `override` (`on` | `limited` |
+`off`) with `overrideWhy`/`overrideBy`/`overrideAt`. Access itself is never
+stored: `wifi_access_for()` derives it from the record.
+
+`wifi_gateways`: `gatewayId` (`G` + 8 hex), `platform` (`mikrotik` | `radius` |
+`openwrt` | `generic`), `centre`/`centreId`, `label`, `keyHash` (sha256)/
+`keyTail`/`keySetAt`, `lastSeenAt`, `lastFullAt`, `lastChangeAt`, `osVersion`,
+`lastError`, `lastVersion` + `ackedJson` (what the gateway confirmed) +
+`pendingJson`/`pendingVersion` (what it was last handed), `removedAt`.
+
+## `wifi_gateway_stats`, `wifi_speed_tests` (migration 190)
+
+`wifi_gateways` gains `testAsked` and `lastStatsJson` (the latest report:
+active, cpu, memFree, uptime). `wifi_gateway_stats`: one row per gateway per
+UTC hour (`hour` = `YYYY-MM-DDTHH`) — `samples`, `activeMax`, `activeSum`,
+`cpuMax`, `memFreeMin`; kept 14 days. `wifi_speed_tests`: `centre`/`centreId`,
+`gatewayId` (blank for a device), `source` (`gateway` | `device`), `downMbps`,
+`upMbps`, `rttMs`, `byId`, `note`, `at`. No table holds who browsed what.
+
+## Wi-Fi regions and analytics (migration 191)
+
+`wifi_regions` (regionId `WR…`, name, code, note, removedAt) · `wifi_region_centres`
+(centre UNIQUE + centreId, regionId) · `wifi_region_leads` (regionId, memberId) ·
+`wifi_profile_overrides` (regionId | centre + centreId, profilesJson: only the
+fields set at that level) · `wifi_gateway_daily` (gatewayId, date, samples,
+hoursUp, activePeak, activeSum, activeSamples, cpuMax; 400 days) ·
+`wifi_gateway_stats.activeSamples` (so an hour's average counts only reports
+that carried a figure).
+
+## Wi-Fi silence alerts and feed load (migration 192)
+
+`wifi_gateways.silentAlertAt` (when its silence was last told; cleared by its
+next fetch) · `wifi_feed_load` (hour UNIQUE `YYYY-MM-DDTHH`, fetches, failed,
+msTotal, msMax, bytesTotal, memMaxKb, and fetch-time buckets b25 / b50 / b100 /
+b250 / b500 / bOver in milliseconds; 30 days).
+
+Paying ahead needs no table: `membership_invoices.purpose` takes `advance`
+(invoiceId `NGG-ADV-…`), and its payment is an ordinary `payment` credit on
+`member_ledger`. A child's ask is a `guardian_notices` row of kind `nudge`.
+
+## Anchor Circle in the family account (migration 193)
+
+No new table. `circle_links` (the old code-and-token portal) are all
+`moved`. `circle_confirmations` and `circle_remarks` carry on, keyed by the
+adult's link: a family link (`GW-…`) or a mentor (`MT-<mentorId>`), with
+`role` parent | mentor (old rows may still say `teacher`).
+

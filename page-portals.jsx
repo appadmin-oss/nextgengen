@@ -4702,10 +4702,14 @@ function SummerPolicy() {
           </label>
         </div>
         <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Stricter than Summer School</div>
-        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>Summer School participants have no account, so their ladder is warnings, dormancy and suspension. NGG members have a ledger and are held to more: every late is fined from the first, there is no "tardy" grace band, and a day with no sign-out (see Settings → Closing time) counts as an absence.</p>
+        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>Summer School participants have no account, so their ladder is warnings, dormancy and suspension. NGG members have a ledger and are held to more: every late is fined from the first, an absence nobody asked to be excused is fined, there is no "tardy" grace band, and a day with no sign-out (see Settings → Closing time) counts as an absence.</p>
         <div className="admin-fields">
           <label className="admin-field"><span>Fine for every late (₦, 0 = off)</span>
             <input type="number" min={0} step={100} className="admin-input" value={(pol.member || {}).lateFine ?? 500} onChange={e => setPol2("member", "lateFine", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field"><span>Fine for an absence nobody asked about (₦, 0 = off)</span>
+            <input type="number" min={0} step={100} className="admin-input" value={(pol.member || {}).absenceFine ?? 1000} onChange={e => setPol2("member", "absenceFine", Number(e.target.value))}/>
+            <small className="admin-hint">An absence with a request still waiting is not fined until the desk decides it; approved leave is excused; approved academic leave is not an absence at all.</small>
           </label>
           <label className="admin-field admin-field-check"><input type="checkbox" checked={(pol.member || {}).tardyIsLate !== false} onChange={e => setPol2("member", "tardyIsLate", e.target.checked)}/>
             <span>No grace band — arriving after resumption is late</span>
@@ -5556,9 +5560,12 @@ function PortalGate({ cap, brand, setPage, children, bare }) {
 }
 
 function SummerAdminPortal({ setPage }) {
-  return <PortalGate cap="summer" setPage={setPage}
+  /* The Summer School portal v3 (src/modules/summer3/). The older AdminSummer
+     panels stay in the Control Room, which is where the season's settings,
+     gates and imports are administered. */
+  return <PortalGate cap="summer" setPage={setPage} bare
     brand={{ key: "summer", label: "Summer School", eyebrow: "SUMMER SCHOOL · STAFF PORTAL", icon: "☀" }}>
-    <AdminSummer/>
+    {({ signOut }) => <Ss3Portal setPage={setPage} signOut={signOut}/>}
   </PortalGate>;
 }
 

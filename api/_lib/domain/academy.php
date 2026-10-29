@@ -36,7 +36,7 @@ const ACADEMY_TRACKS = ['instructor'];
 const ACADEMY_ATTEMPTS_PER_DAY = 3;
 
 /** The mentor portal's writes that wait for "Start here". Not concern, not the Academy itself, not marking a message read. */
-const ACADEMY_GATED_MENTOR_OPS = ['member.mentor.session.save', 'member.mentor.session.delete', 'member.mentor.goal.checkin', 'member.mentor.scorecard.save',
+const ACADEMY_GATED_MENTOR_OPS = ['member.mentor.session.save', 'member.mentor.supervision.record', 'member.mentor.session.delete', 'member.mentor.goal.checkin', 'member.mentor.scorecard.save',
     'member.mentor.rel.save', 'member.mentor.rel.fit', 'member.mentor.family.send', 'member.mentor.family.drafts', 'member.mentor.supervision.prep',
     'member.mentor.supervision.book', 'member.mentor.retreat.book', 'member.mentor.saturday.plan', 'member.mentor.onetoones.add', 'member.mentor.register',
     'member.mentor.week.review', 'member.mentor.week.review.undo', 'member.mentor.message.reply', 'member.mentor.message.lead', 'member.mentor.plan.approve',

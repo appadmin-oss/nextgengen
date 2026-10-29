@@ -2572,6 +2572,13 @@ function DashCurriculum() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [open, setOpen] = React.useState("");
+  const [say, setSay] = React.useState(null);
+  /* Its own request, and its own failure: the term question never being
+     asked must not cost anybody their lessons. */
+  const loadSay = React.useCallback(() => {
+    NGGApi.member.testimonialMine().then(setSay).catch(() => setSay(null));
+  }, []);
+  React.useEffect(() => { loadSay(); }, [loadSay]);
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculum().then(setData).catch(e => setErr(e.code || e.message || "failed"));
@@ -2594,6 +2601,9 @@ function DashCurriculum() {
   data.units.forEach(u => { const w = weeks.find(x => x.week === u.week); w ? w.units.push(u) : weeks.push({ week: u.week, units: [u] }); });
   return (
     <div className="cur">
+      {/* Once a session, in its last weeks — never a gate on anything. The
+          server decides whether the question is open (testi_session_ask). */}
+      {say && say.session && <DashTermSay ask={say.session} mine={say.mine} onSaved={loadSay}/>}
       <div className="dash-card cur-summary">
         <div>
           <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
@@ -2634,12 +2644,317 @@ function DashCurriculum() {
   );
 }
 
+/* The kinds of question where the work itself is the answer. A practical
+   subject assessed only in prose is a practical subject assessed badly —
+   so these carry the thing made, done or played, attached in the exam
+   itself rather than "bring it next Saturday". */
+const CUR_SHOWS_WORK = ["task", "project", "code"];
+
+/**
+ * Attach the work to the answer — a photo of it, a recording of it, a file.
+ *
+ * This is what makes the practical half of a review sittable HERE. Before
+ * it, "play the scale and say where your thumb went" could only ever be
+ * marked on the learner's own account of it, which in a music programme is
+ * the one thing that is not evidence. The upload goes through the member's
+ * own curriculum store (signed-in readers only) and its URL is appended to
+ * the written answer, so nothing about marking, progress or the schema
+ * changes — a marker opens the answer and the work is in it.
+ */
+function CurAttach({ n, onAdd }) {
+  const [busy, setBusy] = React.useState(false);
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumUpload(file);
+      onAdd(r.url);
+      toast.success("Added to your answer.", file.name);
+    } catch (e) {
+      toast.error(e.code === "too_large" ? "That file is over 25 MB — a shorter recording or a smaller photo."
+        : e.code === "bad_type" ? "That kind of file is not allowed here." : humanizeError(e.code, e.code));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="cur-attach">
+      <label className={"cur-attach-btn" + (busy ? " is-busy" : "")}>
+        {busy ? "Adding…" : "Attach your work"}
+        <input type="file" className="sr-only" disabled={busy} accept={CUR_FILE_ACCEPT}
+               aria-label={"Attach your work for question " + n}
+               onChange={e => { pick(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
+      </label>
+      <span className="cur-attach-hint">A photo, a recording, a screenshot or a file — whatever shows you did it.</span>
+    </div>
+  );
+}
+
+/**
+ * One question, wherever it is asked.
+ *
+ * It is asked in two places now — at the START of a session, as the review
+ * of the one before it, and inside a lesson's own set — and they must be the
+ * same question: the same options, the same marking, the same feedback, the
+ * same model answer. A second copy of this markup for the review panel is
+ * how the two drift until a child sees a different thing depending on which
+ * screen asked them.
+ */
+function CurCheckField({ c, n, value, onChange, verdict, mark, disabled }) {
+  const rv = verdict;
+  return (
+    <fieldset className="cur-check">
+      <legend><span className="cur-check-n">{n}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
+      {/* THE VIDEO IS PART OF THE QUESTION, so it plays here. Sending a
+          learner away to find it is where this flow breaks: they lose the
+          exam, they lose the question, and on a phone they lose the tab. */}
+      {c.kind === "watch" && c.videoUrl && (() => {
+        const v = curVideoEmbed(c.videoUrl);
+        return v ? <div className="cur-watch">
+          <div className="cur-embed"><iframe src={v.src} title={v.title} loading="lazy"
+            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"/></div>
+          <p className="cur-watch-note">Watch it, then write what you took from it — in your own words. A detail or a moment from the video counts for more than a tidy summary.</p>
+        </div> : null;
+      })()}
+      {c.kind === "mcq"
+        ? c.options.map((o, k) => (
+            <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && value === k && String(k) !== rv.answer ? " is-wrong" : "")}>
+              <input type="radio" name={c.checkId} checked={value === k} disabled={disabled} onChange={() => onChange(k)}/>
+              <span>{o}</span>
+            </label>))
+        : <React.Fragment>
+            <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
+              value={value || ""} aria-label={"Answer to question " + n} spellCheck={c.kind !== "code"} disabled={disabled}
+              onChange={e => onChange(e.target.value)}
+              placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
+                project: "What you made, how you made it, and what you learned", task: "What you actually did, and one decision you made while doing it",
+                watch: "What you took from it — something specific you saw or heard, in your own words",
+                code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>
+            {CUR_SHOWS_WORK.includes(c.kind) && !disabled && <CurAttach n={n} onAdd={url => onChange(((value || "") + "\n" + url).trim())}/>}
+          </React.Fragment>}
+      {mark && mark.feedback && <p className="cur-feedback"><b>{mark.by === "ai" ? "Feedback (AI)" : mark.by === "auto" ? "Note" : "Your instructor"}:</b> {mark.feedback}</p>}
+      {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+    </fieldset>
+  );
+}
+
+/**
+ * ONE LINE ABOUT TODAY, asked at the end of every session.
+ *
+ * The home page used to carry four testimonials attributed to named people.
+ * Nobody said any of them. This is where the real ones come from — written
+ * the day it happened, by the person it happened to, rather than
+ * reconstructed for a funder's report eighteen months later.
+ *
+ * Four things this screen will not do:
+ *   · It will not publish anything. What is written here is private, goes to
+ *     staff, and reaches the public site only if somebody with `content`
+ *     decides so AND the record carries the guardian's visibility consent.
+ *     That is said here, in a sentence, before they type.
+ *   · It will not ask for a name. They choose initials, their first name, or
+ *     nothing — and the quietest option is the default.
+ *   · It will not block anything. No lesson, no review, no progress depends
+ *     on it. A testimonial given to unlock something is not a testimonial.
+ *   · It will not hold on to it. Clearing the box takes it back, published
+ *     or not, without asking anybody.
+ */
+/* ── HOW DID TODAY GO ───────────────────────────────────────────────────────
+ *
+ * Three taps, two seconds, after every lesson. Private to the people who
+ * teach them (domain/lesson-feedback.php) — it is never published and there
+ * is no op that could publish it.
+ *
+ * This replaced a text box asking for a testimonial after every lesson, which
+ * was the wrong question at the wrong rhythm: a child asked to write
+ * something quotable twenty-four times a term answers twice. The considered
+ * sentence is asked once a SESSION and lives in DashTermSay below.
+ *
+ * The words are optional, asked SECOND, and only of the child who did not
+ * follow — because that is the only one whose words change what somebody
+ * does next Saturday.
+ */
+const CUR_FB = [
+  { id: "got",    label: "I could do it",   icon: "\u2713" },
+  { id: "mostly", label: "I could follow,\nbut I'd need help", icon: "\u2248" },
+  { id: "lost",   label: "I could not follow", icon: "?" },
+];
+
+function DashLessonFeedback({ unitId, mine, onSaved }) {
+  const [signal, setSignal] = React.useState((mine && mine.signal) || "");
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [busy, setBusy] = React.useState(false);
+  const [saidAt, setSaidAt] = React.useState(0);
+  const send = async (sig, text) => {
+    setBusy(true);
+    try {
+      await NGGApi.member.lessonFeedback(unitId, sig, text);
+      setSaidAt(Date.now());
+      if (onSaved) onSaved();
+    } catch (e) { toast.error(humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  const tap = (id) => { const next = signal === id ? "" : id; setSignal(next); send(next, next ? body : ""); };
+  return (
+    <section className="dash-card cur-fb" aria-label="How today went">
+      <h3 className="cur-sec-h">How did that go?</h3>
+      <p className="cur-fb-note">Only your instructor sees this. It never goes anywhere else, and it is not marked.</p>
+      <div className="cur-fb-taps" role="group" aria-label="How did that go?">
+        {CUR_FB.map(o => (
+          <button key={o.id} type="button" disabled={busy}
+                  className={"cur-fb-tap is-" + o.id + (signal === o.id ? " is-on" : "")}
+                  aria-pressed={signal === o.id} onClick={() => tap(o.id)}>
+            <span className="cur-fb-ico" aria-hidden="true">{o.icon}</span>
+            <span className="cur-fb-lab">{o.label}</span>
+          </button>
+        ))}
+      </div>
+      {/* Asked only of the child who struggled: a nice note on "got it" is
+          pleasant and is not why an instructor opens this. */}
+      {(signal === "lost" || signal === "mostly") && (
+        <label className="cur-fb-more">
+          <span>What was hard? (you can skip this)</span>
+          <textarea rows={2} value={body} maxLength={400} disabled={busy}
+                    placeholder="e.g. I did not understand where the variable goes"
+                    onChange={e => setBody(e.target.value)}
+                    onBlur={() => body !== ((mine && mine.body) || "") && send(signal, body)}/>
+        </label>
+      )}
+      {saidAt > 0 && <p className="cur-fb-done" role="status">Thank you \u2014 your instructor will see this.</p>}
+    </section>
+  );
+}
+
+/* ── WHAT THIS TERM GAVE YOU ────────────────────────────────────────────────
+ *
+ * The testimonial, asked once a SESSION — the twelve-week block, four a year
+ * — in the last three weeks of it and for two months after it ends. The
+ * server decides whether the question is open at all (testi_session_ask);
+ * this draws nothing when it is not.
+ */
+function DashTermSay({ ask, mine, onSaved }) {
+  const [body, setBody] = React.useState((mine && mine.body) || "");
+  const [showAs, setShowAs] = React.useState((mine && mine.showAs) || "initials");
+  const [busy, setBusy] = React.useState(false);
+  const [done, setDone] = React.useState(false);
+  const had = !!(mine && mine.body);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.testimonialGive({ sessionId: ask.sessionId, body: body.trim(), showAs });
+      setDone(true);
+      toast.success(r.status === "withdrawn" ? "Taken back. Nobody will see it."
+        : had ? "Changed. Somebody at NGG reads it before it goes anywhere."
+        : "Thank you \u2014 somebody at NGG will read it.");
+      if (onSaved) onSaved();
+    } catch (e2) {
+      toast.error(e2.code === "too_short" ? "A few more words than that." : humanizeError(e2.code, e2.code));
+    } finally { setBusy(false); }
+  };
+  const SHOW = [["initials", "My initials"], ["first", "My first name"], ["anon", "Don\u2019t say who"]];
+  return (
+    <form className="dash-card cur-say" onSubmit={save} aria-label={"What " + ask.name + " gave you"}>
+      <div className="eyebrow cur-eyebrow">{ask.name.toUpperCase()} IS ENDING</div>
+      <h3 className="cur-sec-h">What did this term give you?</h3>
+      <p className="cur-say-q">One or two lines, in your own words. Not today \u2014 the whole term.</p>
+      <label className="cur-say-f">
+        <span className="sr-only">What this term gave you</span>
+        <textarea rows={3} value={body} maxLength={600} disabled={busy}
+                  onChange={e => { setBody(e.target.value); setDone(false); }}
+                  placeholder="Something you can do now that you could not do in week one."/>
+      </label>
+      <fieldset className="cur-say-as">
+        <legend>If this ever goes on the website, show me as</legend>
+        {SHOW.map(([v, l]) => (
+          <label key={v} className={"cur-say-opt" + (showAs === v ? " is-on" : "")}>
+            <input type="radio" name="showas" checked={showAs === v} disabled={busy}
+                   onChange={() => { setShowAs(v); setDone(false); }}/>
+            <span>{l}</span>
+          </label>
+        ))}
+      </fieldset>
+      <p className="cur-say-note">
+        Nobody sees this but NGG staff unless you and your parent or guardian have
+        agreed it can go on the website \u2014 and even then, a person decides, not a computer.
+        {had ? " Clearing the box takes it back." : ""}
+      </p>
+      <div className="cur-say-acts">
+        <button type="submit" className="btn btn-primary" disabled={busy || (!body.trim() && !had)}>
+          {busy ? "Saving\u2026" : had ? (body.trim() ? "Change it" : "Take it back") : "Send it"}
+        </button>
+        {done && <span className="cur-say-done" role="status">Saved.</span>}
+      </div>
+    </form>
+  );
+}
+
+/**
+ * THE OPENING REVIEW — last week's questions, before today's lesson.
+ *
+ * The questions belong to the PREVIOUS lesson and are submitted against it,
+ * so the attempt lands on the lesson it is about and every report, deadline
+ * and completion already knows where to look. Nothing new is stored.
+ *
+ * It is first on the page and today's teaching waits behind it — but "Skip
+ * to today's lesson" is always there, in plain words, because a child who
+ * joined late or was away must not be locked out of the lesson by a review
+ * of a week they were not here for.
+ */
+function DashOpeningReview({ review, onDone, onSkip }) {
+  const [answers, setAnswers] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [out, setOut] = React.useState(null);
+  const checks = review.checks || [];
+  const answered = checks.every(c => answers[c.checkId] !== undefined && answers[c.checkId] !== "");
+  const verdicts = {}; ((out && out.review) || []).forEach(c => { verdicts[c.checkId] = c; });
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumSubmit(review.unitId, answers);
+      setOut(r);
+      if (r.progress.pending) toast.info("Sent. Your instructor will mark the written answers.", review.title);
+      else toast.success("Review done — " + Math.round(r.progress.score) + " of " + r.progress.maxScore + ".", review.title);
+    } catch (e2) { toast.error(humanizeError(e2.code, e2.code)); }
+    finally { setBusy(false); }
+  };
+  const p = out && out.progress;
+  return (
+    <form className="dash-card cur-review" onSubmit={submit} aria-label={"Review of week " + review.week}>
+      <div className="eyebrow cur-review-eyebrow">BEFORE TODAY&rsquo;S LESSON</div>
+      <h3 className="cur-review-h">What do you still remember?</h3>
+      <p className="cur-review-sub">
+        {checks.length} question{checks.length === 1 ? "" : "s"} from week {review.week}, <b>{review.title}</b>.
+        {review.attempted ? " You have had a go at these before." : " Try them from memory — looking them up does not help you."}
+      </p>
+      {checks.map((c, i) => (
+        <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]} disabled={!!p}
+                       onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
+                       verdict={verdicts[c.checkId]} mark={p && p.marks && p.marks[c.checkId]}/>
+      ))}
+      {p
+        ? <div className="cur-review-done" aria-live="polite">
+            <p className="cur-result">
+              {p.pending ? "Your written answers are with your instructor."
+                : Math.round(p.score) + " of " + p.maxScore + ". " + (p.status === "completed" ? "That week is complete." : "Worth going back over before you carry on.")}
+            </p>
+            <button type="button" className="btn btn-primary" onClick={onDone}>Start today&rsquo;s lesson</button>
+          </div>
+        : <div className="cur-review-acts">
+            <button type="submit" className="btn btn-primary" disabled={busy || !answered}>{busy ? "Marking…" : "Check my answers"}</button>
+            <button type="button" className="btn btn-ghost" onClick={onSkip}>Skip to today&rsquo;s lesson</button>
+            {!answered && <span className="cur-note">Answer every question to check them.</span>}
+          </div>}
+    </form>
+  );
+}
+
 function DashCurriculumLesson({ unitId, onBack }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [answers, setAnswers] = React.useState({});
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState(null);
+  const [started, setStarted] = React.useState(false);
   const load = React.useCallback(() => {
     setErr("");
     return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setResult(null); }).catch(e => setErr(e.code || e.message));
@@ -2666,6 +2981,11 @@ function DashCurriculumLesson({ unitId, onBack }) {
     finally { setBusy(false); }
   };
   const st = curriculumStatusLabel(p);
+  /* The review comes FIRST and today's teaching waits behind it, because a
+     review sat after the lesson it is meant to precede is just a quiz. The
+     skip is always there: being away last week is not a reason to be shut
+     out of this week. */
+  const opened = started || !d.review;
   return (
     <article className="cur-lesson">
       <button type="button" className="btn btn-ghost btn-sm cur-back" onClick={onBack}>← All lessons</button>
@@ -2676,44 +2996,39 @@ function DashCurriculumLesson({ unitId, onBack }) {
         <span className={"cur-chip " + st.tone}>{st.label}</span>
         {p && p.stale && <p className="cur-note">This lesson's checks have changed since you sat them — your earlier score was on the older questions.</p>}
       </header>
-      {u.objectives.length > 0 && (
+      {!opened && <DashOpeningReview review={d.review} onDone={() => setStarted(true)} onSkip={() => setStarted(true)}/>}
+      {opened && u.objectives.length > 0 && (
         <section className="dash-card">
           <h3 className="cur-sec-h">What you'll learn</h3>
           <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
         </section>
       )}
-      {(u.body || u.materials.length > 0) && (
+      {opened && (u.body || u.materials.length > 0) && (
         <section className="dash-card">
           <h3 className="cur-sec-h">The lesson</h3>
           <CurriculumText text={u.body}/>
           <CurriculumMaterials materials={u.materials}/>
         </section>
       )}
-      {u.checks.length > 0 && (
-        <form className="dash-card cur-checks" onSubmit={submit} aria-label="Check your understanding">
-          <h3 className="cur-sec-h">Check your understanding</h3>
-          <p className="cur-note">Pass mark {u.passMark}%.{p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}</p>
-          {u.checks.map((c, i) => {
-            const rv = reviewById[c.checkId]; const mk = marks[c.checkId];
-            return (
-              <fieldset key={c.checkId} className="cur-check">
-                <legend><span className="cur-check-n">{i + 1}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
-                {c.kind === "mcq"
-                  ? c.options.map((o, k) => (
-                      <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && answers[c.checkId] === k && String(k) !== rv.answer ? " is-wrong" : "")}>
-                        <input type="radio" name={c.checkId} checked={answers[c.checkId] === k} onChange={() => setAnswers(a => ({ ...a, [c.checkId]: k }))}/>
-                        <span>{o}</span>
-                      </label>))
-                  : <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
-                      value={answers[c.checkId] || ""} aria-label={"Answer to question " + (i + 1)} spellCheck={c.kind !== "code"}
-                      onChange={e => setAnswers(a => ({ ...a, [c.checkId]: e.target.value }))}
-                      placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
-                        project: "What you made, how you made it, and what you learned (add a link if you have one)", code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>}
-                {mk && mk.feedback && <p className="cur-feedback"><b>{mk.by === "ai" ? "Feedback (AI)" : mk.by === "auto" ? "Note" : "Your instructor"}:</b> {mk.feedback}</p>}
-                {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
-              </fieldset>
-            );
-          })}
+      {opened && u.checks.length > 0 && (
+        /* These are the questions you will be asked at the START of the next
+           session, a week from now. They stay reachable here on purpose: a
+           member who wants to try them straight away should be able to, the
+           last lesson of a course has no next session to be asked in, and
+           completion has to remain possible either way. What changed is
+           which moment the programme treats as the real one. */
+        <form className="dash-card cur-checks" onSubmit={submit} aria-label="Next session's review">
+          <h3 className="cur-sec-h">Next session&rsquo;s review</h3>
+          <p className="cur-note">
+            You&rsquo;ll be asked {u.checks.length === 1 ? "this" : "these"} at the start of your next session, from memory.
+            Have a go now if you like — it is the remembering a week later that makes it stick.
+            Pass mark {u.passMark}%.{p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}
+          </p>
+          {u.checks.map((c, i) => (
+            <CurCheckField key={c.checkId} c={c} n={i + 1} value={answers[c.checkId]}
+                           onChange={v => setAnswers(a => ({ ...a, [c.checkId]: v }))}
+                           verdict={reviewById[c.checkId]} mark={marks[c.checkId]}/>
+          ))}
           {p && p.attempts > 0 && (
             <p className="cur-result" aria-live="polite">
               {p.pending ? "Your written answers are with your instructor. Your score appears once they're marked."
@@ -2724,6 +3039,9 @@ function DashCurriculumLesson({ unitId, onBack }) {
           {!answered && <span className="cur-note"> Answer every question to submit.</span>}
         </form>
       )}
+      {/* Last on the page, after the work, because that is when somebody
+          knows what the session gave them. Never a gate on any of it. */}
+      {opened && <DashLessonFeedback unitId={unitId} mine={d.feedback} onSaved={load}/>}
     </article>
   );
 }

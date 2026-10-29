@@ -75,7 +75,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const open = async (w, h, at) => {
@@ -239,6 +239,47 @@ function cleanup() {
     chk('adding an account asks for the cloud name, API key and secret, and says they are checked', /API secret/.test(await MA.evaluate(() => document.body.innerText)) && /checked with Cloudinary/.test(await MA.evaluate(() => document.body.innerText)));
     await MA.context().close();
     php(`setting_set('media.accounts', null, 'test'); setting_set('media.usage.accounts', null, 'test');`, ['bootstrap']);
+
+    console.log('testimonials waiting to be read');
+    /* Two members said something about their session. One guardian granted
+       "Feature on our website", the other never answered. The queue must make
+       that difference visible BEFORE anybody presses anything — and must not
+       draw a Publish button that the server would refuse. */
+    php(`db_insert('testimonials', ['tid'=>'TST-YES','memberId'=>'NGG-CR-1','unitId'=>'U-1','course'=>'Technology','centre'=>'Egbeda','body'=>'I built a calculator that actually works.','showAs'=>'first','status'=>'new','createdAt'=>now_iso()]);
+      db_insert('testimonials', ['tid'=>'TST-NO','memberId'=>'NGG-CR-2','unitId'=>'U-1','course'=>'Technology','centre'=>'Egbeda','body'=>'I was scared of the keyboard and now I am not.','showAs'=>'initials','status'=>'new','createdAt'=>now_iso()]);
+      consent_record('NGG-CR-1', 'site_visibility', 'granted', 'Paper form', 'Test');`, ['bootstrap']);
+    const T = await open(1280, 900, '/control/inbox/testimonials');
+    await T.waitForSelector('.cr-ib-row', { timeout: 20000 });
+    chk('the queue lists what members said, newest work first', (await T.$$('.cr-ib-row')).length === 2);
+    const openSay = async (who) => {
+      await T.click(`.cr-ib-row:has-text("${who}")`);
+      await T.waitForFunction(w => ((document.querySelector('.cr-ib-pane h2') || {}).innerText || '').indexOf(w) === 0, who, { timeout: 8000 });
+    };
+    await openSay('Member A');
+    const yes = await T.evaluate(() => document.querySelector('.cr-ib-pane').innerText);
+    chk('a consented one can be published, and says how it will be signed',
+      !!(await T.$('.cr-ib-pane button:has-text("Publish")')) && /first name and age/.test(yes) && /Guardian granted/.test(yes));
+    await openSay('Member B');
+    const no = await T.evaluate(() => document.querySelector('.cr-ib-pane').innerText);
+    chk('without that consent there is NO Publish button to press, and it says why',
+      !(await T.$('.cr-ib-pane button:has-text("Publish")')) && /has not granted/.test(no));
+    chk('…and the words are still readable, because they are useful to staff either way',
+      /scared of the keyboard/.test(no) && !!(await T.$('.cr-ib-pane button:has-text("Not this one")')));
+    await openSay('Member A');
+    await T.click('.cr-ib-pane button:has-text("Publish")');
+    chk('publishing says it is live and offers Undo', await toastHas(T, /home page[\s\S]*Undo/));
+    chk('…and the public page now carries it, signed the way the MEMBER chose',
+      php(`$r = public_testimonials(); echo count($r['testimonials']) . '|' . ($r['testimonials'][0]['from'] ?? '');`, ['bootstrap']) === '1|Member');
+    await T.context().close();
+    php(`db_exec("DELETE FROM testimonials"); db_exec("DELETE FROM consents");`, ['bootstrap']);
+
+    // One focus ring on a framed search field: the frame's, never a second on the bare input inside it.
+    const R = await open(1366, 768, '/control/members');
+    await R.waitForSelector('[role=search] input', { timeout: 30000 });
+    await R.focus('[role=search] input'); await R.keyboard.press('Shift+Tab'); await R.keyboard.press('Tab');
+    const ring = await R.$eval('[role=search] input', el => ({ focused: document.activeElement === el, inner: getComputedStyle(el).outlineStyle, frame: getComputedStyle(el.parentElement).boxShadow }));
+    chk('the members search draws one focus ring, on its frame, not a second on the input inside it', ring.focused && ring.inner === 'none' && ring.frame !== 'none');
+    await R.context().close();
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

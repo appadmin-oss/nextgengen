@@ -108,7 +108,7 @@ function cleanup() {
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const errs = [];
     const open = async (w, h, at) => {
@@ -178,6 +178,18 @@ function cleanup() {
     // v4: a group that cannot fill a sheet is not padded, so one centre's 10 cards leave a gap to fill.
     chk('one centre is one group: no slots padded, and the gap bar counts the empty slots on the last sheet',
       !/left blank so the piles never mix/.test(await P.innerText('.ids-set')) && /8 empty slots on the last sheet/.test(await P.innerText('.ids-gapbar')));
+    // Framing a photo shows the box the card prints, starting with this person's own card (tests/ids-photo-shape.test.js holds the shapes).
+    await P.click('.ids-slot.is-card >> nth=0');
+    await P.click('.ids-btn:has-text("Frame photo")');
+    await P.waitForSelector('.ids-frame .ids-frame-fig', { timeout: 10000 });
+    const figs = await P.$$eval('.ids-frame .ids-frame-fig', fs => fs.map(f => { const b = f.querySelector('.ids-frame-box').getBoundingClientRect();
+      return { cap: f.querySelector('figcaption').innerText, own: f.classList.contains('is-own'), ar: b.width / b.height, round: f.querySelector('.ids-frame-box').classList.contains('is-round') }; }));
+    chk('framing a member’s photo previews the member card’s wide 54 × 37.8 mm photo first, as the card that prints', figs[0] && figs[0].own && /^Member card/.test(figs[0].cap) && Math.abs(figs[0].ar - 54 / 37.8) < 0.05 && !figs[0].round);
+    chk('…then the Summer School card’s circle and the volunteer card’s box, each under its own name',
+      figs.length === 3 && figs.some(f => /^Summer School card/.test(f.cap) && f.round && Math.abs(f.ar - 1) < 0.05) && figs.some(f => /^Volunteer card/.test(f.cap) && Math.abs(f.ar - 404 / 318) < 0.05));
+    if (process.env.IDS_SHOTS) await (await P.$('.ids-frame')).screenshot({ path: process.env.IDS_SHOTS + '/frame-photo.png' });
+    await P.click('.ids-frame .ids-btn:has-text("Cancel")');
+    await P.click('.ids-slot.is-card >> nth=0');   // the same card again: deselected, as the steps below expect
     await P.click('.ids-slot.is-card >> nth=0');
     const first = await P.getAttribute('.ids-slot.is-card >> nth=0', 'aria-label');
     await P.keyboard.press('ArrowRight');

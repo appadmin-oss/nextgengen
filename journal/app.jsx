@@ -894,7 +894,7 @@ function Reflect({ ctx }) {
       <div className="pad" style={{ marginTop: 24 }}>
         {mentor && <button type="button" className={"aj-share" + (share ? " on" : "")} aria-pressed={share} onClick={() => setShare(!share)}>
           <i className={"ph-fill " + (share ? "ph-check-square" : "ph-square")} aria-hidden="true"/>
-          <span><b>Share with {mentor.displayName || mentor.fullName || "my mentor"}</b><span>{share ? "Your mentor can read this one and reply." : "Off: only you can read it."}</span></span>
+          <span><b>Share with {mentor.displayName || mentor.fullName || "my mentor"}</b><span>{share ? "Sent to your mentor to read and reply to." : "Off: it isn’t sent, but your mentor can still read your journal."}</span></span>
         </button>}
         <button className="btn-a" disabled={busy} onClick={submit}>Anchor it <i className="ph-fill ph-anchor"/></button>
         <p className="center muted" style={{ fontSize: 12, margin: "14px 0 0" }}>Earn +60 XP · keep your streak alive</p>
@@ -930,7 +930,7 @@ function Notepad({ ctx }) {
         </div>
         <div className="pad" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, minHeight: 0 }}>
           <input className="aj-note-title" placeholder="Title" value={open.title} maxLength={120} onChange={e => setOpen(o => Object.assign({}, o, { title: e.target.value }))}/>
-          <textarea className="aj-note-body" placeholder="Write freely — this stays private to you." value={open.body} onChange={e => setOpen(o => Object.assign({}, o, { body: e.target.value }))}/>
+          <textarea className="aj-note-body" placeholder="Write freely — only you and your mentor read this." value={open.body} onChange={e => setOpen(o => Object.assign({}, o, { body: e.target.value }))}/>
           {open.i !== -1 && <button className="aj-note-del" onClick={del}><i className="ph-bold ph-trash"/> Delete note</button>}
         </div>
       </div>
@@ -1293,7 +1293,7 @@ function EntryDetail({ ctx }) {
       <div className="pad" style={{ marginTop: 16 }}>
         {(e.media || []).filter(x => x.type === "audio").map((x, i) => <audio key={i} controls preload="none" src={x.url} aria-label="Your voice note" style={{ width: "100%", marginBottom: 12 }}/>)}
         {"speechSynthesis" in window && (e.body || "").trim() && <button type="button" className="aj-voice-b" style={{ marginBottom: 12 }} onClick={() => speak(e.body)}><i className="ph-fill ph-speaker-high" aria-hidden="true"/>Read it aloud</button>}
-        <div className="aj-vis-note">{e.visibility === "mentor" ? <><i className="ph-fill ph-users" aria-hidden="true"/>Shared with your mentor</> : <><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Private: only you can read this</>}</div>
+        <div className="aj-vis-note">{e.visibility === "mentor" ? <><i className="ph-fill ph-users" aria-hidden="true"/>Shared with your mentor</> : <><i className="ph-fill ph-lock-simple" aria-hidden="true"/>Only you and your mentor read this</>}</div>
         {(e.replies || []).map((r, i) => (
           <div className="aj-reply" key={i}>
             <div className="eyebrow" style={{ letterSpacing: ".12em" }}>{(r.from || "Your mentor").toUpperCase()} REPLIED · {fmtDayMonth(new Date(r.at)).toUpperCase()}</div>

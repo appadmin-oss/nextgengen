@@ -1,1661 +1,1745 @@
 {
- "key": "media-lab-2026",
- "title": "Media Lab — Digital Creative Learning (2026)",
- "allowNewCourse": true,
- "description": "24 weeks, two sessions a week (learn & practise, then create & review): foundation and digital safety, graphic design, photography and writing, video, social media and marketing, then leadership and portfolio — with a team challenge every month and a check on every lesson. Every lesson now carries an 'AI, used well' strand (AI explains, suggests and checks; the learner does the work and verifies it) and support and stretch work for mixed abilities.",
- "source": "NGG Media Lab Programme (programme team), turned into lessons",
- "lessons": [
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 1,
-   "position": 1,
-   "title": "Welcome to the Media Lab: devices, files and folders",
-   "summary": "How the Lab works — learn, create, collaborate, lead, serve — and the habits every creator needs: finding, naming and backing up your work.",
-   "objectives": [
-    "You will set up your portfolio folder",
-    "You will name and organise files so you can find them later",
-    "You will know which tools you will use and their age rules"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Create a folder called `Media Lab — your name` with sub-folders: Design, Photo, Video, Writing, Portfolio\n- Rename three files with the pattern `2026-10-12_poster_v1.png`\n- Check the age rules for Canva and CapCut with your instructor (both expect 13+; younger members use the programme's supervised accounts)\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
+  "key": "media-lab-2026",
+  "title": "Media Lab — Digital Creative Learning (2026)",
+  "allowNewCourse": false,
+  "description": "24 weeks, two sessions a week (learn & practise, then create & review): foundation and digital safety, graphic design, photography and writing, video, social media and marketing, then leadership and portfolio — with a team challenge every month and a check on every lesson. Every lesson now carries an 'AI, used well' strand (AI explains, suggests and checks; the learner does the work and verifies it) and support and stretch work for mixed abilities.",
+  "source": "NGG Media Lab Programme (programme team), turned into lessons",
+  "lessons": [
     {
-     "url": "https://applieddigitalskills.withgoogle.com/",
-     "title": "Google: Applied Digital Skills",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Which file name will you still understand in six months?",
-     "options": [
-      "final final 2.png",
-      "2026-10-12_poster_v2.png",
-      "image(3).png",
-      "new.png"
-     ],
-     "answer": "2026-10-12_poster_v2.png",
-     "points": 1
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 1,
+      "position": 1,
+      "title": "Welcome to the Media Lab: devices, files and folders",
+      "summary": "How the Lab works — learn, create, collaborate, lead, serve — and the habits every creator needs: finding, naming and backing up your work.",
+      "objectives": [
+        "You will set up your portfolio folder",
+        "You will name and organise files so you can find them later",
+        "You will know which tools you will use and their age rules"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Create a folder called `Media Lab — your name` with sub-folders: Design, Photo, Video, Writing, Portfolio\n- Rename three files with the pattern `2026-10-12_poster_v1.png`\n- Check the age rules for Canva and CapCut with your instructor (both expect 13+; younger members use the programme's supervised accounts)\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://applieddigitalskills.withgoogle.com/",
+          "title": "Google: Applied Digital Skills",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Which file name will you still understand in six months?",
+          "options": [
+            "final final 2.png",
+            "2026-10-12_poster_v2.png",
+            "image(3).png",
+            "new.png"
+          ],
+          "answer": "2026-10-12_poster_v2.png",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Upload a screenshot of your Media Lab folder with its five sub-folders.",
+          "answer": "",
+          "rubric": "Five clearly named sub-folders inside a named Media Lab folder.",
+          "points": 2
+        }
+      ]
     },
     {
-     "kind": "task",
-     "prompt": "Upload a screenshot of your Media Lab folder with its five sub-folders.",
-     "answer": "",
-     "rubric": "Five clearly named sub-folders inside a named Media Lab folder.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 1,
-   "position": 2,
-   "title": "Staying safe online, and asking before you post",
-   "summary": "Your digital footprint, privacy settings, and the rule this Lab lives by: never photograph, film or post a person — especially a child — without permission.",
-   "objectives": [
-    "You will check the privacy settings on an account you use",
-    "You will explain what consent means for photos and videos",
-    "You will recognise a scam or unsafe message"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Complete one Be Internet Awesome activity\n- Write three rules for your Creative Team about posting people's photos\n\n## AI, used well\n\nAI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://beinternetawesome.withgoogle.com/",
-     "title": "Google: Be Internet Awesome",
-     "kind": "link"
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 1,
+      "position": 2,
+      "title": "Staying safe online, and asking before you post",
+      "summary": "Your digital footprint, privacy settings, and the rule this Lab lives by: never photograph, film or post a person — especially a child — without permission.",
+      "objectives": [
+        "You will check the privacy settings on an account you use",
+        "You will explain what consent means for photos and videos",
+        "You will recognise a scam or unsafe message"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Complete one Be Internet Awesome activity\n- Write three rules for your Creative Team about posting people's photos\n- **With an AI assistant —** AI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://beinternetawesome.withgoogle.com/",
+          "title": "Google: Be Internet Awesome",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.commonsense.org/education/digital-citizenship",
+          "title": "Common Sense: Digital citizenship",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Before you post a photo of a friend at the centre, you should…",
+          "options": [
+            "Post it if it looks good",
+            "Ask them — and for under-18s, check the programme has their parent's consent",
+            "Blur the background",
+            "Post it privately"
+          ],
+          "answer": "Ask them — and for under-18s, check the programme has their parent's consent",
+          "points": 1
+        },
+        {
+          "kind": "short",
+          "prompt": "A stranger messages you offering to pay for your designs if you send your home address. What do you do?",
+          "answer": "Do not reply or share anything; tell an instructor or parent and block/report the account.",
+          "rubric": "Does not share personal details; tells a trusted adult; blocks or reports.",
+          "points": 2
+        }
+      ]
     },
     {
-     "url": "https://www.commonsense.org/education/digital-citizenship",
-     "title": "Common Sense: Digital citizenship",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Before you post a photo of a friend at the centre, you should…",
-     "options": [
-      "Post it if it looks good",
-      "Ask them — and for under-18s, check the programme has their parent's consent",
-      "Blur the background",
-      "Post it privately"
-     ],
-     "answer": "Ask them — and for under-18s, check the programme has their parent's consent",
-     "points": 1
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 2,
+      "position": 1,
+      "title": "Researching online and checking your sources",
+      "summary": "Find information quickly and decide whether to trust it — the skill behind every article, caption and campaign you will make.",
+      "objectives": [
+        "You will search with precise keywords",
+        "You will check who made a page and when",
+        "You will credit sources and images"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Research a local environmental problem and find three trustworthy sources\n- For each source, write who made it and why you trust it\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://applieddigitalskills.withgoogle.com/",
+          "title": "Google: Applied Digital Skills",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Which is the best first check of a website you have never heard of?",
+          "options": [
+            "How many pictures it has",
+            "Who made it, and whether other trustworthy sources say the same",
+            "Whether it loads quickly",
+            "Its colours"
+          ],
+          "answer": "Who made it, and whether other trustworthy sources say the same",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Search with precise keywords, then check who made a page and when. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Search with precise keywords (2); Check who made a page and when (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "kind": "short",
-     "prompt": "A stranger messages you offering to pay for your designs if you send your home address. What do you do?",
-     "answer": "Do not reply or share anything; tell an instructor or parent and block/report the account.",
-     "rubric": "Does not share personal details; tells a trusted adult; blocks or reports.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 2,
-   "position": 1,
-   "title": "Researching online and checking your sources",
-   "summary": "Find information quickly and decide whether to trust it — the skill behind every article, caption and campaign you will make.",
-   "objectives": [
-    "You will search with precise keywords",
-    "You will check who made a page and when",
-    "You will credit sources and images"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Research a local environmental problem and find three trustworthy sources\n- For each source, write who made it and why you trust it\n\n## AI, used well\n\nAI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://applieddigitalskills.withgoogle.com/",
-     "title": "Google: Applied Digital Skills",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Which is the best first check of a website you have never heard of?",
-     "options": [
-      "How many pictures it has",
-      "Who made it, and whether other trustworthy sources say the same",
-      "Whether it loads quickly",
-      "Its colours"
-     ],
-     "answer": "Who made it, and whether other trustworthy sources say the same",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 2,
-   "position": 2,
-   "title": "AI tools: what they are and how to use them honestly",
-   "summary": "What AI image and writing tools can and cannot do, how to use them as a helper rather than a replacement, and when you must say you used one.",
-   "objectives": [
-    "You will use an AI tool to brainstorm ideas",
-    "You will check AI output for mistakes",
-    "You will disclose AI use in your work"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Start the first chapter of Elements of AI\n- Ask an AI tool for five campaign slogans about clean streets, then improve the best one yourself and note what you changed\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.elementsofai.com/",
-     "title": "Elements of AI",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "You used an AI tool to draft a caption and then edited it. What should you do?",
-     "options": [
-      "Say nothing",
-      "Say an AI tool helped and that you edited it",
-      "Delete it",
-      "Claim it is fully yours"
-     ],
-     "answer": "Say an AI tool helped and that you edited it",
-     "points": 1
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 2,
+      "position": 2,
+      "title": "AI tools: what they are and how to use them honestly",
+      "summary": "What AI image and writing tools can and cannot do, how to use them as a helper rather than a replacement, and when you must say you used one.",
+      "objectives": [
+        "You will use an AI tool to brainstorm ideas",
+        "You will check AI output for mistakes",
+        "You will disclose AI use in your work"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Start the first chapter of Elements of AI\n- Ask an AI tool for five campaign slogans about clean streets, then improve the best one yourself and note what you changed\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.elementsofai.com/",
+          "title": "Elements of AI",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "You used an AI tool to draft a caption and then edited it. What should you do?",
+          "options": [
+            "Say nothing",
+            "Say an AI tool helped and that you edited it",
+            "Delete it",
+            "Claim it is fully yours"
+          ],
+          "answer": "Say an AI tool helped and that you edited it",
+          "points": 1
+        },
+        {
+          "kind": "short",
+          "prompt": "Name one thing AI tools often get wrong, and how you would check it.",
+          "answer": "Facts, names or numbers can be made up — check them against a trustworthy source.",
+          "rubric": "Names a real weakness (made-up facts, bias, wrong details) and a sensible check.",
+          "points": 2
+        }
+      ]
     },
     {
-     "kind": "short",
-     "prompt": "Name one thing AI tools often get wrong, and how you would check it.",
-     "answer": "Facts, names or numbers can be made up — check them against a trustworthy source.",
-     "rubric": "Names a real weakness (made-up facts, bias, wrong details) and a sensible check.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 3,
-   "position": 1,
-   "title": "The creative process: from a brief to a finished piece",
-   "summary": "Every project in the Lab follows the same loop: brief, ideas, draft, feedback, improve, deliver. Learn it on something small.",
-   "objectives": [
-    "You will read a brief and list what it asks for",
-    "You will sketch at least three ideas before choosing one",
-    "You will give feedback that helps"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Read the sample brief for a school notice\n- Sketch three thumbnail ideas on paper\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Why sketch several ideas before designing one?",
-     "options": [
-      "It wastes time",
-      "The first idea is rarely the best — options lead to a stronger choice",
-      "Teachers require it",
-      "To fill the page"
-     ],
-     "answer": "The first idea is rarely the best — options lead to a stronger choice",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 3,
-   "position": 2,
-   "title": "Creative Teams: roles and how we work together",
-   "summary": "Teams of designer, editor, photographer, writer, social media lead and project lead — with roles that rotate, so everybody finds their strengths.",
-   "objectives": [
-    "You will join a Creative Team and take a first role",
-    "You will agree team rules",
-    "You will plan who does what on a small task"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Meet your team and agree three team rules\n- Choose your first role — it rotates each month\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your team's charter: members, first roles and three rules.",
-     "answer": "",
-     "rubric": "Lists members and roles; three clear, fair rules.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 4,
-   "position": 1,
-   "title": "Graphic design 1: Canva and visual hierarchy",
-   "summary": "Make one thing on the page the most important — through size, colour and position — so people see the message first.",
-   "objectives": [
-    "You will set up a design in Canva",
-    "You will use size and contrast to show what matters most",
-    "You will export a design correctly"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Do the Canva Design School beginner lesson\n- Recreate a poster you like to understand its structure\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "What is visual hierarchy?",
-     "options": [
-      "Using many fonts",
-      "Arranging elements so the most important is seen first",
-      "Putting the logo top left",
-      "Making everything the same size"
-     ],
-     "answer": "Arranging elements so the most important is seen first",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 4,
-   "position": 2,
-   "title": "Month 1 challenge: an environmental awareness poster set",
-   "summary": "Your team makes three posters about one local environmental problem, using what you researched in week 2.",
-   "objectives": [
-    "You will deliver a set of three consistent posters",
-    "You will credit your sources",
-    "You will present and take feedback"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Plan the three posters as a team\n- Design them in Canva\n- Present them at the next session\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's three posters and one paragraph explaining the message and who it is for.",
-     "answer": "",
-     "rubric": "Clear single message per poster; consistent style across the set; readable text (good contrast); facts credited. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 10
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 3,
+      "position": 1,
+      "title": "The creative process: from a brief to a finished piece",
+      "summary": "Every project in the Lab follows the same loop: brief, ideas, draft, feedback, improve, deliver. Learn it on something small.",
+      "objectives": [
+        "You will read a brief and list what it asks for",
+        "You will sketch at least three ideas before choosing one",
+        "You will give feedback that helps"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Read the sample brief for a school notice\n- Sketch three thumbnail ideas on paper\n- **With an AI assistant —** ask it to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Why sketch several ideas before designing one?",
+          "options": [
+            "It wastes time",
+            "The first idea is rarely the best — options lead to a stronger choice",
+            "Teachers require it",
+            "To fill the page"
+          ],
+          "answer": "The first idea is rarely the best — options lead to a stronger choice",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Read a brief and list what it asks for, then sketch at least three ideas before choosing one. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Read a brief and list what it asks for (2); Sketch at least three ideas before choosing one (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 5,
-   "position": 1,
-   "title": "Colour",
-   "summary": "How colour sets mood and meaning, how to build a palette, and how to keep text readable.",
-   "objectives": [
-    "You will build a three-colour palette",
-    "You will explain what different colours suggest",
-    "You will check text contrast"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Do the Canva colour lesson\n- Build a palette for an imaginary juice brand\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "",
+      "level": "Media Lab 2026",
+      "week": 3,
+      "position": 2,
+      "title": "Creative Teams: roles and how we work together",
+      "summary": "Teams of designer, editor, photographer, writer, social media lead and project lead — with roles that rotate, so everybody finds their strengths.",
+      "objectives": [
+        "You will join a Creative Team and take a first role",
+        "You will agree team rules",
+        "You will plan who does what on a small task"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Meet your team and agree three team rules\n- Choose your first role — it rotates each month\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your team's charter: members, first roles and three rules.",
+          "answer": "",
+          "rubric": "Lists members and roles; three clear, fair rules.",
+          "points": 3
+        }
+      ]
     },
     {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Light grey text on a white background is a problem because…",
-     "options": [
-      "It is old-fashioned",
-      "It is hard to read — the contrast is too low",
-      "It prints badly",
-      "Grey is unlucky"
-     ],
-     "answer": "It is hard to read — the contrast is too low",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 5,
-   "position": 2,
-   "title": "Typography",
-   "summary": "Choose and pair typefaces, size them, and space text so it is easy and pleasant to read.",
-   "objectives": [
-    "You will pair a heading font with a body font",
-    "You will use size and weight for hierarchy",
-    "You will avoid common type mistakes"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Redesign a crowded flyer using only two fonts\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your before-and-after flyer and name the two fonts you used.",
-     "answer": "",
-     "rubric": "Two fonts at most; clear size difference between heading and body; comfortable spacing.",
-     "points": 4
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 6,
-   "position": 1,
-   "title": "Layout and the grid",
-   "summary": "Alignment, margins and a simple grid make a design look intentional and calm.",
-   "objectives": [
-    "You will align elements to a grid",
-    "You will use white space on purpose",
-    "You will group related information"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Use Canva's grid to rebuild a busy page\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "White space in a design is…",
-     "options": [
-      "Wasted space",
-      "Space that helps the important parts stand out",
-      "A printing error",
-      "Only for logos"
-     ],
-     "answer": "Space that helps the important parts stand out",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 6,
-   "position": 2,
-   "title": "Composition: creating a social media graphic",
-   "summary": "Bring colour, type and layout together in a post sized for social media.",
-   "objectives": [
-    "You will design at the right size for a platform",
-    "You will write a short headline that works at a glance"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Design an Instagram post announcing a centre open day\n\n## AI, used well\n\nAI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your open-day post.",
-     "answer": "",
-     "rubric": "Correct size; headline readable on a phone; date, time and place clear; good contrast.",
-     "points": 4
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 7,
-   "position": 1,
-   "title": "Branding basics: logos and identity",
-   "summary": "A brand is a promise people recognise: a name, a logo, colours and a voice used consistently.",
-   "objectives": [
-    "You will explain what a brand identity includes",
-    "You will sketch logo ideas",
-    "You will make a one-page brand guide"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Study two local brands and list their colours, fonts and tone\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 4,
+      "position": 1,
+      "title": "Graphic design 1: Canva and visual hierarchy",
+      "summary": "Make one thing on the page the most important — through size, colour and position — so people see the message first.",
+      "objectives": [
+        "You will set up a design in Canva",
+        "You will use size and contrast to show what matters most",
+        "You will export a design correctly"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Do the Canva Design School beginner lesson\n- Recreate a poster you like to understand its structure\n- **With an AI assistant —** try Canva Magic tools for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "What is visual hierarchy?",
+          "options": [
+            "Using many fonts",
+            "Arranging elements so the most important is seen first",
+            "Putting the logo top left",
+            "Making everything the same size"
+          ],
+          "answer": "Arranging elements so the most important is seen first",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Set up a design in Canva, then use size and contrast to show what matters most. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Set up a design in Canva (2); Use size and contrast to show what matters most (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "short",
-     "prompt": "Name three things a brand guide should include.",
-     "answer": "Logo, colours, fonts (and tone of voice).",
-     "rubric": "Names at least three of: logo, colour palette, typefaces, tone of voice, examples of use.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 7,
-   "position": 2,
-   "title": "Designing an invitation and a certificate",
-   "summary": "Two everyday pieces that test hierarchy, type and layout together.",
-   "objectives": [
-    "You will design print-ready pieces",
-    "You will check spelling and details before export"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Design an invitation and a certificate for a Media Lab event\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your invitation and certificate.",
-     "answer": "",
-     "rubric": "All details correct and spelled right; consistent style; suitable for printing.",
-     "points": 4
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 8,
-   "position": 1,
-   "title": "Planning a brand package",
-   "summary": "Plan the Month 2 challenge: who the event is for, what it needs, and who makes what.",
-   "objectives": [
-    "You will turn a brief into a task list",
-    "You will share the work fairly across your team"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write the brief for your event as a team\n- List every item you will deliver and who owns it\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your team's task list: each item, its owner and its deadline.",
-     "answer": "",
-     "rubric": "Every deliverable listed with an owner and a date; work shared fairly.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 8,
-   "position": 2,
-   "title": "Month 2 challenge: a complete event branding package",
-   "summary": "Logo, colour palette, poster, social post, invitation and badge for a real or planned NGG event.",
-   "objectives": [
-    "You will deliver a consistent brand package",
-    "You will present the thinking behind it"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish and export every item\n- Present to the group and take feedback\n\n## AI, used well\n\nTry an AI design tool (Canva Magic tools) for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's branding package (logo, palette, poster, social post, invitation, badge) and a one-page brand guide.",
-     "answer": "",
-     "rubric": "All six pieces present; consistent colours and type; readable; the guide explains how to use the brand. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 10
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 4,
+      "position": 2,
+      "title": "Month 1 challenge: an environmental awareness poster set",
+      "summary": "Your team makes three posters about one local environmental problem, using what you researched in week 2.",
+      "objectives": [
+        "You will deliver a set of three consistent posters",
+        "You will credit your sources",
+        "You will present and take feedback"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Plan the three posters as a team\n- Design them in Canva\n- Present them at the next session\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's three posters and one paragraph explaining the message and who it is for.",
+          "answer": "",
+          "rubric": "Clear single message per poster; consistent style across the set; readable text (good contrast); facts credited. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 10
+        },
+        {
+          "kind": "reflection",
+          "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 9,
-   "position": 1,
-   "title": "Photography 1: composition and framing",
-   "summary": "The rule of thirds, leading lines, angles and filling the frame — on the phone you already have.",
-   "objectives": [
-    "You will use the rule of thirds",
-    "You will try three angles of one subject",
-    "You will hold the phone steady"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Turn on your phone camera's grid\n- Take five photographs of one object from different angles\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "The rule of thirds suggests placing your subject…",
-     "options": [
-      "Always in the exact centre",
-      "Along the lines or where they cross on a 3×3 grid",
-      "At the very edge",
-      "Out of focus"
-     ],
-     "answer": "Along the lines or where they cross on a 3×3 grid",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 9,
-   "position": 2,
-   "title": "Photography 2: light",
-   "summary": "Natural light, shade, backlight and why the time of day matters more than the camera.",
-   "objectives": [
-    "You will photograph the same subject in three kinds of light",
-    "You will avoid harsh shadows on faces"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Take three photos of the same thing — in shade, in sunlight and against a window\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your three photos and say which light worked best and why.",
-     "answer": "",
-     "rubric": "Three photos in visibly different light; a sensible reason for the choice.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 10,
-   "position": 1,
-   "title": "Portraits — with permission",
-   "summary": "Photographing people well and respectfully: asking first, putting people at ease, and the consent rules for children.",
-   "objectives": [
-    "You will ask permission before photographing anyone",
-    "You will frame a flattering portrait",
-    "You will know when a photo must not be shared"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Practise portraits of a teammate who agrees\n- Review the Lab's consent rules from week 1\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.commonsense.org/education/digital-citizenship",
-     "title": "Common Sense: Digital citizenship",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "A parent at an event says they do not want their child photographed. You…",
-     "options": [
-      "Take the photo but don't post it",
-      "Do not photograph the child, and leave them out of group shots",
-      "Blur the child later",
-      "Ask the child instead"
-     ],
-     "answer": "Do not photograph the child, and leave them out of group shots",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 10,
-   "position": 2,
-   "title": "Editing photos",
-   "summary": "Crop, straighten, adjust light and colour — and know when editing becomes misleading.",
-   "objectives": [
-    "You will crop and straighten a photo",
-    "You will adjust exposure and colour",
-    "You will avoid misleading edits"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit three of your photos in a free phone editor or Canva\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 5,
+      "position": 1,
+      "title": "Colour",
+      "summary": "How colour sets mood and meaning, how to build a palette, and how to keep text readable.",
+      "objectives": [
+        "You will build a three-colour palette",
+        "You will explain what different colours suggest",
+        "You will check text contrast"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Do the Canva colour lesson\n- Build a palette for an imaginary juice brand\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Light grey text on a white background is a problem because…",
+          "options": [
+            "It is old-fashioned",
+            "It is hard to read — the contrast is too low",
+            "It prints badly",
+            "Grey is unlucky"
+          ],
+          "answer": "It is hard to read — the contrast is too low",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Build a three-colour palette, then explain what different colours suggest. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Build a three-colour palette (2); Explain what different colours suggest (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload one photo before and after editing, and list what you changed.",
-     "answer": "",
-     "rubric": "Visible, tasteful improvement; changes listed; nothing misleading.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 11,
-   "position": 1,
-   "title": "Writing for media: captions, articles and slogans",
-   "summary": "Short, clear writing that people actually read — captions, a short article, a campaign slogan.",
-   "objectives": [
-    "You will write a caption that adds to a photo",
-    "You will write a 150-word article",
-    "You will write and test slogans"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write captions for three of your photos\n- Write a 150-word article about something at your centre\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://applieddigitalskills.withgoogle.com/",
-     "title": "Google: Applied Digital Skills",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "short",
-     "prompt": "Rewrite this caption to be clearer and more interesting: 'This is a picture of our class.'",
-     "answer": "Saturday's coding crew debugging their first website — 14 learners, one stubborn bug, zero giving up.",
-     "rubric": "Specific, active, adds information the photo does not show; short.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 11,
-   "position": 2,
-   "title": "Storytelling",
-   "summary": "Beginning, middle and end; a person, a problem and a change — the shape behind every good story, photo essay or video.",
-   "objectives": [
-    "You will plan a story in three parts",
-    "You will choose five images that tell it"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Plan a five-photo story about a person in your community (with their permission)\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your story plan: the person, the problem, the change, and the five shots you need.",
-     "answer": "",
-     "rubric": "Clear three-part structure; five planned shots that move the story forward; consent noted.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 12,
-   "position": 1,
-   "title": "Planning the photo story",
-   "summary": "Plan the Month 3 challenge as a team: the story, the shots, the people to ask, and the words.",
-   "objectives": [
-    "You will plan a shoot",
-    "You will get consent before the shoot"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Agree your story and shot list\n- Get permission from everyone who will appear\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your shot list and confirmation that everyone pictured has agreed.",
-     "answer": "",
-     "rubric": "Complete shot list; consent confirmed for every person shown.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 12,
-   "position": 2,
-   "title": "Month 3 challenge: a community photo story",
-   "summary": "Five to eight photographs with captions that tell one true story from your community.",
-   "objectives": [
-    "You will deliver a captioned photo story",
-    "You will present it to the group"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Shoot, edit and caption your story\n- Present it at the next session\n\n## AI, used well\n\nAI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's photo story (5–8 photos with captions) and a short introduction.",
-     "answer": "",
-     "rubric": "Tells one clear story; strong composition and light; captions add meaning; consent respected. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 10
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 5,
+      "position": 2,
+      "title": "Typography",
+      "summary": "Choose and pair typefaces, size them, and space text so it is easy and pleasant to read.",
+      "objectives": [
+        "You will pair a heading font with a body font",
+        "You will use size and weight for hierarchy",
+        "You will avoid common type mistakes"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Redesign a crowded flyer using only two fonts\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your before-and-after flyer and name the two fonts you used.",
+          "answer": "",
+          "rubric": "Two fonts at most; clear size difference between heading and body; comfortable spacing.",
+          "points": 4
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 13,
-   "position": 1,
-   "title": "Video 1: storyboarding",
-   "summary": "Plan every shot before you film — it saves hours of editing.",
-   "objectives": [
-    "You will storyboard a one-minute video",
-    "You will plan shot types (wide, medium, close-up)"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Storyboard a one-minute 'day at the centre' video in six frames\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.youtube.com/creators/",
-     "title": "YouTube Creators",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "A storyboard is…",
-     "options": [
-      "The final edited video",
-      "A sequence of sketches planning each shot",
-      "A list of music",
-      "The camera settings"
-     ],
-     "answer": "A sequence of sketches planning each shot",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 13,
-   "position": 2,
-   "title": "Video 2: shooting on a phone",
-   "summary": "Steady shots, landscape or portrait on purpose, good light and clean sound.",
-   "objectives": [
-    "You will film steady shots",
-    "You will capture clear sound",
-    "You will film the shots on your storyboard"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Film the six shots from your storyboard\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.youtube.com/creators/",
-     "title": "YouTube Creators",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload two of your clips and say what you did to keep them steady and the sound clear.",
-     "answer": "",
-     "rubric": "Steady footage; audible sound; matches the storyboard.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 14,
-   "position": 1,
-   "title": "Video 3: editing basics",
-   "summary": "Cut, trim, order and pace your clips in CapCut or DaVinci Resolve.",
-   "objectives": [
-    "You will import and trim clips",
-    "You will order them to tell the story",
-    "You will export at the right size"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit your clips into a one-minute video\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 6,
+      "position": 1,
+      "title": "Layout and the grid",
+      "summary": "Alignment, margins and a simple grid make a design look intentional and calm.",
+      "objectives": [
+        "You will align elements to a grid",
+        "You will use white space on purpose",
+        "You will group related information"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Use Canva's grid to rebuild a busy page\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "White space in a design is…",
+          "options": [
+            "Wasted space",
+            "Space that helps the important parts stand out",
+            "A printing error",
+            "Only for logos"
+          ],
+          "answer": "Space that helps the important parts stand out",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Align elements to a grid, then use white space on purpose. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Align elements to a grid (2); Use white space on purpose (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
-     "title": "DaVinci Resolve training",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "What is a 'cut' in video editing?",
-     "options": [
-      "A mistake",
-      "The change from one shot to the next",
-      "Deleting the whole video",
-      "A sound effect"
-     ],
-     "answer": "The change from one shot to the next",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 14,
-   "position": 2,
-   "title": "Video 4: sound, music and subtitles",
-   "summary": "Clean audio, music you are allowed to use, and subtitles so everyone can follow.",
-   "objectives": [
-    "You will balance voice and music",
-    "You will use copyright-free music",
-    "You will add accurate subtitles"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Add music and subtitles to your one-minute video\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Why add subtitles?",
-     "options": [
-      "They look modern",
-      "So deaf viewers, and anyone watching without sound, can follow",
-      "They are required by law everywhere",
-      "To hide mistakes"
-     ],
-     "answer": "So deaf viewers, and anyone watching without sound, can follow",
-     "points": 1
+      "course": "Graphic Design",
+      "level": "Media Lab 2026",
+      "week": 6,
+      "position": 2,
+      "title": "Composition: creating a social media graphic",
+      "summary": "Bring colour, type and layout together in a post sized for social media.",
+      "objectives": [
+        "You will design at the right size for a platform",
+        "You will write a short headline that works at a glance"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Design an Instagram post announcing a centre open day\n- **With an AI assistant —** AI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your open-day post.",
+          "answer": "",
+          "rubric": "Correct size; headline readable on a phone; date, time and place clear; good contrast.",
+          "points": 4
+        }
+      ]
     },
     {
-     "kind": "task",
-     "prompt": "Upload your finished one-minute video with subtitles.",
-     "answer": "",
-     "rubric": "Clear story; clean cuts; voice audible over music; subtitles accurate and readable.",
-     "points": 5
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 15,
-   "position": 1,
-   "title": "Interviews",
-   "summary": "Prepare questions, frame the speaker, record clean sound and get permission to publish.",
-   "objectives": [
-    "You will write open questions",
-    "You will frame and record an interview",
-    "You will get consent to publish"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write five open questions\n- Record a two-minute interview with a teammate\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.youtube.com/creators/",
-     "title": "YouTube Creators",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "short",
-     "prompt": "Turn this closed question into an open one: 'Do you like the centre?'",
-     "answer": "What has the centre changed for you since you joined?",
-     "rubric": "Cannot be answered yes or no; invites a story or explanation.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 15,
-   "position": 2,
-   "title": "Planning the documentary",
-   "summary": "Plan the Month 4 challenge: a short documentary about your community.",
-   "objectives": [
-    "You will plan a short documentary",
-    "You will arrange interviews with consent"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose your topic and storyboard\n- Arrange two interviews and get consent\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your storyboard and interview plan, with consent confirmed.",
-     "answer": "",
-     "rubric": "Clear topic and structure; interviews arranged; consent confirmed.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 16,
-   "position": 1,
-   "title": "Editing the documentary",
-   "summary": "Shape interviews and footage into a story with a beginning, middle and end.",
-   "objectives": [
-    "You will cut interviews down to the best moments",
-    "You will add supporting footage over speech"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit your team's documentary rough cut\n- Swap rough cuts with another team for feedback\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
+      "course": "Branding",
+      "level": "Media Lab 2026",
+      "week": 7,
+      "position": 1,
+      "title": "Branding basics: logos and identity",
+      "summary": "A brand is a promise people recognise: a name, a logo, colours and a voice used consistently.",
+      "objectives": [
+        "You will explain what a brand identity includes",
+        "You will sketch logo ideas",
+        "You will make a one-page brand guide"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Study two local brands and list their colours, fonts and tone\n- **With an AI assistant —** try Canva Magic tools for a first idea, then make it your own: original, readable and on-brand. Do not use AI images of real people, or logos you do not own.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "short",
+          "prompt": "Name three things a brand guide should include.",
+          "answer": "Logo, colours, fonts (and tone of voice).",
+          "rubric": "Names at least three of: logo, colour palette, typefaces, tone of voice, examples of use.",
+          "points": 2
+        }
+      ]
     },
     {
-     "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
-     "title": "DaVinci Resolve training",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Give another team written feedback on their rough cut: two things that work and one to improve.",
-     "answer": "",
-     "rubric": "Specific, kind and useful; refers to actual moments in the video.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 16,
-   "position": 2,
-   "title": "Month 4 challenge: a short community documentary",
-   "summary": "Two to three minutes, with interviews, supporting footage, music and subtitles.",
-   "objectives": [
-    "You will deliver a short documentary",
-    "You will present it and take questions"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish, subtitle and export\n- Present at the next session\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
+      "course": "Branding",
+      "level": "Media Lab 2026",
+      "week": 7,
+      "position": 2,
+      "title": "Designing an invitation and a certificate",
+      "summary": "Two everyday pieces that test hierarchy, type and layout together.",
+      "objectives": [
+        "You will design print-ready pieces",
+        "You will check spelling and details before export"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Design an invitation and a certificate for a Media Lab event\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your invitation and certificate.",
+          "answer": "",
+          "rubric": "All details correct and spelled right; consistent style; suitable for printing.",
+          "points": 4
+        }
+      ]
     },
     {
-     "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
-     "title": "DaVinci Resolve training",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's 2–3 minute documentary.",
-     "answer": "",
-     "rubric": "Clear story; good sound; subtitles; respectful of the people in it; consent obtained; credits included. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 10
+      "course": "Branding",
+      "level": "Media Lab 2026",
+      "week": 8,
+      "position": 1,
+      "title": "Planning a brand package",
+      "summary": "Plan the Month 2 challenge: who the event is for, what it needs, and who makes what.",
+      "objectives": [
+        "You will turn a brief into a task list",
+        "You will share the work fairly across your team"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write the brief for your event as a team\n- List every item you will deliver and who owns it\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your team's task list: each item, its owner and its deadline.",
+          "answer": "",
+          "rubric": "Every deliverable listed with an owner and a date; work shared fairly.",
+          "points": 3
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 17,
-   "position": 1,
-   "title": "Social media: platforms, audiences and responsibility",
-   "summary": "Who is on which platform, what works where, and how to post responsibly for an organisation.",
-   "objectives": [
-    "You will match content to a platform and audience",
-    "You will follow an organisation's posting rules",
-    "You will handle negative comments calmly"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Compare how three organisations post on two platforms\n\n## AI, used well\n\nAI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.commonsense.org/education/digital-citizenship",
-     "title": "Common Sense: Digital citizenship",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "Posting for an organisation, you see a rude comment. The best first step is…",
-     "options": [
-      "Reply angrily",
-      "Follow the organisation's rules — usually hide or report it and tell the lead",
-      "Delete the whole post",
-      "Ignore all comments forever"
-     ],
-     "answer": "Follow the organisation's rules — usually hide or report it and tell the lead",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 17,
-   "position": 2,
-   "title": "Content strategy and a content calendar",
-   "summary": "Plan what to post, when, and why — a week of posts with one clear goal.",
-   "objectives": [
-    "You will set one goal for a campaign",
-    "You will plan a week of posts in a calendar"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Make a one-week content calendar for the Media Lab's own page\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your one-week content calendar: day, platform, post idea and goal.",
-     "answer": "",
-     "rubric": "Seven entries; each fits the platform; all serve one clear goal.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 18,
-   "position": 1,
-   "title": "Digital marketing basics",
-   "summary": "Audience, message, call to action, and reading simple numbers — reach, engagement, clicks.",
-   "objectives": [
-    "You will write a clear call to action",
-    "You will read reach and engagement",
-    "You will explain what makes a campaign work"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Analyse one campaign you like: audience, message, call to action\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://applieddigitalskills.withgoogle.com/",
-     "title": "Google: Applied Digital Skills",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "A 'call to action' is…",
-     "options": [
-      "The video's soundtrack",
-      "What you ask the audience to do, like 'Register by Friday'",
-      "A phone call",
-      "The logo"
-     ],
-     "answer": "What you ask the audience to do, like 'Register by Friday'",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 18,
-   "position": 2,
-   "title": "AI-assisted creativity, done properly",
-   "summary": "Use AI to speed up ideas and variations while the decisions, the facts and the credit stay yours.",
-   "objectives": [
-    "You will use AI to generate variations",
-    "You will choose, edit and fact-check",
-    "You will disclose AI use"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Generate ten caption ideas with an AI tool, pick and improve two, and note what you changed\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.elementsofai.com/",
-     "title": "Elements of AI",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "short",
-     "prompt": "When is it NOT acceptable to use an AI-generated image in a campaign?",
-     "answer": "When it shows a real person, place or event that did not happen, or would mislead the audience.",
-     "rubric": "Mentions misleading people, fake real people/events, or using someone's likeness without permission.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 19,
-   "position": 1,
-   "title": "Promotional video",
-   "summary": "Thirty to sixty seconds that make people want to come: hook, message, call to action.",
-   "objectives": [
-    "You will write a hook for the first three seconds",
-    "You will plan a short promo"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Script and storyboard a 30-second promo for an NGG centre\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your promo script and storyboard.",
-     "answer": "",
-     "rubric": "Strong opening hook; one clear message; a call to action; fits 30–60 seconds.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 19,
-   "position": 2,
-   "title": "Planning the social media campaign",
-   "summary": "Plan the Month 5 challenge: a campaign with a goal, a calendar, graphics and a promo video.",
-   "objectives": [
-    "You will plan a full campaign as a team"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Agree goal, audience and calendar\n- Assign graphics, video, captions and posting\n\n## AI, used well\n\nAI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your campaign plan: goal, audience, calendar and who makes what.",
-     "answer": "",
-     "rubric": "Clear goal and audience; realistic calendar; every task owned.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 20,
-   "position": 1,
-   "title": "Making the campaign",
-   "summary": "Produce the graphics, the promo video and the captions.",
-   "objectives": [
-    "You will produce campaign assets to a consistent style"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Make every asset on your plan\n- Review each other's work against the brief\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Branding",
+      "level": "Media Lab 2026",
+      "week": 8,
+      "position": 2,
+      "title": "Month 2 challenge: a complete event branding package",
+      "summary": "Logo, colour palette, poster, social post, invitation and badge for a real or planned NGG event.",
+      "objectives": [
+        "You will deliver a consistent brand package",
+        "You will present the thinking behind it"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish and export every item\n- Present to the group and take feedback\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's branding package (logo, palette, poster, social post, invitation, badge) and a one-page brand guide.",
+          "answer": "",
+          "rubric": "All six pieces present; consistent colours and type; readable; the guide explains how to use the brand. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 10
+        },
+        {
+          "kind": "reflection",
+          "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
     },
     {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload two assets you made and say how they follow the campaign's style.",
-     "answer": "",
-     "rubric": "Consistent with the campaign style; meets the brief.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 20,
-   "position": 2,
-   "title": "Month 5 challenge: a social media campaign with a promo video",
-   "summary": "A week-long campaign: content calendar, at least five graphics, captions and a 30–60 second promo video.",
-   "objectives": [
-    "You will deliver a complete campaign",
-    "You will present the results you would measure"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish all assets\n- Present the campaign and how you would measure success\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 9,
+      "position": 1,
+      "title": "Photography 1: composition and framing",
+      "summary": "The rule of thirds, leading lines, angles and filling the frame — on the phone you already have.",
+      "objectives": [
+        "You will use the rule of thirds",
+        "You will try three angles of one subject",
+        "You will hold the phone steady"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Turn on your phone camera's grid\n- Take five photographs of one object from different angles\n- **With an AI assistant —** AI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "The rule of thirds suggests placing your subject…",
+          "options": [
+            "Always in the exact centre",
+            "Along the lines or where they cross on a 3×3 grid",
+            "At the very edge",
+            "Out of focus"
+          ],
+          "answer": "Along the lines or where they cross on a 3×3 grid",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Use the rule of thirds, then try three angles of one subject. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Use the rule of thirds (2); Try three angles of one subject (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's campaign: calendar, at least five graphics with captions, and the promo video.",
-     "answer": "",
-     "rubric": "One clear goal; consistent style; strong calls to action; promo has a hook; measurable success named. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 10
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 9,
+      "position": 2,
+      "title": "Photography 2: light",
+      "summary": "Natural light, shade, backlight and why the time of day matters more than the camera.",
+      "objectives": [
+        "You will photograph the same subject in three kinds of light",
+        "You will avoid harsh shadows on faces"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Take three photos of the same thing — in shade, in sunlight and against a window\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your three photos and say which light worked best and why.",
+          "answer": "",
+          "rubric": "Three photos in visibly different light; a sensible reason for the choice.",
+          "points": 3
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 21,
-   "position": 1,
-   "title": "Project management",
-   "summary": "Plan, track and finish a project on time: tasks, owners, deadlines and check-ins.",
-   "objectives": [
-    "You will break a project into tasks",
-    "You will run a short team check-in"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Build a task board for your final project\n- Run a five-minute check-in: done, doing, stuck\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://applieddigitalskills.withgoogle.com/",
-     "title": "Google: Applied Digital Skills",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "mcq",
-     "prompt": "In a team check-in, the most useful thing to share is…",
-     "options": [
-      "Everything you did all week",
-      "What is done, what you are doing next, and what is blocking you",
-      "Only good news",
-      "Nothing"
-     ],
-     "answer": "What is done, what you are doing next, and what is blocking you",
-     "points": 1
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 21,
-   "position": 2,
-   "title": "Leading a team and mentoring a younger learner",
-   "summary": "Lead by example, give useful feedback, and help a newer member learn a skill you have.",
-   "objectives": [
-    "You will give feedback using 'what works, what next'",
-    "You will teach one skill to a newer learner"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Teach a newer member one thing you learned (with your instructor)\n- Note what you taught and how it went\n\n## AI, used well\n\nUse an AI assistant only to explain, suggest or check — never to produce your work for you. Write down what you asked, what it said, and how you checked it.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "reflection",
-     "prompt": "You taught a newer learner a skill. What went well, what was hard, and what would you do differently as a mentor?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 22,
-   "position": 1,
-   "title": "Building your portfolio",
-   "summary": "Choose your best work, explain it, and present it so others can see what you can do.",
-   "objectives": [
-    "You will choose your strongest pieces",
-    "You will write a short note for each",
-    "You will build a portfolio page or PDF"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose six pieces from across the year\n- Write two sentences for each: the brief and what you did\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 10,
+      "position": 1,
+      "title": "Portraits — with permission",
+      "summary": "Photographing people well and respectfully: asking first, putting people at ease, and the consent rules for children.",
+      "objectives": [
+        "You will ask permission before photographing anyone",
+        "You will frame a flattering portrait",
+        "You will know when a photo must not be shared"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Practise portraits of a teammate who agrees\n- Review the Lab's consent rules from week 1\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.commonsense.org/education/digital-citizenship",
+          "title": "Common Sense: Digital citizenship",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "A parent at an event says they do not want their child photographed. You…",
+          "options": [
+            "Take the photo but don't post it",
+            "Do not photograph the child, and leave them out of group shots",
+            "Blur the child later",
+            "Ask the child instead"
+          ],
+          "answer": "Do not photograph the child, and leave them out of group shots",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Ask permission before photographing anyone, then frame a flattering portrait. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Ask permission before photographing anyone (2); Frame a flattering portrait (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
     },
     {
-     "url": "https://www.adobe.com/express/learn",
-     "title": "Adobe Express: Learn",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload a draft of your portfolio (a page or PDF) with at least six pieces and notes.",
-     "answer": "",
-     "rubric": "Six or more strong pieces across skills; a clear note for each; easy to view on a phone.",
-     "points": 4
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 22,
-   "position": 2,
-   "title": "Planning the community storytelling project",
-   "summary": "Plan the final challenge: a story from your community told through design, photography, writing and video together.",
-   "objectives": [
-    "You will plan a multi-media project as a team"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose your story and the formats you will use\n- Agree roles — each member leads one part\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your final project plan: the story, formats, roles and deadlines.",
-     "answer": "",
-     "rubric": "Clear story; at least three formats; every member leads a part; realistic deadlines.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 23,
-   "position": 1,
-   "title": "Making the final project",
-   "summary": "Produce your community storytelling project, reviewing each other's parts as you go.",
-   "objectives": [
-    "You will produce your part to a high standard",
-    "You will give and act on peer feedback"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Produce your part\n- Swap for peer review and improve\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 10,
+      "position": 2,
+      "title": "Editing photos",
+      "summary": "Crop, straighten, adjust light and colour — and know when editing becomes misleading.",
+      "objectives": [
+        "You will crop and straighten a photo",
+        "You will adjust exposure and colour",
+        "You will avoid misleading edits"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit three of your photos in a free phone editor or Canva\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload one photo before and after editing, and list what you changed.",
+          "answer": "",
+          "rubric": "Visible, tasteful improvement; changes listed; nothing misleading.",
+          "points": 3
+        }
+      ]
     },
     {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Give a teammate written feedback on their part: two things that work and one to improve.",
-     "answer": "",
-     "rubric": "Specific, kind and useful.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 23,
-   "position": 2,
-   "title": "Presenting your work",
-   "summary": "Prepare a short, confident presentation of your project and your portfolio.",
-   "objectives": [
-    "You will structure a three-minute presentation",
-    "You will practise and take feedback"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Prepare your three-minute presentation\n- Rehearse with your team\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "task",
-     "prompt": "Upload your presentation outline: opening, the story, what you made, what you learned.",
-     "answer": "",
-     "rubric": "Clear structure; fits three minutes; shows what was made and learned.",
-     "points": 3
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 24,
-   "position": 1,
-   "title": "Month 6 challenge: a community storytelling project",
-   "summary": "Your team's final project, telling one community story across design, photography, writing and video.",
-   "objectives": [
-    "You will deliver a finished multi-media project"
-   ],
-   "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish and submit every part\n\n## AI, used well\n\nUse AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [
-    {
-     "url": "https://www.canva.com/designschool/",
-     "title": "Canva Design School",
-     "kind": "link"
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 11,
+      "position": 1,
+      "title": "Writing for media: captions, articles and slogans",
+      "summary": "Short, clear writing that people actually read — captions, a short article, a campaign slogan.",
+      "objectives": [
+        "You will write a caption that adds to a photo",
+        "You will write a 150-word article",
+        "You will write and test slogans"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write captions for three of your photos\n- Write a 150-word article about something at your centre\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://applieddigitalskills.withgoogle.com/",
+          "title": "Google: Applied Digital Skills",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "short",
+          "prompt": "Rewrite this caption to be clearer and more interesting: 'This is a picture of our class.'",
+          "answer": "Saturday's coding crew debugging their first website — 14 learners, one stubborn bug, zero giving up.",
+          "rubric": "Specific, active, adds information the photo does not show; short.",
+          "points": 2
+        }
+      ]
     },
     {
-     "url": "https://www.capcut.com/",
-     "title": "CapCut",
-     "kind": "link"
-    }
-   ],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your team's community storytelling project (all parts) and a short introduction.",
-     "answer": "",
-     "rubric": "One clear story across at least three formats; high craft in each; consent respected; every member's part visible. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 20
-    }
-   ]
-  },
-  {
-   "course": "Media Lab",
-   "level": "Media Lab 2026",
-   "week": 24,
-   "position": 2,
-   "title": "Showcase and what comes next",
-   "summary": "Show your work to families and the community, celebrate, and set your next goal — Junior Creator, Creative Associate, Team Lead.",
-   "objectives": [
-    "You will present at the showcase",
-    "You will set your next goal in the Lab"
-   ],
-   "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Present your project and portfolio at the showcase\n- Write your next goal\n\n## AI, used well\n\nAsk an AI assistant to improve one paragraph, then compare it with yours and keep what sounds like you. Check every fact — AI can state wrong things confidently.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.",
-   "durationMins": 120,
-   "passMark": 60,
-   "materials": [],
-   "checks": [
-    {
-     "kind": "project",
-     "prompt": "Upload your final portfolio link.",
-     "answer": "",
-     "rubric": "Live and complete; best work from the year; clear notes; readable on a phone. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
-     "points": 5
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 11,
+      "position": 2,
+      "title": "Storytelling",
+      "summary": "Beginning, middle and end; a person, a problem and a change — the shape behind every good story, photo essay or video.",
+      "objectives": [
+        "You will plan a story in three parts",
+        "You will choose five images that tell it"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Plan a five-photo story about a person in your community (with their permission)\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your story plan: the person, the problem, the change, and the five shots you need.",
+          "answer": "",
+          "rubric": "Clear three-part structure; five planned shots that move the story forward; consent noted.",
+          "points": 3
+        }
+      ]
     },
     {
-     "kind": "reflection",
-     "prompt": "Looking back over the six months: what are you proudest of, what was hardest, and what is your next goal in the Lab?",
-     "answer": "",
-     "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
-     "points": 2
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 12,
+      "position": 1,
+      "title": "Planning the photo story",
+      "summary": "Plan the Month 3 challenge as a team: the story, the shots, the people to ask, and the words.",
+      "objectives": [
+        "You will plan a shoot",
+        "You will get consent before the shoot"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Agree your story and shot list\n- Get permission from everyone who will appear\n- **With an AI assistant —** AI can enhance a photo, but say when an image has been changed. Never use AI to alter a real person's photo without their permission.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your shot list and confirmation that everyone pictured has agreed.",
+          "answer": "",
+          "rubric": "Complete shot list; consent confirmed for every person shown.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Visual Storytelling",
+      "level": "Media Lab 2026",
+      "week": 12,
+      "position": 2,
+      "title": "Month 3 challenge: a community photo story",
+      "summary": "Five to eight photographs with captions that tell one true story from your community.",
+      "objectives": [
+        "You will deliver a captioned photo story",
+        "You will present it to the group"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Shoot, edit and caption your story\n- Present it at the next session\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's photo story (5–8 photos with captions) and a short introduction.",
+          "answer": "",
+          "rubric": "Tells one clear story; strong composition and light; captions add meaning; consent respected. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 10
+        },
+        {
+          "kind": "reflection",
+          "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Cinematography",
+      "level": "Media Lab 2026",
+      "week": 13,
+      "position": 1,
+      "title": "Video 1: storyboarding",
+      "summary": "Plan every shot before you film — it saves hours of editing.",
+      "objectives": [
+        "You will storyboard a one-minute video",
+        "You will plan shot types (wide, medium, close-up)"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Storyboard a one-minute 'day at the centre' video in six frames\n- **With an AI assistant —** Use AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.youtube.com/creators/",
+          "title": "YouTube Creators",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "A storyboard is…",
+          "options": [
+            "The final edited video",
+            "A sequence of sketches planning each shot",
+            "A list of music",
+            "The camera settings"
+          ],
+          "answer": "A sequence of sketches planning each shot",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Storyboard a one-minute video, then plan shot types (wide, medium, close-up). Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Storyboard a one-minute video (2); Plan shot types (wide, medium, close-up) (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
+    },
+    {
+      "course": "Cinematography",
+      "level": "Media Lab 2026",
+      "week": 13,
+      "position": 2,
+      "title": "Video 2: shooting on a phone",
+      "summary": "Steady shots, landscape or portrait on purpose, good light and clean sound.",
+      "objectives": [
+        "You will film steady shots",
+        "You will capture clear sound",
+        "You will film the shots on your storyboard"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Film the six shots from your storyboard\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.youtube.com/creators/",
+          "title": "YouTube Creators",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload two of your clips and say what you did to keep them steady and the sound clear.",
+          "answer": "",
+          "rubric": "Steady footage; audible sound; matches the storyboard.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 14,
+      "position": 1,
+      "title": "Video 3: editing basics",
+      "summary": "Cut, trim, order and pace your clips in CapCut or DaVinci Resolve.",
+      "objectives": [
+        "You will import and trim clips",
+        "You will order them to tell the story",
+        "You will export at the right size"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit your clips into a one-minute video\n- **With an AI assistant —** Use AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
+          "title": "DaVinci Resolve training",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "What is a 'cut' in video editing?",
+          "options": [
+            "A mistake",
+            "The change from one shot to the next",
+            "Deleting the whole video",
+            "A sound effect"
+          ],
+          "answer": "The change from one shot to the next",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Import and trim clips, then order them to tell the story. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Import and trim clips (2); Order them to tell the story (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 14,
+      "position": 2,
+      "title": "Video 4: sound, music and subtitles",
+      "summary": "Clean audio, music you are allowed to use, and subtitles so everyone can follow.",
+      "objectives": [
+        "You will balance voice and music",
+        "You will use copyright-free music",
+        "You will add accurate subtitles"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Add music and subtitles to your one-minute video\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Why add subtitles?",
+          "options": [
+            "They look modern",
+            "So deaf viewers, and anyone watching without sound, can follow",
+            "They are required by law everywhere",
+            "To hide mistakes"
+          ],
+          "answer": "So deaf viewers, and anyone watching without sound, can follow",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Upload your finished one-minute video with subtitles.",
+          "answer": "",
+          "rubric": "Clear story; clean cuts; voice audible over music; subtitles accurate and readable.",
+          "points": 5
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 15,
+      "position": 1,
+      "title": "Interviews",
+      "summary": "Prepare questions, frame the speaker, record clean sound and get permission to publish.",
+      "objectives": [
+        "You will write open questions",
+        "You will frame and record an interview",
+        "You will get consent to publish"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Write five open questions\n- Record a two-minute interview with a teammate\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.youtube.com/creators/",
+          "title": "YouTube Creators",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "short",
+          "prompt": "Turn this closed question into an open one: 'Do you like the centre?'",
+          "answer": "What has the centre changed for you since you joined?",
+          "rubric": "Cannot be answered yes or no; invites a story or explanation.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 15,
+      "position": 2,
+      "title": "Planning the documentary",
+      "summary": "Plan the Month 4 challenge: a short documentary about your community.",
+      "objectives": [
+        "You will plan a short documentary",
+        "You will arrange interviews with consent"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose your topic and storyboard\n- Arrange two interviews and get consent\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your storyboard and interview plan, with consent confirmed.",
+          "answer": "",
+          "rubric": "Clear topic and structure; interviews arranged; consent confirmed.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 16,
+      "position": 1,
+      "title": "Editing the documentary",
+      "summary": "Shape interviews and footage into a story with a beginning, middle and end.",
+      "objectives": [
+        "You will cut interviews down to the best moments",
+        "You will add supporting footage over speech"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Edit your team's documentary rough cut\n- Swap rough cuts with another team for feedback\n- **With an AI assistant —** Use AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
+          "title": "DaVinci Resolve training",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Give another team written feedback on their rough cut: two things that work and one to improve.",
+          "answer": "",
+          "rubric": "Specific, kind and useful; refers to actual moments in the video.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Video Production",
+      "level": "Media Lab 2026",
+      "week": 16,
+      "position": 2,
+      "title": "Month 4 challenge: a short community documentary",
+      "summary": "Two to three minutes, with interviews, supporting footage, music and subtitles.",
+      "objectives": [
+        "You will deliver a short documentary",
+        "You will present it and take questions"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish, subtitle and export\n- Present at the next session\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.blackmagicdesign.com/products/davinciresolve/training",
+          "title": "DaVinci Resolve training",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's 2–3 minute documentary.",
+          "answer": "",
+          "rubric": "Clear story; good sound; subtitles; respectful of the people in it; consent obtained; credits included. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 10
+        },
+        {
+          "kind": "reflection",
+          "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Social Media",
+      "level": "Media Lab 2026",
+      "week": 17,
+      "position": 1,
+      "title": "Social media: platforms, audiences and responsibility",
+      "summary": "Who is on which platform, what works where, and how to post responsibly for an organisation.",
+      "objectives": [
+        "You will match content to a platform and audience",
+        "You will follow an organisation's posting rules",
+        "You will handle negative comments calmly"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Compare how three organisations post on two platforms\n- **With an AI assistant —** AI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.commonsense.org/education/digital-citizenship",
+          "title": "Common Sense: Digital citizenship",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "Posting for an organisation, you see a rude comment. The best first step is…",
+          "options": [
+            "Reply angrily",
+            "Follow the organisation's rules — usually hide or report it and tell the lead",
+            "Delete the whole post",
+            "Ignore all comments forever"
+          ],
+          "answer": "Follow the organisation's rules — usually hide or report it and tell the lead",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Match content to a platform and audience, then follow an organisation's posting rules. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Match content to a platform and audience (2); Follow an organisation's posting rules (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
+    },
+    {
+      "course": "Social Media",
+      "level": "Media Lab 2026",
+      "week": 17,
+      "position": 2,
+      "title": "Content strategy and a content calendar",
+      "summary": "Plan what to post, when, and why — a week of posts with one clear goal.",
+      "objectives": [
+        "You will set one goal for a campaign",
+        "You will plan a week of posts in a calendar"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Make a one-week content calendar for the Media Lab's own page\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your one-week content calendar: day, platform, post idea and goal.",
+          "answer": "",
+          "rubric": "Seven entries; each fits the platform; all serve one clear goal.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Social Media",
+      "level": "Media Lab 2026",
+      "week": 18,
+      "position": 1,
+      "title": "Digital marketing basics",
+      "summary": "Audience, message, call to action, and reading simple numbers — reach, engagement, clicks.",
+      "objectives": [
+        "You will write a clear call to action",
+        "You will read reach and engagement",
+        "You will explain what makes a campaign work"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Analyse one campaign you like: audience, message, call to action\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://applieddigitalskills.withgoogle.com/",
+          "title": "Google: Applied Digital Skills",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "A 'call to action' is…",
+          "options": [
+            "The video's soundtrack",
+            "What you ask the audience to do, like 'Register by Friday'",
+            "A phone call",
+            "The logo"
+          ],
+          "answer": "What you ask the audience to do, like 'Register by Friday'",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Write a clear call to action, then read reach and engagement. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Write a clear call to action (2); Read reach and engagement (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
+    },
+    {
+      "course": "Social Media",
+      "level": "Media Lab 2026",
+      "week": 18,
+      "position": 2,
+      "title": "AI-assisted creativity, done properly",
+      "summary": "Use AI to speed up ideas and variations while the decisions, the facts and the credit stay yours.",
+      "objectives": [
+        "You will use AI to generate variations",
+        "You will choose, edit and fact-check",
+        "You will disclose AI use"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Generate ten caption ideas with an AI tool, pick and improve two, and note what you changed\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.elementsofai.com/",
+          "title": "Elements of AI",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "short",
+          "prompt": "When is it NOT acceptable to use an AI-generated image in a campaign?",
+          "answer": "When it shows a real person, place or event that did not happen, or would mislead the audience.",
+          "rubric": "Mentions misleading people, fake real people/events, or using someone's likeness without permission.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 19,
+      "position": 1,
+      "title": "Promotional video",
+      "summary": "Thirty to sixty seconds that make people want to come: hook, message, call to action.",
+      "objectives": [
+        "You will write a hook for the first three seconds",
+        "You will plan a short promo"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Script and storyboard a 30-second promo for an NGG centre\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your promo script and storyboard.",
+          "answer": "",
+          "rubric": "Strong opening hook; one clear message; a call to action; fits 30–60 seconds.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 19,
+      "position": 2,
+      "title": "Planning the social media campaign",
+      "summary": "Plan the Month 5 challenge: a campaign with a goal, a calendar, graphics and a promo video.",
+      "objectives": [
+        "You will plan a full campaign as a team"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Agree goal, audience and calendar\n- Assign graphics, video, captions and posting\n- **With an AI assistant —** AI can draft a post schedule; you decide what is true, kind and safe to share. Never share someone's image or details without consent, with or without AI.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your campaign plan: goal, audience, calendar and who makes what.",
+          "answer": "",
+          "rubric": "Clear goal and audience; realistic calendar; every task owned.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 20,
+      "position": 1,
+      "title": "Making the campaign",
+      "summary": "Produce the graphics, the promo video and the captions.",
+      "objectives": [
+        "You will produce campaign assets to a consistent style"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Make every asset on your plan\n- Review each other's work against the brief\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload two assets you made and say how they follow the campaign's style.",
+          "answer": "",
+          "rubric": "Consistent with the campaign style; meets the brief.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 20,
+      "position": 2,
+      "title": "Month 5 challenge: a social media campaign with a promo video",
+      "summary": "A week-long campaign: content calendar, at least five graphics, captions and a 30–60 second promo video.",
+      "objectives": [
+        "You will deliver a complete campaign",
+        "You will present the results you would measure"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish all assets\n- Present the campaign and how you would measure success\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's campaign: calendar, at least five graphics with captions, and the promo video.",
+          "answer": "",
+          "rubric": "One clear goal; consistent style; strong calls to action; promo has a hook; measurable success named. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 10
+        },
+        {
+          "kind": "reflection",
+          "prompt": "What did you learn this month, and what will you do differently on the next challenge?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 21,
+      "position": 1,
+      "title": "Project management",
+      "summary": "Plan, track and finish a project on time: tasks, owners, deadlines and check-ins.",
+      "objectives": [
+        "You will break a project into tasks",
+        "You will run a short team check-in"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Build a task board for your final project\n- Run a five-minute check-in: done, doing, stuck\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://applieddigitalskills.withgoogle.com/",
+          "title": "Google: Applied Digital Skills",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "mcq",
+          "prompt": "In a team check-in, the most useful thing to share is…",
+          "options": [
+            "Everything you did all week",
+            "What is done, what you are doing next, and what is blocking you",
+            "Only good news",
+            "Nothing"
+          ],
+          "answer": "What is done, what you are doing next, and what is blocking you",
+          "points": 1
+        },
+        {
+          "kind": "task",
+          "prompt": "Assignment: Break a project into tasks, then run a short team check-in. Submit your deliverable (a link, a file or a photo) and one sentence on a decision you made.",
+          "answer": "The work itself, plus one sentence naming a choice they made and why — not a description of the lesson.",
+          "rubric": "Up to 6 points: Break a project into tasks (2); Run a short team check-in (2); They can say WHY they made one choice in it, not only what they did (2). Mastery means it was done independently and correctly.",
+          "points": 6
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 21,
+      "position": 2,
+      "title": "Leading a team and mentoring a younger learner",
+      "summary": "Lead by example, give useful feedback, and help a newer member learn a skill you have.",
+      "objectives": [
+        "You will give feedback using 'what works, what next'",
+        "You will teach one skill to a newer learner"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Teach a newer member one thing you learned (with your instructor)\n- Note what you taught and how it went\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "reflection",
+          "prompt": "You taught a newer learner a skill. What went well, what was hard, and what would you do differently as a mentor?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 22,
+      "position": 1,
+      "title": "Building your portfolio",
+      "summary": "Choose your best work, explain it, and present it so others can see what you can do.",
+      "objectives": [
+        "You will choose your strongest pieces",
+        "You will write a short note for each",
+        "You will build a portfolio page or PDF"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose six pieces from across the year\n- Write two sentences for each: the brief and what you did\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.adobe.com/express/learn",
+          "title": "Adobe Express: Learn",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload a draft of your portfolio (a page or PDF) with at least six pieces and notes.",
+          "answer": "",
+          "rubric": "Six or more strong pieces across skills; a clear note for each; easy to view on a phone.",
+          "points": 4
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 22,
+      "position": 2,
+      "title": "Planning the community storytelling project",
+      "summary": "Plan the final challenge: a story from your community told through design, photography, writing and video together.",
+      "objectives": [
+        "You will plan a multi-media project as a team"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Choose your story and the formats you will use\n- Agree roles — each member leads one part\n- **With an AI assistant —** Use AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your final project plan: the story, formats, roles and deadlines.",
+          "answer": "",
+          "rubric": "Clear story; at least three formats; every member leads a part; realistic deadlines.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 23,
+      "position": 1,
+      "title": "Making the final project",
+      "summary": "Produce your community storytelling project, reviewing each other's parts as you go.",
+      "objectives": [
+        "You will produce your part to a high standard",
+        "You will give and act on peer feedback"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Produce your part\n- Swap for peer review and improve\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Give a teammate written feedback on their part: two things that work and one to improve.",
+          "answer": "",
+          "rubric": "Specific, kind and useful.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 23,
+      "position": 2,
+      "title": "Presenting your work",
+      "summary": "Prepare a short, confident presentation of your project and your portfolio.",
+      "objectives": [
+        "You will structure a three-minute presentation",
+        "You will practise and take feedback"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Prepare your three-minute presentation\n- Rehearse with your team\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "task",
+          "prompt": "Upload your presentation outline: opening, the story, what you made, what you learned.",
+          "answer": "",
+          "rubric": "Clear structure; fits three minutes; shows what was made and learned.",
+          "points": 3
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 24,
+      "position": 1,
+      "title": "Month 6 challenge: a community storytelling project",
+      "summary": "Your team's final project, telling one community story across design, photography, writing and video.",
+      "objectives": [
+        "You will deliver a finished multi-media project"
+      ],
+      "body": "**Learn & practise.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Finish and submit every part\n- **With an AI assistant —** Use AI to suggest a shot list or captions, then check every caption against what is actually said. Label AI-generated footage or voices honestly.\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [
+        {
+          "url": "https://www.canva.com/designschool/",
+          "title": "Canva Design School",
+          "kind": "link"
+        },
+        {
+          "url": "https://www.capcut.com/",
+          "title": "CapCut",
+          "kind": "link"
+        }
+      ],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your team's community storytelling project (all parts) and a short introduction.",
+          "answer": "",
+          "rubric": "One clear story across at least three formats; high craft in each; consent respected; every member's part visible. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 20
+        }
+      ]
+    },
+    {
+      "course": "Digital Content Creation",
+      "level": "Media Lab 2026",
+      "week": 24,
+      "position": 2,
+      "title": "Showcase and what comes next",
+      "summary": "Show your work to families and the community, celebrate, and set your next goal — Junior Creator, Creative Associate, Team Lead.",
+      "objectives": [
+        "You will present at the showcase",
+        "You will set your next goal in the Lab"
+      ],
+      "body": "**Create & review.** Every lesson in the Lab produces something.\n\n## What to do\n\n- Present your project and portfolio at the showcase\n- Write your next goal\n\n## Make it fit you\n\n- **If this is new to you:** do the first step with your instructor or a partner, then repeat it on your own before moving on.\n- **If you already can:** make a second version for a different audience or platform, and explain the choices you changed.\n\n## Before the next session\n\nComplete the check below. If you are stuck, write down exactly where — that is the question to bring to your mentor.\n",
+      "durationMins": 120,
+      "passMark": 60,
+      "materials": [],
+      "checks": [
+        {
+          "kind": "project",
+          "prompt": "Upload your final portfolio link.",
+          "answer": "",
+          "rubric": "Live and complete; best work from the year; clear notes; readable on a phone. Weighting: Technical skill 30% · Creativity 20% · Project completion 20% · Teamwork 15% · Leadership & responsibility 15%.",
+          "points": 5
+        },
+        {
+          "kind": "reflection",
+          "prompt": "Looking back over the six months: what are you proudest of, what was hardest, and what is your next goal in the Lab?",
+          "answer": "",
+          "rubric": "Answers honestly: what was learned, what was difficult, what improved, and what will be done differently next time.",
+          "points": 2
+        }
+      ]
     }
-   ]
-  }
- ]
+  ]
 }

@@ -172,7 +172,7 @@ return [
     'ai' => [
         // Default profile (legacy flat block — used when a purpose below has
         // no key of its own):
-        'provider'       => 'groq',                    // preference: groq | gemini | anthropic | openai | openrouter
+        'provider'       => 'groq',                    // preference: see the list below
         'groq_api_key'   => '',                        // leave empty to disable
         'groq_model'     => 'llama-3.1-8b-instant',
         'gemini_api_key' => '',                        // leave empty to disable
@@ -189,6 +189,28 @@ return [
         // line rather than a deploy. Model ids look like 'vendor/model'.
         'openrouter_api_key' => '',
         'openrouter_model'   => 'meta-llama/llama-3.1-8b-instruct',
+
+        // More providers, all speaking the same OpenAI-shaped request, so
+        // they are one branch in ai.php rather than one each. Set a key and
+        // the provider joins the fallback chain; leave it empty and it is
+        // skipped. The four marked FREE TIER have one that does not expire
+        // into a card, which is what a programme on shared hosting needs.
+        'cerebras_api_key'   => '',   // FREE TIER — https://cloud.cerebras.ai  (fastest of these by a distance)
+        'cerebras_model'     => 'llama3.1-8b',
+        'mistral_api_key'    => '',   // FREE TIER — https://console.mistral.ai
+        'mistral_model'      => 'mistral-small-latest',
+        'together_api_key'   => '',   // FREE TIER — https://api.together.xyz
+        'together_model'     => 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+        'github_api_key'     => '',   // FREE TIER — a GitHub PAT; https://github.com/marketplace/models
+        'github_model'       => 'gpt-4o-mini',
+        'deepseek_api_key'   => '',   // paid, inexpensive — https://platform.deepseek.com
+        'deepseek_model'     => 'deepseek-chat',
+        // Anything else that speaks the OpenAI chat-completions shape: a
+        // self-hosted llama.cpp or Ollama, a university's endpoint, a model
+        // gateway. No key is required, because many of these want none.
+        'custom_base_url'    => '',   // e.g. 'http://127.0.0.1:11434/v1/chat/completions'
+        'custom_api_key'     => '',
+        'custom_model'       => '',
 
         // Pro allocation — one key per purpose so a rate-limited or leaked
         // key degrades ONE feature. Every entry optional; each may carry a
@@ -248,6 +270,40 @@ return [
             'insight_router'    => ['provider' => 'groq',       'api_key' => '', 'model' => 'llama-3.1-8b-instant'],
             'insight_answer'    => ['provider' => 'anthropic',  'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929'],
         ],
+    ],
+
+    // -----------------------------------------------------------------------
+    // SCHOOL QUESTION BANK (optional) — where /learn's School drill gets its
+    // questions BEFORE it asks a model. A real past-question bank beats
+    // anything generated: the wording, the mark scheme and the difficulty are
+    // the ones the child will actually meet in WAEC, NECO or UTME.
+    //
+    // Leave it empty and the drill asks the AI layer instead; with neither,
+    // it refuses in words and sends the child to their flashcards rather than
+    // handing them a blank paper. It is asked over HTTPS with a 6s timeout
+    // and a 256KB cap, it never follows a redirect, and a failure is silent —
+    // the drill falls through to AI rather than erroring at a child.
+    //
+    // It asks for ONE question per request, five times, because that is the
+    // shape these banks have; fewer than five and it falls through to AI
+    // rather than handing over a short paper.
+    //
+    //   'url'       the endpoint. `subject` and `type` are appended as query
+    //               parameters (`type` is the exam: waec | neco | utme).
+    //   'token'     sent in the header named by 'header', when set.
+    //   'header'    the header that carries the token. Default 'AccessToken'.
+    //   'subjects'  optional: this programme's subject name → the bank's own
+    //               slug. Unmapped subjects are sent lowercased.
+    //
+    // The reply may be {question, option:{a:…,b:…}, answer:'a'}, the same
+    // wrapped in `data`, or a one-element list of either — the common
+    // Nigerian past-question shapes. Anything else is treated as no answer.
+    // -----------------------------------------------------------------------
+    'study_bank' => [
+        'url'      => '',
+        'token'    => '',
+        'header'   => 'AccessToken',
+        'subjects' => [],   // e.g. ['Mathematics' => 'mathematics', 'English' => 'english']
     ],
 
     // -----------------------------------------------------------------------
@@ -457,6 +513,9 @@ return [
         'public.stats'     => 300,  // 5 min
         'public.events'    => 120,
         'public.posts'     => 120,
+        // What members said about their own sessions. Short, because a
+        // withdrawal or a consent turned off has to leave the page quickly.
+        'public.testimonials'      => 120,
         'public.session'   => 300,
         'public.anchorContent' => 300,
         'public.centres'   => 300,  // centre list; purged on centre_upsert/delete
@@ -542,6 +601,15 @@ return [
         'unsigned_preset' => '',             // e.g. 'ngg_public_headshots'
         'unsigned_folder' => 'ngg/headshots',
     ],
+
+    // CACENTRE: the one connection NGG has with it. It carries the person
+    // directory (domain/directory-push.php) and the Wi-Fi: NGG's people and its
+    // say about each, every 15 minutes, and each member's PIN for Me → Wi-Fi
+    // (domain/wifi-cacentre.php). Empty secret: nothing is sent. The SAME value
+    // goes in CACENTRE's includes/.env as DIR_PUSH_SECRET_NGG (an environment
+    // variable of that name here wins over this file).
+    'dir_push_secret' => '',                 // 32+ random characters
+    'dir_push_url'    => '',                 // default https://cacentre.afrovanguard.org.ng
 
     // Debug — flip to true only in local dev. Leaks internal errors.
     'debug' => false,

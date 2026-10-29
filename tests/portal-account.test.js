@@ -97,7 +97,7 @@ async function as(memberId, admin, viewport) {
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
     // A fake microphone, so a voice note can be recorded headless.
     const media = { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] };
-    browser = await chromium.launch(Object.assign(media, process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {}));
+    browser = await chromium.launch(Object.assign(media, process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {}));
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const shot = (pg, n) => pg.screenshot({ path: (process.env.PA_SHOTS || TMP) + '/' + n + '.png' });
     const pwIs = pw => q(`password_verify(${JSON.stringify(pw)}, (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-PA-K1'")['passwordHash'])`);
@@ -147,6 +147,11 @@ async function as(memberId, admin, viewport) {
     const L1 = await lay(mb);
     chk('Messages (desktop): a full-height conversation, the message box on screen without scrolling, days marked, the mentor panel beside it',
       L1.composerOnScreen && L1.tall && L1.days.includes('Today') && L1.sideShown && L1.logScrolls);
+    /* Quick replies are for answering (mp9-app.jsx showQuick): none while the
+       child's own message is the last word, back once the mentor writes. */
+    chk('Messages: no quick replies straight after the child’s own message', !(await mb.$('main button:has-text("Can we talk on Saturday?")')));
+    php(`db_insert('mentor_messages', ['threadId' => 'chat:NGG-PA-K1', 'kind' => 'Reply', 'subjectId' => 'NGG-PA-K1', 'fromId' => 'NGG-PA-MEN', 'fromName' => 'Ngozi Eke', 'toId' => 'NGG-PA-K1', 'body' => 'How was school today?', 'status' => 'sent', 'readAt' => '', 'createdAt' => now_iso()]); echo 'ok';`);
+    await mb.waitForSelector('main button:has-text("Can we talk on Saturday?")', { timeout: 45000 });
     const sentBefore = q(`(int)db_row("SELECT COUNT(*) c FROM mentor_messages WHERE threadId = 'chat:NGG-PA-K1'")['c']`);
     await mb.click('main button:has-text("Can we talk on Saturday?")');
     await mb.waitForTimeout(500);

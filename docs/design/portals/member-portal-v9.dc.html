@@ -89,7 +89,7 @@ button,input,textarea,select{font:inherit;color:inherit}
     <div style="display:flex;align-items:center;gap:8px"><h2 id="acc-h" style="margin:0;font-size:16px;font-weight:600;flex:1">Account</h2><button onClick="{{ goMoney }}" style="height:44px;padding:0 4px;border:0;background:none;font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px">Full statement<i class="ph ph-caret-right"></i></button></div>
     <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:160px"><span style="font-size:12.5px;color:#6b6b72">To pay now</span><span style="font-size:28px;font-weight:700;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:{{ acc.balFg }}">{{ balance }}</span><span style="align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:{{ acc.pillBg }};color:{{ acc.balFg }};font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px"><i class="{{ acc.pillIcon }}"></i>{{ acc.pill }}</span></div>
-      <sc-if value="{{ owes }}" hint-placeholder-val="{{ true }}"><button onClick="{{ openPaid }}" style="height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">I've made a payment</button></sc-if>
+      <sc-if value="{{ owes }}" hint-placeholder-val="{{ true }}"><button onClick="{{ openAsk }}" style="height:44px;padding:0 16px;border-radius:12px;border:0;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer">Ask my parent</button></sc-if>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:#f0efea;border:1px solid #f0efea;border-radius:12px;overflow:hidden">
       <sc-for list="{{ acc.stats }}" as="a" hint-placeholder-count="4"><div style="background:#fff;padding:10px 12px;display:flex;flex-direction:column;gap:2px"><span style="font-size:12px;color:#6b6b72">{{ a.k }}</span><span style="font-size:14.5px;font-weight:600;font-variant-numeric:tabular-nums;color:{{ a.fg }}">{{ a.v }}</span><span style="font-size:12px;color:#6b6b72">{{ a.s }}</span></div></sc-for>
@@ -548,9 +548,9 @@ button,input,textarea,select{font:inherit;color:inherit}
     <span style="font-size:14px;color:#4a4a50;line-height:1.5">{{ ngv.note }} Volunteers get their own ID, a check-in QR and sessions to shadow.</span>
   </section>
   <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
-    <div style="display:flex;flex-direction:column;gap:4px"><h2 style="margin:0;font-size:16px;font-weight:600">Anchor Circle</h2><span style="font-size:13.5px;color:#4a4a50">Give this code to a parent or guardian so they can follow your progress in the family app. NGG checks every link first.</span></div>
+    <div style="display:flex;flex-direction:column;gap:4px"><h2 style="margin:0;font-size:16px;font-weight:600">Anchor Circle</h2><span style="font-size:13.5px;color:#4a4a50">Give this code, with your name, to a parent or guardian: they connect in the NGG family app and follow your week. Your mentor is connected for you.</span></div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-family:'Geist Mono',monospace;font-size:20px;font-weight:500;letter-spacing:.06em;padding:8px 14px;border-radius:12px;background:#f4f4f2">{{ codeText }}</span><button onClick="{{ toggleCode }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer">{{ codeLabel }}</button></div>
-    <sc-for list="{{ circle.linked }}" as="c" hint-placeholder-count="1"><span style="font-size:13.5px;display:flex;align-items:center;gap:6px"><i class="ph ph-house-line"></i>Linked: {{ c }}</span></sc-for>
+    <sc-for list="{{ circle.linked }}" as="c" hint-placeholder-count="1"><span style="font-size:13.5px;display:flex;align-items:center;gap:6px"><i class="ph ph-users-three"></i>Connected: {{ c }}</span></sc-for>
   </section>
   <section aria-labelledby="si-h" style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
     <h2 id="si-h" style="margin:0;font-size:16px;font-weight:600">Sign-in and password</h2>
@@ -567,18 +567,40 @@ button,input,textarea,select{font:inherit;color:inherit}
   </section>
 </sc-if>
 <sc-if value="{{ onTimetable }}" hint-placeholder-val="{{ false }}">
-  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-    <span style="width:48px;height:48px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:24px;flex-shrink:0"><i class="ph ph-code"></i></span>
-    <span style="flex:1;min-width:200px"><span style="display:block;font-size:12.5px;color:#6b6b72;font-weight:600">Your division</span><span style="display:block;font-size:17px;font-weight:700">{{ division.name }} · {{ division.course }}</span><span style="display:block;font-size:13px;color:#4a4a50;margin-top:2px">{{ division.instructor }} · {{ division.room }}</span></span>
+  <sc-if value="{{ hasMine }}" hint-placeholder-val="{{ true }}">
+    <section aria-labelledby="tt-mine-h" style="background:#0b0b0c;color:#fff;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+      <h2 id="tt-mine-h" style="margin:0;font-size:13px;font-weight:600;color:#f5b026;letter-spacing:.02em">Your class</h2>
+      <sc-for list="{{ ttMine }}" as="c" hint-placeholder-count="1"><div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:20px;font-weight:700">{{ c.course }}</span><span style="font-size:15px">{{ c.day }} · <span style="font-family:'Geist Mono',monospace">{{ c.time }}</span></span><span style="font-size:13.5px;color:#d6d4cc">{{ c.where }}</span></div></sc-for>
+    </section>
+  </sc-if>
+  <sc-if value="{{ noMine }}" hint-placeholder-val="{{ false }}">
+    <div role="note" style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fff;border:1px solid #e8e5dd;font-size:14px;line-height:1.45"><i class="ph ph-info" style="font-size:18px;flex-shrink:0"></i>Your own class isn’t on your centre’s timetable yet. Ask your centre which class is yours.</div>
+  </sc-if>
+  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <span style="width:44px;height:44px;border-radius:14px;background:#0b0b0c;color:#f5b026;display:grid;place-items:center;font-size:22px;flex-shrink:0"><i class="{{ division.icon }}"></i></span>
+    <span style="flex:1;min-width:180px"><span style="display:block;font-size:12.5px;color:#6b6b72;font-weight:600">Your division</span><span style="display:block;font-size:16px;font-weight:700">{{ division.name }}</span><span style="display:block;font-size:13.5px;color:#4a4a50;margin-top:2px">{{ division.course }}</span></span>
   </section>
-  <div style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45"><i class="ph ph-crown-simple" style="font-size:18px;flex-shrink:0"></i>{{ division.chess }}</div>
-  <sc-for list="{{ ttDays }}" as="d" hint-placeholder-count="3">
+  <sc-for list="{{ ttDays }}" as="d" hint-placeholder-count="1">
     <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
-      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">{{ d.d }}</h2>
-      <sc-for list="{{ d.rows }}" as="r" hint-placeholder-count="4"><div style="display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#6b6b72">{{ r.t }}</span><span style="font-size:15px">{{ r.a }}</span><span style="font-size:12.5px;color:#6b6b72">{{ r.w }}</span></div></sc-for>
+      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">Classes on {{ d.d }}</h2>
+      <sc-for list="{{ d.rows }}" as="r" hint-placeholder-count="3"><div style="display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea;background:{{ r.bg }}"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#4a4a50">{{ r.t }}</span><span style="font-size:15px;font-weight:{{ r.fw }}">{{ r.a }}<sc-if value="{{ r.mine }}" hint-placeholder-val="{{ false }}"><span style="margin-left:8px;padding:2px 8px;border-radius:999px;background:#0b0b0c;color:#fff;font-size:12px;font-weight:600">Yours</span></sc-if></span><span style="font-size:12.5px;color:#4a4a50">{{ r.w }}</span></div></sc-for>
     </section>
   </sc-for>
-  <div style="display:flex;gap:8px;flex-wrap:wrap"><button onClick="{{ openTimetableMaker }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;background:#0b0b0c;color:#fff;border-color:#0b0b0c"><i class="ph ph-pencil-simple"></i>Design my own timetable</button><button onClick="{{ printPdf }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-printer"></i>Print</button></div>
+  <sc-if value="{{ noSlots }}" hint-placeholder-val="{{ false }}">
+    <p style="margin:0;padding:14px 16px;background:#fff;border:1px solid #e8e5dd;border-radius:18px;font-size:14px">Your centre hasn’t put its classes on the timetable yet.</p>
+  </sc-if>
+  <sc-if value="{{ hasSat }}" hint-placeholder-val="{{ false }}">
+    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
+      <h2 style="margin:0;padding:12px 16px;font-size:15px;font-weight:600;background:#fafaf8;border-bottom:1px solid #f0efea">The rest of Saturday</h2>
+      <sc-for list="{{ ttSat }}" as="r" hint-placeholder-count="3"><div style="display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:12px;align-items:baseline;padding:10px 16px;border-bottom:1px solid #f0efea"><span style="font-family:'Geist Mono',monospace;font-size:13px;color:#4a4a50">{{ r.t }}</span><span style="font-size:15px">{{ r.a }}</span><span style="font-size:12.5px;color:#4a4a50">{{ r.w }}</span></div></sc-for>
+    </section>
+  </sc-if>
+  <div style="display:flex;gap:10px;padding:12px 14px;border-radius:14px;background:#fdf6e3;color:#7a5600;font-size:13.5px;line-height:1.45"><i class="ph ph-crown-simple" style="font-size:18px;flex-shrink:0"></i>{{ division.chess }}</div>
+  <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+    <h2 style="margin:0;font-size:16px;font-weight:700">Make your whole week</h2>
+    <p style="margin:0;font-size:14px;color:#4a4a50;line-height:1.45">Your NGG classes go in first. Then add your school lessons and we fit study time around them. Download it or print it.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button onClick="{{ openTimetableMaker }}" style="height:44px;padding:0 16px;border-radius:12px;border:1px solid #0b0b0c;background:#0b0b0c;color:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-pencil-simple"></i>Make my week</button><button onClick="{{ printPdf }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px"><i class="ph ph-printer"></i>Print this</button></div>
+  </section>
 </sc-if>
 
 <sc-if value="{{ onCompanion }}" hint-placeholder-val="{{ false }}">
@@ -632,7 +654,7 @@ button,input,textarea,select{font:inherit;color:inherit}
 
 <sc-if value="{{ onMoney }}" hint-placeholder-val="{{ false }}">
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
-    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">To pay</span><span style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">{{ balance }}</span><span style="font-size:13px;color:#4a4a50">Membership, dues and any fines.</span><button onClick="{{ openPaid }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;align-self:flex-start;margin-top:6px">I've made a payment</button></section>
+    <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">To pay</span><span style="font-size:24px;font-weight:700;font-variant-numeric:tabular-nums">{{ balance }}</span><span style="font-size:13px;color:#4a4a50">Membership, dues and any fines.</span><button onClick="{{ openAsk }}" style="height:44px;padding:0 14px;border-radius:12px;border:1px solid #d6d4cc;background:#fff;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;align-self:flex-start;margin-top:6px">Ask my parent</button></section>
     <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:6px"><span style="font-size:12.5px;color:#6b6b72;font-weight:600">Cost of your training</span><span style="font-size:24px;font-weight:700">{{ mou.cost }}</span><span style="font-size:13px;color:#4a4a50;line-height:1.45">{{ mou.note }}</span><span style="align-self:flex-start;height:24px;padding:0 9px;border-radius:999px;background:#e9f6ec;color:#1d6b30;font-size:12px;font-weight:600;display:inline-flex;align-items:center;margin-top:4px">MOU done</span></section>
   </div>
   <section style="background:#fff;border:1px solid #e8e5dd;border-radius:18px;overflow:hidden">
@@ -1237,7 +1259,7 @@ class Component extends DCLogic {
       ["Add proof for a mission", "ph ph-camera", () => this.goTop("today")],
       ["Message my mentor", "ph ph-chat-circle-text", () => this.goTop("mentor")],
       ["Show my gate pass", "ph ph-qr-code", () => set({ pal: false, sheet: { k: "gate" } })],
-      ["I've made a payment", "ph ph-currency-ngn", () => set({ pal: false, scr: "records", rKind: "I've made a payment", rF: {} })],
+      ["Ask my parent to pay", "ph ph-hand-waving", () => set({ pal: false, scr: "money" })],
       ["Ask for a change of mentor", "ph ph-arrows-left-right", () => set({ pal: false, sheet: { k: "change" }, sText: "", sPick: null })],
       ["Tell us about something", "ph ph-lifebuoy", () => this.goTop("help")]
     ];
@@ -1282,7 +1304,9 @@ class Component extends DCLogic {
     out.tally = { ...D.tally, xpW: D.tally.xp + "%" };
     // timetable + curriculum
     out.division = D.division;
-    out.ttDays = D.timetable.map(d => ({ d: d.d, rows: d.rows.map(([t, a, w]) => ({ t, a, w, mine: /Coding|mentor/.test(a) })) }));
+    out.ttDays = D.timetable.map(d => ({ d: d.d, rows: d.rows.map(([t, a, w]) => ({ t, a, w, mine: /Coding/.test(a), bg: /Coding/.test(a) ? "#fdf6e3" : "#fff", fw: /Coding/.test(a) ? "700" : "400" })) }));
+    out.ttMine = [{ day: "Saturday", time: "10:00–11:30", course: "Coding", where: "Lab 1 · Mr Bello" }]; out.hasMine = true; out.noMine = false; out.ttSat = []; out.hasSat = false; out.noSlots = false;
+    out.division = Object.assign({ icon: "ph ph-code" }, out.division || {});
     out.curWeeks = D.curriculum.map(c => ({ ...c, fg: c.s === "Done" ? "#1d6b30" : c.s === "In progress" ? "#7a5600" : "#6b6b72", icon: c.s === "Done" ? "ph-fill ph-check-circle" : c.s === "In progress" ? "ph-fill ph-circle-half" : "ph ph-lock-simple" }));
     out.dlPdf = () => this.toast("Opening your curriculum as a PDF"); out.dlDoc = () => this.toast("Downloading your curriculum for Word");
     out.openTimetableMaker = () => this.toast("Opens the Timetable Maker");
@@ -1314,7 +1338,7 @@ class Component extends DCLogic {
       };
     }
     out.finesList = D.fines.map(([d, t, a, st]) => ({ d, t, a: naira(a), st, fg: st === "Owed" ? "#b0361c" : "#6b6b72", strike: st === "Waived" ? "line-through" : "none" }));
-    out.openPaid = () => set({ scr: "records", rKind: "I've made a payment", rF: {} });
+    out.openAsk = () => set({ scr: "money" });
     out.printPdf = () => this.toast("Opening print view · save as PDF");
     // records
     const R = D.records;

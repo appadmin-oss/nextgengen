@@ -1239,6 +1239,16 @@ function sg_report(array $p, bool $self = false): array {
         if (!$subject || !mentor_scope_ok($reach, $subject)) return ['ok' => false, 'error' => 'not_found'];
     }
     $centre = (string)($subject['centre'] ?? ($gate['mentor']['centre'] ?? '') ?: ($me['centre'] ?? ''));
+    return sg_case_open($me, $subject, trim((string)($p['subjectName'] ?? '')), $centre, $cat, $body, (string)($p['ip'] ?? ''));
+}
+
+/**
+ * Open one safeguarding case and tell the centre's officer — the one way a case
+ * is filed, whoever files it: a mentor's report (sg_report), a child about
+ * themselves, or a Summer School incident of the Safeguarding kind
+ * (summer-incidents.php). The daily cap is the reporter's, on every path.
+ */
+function sg_case_open(array $me, ?array $subject, string $subjectName, string $centre, string $cat, string $body, string $ip = ''): array {
     if (sg_report_capped((string)$me['memberId'])) return sg_report_refusal((string)$me['memberId'], $centre);
     $officer = sg_officer($centre);
     $now = now_iso();
@@ -1248,7 +1258,7 @@ function sg_report(array $p, bool $self = false): array {
         if (!db_row('SELECT 1 FROM safeguarding_cases WHERE caseNo = ?', [$n])) $caseNo = $n;
     }
     db_insert('safeguarding_cases', ['caseNo' => $caseNo, 'reporterId' => (string)$me['memberId'], 'reporterName' => (string)($me['fullName'] ?? ''),
-        'subjectId' => (string)($subject['memberId'] ?? ''), 'subjectName' => (string)($subject['fullName'] ?? trim((string)($p['subjectName'] ?? ''))),
+        'subjectId' => (string)($subject['memberId'] ?? ''), 'subjectName' => (string)($subject['fullName'] ?? $subjectName),
         'centre' => $centre, 'category' => $cat, 'body' => mb_substr($body, 0, 8000),
         'officerId' => (string)($officer['memberId'] ?? ''), 'officerName' => (string)($officer['fullName'] ?? ''),
         'status' => 'received', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -1256,7 +1266,7 @@ function sg_report(array $p, bool $self = false): array {
         try { send_mail((string)$officer['email'], 'Safeguarding concern ' . $caseNo,
             '<p>A safeguarding concern was reported at ' . htmlspecialchars($centre) . '. Case ' . $caseNo . '.</p><p>Open the Control Room → People → Mentorship → Safeguarding to read it. The details are not sent by email.</p>'); } catch (Throwable $e) {}
     }
-    audit('safeguarding.report', (string)$me['memberId'], $caseNo, ['centre' => $centre], (string)($p['ip'] ?? ''));
+    audit('safeguarding.report', (string)$me['memberId'], $caseNo, ['centre' => $centre], $ip);
     return ['ok' => true, 'caseNo' => $caseNo, 'officerName' => (string)($officer['fullName'] ?? 'the safeguarding officer'),
             'receivedBy' => $officer ? 'officer' : 'unassigned'];
 }

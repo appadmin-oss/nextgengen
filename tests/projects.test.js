@@ -99,7 +99,7 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT, path.join(ROOT, '_router.php')], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: require('./_responsive-probe').chromiumPath(require('fs')) } : {});
     const q = sql => JSON.parse(php(`echo json_encode(${sql});`));
     const openPortal = async pg => {
       await pg.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
@@ -199,6 +199,50 @@ const until = (pg, fn, arg, ms) => pg.waitForFunction(fn, arg, { timeout: ms || 
     chk('the lead sees Team A finished', /Team A 2 of 2 done/.test(await text(L, '.mpj')));
     await L.selectOption('select[aria-label="Part for Kemi Adewale"]', 'excused');
     chk('the lead excuses a part, and the tally stops counting it', await until(L, () => /Team B 0 of 1 done/.test(document.querySelector('.mpj').innerText)));
+
+    console.log('an admin sees and runs projects from the Control Room');
+    php(`db_insert('members', ['memberId' => 'NGG-PJ-ADM', 'fullName' => 'Ada Admin', 'email' => 'ada.admin@pj.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);`);
+    const tokA = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-PJ-ADM'"), true);`);
+    const actx = await browser.newContext({ viewport: { width: 1280, height: 1000 } });
+    await actx.addCookies([{ name: 'ngg_sess', value: tokA, domain: '127.0.0.1', path: '/', httpOnly: true }, { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+    const A = await actx.newPage(); A.errs = [];
+    A.on('pageerror', e => A.errs.push(String(e).slice(0, 200)));
+    await A.goto(BASE + '/control/mentorship/ms-projects', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(A);
+    const seen = await until(A, () => /Book drive/.test(document.body.innerText) && /Parts done/.test(document.body.innerText), null, 60000);
+    chk('Mentorship › Projects lists the projects leads set in the mentor portal, with the countdown and the figures', seen && /past the finish date/.test(await text(A, 'main')));
+    await A.click('.cr-head-acts button:has-text("New project")');
+    await A.waitForSelector('#crf-title', { timeout: 20000 });
+    await A.fill('#crf-title', 'Open day at the centre');
+    await A.fill('#crf-dueOn', due);
+    await A.click('[role="checkbox"]:has-text("Tunde Bakare")');
+    await A.click('button[role="switch"][aria-label^="Every child at Egbeda"]');
+    await A.fill('#crf-groups', 'Red, Blue');
+    await A.click('button[type=submit]:has-text("Set the project")');
+    await until(A, () => /Project set/.test(document.body.innerText), null, 20000);
+    const made = q(`db_all("SELECT pp.kind, pp.personId, pp.groupName FROM project_people pp JOIN projects pr ON pr.projectId = pp.projectId WHERE pr.title = 'Open day at the centre' ORDER BY pp.kind, pp.personId")`);
+    const kids = made.filter(x => x.kind === 'member');
+    chk('an admin sets a project for a mentor and every child at the centre, shared out across two groups',
+      made.length === 4 && made.some(x => x.kind === 'mentor' && x.personId === 'MEN-PJ-M') && kids.length === 3
+      && new Set(made.map(x => x.groupName)).size === 2 && made.every(x => ['Red', 'Blue'].includes(x.groupName)));
+    chk('…and it is on the list, with its groups', await until(A, () => /Open day at the centre/.test(document.body.innerText) && /Red 0\/\d/.test(document.body.innerText), null, 20000));
+    await A.click('main tr:has-text("Open day at the centre")');
+    await A.waitForSelector('.cr-sheet-sec:has-text("Mariam Yusuf") button:has-text("Set part")', { timeout: 20000 });
+    await A.click('.cr-sheet-sec .cr-list-row:has-text("Mariam Yusuf") button:has-text("Set part")');
+    // text-is, not has-text: "Not done yet" contains "done" too.
+    await A.waitForSelector('[role="radio"]:text-is("Done")', { timeout: 20000 });
+    await A.click('[role="radio"]:text-is("Done")');
+    await A.click('button[type=submit]:has-text("Save")');
+    chk('…and sets a child’s part from the project’s drawer', await until(A, () => true, null, 500) && (await (async () => { for (let i = 0; i < 40; i++) { const st = q(`(string)(db_row("SELECT pp.status FROM project_people pp JOIN projects pr ON pr.projectId = pp.projectId WHERE pr.title = 'Open day at the centre' AND pp.personId = 'NGG-PJ-K1'")['status'] ?? '')`); if (st === 'done') return true; await A.waitForTimeout(250); } return false; })()));
+    chk('no page errors (Control Room)', A.errs.length === 0);
+    if (A.errs.length) console.log(A.errs.slice(0, 6));
+
+    console.log('a child leaves; the lead can still finish the project');
+    php(`db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-PJ-K3'"); echo 'ok';`);
+    await L.click('.mpj-card:has-text("Clean-up day") button:has-text("Mark finished")');
+    chk('“Mark finished” works when somebody on it has since left', await until(L, () => /Project marked finished/.test(document.body.innerText)));
+    chk('…and it is finished', q(`db_row("SELECT status FROM projects WHERE title = 'Clean-up day'")['status']`) === 'closed');
+
     chk('no page errors', L.errs.length + K.errs.length + M.errs.length === 0);
     if (L.errs.length + K.errs.length + M.errs.length) console.log(L.errs.concat(K.errs, M.errs).slice(0, 6));
   } catch (e) {

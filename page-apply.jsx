@@ -453,7 +453,7 @@ function ClubApplyPage({ setPage }) {
             )}
             <section className="apf-card" aria-labelledby="apf-h1">
               <div className="apf-card-h"><h1 id="apf-h1">{st.t}</h1><span>{st.s}</span></div>
-              {tried[step] && errs.length > 0 && (
+              {tried[st.id] && errs.length > 0 && (
                 <div className="apf-errsum" role="alert">
                   <b><i className="ph ph-warning-circle" aria-hidden="true"/>{errs.length === 1 ? "One thing needs fixing" : errs.length + " things need fixing"}</b>
                   {errs.map(([f, e]) => <button key={f.id} type="button" onClick={() => focusField(f.id)}>{(f.label || (f.type === "agree" ? "Agreements" : "This")) + ": " + e}</button>)}

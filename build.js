@@ -42,7 +42,9 @@ const ORDER = [
   'auth.jsx',
   'command.jsx',
   'tweaks-panel.jsx',
+  'lesson-blocks.jsx',
   'components.jsx',
+  'lesson-editor.jsx',
   'table.jsx',
   'card-photo.jsx',
   'card-template.jsx',
@@ -78,6 +80,8 @@ const ORDER = [
   'src/modules/control/cr-tab-learning.jsx',
   'src/modules/control/cr-tab-publishing.jsx',
   'src/modules/control/cr-tab-system.jsx',
+  'src/modules/control/cr-tab-wifi.jsx',
+  'src/modules/control/cr-tab-support.jsx',
   'src/modules/control/cr-tab-analytics.jsx',
   'src/modules/control/cr-tab-mentors.jsx',
   'src/modules/control/cr-tab-mentorship.jsx',
@@ -99,6 +103,7 @@ const ORDER = [
   'src/modules/timetable/tt-app.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
+  'page-learn.jsx',
   'src/modules/portal/member-results.jsx',
   'src/modules/dc/dc-runtime.jsx',
   'src/modules/mentor15/mp15-view.jsx',
@@ -109,16 +114,23 @@ const ORDER = [
   'src/modules/instructor6/ip6-app.jsx',
   'src/modules/guide/guide.jsx',
   'src/modules/auth/mfa.jsx',
+  'src/modules/support/support-desk.jsx',
   'src/modules/member9/mp9-view.jsx',
   'src/modules/member9/mp9-app.jsx',
   'src/modules/member9/mp9-more.jsx',
   'src/modules/club3/cp3-view.jsx',
   'src/modules/club3/sd3-view.jsx',
+  'src/modules/club3/cp3-wifi.jsx',
   'src/modules/club3/cp3-meta.jsx',
   'src/modules/club3/cp3-directory.jsx',
   'src/modules/club3/cp3-app.jsx',
+  'src/modules/summer3/ss3-view.jsx',
+  'src/modules/summer3/ss3-app.jsx',
   'src/modules/community3/cm3-view.jsx',
   'src/modules/community3/cm3-app.jsx',
+  'src/modules/family3/fp3-view.jsx',
+  'src/modules/family3/fp3-data.jsx',
+  'src/modules/family3/fp3-app.jsx',
   'page-family.jsx',
   'page-book.jsx',
   'page-analytics.jsx',
@@ -201,6 +213,7 @@ async function build() {
   // index.html MUST list the same files in the same order, or the prod bundle
   // silently diverges from what dev runs. Fail the build if they don't match.
   validateOrderAgainstIndex();
+  validateCssBraces();
 
   // The source treats classic-script top-level bindings (e.g.
   // `const { useState, useEffect } = React;` in components.jsx) as
@@ -319,7 +332,14 @@ async function build() {
   // Insert the bundled scripts + a preload right after the React tags
   prod = prod.replace(
     /(<script src="vendor\/react-dom\.production\.min\.js"><\/script>\s*)/,
-    `$1<link rel="modulepreload" href="${A('app.min.js')}"/>\n`
+    /* `preload as="script"`, NOT `modulepreload`.
+       The bundle is a classic script (`<script defer>`), and a
+       modulepreload is fetched with module semantics — so the browser could
+       not reuse it and downloaded the whole bundle a SECOND time. The
+       browser's own Resource Timing said so: two entries, 4.97 MB each,
+       one initiated by the link and one by the script tag. On a phone on
+       metered data that is the single most expensive line in the build. */
+    `$1<link rel="preload" as="script" href="${A('app.min.js')}"/>\n`
     + ['data.js', 'photos.js', 'api-client.js', 'outbox.js', 'app.min.js']
         .map(f => `<script defer src="${A(f)}"></script>`).join('\n') + '\n'
   );
@@ -451,6 +471,27 @@ async function build() {
 // Ensure the compile ORDER and index.html's JSX <script> tags agree. A
 // mismatch means the prod bundle would run different code than dev — a
 // class of bug that is invisible until a specific page breaks in prod only.
+/* A stylesheet with one unclosed brace is not an error to a browser: every
+   rule after it is read as nested inside the open block. An `@media (pointer:
+   coarse) {` lost its `}` once, and the whole Family Portal (and everything
+   after it in styles-app.css) applied on touch screens only — a laptop got an
+   unstyled page and nothing failed. Refuse to build a sheet like that. */
+function validateCssBraces() {
+  for (const f of ['styles.css', 'styles-app.css']) {
+    const p = path.join(ROOT, f);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+      .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, m => m.replace(/[{}]/g, ' '));
+    let depth = 0, line = 1, openedAt = 0;
+    for (const c of src) {
+      if (c === '\n') line++;
+      if (c === '{') { if (depth === 0) openedAt = line; depth++; }
+      if (c === '}') { depth--; if (depth < 0) { console.error(`[build] ${f}:${line} closes a brace that was never opened`); process.exit(1); } }
+    }
+    if (depth !== 0) { console.error(`[build] ${f}: a block opened at line ${openedAt} is never closed, so every rule after it is nested inside it`); process.exit(1); }
+  }
+}
+
 function validateOrderAgainstIndex() {
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const tags = [];

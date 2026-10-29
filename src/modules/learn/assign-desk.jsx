@@ -533,46 +533,102 @@ function AsdHandIn({ a, filesMax, onClose, onDone }) {
 }
 
 /* ── The study helper (member_curriculum_ask) ────────────────────────────────
- * A member picks a lesson they are taking and asks about it. The AI answers
- * from the lesson only, as a tutor, within a daily allowance the server
- * counts; it never gives answers to the lesson's checks.
+ *
+ * It was a form: pick a lesson, type a question, get one paragraph, and the
+ * previous answer was wiped on the next press. The server only ever saw the
+ * latest question, so a child who read an explanation and said "I still don't
+ * get it" was starting from nothing — which is the one thing being stuck is
+ * never like. That is why it was useless, and it is a thread now.
+ *
+ * The openers exist because "ask a question" is itself hard when you do not
+ * know what you do not understand. They are the three things a stuck child
+ * actually needs, in their own words.
  */
+const STH_OPENERS = [
+  "Explain this lesson to me like I am ten.",
+  "I read it but I still don\u2019t understand the main idea.",
+  "Give me an example I can try myself.",
+];
+
 function CurStudyHelper({ units }) {
   const open = (units || []).filter(u => !u.progress || u.progress.status !== "completed");
   const list = open.length ? open : (units || []);
   const [unitId, setUnitId] = React.useState(list[0] ? list[0].unitId : "");
   const [q, setQ] = React.useState("");
   const [busy, setBusy] = React.useState(false);
-  const [res, setRes] = React.useState(null);   // {answer, left} | {error}
+  const [thread, setThread] = React.useState([]);     // [{role:'me'|'ai', text}]
+  const [err, setErr] = React.useState("");
+  const [left, setLeft] = React.useState(null);
+  const endRef = React.useRef(null);
+  React.useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ block: "nearest" }); }, [thread, busy]);
   if (!list.length) return null;
-  const ask = async (e) => {
-    e.preventDefault();
-    if (q.trim().length < 4 || busy) return;
-    setBusy(true); setRes(null);
-    try { const r = await NGGApi.member.curriculumAsk(unitId, q.trim()); setRes(r); }
-    catch (err) {
-      const c = err && err.code;
-      setRes({ error: c === "daily_limit" ? "You've used today's questions. Ask your instructor, or come back tomorrow."
-        : c === "ai_disabled" ? "The study helper isn't switched on yet. Ask your instructor or mentor."
-        : c === "question_too_short" ? "Ask a little more — a full question gets a better answer."
-        : "The study helper couldn't answer just now. Try again in a minute." });
+
+  const send = async (text) => {
+    const question = String(text || "").trim();
+    if (question.length < 4 || busy) return;
+    setBusy(true); setErr(""); setQ("");
+    /* The thread as it was BEFORE this question — what the server needs to
+       understand the follow-up. */
+    const history = thread.map(t => ({ role: t.role, text: t.text }));
+    setThread(t => t.concat([{ role: "me", text: question }]));
+    try {
+      const r = await NGGApi.member.curriculumAsk(unitId, question, history);
+      setThread(t => t.concat([{ role: "ai", text: r.answer, care: !!r.safeguarding }]));
+      if (typeof r.left === "number") setLeft(r.left);
+    } catch (e) {
+      const c = e && e.code;
+      setErr(c === "daily_limit" ? "You\u2019ve used today\u2019s questions. Ask your instructor, or come back tomorrow."
+        : c === "ai_disabled" ? "The study helper isn\u2019t switched on yet. Ask your instructor or mentor."
+        : c === "question_too_short" ? "Ask a little more \u2014 a full question gets a better answer."
+        : "The study helper couldn\u2019t answer just now. Try again in a minute.");
+      // Put the question back so nobody has to retype it.
+      setThread(t => t.slice(0, -1)); setQ(question);
     } finally { setBusy(false); }
   };
-  const label = u => (u.path ? u.path.code + " · " : "") + u.title;
+  const label = u => (u.path ? u.path.code + " \u00b7 " : "") + u.title;
+  const pickLesson = (v) => { setUnitId(v); setThread([]); setErr(""); };
+
   return (
     <section className="sth" aria-labelledby="sth-h">
       <div className="sth-head"><i className="ph ph-sparkle" aria-hidden="true"/><div><h3 id="sth-h">Study helper</h3>
-        <p>Stuck on a lesson? Ask about it. It explains and asks you a question back — it won't do your assignment for you.</p></div></div>
-      <form className="sth-form" onSubmit={ask}>
-        <label className="sth-field"><span>Lesson</span>
-          <select className="sth-input" value={unitId} onChange={e => { setUnitId(e.target.value); setRes(null); }}>
-            {list.map(u => <option key={u.unitId} value={u.unitId}>{label(u)}</option>)}</select></label>
-        <label className="sth-field"><span>Your question</span>
-          <textarea className="sth-input is-area" rows={3} maxLength={600} value={q} onChange={e => setQ(e.target.value)} placeholder="e.g. Why does F major have a B flat?"/></label>
-        <div className="sth-row"><span className="sth-left" aria-live="polite">{res && typeof res.left === "number" ? res.left + " questions left today" : ""}</span>
-          <button type="submit" className="sth-btn" disabled={busy || q.trim().length < 4}>{busy ? "Thinking…" : "Ask"}</button></div>
+        <p>Stuck on a lesson? Ask, then keep asking until it makes sense \u2014 it remembers what you have already been told. It won\u2019t do your assignment for you.</p></div></div>
+
+      <label className="sth-field"><span>Lesson</span>
+        <select className="sth-input" value={unitId} onChange={e => pickLesson(e.target.value)}>
+          {list.map(u => <option key={u.unitId} value={u.unitId}>{label(u)}</option>)}</select></label>
+
+      {thread.length > 0 && (
+        <ol className="sth-thread" aria-label="Your conversation" aria-live="polite">
+          {thread.map((t, i) => (
+            <li key={i} className={"sth-turn is-" + t.role + (t.care ? " is-care" : "")}>
+              <span className="sth-who">{t.role === "me" ? "You" : "Study helper"}</span>
+              <p className="sth-bubble">{t.text}</p>
+            </li>
+          ))}
+          {busy && <li className="sth-turn is-ai"><span className="sth-who">Study helper</span><p className="sth-bubble is-wait">Thinking\u2026</p></li>}
+          <li ref={endRef} aria-hidden="true"/>
+        </ol>
+      )}
+
+      {thread.length === 0 && !busy && (
+        <div className="sth-openers" role="group" aria-label="Ways to start">
+          {STH_OPENERS.map((o, i) => <button key={i} type="button" className="sth-opener" onClick={() => send(o)}>{o}</button>)}
+        </div>
+      )}
+
+      <form className="sth-form" onSubmit={e => { e.preventDefault(); send(q); }}>
+        <label className="sth-field"><span className="sr-only">Your question</span>
+          <textarea className="sth-input is-area" rows={2} maxLength={600} value={q} disabled={busy}
+                    onChange={e => setQ(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(q); } }}
+                    placeholder={thread.length ? "Ask a follow-up\u2026" : "e.g. Why does F major have a B flat?"}/></label>
+        <div className="sth-row">
+          <span className="sth-left" aria-live="polite">{left !== null ? left + " questions left today" : ""}</span>
+          {thread.length > 0 && <button type="button" className="sth-restart" onClick={() => { setThread([]); setErr(""); }}>Start again</button>}
+          <button type="submit" className="sth-btn" disabled={busy || q.trim().length < 4}>{busy ? "Thinking\u2026" : thread.length ? "Send" : "Ask"}</button>
+        </div>
       </form>
-      {res ? <div className={"sth-ans" + (res.error ? " is-err" : res.safeguarding ? " is-care" : "")} role="status" aria-live="polite">{res.error || res.answer}</div> : null}
+      {err ? <div className="sth-ans is-err" role="alert">{err}</div> : null}
     </section>
   );
 }

@@ -126,9 +126,18 @@ const WIDTHS = [
 /** Resolve the browser this image actually has, rather than the revision
  *  playwright-core happens to pin. */
 function chromiumPath(fs) {
-  return process.env.CHROMIUM_PATH
-    || (fs.existsSync('/opt/pw-browsers/chromium-1194/chrome-linux/chrome')
-        ? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' : undefined);
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+  // Any revision the image carries, in either layout: Playwright moved the binary from
+  // chrome-linux/ to chrome-linux64/, and a pinned revision number goes stale with it.
+  const base = '/opt/pw-browsers';
+  if (!fs.existsSync(base)) return undefined;
+  for (const d of fs.readdirSync(base).filter(x => /^chromium-\d+$/.test(x)).sort().reverse()) {
+    for (const sub of ['chrome-linux64', 'chrome-linux']) {
+      const f = base + '/' + d + '/' + sub + '/chrome';
+      if (fs.existsSync(f)) return f;
+    }
+  }
+  return undefined;
 }
 
 function loadChromium() {

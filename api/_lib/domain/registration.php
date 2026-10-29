@@ -300,6 +300,20 @@ function form_default_fields(): array {
     ];
 }
 
+/** Every faculty or division either programme teaches — the volunteer form's
+ *  own default, kept here so reading the live form never recurses into it. */
+function volunteer_faculty_options_default(): array {
+    $out = function_exists('club_catalogue') ? array_keys(club_catalogue()) : [];
+    foreach (academy_faculties() as $f) if (!in_array($f, $out, true)) $out[] = $f;
+    return array_values($out);
+}
+/** Every course either programme teaches, Club first. */
+function volunteer_courses_default(): array {
+    $out = function_exists('club_courses') ? club_courses() : [];
+    foreach (academy_courses() as $c) if (!in_array($c, $out, true)) $out[] = $c;
+    return array_values($out);
+}
+
 /** The public volunteer form. The first block is structural (the wizard +
  *  approval pipeline depend on these keys) and locked; admins append their
  *  own custom questions after them, which render on the public form. */
@@ -320,9 +334,22 @@ function volunteer_default_fields(): array {
         // Faculty is the teaching group mentors & instructors belong to. Locked
         // key (the /v-status board + validation read it), but its OPTIONS are
         // admin-editable here — the single source of truth for the catalogue.
-        ['key' => 'faculty', 'label' => 'Faculty', 'type' => 'choice', 'required' => false, 'locked' => true, 'options' => academy_faculties(),
+        /* BOTH programmes. A volunteer may teach on the Club, on Summer School
+           or on both, and offering Summer's faculties alone made every Club
+           division — and so every Club course under it — unreachable from this
+           form. The course picker filters on whatever is chosen here. */
+        ['key' => 'faculty', 'label' => 'Faculty or division', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'options' => volunteer_faculty_options_default(),
          'help' => 'Which teaching group you would join. Required for mentors and instructors.',
-         'adminHelp' => 'The academy / faculty catalogue — edit these options freely (add/rename/remove). Drives the /v-status faculty breakdown.'],
+         'adminHelp' => 'Both programmes: the Club\'s divisions and Summer School\'s faculties. Edit freely (add/rename/remove). Drives the /v-status faculty breakdown.'],
+        /* An instructor has to be able to say WHAT they teach. There was no
+           course field on this form at all, so the one question that decides
+           where an instructor is placed was never asked — and the list that
+           stood in for it was read off the children's Summer School form. */
+        ['key' => 'course', 'label' => 'Course you would teach', 'type' => 'choice', 'required' => false, 'locked' => true,
+         'optionsFrom' => 'faculty', 'options' => volunteer_courses_default(),
+         'help' => 'Required if you are applying to be an instructor. Pick your faculty or division first.',
+         'adminHelp' => 'Filtered by the faculty chosen above. Accepts any course either programme teaches.'],
         ['key' => 'why', 'label' => 'Why you', 'type' => 'longtext', 'required' => false, 'locked' => true],
     ];
 }
@@ -2365,7 +2392,16 @@ function admin_registrations_list(array $p): array {
     if ($rows) {
         $ids = array_column($rows, 'studentId');
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT studentId, type FROM consents WHERE status = 'granted' AND studentId IN $in", $ids) as $cr) {
+        /* The LATEST row per type, not any granted row ever.
+           `consents` is an append-only ledger and every other reader
+           lets the last row win. This one did not, so a child whose
+           parent granted a consent and later declined or withdrew it
+           still read as granted here — the decision was recorded
+           correctly and then ignored by the screen that acts on it. */
+        foreach (db_all("SELECT studentId, type FROM consents c
+                          WHERE studentId IN $in AND status = 'granted'
+                            AND id = (SELECT MAX(id) FROM consents c2
+                                       WHERE c2.studentId = c.studentId AND c2.type = c.type)", $ids) as $cr) {
             $consents[(string)$cr['studentId']][] = (string)$cr['type'];
         }
     }
@@ -3841,9 +3877,32 @@ function consent_handle_for(string $subjectId): string {
  * how the decision was obtained and who recorded it is a checkbox, not
  * evidence, and this is the record the programme would have to stand behind.
  */
+/**
+ * Record a decision about a consent.
+ *
+ * THREE STATUSES, NOT TWO, AND THE THIRD IS NOT A SYNONYM.
+ *
+ *   granted    they agreed
+ *   declined   they were asked and said no
+ *   withdrawn  they agreed, and have since taken it back
+ *
+ * `withdrawn` used to be refused as a bad status, which made the bulk
+ * action that sends it fail on every row with no usable reason. The
+ * obvious repair — map it onto `declined` — writes down the wrong fact.
+ * "Never agreed" and "agreed and then withdrew" are different things to
+ * a family and different things in law: only the second means data was
+ * lawfully collected and must now stop being used. Collapsing them
+ * would leave the record unable to answer the one question anybody asks
+ * afterwards, which is when the permission stopped.
+ *
+ * Nothing downstream has to change to understand it: every reader tests
+ * for `granted`, and a withdrawal is not granted.
+ */
+const CONSENT_STATUSES = ['granted', 'declined', 'withdrawn'];
+
 function consent_record(string $subjectId, string $type, string $status, string $method, string $actorName): array {
     if (!isset(CONSENT_TYPES[$type])) return ['ok' => false, 'error' => 'bad_type'];
-    if (!in_array($status, ['granted', 'declined'], true)) return ['ok' => false, 'error' => 'bad_status'];
+    if (!in_array($status, CONSENT_STATUSES, true)) return ['ok' => false, 'error' => 'bad_status'];
     $method = trim($method);
     if ($method === '') return ['ok' => false, 'error' => 'method_required'];
     db_insert('consents', [
@@ -3851,6 +3910,12 @@ function consent_record(string $subjectId, string $type, string $status, string 
         'method' => mb_substr($method, 0, 60), 'actorName' => mb_substr(trim($actorName), 0, 120),
         'createdAt' => now_iso(),
     ]);
+    /* Withdrawing site visibility takes a published testimonial off the home
+       page, and that page is cached. The read already re-checks consent on
+       every request (domain/testimonials.php), so without this purge the
+       words would linger for the cache's TTL and no longer than that — but
+       "no longer than two minutes" is not what withdrawing consent means. */
+    if ($type === 'site_visibility' && function_exists('cache_invalidate')) cache_invalidate('testimonials');
     return ['ok' => true];
 }
 

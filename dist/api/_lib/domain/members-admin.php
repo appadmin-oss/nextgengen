@@ -45,8 +45,17 @@ function member_segment_sql(string $segment): ?array {
             return ["status = 'active' AND memberId NOT IN (
                        SELECT memberId FROM member_stats WHERE lastActiveAt >= ?)", [$dormantCut]];
         case 'no_consent':
+            /* The LATEST decision, not any granted row ever. This read
+               the whole ledger, so somebody who granted site visibility
+               and later declined or withdrew it did not appear here —
+               the segment that exists to find people whose photo may
+               not be shown was blind to everybody who had changed their
+               mind, which is the only group it really needed to find. */
             return ["role = 'member' AND memberId NOT IN (
-                       SELECT studentId FROM consents WHERE type = 'site_visibility' AND status = 'granted')", []];
+                       SELECT studentId FROM consents c
+                        WHERE c.type = 'site_visibility' AND c.status = 'granted'
+                          AND c.id = (SELECT MAX(id) FROM consents c2
+                                       WHERE c2.studentId = c.studentId AND c2.type = c.type))", []];
     }
     return member_conduct_segment_sql($segment);
 }
@@ -282,6 +291,8 @@ function member_merge_policy(): array {
         'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_progress'        => 'MOVE_UNIQUE',
+        'lesson_feedback'        => 'MOVE_UNIQUE',    // one tap per person per lesson; the survivor's stands
+        'study_drills'           => 'MOVE',           // their practice history; both accounts' goes come with them
         'member_state'           => 'MOVE_UNIQUE',
         'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',
@@ -296,6 +307,12 @@ function member_merge_policy(): array {
         'community_video_progress' => 'MOVE_UNIQUE',  // one place in a video per person; the survivor's stands
         'event_rsvps'            => 'MOVE_UNIQUE',
         'engagement_snapshots'   => 'MOVE_UNIQUE',
+        /* One line per person per session, so a merge keeps the survivor's
+           where both records wrote about the same Saturday. Their own words
+           are not merged, averaged or concatenated — and a published one
+           keeps pointing at the surviving member, whose consent is what the
+           public page reads (domain/testimonials.php). */
+        'testimonials'           => 'MOVE_UNIQUE',
         'auth_sessions'          => 'DROP',           // sign-in state, not history
         'device_sessions'        => 'DROP',
         'notifications'          => 'MOVE',
@@ -305,6 +322,13 @@ function member_merge_policy(): array {
         'mentor_supports'        => 'MOVE',
         'circle_links'           => 'MOVE',
         'guardian_wards'         => 'MOVE',           // a parent's link follows the child
+        'guardian_notices'       => 'MOVE',           // a report about the child stays about the child
+        'mentor_slots'           => 'MOVE',           // a booked family meeting follows the child
+        'member_collectors'      => 'MOVE',           // who may collect them is a fact about the child
+        'notification_state'     => 'MOVE_UNIQUE',    // read/dismissed marks; the survivor's own marks stand
+        'support_cases'          => 'MOVE',           // the cases about a child follow the surviving record
+        'learn_state'            => 'MOVE_UNIQUE',    // notes and saves per lesson; the survivor's own stand
+        'wifi_region_leads'      => 'MOVE_UNIQUE',    // leading a Wi-Fi region follows the surviving staff record
         'circle_confirmations'   => 'MOVE',
         'circle_remarks'         => 'MOVE',
         'post_comments'          => 'MOVE',

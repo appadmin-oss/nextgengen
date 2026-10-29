@@ -347,6 +347,24 @@ chk('broadcast history lists past announcements', (function () {
     $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
     return !empty($h['ok']) && (bool)array_filter($h['announcements'], fn($a) => $a['title'] === 'Egbeda only' && $a['audience'] === 'Egbeda');
 })());
+// An audience nobody can name is refused — it used to be stamped '' (everyone) and emailed to every active member.
+chk('broadcast refuses an unknown audience instead of sending it to everyone', (function () {
+    $before = (int)db_row("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'announcement'")['n'];
+    $r = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Typo', 'body' => 'x', 'audience' => 'Egbedaa', 'email' => true]);
+    return ($r['error'] ?? '') === 'bad_audience' && (int)db_row("SELECT COUNT(*) AS n FROM notifications WHERE kind = 'announcement'")['n'] === $before;
+})());
+// A centre other than the two that used to be typed into the code can be addressed, and only its members see it.
+chk('broadcast reaches a centre beyond the two that used to be hard-coded, and nobody else', (function () use ($feedHas) {
+    db_insert('centres', ['centreId' => 'CEN-BC-NEW', 'name' => 'Ikorodu', 'code' => 'IKD', 'color' => '#336699', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-BC-IKD', 'fullName' => 'Ike Odu', 'email' => 'ike@bc.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ikorodu', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-2025-0099', 'title' => 'Ikorodu only', 'body' => 'x', 'audience' => 'Ikorodu']);
+    $ok = !empty($r['ok']) && $feedHas('NGG-BC-IKD', 'Ikorodu only') && !$feedHas('NGG-2025-0001', 'Ikorodu only');
+    $h = backend_dispatch('admin.broadcast.history', ['requesterId' => 'NGG-2025-0099']);
+    $ik = array_values(array_filter($h['audiences'] ?? [], fn($a) => $a['id'] === 'Ikorodu'));
+    $ok = $ok && $ik && $ik[0]['n'] === 1 && ($h['audiences'][0]['id'] ?? '') === 'all';
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-BC-IKD'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-BC-NEW'");
+    return $ok;
+})());
 
 /* ── Brute-force floors ───────────────────────────────────────────────────
  *
@@ -1221,6 +1239,45 @@ chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search fi
     chk('join date: a new member is given today when none is set', !empty($newM['ok']) && db_row('SELECT joinDate FROM members WHERE memberId = ?', [$newM['memberId']])['joinDate'] === gmdate('Y-m-d'));
     setting_set('profile_drive', ['phase' => 'off'], 't');
 })();
+/* A TYPE change can never be made with ADD COLUMN.
+   The mirror repeats ADD COLUMN on purpose so it can be replayed, and
+   db_apply_mysql_schema swallows the duplicate-column errors (docs/SETUP.md).
+   That is right for adding a column and silently wrong for changing one: the
+   ADD errors, the error is swallowed, and the column keeps the type its
+   CREATE TABLE gave it. `ALTER TABLE volunteers ADD COLUMN memberId
+   VARCHAR(64)` had never once taken effect — volunteers.memberId was
+   VARCHAR(40) on every MySQL deployment there has ever been, which is also
+   why no foreign key could be declared against members.memberId. MODIFY is
+   the statement for a type change, and it is idempotent. */
+chk('mysql mirror: a column whose type differs from its CREATE is changed with MODIFY, never ADD COLUMN', (function () {
+    /* Comments are stripped first: the mirror explains this very rule in a
+       comment that quotes an ADD COLUMN, and a scanner that reads its own
+       documentation as schema reports it as a fault. */
+    $sql = preg_replace('/^\s*--.*$/m', '', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'));
+    $create = [];
+    if (preg_match_all('/CREATE TABLE IF NOT EXISTS (\w+)\s*\((.*?)\n\)[^\n]*;/s', $sql, $t, PREG_SET_ORDER)) {
+        foreach ($t as $m) {
+            foreach (preg_split('/,(?![^(]*\))/', $m[2]) as $part) {
+                if (preg_match('/^\s*(?:--.*\n\s*)?(\w+)\s+((?:VARCHAR|TEXT|INT|BIGINT|TINYINT|DECIMAL|CHAR|DATE|DATETIME)[^,]*)/i', $part, $c)
+                    && !in_array(strtoupper($c[1]), ['KEY', 'UNIQUE', 'PRIMARY', 'INDEX'], true)) {
+                    $create[$m[1] . '.' . $c[1]] = preg_replace('/\s+/', ' ', trim($c[2]));
+                }
+            }
+        }
+    }
+    $bad = [];
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)\s+([^;]+);/i', $sql, $a, PREG_SET_ORDER);
+    foreach ($a as $m) {
+        $k = $m[1] . '.' . $m[2];
+        if (!isset($create[$k])) continue;                       // genuinely a new column: fine
+        $want = strtoupper(preg_replace('/\s+/', ' ', trim($m[3])));
+        $have = strtoupper($create[$k]);
+        if ($want !== $have) $bad[] = $k . ' (CREATE says ' . $create[$k] . ', the ALTER wants ' . trim($m[3]) . ')';
+    }
+    if ($bad) echo '    mirror: ' . implode('; ', $bad) . "\n";
+    return !$bad;
+})());
+
 chk('mysql mirror: every column a SQLite migration adds with ALTER is added by an ALTER in db/schema-mysql.sql (a CREATE TABLE alone never reaches an existing table)', (function () {
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/', (string)file_get_contents(__DIR__ . '/../_lib/db.php'), $a, PREG_SET_ORDER);
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
@@ -2240,7 +2297,7 @@ chk('s-status: still leaks no PII with registration added', (function () {
 })());
 
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
-chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum']
+chk('admin role caps = both programmes, the door and support cases, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum', 'support']
     && !array_intersect(admin_role_caps('admin'), ['fees', 'journal', 'settings', 'rbac']));
 chk('club_admin role caps = the Club, its people, the door and what it teaches', admin_role_caps('club_admin') === ['club', 'people', 'checkin', 'curriculum']);
 chk('the Control Room keeps no copy of the roles — it reads them from admin.roles', (function () {
@@ -3149,7 +3206,14 @@ chk('a partial name does not match — the compare is exact, not a prefix', (fun
     return true;
 })());
 chk('lookup rejects an unknown code', backend_dispatch('circle.lookup', ['code' => '000000', 'name' => 'Tunde'])['error'] === 'not_found');
-chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent'])['error'] === 'consent_required');
+/* Anchor Circle joined the family account (2026-10-28). A parent connects a
+   child from the family account with the code AND the name — the same check,
+   guard and lockout as before, on the new door. $OTH is a second family
+   account that never links to this child. */
+db_exec("DELETE FROM guardians WHERE guardianId IN ('GDN-ACE0000001','GDN-ACE0000002')");
+db_insert('guardians', ['guardianId' => 'GDN-ACE0000001', 'email' => 'other.anchor@example.org', 'fullName' => 'Another Adult', 'status' => 'active', 'createdAt' => now_iso()]);
+db_insert('guardians', ['guardianId' => 'GDN-ACE0000002', 'email' => 'parent.anchor@example.org', 'fullName' => 'A Parent', 'status' => 'active', 'createdAt' => now_iso()]);
+$OTH = 'GDN-ACE0000001'; $PAR = 'GDN-ACE0000002';
 /* The block above deliberately walks every way a lookup can be refused, all
    against the same code — which is exactly the shape the guess ceiling exists
    to stop, and no real guardian ever does. Clear the count so what follows
@@ -3157,19 +3221,18 @@ chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $c
    test at the end of this section. */
 attempt_reset('circle.code', $code);
 
-/* connect is its own request and nothing stops it being called directly, so
-   skipping lookup must not skip the check. This is the one that actually
-   protects the dashboard. */
-chk('connect cannot be called straight through with a bare code', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'role' => 'parent', 'guardianName' => 'Not A Parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+/* Connecting is its own request and nothing stops it being called directly, so
+   skipping the lookup must not skip the check. */
+chk('a family account cannot connect a child with a bare code', (function () use ($code, $OTH) {
+    $r = backend_dispatch('family.ward.add', ['guardianId' => $OTH, 'code' => $code]);
+    return empty($r['ok']) && empty($r['link']);
 })());
-chk('…nor with the wrong name', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Wrong', 'role' => 'parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'not_found' && empty($r['token']);
+chk('…nor with the wrong name', (function () use ($code, $OTH) {
+    $r = backend_dispatch('family.ward.add', ['guardianId' => $OTH, 'code' => $code, 'name' => 'Wrong']);
+    return empty($r['ok']) && empty($r['link']);
 })());
-chk('…and no link row is created by either refused attempt',
-    (int)db_row("SELECT COUNT(*) c FROM circle_links WHERE guardianName = 'Not A Parent'")['c'] === 0);
+chk('…and no link is made by either refused attempt', (int)db_row("SELECT COUNT(*) c FROM guardian_wards WHERE guardianId = ?", [$OTH])['c'] === 0);
+attempt_reset('circle.code', $code);
 
 /* ── The guess ceiling ────────────────────────────────────────────────────
  * Six digits resolving to a child's name needs a ceiling that does not depend
@@ -3181,9 +3244,9 @@ chk('guessing one code repeatedly locks that code, not the guesser', (function (
     for ($i = 0; $i < 10; $i++) backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
     return backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['error'] === 'too_many_attempts';
 })());
-chk('…and connect is shut too, not just lookup', (function () use ($code) {
-    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'consent' => true]);
-    return ($r['error'] ?? '') === 'too_many_attempts' && empty($r['token']);
+chk('…and connecting is shut too, not just the lookup', (function () use ($code, $PAR) {
+    $f = backend_dispatch('family.ward.add', ['guardianId' => $PAR, 'code' => $code, 'name' => 'Tunde']);
+    return ($f['error'] ?? '') === 'too_many_attempts';
 })());
 chk('…and the lockout is recorded without printing the code',
     (function () {
@@ -3204,39 +3267,36 @@ chk('a correct answer clears the count', (function () use ($code) {
     return !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['student']['name']);
 })());
 attempt_reset('circle.code', $code);
-$conn = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'guardianName' => 'A Parent', 'consent' => true]);
-chk('connect mints a portal token', !empty($conn['token']) && $conn['role'] === 'parent');
-$ctok = $conn['token'];
-chk('parent link now shows as linked for the student', backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['circle']['parent'] === true);
-$dash = backend_dispatch('circle.dashboard', ['token' => $ctok]);
-chk('portal dashboard returns read-only stats', !empty($dash['ok']) && isset($dash['stats']['weekBars']) && count($dash['stats']['weekBars']) === 7);
+// ── Anchor in the family account: parents; the old portal answers "moved" ──
+foreach (['circle.connect', 'circle.dashboard', 'circle.confirm', 'circle.remark', 'circle.report', 'circle.cohort'] as $op)
+    if ((backend_dispatch($op, ['token' => 'x'])['error'] ?? '') !== 'moved') { chk('the old /circle op ' . $op . ' answers moved', false); }
+chk('the old /circle portal\'s ops all answer "moved", with where to go', str_contains((string)(backend_dispatch('circle.dashboard', [])['detail'] ?? ''), '/family'));
+$pw = backend_dispatch('family.ward.add', ['guardianId' => $PAR, 'code' => $code, 'name' => 'Tunde']);
+$PL = (string)($pw['link']['linkId'] ?? '');
+$wk = backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL]);
+chk('a parent sees their child\'s Anchor week in the family account: seven days, the stats, a suggestion', !empty($wk['ok']) && count($wk['days']) === 7 && $wk['role'] === 'parent'
+    && isset($wk['stats']['streak'], $wk['stats']['atRisk']) && strlen((string)$wk['suggestion']) > 5);
 $today = gmdate('Y-m-d');
-chk('guardian can confirm a conduct day', !empty(backend_dispatch('circle.confirm', ['token' => $ctok, 'date' => $today, 'on' => true])['ok']));
-chk('confirmed day is reflected back', in_array($today, backend_dispatch('circle.dashboard', ['token' => $ctok])['confirmed'], true));
-chk('guardian remark is stored + visible to the student', (function () use ($ctok) {
-    backend_dispatch('circle.remark', ['token' => $ctok, 'text' => 'Proud of your consistency.']);
-    foreach (backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['remarks'] as $r) if (strpos((string)$r['text'], 'Proud') !== false) return true;
+chk('a parent confirms today, and it reads back as theirs', !empty(backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => $today, 'on' => true])['ok'])
+    && (array_values(array_filter(backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL])['days'], fn($d) => $d['date'] === $today))[0]['mine'] ?? false) === true);
+chk('…but not a day in the future, nor last week', (backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => gmdate('Y-m-d', time() + 8 * 86400), 'on' => true])['error'] ?? '') === 'not_this_week'
+    && (backend_dispatch('family.anchor.confirm', ['guardianId' => $PAR, 'linkId' => $PL, 'date' => gmdate('Y-m-d', strtotime(circle_monday()) - 86400), 'on' => true])['error'] ?? '') === 'not_this_week');
+chk('a parent\'s note reaches the child, in their app', (function () use ($PAR, $PL) {
+    backend_dispatch('family.anchor.remark', ['guardianId' => $PAR, 'linkId' => $PL, 'text' => 'Proud of your consistency.']);
+    foreach (backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['remarks'] as $r) if (strpos((string)$r['text'], 'Proud') !== false && $r['role'] === 'parent') return true;
     return false;
 })());
-chk('report carries stats + remarks', !empty(backend_dispatch('circle.report', ['token' => $ctok])['report']['stats']));
-chk('dashboard carries behavioral intelligence (trend/at-risk/suggestion)', (function () use ($ctok) {
-    $d = backend_dispatch('circle.dashboard', ['token' => $ctok]);
-    return isset($d['stats']['trend'], $d['stats']['atRisk']) && strlen((string)($d['suggestion'] ?? '')) > 5;
+chk('…a few notes a week, and the limit says so', (function () use ($PAR, $PL) {
+    for ($i = 0; $i < ANCHOR_REMARKS_PER_WEEK; $i++) $last = backend_dispatch('family.anchor.remark', ['guardianId' => $PAR, 'linkId' => $PL, 'text' => 'Note ' . $i]);
+    return ($last['error'] ?? '') === 'week_limit' && backend_dispatch('family.anchor', ['guardianId' => $PAR, 'linkId' => $PL])['remarksLeft'] === 0;
 })());
-// Cohort strip — summaries for every token a device holds; dupes collapse,
-// junk is skipped, and only that token's read-only aggregates come back.
-$cohort = backend_dispatch('circle.cohort', ['tokens' => [$ctok, $ctok, 'garbage', 42]]);
-chk('cohort summarises valid tokens once, skips junk', count($cohort['students']) === 1
-    && $cohort['students'][0]['token'] === $ctok
-    && isset($cohort['students'][0]['streak'], $cohort['students'][0]['atRisk'], $cohort['students'][0]['trend'])
-    && !isset($cohort['students'][0]['reflections0'])); // shape sanity
-chk('cohort never exposes private text', !preg_match('/body|musing|note/i', json_encode(array_keys($cohort['students'][0]))));
-chk('cohort with no tokens is empty, not an error', backend_dispatch('circle.cohort', [])['students'] === []);
+chk('another account cannot read the child\'s week through this link', (backend_dispatch('family.anchor', ['guardianId' => $OTH, 'linkId' => $PL])['error'] ?? '') === 'not_found');
 
-$rl = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001'])['links'][0]['linkId'];
-chk('student can revoke a link', !empty(backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001', 'linkId' => $rl])['ok']));
-chk('revoked token no longer works', backend_dispatch('circle.dashboard', ['token' => $ctok])['error'] === 'link_invalid');
-chk('revoked token drops out of the cohort', backend_dispatch('circle.cohort', ['tokens' => [$ctok]])['students'] === []);
+$mc = backend_dispatch('member.circle', ['requesterId' => 'NGG-2025-0001']);
+chk('the member sees who follows them: the parent', $mc['circle']['parent'] === true && !isset($mc['circle']['teacher'])
+    && (bool)array_filter($mc['connected'], fn($x) => $x['name'] === 'A Parent'));
+chk('teachers are not part of the circle: no op connects one', (backend_dispatch('family.teach.add', ['guardianId' => $OTH])['error'] ?? '') === 'unknown_op'
+    && (backend_dispatch('member.circle.revoke', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'unknown_op');
 
 // ── Integration bus (mocked HTTP — no network) ──
 chk('bus: emit fans out only to subscribed destinations, dispatch delivers signed', (function () {
@@ -5249,19 +5309,47 @@ chk('centres: upsert validates, code unique, list works', (function () {
     $l = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
     return count($l['centres']) === 1 && $l['centres'][0]['code'] === 'IJ';
 })());
-chk('cards: verified student gets CODE-YY-serial + QR token + centre colour', (function () {
+/* One assertion per promise. This was a single conjunction of six, and when
+   it failed on MySQL roughly one run in four it said only that something
+   among the six was wrong. A conjunction is a cheap way to write a test and
+   an expensive way to read one. */
+(function () {
     db_update('summer_students', ['centre' => 'Ijaiye'], ['regStatus' => 'verified']);
-    $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
-    if (empty($d['ok']) || count($d['cards']) < 1) return false;
-    $c = $d['cards'][0];
+    $all = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
+    chk('cards: the card data loads with at least one verified student (' . count($all['cards'] ?? []) . ')', !empty($all['ok']) && count($all['cards'] ?? []) >= 1);
+
+    /* A student THIS check owns, read back by id.
+       It used to assert on cards[0] of the whole list, which is whichever
+       verified student sorts first — and if that one's display ID had already
+       been minted while they were unplaced, it is "ST-26-007" and stays that
+       way, because a printed ID is never reissued. Correct behaviour, failing
+       assertion, about one run in seven on MySQL, and the message said only
+       that something among six conditions was wrong. The check is about what
+       a NEW verified student at a centre gets, so it makes one. */
+    $ckc = summer_ensure_cohort();
+    db_insert('summer_students', ['studentId' => 'STU-CARD-IJ', 'cohortId' => (string)$ckc['cohortId'], 'token' => 'SUMQR-CARDIJ',
+        'handle' => 'cardij', 'fullName' => 'Ije Card', 'age' => 12, 'centre' => 'Ijaiye', 'track' => 'Tech',
+        'regStatus' => 'verified', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $d = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'STU-CARD-IJ']);
+    chk('cards: that student\'s card is the one returned', !empty($d['ok']) && count($d['cards'] ?? []) === 1);
+    $c = ($d['cards'] ?? [[]])[0];
     $yy = gmdate('y');
-    if (!preg_match('/^IJ-' . $yy . '-\d{3}$/', $c['displayId'])) return false;
-    if (strpos($c['token'], 'SUMQR-') !== 0 || $c['centre']['color'] !== '#76B043') return false;
-    if ($c['firstName'] === '' || $d['program']['program'] !== 'LCASP') return false;
+    chk('cards: a verified student gets a centre-prefixed serial, IJ-' . $yy . '-NNN (got "' . (string)($c['displayId'] ?? '') . '")',
+        (bool)preg_match('/^IJ-' . $yy . '-\d{3}$/', (string)($c['displayId'] ?? '')));
+    chk('cards: …and a Summer QR token (got "' . mb_substr((string)($c['token'] ?? ''), 0, 12) . '")', str_starts_with((string)($c['token'] ?? ''), 'SUMQR-'));
+    chk('cards: …and their centre\'s own colour (got "' . (string)($c['centre']['color'] ?? '') . '" for centre "' . (string)($c['centre']['name'] ?? '') . '")',
+        (string)($c['centre']['color'] ?? '') === '#76B043');
+    chk('cards: …and a name, on the programme (' . (string)($d['program']['program'] ?? '') . ')',
+        (string)($c['firstName'] ?? '') !== '' && (string)($d['program']['program'] ?? '') === 'LCASP');
     // Allocation is sticky — a second read must not re-serial.
-    $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099']);
-    return $d2['cards'][0]['displayId'] === $c['displayId'];
-})());
+    $d2 = backend_dispatch('admin.cards.data', ['requesterId' => 'NGG-2025-0099', 'studentId' => 'STU-CARD-IJ']);
+    chk('cards: the serial is sticky — a second read does not re-allocate',
+        (string)($d2['cards'][0]['displayId'] ?? 'x') === (string)($c['displayId'] ?? 'y'));
+    /* Taken away again: a fixture that outlives its check becomes somebody
+       else's surprise, which is how this check came to be about whichever
+       student happened to sort first. */
+    db_exec("DELETE FROM summer_students WHERE studentId = 'STU-CARD-IJ'");
+})();
 chk('cards: gate context serves centre options for the centre field', (function () {
     $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Card desk']);
     $ctx = backend_dispatch('gate.context', ['gate' => $g['gateId']]);
@@ -6830,6 +6918,24 @@ chk('threads: that flag and the ask agree, in both directions', (function () {
     __ichat_config_off($cfg);
     $agreeOn = ($on['aiReady'] === true) && (($askOn['error'] ?? '') !== 'ai_disabled');
     return $agreeOff && $agreeOn;
+})());
+
+chk('analyst: an empty answer is never a success — no points says what it can read, and points survive a failed composition', (function () {
+    $cfg = __ichat_config_on();
+    // Every lens finds nothing (a request for a list of people, which it cannot see).
+    $GLOBALS['__ai_mock'] = function ($profile, $sys, $turns) {
+        if ($profile === ICHAT_ROUTER_PROFILE) return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['lenses' => ['mechanism', 'risk'], 'why' => 'w', 'answerable' => true, 'restated' => 'r'])];
+        if ($profile === ICHAT_ANSWER_PROFILE) return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['answer' => '', 'claims' => []])];
+        return ['ok' => true, 'provider' => 'stub', 'text' => json_encode(['points' => []])];
+    };
+    $r1 = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Can you send me an export of the members grouped by their divisions?']);
+    // The lenses found points but the composer failed: the points are the answer.
+    $GLOBALS['__ai_mock'] = __ichat_mock(['composerDown' => true]);
+    $r2 = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099', 'question' => 'Why does Wednesday run so much lower than Saturday?']);
+    unset($GLOBALS['__ai_mock']); __ichat_config_off($cfg);
+    if (empty($r1['ok']) && ($r1['error'] ?? '') === 'no_evidence') return true;   // no data in range is a valid shape
+    return str_contains((string)($r1['turn']['answer'] ?? ''), 'no names') && str_contains((string)$r1['turn']['answer'], 'Export CSV')
+        && str_contains((string)($r2['turn']['answer'] ?? ''), 'Wednesday runs lowest');
 })());
 
 chk('the chat routes to the lenses the question needs, and no more', (function () {
@@ -9122,16 +9228,12 @@ chk('an email that is not an email is refused', (function () {
         'data' => ['fullName' => 'Bad Email', 'email' => 'not-an-address', 'centre' => 'Egbeda']]);
     return ($r['error'] ?? '') === 'email_invalid';
 })());
-chk('a duplicate email is refused, because sign-in resolves one address to one member', (function () {
-    /* email is indexed but not unique, and auth does
-       WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1 — so two records
-       sharing an address leave whichever the database returns second unable
-       to sign in, and which one that is can change when rows move. */
+chk('a shared email is allowed (siblings on a parent’s address) — sign-in asks who', (function () {
     $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
-        'data' => ['fullName' => 'Impostor', 'email' => 'ayochild@example.com', 'centre' => 'Egbeda']]);
-    return ($r['error'] ?? '') === 'email_taken'
-        && strpos((string)($r['detail'] ?? ''), 'Ayo Child') !== false
-        && (int)db_row("SELECT COUNT(*) c FROM members WHERE lower(email)='ayochild@example.com'")['c'] === 1;
+        'data' => ['fullName' => 'Ayo Sibling', 'email' => 'ayochild@example.com', 'centre' => 'Egbeda']]);
+    $ok = !empty($r['ok']) && (int)db_row("SELECT COUNT(*) c FROM members WHERE lower(email)='ayochild@example.com'")['c'] === 2;
+    if (!empty($r['ok'])) db_exec("DELETE FROM members WHERE fullName = 'Ayo Sibling' AND lower(email) = 'ayochild@example.com'");
+    return $ok;
 })());
 chk('…but a member keeping their own email is not a duplicate of themselves', (function () {
     $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
@@ -10031,12 +10133,23 @@ chk('catalogue: an ampersand in a course name is part of the name, not a join',
     && !in_array('Visual Design', academy_courses(), true));
 chk('catalogue: leadership faculty + its courses are excluded', !in_array('Leadership', academy_faculties(), true)
     && !in_array('V3 Fixer', academy_courses(), true) && !in_array('Anchor Journal', academy_courses(), true));
-// Courses are just as editable — an admin edit to the summer-reg Course field
-// round-trips to the public context (no code change; not hard-coded). Run late,
-// after the other summer-reg form tests, so publishing doesn't disturb them.
-$srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
-backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
+/* Courses are just as editable — an admin edit to the VOLUNTEER form's Course
+   field round-trips to the public volunteer context (no code change; not
+   hard-coded).
+
+   This used to publish to `summer-reg` and assert the change appeared in the
+   volunteer context, which is the bug it was quietly describing: the courses a
+   volunteer was offered to TEACH were read off the form a parent fills in for
+   a child joining Summer School. The volunteer context reads the volunteer
+   form now, so the edit is made where it belongs. */
+$vrf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Practical Coding', 'Robotics Lab', 'Chess Club']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer'])['form']['fields']);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'volunteer', 'fields' => $vrf2]);
 chk('course catalogue edit round-trips to the public context', backend_dispatch('public.volunteer.context', [])['courses'] === ['Practical Coding', 'Robotics Lab', 'Chess Club']);
+/* And an edit to the CHILDREN's form no longer leaks into it. */
+$srf2 = array_map(function ($f) { if (($f['key'] ?? '') === 'course') $f['options'] = ['Child Course A', 'Child Course B']; return $f; }, backend_dispatch('admin.forms.get', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg'])['form']['fields']);
+backend_dispatch('admin.forms.publish', ['requesterId' => 'NGG-2025-0099', 'formId' => 'summer-reg', 'fields' => $srf2]);
+chk('a child intake edit does not change what a volunteer is offered to teach',
+    !array_intersect(backend_dispatch('public.volunteer.context', [])['courses'], ['Child Course A', 'Child Course B']));
 
 // ── Academy catalogue: per-faculty mapping (setting-backed, admin-editable) ──
 chk('academy_courses_for returns a faculty\'s courses', academy_courses_for('Music') === ['Talking Drums', 'Piano', 'Guitar'] && academy_courses_for('Nope') === []);
@@ -10067,8 +10180,15 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     db_insert('form_defs', ['formId' => 'summer-reg', 'version' => 1, 'name' => 'Summer', 'fields' => json_encode([['key' => 'course', 'type' => 'choice', 'options' => ['Custom Course Kept']]]), 'status' => 'live', 'publishedBy' => 'NGG-2025-0099', 'createdAt' => now_iso()]);
     setting_set('seed_academy_v1', '0', 'system');
     db_run_seeds($db);
-    return volunteer_faculty_options() === academy_faculties()   // system form re-seeded from defaults
-        && volunteer_course_options() === ['Custom Course Kept']; // human form untouched
+    /* The volunteer form was auto-generated, so it is refreshed from the
+       defaults — which now cover BOTH programmes, because a volunteer may
+       teach on the Club or on Summer School. The summer-reg form was published
+       by a person, so its custom course list is left exactly as they left it. */
+    $humanKept = [];
+    foreach (form_live('summer-reg')['fields'] as $f) if (($f['key'] ?? '') === 'course') $humanKept = $f['options'] ?? [];
+    return volunteer_faculty_options() === volunteer_faculty_options_default()   // system form re-seeded from defaults
+        && $humanKept === ['Custom Course Kept']                                 // human form untouched
+        && in_array('Piano', volunteer_course_options(), true);                  // …and the Club's courses are offered
 })());
 
 /* ── Community 2.0 (channels · posts · reactions · polls · Slack unreads) ── */
@@ -16959,9 +17079,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             if (strpos($pair[1], 'fees') === false) continue;
             if (($allowed[$pair[1]] ?? '') !== $pair[2]) return false;
         }
-        // The route's one write is `pay`; it carries no amount, reference or status from the body.
+        /* The route's writes are `pay` and `nudge` (asking a parent); neither
+           carries an amount, reference or status from the body. */
         $route = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/api/member/fees.php');
-        if ($route === '' || substr_count($route, 'gs_call(') !== 2 || !str_contains($route, 'gs_call(\'member.fees.pay\', [\'memberId\' => $s[\'mid\']])')) return false;
+        if ($route === '' || substr_count($route, 'gs_call(') !== 4 || !str_contains($route, 'gs_call(\'member.fees.pay\', [\'memberId\' => $s[\'mid\']])')) return false;
+        if (preg_match('/amount|reference|status/', implode('', array_filter(explode("\n", $route), static fn($l) => str_contains($l, 'gs_call('))))) return false;
+        $fam = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/family.php');
+        $nf = substr($fam, (int)strpos($fam, 'function member_family_nudge('));
+        if ($nf === '' || str_contains($nf, 'fees_post(') || str_contains($nf, 'membership_settle(')) return false;
         // And pay itself writes nothing to the ledger.
         $src = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/membership-pay.php');
         $fn = substr($src, (int)strpos($src, 'function membership_balance_invoice'));
@@ -24245,12 +24370,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 /* ── The NGG Club curriculum ─────────────────────────────────────────────── */
 (function () {
     $now = now_iso();
-    /* These fixtures are written against the legacy course names (Piano,
-       Guitar…). They test lessons, checks and the timetable, not which courses
-       the Club teaches, so the Club's list is pinned to those names — with the
-       NGG divisions seed marked done, so the first read does not replace it. */
-    setting_set('club_catalogue_seed', CLUB_DIVISIONS_SEED, 'test');
-    setting_set('club_catalogue', academy_catalogue_default(), 'test');
+    /* These fixtures are written against Piano and Guitar, which ARE Club
+       courses now that an instrument is its own course. They used to need the
+       Club's list swapped for Summer School's to make those names resolve —
+       and that swap was never undone, so every later test saw Summer's
+       catalogue where the Club's belonged. Nothing is pinned now. */
     $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cur ' . $id, 'email' => strtolower($id) . '@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-CUR-ADM', 'club_admin'); $mk('NGG-CUR-ED', 'editor');
@@ -24267,8 +24391,14 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'course' => 'piano', 'week' => 1, 'position' => 1, 'title' => 'Finding middle C', 'status' => 'published', 'passMark' => 50,
         'objectives' => "Find middle C; Play a C major scale",
         'materials' => [['url' => 'https://example.org/c-major.pdf', 'title' => 'Scale sheet']],
+        /* Two multiple-choice questions and a practical one. It used to be
+           two mcqs, which is exactly the review the programme now refuses to
+           publish: in a subject where the thing being learned is played with
+           two hands, picking the right words off a list is not evidence. */
         'checks' => [['kind' => 'mcq', 'prompt' => 'How many white keys in an octave?', 'options' => ['5', '7', '8'], 'answer' => 'B'],
-                     ['kind' => 'mcq', 'prompt' => 'Middle C is…', 'options' => ['C4', 'C2'], 'answer' => 'C4']]]]);
+                     ['kind' => 'mcq', 'prompt' => 'Middle C is…', 'options' => ['C4', 'C2'], 'answer' => 'C4'],
+                     ['kind' => 'task', 'prompt' => 'Play a C major scale and say where your thumb went under.',
+                      'rubric' => 'Up to 3: played evenly (2); can say where the thumb crossed (1).', 'points' => 3]]]]);
     chk('curriculum: a lesson saves under the catalogue\'s spelling, with materials and checks',
         !empty($u1['ok']) && $u1['unit']['course'] === 'Piano' && count($u1['unit']['materials']) === 1 && $u1['unit']['materials'][0]['kind'] === 'pdf'
         && $u1['unit']['checks'][0]['answer'] === '1' && $u1['unit']['checks'][1]['answer'] === '0' && count($u1['unit']['objectives']) === 2);
@@ -24276,10 +24406,372 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('curriculum: a material must be https or a stored file', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad link', 'materials' => [['url' => 'javascript:alert(1)']]]])['error'] ?? '') === 'bad_material_url');
     chk('curriculum: a multiple-choice answer must be one of its options', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad answer', 'checks' => [['kind' => 'mcq', 'prompt' => 'Q', 'options' => ['a', 'b'], 'answer' => 'z']]]])['error'] ?? '') === 'mcq_answer_missing');
 
+    /* ── The exam is the NEXT session's opening review ──────────────────
+       A lesson's questions are written with it and sat a week later, so a
+       published lesson with none is a week of teaching nobody is ever asked
+       about again. The floor is one, not the three the editor asks for:
+       587 of the 588 bundled lessons carry one or two, and a rule the
+       shipped curriculum cannot meet stops the boot seeder instead of
+       raising anybody's standard. */
+    chk('review: a lesson cannot be PUBLISHED with nothing to ask a week later',
+        (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Silent lesson', 'status' => 'published']])['error'] ?? '') === 'review_required');
+    chk('review: …but a DRAFT may be half-written, because that is what a draft is',
+        !empty(backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Silent lesson', 'status' => 'draft']])['ok']));
+    /* Publishing in bulk is a second door onto the same act. A rule enforced
+       on one door is one anybody reaches past by using the other. */
+    $silent = (string)db_row("SELECT unitId FROM curriculum_units WHERE title = 'Silent lesson'")['unitId'];
+    $bulk = backend_dispatch('admin.curriculum.status', ['requesterId' => 'NGG-CUR-ADM', 'action' => 'publish', 'unitIds' => [$silent]]);
+    chk('review: nor can it be published by selecting it and pressing Publish',
+        ($bulk['results'][0]['error'] ?? '') === 'review_required'
+        && (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$silent])['status'] === 'draft');
+    db_exec("DELETE FROM curriculum_units WHERE unitId = ?", [$silent]);
+    /* A review made only of multiple choice measures whether a child can
+       pick the right words off a list a week later. In subjects that are
+       almost entirely practical that is close to measuring nothing. */
+    chk('review: a lesson cannot be published with multiple choice as its ONLY question',
+        (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Guess it', 'status' => 'published',
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which is middle C?', 'options' => ['a', 'b'], 'answer' => '0']]]])['error'] ?? '') === 'review_too_shallow');
+    chk('review: …and publishes once one question asks them to DO something',
+        !empty(backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+            'course' => 'Piano', 'week' => 9, 'title' => 'Guess it', 'status' => 'published',
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which is middle C?', 'options' => ['a', 'b'], 'answer' => '0'],
+                         ['kind' => 'task', 'prompt' => 'Play a C major triad and say which notes you used.', 'rubric' => 'Up to 3.', 'points' => 3]]]])['ok']));
+    db_exec("DELETE FROM curriculum_units WHERE title = 'Guess it'");
+
+    /* ── Watch a video and tell me ──────────────────────────────────────
+       A lesson can send a learner to a video and ask what they took from
+       it. The video travels WITH the question so it plays inside the exam,
+       and it is verified the only way it honestly can be: marked on what
+       only watching could produce. There is deliberately no keyword gate —
+       it would pass the child who skimmed a transcript and fail the one who
+       understood it and said so in their own words. */
+    $watch = fn(string $url) => backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+        'course' => 'Piano', 'week' => 9, 'position' => 7, 'title' => 'Watch and tell', 'status' => 'published',
+        'checks' => [['kind' => 'watch', 'prompt' => 'What did they do with their wrist?', 'videoUrl' => $url,
+                      'rubric' => 'Up to 3 for a specific detail from the video.', 'points' => 3]]]]);
+    chk('watch: a question about a video nobody was shown is refused',
+        ($watch('')['error'] ?? '') === 'watch_needs_video');
+    chk('watch: a link the exam cannot play is refused where it is written, not found on a Saturday',
+        ($watch('https://example.org/lesson.mp4')['error'] ?? '') === 'watch_needs_video'
+        && ($watch('http://www.youtube.com/watch?v=dQw4w9WgXcQ')['error'] ?? '') === 'watch_needs_video');
+    $w = $watch('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    chk('watch: a YouTube link saves, and the video is stored on the question itself',
+        !empty($w['ok']) && (string)db_row("SELECT videoUrl FROM curriculum_checks WHERE unitId = ?", [$w['unit']['unitId']])['videoUrl']
+            === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    chk('watch: …and it reaches the learner, because it IS the question — unlike the answer, which does not',
+        ($w['unit']['checks'][0]['videoUrl'] ?? '') === 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+        && !isset(curriculum_unit_public(
+              db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']]), [],
+              db_all('SELECT * FROM curriculum_checks WHERE unitId = ?', [$w['unit']['unitId']]), false)['checks'][0]['answer']));
+    chk('watch: a question of any other kind carries no video, whatever the request said',
+        (string)db_row("SELECT COUNT(*) c FROM curriculum_checks WHERE kind <> 'watch' AND videoUrl <> ''")['c'] === '0');
+    chk('watch: a video question is not multiple choice, so it satisfies the review on its own',
+        (string)db_row('SELECT status FROM curriculum_units WHERE unitId = ?', [$w['unit']['unitId']])['status'] === 'published');
+    db_exec("DELETE FROM curriculum_units WHERE title = 'Watch and tell'");
+
+    /* ── What a member says about a session ─────────────────────────────
+       Asked at the end of every one. The rules ARE the feature: private
+       until a person decides otherwise, never published without the
+       guardian's consent on the record, named the way the member chose,
+       and withdrawable by them at any time. Four invented testimonials
+       used to sit on the home page under real centre names; these are the
+       guards that stop that happening again with real children's words. */
+    (function () use ($u1) {
+        /* A SESSION is the twelve-week block, not a Saturday. The question is
+           put in the last three weeks of one — so the fixture is a session
+           ending in a fortnight. */
+        $unit = (string)$u1['unit']['unitId'];
+        $today = gmdate('Y-m-d');
+        db_exec("DELETE FROM sessions WHERE sessionId = 'TST-SESS'");
+        db_insert('sessions', ['sessionId' => 'TST-SESS', 'code' => 'TONI', 'year' => (int)gmdate('Y'), 'name' => 'Toni',
+            'startDate' => gmdate('Y-m-d', strtotime($today . ' -5 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +14 days')),
+            'theme' => '', 'isActive' => 1, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $sid = 'TST-SESS';
+        $say = fn(string $body, string $showAs = 'initials') => member_testimonial_give([
+            'memberId' => 'NGG-CUR-M1', 'sessionId' => $sid, 'course' => 'Music', 'body' => $body, 'showAs' => $showAs]);
+
+        chk('testimonial: it is asked about the SESSION that is ending, not about a lesson',
+            (testi_session_ask()['sessionId'] ?? '') === $sid);
+        /* "One per session" is the only thing bounding how many one account
+           can write, so a sessionId the client invents is not a session. */
+        chk('testimonial: a session nobody is being asked about is refused',
+            (member_testimonial_give(['memberId' => 'NGG-CUR-M1', 'sessionId' => 'SESS-MADE-UP', 'body' => 'Lovely term, really.'])['error'] ?? '') === 'not_asked_now');
+        chk('testimonial: a couple of words is not a testimonial', ($say('ok')['error'] ?? '') === 'too_short');
+        $w = $say('I can find middle C without looking now, and I showed my sister.', 'first');
+        chk('testimonial: it saves, and it is NEW — not published because a child wrote it',
+            !empty($w['ok']) && $w['status'] === 'new'
+            && (string)db_row('SELECT status FROM testimonials WHERE tid = ?', [$w['tid']])['status'] === 'new');
+        chk('testimonial: it is not on the public page', !public_testimonials()['testimonials']);
+
+        /* The consent gate. Publishing a child's words under a byline is the
+           one act here that leaves the programme. */
+        $pub = fn() => backend_dispatch('admin.testimonials.decide', ['requesterId' => 'NGG-CUR-ED', 'tid' => $w['tid'], 'status' => 'published']);
+        /* The SAME ledger the summer board reads before printing a child's
+           name — not a second consent flag of this feature's own. */
+        $consent = fn(string $status) => consent_record('NGG-CUR-M1', 'site_visibility', $status, 'Test suite', 'Suite');
+        chk('testimonial: a member with nothing in the consent ledger cannot be published, and is told why',
+            ($pub()['error'] ?? '') === 'no_visibility_consent');
+        $consent('declined');
+        chk('testimonial: a guardian who said no is a refusal too, not a gap',
+            ($pub()['error'] ?? '') === 'no_visibility_consent');
+        $consent('granted');
+        chk('testimonial: with the guardian\'s consent, a person publishes it', !empty($pub()['ok']));
+        $live = public_testimonials()['testimonials'];
+        chk('testimonial: …and it appears, named the way the MEMBER chose, never in full',
+            count($live) === 1 && strpos($live[0]['q'], 'middle C') !== false
+            && $live[0]['from'] === 'Cur' && strpos($live[0]['from'], 'NGG-CUR-M1') === false);
+
+        /* Consent read again on every request, so withdrawing it takes the
+           words down without anybody remembering to unpublish them. */
+        $consent('declined');
+        chk('testimonial: withdrawing the consent takes it off the site, with no second action',
+            !public_testimonials()['testimonials']);
+        $consent('granted');
+
+        /* Editing published words sends them back: the site shows what
+           somebody approved, and these are not that any more. */
+        $say('Actually what I got was the confidence to play in front of people.');
+        chk('testimonial: changing it un-publishes it, because the site shows approved words',
+            (string)db_row('SELECT status FROM testimonials WHERE tid = ?', [$w['tid']])['status'] === 'new'
+            && !public_testimonials()['testimonials']);
+
+        // One per session: a second thought is a correction, not a second one.
+        chk('testimonial: one per session — writing again replaces it',
+            (int)db_row("SELECT COUNT(*) c FROM testimonials WHERE memberId = 'NGG-CUR-M1' AND sessionId = ?", [$sid])['c'] === 1);
+
+        /* Withdrawal: the same box, emptied, and it must work on a published
+           one. Consent that cannot be withdrawn was not consent. */
+        $pub();
+        chk('testimonial: a member takes it back by clearing the box, published or not',
+            ($say('')['status'] ?? '') === 'withdrawn' && !public_testimonials()['testimonials']);
+        chk('testimonial: …and it cannot be quietly put back up', ($pub()['error'] ?? '') === 'withdrawn');
+
+        /* Publishing is a CONTENT act. The club admin who runs the curriculum
+           and reads the words on the queue cannot put them on the site. */
+        chk('testimonial: the curriculum lead who reads them cannot publish them — that is content',
+            (backend_dispatch('admin.testimonials.decide', ['requesterId' => 'NGG-CUR-ADM', 'tid' => $w['tid'], 'status' => 'published'])['error'] ?? '') === 'forbidden');
+        chk('testimonial: …and they can still READ the queue, because the words are useful to staff either way',
+            !empty(backend_dispatch('admin.testimonials.list', ['requesterId' => 'NGG-CUR-ADM', 'status' => 'all'])['ok']));
+
+        /* Mid-term there is nothing to say yet, so the question is not put —
+           and an answer already given is still editable, because a window
+           governs when somebody is ASKED, never whether they may take their
+           own words back. */
+        db_update('sessions', ['endDate' => gmdate('Y-m-d', strtotime($today . ' +60 days'))], ['sessionId' => $sid]);
+        chk('testimonial: mid-term the question is not put at all', testi_session_ask() === null);
+        chk('testimonial: …but what they already wrote is still theirs to change',
+            !empty($say('Second thoughts, and better ones, about the term.')['ok']));
+
+        db_exec("DELETE FROM testimonials WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM consents WHERE studentId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM sessions WHERE sessionId = 'TST-SESS'");
+
+        /* ── How today went: the OTHER question, asked every lesson ──────
+           Three taps, never published, and there is no op here that could
+           publish it. What it must do is pay for itself: an instructor
+           opening the board sees the lesson most of the class could not
+           follow, at the top, with their words on it. */
+        $fb = fn(string $who, string $sig, string $body = '') => member_lesson_feedback_give(
+            ['memberId' => $who, 'unitId' => $unit, 'signal' => $sig, 'body' => $body]);
+        chk('feedback: a lesson the member does not have is refused',
+            (member_lesson_feedback_give(['memberId' => 'NGG-CUR-M1', 'unitId' => 'U-MADE-UP', 'signal' => 'got'])['error'] ?? '') === 'not_found');
+        chk('feedback: only the three answers are answers', ($fb('NGG-CUR-M1', 'brilliant')['error'] ?? '') === 'bad_signal');
+        chk('feedback: one tap is enough, and the words are optional', !empty($fb('NGG-CUR-M1', 'lost')['ok'])
+            && (string)db_row("SELECT `signal` FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'lost');
+        chk('feedback: one per member per lesson — tapping again corrects it, it does not add one',
+            !empty($fb('NGG-CUR-M1', 'got', 'I got it in the end')['ok'])
+            && (int)db_row("SELECT COUNT(*) c FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit])['c'] === 1
+            && (string)db_row("SELECT `signal` FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1'")['signal'] === 'got');
+        /* Two more who actually TAKE Piano — NGG-CUR-M2 is a guitarist, so
+           this lesson is not theirs and the tap would rightly be refused. */
+        foreach (['NGG-CUR-P1', 'NGG-CUR-P2'] as $pid) {
+            db_insert('members', ['memberId' => $pid, 'fullName' => 'Piano ' . $pid, 'email' => strtolower($pid) . '@example.com',
+                'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'track' => 'Piano', 'centre' => 'Egbeda',
+                'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        }
+        $fb('NGG-CUR-P1', 'lost', 'I could not see which key was middle C');
+        $fb('NGG-CUR-P2', 'mostly');
+        chk('feedback: a "mostly" counts half a miss, because a class that could only follow with help was not taught either',
+            lfb_miss_pct(['got' => 1, 'mostly' => 2, 'lost' => 1]) === 50);
+        $board = backend_dispatch('admin.curriculum.feedback', ['requesterId' => 'NGG-CUR-ADM']);
+        $top = $board['lessons'][0] ?? [];
+        chk('feedback: the board answers the question an instructor HAS — which lesson is not landing',
+            !empty($board['ok']) && ($top['unitId'] ?? '') === $unit
+            && ($top['got'] ?? 0) === 1 && ($top['mostly'] ?? 0) === 1 && ($top['lost'] ?? 0) === 1
+            && ($top['voices'] ?? 0) === 3 && ($top['missPct'] ?? 0) === 50 && !empty($top['enough']));
+        chk('feedback: …with the words from the ones who struggled, and only those',
+            count($top['said'] ?? []) === 1 && strpos($top['said'][0]['body'] ?? '', 'middle C') !== false);
+        chk('feedback: it is never published — there is no public op, and no publish verb anywhere in the file',
+            !function_exists('public_lesson_feedback')
+            && (backend_dispatch('public.lesson.feedback', [])['error'] ?? '') === 'unknown_op'
+            && !preg_match('/function\\s+\\w*(publish|public)\\w*lesson_feedback/i', (string)file_get_contents(__DIR__ . '/../_lib/domain/lesson-feedback.php')));
+        chk('feedback: clearing the tap takes the answer back entirely',
+            !empty(member_lesson_feedback_give(['memberId' => 'NGG-CUR-M1', 'unitId' => $unit, 'signal' => ''])['removed'])
+            && !db_row("SELECT id FROM lesson_feedback WHERE memberId = 'NGG-CUR-M1' AND unitId = ?", [$unit]));
+        db_exec("DELETE FROM lesson_feedback");
+        db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-P1','NGG-CUR-P2')");
+
+        /* ── The division IS the enrolment ───────────────────────────────
+           `courseSource = division`: a member takes their division's own
+           shared curriculum and nothing from the strands. It exists because
+           the old fallback was doing a bad impression of it — a member with
+           no courses on record was handed all seven of Technology's strands
+           at once, which is a wall, not a curriculum. */
+        $tech = 'Technology & Applied Engineering';
+        /* The division spine is SEEDED (curriculum-divisions-2026.json) — the
+           real thing the mode delivers, not a fixture standing in for it. */
+        $spine = db_row("SELECT unitId FROM curriculum_units WHERE course = ? AND status = 'published' ORDER BY week LIMIT 1", [$tech]);
+        chk('division mode: the division spine ships with the code and is published', (bool)$spine);
+        $spineId = (string)($spine['unitId'] ?? '');
+        db_insert('members', ['memberId' => 'NGG-CUR-D1', 'fullName' => 'Div Member', 'email' => 'div1@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => 'Coding', 'courses' => json_encode(['Coding']),
+            'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $mD = fn() => curriculum_member_row('NGG-CUR-D1');
+
+        $ctx = null;
+        $inMember = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: by default the member keeps the courses chosen for them',
+            in_array('Coding', $inMember, true) && !in_array($tech, $inMember, true));
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'division']]);
+        chk('division mode: the setting is stored, and only the two modes are modes',
+            curriculum_schedule()['courseSource'] === 'division'
+            && (function () { backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'whatever']]);
+                              return curriculum_schedule()['courseSource']; })() === 'division');
+
+        $ctx = null;
+        $inDiv = curriculum_member_courses($mD(), $ctx);
+        chk('division mode: the member now takes their DIVISION\'s curriculum, not their strand',
+            in_array($tech, $inDiv, true) && !in_array('Coding', $inDiv, true));
+        chk('division mode: …and Chess, because Chess is every division\'s',
+            in_array('Chess', $inDiv, true));
+        chk('division mode: the division\'s own lesson actually reaches them',
+            $spineId !== '' && isset(curriculum_member_units($mD())[$spineId]));
+
+        /* A member with no division is not handed somebody else's curriculum. */
+        db_insert('members', ['memberId' => 'NGG-CUR-D2', 'fullName' => 'No Div', 'email' => 'div2@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'track' => '', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $ctx = null;
+        chk('division mode: a member with no division gets Chess and the Club-wide lessons, never a division that is not theirs',
+            curriculum_member_courses(curriculum_member_row('NGG-CUR-D2'), $ctx) === ['Chess']);
+
+        /* THE COVERAGE BOARD. The spine that ships is Year 1 only, so turning
+           the mode on strands every Year 2 and 3 member. That has to be a
+           number on a screen, not something a child discovers. */
+        $cov = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        $techRow = null;
+        foreach ($cov['rows'] ?? [] as $r) if ($r['name'] === $tech) $techRow = $r;
+        chk('division coverage: every division is listed with a year-by-year verdict',
+            !empty($cov['ok']) && count($cov['rows']) === 4 && $techRow && count($techRow['years']) === CURR_PROGRAMME_YEARS);
+        chk('division coverage: Year 1 has a spine; Years 2 and 3 are named as gaps',
+            $techRow['years'][0]['has'] === true && $techRow['years'][1]['has'] === false && $techRow['gaps'] === [2, 3]);
+        chk('division coverage: it counts the members a gap would actually strand, rather than leaving it to be inferred',
+            $cov['stranded'] === 0 && $techRow['years'][0]['members'] >= 1);
+        staff_curriculum_year(['requesterId' => 'NGG-CUR-ADM', 'viaAdmin' => true, 'memberId' => 'NGG-CUR-D1', 'year' => 2]);
+        $cov2 = backend_dispatch('admin.curriculum.divisions', ['requesterId' => 'NGG-CUR-ADM']);
+        chk('division coverage: …so placing that member in a year with no spine makes the count go up',
+            $cov2['stranded'] === 1);
+
+        backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['courseSource' => 'member']]);
+        chk('division mode: turning it off puts the member back on their own courses',
+            (function () { $c = null; return in_array('Coding', curriculum_member_courses(curriculum_member_row('NGG-CUR-D1'), $c), true); })());
+        db_exec("DELETE FROM members WHERE memberId IN ('NGG-CUR-D1','NGG-CUR-D2')");
+        db_exec("DELETE FROM member_state WHERE memberId = 'NGG-CUR-D1'");
+
+        /* ── Studying for school: one session of the growth plan ─────────
+           The plan from a member's results already said "Mathematics, 62 →
+           70, three sessions a week" and there was nowhere to do one. A
+           drill is that session, and finishing it has to close three loops:
+           the week's own counter, the spaced repetition, and the level the
+           next one sits at. */
+        db_insert('growth_plans', ['planId' => 'GP-TEST-1', 'uploadId' => 'UP-TEST-1', 'memberId' => 'NGG-CUR-M1',
+            'term' => '2026-1', 'summary' => 'Two subjects this term.', 'status' => 'live', 'committed' => 1,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('growth_plan_items', ['itemId' => 'GI-TEST-1', 'planId' => 'GP-TEST-1', 'subject' => 'Mathematics',
+            'current' => 62, 'target' => 70, 'method' => 'retrieval', 'what' => 'Past questions, out loud.',
+            'whenWhere' => 'After supper, at the table.', 'sessionsPerWeek' => 3, 'helper' => 'self', 'position' => 0]);
+
+        $drillQs = static function () {
+            $qs = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $qs[] = ['q' => "What is $i + $i?", 'options' => ['One', (string)($i * 2), 'Three', 'Four'],
+                         'answer' => 1, 'why' => 'Add it to itself.'];
+            }
+            return json_encode(['questions' => $qs]);
+        };
+        $GLOBALS['CONFIG']['ai'] = ['groq_api_key' => 'test-key'];
+        $GLOBALS['__ai_mock'] = static fn($profile, $system, $turns) => ['ok' => true, 'provider' => 'groq', 'text' => $drillQs()];
+
+        $plan = backend_dispatch('member.study.plan', ['memberId' => 'NGG-CUR-M1']);
+        chk('study: the School screen is ONE call, already shaped — the app never reads the results payload',
+            !empty($plan['ok']) && $plan['state'] === 'ready' && count($plan['items']) === 1
+            && $plan['items'][0]['subject'] === 'Mathematics' && $plan['items'][0]['target'] === 70
+            && $plan['items'][0]['planned'] === 3 && $plan['items'][0]['doneThisWeek'] === 0
+            && $plan['items'][0]['level'] === 2);
+
+        $start = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a drill is five questions at the level they are working at',
+            !empty($start['ok']) && count($start['questions']) === 5 && $start['level'] === 2 && $start['subject'] === 'Mathematics');
+        chk('study: the ANSWERS never travel to the browser — there is nothing to read off the page',
+            !isset($start['questions'][0]['answer']) && !isset($start['questions'][0]['why']));
+        chk('study: a subject that is not on their plan is not a subject',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-NOPE'])['error'] ?? '') === 'not_found');
+
+        // Four of five right: enough to move up, and one card to make.
+        $mark = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'],
+            'answers' => [1, 1, 1, 1, 0]]);
+        chk('study: it is marked here, with the REASON rather than just a verdict',
+            !empty($mark['ok']) && $mark['correct'] === 4 && $mark['asked'] === 5 && $mark['pct'] === 80
+            && $mark['marks'][4]['right'] === false && strpos((string)$mark['marks'][4]['why'], 'Add it') === 0);
+        chk('study: …and it cannot be marked twice',
+            (backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $start['drillId'], 'answers' => [1,1,1,1,1]])['error'] ?? '') === 'already_marked');
+
+        /* The three loops. */
+        chk('study: the week\'s check-in goes up by one — through the PLAN\'s own counter, not a second tally',
+            ($mark['tick']['done'] ?? 0) === 1 && ($mark['tick']['planned'] ?? 0) === 3
+            && (int)db_row("SELECT done FROM plan_checkins WHERE itemId = 'GI-TEST-1'")['done'] === 1);
+        chk('study: what they got wrong becomes a flashcard, in the spaced repetition they already have',
+            ($mark['cardsMade'] ?? 0) === 1
+            && (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 1
+            && (string)db_row("SELECT name FROM study_decks WHERE memberId = 'NGG-CUR-M1'")['name'] === 'School · Mathematics');
+        chk('study: 80% moves the next one up a level', ($mark['nextLevel'] ?? 0) === 3
+            && drill_level_for('NGG-CUR-M1', 'Mathematics') === 3);
+
+        // The same card is not made twice, however often they miss it again.
+        $s2 = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        $m2 = backend_dispatch('member.study.drill.mark', ['memberId' => 'NGG-CUR-M1', 'drillId' => $s2['drillId'], 'answers' => [0, 0, 0, 0, 0]]);
+        chk('study: a question already on a card is not carded twice — the count would be a lie',
+            (int)db_row("SELECT COUNT(*) c FROM study_cards WHERE memberId = 'NGG-CUR-M1'")['c'] === 5);
+        chk('study: and nought out of five steps the level back down', ($m2['nextLevel'] ?? 0) === 2);
+
+        /* The daily bound, said as itself. */
+        for ($i = 0; $i < DRILL_PER_DAY; $i++) backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+        chk('study: a sitting is short, and the day has a bound it names',
+            (backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1'])['error'] ?? '') === 'enough_today');
+
+        /* With nothing to write the questions, it says so rather than
+           handing a child an empty paper. */
+        unset($GLOBALS['__ai_mock'], $GLOBALS['CONFIG']['ai']);
+        db_exec("DELETE FROM study_drills WHERE memberId = 'NGG-CUR-M1'");
+        chk('study: with no AI and no question bank it refuses honestly, and points somewhere real',
+            (function () { $r = backend_dispatch('member.study.drill.start', ['memberId' => 'NGG-CUR-M1', 'itemId' => 'GI-TEST-1']);
+                           return ($r['error'] ?? '') === 'no_questions' && strpos((string)($r['message'] ?? ''), 'flashcards') !== false; })());
+
+        db_exec("DELETE FROM study_cards WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM study_decks WHERE memberId = 'NGG-CUR-M1'");
+        db_exec("DELETE FROM plan_checkins WHERE itemId = 'GI-TEST-1'");
+        db_exec("DELETE FROM growth_plan_items WHERE planId = 'GP-TEST-1'");
+        db_exec("DELETE FROM growth_plans WHERE planId = 'GP-TEST-1'");
+    })();
+
     // Import: dry run, digest, apply, re-run.
     $rows = [
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Hand position', 'summary' => 'Curved fingers.', 'checks' => [['kind' => 'short', 'prompt' => 'Why curve your fingers?', 'answer' => 'Control and speed']]],
-        ['course' => '', 'week' => 1, 'position' => 1, 'title' => 'Welcome to the Club', 'objectives' => ['Know the Club values']],
+        ['course' => '', 'week' => 1, 'position' => 1, 'title' => 'Welcome to the Club', 'objectives' => ['Know the Club values'],
+         'checks' => [['kind' => 'task', 'prompt' => 'Tell us one Club value and a time you have seen somebody live it.', 'answer' => 'A named value and a real occasion.', 'rubric' => 'Up to 3: names a value (1); a real occasion, not a definition (2).', 'points' => 3]]],
         ['course' => 'Guitr', 'week' => 1, 'title' => 'Tuning'],
         ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Duplicate slot'],
     ];
@@ -24290,6 +24782,35 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('import: an apply without the dry run\'s digest is refused', (backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => 'x'])['error'] ?? '') === 'import_changed');
     $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => $dry['digest']]);
     chk('import: the apply writes the rows that passed', !empty($ap['ok']) && $ap['tally']['create'] === 2 && (bool)db_row("SELECT id FROM curriculum_units WHERE title = 'Hand position' AND status = 'published' AND source = 'import'"));
+    /* A row with nothing to ask still imports — as a draft, named. A sheet
+       of a hundred lessons must not import zero because some rows have no
+       questions yet; and nothing reaches a member unreviewable. */
+    /* A sheet of a hundred lessons must not import zero because some rows
+       have no question yet — the row lands as a draft and is named. Run on
+       its own rows: the sheet above is shared with the tests that follow
+       it, and adding lessons to it moves what they are counting. */
+    (function () {
+        $rows2 = [
+            ['course' => 'Piano', 'week' => 77, 'position' => 1, 'title' => 'Nothing to ask yet'],
+            ['course' => 'Piano', 'week' => 77, 'position' => 2, 'title' => 'Only multiple choice',
+             'checks' => [['kind' => 'mcq', 'prompt' => 'Which finger is the thumb?', 'options' => ['1', '2'], 'answer' => '0']]],
+            ['course' => 'Piano', 'week' => 77, 'position' => 3, 'title' => 'Asks for the work',
+             'checks' => [['kind' => 'task', 'prompt' => 'Play it and say what you changed.', 'rubric' => 'Up to 3.', 'points' => 3]]],
+        ];
+        $d2 = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows2, 'dryRun' => true, 'publish' => true]);
+        $a2 = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows2, 'publish' => true, 'digest' => $d2['digest']]);
+        $st = static fn($t) => (string)(db_row('SELECT status FROM curriculum_units WHERE title = ?', [$t])['status'] ?? '');
+        chk('import: a row with no question for next week lands as a DRAFT, not thrown out, and is named',
+            ($a2['tally']['drafted'] ?? 0) === 2 && $st('Nothing to ask yet') === 'draft'
+            && ($a2['rows'][0]['note'] ?? '') === 'review_required');
+        /* Multiple choice alone is held back for the same reason nothing at
+           all is: it would publish a week that is never really revisited. */
+        chk('import: a row whose only question is multiple choice is held back the same way',
+            $st('Only multiple choice') === 'draft');
+        chk('import: …and a row that asks for the work publishes',
+            $st('Asks for the work') === 'published');
+        db_exec("DELETE FROM curriculum_units WHERE course = 'Piano' AND week = 77");
+    })();
     $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => array_slice($rows, 0, 2), 'dryRun' => true, 'publish' => true]);
     chk('import: the same sheet again is unchanged, not duplicated', $again['tally']['unchanged'] === 2 && $again['tally']['create'] === 0);
     $rows[0]['summary'] = 'Curved fingers, relaxed wrists.';
@@ -24298,14 +24819,37 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // The member's curriculum.
     $list = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1']);
-    chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok']) && $list['total'] === 3);
-    chk('member: a Guitar member sees only the Club-wide lesson', backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['total'] === 1);
+    /* The bundled curricula seed themselves on boot now, so a Piano member has
+       the shipped Piano course as well as this fixture's two lessons. Counting
+       rows would pin the size of the seed; what matters is WHICH lessons reach
+       them — their own course, plus the Club-wide one, and nothing belonging
+       to a course they are not on. */
+    $coursesOf = static function (string $mid) {
+        $r = backend_dispatch('member.curriculum.list', ['memberId' => $mid]);
+        return array_values(array_unique(array_column($r['units'] ?? [], 'course')));
+    };
+    /* Which COURSES reach them, not which titles: the year-staging decides
+       which weeks of a course a given member is shown, and pinning titles
+       would pin that placement too. Piano is a strand of Music, so a pianist
+       is shown both — reading music is not a piano skill — and '' is the
+       Club-wide lesson every member gets. */
+    $pianoSees = $coursesOf('NGG-CUR-M1');
+    chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok'])
+        && in_array('Piano', $pianoSees, true) && in_array('', $pianoSees, true)
+        && !in_array('Guitar', $pianoSees, true));
+    $guitarSees = $coursesOf('NGG-CUR-M2');
+    chk('member: a Guitar member gets the Club-wide lesson (' . implode('|', $guitarSees) . ')', in_array('', $guitarSees, true));
+    /* Guitar widens to Music (its subject) and to the division. It must NOT
+       widen through Music back down to Music's other strands: a guitarist is
+       not taking piano lessons. */
+    chk('member: …but never another strand of the same subject (Piano)', !in_array('Piano', $guitarSees, true));
+    chk('member: …and the division lesson does reach them', in_array('Creative & Performing Arts', $guitarSees, true));
     chk('member: a Summer account has no Club curriculum', (backend_dispatch('member.curriculum.list', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
     // The downloadable document: data in, a template out, nothing a lesson says becomes markup.
     $docR = backend_dispatch('member.curriculum.document', ['memberId' => 'NGG-CUR-M1']);
     $doc = $docR['document'] ?? [];
     chk('document: the member\'s curriculum, by week, with the title of their course',
-        !empty($docR['ok']) && $doc['title'] === 'Piano curriculum' && $doc['total'] === 3 && $doc['weeks'][0]['week'] === 1);
+        !empty($docR['ok']) && $doc['title'] === 'Piano curriculum' && $doc['total'] >= 3 && $doc['weeks'][0]['week'] === 1);
     $flat = json_encode($doc);
     chk('document: carries the checks\' questions but never their answers or rubrics',
         strpos($flat, 'Why curve your fingers?') !== false && strpos($flat, 'Control and speed') === false && strpos($flat, '"rubric"') === false);
@@ -24326,9 +24870,93 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $c = $open['unit']['checks'];
     $wrong = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 0, $c[1]['checkId'] => 1]]);
     chk('member: a failed attempt is marked on the spot and not completed', !empty($wrong['ok']) && $wrong['progress']['status'] === 'attempted' && $wrong['progress']['bestPct'] === 0);
-    $right = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0]]);
-    chk('member: passing at the pass mark completes the lesson, and the answers are then shown',
-        $right['progress']['status'] === 'completed' && $right['progress']['bestPct'] === 100 && $right['progress']['attempts'] === 2 && isset($right['review'][0]['answer']));
+    $right = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid,
+        'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0, $c[2]['checkId'] => 'I played it twice; the thumb went under on F.']]);
+    /* The recall half marks itself on the spot and the practical waits for a
+       marker — so getting both multiple-choice questions right does NOT
+       complete the lesson. That is the point of refusing to publish a review
+       made only of multiple choice: in a practical subject, picking the
+       right words off a list is not evidence that anybody can play. The
+       cost is real and deliberate — completion now needs a marker, AI or
+       human — and `curriculum.mark` is where it finishes (tested below). */
+    chk('member: the recall half marks on the spot, and the practical holds the lesson open for a marker',
+        $right['progress']['status'] === 'submitted' && $right['progress']['pending'] === true
+        && $right['progress']['attempts'] === 2 && $right['review'] === null);
+    chk('member: …and the multiple-choice points were still awarded',
+        (int)$right['progress']['score'] === 2 && (int)$right['progress']['maxScore'] === 5);
+
+    // The Learn app's own record: picked up, kept, noted (domain/learn.php).
+    (function () use ($uid) {
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'] ?? [];
+        chk('learn: opening a lesson is what "pick up where you left off" reads', ($L['recent'][0]['unitId'] ?? '') === $uid);
+        $n = backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => "  Thumb under on F.\r\nPractise slowly.  "]);
+        chk('learn: a note is kept, trimmed, with its time', !empty($n['ok']) && $n['note'] === "Thumb under on F.\nPractise slowly." && $n['noteAt'] !== '');
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: …and comes back on the list read and on the lesson', ($L['notes'][0]['note'] ?? '') === $n['note']
+            && backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid])['mine']['note'] === $n['note']);
+        chk('learn: a note over the limit is refused and names it', (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => str_repeat('a', LEARN_NOTE_MAX + 1)])['error'] ?? '') === 'too_long');
+        $guitar = (string)(db_row("SELECT unitId FROM curriculum_units WHERE course = 'Guitar' LIMIT 1")['unitId'] ?? 'none');
+        chk('learn: nobody keeps a note on, or saves, a lesson that is not theirs',
+            (backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'note' => 'x'])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar, 'saved' => true])['error'] ?? '') === 'not_found'
+            && (backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $guitar])['error'] ?? '') === 'not_found');
+        chk('learn: …nor on anybody else\'s list', empty(backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['learn']['notes']));
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => true]);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: a lesson saved for later is on the saved list, and its note survives the save', ($L['saved'][0]['unitId'] ?? '') === $uid && ($L['notes'][0]['note'] ?? '') === $n['note']);
+        backend_dispatch('member.learn.save', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'saved' => false]);
+        backend_dispatch('member.learn.note', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'note' => '   ']);
+        $L = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['learn'];
+        chk('learn: unsaving and an empty note take it off both lists', $L['saved'] === [] && $L['notes'] === []);
+        chk('learn: one row per member per lesson, however often it is touched', (int)db_row('SELECT COUNT(*) n FROM learn_state WHERE memberId = ? AND unitId = ?', ['NGG-CUR-M1', $uid])['n'] === 1);
+
+        // The figures are derived from completions, never stored.
+        $t = strtotime(attendance_today() . 'T12:00:00Z');
+        $mon = $t - ((int)gmdate('N', $t) - 1) * 86400;
+        $u = static fn($d, $mins = 20) => ['durationMins' => $mins, 'progress' => ['status' => 'completed', 'completedAt' => gmdate('Y-m-d', $d) . 'T10:00:00Z']];
+        $s = learn_stats([$u($mon), $u($mon - 7 * 86400), $u($mon - 14 * 86400, 40), $u($mon - 35 * 86400), ['durationMins' => 30, 'progress' => ['status' => 'started']]]);
+        chk('learn: three weeks in a row, the minutes of finished lessons only, and this week\'s count',
+            $s['streakWeeks'] === 3 && $s['minutes'] === 100 && $s['doneThisWeek'] === 1 && $s['done'] === 4);
+        $s = learn_stats([$u($mon - 7 * 86400), $u($mon - 14 * 86400)]);
+        chk('learn: a week not yet over does not break the run', $s['streakWeeks'] === 2 && $s['doneThisWeek'] === 0);
+        chk('learn: a gap does', learn_stats([$u($mon - 14 * 86400)])['streakWeeks'] === 0);
+
+        // Go deeper: a fetched read that has to be ABOUT the lesson, and vetted sources by course.
+        $unit = db_row('SELECT title, course FROM curriculum_units WHERE unitId = ?', [$uid]);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) {
+            $calls[] = $url;
+            if (strpos($url, '/search/title') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['pages' => [
+                ['key' => 'Banana', 'title' => 'Banana'], ['key' => 'Middle_C', 'title' => 'Middle C']]])];
+            if (strpos($url, 'Banana') !== false) return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Banana', 'extract' => str_repeat('A yellow fruit. ', 10)])];
+            return ['ok' => true, 'code' => 200, 'body' => json_encode(['type' => 'standard', 'title' => 'Middle C',
+                'extract' => 'Middle C is the C note near the middle of a piano keyboard. It is the fourth C key from the left on a standard 88-key piano.',
+                'content_urls' => ['desktop' => ['page' => 'https://simple.wikipedia.org/wiki/Middle_C']]])];
+        };
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is the article that shares a word with the lesson, never the first result', ($g['read']['title'] ?? '') === 'Middle C'
+            && !array_filter($calls, fn($c) => strpos($c, 'summary/Banana') !== false));
+        chk('learn: …with its source, its licence and a link back', ($g['read']['source'] ?? '') === 'Simple English Wikipedia'
+            && ($g['read']['licence'] ?? '') === 'CC BY-SA 4.0' && ($g['read']['url'] ?? '') === 'https://simple.wikipedia.org/wiki/Middle_C');
+        $hosts = array_map(fn($x) => parse_url($x['url'], PHP_URL_HOST), $g['sources'] ?? []);
+        chk('learn: a music lesson gets the vetted music sources, and a search on its topic', in_array('www.musictheory.net', $hosts, true) && in_array('www.khanacademy.org', $hosts, true));
+        $calls = [];
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: the read is cached, so the next view asks Wikipedia nothing', $calls === []);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $GLOBALS['__learn_http'] = fn($url) => ['ok' => false, 'code' => 429, 'body' => ''];
+        $g = backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: Wikipedia refusing is not an error anybody sees: no read, and the sources still show', !empty($g['ok']) && $g['read'] === null && count($g['sources']) > 0);
+        $calls = [];
+        $GLOBALS['__learn_http'] = function ($url) use (&$calls) { $calls[] = $url; return ['ok' => false, 'code' => 429, 'body' => '']; };
+        backend_dispatch('member.learn.sources', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+        chk('learn: …and a miss is remembered for a day rather than asked on every view', $calls === []);
+        unset($GLOBALS['__learn_http']);
+        foreach ([$unit['title'], $unit['course']] as $q) @unlink(cache_path('learn-wiki-' . sha1(mb_strtolower((string)$q))));
+        $gen = array_column(learn_curated('Swimming', 'Floating'), 'by');
+        chk('learn: a course with no list of its own gets the general one, never another course\'s', in_array('OpenStax (Rice University)', $gen, true) && !in_array('musictheory.net', $gen, true));
+    })();
 
     // A written answer with no AI waits for a person.
     $hp = db_row("SELECT unitId FROM curriculum_units WHERE title = 'Hand position'")['unitId'];
@@ -24344,10 +24972,23 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $mk('NGG-CUR-VS', 'member', ['email' => 'vcs@example.com']); $mk('NGG-CUR-VN', 'member', ['email' => 'vcn@example.com']);
     chk('staff: a Summer-only instructor has no Club curriculum', (backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VS'])['error'] ?? '') === 'not_ngg_staff');
     $st = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']);
+    /* TWO answers wait now, not one: the written answer on 'Hand position'
+       and the practical on 'Finding middle C'. That is the shape of every
+       review since a published one cannot be multiple choice alone — a
+       marker, AI or human, is part of the loop by design. Found by unitId
+       rather than by position, because which one is first is not a fact
+       this test should depend on. */
     $mine = array_values(array_filter($st['pending'] ?? [], fn($x) => $x['memberId'] === 'NGG-CUR-M1'));
-    chk('staff: an NGG instructor sees their course\'s lessons and the answers waiting', !empty($st['ok']) && count($st['units']) >= 2 && count($mine) === 1 && $mine[0]['checks'][0]['answer'] === 'So I can play faster');
-    $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $mine[0]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
+    $byUnit = array_column($mine, null, 'unitId');
+    chk('staff: an NGG instructor sees their course\'s lessons and the answers waiting',
+        !empty($st['ok']) && count($st['units']) >= 2 && count($mine) === 2
+        && ($byUnit[$hp]['checks'][0]['answer'] ?? '') === 'So I can play faster');
+    $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $byUnit[$hp]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
     chk('staff: marking the answer completes the lesson', !empty($mark['ok']) && $mark['status'] === 'completed' && $mark['pending'] === 0);
+    $pm = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $byUnit[$uid]['progressId'],
+        'marks' => [$c[2]['checkId'] => ['points' => 3, 'feedback' => 'Even, and you knew where the thumb went.']]]);
+    chk('staff: marking the practical is what finishes the lesson it belongs to',
+        !empty($pm['ok']) && $pm['status'] === 'completed' && $pm['pending'] === 0 && $pm['pct'] === 100);
     chk('staff: …and a mentor can open the member\'s record', backend_dispatch('staff.curriculum.member', ['requesterId' => 'NGG-CUR-VN', 'memberId' => 'NGG-CUR-M1'])['completed'] === 2);
     // The map staff read: the week the Club is on, each lesson's due date, the average score, and who is behind.
     $schedKeep = setting_get('curriculum');
@@ -24978,6 +25619,54 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM centres WHERE centreId = 'CEN-PD-W'");
 })();
 
+/* ── A sign-out that arrives after the nightly check clears the absence it caused ── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $keep = []; foreach (['memberProgramme', 'policy', 'policy_member_swept_through', 'policy_member_checkout_since'] as $k) $keep[$k] = setting_raw($k);
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    $sat = ''; for ($i = 1; $i <= 7; $i++) { $d = $ago($i); if ((int)gmdate('N', strtotime($d . ' UTC')) === 6) $sat = $d; }
+    db_insert('members', ['memberId' => 'NGG-LO-1', 'fullName' => 'Lo Late', 'email' => 'lo1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(30), 'endDate' => $ago(-30), 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['member' => ['enabled' => true, 'checkoutRequired' => true]], 'test');
+    setting_set('policy_member_checkout_since', $ago(20), 'system');
+    // Came in through the CACENTRE gate on Saturday; the gate never sent the departure.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-LO-1', 'date' => $sat, 'checkInAt' => $sat . 'T07:34:00Z', 'checkOutAt' => '', 'method' => 'webhook', 'createdAt' => $now]);
+    setting_set('policy_member_swept_through', $ago(8), 'system');
+    policy_sweep_member_absences($ago(1));
+    $live = fn() => array_column(db_all("SELECT kind FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND (voidedAt IS NULL OR voidedAt = '')", [$sat]), 'kind');
+    chk('late sign-out: the sweep counts a day with no sign-out absent (the rule)', in_array('absence', $live(), true) && in_array('no_checkout', $live(), true));
+
+    $rec = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
+    $onSat = array_values(array_filter($rec['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the record shows that Saturday once, as no sign-out — not present AND absent', count($onSat) === 1 && $onSat[0]['kind'] === 'incomplete' && $onSat[0]['in'] === '07:34');
+    chk('late sign-out: …and counts it once, as the absence it is', ($rec['attendance']['present'] ?? -1) === 0 && ($rec['attendance']['absent'] ?? -1) === 1);
+    $own = backend_dispatch('member.records', ['memberId' => 'NGG-LO-1']);
+    $ownSat = array_values(array_filter($own['attendance']['days'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the member\'s own records say it was counted absent, not "present"', ($ownSat[0]['status'] ?? '') === 'no sign-out, counted absent');
+
+    // Days later the gate's back-fill delivers the departure, with its own time.
+    $tz = (int)attendance_settings()['tzOffset'];
+    $leftAt = gmdate('Y-m-d\TH:i:s\Z', strtotime($sat . ' 17:30:00 UTC') - $tz * 60);
+    $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-LO-1', 'action' => 'out', 'date' => $sat, 'scannedAt' => $leftAt]]]);
+    $row = db_row('SELECT checkOutAt FROM attendance WHERE studentId = ? AND date = ?', ['NGG-LO-1', $sat]);
+    chk('late sign-out: a departure re-sent days later is stamped at the time it happened, not now', ($h['results'][0]['status'] ?? '') === 'marked' && (string)$row['checkOutAt'] === $leftAt);
+    chk('late sign-out: …and the no-sign-out absence and its no_checkout are voided', $live() === []);
+    chk('late sign-out: …with the reason kept', (bool)db_row("SELECT 1 FROM infractions WHERE personId = 'NGG-LO-1' AND date = ? AND voidReason LIKE 'Signed out%'", [$sat]));
+    $rec2 = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-LO-1']);
+    $onSat2 = array_values(array_filter($rec2['attendance']['recent'] ?? [], fn($r) => $r['date'] === $sat));
+    chk('late sign-out: the record now shows a present day with its sign-out time', count($onSat2) === 1 && $onSat2[0]['kind'] === 'present' && $onSat2[0]['out'] === gmdate('H:i', strtotime($leftAt)));
+    chk('late sign-out: a departure delivered for a past day sends the member no email today', !array_filter($GLOBALS['__mail_sink'] ?? [], fn($m) => $m['to'] === 'lo1@example.com'));
+
+    // A real absence (never came) is not this path's to clear.
+    $other = $ago(15); while ((int)gmdate('N', strtotime($other . ' UTC')) !== 6) $other = gmdate('Y-m-d', strtotime($other . ' UTC') - 86400);
+    policy_log('NGG-LO-1', 'member', 'absence', $other, 'No check-in on a member programme day.');
+    chk('late sign-out: an absence for a day they never came is untouched', policy_checkout_landed('NGG-LO-1', 'member', $other) === 0);
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    foreach (['infractions' => 'personId', 'sanctions' => 'personId', 'member_ledger' => 'memberId', 'attendance' => 'studentId', 'members' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c = 'NGG-LO-1'");
+})();
+
 /* ── Approval notifications: the people who decide hear, and so does the asker ── */
 (function () {
     $now = now_iso();
@@ -25001,7 +25690,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     // A member's request reaches the desk; the decision reaches the member by email too.
     $GLOBALS['__mail_sink'] = [];
-    $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for exams', 'body' => 'Two Saturdays', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-14']);
+    $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for an exam', 'body' => 'One Saturday', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07']);
     chk('notify: a member request reaches the people who decide it', !empty($rq['ok']) && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
     $GLOBALS['__mail_sink'] = [];
     backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-NT-ADM', 'requestId' => $rq['request']['requestId'], 'approve' => true, 'decision' => 'Good luck with the exams']);
@@ -25091,7 +25780,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $rq = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07', 'body' => 'Family wedding']);
     chk('family: a parent\'s absence notice lands in the desk\'s request queue', !empty($rq['ok']) && ($rq['request']['byFamily'] ?? false) === true
         && (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
-    chk('family: a parent cannot raise a payment claim', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment', 'amount' => 5000])['error'] ?? '') === 'unknown_kind');
+    chk('family: a parent\'s payment claim needs the amount', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment'])['error'] ?? '') === 'bad_amount');
     $list = backend_dispatch('admin.requests.list', ['requesterId' => 'NGG-FA-ADM', 'status' => 'open']);
     $row = array_values(array_filter($list['requests'] ?? [], fn($x) => $x['requestId'] === $rq['request']['requestId']))[0] ?? [];
     chk('family: …and the desk sees who raised it', ($row['raisedByName'] ?? '') === 'mum@example.com');
@@ -25118,6 +25807,169 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $GLOBALS['__mail_sink'] = [];
     $a = family_weekly_run(attendance_today()); $b = family_weekly_run(attendance_today());
     chk('family: the weekly mail goes once per family per week', $a['sent'] >= 1 && $b['sent'] === 0 && count($mailTo('mum@example.com')) === 1);
+
+    // ── Family Portal v3 ────────────────────────────────────────────────
+    chk('family v3: a parent cannot edit their own profile; it is a request to the desk', (backend_dispatch('family.profile', ['guardianId' => $gid, 'fullName' => 'X'])['error'] ?? '') === 'read_only');
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('family v3: no scorecard is an empty state, not a card of zeros', array_key_exists('score', $w3) && $w3['score'] === null);
+    chk('family v3: a parent is offered the charges they can appeal, and never the training place', (function () use ($gid, $lid) {
+        db_insert('member_ledger', ['entryId' => 'FEE-FA-1', 'memberId' => 'NGG-FA-KID', 'kind' => 'dues', 'direction' => 'charge', 'amount' => 2000, 'note' => 'Commitment fee', 'periodKey' => 'fa-1', 'createdAt' => now_iso()]);
+        db_insert('member_ledger', ['entryId' => 'FEE-FA-2', 'memberId' => 'NGG-FA-KID', 'kind' => 'training', 'direction' => 'charge', 'amount' => 6000, 'note' => 'Training', 'periodKey' => 'fa-2', 'createdAt' => now_iso()]);
+        $ids = array_column(backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['charges'] ?? [], 'entryId');
+        db_exec("DELETE FROM member_ledger WHERE entryId IN ('FEE-FA-1', 'FEE-FA-2')");
+        return in_array('FEE-FA-1', $ids, true) && !in_array('FEE-FA-2', $ids, true);
+    })());
+    chk('family v3: five consents, each with the date it was given, and no way to change them', count($w3['consents'] ?? []) === 5 && ($w3['consents'][0]['given'] ?? '') !== '');
+    db_insert('member_collectors', ['memberId' => 'NGG-FA-KID', 'name' => 'Kemi Bello', 'relation' => 'Aunt', 'phone' => '0813 000 0000', 'createdAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MTR-FA', 'fullName' => 'Funmi Adebayo', 'status' => 'active', 'centre' => 'Egbeda']);
+    db_insert('mentor_assignments', ['memberId' => 'NGG-FA-KID', 'mentorId' => 'MTR-FA', 'status' => 'active']);
+    $mo = gmdate('Y-m'); $pm = gmdate('Y-m', strtotime($mo . '-01T12:00:00Z') - 86400);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $pm, 'scores' => '7,7,7,6,6,7,7,6,6,4', 'total' => 63, 'byKind' => 'mentor', 'mentorId' => 'MTR-FA', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $mo, 'scores' => '8,7,8,7,6,8,8,7,7,5', 'total' => 71, 'byKind' => 'mentor', 'mentorId' => 'MTR-FA', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-FA-KID', 'month' => $mo, 'scores' => '10,10,10,10,10,10,10,10,10,10', 'total' => 100, 'byKind' => 'member', 'mentorId' => '', 'centre' => 'Egbeda', 'locked' => 0, 'createdAt' => $now, 'updatedAt' => $now]);
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('family v3: the scorecard is the mentor\'s, with the one before it — never the child\'s self-score', array_sum($w3['score']['now'] ?? []) === 71 && array_sum($w3['score']['prev'] ?? []) === 63 && ($w3['score']['by'] ?? '') === 'Funmi Adebayo');
+    chk('family v3: the collectors the centre keeps, and the mentor by name', ($w3['collectors'][0]['name'] ?? '') === 'Kemi Bello' && ($w3['mentor']['name'] ?? '') === 'Funmi Adebayo');
+
+    // Results: owed, reminded once a day, uploaded by a parent, plan hidden until approved.
+    db_exec("UPDATE members SET joinDate = ? WHERE memberId = 'NGG-FA-KID'", [gmdate('Y-m-d', strtotime('-2 years'))]);
+    $res = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'] ?? [];
+    $term = (string)($res[0]['id'] ?? '');
+    chk('family v3: an owed term with nothing uploaded is "missing", newest first', $term !== '' && $res[0]['status'] === 'missing' && $res[0]['plan'] === null);
+    $GLOBALS['__mail_sink'] = [];
+    $rm = backend_dispatch('family.results.remind', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term]);
+    chk('family v3: a parent can remind the child about their results', !empty($rm['ok']) && (bool)array_filter($inbox('NGG-FA-KID'), fn($t) => strpos($t, 'results are due') !== false));
+    chk('family v3: …once a day', (backend_dispatch('family.results.remind', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['error'] ?? '') === 'too_soon');
+    chk('family v3: an upload must be a file this site stored', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => 'https://evil.example/x.jpg', 'mime' => 'image/jpeg', 'size' => 900])['error'] ?? '') === 'bad_type');
+    chk('family v3: …and no bigger than the limit', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abc', 'mime' => 'image/jpeg', 'size' => RESULTS_MAX_BYTES + 1])['error'] ?? '') === 'too_large');
+    $up = backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abc', 'mime' => 'image/jpeg', 'size' => 900]);
+    $res = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'];
+    chk('family v3: a parent\'s upload starts the child\'s loop and reads as "processing"', !empty($up['ok']) && $res[0]['status'] === 'processing' && $res[0]['uploadedBy'] === 'guardian');
+    chk('family v3: a second upload for the same term is refused', (backend_dispatch('family.results.upload', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term, 'fileUrl' => '/api/public/photo.php?id=abd', 'mime' => 'image/jpeg', 'size' => 900])['error'] ?? '') === 'already_uploaded');
+    db_insert('growth_plans', ['planId' => 'GP-FA-1', 'uploadId' => (string)$up['uploadId'], 'memberId' => 'NGG-FA-KID', 'term' => $term, 'summary' => 'Maths first.', 'status' => 'draft', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('family v3: a plan the mentor has not approved is never shown, and cannot be signed', backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'][0]['plan'] === null
+        && (backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['error'] ?? '') === 'not_reviewed');
+    db_exec("UPDATE growth_plans SET status = 'sent', approvedAt = ?, approvedByName = 'Funmi Adebayo' WHERE planId = 'GP-FA-1'", [$now]);
+    $pl = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['results'][0];
+    chk('family v3: an approved plan is shown, unsigned, with who checked it', $pl['status'] === 'uploaded' && ($pl['plan']['reviewedBy'] ?? '') === 'Funmi Adebayo' && $pl['plan']['signedAt'] === null);
+    $sg = backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term]);
+    chk('family v3: signing is one step, idempotent, and recorded for the mentor', !empty($sg['ok']) && !empty(backend_dispatch('family.plan.sign', ['guardianId' => $gid, 'linkId' => $lid, 'resultId' => $term])['already'])
+        && (int)db_row("SELECT COUNT(*) c FROM plan_acks WHERE planId = 'GP-FA-1'")['c'] === 1 && (bool)db_row("SELECT 1 FROM results_log WHERE memberId = 'NGG-FA-KID' AND kind = 'family-sign'"));
+
+    // The inbox: categories, signatures, one guardian's only.
+    family_notice_add($gid, 'announcement', 'A-1', 'Closed on Saturday', 'Public holiday.', 'Egbeda desk');
+    family_reports_run(substr($now, 0, 7) . '-02');
+    $ib = backend_dispatch('family.inbox', ['guardianId' => $gid]);
+    $rep = array_values(array_filter($ib['rows'] ?? [], fn($r) => $r['cat'] === 'report'))[0] ?? null;
+    chk('family v3: the monthly report lands in the inbox, about the child, asking for a signature', $rep && $rep['sign'] === true && $rep['wardLinkId'] === $lid);
+    chk('family v3: …once, however often the job runs', family_reports_run(substr($now, 0, 7) . '-02')['made'] === 0);
+    chk('family v3: the inbox filters by category', count(backend_dispatch('family.inbox', ['guardianId' => $gid, 'cat' => 'report'])['rows']) >= 1
+        && !array_filter(backend_dispatch('family.inbox', ['guardianId' => $gid, 'cat' => 'report'])['rows'], fn($r) => $r['cat'] !== 'report'));
+    $ann = array_values(array_filter($ib['rows'], fn($r) => $r['cat'] === 'centre'))[0] ?? null;
+    chk('family v3: a notice that asks for no signature cannot be signed', (backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $ann['id'] ?? ''])['error'] ?? '') === 'not_signable');
+    chk('family v3: signing a report is idempotent', !empty(backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $rep['id']])['ok']) && !empty(backend_dispatch('family.report.sign', ['guardianId' => $gid, 'id' => $rep['id']])['already']));
+    chk('family v3: another guardian cannot sign this family\'s report', (backend_dispatch('family.report.sign', ['guardianId' => 'GDN-0000000000', 'id' => $rep['id']])['error'] ?? '') === 'not_found');
+
+    // Events and RSVPs: the family's own answer.
+    $day = gmdate('Y-m-d', time() + 5 * 86400);
+    db_insert('events', ['eventId' => 'EV-FA-1', 'title' => 'Parent forum', 'kind' => 'forum', 'startAt' => $day . 'T14:00:00', 'centre' => 'Egbeda', 'status' => 'published', 'familiesExpected' => 1]);
+    db_insert('events', ['eventId' => 'EV-FA-2', 'title' => 'No class', 'kind' => 'closure', 'startAt' => $day . 'T09:00:00', 'centre' => 'Egbeda', 'status' => 'published']);
+    db_insert('events', ['eventId' => 'EV-FA-3', 'title' => 'Elsewhere', 'kind' => 'forum', 'startAt' => $day . 'T09:00:00', 'centre' => 'Ikeja', 'status' => 'published']);
+    $ev = backend_dispatch('family.events', ['guardianId' => $gid]);
+    $ids = array_column($ev['rows'] ?? [], 'id');
+    chk('family v3: events at this family\'s centres only, expected ones marked', in_array('EV-FA-1', $ids, true) && !in_array('EV-FA-3', $ids, true)
+        && (array_values(array_filter($ev['rows'], fn($r) => $r['id'] === 'EV-FA-1'))[0]['expected'] ?? false) === true);
+    chk('family v3: an RSVP is yes or no, and a closure takes none', !empty(backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-1', 'answer' => 'yes'])['ok'])
+        && (backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-2', 'answer' => 'yes'])['error'] ?? '') === 'closed'
+        && (backend_dispatch('family.rsvp', ['guardianId' => $gid, 'eventId' => 'EV-FA-1', 'answer' => 'maybe'])['error'] ?? '') === 'bad_answer');
+    chk('family v3: …and it is the family\'s row, not the child\'s', (backend_dispatch('family.events', ['guardianId' => $gid])['rsvp']['EV-FA-1'] ?? '') === 'yes'
+        && !db_row("SELECT 1 FROM event_rsvps WHERE eventId = 'EV-FA-1'"));
+
+    // Meeting the mentor: a free time, claimed once.
+    $at = gmdate('Y-m-d', time() + 4 * 86400) . 'T14:15';
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-1', 'mentorId' => 'MTR-FA', 'startAt' => $at, 'mode' => 'centre', 'createdAt' => $now]);
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-2', 'mentorId' => 'MTR-FA', 'startAt' => gmdate('Y-m-d', time() + 6 * 86400) . 'T10:00', 'mode' => 'phone', 'createdAt' => $now]);
+    db_insert('mentor_slots', ['slotId' => 'SLOT-FA-X', 'mentorId' => 'MTR-OTHER', 'startAt' => $at, 'mode' => 'centre', 'createdAt' => $now]);
+    chk('family v3: the mentor\'s free times are offered', count(backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['mentorSlots'] ?? []) === 2);
+    chk('family v3: another mentor\'s time cannot be booked', (backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-X'])['error'] ?? '') === 'slot_taken');
+    $bk = backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-1']);
+    $bk2 = backend_dispatch('family.mentor.book', ['guardianId' => $gid, 'linkId' => $lid, 'slotId' => 'SLOT-FA-2']);
+    chk('family v3: booking another time frees the first', !empty($bk['ok']) && !empty($bk2['ok'])
+        && (string)db_row("SELECT bookedBy FROM mentor_slots WHERE slotId = 'SLOT-FA-1'")['bookedBy'] === ''
+        && (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['meeting']['slotId'] ?? '') === 'SLOT-FA-2');
+    chk('family v3: a taken time cannot be taken again', (backend_dispatch('family.mentor.book', ['guardianId' => 'GDN-0000000000', 'linkId' => $lid, 'slotId' => 'SLOT-FA-2'])['error'] ?? '') === 'not_found');
+
+    // The new request kinds.
+    chk('family v3: a question for the mentor is a request, with a minimum', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'hm'])['error'] ?? '') === 'need_reason'
+        && !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'askmentor', 'body' => 'How can I help with reading?'])['ok']));
+    // Absences: the policy's own allowance (member absenceLimit) and count, plus leave still ahead (POLICY §1.1).
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID' AND kind = 'leave'");
+    $lim = (int)policy_for('member')['absenceLimit'];
+    $sat = fn($w) => gmdate('Y-m-d', strtotime('next saturday') + $w * 7 * 86400);
+    $leave = fn($from, $to = '') => backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => $from, 'toDate' => $to, 'body' => 'Family emergency']);
+    $ok = []; for ($i = 0; $i < $lim; $i++) $ok[] = $leave($sat(2 * $i));
+    chk('absences: up to the policy\'s limit, a parent can tell the centre', count(array_filter($ok, fn($r) => !empty($r['ok']))) === $lim);
+    $over = $leave($sat(2 * $lim));
+    chk('absences: one past the limit is refused, saying none are left', ($over['error'] ?? '') === 'excuse_limit' && strpos($over['detail'] ?? '', 'none left') !== false);
+    $w3 = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('absences: the family sees the count against the policy\'s own limit', ($w3['excuses']['max'] ?? 0) === $lim && ($w3['excuses']['used'] ?? 0) === $lim && ($w3['excuses']['left'] ?? 1) === 0);
+    db_exec("UPDATE member_requests SET status = 'withdrawn' WHERE memberId = 'NGG-FA-KID' AND kind = 'leave' AND fromDate = ?", [$sat(0)]);
+    $span = $leave($sat(6), $sat(7));
+    chk('absences: a notice covering two meeting days counts as two', ($span['error'] ?? '') === 'excuse_limit');
+    policy_log('NGG-FA-KID', 'member', 'absence', gmdate('Y-m-d', strtotime('last saturday')), 'test');
+    chk('absences: an absence the engine logged counts too', (member_excuses(db_row("SELECT * FROM members WHERE memberId = 'NGG-FA-KID'"))['recorded'] ?? 0) === 1);
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'");
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID' AND kind = 'leave'");
+    // Absence fines: nobody asked → fined; asked and undecided → held; decided → fined or not. Academic leave is not an absence.
+    $keepPol = setting_raw('policy');
+    $finesFor = fn($d) => (int)db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = 'NGG-FA-KID' AND kind = 'fine' AND tier = ? AND status IN ('active','pending')", [500000 + intdiv((int)strtotime($d . ' 00:00:00 UTC'), 86400)])['c'];
+    $past = fn($w) => gmdate('Y-m-d', strtotime('last saturday') - $w * 7 * 86400);
+    $absFine = (int)policy_for('member')['absenceFine'];
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(1), 'test'); policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: an absence nobody asked about is fined, at the member policy\'s amount', $absFine > 0 && $finesFor($past(1)) === 1
+        && (int)db_row("SELECT amount FROM sanctions WHERE personId = 'NGG-FA-KID' AND tier = ?", [500000 + intdiv((int)strtotime($past(1) . ' 00:00:00 UTC'), 86400)])['amount'] === $absFine);
+    policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: …once, however often the engine runs', $finesFor($past(1)) === 1);
+    $held = backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'leave', 'fromDate' => $past(2), 'toDate' => $past(2), 'body' => 'Hospital appointment']);
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(2), 'test'); policy_apply('NGG-FA-KID', 'member');
+    chk('absence fines: an absence with a request still open is held, not fined', !empty($held['ok']) && $finesFor($past(2)) === 0);
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $held['request']['requestId'], 'approve' => false, 'decision' => 'No evidence of the appointment.']);
+    chk('absence fines: declined, the held absence is fined then', $finesFor($past(2)) === 1);
+    $ok = backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'leave', 'fromDate' => $past(3), 'toDate' => $past(3), 'body' => 'Family funeral']);
+    policy_log('NGG-FA-KID', 'member', 'absence', $past(3), 'test');
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $ok['request']['requestId'], 'approve' => true, 'decision' => '']);
+    chk('absence fines: approved, it is excused — no fine', $finesFor($past(3)) === 0);
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID'"); db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM sanctions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FA-KID'");
+    chk('academic leave: needs both dates and a real reason, and is at most ten weeks', (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => $past(4), 'body' => 'WAEC exams at Grace High'])['error'] ?? '') === 'bad_dates'
+        && (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => $past(4), 'toDate' => $past(3), 'body' => 'exams'])['error'] ?? '') === 'need_reason'
+        && (backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'academic', 'fromDate' => '2027-01-01', 'toDate' => '2027-06-30', 'body' => 'WAEC exams at Grace High'])['error'] ?? '') === 'too_long');
+    $ac = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'academic', 'fromDate' => $past(4), 'toDate' => $past(3), 'body' => 'WAEC mock exams at Grace High School']);
+    foreach ([4, 3] as $w) policy_log('NGG-FA-KID', 'member', 'absence', $past($w), 'test');
+    policy_apply('NGG-FA-KID', 'member');
+    chk('academic leave: a parent can ask for it, and while it is open the absences it covers are held', !empty($ac['ok']) && $finesFor($past(4)) === 0 && $finesFor($past(3)) === 0);
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $ac['request']['requestId'], 'approve' => true, 'decision' => 'Good luck in the exams.']);
+    chk('academic leave: approved, its days are not absences — voided, unfined, and not counted against the limit',
+        (int)db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-FA-KID' AND kind = 'absence' AND (voidedAt IS NULL OR voidedAt = '')")['c'] === 0
+        && $finesFor($past(4)) === 0 && member_excuses(db_row("SELECT * FROM members WHERE memberId = 'NGG-FA-KID'"))['used'] === 0);
+    chk('academic leave: the sweep skips an approved academic day', member_absence_cover('NGG-FA-KID', $past(4)) === 'academic');
+    db_exec("DELETE FROM member_requests WHERE memberId = 'NGG-FA-KID'"); db_exec("DELETE FROM infractions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM sanctions WHERE personId = 'NGG-FA-KID'"); db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FA-KID'");
+    chk('family v3: an absence needs a reason, from a parent as from a member', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05'])['error'] ?? '') === 'need_reason'
+        && !empty(backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-12-05', 'body' => 'Hospital appointment'])['ok']));
+    chk('family v3: collectors are changed by the desk, and a scoped admin elsewhere cannot', !empty(backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-ADM', 'memberId' => 'NGG-FA-KID', 'collectors' => [['name' => 'Ada Obi', 'relation' => 'Grandmother', 'phone' => '0803 111 2222']]])['ok'])
+        && (backend_dispatch('admin.member.collectors', ['requesterId' => 'NGG-FA-SCOPED', 'memberId' => 'NGG-FA-KID'])['error'] ?? '') === 'out_of_scope'
+        && ($w = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])) && count($w['collectors']) === 1 && $w['collectors'][0]['name'] === 'Ada Obi');
+    db_exec("DELETE FROM mentor_slots WHERE slotId LIKE 'SLOT-FA-%'");
+    db_exec("DELETE FROM events WHERE eventId LIKE 'EV-FA-%'");
+    db_exec("DELETE FROM guardian_rsvps WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM guardian_notices WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM member_collectors WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentor_scorecards WHERE subjectId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MTR-FA'");
+    db_exec("DELETE FROM growth_plans WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM plan_acks WHERE planId = 'GP-FA-1'");
+    db_exec("DELETE FROM results_uploads WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM results_log WHERE memberId LIKE 'NGG-FA-%'");
 
     // The desk: scope per row, a reason to refuse, one audit event per run.
     chk('family: a scoped admin cannot approve outside their centres', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-SCOPED', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId']]])['results'][0]['error'] ?? '') === 'out_of_scope');
@@ -25231,9 +26083,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_insert('members', ['memberId' => 'NGG-ML-ADM', 'fullName' => 'Media Admin', 'email' => 'ml-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
     $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-ML-ADM', 'key' => 'media-lab-2026']);
     $rows = $s['rows'] ?? [];
+    $cat = array_map('mb_strtolower', club_courses());
     chk('media lab: the course ships, 24 weeks of two sessions, every lesson with a check', count($rows) === 48
-        && count(array_unique(array_column($rows, 'week'))) === 24 && !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Media Lab'));
-    chk('media lab: the seed says it files under a course outside the catalogue', ($s['allowNewCourse'] ?? false) === true);
+        && count(array_unique(array_column($rows, 'week'))) === 24 && !array_filter($rows, fn($r) => !$r['checks']));
+    /* It used to file all 48 under "Media Lab", a course nobody could enrol on,
+       so every one of them reached nobody. Each lesson now names the media
+       course that teaches it — or '' for the handful (safety, honest AI use,
+       research) that belong to every member of the programme. */
+    chk('media lab: every lesson names a real catalogue course, or everyone',
+        !array_filter($rows, fn($r) => $r['course'] !== '' && !in_array(mb_strtolower($r['course']), $cat, true)));
+    chk('media lab: the design, photography, video and social weeks each reach their own course',
+        count(array_unique(array_filter(array_column($rows, 'course')))) >= 6);
+    chk('media lab: it no longer needs the uncatalogued-course flag', ($s['allowNewCourse'] ?? false) === false);
     $proj = 0; $refl = 0;
     foreach ($rows as $r) foreach ($r['checks'] as $c) { if ($c['kind'] === 'project') $proj++; if ($c['kind'] === 'reflection') $refl++; }
     chk('media lab: a team challenge every month, marked on the programme\'s rubric, with a reflection', $proj >= 6 && $refl >= 6
@@ -25241,12 +26102,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $bodies = implode("\n", array_map(fn($r) => $r['title'] . ' ' . $r['body'] . ' ' . $r['summary'], $rows));
     chk('media lab: consent and age rules are taught before the first photograph of a person', stripos($bodies, 'consent') !== false && stripos($bodies, '13+') !== false
         && array_search('Staying safe online, and asking before you post', array_column($rows, 'title')) < array_search('Portraits — with permission', array_column($rows, 'title')));
-    $refused = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true]);
-    chk('media lab: without the flag the importer refuses an uncatalogued course', ($refused['tally']['failed'] ?? 0) === 48);
-    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
-    chk('media lab: with it, every lesson passes', ($dry['tally']['create'] ?? 0) === 48 && ($dry['tally']['failed'] ?? 1) === 0);
-    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'allowNewCourse' => true, 'digest' => $dry['digest']]);
-    chk('media lab: imported as 48 drafts, and the course can then be timetabled', ($ap['tally']['create'] ?? 0) === 48 && in_array('Media Lab', tt_courses(), true));
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('media lab: every lesson passes WITHOUT the uncatalogued-course flag', ($dry['tally']['create'] ?? 0) === 48 && ($dry['tally']['failed'] ?? 1) === 0);
+    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
+    chk('media lab: imported as 48 drafts against courses that can be timetabled', ($ap['tally']['create'] ?? 0) === 48
+        && in_array('Graphic Design', tt_courses(), true) && in_array('Video Production', tt_courses(), true));
     $ids = array_column(db_all("SELECT unitId FROM curriculum_units WHERE level = 'Media Lab 2026'"), 'unitId');
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
@@ -25309,7 +26169,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('study helper: the daily allowance is a refusal once used', (member_curriculum_ask(['memberId' => 'NGG-TU-1', 'unitId' => 'CU-TU-1', 'question' => 'And a tone?'])['error'] ?? '') === 'daily_limit');
     $w = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords on G', 'text' => '', 'course' => 'Piano', 'checks' => 3]);
     chk('lesson writer: with only a title, AI writes the whole lesson in the NGG Saturday standard', !empty($w['ok']) && str_starts_with($w['draft']['body'] ?? '', '## Why it matters')
-        && str_contains($sys, 'Guided hands-on practice (60 minutes)') && str_contains($sys, 'AI, used well'));
+        && str_contains($sys, 'Guided hands-on practice (60 minutes)') && !str_contains($sys, "'AI, used well'"));
+    /* AI is asked for only where the lesson's own work has a step it changes,
+       inside the independent work, and always with the learner checking what
+       comes back. It is NOT a section of every lesson: taught as a ritual it
+       stops being read. */
+    chk('lesson writer: AI is asked for only where the work needs it, as a step inside the independent assignment',
+        str_contains($sys, "Only if this particular lesson's work has a step an AI assistant genuinely changes")
+        && str_contains($sys, "'Independent assignment'") && str_contains($sys, 'checks or judges what it gives back')
+        && str_contains($sys, 'Most lessons do not need one'));
     $n = admin_curriculum_ai(['requesterId' => 'NGG-TU-ADM', 'title' => 'Chords', 'text' => str_repeat('Real notes from the instructor about chords. ', 4), 'course' => 'Piano', 'checks' => 3]);
     chk('lesson writer: with real notes, the notes are never rewritten', !empty($n['ok']) && ($n['draft']['body'] ?? '') === '');
     unset($GLOBALS['__ai_mock']); if ($prevAi === null) unset($GLOBALS['CONFIG']['ai']); else $GLOBALS['CONFIG']['ai'] = $prevAi;
@@ -25328,15 +26196,32 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('business: every Saturday follows the standard — demonstration, guided practice, independent assignment, feedback — with a deliverable and AI used well',
         !array_filter($rows, fn($r) => !str_contains($r['body'], 'Demonstration (20 minutes)') || !str_contains($r['body'], 'Guided hands-on practice (60 minutes)')
             || !str_contains($r['body'], 'Independent assignment (25 minutes)') || !str_contains($r['body'], 'feedback and submission (15 minutes)')
-            || !str_contains($r['body'], '**Deliverable:**') || !str_contains($r['body'], '## AI, used well') || (int)$r['durationMins'] !== 120));
+            || !str_contains($r['body'], '**Deliverable:**') || (int)$r['durationMins'] !== 120));
     chk('business: the programme team\'s weeks are kept (week 1 Drive, week 27 ChatGPT, week 72 the defence)', str_starts_with($rows[0]['title'], 'Google Drive')
         && str_starts_with($rows[26]['title'], 'ChatGPT') && str_contains($rows[71]['title'], 'defend the final project'));
     $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-BZ-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
     chk('business: every lesson passes the importer', ($dry['tally']['create'] ?? 0) === 72 && ($dry['tally']['failed'] ?? 1) === 0);
     $all = array_merge(backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'practical-coding-2026'])['rows'] ?? [],
                        backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-BZ-ADM', 'key' => 'media-lab-2026'])['rows'] ?? []);
-    chk('the Tech and Media courses now carry AI used well and support and stretch in every lesson', count($all) === 120
-        && !array_filter($all, fn($r) => !str_contains($r['body'], '## AI, used well') || !str_contains($r['body'], 'If you already can')));
+    chk('the Tech and Media courses carry support and stretch in every lesson', count($all) === 120
+        && !array_filter($all, fn($r) => !str_contains($r['body'], 'If you already can')));
+    /* AI in proportion, and inside the work. It was once a trailing section on
+       298 of 336 bundled lessons — more shelf space than the weekly
+       assignment. The budget per course is in api/tests/curriculum-shape.php;
+       what is pinned here is the shape: never an appendix, always a step of
+       the independent work, and never on every lesson. */
+    $every = array_merge($rows, $all);
+    $appendix = array_filter($every, fn($r) => str_contains($r['body'], '## AI, used well'));
+    chk('AI is never a trailing section appended to a lesson (' . count($appendix) . ' of ' . count($every) . ')', !$appendix);
+    $withAi = array_values(array_filter($every, fn($r) => str_contains($r['body'], 'With an AI assistant')));
+    chk('AI appears as a step inside the work, on a minority of lessons (' . count($withAi) . ' of ' . count($every) . ')',
+        $withAi && count($withAi) < count($every) / 3);
+    chk('every AI step sits inside the section where the learner works alone, not after the lesson',
+        !array_filter($withAi, function ($r) {
+            $i = strpos($r['body'], 'With an AI assistant');
+            $host = strrpos(substr($r['body'], 0, $i), '## ');
+            return $host === false || !preg_match('/^## (Independent assignment|What to do|Practise at home)/', substr($r['body'], $host));
+        }));
     db_exec("DELETE FROM members WHERE memberId = 'NGG-BZ-ADM'");
 })();
 
@@ -25375,7 +26260,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
     chk('seed: importing writes 72 lessons as drafts, with their checks and materials', ($ap['tally']['create'] ?? 0) === 72
         && (int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE level = 'Full Stack Web Developer 2026' AND status = 'draft'")['c'] === 72
-        && (int)db_row("SELECT COUNT(*) c FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.level = 'Full Stack Web Developer 2026'")['c'] === 116);
+        && (int)db_row("SELECT COUNT(*) c FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.level = 'Full Stack Web Developer 2026'")['c'] === 149);
     $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'dryRun' => true]);
     chk('seed: loading it a second time changes nothing', ($again['tally']['unchanged'] ?? 0) === 72);
     chk('seed: an unknown key is refused', (backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM', 'key' => '../../config'])['error'] ?? '') === 'not_found');
@@ -25524,7 +26409,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $divs = club_divisions();
     chk('separation: the Club is seeded with the four NGG divisions, not a copy of Summer School\'s catalogue',
         array_column($divs, 'name') === ['Creative & Performing Arts', 'Media & Content Strategy', 'Technology & Applied Engineering', 'Business Strategy, Operations & Administration']
-        && in_array('Robotics', $first, true) && in_array('Adire', $first, true) && !in_array('Piano', $first, true) && (string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED);
+        && in_array('Robotics', $first, true) && in_array('Adire', $first, true)
+        /* Piano used to be the discriminator; it is a Club course now, so it
+           proves nothing. The two programmes name the same subjects
+           differently — the Club teaches Adire and Graphic Design, Summer
+           School Tie & Dye and Graphics Design — and THAT is the difference
+           that matters, because a copy would carry Summer's spellings. */
+        && !array_intersect($first, ['Tie & Dye', 'Dance / Acting'])
+        && !array_intersect(club_courses(), ['Graphics Design', 'Video Editing', 'Practical Coding'])
+        && (string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED);
     chk('separation: each division carries its icon, the short label its card prints, and its description',
         $divs[2]['icon'] === '💻' && $divs[2]['short'] === 'TECH' && str_contains($divs[2]['blurb'], 'cybersecurity') && club_division_of('Robotics') === 'Technology & Applied Engineering');
     chk('separation: the seed runs once — an admin\'s later edit is not overwritten',
@@ -27504,6 +28397,106 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('projects: saving and marking wait for the Academy, as the portal\'s other saves do',
         in_array('member.mentor.project.save', ACADEMY_GATED_MENTOR_OPS, true) && in_array('member.mentor.project.mark', ACADEMY_GATED_MENTOR_OPS, true));
     chk('projects: one audit event per save', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.save' AND subject = ?", [$PID])['c'] === 3);
+
+    /* The Control Room (Mentorship › Projects): staff with `people` see and run every project in their centres. */
+    foreach ([['C-PRJ-PV', 'Portalville', 'PRJPV'], ['C-PRJ-OT', 'Otherton', 'PRJOT']] as [$cid, $cn, $code])
+        if (!db_row('SELECT 1 FROM centres WHERE name = ?', [$cn])) db_insert('centres', ['centreId' => $cid, 'name' => $cn, 'code' => $code, 'status' => 'active', 'programmes' => 'ngg', 'slug' => strtolower($code), 'createdAt' => $now]);
+    $otId = (string)db_row("SELECT centreId FROM centres WHERE name = 'Otherton'")['centreId'];
+    db_insert('members', ['memberId' => 'NGG-PRJ-SCO', 'fullName' => 'Scoped Admin', 'email' => 'scoped.prj@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin',
+        'centre' => 'Otherton', 'centreScope' => json_encode([$otId]), 'createdAt' => $now, 'updatedAt' => $now]);
+    $al = backend_dispatch('admin.projects', ['requesterId' => $SU, 'today' => $T]);
+    $mine = array_values(array_filter($al['projects'] ?? [], static fn($x) => $x['projectId'] === $PID))[0] ?? null;
+    chk('control room: an admin sees projects set in the mentor portal, with groups, progress and the countdown',
+        !empty($al['ok']) && $mine && $mine['centre'] === 'Portalville' && isset($mine['countdown']['label'], $mine['tally']['of']) && isset($al['stats']['open']));
+    chk('control room: a centre-scoped admin sees only their centres’ projects, and a member without `people` sees none',
+        !array_filter(backend_dispatch('admin.projects', ['requesterId' => 'NGG-PRJ-SCO'])['projects'] ?? [], static fn($x) => $x['centre'] !== 'Otherton')
+        && empty(backend_dispatch('admin.projects', ['requesterId' => 'NGG-MPK1'])['ok']));
+    $pp = backend_dispatch('admin.projects.people', ['requesterId' => $SU, 'centre' => 'Portalville']);
+    chk('control room: the people at a centre — its mentors and its children, never a mentor listed as a child',
+        in_array('MEN-MP1', array_column($pp['mentors'] ?? [], 'id'), true) && in_array('NGG-MPK7', array_column($pp['children'] ?? [], 'id'), true)
+        && !in_array('NGG-MP1', array_column($pp['children'] ?? [], 'id'), true)
+        && (backend_dispatch('admin.projects.people', ['requesterId' => 'NGG-PRJ-SCO', 'centre' => 'Portalville'])['error'] ?? '') === 'out_of_scope');
+    $aBase = ['requesterId' => $SU, 'today' => $T, 'title' => 'Centre open day', 'detail' => 'Set up, welcome families, clear away.', 'startOn' => '2026-10-10', 'dueOn' => '2026-10-24', 'centre' => 'Portalville'];
+    $as = backend_dispatch('admin.project.save', $aBase + ['people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]]);
+    $APID = $as['projectId'] ?? '';
+    chk('control room: an admin sets a project for mentors and children at a centre, in groups; the child is told',
+        !empty($as['ok']) && $as['added'] === 3 && db_row('SELECT createdBy, centre FROM projects WHERE projectId = ?', [$APID]) === ['createdBy' => $SU, 'centre' => 'Portalville']
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MPK7' AND title = 'New project: Centre open day'"));
+    chk('control room: the whole payload is checked — a child outside the scope is named and nothing is written; a scoped admin cannot set one elsewhere',
+        ($r = backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO', 'centre' => 'Otherton'] + $aBase + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]))['error'] === 'not_yours_to_assign'
+        && $r['refused'][0]['id'] === 'NGG-MPK7'
+        && (backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO'] + $aBase + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1']]])['error'] ?? '') === 'out_of_scope'
+        && (int)db_row("SELECT COUNT(*) c FROM projects WHERE title = 'Centre open day'")['c'] === 1);
+    chk('control room: an admin edits a project a lead set (moving people between groups), and a scoped admin elsewhere cannot',
+        !empty(($e = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'projectId' => $PID] + $base + ['people' => array_map(static fn($x) => ['kind' => $x['kind'], 'id' => $x['id'], 'group' => 'Everyone'],
+            db_all('SELECT kind, personId AS id FROM project_people WHERE projectId = ?', [$PID]))]))['ok']) && $e['moved'] > 0
+        && (backend_dispatch('admin.project.save', ['requesterId' => 'NGG-PRJ-SCO', 'today' => $T, 'projectId' => $PID] + $base + ['people' => [['kind' => 'member', 'id' => 'NGG-MPX1']]])['error'] ?? '') === 'not_found');
+    chk('control room: an admin sets anyone’s part, and finishes the project; one audit event each',
+        !empty(backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $APID, 'kind' => 'member', 'personId' => 'NGG-MPK6', 'status' => 'excused'])['ok'])
+        && db_row("SELECT status FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK6'", [$APID])['status'] === 'excused'
+        && (backend_dispatch('admin.project.mark', ['requesterId' => 'NGG-PRJ-SCO', 'projectId' => $APID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done'])['error'] ?? '') === 'not_found'
+        && !empty(backend_dispatch('admin.project.save', ['projectId' => $APID, 'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK7', 'group' => 'Welcome'], ['kind' => 'member', 'id' => 'NGG-MPK6', 'group' => 'Set-up']]] + $aBase)['ok'])
+        && db_row('SELECT status FROM projects WHERE projectId = ?', [$APID])['status'] === 'closed'
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'project.mark' AND subject = ?", [$APID])['c'] === 1);
+
+    /* The audit's findings, each pinned (docs/HANDOFF.md, 27 Oct 2026). */
+    db_insert('mentors', ['mentorId' => 'MEN-UNSC', 'fullName' => 'Una Unscreened', 'email' => 'una@mp.example', 'status' => 'active', 'centre' => 'Portalville', 'programme' => 'ngg',
+        'memberId' => '', 'checkedAt' => '', 'maxMentees' => 8, 'joinedAt' => '2025-01-01', 'rank' => 'mentor', 'kind' => '', 'leadId' => '', 'createdAt' => now_iso()]);
+    $uns = backend_dispatch('admin.project.save', $aBase + ['people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: an unscreened mentor is refused on a project with children, by name', ($uns['error'] ?? '') === 'not_screened' && ($uns['names'] ?? []) === ['Una Unscreened']);
+    chk('projects: …and may be on a mentors-only project', !empty(backend_dispatch('admin.project.save', $aBase + ['title' => 'Mentor planning', 'people' => [['kind' => 'mentor', 'id' => 'MEN-UNSC']]])['ok']));
+    $mon = substr($T, 0, 7);
+    $over0 = mp_projects_month('MEN-MP1', $mon, $T)['overdue'];
+    $past = gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 2 * 86400);
+    $op = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'centre' => 'Portalville', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    $OPID = (string)($op['projectId'] ?? '');
+    chk('projects: an open project past its date is overdue on the mentor’s My role', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0 + 1);
+    // NGG-MPK7 leaves the programme; finishing the project must not be blocked by them.
+    db_exec("UPDATE members SET status = 'inactive' WHERE memberId = 'NGG-MPK7'");
+    $fin = backend_dispatch('admin.project.save', ['requesterId' => $SU, 'today' => $T, 'projectId' => $OPID, 'title' => 'Past its date', 'startOn' => gmdate('Y-m-d', strtotime($T . 'T00:00:00Z') - 9 * 86400), 'dueOn' => $past,
+        'status' => 'closed', 'people' => [['kind' => 'mentor', 'id' => 'MEN-MP1'], ['kind' => 'member', 'id' => 'NGG-MPK7']]]);
+    chk('projects: somebody already on a project who has left your reach does not stop you finishing it', !empty($fin['ok']));
+    chk('projects: a mentor cannot change their part on a finished project (as a child cannot)',
+        (backend_dispatch('member.mentor.project.mark', $p('NGG-MP1', ['projectId' => $OPID, 'status' => 'done']))['error'] ?? '') === 'project_closed');
+    chk('projects: …but they still cannot be ADDED to another', (backend_dispatch('admin.project.save', $aBase + ['title' => 'Another', 'people' => [['kind' => 'member', 'id' => 'NGG-MPK7']]])['error'] ?? '') === 'not_yours_to_assign');
+    db_exec("UPDATE members SET status = 'active' WHERE memberId = 'NGG-MPK7'");
+    chk('projects: a finished project is never overdue on My role, whatever was left unticked', mp_projects_month('MEN-MP1', $mon, $T)['overdue'] === $over0);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done', 'note' => 'Painted the sign']);
+    backend_dispatch('admin.project.mark', ['requesterId' => $SU, 'projectId' => $OPID, 'kind' => 'member', 'personId' => 'NGG-MPK7', 'status' => 'done']);
+    chk('projects: marking a part done again without a note keeps what they wrote', db_row("SELECT note FROM project_people WHERE projectId = ? AND personId = 'NGG-MPK7'", [$OPID])['note'] === 'Painted the sign');
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-UNSC'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PRJ-SCO'");
+
+    /* Supervision written up by the lead (member_mp_supervision_record): it closes the booking,
+       reaches the mentor's My role, and dates the "Feedback received professionally" row. */
+    $fbRow = static fn() => array_values(array_filter(backend_dispatch('member.mentor.commitments', $p('NGG-MP1'))['commitments'] ?? [], static fn($r) => $r['key'] === 'feedback'))[0] ?? [];
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: before any are written, My role says so instead of a fixed “Up to date”', ($fbRow()['statusText'] ?? '') === 'No supervision written up yet');
+    $bk = backend_dispatch('member.mentor.supervision.book', $p('NGG-MPL', ['mentorId' => 'MEN-MP1']));
+    $tm = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: a booking shows on the lead’s Mentors list as open, with its date', !empty($bk['ok']) && $tm['booked'] === true && $tm['bookedOn'] === $bk['date'] && $tm['notesAt'] === '');
+    chk('supervision notes: only a lead or coordinator writes them, for someone they lead, and says something',
+        (backend_dispatch('member.mentor.supervision.record', $p('NGG-MP1', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'ok']))['error'] ?? '') === 'write_the_feedback'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-NOBODY', 'feedback' => 'Good work this month on the huddles.']))['error'] ?? '') === 'not_in_team'
+        && (backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => array_fill(0, 6, 'x')]))['error'] ?? '') === 'too_many'
+        && !db_row("SELECT 1 FROM mentor_supervision WHERE mentorId = 'MEN-MP1' AND feedbackAt <> ''"));
+    $rc = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'Good work this month on the huddles.', 'agreed' => ['Call two families before Saturday', '  ', 'Log every one-to-one']]));
+    $sr = db_all("SELECT * FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
+    chk('supervision notes: written up early, the booking becomes the held supervision on that day — one row, blanks dropped',
+        !empty($rc['ok']) && count($sr) === 1 && $sr[0]['status'] === 'held' && $sr[0]['onDate'] === $T && $rc['onDate'] === $T
+        && json_decode($sr[0]['agreedJson'], true) === ['Call two families before Saturday', 'Log every one-to-one']);
+    $rl = backend_dispatch('member.mentor.commitments', $p('NGG-MP1'));
+    chk('supervision notes: the mentor reads the feedback and what was agreed in My role, and no supervision is still coming',
+        ($rl['feedback']['text'] ?? '') === 'Good work this month on the huddles.' && ($rl['agreedLast']['items'] ?? []) === ['Call two families before Saturday', 'Log every one-to-one']
+        && $rl['supervision'] === null && str_starts_with($fbRow()['statusText'] ?? '', 'Last supervision notes '));
+    $tm2 = array_values(array_filter(backend_dispatch('member.mentor.team', $p('NGG-MPL'))['mentors'] ?? [], static fn($m) => $m['mentorId'] === 'MEN-MP1'))[0] ?? [];
+    chk('supervision notes: the lead’s list shows the booking closed and when notes were last written; the mentor is told',
+        $tm2['booked'] === false && $tm2['notesAt'] !== '' && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-MP1' AND title = 'Your supervision notes'"));
+    $r2 = backend_dispatch('member.mentor.supervision.record', $p('NGG-MPL', ['mentorId' => 'MEN-MP1', 'feedback' => 'A quick check-in in the corridor went well.']));
+    chk('supervision notes: notes without a booking record a supervision held that day', !empty($r2['ok']) && (int)db_row("SELECT COUNT(*) c FROM mentor_supervision WHERE mentorId = 'MEN-MP1'")['c'] === 2);
+    db_exec("DELETE FROM mentor_supervision WHERE mentorId = 'MEN-MP1'");
     setting_set('mentor_automation', null);   // portalLive does not outlive these tests
 })();
 
@@ -27758,6 +28751,23 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     // The job: Sunday tick reminder once a week; Saturday due reminder.
     $sun = gmdate('Y-m-d', strtotime(results_week_start($today) . 'T00:00:00Z') + 6 * 86400);
+    /* CLOCK-INDEPENDENT, because the bug below is only reachable for one
+       hour a week and a test you can only run in that hour protects
+       nothing. The guard asks "has this member been sent one since the
+       week began?" — so the boundary it compares against must never be
+       later than the moment a row written now would carry, whatever the
+       offset between the programme's local date and UTC. */
+    $wsNow = results_week_start(results_today());
+    $boundary = gmdate('Y-m-d\TH:i:s', strtotime($wsNow . 'T00:00:00Z') - (results_now_lagos() - time()));
+    chk('results job: the once-a-week guard and the log it reads are on the same clock',
+        $boundary <= now_iso() && $boundary <= gmdate('Y-m-d\TH:i:s'));
+
+    /* THIS CAUGHT A REAL BUG, one hour a week. The programme's "today" is
+       Lagos; results_log stamps UTC. For the hour between UTC Sunday 23:00
+       and local Monday midnight the two disagree about which week a row
+       belongs to, so the once-per-week guard could not see the row it had
+       just written and sent the reminder again. The suite happened to be
+       run inside that hour. */
     $j1 = results_job_run($sun); $j2 = results_job_run($sun);
     chk('job: the Sunday "tick your week" goes once per member per week', $j1['tick'] >= 1 && $j2['tick'] === 0);
     unset($GLOBALS['__ai_results_mock']);
@@ -29029,6 +30039,103 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $wipe();
 })();
 
+// ── Paying ahead, and a child asking their parent ─────────────────────────────
+(function () {
+    $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'membership_invoices' => 'memberId', 'member_ledger' => 'memberId', 'guardian_wards' => 'memberId', 'guardian_notices' => 'memberId', 'member_requests' => 'memberId'] as $t => $c) {
+            try { db_exec("DELETE FROM $t WHERE $c LIKE 'ADV-%'"); } catch (Throwable $e) {}
+        }
+        db_exec("DELETE FROM guardians WHERE guardianId LIKE 'GDN-ADA%'");
+    };
+    $wipe();
+    $prevFees = setting_get('fees'); $prevPs = $GLOBALS['CONFIG']['paystack'] ?? null;
+    $hadSink = array_key_exists('__mail_sink', $GLOBALS); $prevSink = $GLOBALS['__mail_sink'] ?? null;
+    setting_set('fees', ['enabled' => true, 'membershipFee' => 12000, 'membershipEveryMonths' => 12, 'monthlyDues' => 2000, 'trainingFee' => 0, 'balanceCap' => 0] + fees_settings(), 'test');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    // Joined eleven months ago: this month's dues and the first year's membership accrue; the renewal falls a month from now.
+    $join = gmdate('Y-m-d', strtotime(gmdate('Y-m-15') . ' -11 months'));
+    db_insert('members', ['memberId' => 'ADV-1', 'fullName' => 'Ada Ahead', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'parentEmail' => 'mum.adv@example.com', 'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    $m = db_row("SELECT * FROM members WHERE memberId = 'ADV-1'");
+    fees_accrue_member($m);
+    $owed = (int)fees_balance($m)['payable'];
+    $plan = membership_advance_plan($m);
+    $q3 = array_values(array_filter($plan['quotes'], fn($q) => $q['months'] === 3))[0] ?? null;
+    $renewDue = gmdate('Y-m-d', strtotime($join . ' +12 months'));
+    chk('ahead · the plan prices 1, 3, 6 and 12 months, each including what is owed today', count($plan['quotes']) === 4 && $owed > 0
+        && $q3 && $q3['items'][0]['label'] === 'Owed today' && $q3['items'][0]['amount'] === $owed);
+    chk('ahead · …and the renewal that falls inside the months chosen, priced once', $q3 && $q3['total'] === $owed + 3 * 2000 + 12000
+        && count(array_filter($q3['items'], fn($i) => $i['label'] === 'Membership renewal')) === 1
+        && gmdate('Y-m', strtotime($renewDue)) <= $q3['through']);
+    chk('ahead · a choice outside the four is refused', (membership_advance_invoice($m, 2, 'test')['error'] ?? '') === 'bad_months');
+
+    // A guardian pays ahead through their own link only.
+    db_insert('guardians', ['guardianId' => 'GDN-ADA0000001', 'email' => 'mum.adv@example.com', 'fullName' => 'Mum Ahead', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'GDN-ADA0000002', 'email' => 'other.adv@example.com', 'fullName' => 'Other', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'ADV-LINK', 'guardianId' => 'GDN-ADA0000001', 'memberId' => 'ADV-1', 'status' => 'active', 'notify' => '{}', 'createdAt' => $now]);
+    chk('ahead · another guardian cannot pay ahead through this link', (backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000002', 'linkId' => 'ADV-LINK', 'months' => 3])['error'] ?? '') === 'not_found');
+    $bal = backend_dispatch('member.fees.pay', ['memberId' => 'ADV-1']);
+    $a = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'months' => 3]);
+    $inv = db_row('SELECT * FROM membership_invoices WHERE invoiceId = ?', [(string)($a['invoiceId'] ?? '')]);
+    chk('ahead · the guardian gets one advance invoice, priced by the server, replacing the open balance invoice',
+        !empty($a['ok']) && $inv && $inv['purpose'] === 'advance' && (int)$inv['total'] === $q3['total']
+        && db_row('SELECT status FROM membership_invoices WHERE invoiceId = ?', [(string)$bal['invoiceId']])['status'] === 'void');
+    $again = backend_dispatch('family.fees.advance', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'months' => 3]);
+    chk('ahead · asking again for the same months returns the same invoice', !empty($again['existed']) && $again['invoiceId'] === $inv['invoiceId']);
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $inv['payToken']]);
+    chk('ahead · the /pay page shows it as paying ahead', ($pub['invoice']['purpose'] ?? '') === 'advance');
+
+    $charges = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND direction = 'charge'")['c'];
+    $GLOBALS['__mail_sink'] = [];
+    $st = membership_settle($inv['invoiceId'], 'paystack', 'NGGM-ADVTEST', 'test');
+    $m = db_row("SELECT * FROM members WHERE memberId = 'ADV-1'");
+    $b = fees_balance($m);
+    chk('ahead · settling posts the payment only: no charge is made early, and nothing is owed today',
+        !empty($st['ok']) && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND direction = 'charge'")['c'] === $charges
+        && (int)$b['payable'] === 0 && (int)$b['realCredited'] - (int)$b['realCharged'] === $q3['total'] - $owed);
+    chk('ahead · …and the receipt says paid ahead', (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => str_contains($x['html'], 'is paid ahead')));
+    $plan2 = membership_advance_plan($m);
+    chk('ahead · the plan now says the month it is paid to, renewal included', $plan2['paidThrough'] === $q3['through'] && $plan2['credit'] === $q3['total'] - $owed);
+    $fv = family_fees_view($m);
+    chk('ahead · the family view carries the plan', ($fv['ahead']['paidThrough'] ?? '') === $q3['through'] && count($fv['ahead']['quotes'] ?? []) >= 1);
+    // The months arrive: the accrual charges them, and the credit meets each one.
+    $later = gmdate('Y-m-d', strtotime($q3['through'] . '-01'));
+    fees_accrue_member($m, null, $later);
+    chk('ahead · when the months arrive their charges land on the ledger and the credit covers them: nothing is owed',
+        (int)fees_balance($m, null, $later)['payable'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'ADV-1' AND kind = 'dues' AND periodKey = ?", [$q3['through']])['c'] === 1);
+
+    // ── A child asks; the parent confirms ──
+    chk('ask · a member can no longer record a payment from their own app',
+        (member_request_create(['memberId' => 'ADV-1', 'kind' => 'payment', 'amount' => 500, 'fromMember' => true])['error'] ?? '') === 'ask_parent');
+    chk('ask · there is nothing to ask a parent about when nothing is owed', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1'])['error'] ?? '') === 'nothing_owed');
+    fees_post('ADV-1', 'fine', 900, ['periodKey' => 'test:adv:fine', 'note' => 'Late', 'by' => 'test']);
+    $GLOBALS['__mail_sink'] = [];
+    $n1 = backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1']);
+    $note = db_row("SELECT * FROM guardian_notices WHERE guardianId = 'GDN-ADA0000001' AND kind = 'nudge' ORDER BY id DESC LIMIT 1");
+    chk('ask · one ask reaches the parent — pay, or confirm a payment already made: a notice tied to the child, and an email',
+        !empty($n1['ok']) && $n1['parents'] === 1 && $note && $note['memberId'] === 'ADV-1' && $note['cat'] === 'alert'
+        && (bool)array_filter($GLOBALS['__mail_sink'], fn($x) => $x['to'] === 'mum.adv@example.com' && str_contains($x['subject'], 'asks about their NGG fees') && str_contains($x['html'], 'already paid')));
+    chk('ask · once a day: a second press changes nothing and says so', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-1'])['error'] ?? '') === 'too_soon');
+    $asks = backend_dispatch('member.family.nudges', ['memberId' => 'ADV-1']);
+    chk('ask · the member sees how many parents can be asked, and when they last asked', $asks['parents'] === 1 && !empty($asks['asked']['at']));
+    chk('ask · the family view shows the ask', !empty(family_fees_view($m)['asked']['at']));
+    $claim = backend_dispatch('family.request.create', ['guardianId' => 'GDN-ADA0000001', 'linkId' => 'ADV-LINK', 'kind' => 'payment', 'amount' => 900, 'reference' => 'TRF-ADV-1', 'paidAt' => gmdate('Y-m-d')]);
+    chk('ask · the parent confirms a transfer: a claim for the desk, marked as theirs, that moves no money on its own',
+        !empty($claim['ok']) && ($claim['request']['byFamily'] ?? false) === true && (int)$claim['request']['amount'] === 900
+        && (int)fees_balance($m)['payable'] === 900 && (family_fees_view($m)['claim']['reference'] ?? '') === 'TRF-ADV-1');
+    db_insert('members', ['memberId' => 'ADV-ALONE', 'fullName' => 'No Parent', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'joinDate' => $join, 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('ask · a member with no connected parent is told how to connect one', (backend_dispatch('member.family.nudge', ['memberId' => 'ADV-ALONE'])['error'] ?? '') === 'no_family');
+
+    // The mail sink makes send_mail succeed; later blocks depend on it failing as it does on this host.
+    if ($hadSink) $GLOBALS['__mail_sink'] = $prevSink; else unset($GLOBALS['__mail_sink']);
+    if ($prevPs === null) unset($GLOBALS['CONFIG']['paystack']); else $GLOBALS['CONFIG']['paystack'] = $prevPs;
+    setting_set('fees', is_array($prevFees) ? $prevFees : [], 'test');
+    $wipe();
+})();
+
 // ── The Academy quiz: three attempts a module a day, across both portals ──────
 (function () {
     $now = now_iso();
@@ -29402,8 +30509,12 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
        This catalogue (set above): AI & Technology (Practical Coding, Coding,
        Robotics), Music (Piano, Music), Media (Video Production), Business (Finance). */
     $ctxW = null;
-    chk('courses · a word that is a course is that course, and nothing from another division',
-        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Chess']);
+    /* Piano is a strand of Music (COURSE_STRANDS), so a pianist is shown
+       Piano's lessons AND Music's shared ones — reading music is not a piano
+       skill. What they must NOT pick up is another division's courses, which
+       the next two checks hold. */
+    chk('courses · a strand carries its own course and its subject, and nothing from another division',
+        ($pc = curriculum_member_courses(['track' => 'Piano'], $ctxW)) === ['Piano', 'Music', 'Chess']);
     chk('courses · an instrument is never read as "the arts": Guitar does not bring the Music division\'s other courses, nor any other division',
         !array_intersect(curriculum_member_courses(['track' => 'Guitar'], $ctxW), ['Video Production', 'Finance', 'Coding', 'Practical Coding']));
     chk('courses · "Design" names no division: it gets no division\'s courses',
@@ -30832,7 +31943,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $st = member_courses_state($row('PL-TECH'));
     chk('placement: an unplaced Tech child is proposed Technology courses, flagged because their card also says Media', $st['status'] === 'unplaced' && in_array('Coding', $st['courses'], true)
         && !in_array('Graphic Design', $st['courses'], true) && $st['flag'] === 'other_division' && in_array('Graphic Design', $st['dropped'], true) && !in_array('Media', $st['dropped'], true));
-    chk('placement: "Piano" proposes Musical Instruments; nothing recognisable proposes nothing, flagged', in_array('Musical Instruments', member_courses_state($row('PL-PIANO'))['courses'], true)
+    chk('placement: "Piano" proposes the Piano course; nothing recognisable proposes nothing, flagged', in_array('Piano', member_courses_state($row('PL-PIANO'))['courses'], true)
         && member_courses_state($row('PL-NONE'))['status'] === 'none' && member_courses_state($row('PL-NONE'))['flag'] === 'no_match');
     // The same courses for every reader: the PHP list and the SQL used by class lists.
     [$cs, $ca] = member_course_sql('Coding');
@@ -30856,9 +31967,11 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('placement: more than the cap is refused and named', (admin_courses_set(['requesterId' => $A, 'action' => 'confirm', 'memberIds' => array_map(fn($i) => "X$i", range(1, 501))])['max'] ?? 0) === 500);
     chk('placement: someone without the people trust is refused', !empty(admin_courses_placement(['requesterId' => 'PL-CODE'])['error']));
     $h = admin_courses_health(['requesterId' => $A, 'centre' => 'Placeville']);
-    $mi = array_values(array_filter($h['courses'] ?? [], fn($x) => $x['course'] === 'Musical Instruments'))[0] ?? [];
-    chk('course health: a course with children names what is missing (lessons, instructor, class time)', !empty($h['ok']) && $mi['placed'] === 1
-        && in_array('no_instructor', array_column($mi['gaps'], 'code'), true) && in_array('no_class_time', array_column($mi['gaps'], 'code'), true));
+    $mi = array_values(array_filter($h['courses'] ?? [], fn($x) => $x['course'] === 'Piano'))[0] ?? [];
+    $codes = array_column($mi['gaps'] ?? [], 'code');
+    chk('course health: a course with children names exactly what is missing (an instructor only when it has none; class times; lessons)', !empty($h['ok']) && $mi['placed'] === 1
+        && (($mi['instructors'] === 0) === in_array('no_instructor', $codes, true)) && (($mi['classTimes'] === 0) === in_array('no_class_time', $codes, true))
+        && ((($mi['lessons'] + $mi['lessonsFromParts']) === 0) === in_array('no_lessons', $codes, true)));
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
@@ -30890,15 +32003,90 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 /* ── A course's lessons include those filed under its parts ── */
 (function () {
     $prevCat = setting_get('club_catalogue'); setting_set('club_catalogue', club_catalogue_default(), 'test');
-    chk('curriculum: "Piano" lessons belong to Musical Instruments; a catalogue course is its own', curriculum_course_parent('Piano') === 'Musical Instruments' && curriculum_course_parent('Coding') === 'Coding' && curriculum_course_parent('') === '');
+    /* An instrument is its own course now, and "Music" is the subject above it
+       (COURSE_STRANDS). The relationship is structural: nothing reads the
+       spelling of a course name to decide what it belongs to. */
+    chk('curriculum: an instrument is its own course, and so is a course that is just itself',
+        curriculum_course_parent('Piano') === 'Piano' && curriculum_course_parent('Coding') === 'Coding' && curriculum_course_parent('') === '');
+    chk('curriculum: a strand is shown its own lessons AND its subject\'s', course_scope('Piano') === ['Piano', 'Music']);
+    chk('curriculum: a leaf course widens to nothing but itself', course_scope('Acting') === ['Acting']);
     db_insert('curriculum_units', ['unitId' => 'U-PIANO-1', 'course' => 'Piano', 'title' => 'Middle C', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-    $fam = array_map('mb_strtolower', curriculum_course_family('Musical Instruments'));
-    chk('curriculum: the Musical Instruments family includes a lesson filed as Piano, and Guitar', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('musical instruments', $fam, true));
-    db_insert('curriculum_units', ['unitId' => 'U-MI-1', 'course' => 'Musical Instruments', 'title' => 'Posture', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-    chk('curriculum: a course with lessons of its own is taught from them, not the matched ones', curriculum_course_family('Musical Instruments') === ['Musical Instruments']);
+    $fam = array_map('mb_strtolower', curriculum_course_family('Music'));
+    chk('curriculum: the Music family teaches across every instrument under it', in_array('piano', $fam, true) && in_array('guitar', $fam, true) && in_array('music', $fam, true));
+    db_insert('curriculum_units', ['unitId' => 'U-MI-1', 'course' => 'Music', 'title' => 'Posture', 'week' => 1, 'status' => 'published', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* A STRAND is part of the subject, so lessons of its own do not cut the
+       strands off — unlike a merely matched name, which they do. */
+    chk('curriculum: a broad course keeps its strands even once it has lessons of its own',
+        in_array('Piano', curriculum_course_family('Music'), true));
+    chk('curriculum: the retired umbrella still resolves, so no member is orphaned',
+        member_courses_from_text('Musical Instruments')[0] === course_family('Music'));
     chk('curriculum: the matching is not only music ("Drama" lessons are Acting\'s, "Programming" Coding\'s)', curriculum_course_parent('Drama') === 'Acting' && curriculum_course_parent('programming') === 'Coding');
     db_exec("DELETE FROM curriculum_units WHERE unitId IN ('U-PIANO-1', 'U-MI-1')");
     chk('instructor lesson: an unknown course, or a requester who is no staff, is refused', !empty(staff_curriculum_lesson(['requesterId' => 'NGG-NOBODY', 'course' => 'Coding', 'title' => 'x'])['error']));
+
+    /* ── An instructor writes a lesson, in the Control Room's own editor ──
+       The editor is now one screen for both portals, so the ONLY thing that
+       makes an instructor's reach narrower is these guards. If they go, the
+       instructor's screen silently becomes a curriculum lead's. */
+    (function () {
+        db_insert('members', ['memberId' => 'NGG-CURW-1', 'fullName' => 'Ife Writer', 'email' => 'ife.curw@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        db_insert('volunteers', ['volunteerId' => 'VOL-CURW-1', 'memberId' => 'NGG-CURW-1', 'fullName' => 'Ife Writer',
+            'email' => 'ife.curw@example.com', 'role' => 'instructor', 'status' => 'active', 'safeguarding' => 'cleared',
+            'programme' => 'ngg', 'centre' => 'Egbeda', 'courses' => json_encode(['Piano']), 'createdAt' => now_iso()]);
+
+        $mk = fn(array $o) => staff_curriculum_lesson($o + ['requesterId' => 'NGG-CURW-1', 'course' => 'Piano', 'week' => 40,
+            'title' => 'Both hands at once', 'summary' => 'Putting the two hands together.',
+            'body' => "## Warm-up\n\nStretch.\n\n## Make it fit you\n\n- **If this is new to you:** one hand at a time.\n- **If you already can:** add the pedal.",
+            'objectives' => ['You will play the scale with both hands'],
+            'checks' => [['kind' => 'mcq', 'prompt' => 'Which hand leads?', 'options' => ['Left', 'Right'], 'answer' => 'Right', 'points' => 1]],
+            'materials' => [['title' => 'Scale sheet', 'url' => 'https://example.org/scales.pdf']]]);
+
+        $w = $mk([]);
+        chk('instructor lesson: the whole lesson saves — objectives, a review question and a material, not four fields',
+            !empty($w['ok']) && (int)db_row('SELECT COUNT(*) c FROM curriculum_checks WHERE unitId = ?', [$w['unitId']])['c'] === 1
+            && (int)db_row('SELECT COUNT(*) c FROM curriculum_materials WHERE unitId = ?', [$w['unitId']])['c'] === 1
+            && json_decode((string)db_row('SELECT objectives FROM curriculum_units WHERE unitId = ?', [$w['unitId']])['objectives'], true) === ['You will play the scale with both hands']);
+        chk('instructor lesson: without the curriculum capability it is a DRAFT, whatever the request asked for',
+            ($w['status'] ?? '') === 'draft'
+            && (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'course' => 'Piano', 'week' => 41, 'title' => 'Sneak', 'status' => 'published'])['status'] ?? '') === 'draft');
+        chk('instructor lesson: a course they do not teach is refused',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'course' => 'Acting', 'week' => 40, 'title' => 'Not mine'])['error'] ?? '') === 'not_your_course');
+
+        /* Where in the week a lesson sits is the server's. An editor opens a
+           new lesson at position 1 because that is a sensible default for a
+           field, not because anybody chose it — honouring it had every first
+           lesson an instructor wrote refused for a slot they never picked. */
+        $second = $mk(['title' => 'Both hands, faster']);
+        chk('instructor lesson: a second lesson in the same week is placed after the first, not refused',
+            !empty($second['ok']) && (int)$second['position'] === (int)$w['position'] + 1);
+
+        $e = staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40,
+                                      'title' => 'Both hands at once, slowly', 'body' => 'Rewritten.']);
+        chk('instructor lesson: they can edit their own draft, and it stays one lesson',
+            !empty($e['ok']) && $e['unitId'] === $w['unitId']
+            && (string)db_row('SELECT title FROM curriculum_units WHERE unitId = ?', [$w['unitId']])['title'] === 'Both hands at once, slowly');
+
+        db_exec("UPDATE curriculum_units SET status = 'published' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: a PUBLISHED lesson is refused — children are working from it',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Edit anyway'])['error'] ?? '') === 'already_published');
+        db_exec("UPDATE curriculum_units SET status = 'draft' WHERE unitId = ?", [$w['unitId']]);
+
+        db_exec("UPDATE curriculum_units SET createdBy = 'NGG-SOMEONE' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: another person\'s draft is refused',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Not mine either'])['error'] ?? '') === 'not_your_lesson');
+
+        /* The course on the stored row decides, never the one the request
+           claims — otherwise an instructor edits any lesson in the programme
+           by naming a course they happen to teach. */
+        db_exec("UPDATE curriculum_units SET course = 'Acting', createdBy = 'NGG-CURW-1' WHERE unitId = ?", [$w['unitId']]);
+        chk('instructor lesson: the course is read off the stored lesson, not off the request',
+            (staff_curriculum_lesson(['requesterId' => 'NGG-CURW-1', 'unitId' => $w['unitId'], 'course' => 'Piano', 'week' => 40, 'title' => 'Course swap'])['error'] ?? '') === 'not_your_course');
+
+        db_exec("DELETE FROM curriculum_units WHERE course IN ('Piano','Acting') AND week IN (40, 41)");
+        db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-CURW-1'");
+        db_exec("DELETE FROM members WHERE memberId = 'NGG-CURW-1'");
+    })();
     if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
@@ -30987,6 +32175,1243 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('no back door · a session is issued only by api/auth, api/admin and the library (' . implode(', ', $odd) . ')', !$odd && $callers);
     $open = array_values(array_filter(glob($root . '/api/tools/*.php') ?: [], static fn($f) => !preg_match("/PHP_SAPI\s*!==\s*'cli'/", (string)file_get_contents($f))));
     chk('no back door · every api/tools script refuses a web request (' . implode(', ', array_map('basename', $open)) . ')', !$open);
+})();
+
+/* Phase 1 of the centre-key migration (domain/centres-ngg.php).
+
+   A centre is a NAME in 39 tables, and renaming one rewrites three of them.
+   This release adds centreId beside the name everywhere and writes both; it
+   changes no reads. What is pinned here is the thing that made the original
+   problem invisible: that a table can carry a centre and be forgotten. */
+(function () {
+    $db = db_conn();
+    /* Every table the schema says carries a centre name is in the registry,
+       and has the id column. Derived from the live schema, not from a second
+       hand-maintained list — a second list is how this started. */
+    $missing = []; $noCol = [];
+    /* Read the live schema on either driver. The repository ships two — the
+       SQLite ladder and the hand-written MySQL file — and a check that only
+       runs on one of them would miss exactly the drift it is here to catch. */
+    if (db_driver() === 'mysql') {
+        $byTable = [];
+        foreach (db_all("SELECT table_name t, column_name c FROM information_schema.columns WHERE table_schema = DATABASE()") as $r) {
+            $byTable[(string)($r['t'] ?? $r['table_name'])][(string)($r['c'] ?? $r['column_name'])] = true;
+        }
+    } else {
+        $byTable = [];
+        foreach (db_all("SELECT name FROM sqlite_master WHERE type = 'table'") as $r) {
+            $t = (string)$r['name'];
+            if (str_starts_with($t, 'sqlite_')) continue;
+            foreach (db_all("PRAGMA table_info('" . $t . "')") as $c) $byTable[$t][(string)$c['name']] = true;
+        }
+    }
+    foreach ($byTable as $t => $cols) {
+        if (!isset($cols['centre'])) continue;
+        if (!centre_table_tracked((string)$t)) { $missing[] = $t; continue; }
+        if (!isset($cols['centreId'])) $noCol[] = $t;
+    }
+    chk('centre keys · every table carrying a centre name is in CENTRE_NAME_TABLES (' . implode(', ', $missing) . ')', !$missing);
+    chk('centre keys · …and every one of them has the centreId column (' . implode(', ', $noCol) . ')', !$noCol);
+    chk('centre keys · the registry is not empty and covers the serious tables',
+        centre_table_tracked('safeguarding_cases') && centre_table_tracked('community_safeguarding')
+        && centre_table_tracked('members') && centre_table_tracked('skill_marks'));
+
+    /* The mirror writes both columns, through the ordinary helpers, so a
+       table joins the migration by being in the registry rather than by
+       somebody remembering at 288 call sites. */
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CTR-KEYT', 'name' => 'Keytest Centre', 'code' => 'KYT', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-KEY-1', 'fullName' => 'Key One', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'Keytest Centre', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('centre keys · an insert naming a centre gets its id without asking',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-1'")['centreId'] ?? '') === 'CTR-KEYT');
+    /* A name that resolves to NOTHING is left empty rather than guessed: those
+       rows are the inventory admin.centres.idaudit exists to report. */
+    db_insert('members', ['memberId' => 'NGG-KEY-2', 'fullName' => 'Key Two', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'A Centre That Was Renamed', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('centre keys · an unresolvable centre name is left empty, never guessed',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? 'x') === '');
+    db_update('members', ['centre' => 'Keytest Centre'], ['memberId' => 'NGG-KEY-2']);
+    chk('centre keys · an update naming a centre gets its id too',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? '') === 'CTR-KEYT');
+    /* An explicit centreId is never overwritten by the name. */
+    db_update('members', ['centre' => 'Keytest Centre', 'centreId' => 'CTR-EXPLICIT'], ['memberId' => 'NGG-KEY-2']);
+    chk('centre keys · an explicit centreId wins over the name',
+        (string)(db_row("SELECT centreId FROM members WHERE memberId = 'NGG-KEY-2'")['centreId'] ?? '') === 'CTR-EXPLICIT');
+
+    /* And the report that this whole release exists to produce. */
+    $aud = admin_centres_idaudit(['requesterId' => 'NGG-2025-0099']);
+    chk('centre keys · the audit reports per table, and counts the unresolved',
+        !empty($aud['ok']) && is_array($aud['tables']) && ($aud['totalUnresolved'] ?? -1) >= 0);
+    /* A row whose centre resolves to nothing must move the unresolved count.
+       Asserted as a delta rather than by looking for the name: the audit lists
+       at most 25 names per table, and the suite leaves plenty of others. */
+    db_insert('members', ['memberId' => 'NGG-KEY-3', 'fullName' => 'Key Three', 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'Renamed Away Centre', 'createdAt' => $now, 'updatedAt' => $now]);
+    $after = admin_centres_idaudit(['requesterId' => 'NGG-2025-0099']);
+    chk('centre keys · …and an unresolvable row is counted as unresolved',
+        ($after['totalUnresolved'] ?? 0) === ($aud['totalUnresolved'] ?? 0) + 1);
+    chk('centre keys · …and its name is reported for a person to decide on',
+        in_array('Renamed Away Centre', array_column($after['names'] ?? [], 'centre'), true));
+    chk('centre keys · reads are unchanged this release — the name still matches',
+        (int)(db_row("SELECT COUNT(*) n FROM members WHERE centre = 'Keytest Centre'")['n'] ?? 0) >= 1);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KEY-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CTR-KEYT'");
+    centre_id_cache_clear();
+})();
+
+/* A lesson may be scoped to a DIVISION, not only to a course.
+   A centre does not always have an instructor for every course. When the
+   Robotics specialist is unavailable, the Robotics learners must still have
+   the Saturday the rest of Technology is having — so a member reaches, in
+   order: their course, its parent strand, their division, and ''. */
+(function () {
+    chk('division scope · a course resolves to its division', course_division('Robotics') === 'Technology & Applied Engineering'
+        && course_division('Catering') === 'Creative & Performing Arts' && course_division('Social Media') === 'Media & Content Strategy');
+    chk('division scope · a strand resolves through its parent (Piano → Music → Creative Arts)',
+        course_division('Piano') === 'Creative & Performing Arts');
+    chk('division scope · a course that is in no division resolves to nothing, rather than to a guess', course_division('Nonsense Course') === '');
+    $sc = array_map('strtolower', course_reach('Piano'));
+    chk('division scope · a pianist reaches Piano, Music AND their division',
+        in_array('piano', $sc, true) && in_array('music', $sc, true) && in_array('creative & performing arts', $sc, true));
+    chk('division scope · a leaf course reaches itself and its division, and nothing else (Robotics)',
+        count(course_reach('Robotics')) === 2);
+    /* A division name is a legitimate value for curriculum_units.course, or the
+       seeds for it would be refused and silently skipped at boot. */
+    chk('division scope · a division name validates as a lesson scope',
+        curriculum_course_canonical('technology & applied engineering') === 'Technology & Applied Engineering');
+    chk('division scope · a course still wins over a division on any name collision',
+        curriculum_course_canonical('Robotics') === 'Robotics');
+    /* And it reaches a real member through the real matcher. */
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-DIV-1', 'fullName' => 'Div Test', 'email' => 'div1@example.com', 'type' => 'NGG',
+        'status' => 'active', 'courses' => json_encode(['Robotics']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $m = db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-DIV-1']);
+    /* Identity stays the courses they chose — a division is not something
+       anybody enrols in, and it must not appear in "My course". */
+    chk('division scope · the division does NOT leak into the member\'s own course list',
+        !in_array('technology & applied engineering', array_map('mb_strtolower', curriculum_member_courses($m)), true));
+    $reach = array_map('mb_strtolower', course_reach('Robotics'));
+    chk('division scope · but their REACH includes the Technology division',
+        in_array('robotics', $reach, true) && in_array('technology & applied engineering', $reach, true));
+    chk('division scope · …and not another division', !in_array('media & content strategy', $reach, true));
+    db_insert('curriculum_units', ['unitId' => 'U-DIVT-1', 'course' => 'Technology & Applied Engineering', 'title' => 'Debugging anything',
+        'week' => 1, 'status' => 'published', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('division scope · a Robotics member actually receives a division lesson',
+        isset(curriculum_member_units_all($m)['U-DIVT-1']));
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'U-DIVT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-DIV-1'");
+})();
+
+/* An answer that IS one of the options wins over the A/B/C/D letter reading.
+   Options D/E/F/G with the answer "E" means the option "E" — not option
+   number five, which does not exist. The letter reading came first and
+   rejected the row; the boot seeder skips what it cannot validate, so the
+   lesson disappeared silently. */
+(function () {
+    $mk = fn($answer) => curriculum_validate(['course' => 'Violin', 'title' => 'Reading', 'week' => 1, 'position' => 1,
+        'checks' => [['kind' => 'mcq', 'prompt' => 'The bottom line of the treble stave is…',
+                      'options' => ['D', 'E', 'F', 'G'], 'answer' => $answer]]], true);
+    $v = $mk('E');
+    chk('mcq · an answer that is one of the options wins over the letter reading (D/E/F/G, answer "E")',
+        !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '1');
+    $v = $mk('B');
+    chk('mcq · a letter that is not one of the options still reads as the letter', !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '1');
+    $v = $mk('2');
+    chk('mcq · a numeric answer is still an index', !empty($v['ok']) && ($v['checks'][0]['answer'] ?? '') === '2');
+    chk('mcq · an answer matching nothing is still refused', empty($mk('photosynthesis')['ok']));
+})();
+
+/* Every bundled lesson survives the real importer.
+   curriculum_seed_bundled_once() SKIPS a row that does not validate — which is
+   right at boot, where one bad row must not stop the rest, and silent in a
+   test suite, where a whole course can go missing without anything turning
+   red. A material with no https URL is enough to lose the lesson. So the
+   seeds are run through the actual validator here, and a skip is a failure. */
+(function () {
+    foreach (curriculum_seed_files() as $key => $j) {
+        $bad = [];
+        foreach ($j['lessons'] ?? [] as $i => $row) {
+            $v = curriculum_validate($row, !empty($j['allowNewCourse']));
+            if (empty($v['ok'])) $bad[] = ($row['course'] ?? '?') . ' w' . ($row['week'] ?? '?')
+                . ' — ' . ($v['error'] ?? '?') . (isset($v['detail']) ? ' (' . $v['detail'] . ')' : '');
+        }
+        chk('seed · every lesson in ' . $key . ' passes the importer (' . count($j['lessons'] ?? []) . ' rows)'
+            . ($bad ? ' — ' . implode('; ', array_slice($bad, 0, 3)) : ''), !$bad);
+    }
+})();
+
+/* The shape every course must hold — retrieval, autonomy, a proportionate AI
+   budget, a project cadence and spacing. The rules and the evidence behind
+   each live in curriculum-shape.php; this runs them over every bundled seed
+   so a new curriculum cannot be merged without the shape. */
+(function () {
+    require_once __DIR__ . '/curriculum-shape.php';
+    $courses = ngg_course_lessons();
+    chk('curriculum shape · the bundled seeds carry lessons to check (' . count($courses) . ' courses)', count($courses) > 10);
+    foreach ($courses as $course => $lessons) {
+        $faults = ngg_course_shape_faults($course, $lessons);
+        chk('curriculum shape · ' . $course . ' (' . count($lessons) . ' lessons)' . ($faults ? ' — ' . implode('; ', $faults) : ''), !$faults);
+    }
+})();
+
+/* Summer School Portal v3 (domain/summer-portal.php, domain/pending.php):
+   one roster derivation behind every count, the palette's search and recent
+   children, centre scope on the way in, and the undo window — a deferred bulk
+   act does nothing until it commits, and a cancelled one never does. */
+(function () {
+    $A = 'NGG-2025-0099';
+    $progWas = setting_get('programme');
+    setting_set('programme', ['enabled' => false], $A);   // register-basis days: deterministic
+    $ed = 'SS3-ED-T';
+    db_insert('summer_cohorts', ['cohortId' => $ed, 'year' => 2026, 'name' => 'SS3 Test Edition', 'startDate' => gmdate('Y-m-d', strtotime('-20 days')),
+        'endDate' => gmdate('Y-m-d', strtotime('+20 days')), 'status' => 'closed', 'createdAt' => now_iso()]);
+    $kid = function (string $id, string $name, array $extra = []) use ($ed) {
+        db_insert('summer_students', array_merge(['studentId' => $id, 'cohortId' => $ed, 'token' => 'SS3TOK-' . $id, 'handle' => strtolower($id), 'fullName' => $name,
+            'centre' => 'SS3 Centre', 'track' => 'Tech', 'status' => 'active', 'regStatus' => 'verified', 'parentEmail' => strtolower($id) . '@example.com',
+            'displayId' => 'S3-26-' . substr($id, -3), 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()], $extra));
+    };
+    $kid('SS3-K-001', 'Adaora Steady');
+    $kid('SS3-K-002', 'Bolu Stopped');
+    $kid('SS3-K-003', 'Chidi Pending', ['regStatus' => 'parent_pending']);
+    $kid('SS3-K-004', 'Dayo Graduate', ['status' => 'graduated']);
+    $mark = function (string $id, int $daysAgo) use ($ed) {
+        $d = gmdate('Y-m-d', strtotime(attendance_today() . ' -' . $daysAgo . ' days'));
+        db_insert('attendance', ['cohortId' => $ed, 'studentId' => $id, 'token' => 'SS3TOK-' . $id, 'date' => $d, 'checkInAt' => $d . 'T08:30:00Z', 'method' => 'qr', 'status' => 'present', 'createdAt' => now_iso()]);
+    };
+    foreach ([6, 5, 4, 3, 2, 1] as $n) { $mark('SS3-K-001', $n); $mark('SS3-K-004', $n); }
+    foreach ([6, 5, 4] as $n) $mark('SS3-K-002', $n);
+    $q = fn(array $a) => backend_dispatch('admin.summer.portal', array_merge(['requesterId' => $A, 'editionId' => $ed], $a));
+
+    $boot = $q(['view' => 'boot']);
+    chk('ss3 · boot names the edition and its days so far', !empty($boot['ok']) && $boot['edition']['id'] === $ed && $boot['edition']['dayN'] === 6);
+    chk('ss3 · the stopped badge counts the child who came then stopped', ($boot['badges']['stopped'] ?? -1) === 1);
+    chk('ss3 · an unconfirmed registration is a badge', ($boot['badges']['regOpen'] ?? -1) === 1);
+
+    $st = $q(['view' => 'people', 'pview' => 'stopped']);
+    chk('ss3 · the stopped view is exactly that child', $st['total'] === 1 && $st['rows'][0]['id'] === 'SS3-K-002');
+    chk('ss3 · the stopped tab count agrees with the list', $st['views']['stopped'] === 1);
+    chk('ss3 · a list row carries no card token or full email', !isset($st['rows'][0]['token']) && !isset($st['rows'][0]['email']));
+    $all = $q(['view' => 'people', 'sort' => 'DROP TABLE', 'pview' => 'nonsense']);
+    chk('ss3 · an unknown sort and view fall back rather than erroring', !empty($all['ok']) && $all['applied']['sort'] === 'name' && $all['applied']['pview'] === 'all' && $all['total'] === 4);
+    $risk = $q(['view' => 'people', 'pview' => 'risk']);
+    chk('ss3 · at risk is under the risk rate (3 of 6 days is 50%, not under)', $risk['total'] === 0);
+    $fac = $q(['view' => 'people', 'f_today' => 'absent']);
+    chk('ss3 · a facet filters above the page and counts the other facets', $fac['total'] >= 1 && isset($fac['facets']['centre']['SS3 Centre']));
+
+    $s1 = backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => 'Bolu']);
+    chk('ss3 · search finds a child by name', count($s1['children']) === 1 && $s1['children'][0]['id'] === 'SS3-K-002');
+    db_insert('qr_codes', ['token' => 'SS3CARD-90417', 'batch' => 'SS3', 'cohortId' => $ed, 'status' => 'assigned', 'studentId' => 'SS3-K-001', 'assignedName' => 'Adaora Steady', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    $s2 = backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => '0417']);
+    chk('ss3 · the last four digits of a card find its holder', in_array('SS3-K-001', array_column($s2['children'], 'id'), true));
+    chk('ss3 · search returns at most six', count(backend_dispatch('admin.summer.search', ['requesterId' => $A, 'q' => 'a'])['children']) <= SS3_SEARCH_MAX);
+
+    $c = $q(['view' => 'child', 'studentId' => 'SS3-K-002']);
+    chk('ss3 · the drawer opens a child with consents and a pattern strip', ($c['child']['id'] ?? '') === 'SS3-K-002' && count($c['child']['consents']) === count(CONSENT_TYPES) && count($c['child']['strip']) === 6);
+    $rec = backend_dispatch('admin.summer.recent', ['requesterId' => $A]);
+    chk('ss3 · opening a child puts them first in recent', ($rec['children'][0]['id'] ?? '') === 'SS3-K-002');
+
+    $reg = $q(['view' => 'register', 'rf' => 'absent', 'date' => gmdate('Y-m-d', strtotime(attendance_today() . ' -1 days'))]);
+    chk('ss3 · the register names who was not in on a day', $reg['kpis']['absent'] === 1 && $reg['list'][0]['id'] === 'SS3-K-002');
+
+    // Centre scope on the way in: a coordinator scoped elsewhere sees none of it.
+    db_insert('centres', ['centreId' => 'CEN-SS3-OTHER', 'name' => 'SS3 Other', 'code' => 'SO', 'status' => 'active']);
+    db_insert('members', ['memberId' => 'NGG-SS3-SCOPED', 'fullName' => 'Scoped Coordinator', 'email' => 'ss3scoped@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'admin', 'centre' => 'SS3 Other', 'centreScope' => json_encode(['CEN-SS3-OTHER']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $sc = backend_dispatch('admin.summer.portal', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'view' => 'people']);
+    chk('ss3 · a scoped coordinator counts only their centres', !empty($sc['ok']) && $sc['total'] === 0);
+    chk('ss3 · and searches only their centres', count(backend_dispatch('admin.summer.search', ['requesterId' => 'NGG-SS3-SCOPED', 'q' => 'Bolu'])['children']) === 0);
+    $oc = $q(['view' => 'child', 'studentId' => 'SS3-K-002', 'requesterId' => 'NGG-SS3-SCOPED']);
+    chk('ss3 · and cannot open another centre’s child', array_key_exists('child', $oc) && $oc['child'] === null);
+
+    // The undo window.
+    $before = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0);
+    $d = backend_dispatch('admin.summer.absence.alert', ['requesterId' => $A, 'cohortId' => $ed, 'defer' => 8]);
+    chk('ss3 · a bulk alert with a window is parked, not sent', !empty($d['deferred']) && $d['pendingId'] !== '' && $d['seconds'] === 8);
+    chk('ss3 · nothing was sent while parked', (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before);
+    chk('ss3 · flushing before the window ends is refused', (backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d['pendingId']])['error'] ?? '') === 'not_due');
+    chk('ss3 · somebody else cannot cancel it', (backend_dispatch('admin.pending.cancel', ['requesterId' => 'NGG-SS3-SCOPED', 'pendingId' => $d['pendingId']])['error'] ?? '') === 'not_yours');
+    chk('ss3 · the requester can undo it', !empty(backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $d['pendingId']])['cancelled']));
+    pending_commit_due(50);
+    chk('ss3 · a cancelled act never commits', db_row('SELECT status FROM pending_actions WHERE pendingId = ?', [$d['pendingId']])['status'] === 'cancelled'
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before);
+    $d2 = backend_dispatch('admin.summer.absence.alert', ['requesterId' => $A, 'cohortId' => $ed, 'defer' => 8]);
+    db_exec('UPDATE pending_actions SET commitAt = ? WHERE pendingId = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - 1), $d2['pendingId']]);
+    $f = backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d2['pendingId']]);
+    chk('ss3 · when the window ends the act commits, as the requester', ($f['status'] ?? '') === 'committed' && !empty($f['result']['ok'])
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before + 1);
+    chk('ss3 · it is too late to undo once committed', (backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $d2['pendingId']])['error'] ?? '') === 'too_late');
+    chk('ss3 · a second flush reports, never repeats', (backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $d2['pendingId']])['status'] ?? '') === 'committed'
+        && (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.absence.alert'")['c'] ?? 0) === $before + 1);
+
+    // Into NGG: a parked move makes no member row; a real one links back.
+    db_insert('centres', ['centreId' => 'CEN-SS3-NGG', 'name' => 'SS3 Club', 'code' => 'SC', 'status' => 'active', 'programmes' => 'ngg']);
+    $gr = backend_dispatch('admin.summer.graduates', ['requesterId' => $A, 'editionId' => $ed, 'stage' => 'all']);
+    chk('ss3 · graduates are the children at or over the graduate rate', !empty($gr['ok']) && $gr['counts']['ready'] === 2 && $gr['threshold'] === SUMMER_GRADUATE_RATE);
+    $pm = backend_dispatch('admin.club.promote', ['requesterId' => $A, 'studentId' => 'SS3-K-004', 'centre' => 'SS3 Club', 'defer' => 8]);
+    chk('ss3 · a parked promotion creates no member yet', !empty($pm['deferred']) && !db_row("SELECT id FROM members WHERE fromSummerId = 'SS3-K-004'"));
+    backend_dispatch('admin.pending.cancel', ['requesterId' => $A, 'pendingId' => $pm['pendingId']]);
+    $pr = backend_dispatch('admin.club.promote', ['requesterId' => $A, 'studentId' => 'SS3-K-004', 'centre' => 'SS3 Club']);
+    chk('ss3 · a promotion records which participant the member was', !empty($pr['ok']) && db_row('SELECT fromSummerId FROM members WHERE memberId = ?', [$pr['memberId']])['fromSummerId'] === 'SS3-K-004');
+    $gr2 = backend_dispatch('admin.summer.graduates', ['requesterId' => $A, 'editionId' => $ed, 'stage' => 'promoted']);
+    chk('ss3 · and Into NGG moves them to the promoted stage', $gr2['counts']['promoted'] === 1 && ($gr2['rows'][0]['memberId'] ?? '') === $pr['memberId']);
+    chk('ss3 · a bulk invoice with nobody selected is refused', (backend_dispatch('admin.summer.graduates.invoice', ['requesterId' => $A, 'memberIds' => []])['error'] ?? '') !== '');
+
+    // The door rules, consent, cards and desk screens read from the same roster.
+    $boot2 = $q(['view' => 'boot']);
+    chk('ss3 · boot carries the door rules the desk grades by', preg_match('/^\d{2}:\d{2}$/', (string)($boot2['rules']['student'] ?? '')) === 1 && is_int($boot2['rules']['grace']));
+    $con = $q(['view' => 'consent']);
+    chk('ss3 · consent lists every consent type', !empty($con['ok']) && count($con['types']) === count(CONSENT_TYPES));
+    chk('ss3 · consent’s missing count agrees with the badge', $con['missingTotal'] === $boot2['badges']['consent'] && count($con['missing']) === $con['missingTotal']);
+    $cards = $q(['view' => 'cards', 'q' => 'nothing-like-this']);
+    chk('ss3 · confirmed children with no card are counted', !empty($cards['ok']) && $cards['cardCounts']['noCard'] === 0 && $cards['card'] === null && $cards['cardAsked'] === true);
+    db_insert('qr_codes', ['token' => 'SS3QR-AAAA', 'batch' => 'B-SS3', 'cohortId' => $ed, 'status' => 'assigned', 'studentId' => 'SS3-K-002', 'assignedName' => 'Bolu Stopped', 'createdAt' => now_iso(), 'assignedAt' => now_iso()]);
+    $hit = $q(['view' => 'cards', 'q' => 'ss3qr-aaaa']);
+    chk('ss3 · a card is found by its code, whatever its case', ($hit['card']['name'] ?? '') === 'Bolu Stopped' && ($hit['batches'][0]['id'] ?? '') === 'B-SS3');
+    $hitS = backend_dispatch('admin.summer.portal', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'view' => 'cards', 'q' => 'SS3QR-AAAA']);
+    chk('ss3 · a scoped coordinator cannot look up another centre’s card', array_key_exists('card', $hitS) && $hitS['card'] === null);
+    chk('ss3 · the desk screen reads', !empty($q(['view' => 'desk'])['ok']));
+    $desk = fn(array $a) => backend_dispatch('admin.summer.desk', array_merge(['requesterId' => $A, 'editionId' => $ed, 'mode' => 'in'], $a));
+    chk('ss3 · the desk says when nothing matches', ($desk(['q' => 'Nobody Here At All'])['error'] ?? '') === 'card_not_found');
+    chk('ss3 · the desk refuses an unconfirmed child by printed ID', ($desk(['q' => 'S3-26-003'])['error'] ?? '') === 'not_verified');
+    chk('ss3 · the desk refuses a child who is no longer active', ($desk(['q' => 'S3-26-004'])['error'] ?? '') === 'not_active');
+    $byCard = $desk(['q' => 'ss3qr-aaaa']);
+    chk('ss3 · a card code reaches the one check-in op, for that child', ($byCard['child']['id'] ?? '') === 'SS3-K-002' && array_key_exists('ok', $byCard));
+    chk('ss3 · a scoped coordinator’s desk cannot reach another centre’s child', (backend_dispatch('admin.summer.desk', ['requesterId' => 'NGG-SS3-SCOPED', 'editionId' => $ed, 'q' => 'ss3qr-aaaa'])['error'] ?? '') === 'card_not_found');
+    $sa = backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-SS3-SCOPED', 'cohortId' => $ed, 'defer' => 8]);
+    chk('ss3 · a scoped coordinator’s bulk alert counts only their centres', !empty($sa['deferred']) && $sa['absent'] === 0);
+    backend_dispatch('admin.pending.cancel', ['requesterId' => 'NGG-SS3-SCOPED', 'pendingId' => $sa['pendingId']]);
+    chk('ss3 · and cannot alert one child in another centre', (backend_dispatch('admin.summer.absence.alert', ['requesterId' => 'NGG-SS3-SCOPED', 'cohortId' => $ed, 'studentId' => 'SS3-K-002'])['error'] ?? '') === 'out_of_scope');
+
+    // Incidents: logged, told for real, closed; a Safeguarding one becomes a case.
+    $inc = fn(array $a) => backend_dispatch('admin.summer.incident.save', array_merge(['requesterId' => $A, 'editionId' => $ed, 'kind' => 'First aid', 'sev' => 'low', 'note' => 'Grazed knee, cleaned and plastered.'], $a));
+    chk('ss3 · an incident needs what happened', ($inc(['child' => 'Adaora Steady', 'note' => ''])['error'] ?? '') === 'note_required');
+    chk('ss3 · an incident needs a real kind', ($inc(['child' => 'Adaora Steady', 'kind' => 'Mystery'])['error'] ?? '') === 'bad_kind');
+    $i1 = $inc(['child' => 'adaora steady']);
+    chk('ss3 · an incident links the child from the roster, whatever the case of the name', !empty($i1['ok']) && $i1['linked'] === true && $i1['childName'] === 'Adaora Steady');
+    chk('ss3 · the untold incident is a badge', ($q(['view' => 'boot'])['badges']['incidents'] ?? -1) === 1);
+    chk('ss3 · a scoped coordinator cannot log one in another centre', ($inc(['requesterId' => 'NGG-SS3-SCOPED', 'child' => 'Adaora Steady'])['error'] ?? '') === 'out_of_scope');
+    chk('ss3 · nor tell or close another centre’s incident', (backend_dispatch('admin.summer.incident.close', ['requesterId' => 'NGG-SS3-SCOPED', 'incidentId' => $i1['incidentId']])['error'] ?? '') === 'not_found');
+    $tell = backend_dispatch('admin.summer.incident.tell', ['requesterId' => $A, 'incidentId' => $i1['incidentId']]);
+    $told = db_row('SELECT toldAt FROM summer_incidents WHERE incidentId = ?', [$i1['incidentId']])['toldAt'];
+    chk('ss3 · telling the guardian is recorded only when a message went', (!empty($tell['ok']) && $told !== '') || (($tell['error'] ?? '') === 'not_delivered' && $told === ''));
+    chk('ss3 · closing an incident closes it', !empty(backend_dispatch('admin.summer.incident.close', ['requesterId' => $A, 'incidentId' => $i1['incidentId']])['ok'])
+        && db_row('SELECT status FROM summer_incidents WHERE incidentId = ?', [$i1['incidentId']])['status'] === 'closed');
+    $cases0 = (int)db_row('SELECT COUNT(*) c FROM safeguarding_cases')['c'];
+    $sg = $inc(['child' => 'Bolu Stopped', 'kind' => 'Safeguarding', 'note' => 'Said something worrying about home at break.']);
+    chk('ss3 · a safeguarding incident is filed as a case in the safeguarding queue', !empty($sg['ok']) && $sg['restricted'] === true && (int)db_row('SELECT COUNT(*) c FROM safeguarding_cases')['c'] === $cases0 + 1
+        && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sg['caseNo']])['subjectName'] === 'Bolu Stopped');
+    $row = db_row('SELECT childName, note, studentId FROM summer_incidents WHERE incidentId = ?', [$sg['incidentId']]);
+    chk('ss3 · and the incident row keeps no child or details', $row['childName'] === '' && $row['studentId'] === '' && !str_contains($row['note'], 'worrying'));
+    $iv = $q(['view' => 'incidents']);
+    $sgv = array_values(array_filter($iv['incidents'], fn($x) => $x['id'] === $sg['incidentId']))[0] ?? [];
+    chk('ss3 · the portal shows it as restricted', ($sgv['child'] ?? '') === 'Restricted' && !empty($sgv['restricted']) && $iv['incKpis']['safeOpen'] === 1);
+    chk('ss3 · the lead decides who is told, not the portal', (backend_dispatch('admin.summer.incident.tell', ['requesterId' => $A, 'incidentId' => $sg['incidentId']])['error'] ?? '') === 'lead_decides');
+    chk('ss3 · a safeguarding incident never counts as a guardian not told', ($q(['view' => 'boot'])['badges']['incidents'] ?? -1) === 0);
+
+    // Messages: an audience from the roster, parked, then recorded once.
+    $mv = $q(['view' => 'messages']);
+    $absN = array_values(array_filter($mv['audiences'], fn($a) => $a['id'] === 'all'))[0]['n'] ?? -1;
+    chk('ss3 · every message audience is counted from the roster', !empty($mv['ok']) && $absN === 3 && count($mv['templates']) >= 2);
+    $ms = fn(array $a) => backend_dispatch('admin.summer.message.send', array_merge(['requesterId' => $A, 'editionId' => $ed, 'template' => 'note', 'audience' => 'all', 'channel' => 'email', 'details' => 'Bring a water bottle tomorrow.'], $a));
+    chk('ss3 · a template that needs details refuses without them', ($ms(['details' => ''])['error'] ?? '') === 'details_required');
+    chk('ss3 · texts are refused when SMS is not set up', function_exists('sms_enabled') && sms_enabled() ? true : ($ms(['channel' => 'sms'])['error'] ?? '') === 'sms_off');
+    $pm = $ms(['defer' => 8]);
+    chk('ss3 · a send is parked for its undo window', !empty($pm['deferred']) && $pm['n'] === 3 && !db_row('SELECT id FROM summer_messages WHERE cohortId = ?', [$ed]));
+    db_exec("UPDATE pending_actions SET commitAt = ? WHERE pendingId = ?", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 5), $pm['pendingId']]);
+    $fm = backend_dispatch('admin.pending.flush', ['requesterId' => $A, 'pendingId' => $pm['pendingId']]);
+    $sent = db_row('SELECT * FROM summer_messages WHERE cohortId = ?', [$ed]);
+    chk('ss3 · when it commits the send is one row, with what reached and what did not', ($fm['status'] ?? '') === 'committed' && $sent && (int)$sent['recipients'] === 3
+        && (int)$sent['delivered'] + (int)$sent['failed'] === 3);
+    chk('ss3 · and one audit event', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'summer.message.send'")['c'] === 1);
+
+    setting_set('programme', is_array($progWas) ? $progWas : [], $A);
+})();
+
+
+/* ── One email, several member accounts: "Who's signing in?" (auth.php auth_pick) ── */
+(function () {
+    $now = now_iso(); $E = 'family.inbox@example.com';
+    foreach ([['NGG-SH-1', 'Ada Shared', ''], ['NGG-SH-2', 'Bayo Shared', ''], ['NGG-SH-3', 'Chi Shared', 'suspended']] as [$id, $n, $st])
+        db_insert('members', ['memberId' => $id, 'fullName' => $n, 'email' => $id === 'NGG-SH-2' ? ' Family.Inbox@example.com ' : $E, 'type' => 'NGG', 'status' => $st ?: 'active',
+            'role' => 'member', 'centre' => 'Egbeda', 'displayId' => '026-9' . substr($id, -1) . '1', 'createdAt' => $now, 'updatedAt' => $now]);
+    $acc = array_column(auth_email_accounts('FAMILY.inbox@example.com'), 'memberId');
+    chk('shared email: the accounts behind an address, whatever its case or spacing — a suspended one is not offered', $acc === ['NGG-SH-1', 'NGG-SH-2']);
+    $f = auth_find_member($E, '10.9.9.1', 'request');
+    chk('shared email: the door no longer opens the first row — it knows the address is shared', $f['member'] === null && count($f['shared'] ?? []) === 2);
+
+    $GLOBALS['__mail_sink'] = [];
+    $rq = auth_request(['identifier' => $E, 'ip' => '10.9.9.1']);
+    $mail = $GLOBALS['__mail_sink'][0] ?? [];
+    $ch = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    chk('shared email: ONE code, to the inbox, naming who is on it, keyed by the address not a child',
+        !empty($rq['ok']) && count($GLOBALS['__mail_sink']) === 1 && ($mail['to'] ?? '') === $E && str_contains($mail['html'] ?? '', 'Ada and Bayo')
+        && $ch && $ch['memberId'] === auth_shared_key($E) && $ch['pickIds'] === 'NGG-SH-1,NGG-SH-2');
+    $wrong = auth_verify(['memberId' => $E, 'otp' => $ch['otp'] === '000000' ? '111111' : '000000', 'ip' => '10.9.9.1']);
+    chk('shared email: a wrong code is wrong, and opens nothing', ($wrong['error'] ?? '') === 'invalid' && empty($wrong['pick']));
+    $v = auth_verify(['memberId' => $E, 'otp' => $ch['otp'], 'ip' => '10.9.9.1']);
+    chk('shared email: the right code (typed with the email) proves the inbox and offers the accounts — no session yet',
+        !empty($v['ok']) && empty($v['member']) && array_column($v['pick'] ?? [], 'memberId') === ['NGG-SH-1', 'NGG-SH-2'] && ($v['pick'][1]['first'] ?? '') === 'Bayo'
+        && ($v['pick'][0]['displayId'] ?? '') === '026-911' && $v['pickToken'] === $ch['token']);
+    chk('shared email: an account not on the address cannot be picked, nor the suspended one',
+        (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-2025-0001'])['error'] ?? '') === 'not_on_this_email'
+        && (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-3'])['error'] ?? '') === 'not_on_this_email');
+    $pk = auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-2', 'ip' => '10.9.9.1']);
+    chk('shared email: picking opens that account, once', !empty($pk['ok']) && ($pk['member']['memberId'] ?? '') === 'NGG-SH-2'
+        && (auth_pick(['pickToken' => $v['pickToken'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'already_used');
+    // The magic link takes the same road.
+    $GLOBALS['__mail_sink'] = [];
+    auth_request(['identifier' => $E, 'ip' => '10.9.9.2']);
+    $ch2 = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    $v2 = auth_verify(['token' => $ch2['token'], 'ip' => '10.9.9.2']);
+    db_exec("UPDATE auth_sessions SET verifiedAt = ? WHERE id = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - (AUTH_PICK_MINUTES * 60 + 5)), (int)$ch2['id']]);
+    chk('shared email: the emailed link offers the same choice, and a pick left too long expires', count($v2['pick'] ?? []) === 2
+        && (auth_pick(['pickToken' => $ch2['token'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'expired');
+    // An account suspended between the code and the pick is not opened.
+    auth_request(['identifier' => $E, 'ip' => '10.9.9.3']);
+    $ch3 = db_row("SELECT * FROM auth_sessions WHERE email = ? AND purpose = 'login' ORDER BY id DESC LIMIT 1", [$E]);
+    $v3 = auth_verify(['memberId' => 'Family.Inbox@example.com', 'otp' => $ch3['otp'], 'ip' => '10.9.9.3']);
+    db_exec("UPDATE members SET status = 'suspended' WHERE memberId = 'NGG-SH-1'");
+    chk('shared email: suspended after the code, before the pick — not opened', count($v3['pick'] ?? []) === 2 && (auth_pick(['pickToken' => $v3['pickToken'], 'memberId' => 'NGG-SH-1'])['error'] ?? '') === 'member_gone');
+    db_exec("UPDATE members SET status = 'active' WHERE memberId = 'NGG-SH-1'");
+
+    // Passwords: the password says whose; the same password on two offers those two.
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId = 'NGG-SH-1'", [password_hash_best('ada-password-1')]);
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId = 'NGG-SH-2'", [password_hash_best('bayo-password-2')]);
+    $l1 = auth_login(['identifier' => $E, 'password' => 'bayo-password-2', 'ip' => '10.9.9.4']);
+    chk('shared email: a password signs straight into the account it belongs to', !empty($l1['ok']) && ($l1['member']['memberId'] ?? '') === 'NGG-SH-2' && empty($l1['pick']));
+    chk('shared email: a password that fits no account on it is refused, the same way as ever', (auth_login(['identifier' => $E, 'password' => 'nobody-at-all', 'ip' => '10.9.9.4'])['error'] ?? '') === 'invalid_login');
+    db_exec("UPDATE members SET passwordHash = ? WHERE memberId IN ('NGG-SH-1','NGG-SH-2')", [password_hash_best('one-family-pass')]);
+    $l2 = auth_login(['identifier' => $E, 'password' => 'one-family-pass', 'ip' => '10.9.9.4']);
+    chk('shared email: one password set for both — the person picks among the accounts it opens', !empty($l2['ok']) && array_column($l2['pick'] ?? [], 'memberId') === ['NGG-SH-1', 'NGG-SH-2']
+        && !empty(auth_pick(['pickToken' => $l2['pickToken'], 'memberId' => 'NGG-SH-1'])['ok']));
+    chk('shared email: the gateway offers a password when any account on the address has one', in_array('password', auth_gateway(['identifier' => $E, 'device' => 'dev-shared-1'])['methods'] ?? [], true));
+
+    // A password reset: one email, one link per account.
+    $GLOBALS['__mail_sink'] = [];
+    $rr = auth_reset_request(['identifier' => $E, 'ip' => '10.9.9.5']);
+    $rm = $GLOBALS['__mail_sink'][0]['html'] ?? '';
+    $links = db_all("SELECT memberId FROM auth_sessions WHERE purpose = 'reset' AND memberId IN ('NGG-SH-1','NGG-SH-2','NGG-SH-3') AND verifiedAt = '' ORDER BY id");
+    chk('shared email: a reset sends one email with a link for each account (not the suspended one)', !empty($rr['ok']) && count($GLOBALS['__mail_sink']) === 1
+        && str_contains($rm, 'Set Ada') && str_contains($rm, 'Set Bayo') && !str_contains($rm, 'Chi') && array_column($links, 'memberId') === ['NGG-SH-1', 'NGG-SH-2']);
+    unset($GLOBALS['__mail_sink']);
+
+    // A member's own email may now be a family inbox.
+    chk('shared email: a member may change their email to one a sibling uses', !empty(member_request_email_change(['memberId' => 'NGG-SH-3', 'email' => 'ayochild@example.com'])['ok']));
+    // One account on an address behaves exactly as before.
+    db_exec("UPDATE members SET email = 'just.bayo@example.com' WHERE memberId = 'NGG-SH-2'");
+    chk('shared email: an address with one account still opens it directly', (auth_find_member('just.bayo@example.com', '10.9.9.6', 'request')['member']['memberId'] ?? '') === 'NGG-SH-2'
+        && auth_resolve_member_id('just.bayo@example.com') === 'NGG-SH-2');
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-SH-1','NGG-SH-2','NGG-SH-3')");
+})();
+
+/* Notifications a person can act on: read and dismiss are per person (a
+   broadcast read by one member stays unread for the next), a running thing
+   keeps one live item, and every item that goes somewhere says where. */
+(function () {
+    foreach (['NTF-A', 'NTF-B'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => 'Notif ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('notifications', ['notifId' => 'NTF-BC-1', 'memberId' => '*', 'kind' => 'announcement', 'title' => 'For everybody', 'body' => '', 'linkPage' => 'events', 'readAt' => '', 'createdAt' => now_iso(), 'audience' => '']);
+    $list = fn(string $m) => backend_dispatch('member.notifications', ['memberId' => $m]);
+    $find = function (string $m, string $id) use ($list) { foreach ($list($m)['notifications'] as $n) if ($n['notifId'] === $id) return $n; return null; };
+    chk('notif · a broadcast reaches both members unread', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? 'x') === '' && ($find('NTF-B', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'notifId' => 'NTF-BC-1']);
+    chk('notif · one member reading a broadcast does not read it for another', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? '') !== '' && ($find('NTF-B', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'notifId' => 'NTF-BC-1', 'unread' => true]);
+    chk('notif · and it can be marked unread again', ($find('NTF-A', 'NTF-BC-1')['readAt'] ?? 'x') === '');
+    chk('notif · an item with a page carries a named action', ($find('NTF-A', 'NTF-BC-1')['action']['page'] ?? '') === 'events' && ($find('NTF-A', 'NTF-BC-1')['action']['label'] ?? '') !== '');
+    backend_dispatch('member.notificationDismiss', ['memberId' => 'NTF-B', 'notifId' => 'NTF-BC-1']);
+    chk('notif · dismissing removes it from that member’s list only', $find('NTF-B', 'NTF-BC-1') === null && $find('NTF-A', 'NTF-BC-1') !== null);
+    backend_dispatch('member.notificationDismiss', ['memberId' => 'NTF-B', 'notifId' => 'NTF-BC-1', 'undo' => true]);
+    chk('notif · and undo brings it back', $find('NTF-B', 'NTF-BC-1') !== null);
+    chk('notif · nobody can mark a notification they cannot see', (backend_dispatch('member.notificationRead', ['memberId' => 'NTF-B', 'notifId' => 'NO-SUCH'])['error'] ?? '') === 'not_found');
+    push_notification('NTF-A', ['kind' => 'formation', 'title' => 'Now · 10:00 First', 'linkPage' => 'timetable', 'groupKey' => 'formation:test']);
+    backend_dispatch('member.notificationRead', ['memberId' => 'NTF-A', 'all' => true]);
+    push_notification('NTF-A', ['kind' => 'formation', 'title' => 'Now · 13:00 Second', 'linkPage' => 'timetable', 'groupKey' => 'formation:test']);
+    $live = array_values(array_filter($list('NTF-A')['notifications'], fn($n) => strpos($n['title'], 'Now · ') === 0));
+    chk('notif · a running thing keeps one live item, updated and unread again', count($live) === 1 && $live[0]['title'] === 'Now · 13:00 Second' && $live[0]['readAt'] === '');
+    push_notification('NTF-A', ['kind' => 'system', 'title' => 'Nowhere to go']);
+    $nw = null; foreach ($list('NTF-A')['notifications'] as $n) if ($n['title'] === 'Nowhere to go') $nw = $n;
+    chk('notif · an item with nowhere to go has no button', $nw !== null && $nw['action'] === null);
+    chk('notif · the unread count is returned with the list', is_int($list('NTF-A')['unread']));
+})();
+
+/* Support cases (domain/support.php): opened only inside a portal, by the
+   person signed in; a person sees only their own; priority sets the target;
+   the lifecycle reopens on a reply and follows a closed case up; staff see
+   internal notes the person never does; bulk is capped, per-row and scoped. */
+(function () {
+    $A = 'NGG-2025-0099';
+    foreach (['SUP-M1' => 'Tolu Support', 'SUP-M2' => 'Ada Other'] as $id => $nm) db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $m1 = support_who_member('SUP-M1'); $m2 = support_who_member('SUP-M2');
+    $open = fn(array $who, array $x) => backend_dispatch('support.open', array_merge(['who' => $who, 'category' => 'fees', 'priority' => 'P2',
+        'subject' => 'My transfer is not showing', 'body' => 'I paid 5,000 on Monday by transfer and the account still shows it owed.'], $x));
+    chk('support · nobody outside a portal can open a case', (backend_dispatch('support.open', ['who' => support_nobody(), 'category' => 'fees', 'subject' => 'x x x x', 'body' => str_repeat('a', 30)])['error'] ?? '') === 'sign_in_required');
+    chk('support · a case needs a category it knows', ($open($m1, ['category' => 'nonsense'])['error'] ?? '') === 'category_required');
+    chk('support · and enough words to act on', ($open($m1, ['body' => 'help'])['error'] ?? '') === 'body_required');
+    $c = $open($m1, []);
+    chk('support · a member opens a case and gets a number', !empty($c['ok']) && $c['caseNo'] >= 100001);
+    $row = db_row('SELECT * FROM support_cases WHERE caseNo = ?', [$c['caseNo']]);
+    chk('support · the response target follows the priority (P2: a day)', abs(strtotime($row['respondBy']) - strtotime($row['createdAt']) - 24 * 3600) < 5 && $row['status'] === 'new');
+    $again = $open($m1, ['body' => 'Still not showing a day later, please look.']);
+    chk('support · the same problem again adds to the open case, not a second number', !empty($again['appended']) && $again['caseNo'] === $c['caseNo']);
+    $c2 = $open($m1, ['subject' => 'A different problem entirely', 'category' => 'cards', 'priority' => 'nonsense']);
+    chk('support · an unknown priority falls back to normal', db_row('SELECT priority FROM support_cases WHERE caseNo = ?', [$c2['caseNo']])['priority'] === 'P3');
+    chk('support · case numbers are minted from the highest, never a count', $c2['caseNo'] === $c['caseNo'] + 1);
+    chk('support · a member sees their own cases', count(backend_dispatch('support.mine', ['who' => $m1])['cases']) === 2);
+    chk('support · and nobody else’s', count(backend_dispatch('support.mine', ['who' => $m2])['cases']) === 0
+        && (backend_dispatch('support.case', ['who' => $m2, 'caseNo' => $c['caseNo']])['error'] ?? '') === 'not_found');
+    $about = $open($m1, ['subject' => 'About a stranger', 'memberId' => 'SUP-M2', 'category' => 'other']);
+    chk('support · a case cannot be about somebody the asker may not speak for', db_row('SELECT memberId FROM support_cases WHERE caseNo = ?', [$about['caseNo']])['memberId'] === '');
+
+    $lst = backend_dispatch('admin.support.list', ['requesterId' => $A]);
+    chk('support · the queue lists active cases with counts', !empty($lst['ok']) && $lst['kpis']['active'] === 3 && $lst['counts']['new'] === 2 && $lst['counts']['open'] === 1 && $lst['kpis']['urgent'] === 2);
+    chk('support · an unknown sort or status falls back rather than erroring', !empty(backend_dispatch('admin.support.list', ['requesterId' => $A, 'sort' => '1;DROP', 'status' => 'nope'])['ok']));
+    chk('support · the queue finds a case by its number', backend_dispatch('admin.support.list', ['requesterId' => $A, 'q' => (string)$c['caseNo'], 'status' => 'all'])['total'] === 1);
+    backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Checked with the bank team; nothing yet.', 'internal' => true]);
+    $pub = backend_dispatch('support.case', ['who' => $m1, 'caseNo' => $c['caseNo']])['case'];
+    chk('support · an internal note never reaches the person', !preg_grep('/bank team/', array_column($pub['messages'], 'body')));
+    chk('support · and does not count as a reply', db_row('SELECT firstResponseAt FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['firstResponseAt'] === '');
+    $rp = backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Please send the reference on the bank alert.']);
+    $row = db_row('SELECT * FROM support_cases WHERE caseNo = ?', [$c['caseNo']]);
+    chk('support · a staff reply waits for the person and records the first response', $rp['status'] === 'pending' && $row['firstResponseAt'] !== '' && $row['assigneeId'] === $A);
+    chk('support · the person sees it as waiting for them', backend_dispatch('support.case', ['who' => $m1, 'caseNo' => $c['caseNo']])['case']['statusL'] === 'Waiting for you');
+    backend_dispatch('support.reply', ['who' => $m1, 'caseNo' => $c['caseNo'], 'body' => 'The reference is 0012345.']);
+    chk('support · the person’s reply puts it back with the team', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['status'] === 'open');
+    chk('support · somebody else cannot reply to it', (backend_dispatch('support.reply', ['who' => $m2, 'caseNo' => $c['caseNo'], 'body' => 'hi'])['error'] ?? '') === 'not_found');
+    backend_dispatch('admin.support.reply', ['requesterId' => $A, 'caseNo' => $c['caseNo'], 'body' => 'Found it and applied it.', 'status' => 'solved']);
+    chk('support · rating waits for solved, and counts once', !empty(backend_dispatch('support.rate', ['who' => $m1, 'caseNo' => $c['caseNo'], 'rating' => 5])['ok'])
+        && (backend_dispatch('support.rate', ['who' => $m1, 'caseNo' => $c['caseNo'], 'rating' => 1])['error'] ?? '') === 'already_rated');
+    db_exec('UPDATE support_cases SET solvedAt = ? WHERE caseNo = ?', [gmdate('Y-m-d\TH:i:s\Z', time() - (SUPPORT_CLOSE_DAYS + 1) * 86400), $c['caseNo']]);
+    support_housekeeping();
+    chk('support · a solved case nobody reopened closes', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c['caseNo']])['status'] === 'closed');
+    $fu = backend_dispatch('support.reply', ['who' => $m1, 'caseNo' => $c['caseNo'], 'body' => 'It has come back again this month, same problem.']);
+    chk('support · a reply to a closed case becomes a follow-up that points back', !empty($fu['followUp']) && (int)db_row('SELECT followUpOf FROM support_cases WHERE caseNo = ?', [$fu['caseNo']])['followUpOf'] === $c['caseNo']);
+    db_exec("UPDATE support_cases SET status = 'pending', lastActivityAt = ? WHERE caseNo = ?", [gmdate('Y-m-d\TH:i:s\Z', time() - (SUPPORT_PENDING_DAYS + 1) * 86400), $c2['caseNo']]);
+    support_housekeeping();
+    chk('support · a case waiting on a person who never replied is solved, with a note saying so', db_row('SELECT status FROM support_cases WHERE caseNo = ?', [$c2['caseNo']])['status'] === 'solved'
+        && (bool)db_row("SELECT id FROM support_messages WHERE caseNo = ? AND authorKind = 'system' AND internal = 0", [$c2['caseNo']]));
+
+    $b = backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'priority', 'value' => 'P1', 'caseNos' => [$c2['caseNo'], $about['caseNo'], 999999]]);
+    chk('support · bulk reports per case: applied and not found', $b['applied'] === 2 && $b['refused'] === 1);
+    chk('support · bulk is capped and says so', (backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'status', 'value' => 'open', 'caseNos' => range(1, SUPPORT_BULK_MAX + 1)])['error'] ?? '') === 'too_many');
+    chk('support · only somebody who answers cases can be given one', (backend_dispatch('admin.support.bulk', ['requesterId' => $A, 'action' => 'assign', 'value' => 'SUP-M2', 'caseNos' => [$c2['caseNo']]])['error'] ?? '') === 'bad_assignee');
+    db_insert('centres', ['centreId' => 'CEN-SUP-OTHER', 'name' => 'Support Other', 'code' => 'SP', 'status' => 'active']);
+    db_insert('members', ['memberId' => 'NGG-SUP-SCOPED', 'fullName' => 'Scoped Support', 'email' => 'supscoped@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'admin', 'centre' => 'Support Other', 'centreScope' => json_encode(['CEN-SUP-OTHER']), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('support · a scoped admin sees only their centres’ cases', backend_dispatch('admin.support.list', ['requesterId' => 'NGG-SUP-SCOPED', 'status' => 'all'])['total'] === 0
+        && (backend_dispatch('admin.support.case', ['requesterId' => 'NGG-SUP-SCOPED', 'caseNo' => $c['caseNo']])['error'] ?? '') === 'not_found');
+    db_insert('members', ['memberId' => 'NGG-SUP-EDIT', 'fullName' => 'Editor Only', 'email' => 'supedit@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('support · without the support capability the queue is refused', (backend_dispatch('admin.support.list', ['requesterId' => 'NGG-SUP-EDIT'])['error'] ?? '') === 'forbidden');
+    $ca = $open($m1, ['category' => 'account', 'subject' => 'Cannot sign in at all', 'priority' => 'P3']);
+    $ctx = backend_dispatch('admin.support.case', ['requesterId' => $A, 'caseNo' => $ca['caseNo']])['context'] ?? [];
+    $lab = array_column($ctx, 0);
+    chk('support · staff see what is already known for the category (sign-in state for an account case)', in_array('Password', $lab, true) && in_array('Two-step', $lab, true) && in_array('Member', $lab, true));
+    $cf = backend_dispatch('admin.support.case', ['requesterId' => $A, 'caseNo' => $c2['caseNo'] - 1])['context'] ?? [];
+    chk('support · a fees case shows what is owed to somebody holding fees', in_array('To pay now', array_column($cf, 0), true));
+    chk('support · the help answers are found by what is typed', in_array('signin', array_column(backend_dispatch('support.suggest', ['q' => 'cannot sign in password'])['articles'], 'id'), true));
+})();
+
+/* ── Wi-Fi: the access table, the gateways' feed, PINs and keys (domain/wifi.php) ── */
+(function () {
+    // Each test below changes a record and fetches at once: the 60-second list cache is tested on its own further down.
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    $now = now_iso();
+    $C = 'Wifi Test Centre';
+    db_insert('centres', ['centreId' => 'CEN-WIFI', 'name' => $C, 'code' => 'WF', 'status' => 'active']);
+    db_insert('centres', ['centreId' => 'CEN-WIFI-2', 'name' => 'Wifi Other Centre', 'code' => 'WO', 'status' => 'active']);
+    $mem = function (string $id, array $x) use ($now, $C) {
+        db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Wifi ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now], $x));
+    };
+    $mem('NGG-WF-ADM', ['role' => 'super_admin', 'centre' => 'Wifi Other Centre', 'displayId' => '026-900']);
+    $mem('NGG-WF-ADMIN', ['role' => 'admin', 'centre' => 'Wifi Other Centre']);
+    $mem('NGG-WF-ACT', ['displayId' => '026-501']);
+    $mem('NGG-WF-SUS', ['displayId' => '026-502', 'status' => 'suspended']);
+    $mem('NGG-WF-DOR', ['displayId' => '026-503']);
+    $mem('NGG-WF-GRD', ['displayId' => '026-504', 'status' => 'graduated-ngg']);
+    $mem('NGG-WF-SANC', ['displayId' => '026-505']);
+    $mem('NGG-WF-FAR', ['displayId' => '026-506', 'centre' => 'Wifi Other Centre']);
+    $mem('NGG-WF-MEN', ['displayId' => '026-507', 'role' => 'mentor']);
+    db_insert('sanctions', ['personId' => 'NGG-WF-DOR', 'personType' => 'member', 'kind' => 'dormant', 'status' => 'active', 'issuedAt' => $now]);
+    db_insert('sanctions', ['personId' => 'NGG-WF-SANC', 'personType' => 'member', 'kind' => 'suspension', 'status' => 'active', 'issuedAt' => $now, 'endsAt' => '']);
+    $today = attendance_today();
+    db_insert('summer_cohorts', ['cohortId' => 'WF-LIVE', 'name' => 'Wifi live', 'status' => 'active', 'startDate' => gmdate('Y-m-d', strtotime($today . ' -3 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +20 days')), 'createdAt' => $now]);
+    db_insert('summer_cohorts', ['cohortId' => 'WF-OLD', 'name' => 'Wifi old', 'status' => 'closed', 'startDate' => '2024-07-01', 'endDate' => '2024-08-01', 'createdAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SS-WF-1', 'cohortId' => 'WF-LIVE', 'fullName' => 'Live Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'WF-26-001']);
+    db_insert('summer_students', ['studentId' => 'SS-WF-2', 'cohortId' => 'WF-OLD', 'fullName' => 'Old Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'WF-24-001']);
+
+    $A = 'NGG-WF-ADM';
+    // The access table
+    $acc = fn($id) => wifi_access_for(db_row('SELECT * FROM members WHERE memberId = ?', [$id]), ['policy' => policy_states_for([$id], 'member')[$id] ?? null]);
+    chk('wifi · an active member is on, as a member', $acc('NGG-WF-ACT')['access'] === 'on' && $acc('NGG-WF-ACT')['profile'] === 'ngg-member');
+    chk('wifi · a suspended record is off', $acc('NGG-WF-SUS')['access'] === 'off' && $acc('NGG-WF-SUS')['case'] === 'blocked');
+    chk('wifi · a conduct suspension is off too', $acc('NGG-WF-SANC')['case'] === 'blocked');
+    chk('wifi · the Dormant Track is limited', $acc('NGG-WF-DOR')['profile'] === 'ngg-limited');
+    chk('wifi · a graduate is off by default', $acc('NGG-WF-GRD')['access'] === 'off');
+    chk('wifi · staff and mentors take the staff profile', $acc('NGG-WF-ADM')['profile'] === 'ngg-staff' && $acc('NGG-WF-MEN')['profile'] === 'ngg-staff');
+
+    // Gateways are the network capability, never Admin's.
+    chk('wifi · an admin without network cannot see the gateways', (backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-ADMIN'])['error'] ?? '') === 'forbidden');
+    chk('wifi · network is not bundled into Admin', !in_array('network', admin_role_caps('admin'), true) && in_array('network', admin_role_caps('super_admin'), true));
+    chk('wifi · a gateway needs a known platform and a real centre',
+        (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'cisco-ios', 'centre' => $C])['error'] ?? '') === 'bad_platform'
+        && (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => 'Nowhere'])['error'] ?? '') === 'bad_centre');
+    $sv = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Main router']);
+    $gid = $sv['gateway']['gatewayId'] ?? ''; $key = $sv['key'] ?? '';
+    chk('wifi · a new gateway gets an id and a key, shown once', preg_match('/^G[0-9a-f]{8}$/', $gid) === 1 && strlen($key) === 40
+        && !isset(backend_dispatch('admin.wifi.overview', ['requesterId' => $A])['gateways'][0]['key']));
+    chk('wifi · the key is stored hashed, never as itself', db_row('SELECT keyHash FROM wifi_gateways WHERE gatewayId = ?', [$gid])['keyHash'] === hash('sha256', $key));
+    chk('wifi · a gateway not yet heard from says what to do', ($sv['gateway']['diagnosis'][0]['title'] ?? '') === 'Not connected yet');
+
+    // The feed
+    chk('wifi · a wrong key is refused, and counted against the gateway', (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => str_repeat('0', 40)])['error'] ?? '') === 'bad_key'
+        && (wifi_bad_key_counts()[$gid] ?? 0) === 1);
+    $f1 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'os' => '7.14.3']);
+    $names = array_column($f1['users'], 'username');
+    chk('wifi · first contact is a full list', $f1['ok'] && $f1['full'] === true && $f1['version'] === 1);
+    chk('wifi · the list holds the centre’s members with access, by printed ID', in_array('026-501', $names, true) && in_array('026-503', $names, true));
+    chk('wifi · nobody suspended, graduated or at another centre is on it', !array_intersect(['026-502', '026-504', '026-505', '026-506'], $names));
+    chk('wifi · staff are on every centre’s list', in_array('026-900', $names, true) && in_array('026-507', $names, true));
+    chk('wifi · a participant is on within their edition’s dates, and not after', in_array('WF-26-001', $names, true) && !in_array('WF-24-001', $names, true));
+    $u501 = array_values(array_filter($f1['users'], fn($u) => $u['username'] === '026-501'))[0];
+    chk('wifi · each line carries a 6-digit PIN and its profile', preg_match('/^\d{6}$/', $u501['pin']) === 1 && $u501['profile'] === 'ngg-member');
+    chk('wifi · the PIN is sealed at rest', strpos((string)db_row("SELECT pinSealed FROM wifi_accounts WHERE subjectId = 'NGG-WF-ACT'")['pinSealed'], $u501['pin']) === false);
+    $txt = wifi_feed_render($f1)['body'];
+    chk('wifi · the text feed has a header, the profiles, the users and an end marker', strpos($txt, '#ngg-wifi;v=1;full=1;') === 0 && strpos($txt, ';page=1;pages=1') !== false
+        && strpos($txt, "\np;ngg-limited;1;1;1;;0;8\n") !== false && strpos($txt, "\nu;026-501;" . $u501['pin'] . ";ngg-member;add\n") !== false && substr($txt, -5) === "#end\n");
+
+    // Confirmed by sending the version back; then only what changed.
+    $f2 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · nothing changed: nothing sent, the version holds, and it asks again later', $f2['full'] === false && $f2['users'] === [] && $f2['version'] === 1 && $f2['next'] >= WIFI_POLL['warm']);
+    db_update('members', ['status' => 'suspended', 'updatedAt' => now_iso()], ['memberId' => 'NGG-WF-ACT']);
+    $f3 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · a suspension reaches the gateway as a remove, with no Wi-Fi step', $f3['full'] === false && $f3['users'] === [['username' => '026-501', 'pin' => '', 'profile' => '', 'action' => 'remove']]
+        && $f3['version'] === 2 && $f3['next'] === WIFI_POLL['busy']);
+    $f3b = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 1]);
+    chk('wifi · a change the gateway failed to apply is handed out again', $f3b['users'] === $f3['users'] && $f3b['version'] === 3);
+    $v = $f3b['version'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => $v]);
+    db_update('members', ['status' => 'active', 'updatedAt' => now_iso()], ['memberId' => 'NGG-WF-ACT']);
+    // A window that holds whatever the time of the run (hours themselves are tested further down, against the clock).
+    $set = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['down' => 20, 'up' => 5, 'devices' => 1, 'hours' => '00:00-23:59']]]);
+    chk('wifi · a profile is saved and checked', $set['ok'] && $set['profiles']['ngg-member']['down'] === 20
+        && (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['down' => 20, 'up' => 5, 'devices' => 1, 'hours' => '18:00-08:00']]])['error'] ?? '') === 'bad_profile');
+    $f4 = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => $v]);
+    $acts = array_column($f4['users'], 'action', 'username');
+    chk('wifi · a reinstated member is added back, and a speed change re-sends every member line', ($acts['026-501'] ?? '') === 'add' && ($acts['026-503'] ?? '') === '' && ($acts['WF-26-001'] ?? '') === '');
+    chk('wifi · the blocked case cannot be switched on', (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['blocked' => 'on']])['error'] ?? '') === 'case_locked');
+
+    // Big lists are paged under RouterOS's 64,512-byte fetch limit, and every page is the same version.
+    $big = ['format' => 'text', 'version' => 9, 'full' => true, 'count' => 3000, 'next' => 60, 'profiles' => WIFI_PROFILE_DEFAULTS,
+            'users' => array_map(fn($i) => ['username' => sprintf('026-%04d', $i), 'pin' => '123456', 'profile' => 'ngg-member', 'action' => 'add'], range(1, 3000))];
+    $p1 = wifi_feed_render($big, 1)['body']; preg_match('/;pages=(\d+)/', $p1, $pm);
+    $all = 0; for ($i = 1; $i <= (int)$pm[1]; $i++) { $b = wifi_feed_render($big, $i)['body']; $all += substr_count($b, "\nu;"); $okLen = ($okLen ?? true) && strlen($b) < 64512 && substr($b, -5) === "#end\n"; }
+    chk('wifi · a big list is paged under 64,512 bytes, every page ending #end, nobody lost', (int)$pm[1] > 1 && $okLen && $all === 3000);
+    // Hours are kept by NGG: outside the window, people are left off.
+    chk('wifi · hours: inside and outside a window', wifi_in_hours('08:00-18:00', '09:30') && !wifi_in_hours('08:00-18:00', '18:00') && wifi_in_hours('', '03:00'));
+    $set2 = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => wifi_local_clock(time() - 7200) . '-' . wifi_local_clock(time() - 3600)]]]);
+    $hl = wifi_centre_lines($C);
+    chk('wifi · somebody outside their profile’s hours is not on the list', !isset($hl['WF-26-001']) && isset($hl['026-503']));
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-summer' => ['down' => 5, 'up' => 2, 'devices' => 1, 'hours' => '']]]);
+
+    // Other platforms
+    $rad = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'radius', 'centre' => $C]);
+    $fr = backend_dispatch('wifi.feed', ['gatewayId' => $rad['gateway']['gatewayId'], 'key' => $rad['key'], 'since' => 0]);
+    $rb = wifi_feed_render($fr)['body'];
+    chk('wifi · a RADIUS bridge gets a FreeRADIUS users file with speeds in bits', $fr['format'] === 'radius' && strpos($rb, '026-501 Cleartext-Password := "') !== false
+        && strpos($rb, 'WISPr-Bandwidth-Max-Down = 20000000') !== false && strpos($rb, 'Session-Timeout = ') !== false);
+    $fr2 = backend_dispatch('wifi.feed', ['gatewayId' => $rad['gateway']['gatewayId'], 'key' => $rad['key'], 'since' => $fr['version']]);
+    chk('wifi · a RADIUS bridge always gets the whole file, marked unchanged when nothing moved', $fr2['full'] === true && strpos(wifi_feed_render($fr2)['body'], '# unchanged') !== false);
+    $gen = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'generic', 'centre' => $C]);
+    $fj = json_decode(wifi_feed_render(backend_dispatch('wifi.feed', ['gatewayId' => $gen['gateway']['gatewayId'], 'key' => $gen['key']]))['body'], true);
+    chk('wifi · the generic feed is JSON with profiles and users', isset($fj['profiles']['ngg-staff'], $fj['users'][0]['username']));
+
+    // Keys
+    $rot = backend_dispatch('admin.wifi.gateway.rotate', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('wifi · a rotated key stops the old one at once', ($rot['key'] ?? '') !== $key && (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key])['error'] ?? '') === 'bad_key'
+        && !empty(backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $rot['key'], 'since' => 0])['ok']));
+    $ov = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    $g1 = array_values(array_filter($ov['gateways'], fn($g) => $g['gatewayId'] === $gid))[0];
+    chk('wifi · wrong-key fetches are shown, as a warning while the gateway still fetches', (bool)array_filter($g1['diagnosis'], fn($d) => strpos($d['title'], 'wrong key') !== false && $d['tone'] === 'warn')
+        && $g1['health'] === 'warn');
+    $old = wifi_gateway_diagnose(['gatewayId' => 'G00000000', 'platform' => 'mikrotik', 'lastSeenAt' => now_iso(), 'lastError' => '', 'osVersion' => '6.49.10']);
+    chk('wifi · RouterOS 6 is called too old', in_array('RouterOS 6.49 is too old', array_column($old, 'title'), true));
+    $cert = wifi_gateway_diagnose(['gatewayId' => 'G00000000', 'platform' => 'mikrotik', 'lastSeenAt' => now_iso(), 'lastError' => 'certificate verify failed', 'osVersion' => '7.18']);
+    chk('wifi · a gateway’s own error is put in words with the fix', strpos($cert[count($cert) - 1]['fix'], 'clock') !== false);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('wifi · a removed gateway can no longer fetch', (backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $rot['key']])['error'] ?? '') === 'bad_key');
+
+    // The member's own Wi-Fi, and the desk's
+    $me = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WF-ACT'])['wifi'];
+    chk('wifi · a member sees their name, PIN, limits and that their centre has Wi-Fi', $me['username'] === '026-501' && preg_match('/^\d{6}$/', $me['pin']) === 1
+        && $me['limits']['down'] === 20 && $me['centreHasWifi'] === true && $me['resetsLeft'] === 3);
+    $r1 = backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']);
+    backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']); backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT']);
+    chk('wifi · a new PIN, three times a day and no more', ($r1['wifi']['pin'] ?? '') !== $me['pin'] && (backend_dispatch('member.wifi.reset', ['memberId' => 'NGG-WF-ACT'])['error'] ?? '') === 'too_many_resets');
+    $sus = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WF-SUS'])['wifi'];
+    chk('wifi · somebody without access is told why, and shown no PIN', $sus['access'] === 'off' && $sus['pin'] === '' && $sus['why'] !== '');
+    chk('wifi · an override needs a reason', (backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'on'])['error'] ?? '') === 'reason_required');
+    $o = backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'on', 'why' => 'Alumni mentor on Saturdays']);
+    chk('wifi · an override turns a graduate on, and says who and why', $o['wifi']['access'] === 'on' && $o['wifi']['override']['by'] === $A);
+    $os = backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-SUS', 'op' => 'override', 'access' => 'on', 'why' => 'try']);
+    chk('wifi · an override never undoes a suspension', $os['wifi']['access'] === 'off');
+    chk('wifi · an operator cannot override their own Wi-Fi', (backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => $A, 'op' => 'clear'])['error'] ?? '') === 'own_account');
+    $mem('NGG-WF-LEAD', ['role' => 'centre_lead', 'centre' => 'Wifi Other Centre', 'centreScope' => json_encode(['CEN-WIFI-2'])]);
+    chk('wifi · a scoped lead cannot see Wi-Fi for another centre’s member', (backend_dispatch('admin.wifi.member', ['requesterId' => 'NGG-WF-LEAD', 'subjectType' => 'member', 'subjectId' => 'NGG-WF-ACT'])['error'] ?? '') === 'out_of_scope');
+    chk('wifi · a participant’s Wi-Fi is Summer School’s, not People’s', (backend_dispatch('admin.wifi.member', ['requesterId' => 'NGG-WF-LEAD', 'subjectType' => 'summer', 'subjectId' => 'SS-WF-1'])['error'] ?? '') === 'forbidden');
+    $lk = backend_dispatch('admin.wifi.lookup', ['requesterId' => $A, 'q' => '026-50']);
+    $lkr = array_column($lk['results'], null, 'subjectId');
+    chk('wifi · the lookup finds people by printed ID and says why, never with a PIN', isset($lkr['NGG-WF-SUS'], $lkr['NGG-WF-DOR']) && $lkr['NGG-WF-SUS']['access'] === 'off'
+        && $lkr['NGG-WF-DOR']['access'] === 'limited' && $lkr['NGG-WF-DOR']['pin'] === '');
+    chk('wifi · the lookup is centre-scoped per row', array_column(backend_dispatch('admin.wifi.lookup', ['requesterId' => 'NGG-WF-LEAD', 'q' => '026-50'])['results'], 'subjectId') === ['NGG-WF-FAR']);
+    $su = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId']]);
+    chk('wifi · a setup guide comes with its script, the gateway’s id in it and the key left out', $su['ok'] && strpos($su['script'], $rad['gateway']['gatewayId']) !== false
+        && strpos($su['script'], WIFI_KEY_PLACEHOLDER) !== false && strpos($su['script'], $rad['key']) === false && count($su['steps']) >= 4 && $su['pilot'] !== '');
+    foreach (['mikrotik', 'openwrt', 'generic'] as $pl) {
+        $gg = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => $pl, 'centre' => $C]);
+        $sx = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gg['gateway']['gatewayId']]);
+        chk('wifi · a setup guide for ' . $pl, $sx['ok'] && strpos($sx['script'], $gg['gateway']['gatewayId']) !== false && strpos($sx['script'], '/api/hooks/wifi-feed.php') !== false);
+        backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gg['gateway']['gatewayId']]);
+    }
+    // Diagnosis: what a gateway reports, line tests, and a fair share.
+    $dg = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Diag']);
+    $dgid = $dg['gateway']['gatewayId']; $dk = $dg['key'];
+    $t0 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => 0, 'act' => '30', 'cpu' => '95', 'mem' => '12', 'up' => '600']);
+    $txt0 = wifi_feed_render($t0)['body'];
+    chk('wifi · the profile lines carry burst and priority', strpos($txt0, "\np;ngg-staff;25;10;2;;1;2\n") !== false && strpos($txt0, "\np;ngg-limited;1;1;1;;0;8\n") !== false);
+    chk('wifi · a gateway’s report is kept as an hourly summary, not per person', (int)db_row('SELECT activeMax FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['activeMax'] === 30
+        && (int)db_row('SELECT COUNT(*) c FROM wifi_gateway_stats WHERE gatewayId = ?', [$dgid])['c'] === 1);
+    backend_dispatch('admin.wifi.gateway.test', ['requesterId' => $A, 'gatewayId' => $dgid]);
+    $t1 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t0['version'], 'act' => '20']);
+    chk('wifi · a line test asked for rides the next reply', $t1['test'] === true && strpos(wifi_feed_render($t1)['body'], ';test=1;') !== false);
+    $t2 = backend_dispatch('wifi.feed', ['gatewayId' => $dgid, 'key' => $dk, 'since' => $t1['version'], 'dl' => '6.4']);
+    chk('wifi · a reported result is kept as the centre’s line speed and clears the ask', $t2['test'] === false
+        && (float)db_row("SELECT downMbps FROM wifi_speed_tests WHERE gatewayId = ? AND source = 'gateway'", [$dgid])['downMbps'] === 6.4);
+    $ov2 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    $dgo = array_values(array_filter($ov2['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0];
+    $titles = array_column($dgo['diagnosis'], 'title');
+    chk('wifi · busy and promised more than the line gives: the diagnosis says so, with a fair figure', in_array('More promised than the line can give', $titles, true)
+        && $dgo['fair']['peak'] === 30 && $dgo['fair']['suggestMember'] < 10);
+    chk('wifi · a hot CPU, low memory and a recent restart are all named', (bool)array_filter($titles, fn($t) => strpos($t, 'CPU reached 95%') !== false)
+        && (bool)array_filter($titles, fn($t) => strpos($t, 'Low on memory') !== false) && (bool)array_filter($titles, fn($t) => strpos($t, 'Restarted') === 0));
+    chk('wifi · a staff device’s speed test needs a real centre in scope, and a result',
+        (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => 'Nowhere', 'downMbps' => 5])['error'] ?? '') === 'bad_centre'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 0])['error'] ?? '') === 'bad_result'
+        && (backend_dispatch('admin.wifi.speed.save', ['requesterId' => 'NGG-WF-LEAD', 'centre' => $C, 'downMbps' => 9])['error'] ?? '') === 'out_of_scope');
+    backend_dispatch('admin.wifi.speed.save', ['requesterId' => $A, 'centre' => $C, 'downMbps' => 3.2, 'upMbps' => 1.1, 'rttMs' => 80, 'note' => 'Hall, Saturday 10am']);
+    $ov3 = backend_dispatch('admin.wifi.overview', ['requesterId' => $A]);
+    chk('wifi · the newest test is the centre’s line, and a slow one is called slow', $ov3['speedTests'][0]['note'] === 'Hall, Saturday 10am' && $ov3['speedTests'][0]['by'] === 'Wifi NGG-WF-ADM'
+        && in_array('Slow line: 3.2 Mbit/s measured', array_column(array_values(array_filter($ov3['gateways'], fn($g) => $g['gatewayId'] === $dgid))[0]['diagnosis'], 'title'), true));
+    $bp = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['priority' => 9]]]);
+    chk('wifi · priority is checked, and a partial change keeps the rest', ($bp['error'] ?? '') === 'bad_profile'
+        && backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['burst' => false]]])['profiles']['ngg-member']['down'] === 20);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $dgid]);
+    // ── At scale: scope per centre, Wi-Fi regions, speeds that inherit, paged lists, analytics, the list cache.
+    db_insert('centres', ['centreId' => 'CEN-WIFI-3', 'name' => 'Wifi Third Centre', 'code' => 'WT', 'status' => 'active']);
+    $mem('NGG-WF-NADM', ['role' => 'admin', 'centre' => $C, 'capsExtra' => json_encode(['network'])]);
+    $mem('NGG-WF-RLEAD', ['role' => 'admin', 'centre' => 'Wifi Third Centre', 'capsExtra' => json_encode(['network'])]);
+    $gA = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Scale A']);
+    $gB = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'radius', 'centre' => 'Wifi Other Centre', 'label' => 'Scale B']);
+    $gT = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'generic', 'centre' => 'Wifi Third Centre', 'label' => 'Scale T']);
+    chk('wifi scale · an NGG admin with network sees only their own centre’s gateways', in_array('NGG-WF-NADM', [], true) || (function () use ($C) {
+        $o = backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-NADM']);
+        return $o['ok'] && array_unique(array_column($o['gateways'], 'centre')) === [$C] && $o['centres'] === [$C] && $o['scope']['all'] === false;
+    })());
+    chk('wifi scale · …and cannot add, rotate or see another centre’s',
+        (backend_dispatch('admin.wifi.gateway.save', ['requesterId' => 'NGG-WF-NADM', 'platform' => 'mikrotik', 'centre' => 'Wifi Other Centre'])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.wifi.gateway.rotate', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => 'NGG-WF-NADM', 'gatewayId' => $gB['gateway']['gatewayId']])['error'] ?? '') === 'out_of_scope');
+    chk('wifi scale · the network’s table is changed only by somebody who sees every centre', (backend_dispatch('admin.wifi.access.set', ['requesterId' => 'NGG-WF-NADM', 'cases' => ['graduated' => 'on']])['error'] ?? '') === 'network_wide_only');
+    chk('wifi scale · regions are shaped only with wifi_regions', (backend_dispatch('admin.wifi.region.save', ['requesterId' => 'NGG-WF-NADM', 'name' => 'South'])['error'] ?? '') === 'forbidden');
+
+    $rs = backend_dispatch('admin.wifi.region.save', ['requesterId' => $A, 'name' => 'Lagos West', 'code' => 'lw-1']);
+    $RID = $rs['regionId'];
+    chk('wifi scale · a region is made, its code tidied, its name kept unique', $rs['ok'] && db_row('SELECT code FROM wifi_regions WHERE regionId = ?', [$RID])['code'] === 'LW1'
+        && (backend_dispatch('admin.wifi.region.save', ['requesterId' => $A, 'name' => 'lagos west'])['error'] ?? '') === 'name_taken');
+    $as = backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => ['Wifi Other Centre', 'Wifi Third Centre', 'Nowhere Centre']]);
+    chk('wifi scale · centres go into a region with a verdict each', $as['applied'] === 2 && $as['refused'] === 1
+        && backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => ['Wifi Third Centre']])['unchanged'] === 1);
+    chk('wifi scale · a region assignment is capped and says so', (backend_dispatch('admin.wifi.region.assign', ['requesterId' => $A, 'regionId' => $RID, 'centres' => array_map(fn($i) => 'C' . $i, range(1, WIFI_ASSIGN_MAX + 1))])['error'] ?? '') === 'too_many');
+    chk('wifi scale · a lead must hold network', (backend_dispatch('admin.wifi.region.leads', ['requesterId' => $A, 'regionId' => $RID, 'memberIds' => ['NGG-WF-ACT']])['error'] ?? '') === 'not_network');
+    backend_dispatch('admin.wifi.region.leads', ['requesterId' => $A, 'regionId' => $RID, 'memberIds' => ['NGG-WF-RLEAD']]);
+    $lo = backend_dispatch('admin.wifi.overview', ['requesterId' => 'NGG-WF-RLEAD']);
+    sort($lo['centres']);
+    chk('wifi scale · a region lead sees every centre in their region, and nothing outside it', $lo['centres'] === ['Wifi Other Centre', 'Wifi Third Centre']
+        && !in_array($C, array_column($lo['gateways'], 'centre'), true));
+    $rg = backend_dispatch('admin.wifi.regions', ['requesterId' => $A]);
+    $r1 = array_values(array_filter($rg['regions'], fn($r) => $r['regionId'] === $RID))[0];
+    chk('wifi scale · a region rolls up its centres and gateways', $r1['centres'] === 2 && $r1['gateways'] === 2 && $r1['leads'][0]['memberId'] === 'NGG-WF-RLEAD' && $rg['canShape'] === true);
+
+    // Speeds inherit: network → region → centre, and the feed carries the centre's.
+    chk('wifi scale · an NGG admin never sees or sets a region (wifi_regions is not theirs)', (backend_dispatch('admin.wifi.regions', ['requesterId' => 'NGG-WF-NADM'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]])['error'] ?? '') === 'forbidden'
+        && !in_array('wifi_regions', admin_role_caps('admin'), true) && in_array('wifi_regions', admin_role_caps('super_admin'), true));
+    chk('wifi scale · …and region names stay out of an NGG admin’s lists', !isset(backend_dispatch('admin.wifi.gateways', ['requesterId' => 'NGG-WF-RLEAD'])['facets']['region'])
+        && array_unique(array_column(backend_dispatch('admin.wifi.gateways', ['requesterId' => 'NGG-WF-RLEAD'])['gateways'], 'region')) === ['']);
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => $A, 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 4]]]);
+    $pf = backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre']);
+    chk('wifi scale · a region’s speed is set and its centres inherit it, saying from where', $pf['effective']['ngg-member']['down'] === 4 && $pf['from']['ngg-member'] === 'region'
+        && $pf['effective']['ngg-staff']['down'] === WIFI_PROFILE_DEFAULTS['ngg-staff']['down'] && $pf['from']['ngg-staff'] === 'network');
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-RLEAD', 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => ['down' => 3, 'hours' => '']]]);
+    $tf = backend_dispatch('wifi.feed', ['gatewayId' => $gT['gateway']['gatewayId'], 'key' => $gT['key'], 'since' => 0]);
+    chk('wifi scale · a centre’s own speed wins, and its gateway is sent it', $tf['profiles']['ngg-member']['down'] === 3 && $tf['profiles']['ngg-member']['up'] === wifi_settings()['profiles']['ngg-member']['up']);
+    chk('wifi scale · a region’s speed is set only with wifi_regions', (backend_dispatch('admin.wifi.profiles.set', ['requesterId' => 'NGG-WF-NADM', 'regionId' => $RID, 'profiles' => ['ngg-member' => ['down' => 9]]])['error'] ?? '') === 'forbidden');
+    backend_dispatch('admin.wifi.profiles.set', ['requesterId' => $A, 'centre' => 'Wifi Third Centre', 'profiles' => ['ngg-member' => null]]);
+    chk('wifi scale · clearing a centre’s own speed goes back to the region’s', backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre'])['effective']['ngg-member']['down'] === 4);
+
+    // The paged gateway list.
+    $pl = backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'region' => $RID, 'pageSize' => 1, 'sort' => 'nonsense']);
+    chk('wifi scale · the gateway list is filtered on the server with a true total, paged, and an unknown sort falls back', $pl['ok'] && $pl['total'] === 2 && count($pl['gateways']) === 1
+        && ($pl['facets']['region'][$RID] ?? 0) === 2 && ($pl['facets']['region']['_none'] ?? 0) >= 1);
+    chk('wifi scale · search and health filter the whole list, not the page', backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'q' => 'scale t'])['total'] === 1
+        && backend_dispatch('admin.wifi.gateways', ['requesterId' => $A, 'health' => 'never', 'region' => $RID])['total'] === 1);
+    $cl = backend_dispatch('admin.wifi.centres', ['requesterId' => $A, 'region' => '_none', 'idsOnly' => 1]);
+    chk('wifi scale · the centre list finds centres in no region, with every id for “select all”', in_array($C, $cl['all'], true) && !in_array('Wifi Third Centre', $cl['all'], true));
+
+    // Analytics from the heartbeats.
+    foreach ([12, 30, 18] as $act) backend_dispatch('wifi.feed', ['gatewayId' => $gA['gateway']['gatewayId'], 'key' => $gA['key'], 'since' => 0, 'act' => (string)$act, 'cpu' => '40']);
+    db_insert('wifi_gateway_daily', ['gatewayId' => $gA['gateway']['gatewayId'], 'date' => gmdate('Y-m-d', time() - 86400), 'samples' => 300, 'hoursUp' => 12, 'activePeak' => 44, 'activeSum' => 2000, 'activeSamples' => 100, 'cpuMax' => 70]);
+    $an = backend_dispatch('admin.wifi.analytics', ['requesterId' => $A, 'days' => 7, 'centre' => $C]);
+    $yday = array_values(array_filter($an['series'], fn($x) => $x['date'] === gmdate('Y-m-d', time() - 86400)))[0];
+    chk('wifi scale · analytics: people online per day, from the daily summaries', $an['ok'] && count($an['series']) === 7 && $yday['peakOnline'] === 44 && $yday['avgOnline'] === 20.0);
+    chk('wifi scale · analytics: how much of the day gateways were there', $yday['availability'] !== null && $yday['availability'] > 0 && $yday['availability'] <= 100);
+    chk('wifi scale · analytics: the week’s busy hours, and the busiest centres', count($an['heatmap']) === 7 && count($an['heatmap'][0]) === 24 && $an['busiest'][0]['centre'] === $C);
+    chk('wifi scale · analytics are scoped: a centre’s admin gets only their centre', array_unique(array_column(backend_dispatch('admin.wifi.analytics', ['requesterId' => 'NGG-WF-NADM', 'days' => 7])['leastAvailable'], 'centre')) === [$C]);
+    chk('wifi scale · a fetch with nothing to report still counts as the gateway being there', (function () use ($gT) {
+        backend_dispatch('wifi.feed', ['gatewayId' => $gT['gateway']['gatewayId'], 'key' => $gT['key'], 'since' => 0]);
+        return (int)db_row('SELECT hoursUp FROM wifi_gateway_daily WHERE gatewayId = ? AND date = ?', [$gT['gateway']['gatewayId'], gmdate('Y-m-d')])['hoursUp'] === 1;
+    })());
+
+    // The 60-second list cache: sealed, served, and dropped by a change made here.
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 60;
+    wifi_lines_forget($C);
+    $c1 = wifi_centre_lines($C);
+    $raw = (string)@file_get_contents(cache_path('wifi-lines-' . md5($C)));
+    $anyPin = $c1 ? reset($c1)['pin'] : 'x';
+    chk('wifi scale · a centre’s list is kept with the PINs sealed, never in the clear', $raw !== '' && strpos($raw, '"' . $anyPin . '"') === false && strpos($raw, 'v1:') !== false);
+    db_update('members', ['status' => 'suspended'], ['memberId' => 'NGG-WF-DOR']);
+    chk('wifi scale · within the minute the kept list is served', isset(wifi_centre_lines($C)['026-503']));
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-DOR', 'op' => 'clear']);
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WF-GRD', 'op' => 'override', 'access' => 'off', 'why' => 'cache test']);
+    chk('wifi scale · a change made here drops the kept list at once', !isset(wifi_centre_lines($C)['026-503']));
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    db_update('members', ['status' => 'active'], ['memberId' => 'NGG-WF-DOR']);
+
+    // ── Bulk acts per region; the silent-gateway digest; the feed's measured cost.
+    chk('wifi scale · bulk: an NGG admin without Wi-Fi regions cannot act on a whole region', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-NADM', 'action' => 'test', 'regionId' => $RID])['error'] ?? '') === 'forbidden');
+    chk('wifi scale · bulk: an unknown action is refused', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'reboot', 'regionId' => $RID])['error'] ?? '') === 'unknown_action');
+    chk('wifi scale · bulk: the count confirmed must still be the count', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'test', 'regionId' => $RID, 'expect' => 5])['error'] ?? '') === 'count_changed');
+    db_update('wifi_gateways', ['testAsked' => 1], ['gatewayId' => $gB['gateway']['gatewayId']]);
+    $bk = backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-RLEAD', 'action' => 'test', 'regionId' => $RID, 'expect' => 2]);
+    chk('wifi scale · bulk: a region lead asks every gateway in their region for a line test; one already asked is reported unchanged',
+        $bk['ok'] && $bk['ran'] === 2 && $bk['applied'] === 1 && $bk['unchanged'] === 1
+        && (int)db_row('SELECT testAsked FROM wifi_gateways WHERE gatewayId = ?', [$gT['gateway']['gatewayId']])['testAsked'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'wifi.gateway.bulk'")['c'] === 1);
+    $sel = backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => 'NGG-WF-NADM', 'action' => 'rotate', 'gatewayIds' => [$gA['gateway']['gatewayId'], $gT['gateway']['gatewayId']]]);
+    $rs0 = array_column($sel['results'], null, 'gatewayId');
+    chk('wifi scale · bulk: keys are rotated per row, each new key shown once, and another centre’s gateway refused by name',
+        $sel['ok'] && $sel['applied'] === 1 && $sel['refused'] === 1 && ($rs0[$gT['gateway']['gatewayId']]['error'] ?? '') === 'out_of_scope'
+        && strlen($rs0[$gA['gateway']['gatewayId']]['key'] ?? '') >= 32
+        && db_row('SELECT keyHash FROM wifi_gateways WHERE gatewayId = ?', [$gA['gateway']['gatewayId']])['keyHash'] === hash('sha256', $rs0[$gA['gateway']['gatewayId']]['key']));
+    chk('wifi scale · bulk: a selection over the cap is refused, and the cap named', (backend_dispatch('admin.wifi.gateways.bulk', ['requesterId' => $A, 'action' => 'test', 'gatewayIds' => array_map(fn($i) => 'G' . $i, range(1, WIFI_BULK_MAX + 1))])['max'] ?? 0) === WIFI_BULK_MAX);
+    $ids = backend_dispatch('admin.wifi.gateways.ids', ['requesterId' => $A, 'region' => $RID]);
+    chk('wifi scale · "select all matching" gets the ids under the same filter in one request', $ids['total'] === 2 && count($ids['ids']) === 2);
+
+    $old = gmdate('Y-m-d\TH:i:s\Z', time() - 2 * 3600);
+    foreach ([$gA, $gT] as $x) db_update('wifi_gateways', ['lastSeenAt' => $old, 'silentAlertAt' => ''], ['gatewayId' => $x['gateway']['gatewayId']]);
+    db_update('wifi_gateways', ['lastSeenAt' => gmdate('Y-m-d\TH:i:s\Z'), 'silentAlertAt' => ''], ['gatewayId' => $gB['gateway']['gatewayId']]);
+    db_exec("DELETE FROM notifications WHERE kind = 'wifi'");
+    $dg1 = wifi_silent_digest();
+    $nt = fn($mid) => db_all("SELECT title, body FROM notifications WHERE memberId = ? AND kind = 'wifi'", [$mid]);
+    chk('wifi scale · a gateway silent for an hour goes to its region lead, one digest each, naming it',
+        $dg1['silent'] >= 2 && count($nt('NGG-WF-RLEAD')) === 1 && str_contains($nt('NGG-WF-RLEAD')[0]['body'], 'Scale T') && !str_contains($nt('NGG-WF-RLEAD')[0]['body'], 'Scale A'));
+    chk('wifi scale · …a centre with no region goes to the network staff whose scope names it', count($nt('NGG-WF-NADM')) === 1 && str_contains($nt('NGG-WF-NADM')[0]['body'], 'Scale A'));
+    chk('wifi scale · …a gateway fetching recently is not silent', !str_contains(implode(' ', array_column($nt('NGG-WF-RLEAD'), 'body')), 'Scale B'));
+    chk('wifi scale · the same silence is told once', wifi_silent_digest()['silent'] === 0);
+    backend_dispatch('wifi.feed', ['gatewayId' => $gA['gateway']['gatewayId'], 'key' => $rs0[$gA['gateway']['gatewayId']]['key'], 'since' => 0]);
+    chk('wifi scale · a fetch ends the silence, so a later one is told again', db_row('SELECT silentAlertAt FROM wifi_gateways WHERE gatewayId = ?', [$gA['gateway']['gatewayId']])['silentAlertAt'] === '');
+
+    db_exec('DELETE FROM wifi_feed_load');
+    chk('wifi scale · load: with too few fetches measured, the verdict says so', backend_dispatch('admin.wifi.load', ['requesterId' => $A])['plan']['verdict'] === 'unmeasured');
+    // 113 quick fetches and 7 slow: the slowest 5% sits in the 250–500ms bucket.
+    for ($i = 0; $i < 120; $i++) wifi_load_record($i < 113 ? 30 : 300, 2000, $i !== 0);
+    $ld = backend_dispatch('admin.wifi.load', ['requesterId' => $A, 'plan' => 1000, 'poll' => 300]);
+    chk('wifi scale · load: each fetch is measured into the hour, with its tail', $ld['measured']['fetches'] === 120 && $ld['measured']['failed'] === 1 && $ld['measured']['maxMs'] === 300
+        && $ld['measured']['p95Ms'] === 500 && abs($ld['measured']['avgMs'] - (113 * 30 + 7 * 300) / 120) < 0.2);
+    chk('wifi scale · load: projected at the planned size against the budget', abs($ld['plan']['rps'] - 1000 / 300) < 0.01 && $ld['plan']['verdict'] === 'fine'
+        && backend_dispatch('admin.wifi.load', ['requesterId' => $A, 'plan' => 20000, 'poll' => 60])['plan']['verdict'] === 'too_much');
+    chk('wifi scale · load: network-wide, so the Wi-Fi regions capability', (backend_dispatch('admin.wifi.load', ['requesterId' => 'NGG-WF-NADM'])['error'] ?? '') === 'forbidden');
+
+    $rm = backend_dispatch('admin.wifi.region.remove', ['requesterId' => $A, 'regionId' => $RID]);
+    chk('wifi scale · removing a region unassigns its centres and their region speeds, nothing else', $rm['unassigned'] === 2
+        && backend_dispatch('admin.wifi.profiles.get', ['requesterId' => $A, 'centre' => 'Wifi Third Centre'])['effective']['ngg-member']['down'] === wifi_settings()['profiles']['ngg-member']['down']
+        && (bool)wifi_gateway_live($gT['gateway']['gatewayId']));
+    foreach ([$gA, $gB, $gT] as $x) backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $x['gateway']['gatewayId']]);
+    $pv = backend_dispatch('admin.wifi.gateway.preview', ['requesterId' => $A, 'gatewayId' => $rad['gateway']['gatewayId'], 'q' => '026-50']);
+    chk('wifi · the preview counts by profile and finds a person, without their PIN', $pv['byProfile']['ngg-member'] >= 1 && !isset($pv['matches'][0]['pin']) && count($pv['matches']) >= 1);
+})();
+
+// ── Wi-Fi: data used per person, and allowances (domain/wifi-usage.php) ──────
+(function () {
+    $GLOBALS['CONFIG']['wifi']['list_ttl'] = 0;
+    $now = now_iso(); $C = 'Wifi Use Centre';
+    db_insert('centres', ['centreId' => 'CEN-WUSE', 'name' => $C, 'code' => 'WU', 'status' => 'active']);
+    db_insert('centres', ['centreId' => 'CEN-WUSE-2', 'name' => 'Wifi Use Far', 'code' => 'WX', 'status' => 'active']);
+    foreach ([['NGG-WU-ADM', 'super_admin', 'Wifi Use Far', '026-950'], ['NGG-WU-A', 'member', $C, '026-951'], ['NGG-WU-B', 'member', $C, '026-952'], ['NGG-WU-FAR', 'member', 'Wifi Use Far', '026-953']] as [$id, $role, $c, $d])
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Use ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => $c, 'displayId' => $d, 'createdAt' => $now, 'updatedAt' => $now]);
+    $A = 'NGG-WU-ADM';
+    $gw = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => $A, 'platform' => 'mikrotik', 'centre' => $C]);
+    $gid = $gw['gateway']['gatewayId']; $key = $gw['key'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0]);   // makes the accounts
+    $MB = 1048576;
+    $send = fn(string $body) => backend_dispatch('wifi.usage', ['gatewayId' => $gid, 'key' => $key, 'body' => $body]);
+    chk('usage · a wrong key is refused', (backend_dispatch('wifi.usage', ['gatewayId' => $gid, 'key' => 'nope', 'body' => "s;026-951;*1;1;1\n"])['error'] ?? '') === 'bad_key');
+    // The router's counters: in = what the person sent, out = what they received.
+    $r1 = $send("s;026-951;*1|AA:BB;" . (2 * $MB) . ";" . (30 * $MB) . "\ns;026-952;*2|CC:DD;0;" . (5 * $MB) . "\ns;nobody;*9;1;1\n");
+    $row = fn($id) => db_row("SELECT bytesDown, bytesUp FROM wifi_usage_daily WHERE subjectId = ? AND centre = ?", [$id, $C]);
+    chk('usage · a report is counted per person, the router’s out as their download', $r1['ok'] && $r1['people'] === 2
+        && (int)$row('NGG-WU-A')['bytesDown'] === 30 * $MB && (int)$row('NGG-WU-A')['bytesUp'] === 2 * $MB);
+    $send("s;026-951;*1|AA:BB;" . (3 * $MB) . ";" . (50 * $MB) . "\n");
+    chk('usage · a session reported again adds only what it moved since', (int)$row('NGG-WU-A')['bytesDown'] === 50 * $MB && (int)$row('NGG-WU-A')['bytesUp'] === 3 * $MB);
+    $send("s;026-951;*1|AA:BB;" . (3 * $MB) . ";" . (50 * $MB) . "\n");
+    chk('usage · the same counters twice count once', (int)$row('NGG-WU-A')['bytesDown'] === 50 * $MB);
+    $send("s;026-951;*1|AA:BB;0;" . (4 * $MB) . "\n");
+    chk('usage · a counter that goes down is a new session (a reboot), counted from zero', (int)$row('NGG-WU-A')['bytesDown'] === 54 * $MB);
+    $send('{"sessions":[{"username":"026-952","session":"j1","down":' . (1 * $MB) . ',"up":0}]}');
+    chk('usage · JSON reports are read from the person’s side', (int)$row('NGG-WU-B')['bytesDown'] === 6 * $MB);
+    $send("s;026-951;*7;0;" . (60 * 1024 ** 3) . "\n");
+    chk('usage · an impossible jump is a broken counter, not a download', (int)$row('NGG-WU-A')['bytesDown'] === 54 * $MB);
+
+    // Who sees it: the person themselves, and staff — never families.
+    $mine = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WU-A'])['wifi']['usage'] ?? null;
+    chk('usage · a member sees their own: today, this month and the days', $mine && $mine['today'] === 57 * $MB && $mine['month'] === 57 * $MB && count($mine['days']) === 1 && $mine['over'] === '');
+    $u = backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'period' => 'month']);
+    chk('usage · staff see each person heaviest first, with the centre’s total', $u['ok'] && $u['people'][0]['subjectId'] === 'NGG-WU-A' && $u['total'] === 2
+        && $u['bytes'] === 63 * $MB && $u['centres'][0]['centre'] === $C && $u['centres'][0]['people'] === 2);
+    chk('usage · the people list is searched and sorted on the server; an unknown sort falls back', array_column(backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'q' => '952'])['people'], 'subjectId') === ['NGG-WU-B']
+        && backend_dispatch('admin.wifi.usage', ['requesterId' => $A, 'sort' => 'DROP TABLE'])['sort'] === 'bytes');
+    chk('usage · a member cannot read the staff view', (backend_dispatch('admin.wifi.usage', ['requesterId' => 'NGG-WU-B'])['error'] ?? '') === 'forbidden');
+    $sf = backend_dispatch('wifi.setup.script', ['gatewayId' => $gid, 'key' => $key]);
+    chk('setup · the router fetches its own setup file with its key, the key written in, nothing to paste', !empty($sf['ok']) && strpos($sf['script'], $key) !== false
+        && strpos($sf['script'], 'PASTE-THE-KEY-HERE') === false && strpos($sf['script'], ':foreach h in=[/ip hotspot find]') !== false && strpos($sf['script'], 'device-mode') !== false);
+    chk('setup · …and a wrong key gets nothing', (backend_dispatch('wifi.setup.script', ['gatewayId' => $gid, 'key' => str_repeat('0', 40)])['error'] ?? '') === 'bad_key');
+    $gs = backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid]);
+    chk('setup · the guide is one short install line, device-mode first', strpos($gs['oneLiner'], '/api/hooks/wifi-setup.php') !== false && strpos($gs['oneLiner'], '/import file-name=ngg-wifi.rsc') !== false
+        && strlen($gs['oneLiner']) < 400 && strpos($gs['steps'][0]['cmd'], 'device-mode') !== false);
+    chk('usage · the guide says which gateways can report it', backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid])['canUsage'] === true
+        && strpos(backend_dispatch('admin.wifi.gateway.setup', ['requesterId' => $A, 'gatewayId' => $gid])['script'], 'wifi-usage.php') !== false);
+
+    // Allowances: over one, the access table's overLimit case, at the next fetch.
+    chk('usage · an allowance is checked: a day can’t be more than the month', (backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 500, 'monthMb' => 100]]])['error'] ?? '') === 'bad_profile');
+    $set = backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 40, 'monthMb' => 0]]]);
+    chk('usage · a daily allowance is saved on the profile', !empty($set['ok']) && wifi_settings()['profiles']['ngg-member']['dayMb'] === 40);
+    $f = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'full' => 1]);
+    $prof = []; foreach ($f['users'] as $x) $prof[$x['username']] = $x['profile'];
+    chk('usage · over today’s allowance: the slow profile at the next fetch; under it: unchanged', ($prof['026-951'] ?? '') === 'ngg-limited' && ($prof['026-952'] ?? '') === 'ngg-member');
+    $v = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-WU-A'])['wifi'];
+    chk('usage · and the member is told why, in their own view', $v['case'] === 'overLimit' && $v['access'] === 'limited' && $v['usage']['over'] === 'day' && $v['usage']['dayMb'] === 40);
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'off']]);
+    $f = backend_dispatch('wifi.feed', ['gatewayId' => $gid, 'key' => $key, 'since' => 0, 'full' => 1]);
+    chk('usage · the table can make it Off instead', !in_array('026-951', array_column($f['users'], 'username'), true));
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'on']]);
+    chk('usage · or On: watched, never enforced', wifi_view_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-WU-A'"), false)['access'] === 'on');
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'cases' => ['overLimit' => 'limited']]);
+    backend_dispatch('admin.wifi.member.set', ['requesterId' => $A, 'subjectType' => 'member', 'subjectId' => 'NGG-WU-A', 'op' => 'override', 'access' => 'on', 'why' => 'Exam research']);
+    chk('usage · a hand-set override still wins, so staff can let somebody finish', wifi_view_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-WU-A'"), false)['access'] === 'on');
+    chk('usage · and the staff view marks who is over', (array_values(array_filter(backend_dispatch('admin.wifi.usage', ['requesterId' => $A])['people'], fn($r) => $r['subjectId'] === 'NGG-WU-A'))[0]['over'] ?? '') === 'day');
+    $ub = (int)$row('NGG-WU-A')['bytesDown'];
+    db_exec("UPDATE wifi_usage_daily SET date = ? WHERE subjectId LIKE 'NGG-WU-%'", [gmdate('Y-m-d', strtotime(wifi_local_date() . 'T12:00:00Z') - 86400)]);
+    chk('usage · a new day starts today’s count again', wifi_usage_totals(['member|NGG-WU-B'])['member|NGG-WU-B']['day'] === 0 && $ub > 0);
+    backend_dispatch('admin.wifi.access.set', ['requesterId' => $A, 'profiles' => ['ngg-member' => ['dayMb' => 0, 'monthMb' => 0]]]);
+    db_exec("DELETE FROM wifi_usage_daily WHERE subjectId LIKE 'NGG-WU-%'");
+    db_exec("DELETE FROM wifi_usage_sessions WHERE gatewayId = ?", [$gid]);
+    backend_dispatch('admin.wifi.gateway.remove', ['requesterId' => $A, 'gatewayId' => $gid]);
+})();
+
+// ── Anchor, mentor side: connected by the assignment, no code ──────────────────
+(function () {
+    $now = now_iso(); $C = 'Anchorville';
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'circle_confirmations' => 'memberId', 'circle_remarks' => 'memberId', 'notifications' => 'memberId'] as $t => $c) db_exec("DELETE FROM $t WHERE $c LIKE 'ANC-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'ANCT-%'");
+    };
+    $wipe();
+    foreach (['ANC-KID', 'ANC-OTHER', 'ANC-M', 'ANC-M2'] as $id) db_insert('members', ['memberId' => $id, 'fullName' => $id === 'ANC-KID' ? 'Ada Anchor' : $id, 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['ANCT-1', 'ANC-M'], ['ANCT-2', 'ANC-M2']] as [$tid, $mid]) db_insert('mentors', ['mentorId' => $tid, 'fullName' => 'Mentor ' . $mid, 'status' => 'active', 'centre' => $C, 'programme' => 'ngg', 'rank' => 'mentor', 'memberId' => $mid, 'checkedAt' => '2026-01-01', 'createdAt' => $now]);
+    db_insert('mentor_assignments', ['memberId' => 'ANC-KID', 'mentorId' => 'ANCT-1', 'status' => 'active', 'startedAt' => $now]);
+    $w = backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('anchor · an assigned mentor sees their mentee\'s Anchor week with no code', !empty($w['ok']) && $w['role'] === 'mentor' && count($w['days']) === 7 && $w['student']['first'] === 'Ada');
+    chk('anchor · …but not a child they are not assigned', (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-OTHER'])['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload');
+    $today = gmdate('Y-m-d');
+    $cf = backend_dispatch('member.mentor.anchor.confirm', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'date' => $today, 'on' => true]);
+    chk('anchor · the mentor confirms a day, and it counts towards the child\'s conduct', !empty($cf['ok']) && backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['stats']['conduct'] > 0);
+    backend_dispatch('member.mentor.anchor.remark', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'text' => 'Great week of reflections.']);
+    $mc = backend_dispatch('member.circle', ['requesterId' => 'ANC-KID']);
+    chk('anchor · the mentor\'s note reaches the child, who is told it came', (bool)array_filter($mc['remarks'], fn($r) => $r['role'] === 'mentor' && str_contains($r['text'], 'Great week'))
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'ANC-KID' AND title = 'A note from your mentor'"));
+    chk('anchor · the child sees their mentor as connected, without having given a code', $mc['circle']['mentor'] === true && (bool)array_filter($mc['connected'], fn($x) => $x['relation'] === 'Mentor'));
+    // The mentor reads the whole journal — what the child kept to themselves too.
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'ANC-%'");
+    foreach ([['ANC-J1', 'private', 'I was scared at the exam.'], ['ANC-J2', 'mentor', 'My week: wins and a plan.'], ['ANC-J3', 'programme', 'Our team built a bridge.']] as $i => [$eid, $vis, $body])
+        db_insert('journal', ['entryId' => $eid, 'memberId' => 'ANC-KID', 'title' => '', 'body' => $body, 'visibility' => $vis, 'occurredOn' => gmdate('Y-m-d', time() - $i * 86400), 'createdAt' => $now, 'updatedAt' => $now]);
+    $jr = backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('journal · an assigned mentor reads every entry, the ones the child kept to themselves included, newest first', !empty($jr['ok']) && $jr['total'] === 3 && $jr['more'] === false
+        && array_column($jr['entries'], 'entryId') === ['ANC-J1', 'ANC-J2', 'ANC-J3'] && $jr['entries'][0]['body'] === 'I was scared at the exam.');
+    chk('journal · …and the reading is on the record', (bool)db_row("SELECT 1 FROM audit_log WHERE event = 'mentor.journal.read' AND subject = 'ANC-KID'"));
+    chk('journal · not a mentor of another child', (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload'
+        && (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-OTHER'])['error'] ?? '') === 'not_in_caseload');
+    db_exec("UPDATE mentors SET kind = 'peer' WHERE mentorId = 'ANCT-1'");
+    chk('journal · never a peer mentor, even an assigned one', (backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'peer_no_journal');
+    db_exec("UPDATE mentors SET kind = '' WHERE mentorId = 'ANCT-1'");
+    $pg = backend_dispatch('member.mentor.journal', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID', 'before' => 2]);
+    chk('journal · pages on from where the mentor is', array_column($pg['entries'], 'entryId') === ['ANC-J3'] && $pg['more'] === false);
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'ANC-%'");
+    $ls = backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID']);
+    chk('lessons · the assigned mentor gets the mentee\'s lessons, gated like Growth', !empty($ls['ok']) && array_key_exists('curriculum', $ls));
+    /* A mentor whose own record names another centre (they mentor across
+       centres) is refused by the older record gate (not_your_centre) while
+       Growth, gated by the assignment, opens: Lessons must follow Growth. */
+    db_exec("UPDATE mentors SET centre = 'Elsewhere' WHERE mentorId = 'ANCT-1'");
+    chk('lessons · a mentor based at another centre still gets their mentee\'s lessons, as Growth does', !empty(backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['ok'])
+        && !empty(backend_dispatch('member.mentor.growth', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['ok']));
+    db_exec("UPDATE mentors SET centre = 'Anchorville' WHERE mentorId = 'ANCT-1'");
+    chk('lessons · …and a mentor of another child does not', empty(backend_dispatch('member.mentor.child.lessons', ['requesterId' => 'ANC-M2', 'subjectId' => 'ANC-KID'])['ok']));
+    db_exec("UPDATE mentor_assignments SET status = 'ended' WHERE memberId = 'ANC-KID'");
+    chk('anchor · when the assignment ends, so does the connection', (backend_dispatch('member.mentor.anchor', ['requesterId' => 'ANC-M', 'subjectId' => 'ANC-KID'])['error'] ?? '') === 'not_in_caseload'
+        && backend_dispatch('member.circle', ['requesterId' => 'ANC-KID'])['circle']['mentor'] === false);
+    $wipe();
+})();
+
+// ── Wi-Fi: NGG's people and its say, sent to CACENTRE (domain/wifi-cacentre.php) ──
+(function () {
+    $now = now_iso(); $C = 'Cac Push Centre';
+    db_insert('centres', ['centreId' => 'CEN-CACP', 'name' => $C, 'code' => 'CP', 'status' => 'active']);
+    $mem = fn(string $id, array $x) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cac ' . $id, 'email' => strtolower($id) . '@Example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now], $x));
+    $mem('NGG-CP-ACT', ['displayId' => '026-701']);
+    $mem('NGG-CP-SUS', ['displayId' => '026-702', 'status' => 'suspended']);
+    $mem('NGG-CP-OVR', ['displayId' => '026-703']);
+    $mem('NGG-CP-MEN', ['displayId' => '026-704', 'role' => 'mentor']);
+    $mem('SUM-CP-1', ['type' => 'Summer', 'role' => 'member']);
+    $today = attendance_today();
+    db_insert('summer_cohorts', ['cohortId' => 'CP-LIVE', 'name' => 'Cac live', 'status' => 'active', 'startDate' => gmdate('Y-m-d', strtotime($today . ' -2 days')), 'endDate' => gmdate('Y-m-d', strtotime($today . ' +10 days')), 'createdAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SS-CP-1', 'cohortId' => 'CP-LIVE', 'fullName' => 'Cac Participant', 'centre' => $C, 'status' => 'active', 'displayId' => 'CP-26-001']);
+    db_insert('wifi_accounts', ['subjectType' => 'member', 'subjectId' => 'NGG-CP-OVR', 'username' => '026-703', 'pinSealed' => wifi_pin_seal('123456'), 'override' => 'off',
+        'pinSetAt' => $now, 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $all = []; foreach (wifi_cac_people() as $r) $all[$r['id']] = $r;
+    $p = fn($id) => $all[$id] ?? [];
+    chk('wifi→cacentre · an active member goes as an NGG member, on, at their centre’s card code', ($p('NGG-CP-ACT')['kind'] ?? '') === 'member' && $p('NGG-CP-ACT')['verdict'] === 'on'
+        && $p('NGG-CP-ACT')['homeSite'] === 'cp' && $p('NGG-CP-ACT')['printedId'] === '026-701' && $p('NGG-CP-ACT')['why'] === '' && $p('NGG-CP-ACT')['email'] === 'ngg-cp-act@example.com');
+    chk('wifi→cacentre · a suspension here is NGG saying off, with the reason in words', ($p('NGG-CP-SUS')['verdict'] ?? '') === 'off' && $p('NGG-CP-SUS')['why'] === WIFI_CASE_WORDS['blocked']);
+    chk('wifi→cacentre · a hand-set override here travels as NGG’s say', ($p('NGG-CP-OVR')['verdict'] ?? '') === 'off' && $p('NGG-CP-OVR')['why'] === WIFI_CASE_WORDS['override']);
+    chk('wifi→cacentre · a mentor goes as staff, with no home site (staff sign in anywhere)', ($p('NGG-CP-MEN')['kind'] ?? '') === 'staff' && $p('NGG-CP-MEN')['homeSite'] === '');
+    chk('wifi→cacentre · a participant goes within their edition, until its end date', ($p('summer-SS-CP-1')['kind'] ?? '') === 'participant' && $p('summer-SS-CP-1')['verdict'] === 'on'
+        && $p('summer-SS-CP-1')['validUntil'] === gmdate('Y-m-d', strtotime($today . ' +10 days')) && $p('summer-SS-CP-1')['printedId'] === 'CP-26-001');
+    chk('wifi→cacentre · a Summer-type member record is not sent as a member', !isset($all['SUM-CP-1']));
+    $keys = []; foreach ($all as $r) $keys += array_flip(array_keys($r));
+    chk('wifi→cacentre · only the agreed fields travel: no phone, birthday, guardian or money', array_keys($keys) == ['id', 'kind', 'name', 'email', 'printedId', 'homeSite', 'verdict', 'why', 'validUntil']);
+
+    // The envelope: what CACENTRE's WifiEnvelope::verify() checks, re-done here.
+    $sec = str_repeat('k', 40); $t0 = 1800000000;
+    $tok = dirpush_sign('wifi.roster', ['full' => true, 'people' => [$p('NGG-CP-ACT')]], $sec, $t0);
+    [$v, $body, $mac] = explode('.', $tok);
+    $unb = fn($s) => base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4));
+    $c = json_decode($unb($body), true);
+    chk('wifi→cacentre · the roster rides the directory’s connection: its v1 envelope, as NGG, typed wifi.roster', $v === 'v1' && hash_equals(hash_hmac('sha256', $body, $sec, true), $unb($mac))
+        && $c['iss'] === 'ngg' && $c['typ'] === 'wifi.roster' && $c['exp'] - $c['iat'] === 300 && $c['full'] === true && $c['people'][0]['id'] === 'NGG-CP-ACT');
+
+    // One connection: the Wi-Fi is on exactly when the directory push is, with its key.
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    chk('wifi→cacentre · with no directory key nothing is sent', (wifi_cac_push('test')['error'] ?? '') === 'not_configured' && (wifi_cac_tick()['skipped'] ?? '') === 'no key');
+    $GLOBALS['CONFIG']['dir_push_secret'] = 'changeme-changeme-changeme-changeme-12';
+    chk('wifi→cacentre · a placeholder key counts as no key', !wifi_cac_ready());
+    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    chk('wifi→cacentre · the directory’s key IS the Wi-Fi’s: there is no second one', wifi_cac_ready() && !function_exists('wifi_cac_secret'));
+
+    // Members keep their PIN on their own dashboard. A centre whose NGG router still fetches keeps NGG's PIN;
+    // once it has moved, Me → Wi-Fi asks CACENTRE — and says so honestly when CACENTRE can't be reached.
+    $GLOBALS['CONFIG']['dir_push_url'] = 'http://127.0.0.1:9';   // nothing listens there
+    db_insert('wifi_gateways', ['gatewayId' => 'GCP000001', 'centre' => $C, 'platform' => 'mikrotik', 'label' => 'Still on NGG', 'keyHash' => 'x', 'createdAt' => $now, 'lastSeenAt' => $now]);
+    chk('wifi→cacentre · while the centre’s router still fetches from NGG, the member sees NGG’s PIN', !wifi_cac_serves($C, false)
+        && (backend_dispatch('member.wifi.get', ['memberId' => 'NGG-CP-ACT'])['wifi']['username'] ?? '') === '026-701');
+    db_exec("UPDATE wifi_gateways SET lastSeenAt = ? WHERE gatewayId = 'GCP000001'", [gmdate('Y-m-d\\TH:i:s', time() - 3 * 86400)]);
+    $g = backend_dispatch('member.wifi.get', ['memberId' => 'NGG-CP-ACT']);
+    chk('wifi→cacentre · once it has moved, the dashboard asks CACENTRE, and an outage is an honest error, never NGG’s stale PIN', wifi_cac_serves($C, false)
+        && empty($g['ok']) && ($g['error'] ?? '') === 'cacentre_unreachable' && !isset($g['wifi']));
+    db_exec("DELETE FROM wifi_gateways WHERE gatewayId = 'GCP000001'");
+    $GLOBALS['CONFIG']['dir_push_secret'] = ''; $GLOBALS['CONFIG']['dir_push_url'] = '';
+
+    // Who may: the status for anybody with network; sending only for somebody who sees every centre.
+    $mem('NGG-CP-SA', ['role' => 'super_admin']);
+    $mem('NGG-CP-ADM', ['role' => 'admin']);
+    $st = backend_dispatch('admin.wifi.cacentre', ['requesterId' => 'NGG-CP-SA']);
+    chk('wifi→cacentre · the status says whether it is set up, and that a super admin may send', !empty($st['ok']) && $st['configured'] === false && $st['canSend'] === true);
+    chk('wifi→cacentre · an admin without network sees neither', (backend_dispatch('admin.wifi.cacentre', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.wifi.cacentre.push', ['requesterId' => 'NGG-CP-ADM'])['error'] ?? '') === 'forbidden');
+    // Moving a router to CACENTRE.
+    $sv = backend_dispatch('admin.wifi.gateway.save', ['requesterId' => 'NGG-CP-SA', 'platform' => 'mikrotik', 'centre' => $C, 'label' => 'Moving router']);
+    $mg = $sv['gateway']['gatewayId']; $mk = $sv['key'];
+    backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0]);
+    chk('wifi→cacentre · a router can’t be marked moved before NGG is connected', (backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg])['error'] ?? '') === 'cacentre_not_connected');
+    $GLOBALS['CONFIG']['dir_push_secret'] = str_repeat('d', 40);
+    chk('wifi→cacentre · while it still fetches from NGG, its members keep NGG’s PIN', !wifi_cac_serves($C, false));
+    $mv = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg]);
+    chk('wifi→cacentre · marked moved, its members see CACENTRE’s PIN at once, not a day later', !empty($mv['ok']) && $mv['gateway']['movedAt'] !== '' && wifi_cac_serves($C, false));
+    chk('wifi→cacentre · NGG stops watching it: one line, “Runs from CACENTRE”', count($mv['gateway']['diagnosis']) === 1 && $mv['gateway']['diagnosis'][0]['title'] === 'Runs from CACENTRE' && $mv['gateway']['health'] === 'ok');
+    chk('wifi→cacentre · if NGG’s script is still on it, it is told it moved — never sent an empty list', (backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 0])['error'] ?? '') === 'moved_to_cacentre');
+    db_exec("UPDATE wifi_gateways SET lastSeenAt = ? WHERE gatewayId = ?", [gmdate('Y-m-d\\TH:i:s\\Z', time() - 6 * 3600), $mg]);
+    $dg = wifi_silent_digest();
+    chk('wifi→cacentre · a moved router going quiet is not reported silent', !in_array($mg, array_column(db_all("SELECT gatewayId FROM wifi_gateways WHERE silentAlertAt <> ''"), 'gatewayId'), true));
+    $bk = backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true]);
+    $f2 = backend_dispatch('wifi.feed', ['gatewayId' => $mg, 'key' => $mk, 'since' => 1]);
+    chk('wifi→cacentre · back to NGG: it is fed again, with a full list', !empty($bk['ok']) && $bk['gateway']['movedAt'] === '' && !empty($f2['ok']) && !empty($f2['full']));
+    chk('wifi→cacentre · marking it twice changes nothing', !empty(backend_dispatch('admin.wifi.gateway.moved', ['requesterId' => 'NGG-CP-SA', 'gatewayId' => $mg, 'undo' => true])['unchanged']));
+    db_exec("DELETE FROM wifi_gateways WHERE gatewayId = ?", [$mg]);
+    $GLOBALS['CONFIG']['dir_push_secret'] = '';
+    $hook = (string)file_get_contents(__DIR__ . '/../hooks/wifi-feed.php');
+    $set = (string)file_get_contents(__DIR__ . '/../_lib/domain/wifi-setup.php');
+    chk('wifi · a MikroTik is refused with 200, which RouterOS keeps (it drops a 4xx body); others keep the status', str_contains($hook, "\$ros ? 200 :"));
+    chk('wifi · …and NGG’s script logs the reason (bad_key, moved_to_cacentre), not “incomplete”', str_contains($set, ':if ([:pick \\$d 0 7] = "#error;") do={ :set ok false; :set nggWifiErr'));
+    db_exec("DELETE FROM wifi_accounts WHERE subjectId = 'NGG-CP-OVR'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SS-CP-1'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'CP-LIVE'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CP-%' OR memberId = 'SUM-CP-1'"); db_exec("DELETE FROM centres WHERE centreId = 'CEN-CACP'");
+})();
+
+/* ══ Consent: withdrawing one, and the ledger being READ the way it is
+      WRITTEN ══════════════════════════════════════════════════════════════
+
+   Two findings from the 27 October audit, and the second is the one that
+   mattered. The bulk action sent `withdrawn` while consent_record() took
+   only granted|declined, so a withdrawal failed on every row with no
+   usable reason. Fixing that alone would have been worse than leaving it:
+   `consents` is an append-only ledger, and two readers matched ANY granted
+   row ever rather than the latest — so a withdrawal would have been
+   accepted, recorded, and then ignored by the screens that act on it,
+   which is the one failure mode a consent system must not have. */
+(function () {
+    $mid = 'CW-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $mid, 'fullName' => 'Withdraw Test', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $latest = fn() => (string)(consent_state($mid)['site_visibility']['status'] ?? '');
+    $inNoConsentSegment = function () use ($mid): bool {
+        [$sql, $args] = member_segment_sql('no_consent');
+        $rows = db_all("SELECT memberId FROM members WHERE $sql", $args);
+        return in_array($mid, array_column($rows, 'memberId'), true);
+    };
+
+    chk('consent: a withdrawal is a status in its own right, not a synonym for declined',
+        consent_record($mid, 'site_visibility', 'granted', 'form', 'T')['ok']
+        && consent_record($mid, 'site_visibility', 'withdrawn', 'staff', 'T')['ok']
+        && $latest() === 'withdrawn');
+
+    /* "Never agreed" and "agreed and then took it back" are different
+       facts to a family and different facts in law — only the second
+       means data was lawfully collected and must now stop being used. */
+    chk('consent: declined and withdrawn are both kept, and are not the same row',
+        (int)db_row("SELECT COUNT(DISTINCT status) c FROM consents WHERE studentId = ?", [$mid])['c'] === 2);
+
+    chk('consent: a status the ledger does not know is still refused',
+        (consent_record($mid, 'site_visibility', 'maybe', 'staff', 'T')['error'] ?? '') === 'bad_status');
+
+    /* The real one. The segment that finds people whose photo may not be
+       shown read the whole ledger, so it was blind to everybody who had
+       ever granted — which is exactly the group that changes its mind. */
+    chk('consent: withdrawing puts somebody back into the "no consent" segment',
+        $inNoConsentSegment());
+
+    chk('consent: granting again takes them out of it', (function () use ($mid, $inNoConsentSegment) {
+        consent_record($mid, 'site_visibility', 'granted', 'form', 'T');
+        return !$inNoConsentSegment();
+    })());
+
+    chk('consent: and declining after that puts them back', (function () use ($mid, $inNoConsentSegment) {
+        consent_record($mid, 'site_visibility', 'declined', 'form', 'T');
+        return $inNoConsentSegment();
+    })());
+
+    /* The bulk action and the ledger name one list between them. They
+       named two, which is how a withdrawal cleared the first and was
+       refused by the second on every row. */
+    chk('consent: the bulk action accepts exactly what the ledger accepts',
+        str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/domain/members-bulk.php'), 'CONSENT_STATUSES')
+        && CONSENT_STATUSES === ['granted', 'declined', 'withdrawn']);
+
+    chk('consent: a bulk withdrawal is no longer refused before it starts', (function () use ($mid) {
+        $r = admin_members_bulk(['requesterId' => 'SUPER', 'action' => 'consent', 'ids' => [$mid],
+            'consentType' => 'media', 'consentStatus' => 'withdrawn']);
+        /* It may still refuse for a reason of its own — rights, scope —
+           but never again with bad_consent, which meant "that word is
+           not a word" for a word the screen itself sends. */
+        return ($r['error'] ?? '') !== 'bad_consent';
+    })());
+
+    db_exec('DELETE FROM consents WHERE studentId = ?', [$mid]);
+    db_exec('DELETE FROM members WHERE memberId = ?', [$mid]);
+})();
+
+/* ══ Erasing a member, and the one record it deliberately keeps ════════
+
+   The 27 October audit listed the surviving volunteer record as a gap.
+   It is not: a volunteer record is the record that this adult was vetted
+   and supervised children, and for safeguarding that has to outlive the
+   account. The right to erasure yields where there is an overriding
+   obligation, and deleting it on request would let somebody remove the
+   only evidence that they were ever there.
+
+   What WAS wrong is that the code said nothing, so a retention nobody
+   decided looks identical to one nobody noticed. These pin both halves:
+   the member really is erased, and the thing that is kept is counted and
+   named rather than left behind quietly. */
+(function () {
+    $mid = 'ER-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $mid, 'fullName' => 'Vee Teacher', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'email' => 'vee@example.org', 'phone' => '08030000000',
+        'photoUrl' => '/u/vee.jpg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'V-' . $mid, 'memberId' => $mid, 'fullName' => 'Vee Teacher',
+        'email' => 'vee@example.org', 'phone' => '08030000000', 'role' => 'Instructor', 'status' => 'active']);
+
+    $r = member_erase($mid, 'SUPER', '127.0.0.1');
+
+    chk('erase: the member record itself is scrubbed', !empty($r['ok']) && (function () use ($mid) {
+        $m = db_row('SELECT fullName, email, phone, photoUrl, status FROM members WHERE memberId = ?', [$mid]);
+        return $m && (string)$m['fullName'] === 'Deleted member' && (string)$m['email'] === ''
+            && (string)$m['phone'] === '' && (string)$m['photoUrl'] === '' && (string)$m['status'] === 'deleted';
+    })());
+
+    /* Kept on purpose. If somebody "fixes" this by deleting the row, this
+       is the test that should stop them and send them to the comment. */
+    chk('erase: a linked volunteer record SURVIVES — it is a safeguarding record, not a copy of the member',
+        (int)db_row('SELECT COUNT(*) c FROM volunteers WHERE memberId = ?', [$mid])['c'] === 1);
+
+    chk('erase: and the caller is told what was kept, rather than left to find out',
+        ($r['volunteerRecordsKept'] ?? 0) === 1);
+
+    /* So the person asking to be forgotten can be told exactly what was
+       kept and why, and an auditor sees a decision rather than a miss. */
+    chk('erase: the retention is on the audit trail, with its reason', (function () use ($mid) {
+        $row = db_row("SELECT meta FROM audit_log WHERE event = 'member.erase' AND subject = ? ORDER BY id DESC LIMIT 1", [$mid]);
+        $meta = $row ? json_decode((string)$row['meta'], true) : null;
+        return is_array($meta) && ($meta['volunteerRecordsKept'] ?? 0) === 1
+            && str_contains((string)($meta['why'] ?? ''), 'Safeguarding');
+    })());
+
+    /* A member who never volunteered has nothing kept, and the audit row
+       does not imply otherwise. */
+    $plain = 'ER2-' . bin2hex(random_bytes(3));
+    db_insert('members', ['memberId' => $plain, 'fullName' => 'Just Member', 'role' => 'member',
+        'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r2 = member_erase($plain, 'SUPER', '127.0.0.1');
+    chk('erase: somebody who never volunteered has nothing kept and is not said to have',
+        ($r2['volunteerRecordsKept'] ?? null) === 0
+        && (string)(db_row("SELECT meta FROM audit_log WHERE event = 'member.erase' AND subject = ? ORDER BY id DESC LIMIT 1", [$plain])['meta'] ?? '') === '');
+
+    db_exec('DELETE FROM volunteers WHERE memberId = ?', [$mid]);
+    db_exec('DELETE FROM members WHERE memberId IN (?, ?)', [$mid, $plain]);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

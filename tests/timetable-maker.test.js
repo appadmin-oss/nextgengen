@@ -102,7 +102,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
     else {
       const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
-      if (d) launch.executablePath = '/opt/pw-browsers/' + d + '/chrome-linux/chrome';
+      if (d) launch.executablePath = require('./_responsive-probe').chromiumPath(require('fs'));
     }
     browser = await chromium.launch(launch);
     const errs = [];

@@ -19,8 +19,10 @@ declare(strict_types=1);
  * the commitment statuses — with thresholds the NGG admin owns
  * (Settings › Mentorship automations), never the mentor.
  *
- * PRIVACY (README §Global behaviour): private journal entries are never read
- * here; a child's own relationship answers reach the mentor only as a score;
+ * PRIVACY (README §Global behaviour): a child's mentor reads their whole
+ * journal (member.mentor.journal, 2026-10-28 — the owner: nothing in it is
+ * kept from the mentor); a PEER mentor, a minor, never does. A child's own
+ * relationship answers reach the mentor only as a score;
  * concerns go to the safeguarding queue and never onto the child's record;
  * guardian phones are masked; family messages wait for 8am–8pm Lagos.
  */
@@ -1007,8 +1009,15 @@ function member_mp_messages(array $p): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $read = [];
         foreach (db_all("SELECT threadId FROM mentor_messages WHERE fromId = ? AND (kind = 'read' OR kind = 'Reply')", [$g['me']]) as $r) $read[$r['threadId']] = true;
-        foreach (db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, j.mediaJson, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
-                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $peer ? [] : $ids) as $j) {
+        /* A peer mentor never sees a shared journal, so the query does not run
+           for them. It used to run with an EMPTY parameter list against
+           IN (?,?,?) — starving the statement instead of skipping it. SQLite
+           tolerated the mismatch and returned nothing, which looked like the
+           guard working; MySQL does not, and a child's journal entries
+           reached a peer mentor's inbox. A privacy rule has to be a branch,
+           never a malformed query that happens to fail safe on one driver. */
+        foreach ($peer ? [] : db_all("SELECT j.entryId, j.memberId, j.title, j.body, j.createdAt, j.mediaJson, m.fullName FROM journal j JOIN members m ON m.memberId = j.memberId
+                         WHERE j.visibility = 'mentor' AND j.memberId IN ($ph) ORDER BY j.createdAt DESC LIMIT 60", $ids) as $j) {
             $t = 'journal:' . $j['entryId'];
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
                       'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t]),
@@ -1065,6 +1074,27 @@ function member_mp_messages(array $p): array {
     }
     foreach ($out as &$o) $o['replies'] = $replies[$o['threadId']] ?? [];
     unset($o);
+    // A conversation I started with my lead (or a lead with a mentor) that has no answer yet is still a conversation.
+    $haveT = array_flip(array_column($out, 'threadId'));
+    foreach (db_all("SELECT mm.threadId, mm.toId, mm.body, mm.createdAt, m.fullName FROM mentor_messages mm LEFT JOIN members m ON m.memberId = mm.toId
+                     WHERE mm.fromId = ? AND mm.threadId LIKE 'lead:%' AND mm.kind IN ('From your lead', 'From your mentor') ORDER BY mm.createdAt DESC, mm.id DESC LIMIT 60", [$g['me']]) as $r) {
+        if (isset($haveT[$r['threadId']])) continue;
+        $haveT[$r['threadId']] = true;
+        $out[] = ['id' => 'lt:' . $r['threadId'], 'threadId' => (string)$r['threadId'], 'kind' => 'Conversation', 'filter' => 'lead', 'fromId' => (string)$r['toId'], 'from' => (string)($r['fullName'] ?? ''),
+                  'subjectId' => '', 'at' => (string)$r['createdAt'], 'body' => (string)$r['body'], 'read' => true, 'replies' => []];
+    }
+    /* A conversation with a lead (or, for a lead, with a mentor) carries BOTH
+       sides, oldest first, so the inbox can show it as one conversation: the
+       rows above are only what reached me. */
+    $leadT = array_values(array_unique(array_map(static fn($o) => $o['threadId'], array_filter($out, static fn($o) => $o['filter'] === 'lead' && str_starts_with((string)$o['threadId'], 'lead:')))));
+    if ($leadT) {
+        $lp = implode(',', array_fill(0, count($leadT), '?'));
+        $lt = [];
+        foreach (db_all("SELECT id, threadId, fromId, fromName, body, createdAt FROM mentor_messages WHERE threadId IN ($lp) AND kind IN ('From your lead', 'From your mentor') AND (fromId = ? OR toId = ?) ORDER BY createdAt, id", array_merge($leadT, [$g['me'], $g['me']])) as $r)
+            $lt[$r['threadId']][] = ['mid' => (int)$r['id'], 'who' => (string)$r['fromId'] === $g['me'] ? 'You' : (string)$r['fromName'], 'mine' => (string)$r['fromId'] === $g['me'], 'body' => (string)$r['body'], 'at' => (string)$r['createdAt']];
+        foreach ($out as &$o) if ($o['filter'] === 'lead' && isset($lt[$o['threadId']])) $o['thread'] = $lt[$o['threadId']];
+        unset($o);
+    }
     return ['ok' => true, 'messages' => $out, 'peer' => $g['mpRole'] === 'peer'];
 }
 function member_mp_message_read(array $p): array {
@@ -1221,6 +1251,33 @@ function mp_supporting_public(string $memberId): array {
     $s = ms_supports_of($memberId);
     $names = $s && function_exists('staff_public_names') ? staff_public_names(array_column($s, 'mentorId')) : [];
     return array_map(static fn($x) => ['name' => $names[$x['mentorId']] ?? $x['fullName'], 'focus' => $x['focus'], 'until' => $x['endsOn']], $s);
+}
+
+/**
+ * view=journal — one mentee's whole journal, every entry whatever its
+ * visibility, newest first, 30 a page (`before` = how many already shown).
+ * The assignment is the permission: the child must be in this mentor's
+ * caseload, and a peer mentor (a minor) is refused outright. Opening it is
+ * recorded once per read, not per page, so "who read this child's journal"
+ * has an answer.
+ */
+const MP_JOURNAL_PAGE = 30;
+function member_mp_journal(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    if ($g['mpRole'] === 'peer') return ['ok' => false, 'error' => 'peer_no_journal'];
+    $id = trim((string)($p['subjectId'] ?? ''));
+    if (!in_array($id, mp_caseload_ids($g), true)) return ['ok' => false, 'error' => 'not_in_caseload'];
+    $m = db_row('SELECT fullName FROM members WHERE memberId = ?', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $skip = max(0, (int)($p['before'] ?? 0));
+    $total = (int)(db_row('SELECT COUNT(*) c FROM journal WHERE memberId = ?', [$id])['c'] ?? 0);
+    $rows = db_all("SELECT * FROM journal WHERE memberId = ? ORDER BY
+                     CASE WHEN occurredOn IS NULL OR occurredOn = '' THEN createdAt ELSE occurredOn END DESC, createdAt DESC
+                     LIMIT " . MP_JOURNAL_PAGE . " OFFSET " . $skip, [$id]);
+    if ($skip === 0) audit('mentor.journal.read', $g['me'], $id, ['entries' => $total], (string)($p['ip'] ?? ''));
+    $name = (string)$m['fullName'];
+    return ['ok' => true, 'student' => ['memberId' => $id, 'name' => $name, 'first' => explode(' ', trim($name))[0] ?: $name],
+        'entries' => array_map('jm_shape', $rows), 'total' => $total, 'more' => $skip + count($rows) < $total];
 }
 
 function mp_media(string $json): array {
@@ -1895,7 +1952,13 @@ function mp_commitments(array $g, string $month, string $today): array {
              !$retreat || $retreat['booked'] ? 'ok' : 'warn', !$retreat ? 'Not scheduled yet' : ($retreat['booked'] ? 'Booked' : 'Not booked'), 'Retreat booking',
              $retreat && !$retreat['booked'] ? ['label' => 'Book my place', 'route' => 'action:retreat.book', 'retreatId' => (string)$retreat['retreatId']] : null),
         $row('anthem', 'NGGC Anthem and Pledge', 'Known, upheld and modelled', trim((string)($m['anthemAt'] ?? '')) !== '' ? 'ok' : 'warn', trim((string)($m['anthemAt'] ?? '')) !== '' ? 'Confirmed' : 'Not yet confirmed', 'Confirmed by your lead'),
-        $row('feedback', 'Feedback received professionally', 'Concerns raised through the proper channels', 'ok', 'Up to date', 'Noted by your lead'),
+        // The lead's last written-up supervision (member_mp_supervision_record), never a fixed "Up to date".
+        (function () use ($row, $mid, $today) {
+            $fb = $mid === '' ? null : db_row("SELECT feedbackAt FROM mentor_supervision WHERE mentorId = ? AND feedbackAt <> '' ORDER BY feedbackAt DESC LIMIT 1", [$mid]);
+            $days = $fb ? mp_days(substr((string)$fb['feedbackAt'], 0, 10), $today) : null;
+            return $row('feedback', 'Feedback received professionally', 'Concerns raised through the proper channels', $fb && $days > 120 ? 'warn' : 'ok',
+                $fb ? 'Last supervision notes ' . gmdate('j M', strtotime((string)$fb['feedbackAt'])) : 'No supervision written up yet', 'Noted by your lead');
+        })(),
     ];
 }
 function mp_journal_unanswered(array $g, array $ids): array {
@@ -1921,8 +1984,8 @@ function member_mp_role(array $p): array {
     $today = mp_today($p); $month = substr($today, 0, 7);
     $rows = mp_commitments($g, $month, $today);
     $mid = (string)($g['mentorId'] ?? '');
-    $sup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate >= ? ORDER BY onDate LIMIT 1", [$mid, $today]) : null;
-    $lastSup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate < ? ORDER BY onDate DESC LIMIT 1", [$mid, $today]) : null;
+    $sup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND onDate >= ? AND feedbackAt = '' ORDER BY onDate LIMIT 1", [$mid, $today]) : null;
+    $lastSup = $mid !== '' ? db_row("SELECT * FROM mentor_supervision WHERE mentorId = ? AND (onDate < ? OR feedbackAt <> '') ORDER BY onDate DESC, id DESC LIMIT 1", [$mid, $today]) : null;
     $fb = $mid !== '' ? db_row("SELECT feedback, feedbackAt FROM mentor_supervision WHERE mentorId = ? AND feedback <> '' ORDER BY feedbackAt DESC LIMIT 1", [$mid]) : null;
     $pol = $mid !== '' ? db_row('SELECT acceptedAt, policyVersion FROM mentor_policy WHERE mentorId = ? ORDER BY id DESC LIMIT 1', [$mid]) : null;
     return ['ok' => true, 'me' => mp_me($g, mp_opts()), 'month' => $month, 'daysLeft' => mp_days($today, gmdate('Y-m-t', strtotime($today))),
@@ -1959,6 +2022,31 @@ function member_mp_supervision_book(array $p): array {
     db_insert('mentor_supervision', ['mentorId' => (string)$t['mentorId'], 'leadId' => (string)($g['mentorId'] ?? ''), 'onDate' => $tue, 'prepJson' => '', 'agreedJson' => '', 'feedback' => '', 'feedbackAt' => '', 'status' => 'booked', 'createdAt' => now_iso()]);
     if (trim((string)$t['memberId']) !== '' && function_exists('push_notification')) push_notification((string)$t['memberId'], ['kind' => 'mentor', 'title' => 'Supervision booked', 'body' => 'Tuesday ' . gmdate('j F', strtotime($tue)) . ', after STS.', 'linkPage' => 'mentor']);
     return ['ok' => true, 'date' => $tue];
+}
+/** supervisionRecord — the lead writes up a supervision: the feedback, and up to five things agreed.
+ *  It closes the open booking (held on the day it is written, if that is earlier than booked),
+ *  or records one held without a booking. The mentor reads it in My role, and the "Feedback
+ *  received professionally" commitment dates from it. */
+const MP_SUPERVISION_AGREED_MAX = 5;
+function member_mp_supervision_record(array $p): array {
+    $g = mp_gate($p); if (empty($g['ok'])) return $g;
+    if (!in_array($g['mpRole'], ['lead', 'coord'], true)) return ['ok' => false, 'error' => 'forbidden'];
+    $mentorId = trim((string)($p['mentorId'] ?? ''));
+    $t = null; foreach (mp_team_rows($g) as $r) if ((string)$r['mentorId'] === $mentorId) $t = $r;
+    if (!$t) return ['ok' => false, 'error' => 'not_in_team'];
+    $fb = trim((string)($p['feedback'] ?? ''));
+    if (mb_strlen($fb) < 10) return ['ok' => false, 'error' => 'write_the_feedback'];
+    $agreed = array_values(array_filter(array_map(static fn($x) => mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$x)), 0, 200), (array)($p['agreed'] ?? [])), static fn($x) => $x !== ''));
+    if (count($agreed) > MP_SUPERVISION_AGREED_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => MP_SUPERVISION_AGREED_MAX];
+    $today = mp_today($p); $now = now_iso();
+    $row = ['feedback' => mb_substr($fb, 0, 2000), 'feedbackAt' => $now, 'agreedJson' => json_encode($agreed), 'status' => 'held'];
+    $open = db_row("SELECT id, onDate FROM mentor_supervision WHERE mentorId = ? AND feedbackAt = '' ORDER BY onDate DESC, id DESC LIMIT 1", [$mentorId]);
+    if ($open) db_update('mentor_supervision', $row + ['onDate' => min((string)$open['onDate'], $today)], ['id' => (int)$open['id']]);
+    else db_insert('mentor_supervision', $row + ['mentorId' => $mentorId, 'leadId' => (string)($g['mentorId'] ?? ''), 'onDate' => $today, 'prepJson' => '', 'createdAt' => $now]);
+    if (trim((string)$t['memberId']) !== '' && function_exists('push_notification'))
+        push_notification((string)$t['memberId'], ['kind' => 'mentor', 'title' => 'Your supervision notes', 'body' => mb_substr($fb, 0, 140), 'linkPage' => 'mentor']);
+    audit('mentor.supervision.record', $g['me'], $mentorId, ['agreed' => count($agreed), 'booked' => (bool)$open], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'onDate' => $open ? min((string)$open['onDate'], $today) : $today];
 }
 /** retreatBook — book my place at the next quarterly retreat. */
 function member_mp_retreat_book(array $p): array {
@@ -2022,8 +2110,10 @@ function member_mp_team(array $p): array {
         foreach (db_all("SELECT DISTINCT studentId FROM attendance WHERE date = ? AND studentId IN ($kp)", array_merge([$sat], $all)) as $r) $wasHere[$r['studentId']] = true;
         foreach (db_all("SELECT subjectId FROM mentor_reviews WHERE period = ? AND evalJson IS NOT NULL AND evalJson <> '' AND subjectId IN ($kp)", array_merge([$satPeriod], $all)) as $r) $evald[$r['subjectId']] = true;
     }
-    $booked = [];
-    foreach (db_all("SELECT mentorId FROM mentor_supervision WHERE onDate >= ? AND mentorId IN ($ph)", array_merge([$today], $mids)) as $r) $booked[$r['mentorId']] = true;
+    /* A booking stays open until the lead writes it up (supervisionRecord); the last notes are dated. */
+    $booked = []; $notesAt = [];
+    foreach (db_all("SELECT mentorId, onDate FROM mentor_supervision WHERE feedbackAt = '' AND status IN ('booked','prep','prepared') AND mentorId IN ($ph)", $mids) as $r) $booked[$r['mentorId']] = (string)$r['onDate'];
+    foreach (db_all("SELECT mentorId, MAX(feedbackAt) at FROM mentor_supervision WHERE feedbackAt <> '' AND mentorId IN ($ph) GROUP BY mentorId", $mids) as $r) $notesAt[$r['mentorId']] = (string)$r['at'];
     $o = mp_opts(); $out = [];
     foreach ($team as $t) {
         $k = $kids[$t['mentorId']] ?? [];
@@ -2035,7 +2125,7 @@ function member_mp_team(array $p): array {
         $out[] = ['mentorId' => (string)$t['mentorId'], 'name' => (string)$t['fullName'], 'first' => mp_first((string)$t['fullName']), 'initials' => mp_initials((string)$t['fullName']),
                   'kind' => ['pod' => 'Pod mentor', 'peer' => 'Peer mentor', 'instructor' => 'Instructor mentor', 'lead' => 'Lead mentor', 'coord' => 'Coordinator'][$role] ?? 'Mentor',
                   'mentees' => count($k), 'seenPct' => $k ? (int)round(100 * $s / count($k)) : null, 'relAvg' => $rs ? round(array_sum($rs) / count($rs), 1) : null,
-                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']]),
+                  'commitments' => $commit, 'needSupport' => ($k && $s * 100 < 80 * count($k)) || $commit !== 'On track', 'booked' => isset($booked[$t['mentorId']]), 'bookedOn' => $booked[$t['mentorId']] ?? '', 'notesAt' => $notesAt[$t['mentorId']] ?? '',
                   'evalOf' => count(array_filter($k, static fn($x) => isset($wasHere[$x]))), 'evalDone' => count(array_filter($k, static fn($x) => isset($wasHere[$x]) && isset($evald[$x])))];
     }
     usort($out, static fn($a, $b) => [($a['seenPct'] ?? 101), $a['name']] <=> [($b['seenPct'] ?? 101), $b['name']]);

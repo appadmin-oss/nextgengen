@@ -73,6 +73,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],
     'session_ttl' => 604800, 'kiosk_ttl' => 43200,
     'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    /* The bundled curricula seed themselves on first boot. This suite
+       counts what IT writes, so it declines them (docs/SETUP.md). */
+    'seed_bundled_curriculum' => false,
     'webcron' => ['enabled' => false], 'debug' => false,
   ];\n`);
 
@@ -91,7 +94,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
     else {
       const d = fs.existsSync('/opt/pw-browsers') ? fs.readdirSync('/opt/pw-browsers').find(x => x.startsWith('chromium-')) : null;
-      if (d) launch.executablePath = `/opt/pw-browsers/${d}/chrome-linux/chrome`;
+      if (d) launch.executablePath = require('./_responsive-probe').chromiumPath(require('fs'));
     }
     browser = await chromium.launch(launch);
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });

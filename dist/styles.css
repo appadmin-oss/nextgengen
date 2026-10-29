@@ -15,6 +15,11 @@
   --gold-500: #f5b026;   /* logo gold */
   --gold-400: #ffc34d;
   --gold-300: #ffd680;
+  /* The keyboard focus ring. Navy on the light pages (about 16:1 on cream);
+     re-pointed to lime inside every dark surface below. Gold was the ring
+     for years and measured 1.3–1.9:1 on cream — under the 3:1 a focus
+     indicator needs — and 1:1 on a gold button. */
+  --focus-ring: var(--navy-900);
   --gold-700: #7a5600;   /* dark gold — AA-safe as small text on cream/white */
 
   /* Eyebrow micro-label colour. Defaults to the AA-safe dark gold for light
@@ -264,7 +269,7 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 }
 .btn:hover { transform: translateY(-2px); }
 .btn:active { transform: translateY(1px); transition-duration: 0.05s; }
-.btn:focus-visible { outline: 3px solid rgba(245,176,38,0.5); outline-offset: 3px; }
+.btn:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 
 .btn-primary {
   background: var(--navy-900); color: white;
@@ -595,7 +600,9 @@ img[loading="lazy"] { background: rgba(12,20,50,0.04); }
 .newsletter-form:focus-within {
   border-color: var(--gold-500);
   background: rgba(255,255,255,0.08);
-  box-shadow: 0 0 0 3px rgba(245,176,38,0.22);
+  /* The field inside draws no ring of its own; the form is the ring. */
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .newsletter-form input {
   flex: 1;
@@ -967,7 +974,7 @@ body::before {
 /* ---- Focus rings ---- */
 .field input:focus, .field select:focus, .field textarea:focus,
 .nav-link:focus-visible, .chip:focus-visible {
-  outline: 3px solid rgba(245,176,38,0.5);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1045,16 +1052,38 @@ textarea:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible,
 [role="button"]:focus-visible {
-  outline: 3px solid var(--gold-500, #f5b026);
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: 6px;
 }
-/* On dark surfaces, use a brighter ring for contrast. */
-.dark-surface a:focus-visible, .footer a:focus-visible, .footer button:focus-visible,
-.prefooter a:focus-visible, .prefooter button:focus-visible,
-.page-hero-dark a:focus-visible, .page-hero-dark button:focus-visible {
-  outline-color: var(--lime, #d0ff3a);
+/* The ring follows the element's own corners (outline does, in every current
+   browser). It used to set border-radius: 6px on whatever had focus, so a pill
+   button, a round icon button or a card changed shape when tabbed to. */
+/* Dark surfaces: lime, 15:1 on navy. Each of these paints navy (or a navy
+   gradient) behind its controls; a new dark section joins this list, or its
+   ring is navy on navy (tests/focus-ring.test.js measures it). */
+.dark-surface, .hero, .footer, .prefooter, .page-hero-dark, .marquee, .ab-sec-dark,
+.centre-hero-cta, .centre-stats, .centre-lead-card, .mcv-band, .stt-console, .centres-intro {
+  --focus-ring: var(--lime, #d0ff3a);
 }
+/* The public Community hero's member search: chrome here, not inline — an inline
+   outline: none hid its focus ring, and no stylesheet can correct an inline style. */
+/* The box is the control (styles-app.css "One focus ring for one field"): it takes the
+   pill's own shape and the site's ring, not a square 1px halo around a round field. */
+.cm-pub-search { position: relative; border-radius: 999px; }
+.cm-pub-search:focus-within { outline: 3px solid var(--focus-ring); outline-offset: 2px; box-shadow: none; }
+.cm-pub-search-in { width: 100%; font-family: inherit; font-size: 13px; padding: 9px 12px 9px 34px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.08); color: #fff; }
+.cm-pub-search-in::placeholder { color: rgba(255,255,255,0.7); }
+/* …but a light card sitting inside a dark section is a light surface again. */
+:is(.dark-surface, .hero, .page-hero-dark) .card:not(.card-dark):not(.dark-surface) { --focus-ring: var(--navy-900); }
+/* Inside a card that clips its overflow, a ring drawn outside the control is
+   cut off; draw it inside instead. */
+.faq-list button:focus-visible, .ab-disc-btn:focus-visible, .tt-app .tt-startrow:focus-visible, .cm-tab:focus-visible, .page-hero .chip:focus-visible {
+  outline-offset: -3px;
+}
+/* The sticky top bar must not cover what has focus (WCAG 2.4.11): when Tab
+   scrolls a control into view, it lands below the bar, not under it. */
+html:has(.topnav) { scroll-padding-top: 96px; }
 /* Never suppress the ring when a mouse-focus removes :focus-visible. */
 :focus:not(:focus-visible) { outline: none; }
 
@@ -1108,7 +1137,7 @@ summary:focus-visible,
   transition: background .14s, border-color .14s;
 }
 .a11y-nav-btn:hover, .a11y-nav-btn.is-open { background: rgba(12,20,50,0.06); border-color: rgba(12,20,50,0.34); }
-.a11y-nav-btn:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+.a11y-nav-btn:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .a11y-nav-dot { position: absolute; top: 1px; right: 1px; width: 9px; height: 9px; border-radius: 50%;
   background: #4a7a00; border: 2px solid var(--paper, #fbf7ed); }
 /* Anchored to the button rather than the viewport, so it opens where it was
@@ -1283,7 +1312,7 @@ summary:focus-visible,
   padding: 6px 8px 6px 18px; max-width: 620px;
   box-shadow: 0 1px 0 rgba(12,20,50,0.04);
 }
-.summer-search:focus-within { border-color: var(--navy-900); box-shadow: 0 0 0 1px var(--navy-900), 0 0 0 5px rgba(12,20,50,0.12); }
+.summer-search:focus-within { border-color: var(--navy-900); outline: 3px solid var(--focus-ring); outline-offset: 2px; }
 .summer-search-ic { font-size: 18px; color: var(--ink-500); flex: 0 0 auto; }
 .summer-search-in {
   flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 16px;
@@ -1318,7 +1347,7 @@ summary:focus-visible,
   color: var(--navy-900); text-decoration: underline; text-underline-offset: 2px;
 }
 .link-btn:hover { color: var(--coral); }
-.link-btn:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; border-radius: 3px; }
+.link-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ── Centre cards ──────────────────────────────────────────────────────── */
 .summer-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
@@ -1542,8 +1571,9 @@ a.member-card-hit:focus-visible { outline: 2px solid var(--navy-900); outline-of
   color: var(--ink-900);
 }
 .field input:focus, .field select:focus, .field textarea:focus {
-  outline: 2px solid var(--gold-500);
-  border-color: var(--gold-500);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--focus-ring);
 }
 
 /* mini-status pip */
@@ -2159,9 +2189,18 @@ img { background-color: rgba(12,20,50,0.04); }
   font-family: var(--font-body);
 }
 .circle-portal .mono { font-family: var(--font-mono); }
-.circle-back { width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); display: grid; place-items: center; cursor: pointer; color: #fff; font-size: 18px; }
-.circle-err { margin-top: 12px; padding: 11px 14px; border-radius: 12px; background: rgba(255,90,90,.12); border: 1px solid rgba(255,120,120,.28); color: #ffb3b3; font-size: 13px; }
-.circle-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 30px; z-index: 60; padding: 12px 22px; border-radius: 99px; background: rgba(12,22,42,.96); border: 1px solid rgba(255,255,255,.16); font-size: 13px; font-weight: 700; color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.4); }
+.circle-moved { min-height: 100vh; background: #0d1830; color: #fff; padding: 48px 16px 64px; }
+.circle-moved-in { max-width: 640px; margin: 0 auto; }
+.circle-moved-eyebrow { margin: 0; font-family: var(--font-mono); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: #8fe8d0; }
+.circle-moved h1 { margin: 10px 0 0; font: 800 clamp(28px, 6vw, 40px)/1.08 var(--font-display); }
+.circle-moved-lead { margin: 14px 0 0; font-size: 16px; line-height: 1.6; color: rgba(255,255,255,.86); }
+.circle-moved-list { list-style: none; margin: 28px 0 0; padding: 0; display: grid; gap: 14px; }
+.circle-moved-card { display: flex; gap: 16px; align-items: flex-start; padding: 18px 20px; border-radius: 18px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); }
+.circle-moved-card > i { font-size: 28px; color: #8fe8d0; flex: 0 0 auto; margin-top: 2px; }
+.circle-moved-card h2 { margin: 0; font: 700 18px/1.3 var(--font-display); }
+.circle-moved-card p { margin: 6px 0 12px; font-size: 14.5px; line-height: 1.55; color: rgba(255,255,255,.84); }
+.circle-moved-note { margin: 22px 0 0; font-size: 14px; line-height: 1.55; color: rgba(255,255,255,.76); }
+.circle-moved .circle-moved-back { margin-top: 18px; color: #fff; border-color: rgba(255,255,255,.36); }
 
 /* ===== Dashboard momentum card ===== */
 .dash-momentum .dash-nudge { margin: 12px 0 0; }
@@ -6831,7 +6870,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 :where(.tt-app) :where(button, input, select, textarea) { font: inherit; color: inherit; }
 :where(.tt-app) button { cursor: pointer; }
 :where(.tt-app) button:disabled { cursor: default; }
-.tt-app :focus-visible { outline: 3px solid var(--tt-gold); outline-offset: 2px; }
+.tt-app :focus-visible { outline: 3px solid var(--tt-primary); outline-offset: 2px; }
 .tt-app h1, .tt-app h2 { margin: 0; }
 .tt-app .ph { line-height: 1; }
 .tt-grow { flex: 1; min-width: 0; }
@@ -6988,6 +7027,18 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 
 /* ── "What's your week like?" (§7.1) ── */
 .tt-modes { display: flex; flex-direction: column; gap: 12px; }
+.tt-steps { display: flex; flex-direction: column; gap: 12px; }
+.tt-steps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--tt-line-strong); border-radius: 16px; background: var(--tt-surface); overflow: hidden; }
+.tt-step { display: flex; gap: 12px; padding: 14px; }
+.tt-step + .tt-step { border-top: 1px solid var(--tt-hair); }
+.tt-step-n { flex: 0 0 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; background: var(--tt-ink); color: var(--tt-surface); }
+.tt-step.is-done .tt-step-n { background: #17663a; }
+.tt-step-body { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.tt-step-body b { font-size: 15px; font-weight: 600; }
+.tt-step-body > span:not(.tt-row8) { font-size: 13.5px; color: var(--tt-ink-2); }
+.tt-step.is-done .tt-step-body b { color: var(--tt-ink-2); }
+.tt-steps-other { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; color: var(--tt-ink-2); }
+.tt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tt-modes-head { display: flex; flex-direction: column; gap: 4px; color: var(--tt-ink-2); }
 .tt-modes-title { font: 700 18px/1.3 var(--font-display); color: var(--tt-ink); }
 .tt-modes-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -8522,3 +8573,241 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .vol-home-links b { font-size: 16px; }
 .vol-home-links span { font-size: 14px; line-height: 1.45; color: var(--ink-700); }
 .vol-home-note { margin: 24px 0 0; font-size: 14px; color: var(--ink-700); }
+
+/* ── Lesson diagrams (lesson-blocks.jsx) ─────────────────────────────────────
+   Drawn, not photographed, so they stay legible at any size and cost nothing
+   to download. Colours come from the site's own tokens; §9's 4.5:1 applies to
+   every label here exactly as it does to body text. */
+.lb { margin: 18px 0; padding: 0; }
+.lb-svg { width: 100%; height: auto; display: block; max-width: 520px; }
+.lb-cap { margin-top: 8px; font-size: 13px; color: var(--ink-500, #5a6488); }
+.lb-note { margin: 8px 0 0; font-size: 12.5px; color: var(--ink-500, #5a6488); }
+
+/* Keyboard */
+.lb-key { stroke: var(--ink-900, #0c1432); stroke-width: 1.2; }
+.lb-key-white { fill: #ffffff; }
+.lb-key-black { fill: var(--ink-900, #0c1432); }
+.lb-key-white.is-on { fill: var(--gold-400, #ffd166); }
+.lb-key-black.is-on { fill: #b4761a; }
+.lb-key-label { font-size: 10px; text-anchor: middle; fill: var(--ink-700, #3a4256); font-family: inherit; }
+
+/* Guitar chords */
+.lb-chord-row { display: flex; flex-wrap: wrap; gap: 18px; }
+.lb-chord { margin: 0; width: 124px; }
+.lb-chord .lb-svg { max-width: 124px; }
+.lb-chord .lb-cap { text-align: center; font-weight: 700; color: var(--ink-900, #0c1432); }
+.lb-fret-line { stroke: var(--ink-700, #3a4256); stroke-width: 1.2; }
+.lb-fret-line.is-nut { stroke-width: 4; }
+.lb-chord-dot { fill: var(--ink-900, #0c1432); }
+.lb-chord-finger { fill: #ffffff; font-size: 9px; font-weight: 700; text-anchor: middle; }
+.lb-chord-open { fill: none; stroke: var(--ink-700, #3a4256); stroke-width: 1.6; }
+.lb-chord-mark { font-size: 12px; text-anchor: middle; fill: var(--ink-700, #3a4256); }
+.lb-chord-missing { font-size: 13px; color: var(--ink-500, #5a6488); }
+
+/* Staff */
+.lb-staff-line { stroke: var(--ink-700, #3a4256); stroke-width: 1.1; }
+.lb-clef { font-size: 40px; fill: var(--ink-900, #0c1432); }
+.lb-note-head { fill: var(--ink-900, #0c1432); }
+.lb-note-stem { stroke: var(--ink-900, #0c1432); stroke-width: 1.6; }
+.lb-note-name { font-size: 10px; text-anchor: middle; fill: var(--ink-500, #5a6488); }
+
+/* Colour */
+.lb-swatch-row { display: flex; flex-wrap: wrap; gap: 14px; }
+.lb-swatch { width: 128px; display: flex; flex-direction: column; gap: 2px; }
+.lb-swatch-chip { height: 70px; border-radius: 8px; border: 1px solid rgba(12,20,50,0.14); }
+.lb-swatch-name { font-size: 13px; margin-top: 4px; }
+.lb-swatch-hex { font-size: 11.5px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
+.lb-swatch-verdict { font-size: 11.5px; }
+.lb-swatch-ratio { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb-swatch-verdict.is-pass { color: #1b6f47; }
+.lb-swatch-verdict.is-fail { color: #b3261e; }
+
+/* The shape of the session */
+.lb-step-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* The bar's LENGTH is the stage's share of the session, which is the only
+   reason this block exists. It used to sit in a fixed 4px column, so
+   --lb-share — carefully computed in lesson-blocks.jsx — was never read and
+   ten minutes looked exactly like forty. */
+.lb-step { display: grid; grid-template-columns: 56px 1fr; column-gap: 10px; row-gap: 3px; align-items: center; }
+.lb-step-bar { grid-area: 2 / 2; height: 8px; border-radius: 999px; background: var(--gold-500, #f5b026); width: var(--lb-share); min-width: 4px; }
+.lb-step-min { grid-area: 1 / 1; text-align: right; font-size: 12px; color: var(--ink-500, #5a6488); font-variant-numeric: tabular-nums; }
+.lb-step-label { grid-area: 1 / 2; font-size: 14.5px; }
+
+/* ── Lesson blocks: hearing it, and stepping through it ─────────────────────
+   The sounding note is marked by COLOUR AND SIZE together, never colour
+   alone: a learner who cannot tell the gold from the white still sees which
+   key grew. Movement is a short scale, not a bounce — it has to read at a
+   glance on a cheap phone screen in daylight. */
+.lb-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.lb-play {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 36px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); background: var(--surface-0, #fff);
+  color: var(--ink-900, #0c1432); font: inherit; font-size: 13px; font-weight: 600;
+}
+.lb-play:hover { background: var(--surface-2, #eef1f6); }
+.lb-play.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+.lb-play.is-ghost { font-weight: 500; color: var(--ink-700, #3a4256); }
+.lb-clock { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; margin-left: 2px; }
+.lb-notes { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+/* .lb-pitch, not .lb-note: .lb-note is already the chord legend's paragraph,
+   and giving these buttons that name styled the legend as a button. */
+.lb-pitch {
+  min-width: 34px; min-height: 32px; padding: 0 8px; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); border-radius: 7px;
+  background: var(--surface-0, #fff); color: var(--ink-900, #0c1432);
+  font: inherit; font-size: 12.5px; font-weight: 700;
+}
+.lb-pitch:hover { background: var(--surface-2, #eef1f6); }
+.lb-pitch.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+/* A member hears these on a phone, by thumb: Play was 36px and each note 32. On a touch
+   screen both take the 44px floor (CLAUDE.md §9); a mouse keeps the compact row. */
+@media (pointer: coarse) {
+  .lb-play { min-height: 44px; padding: 0 14px; }
+  .lb-pitch { min-width: 44px; min-height: 44px; }
+}
+
+/* The note that is sounding, in each of the three music blocks. */
+.lb-key-white.is-sounding { fill: #f0a500; }
+.lb-key-black.is-sounding { fill: #8a5a00; }
+.lb-key.is-sounding { transform: scaleY(1.03); transform-origin: top; transition: transform .12s ease-out, fill .12s ease-out; }
+.lb-chord-dot.is-sounding, .lb-chord-open.is-sounding { fill: #f0a500; stroke: #8a5a00; stroke-width: 1.5; }
+.lb-fret-line.is-sounding { stroke: #f0a500; stroke-width: 2.4; }
+.lb-note-head.is-sounding { fill: #b4761a; transform: scale(1.3); transform-box: fill-box; transform-origin: center; transition: transform .12s ease-out, fill .12s ease-out; }
+.lb-note-name.is-sounding { font-weight: 800; fill: #b4761a; }
+
+/* The session clock. The stage running now is marked by weight and a rule as
+   well as by fill, for the same reason. */
+.lb-step.is-now .lb-step-bar { background: #b4761a; box-shadow: 0 0 0 2px rgba(180,118,26,.28); }
+.lb-step.is-now .lb-step-label { font-weight: 800; }
+.lb-step.is-done .lb-step-bar { opacity: .45; }
+.lb-step.is-done .lb-step-label { text-decoration: line-through; opacity: .7; }
+
+/* The colour lesson, set in the colour it is talking about. */
+.lb-swatch-demo { display: block; margin-top: 3px; padding: 4px 7px; border-radius: 5px; font-size: 12.5px; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The notes still sound and still light up — the preference is about
+     movement, not about withholding the lesson. Only the scaling stops. */
+  .lb-key.is-sounding, .lb-note-head.is-sounding { transform: none; transition: none; }
+}
+
+/* A chord is one small card: the box, its name and its play, together and the
+   same size as its neighbours. Previously the name sat in a caption and the
+   play in a full-width bar, so three chords made three different heights. */
+.lb-chord { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0; }
+.lb-chord-foot { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 0; }
+.lb-chord-name { font-size: 14px; font-weight: 800; letter-spacing: .01em; }
+.lb-chord-play {
+  width: 28px; height: 28px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--ink-300, #c3c9d6); border-radius: 50%;
+  background: var(--surface-0, #fff); color: var(--ink-900, #0c1432); font-size: 11px; line-height: 1;
+}
+.lb-chord-play:hover { background: var(--surface-2, #eef1f6); }
+.lb-chord-play.is-on { background: var(--gold-400, #ffd166); border-color: #b4761a; }
+.lb-chord-row { display: flex; flex-wrap: wrap; gap: 18px 22px; align-items: flex-start; }
+
+/* ══ The opening review ══════════════════════════════════════════════════════
+   Last week's questions, sat before today's teaching. It is the first thing
+   on the lesson, and it is drawn as a thing in its own right rather than as
+   another card — a member has to be able to tell at a glance that this is not
+   today's lesson yet. */
+.cur-review {
+  border-left: 4px solid var(--gold-500, #d99c0a);
+  display: grid; gap: 12px;
+}
+.cur-review-eyebrow { color: var(--gold-700, #a06f00); }
+.cur-review-h { margin: 0; font-family: var(--font-display); font-size: 1.15rem; font-weight: 800; letter-spacing: -.01em; }
+.cur-review-sub { margin: 0; font-size: .95rem; line-height: 1.6; color: var(--ink-600, #4a5168); }
+.cur-review-acts, .cur-review-done { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cur-review-done { display: grid; gap: 10px; justify-items: start; }
+.cur-review .cur-result { margin: 0; font-weight: 600; }
+
+/* Attaching the work to the answer — what makes the practical half of a
+   review sittable in the exam itself rather than "bring it next Saturday". */
+.cur-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.cur-attach-btn {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; cursor: pointer;
+  border: 1px dashed var(--line-cool, #c3c9d4); border-radius: 999px; background: transparent;
+  font: 600 .9rem/1 inherit; color: var(--ink-800, #2c3450);
+}
+.cur-attach-btn:hover { background: var(--cream-50, #fbf8f1); border-style: solid; }
+.cur-attach-btn.is-busy { opacity: .6; cursor: progress; }
+.cur-attach-btn:focus-within { outline: 2px solid var(--navy-900, #16233f); outline-offset: 2px; }
+.cur-attach-hint { font-size: .8rem; color: var(--ink-500, #5a6488); line-height: 1.4; }
+@media (pointer: coarse) { .cur-attach-btn { min-height: 44px; } }
+
+/* A "watch and tell me" question plays its video inside the exam. */
+.cur-watch { display: grid; gap: 8px; margin: 0 0 10px; }
+.cur-watch-note { margin: 0; font-size: .85rem; line-height: 1.5; color: var(--ink-600, #4a5168); }
+
+/* ══ One line about today ════════════════════════════════════════════════════
+   Asked at the end of every session, after the work. It is deliberately the
+   quietest card on the page: nothing depends on it, and a child who does not
+   feel like writing should be able to tell that at a glance. */
+/* ── How today went: three taps ─────────────────────────────────────────────
+   Sized for a thumb on a phone first (44px floor, a real column each), and
+   only then allowed to sit in a row where there is room. A container query,
+   not a media query: this card lives inside a panel whose width is not the
+   window's (CLAUDE.md §11). */
+.cur-fb { border-left: 4px solid var(--gold-500, #f5b026); display: grid; gap: 10px; container-type: inline-size; }
+.cur-fb-note { margin: 0; font-size: .82rem; line-height: 1.5; color: var(--ink-500, #5a6488); }
+.cur-fb-taps { display: grid; gap: 8px; }
+.cur-fb-tap {
+  display: grid; grid-template-columns: 28px 1fr; align-items: center; gap: 10px;
+  min-height: 52px; padding: 8px 12px; text-align: left; cursor: pointer;
+  border: 1.5px solid var(--line-200, #e3e0d8); border-radius: 12px;
+  background: #fff; color: var(--ink-800, #2c3450); font: inherit; font-size: .95rem;
+}
+.cur-fb-tap:hover { border-color: var(--ink-400, #8a90a6); }
+.cur-fb-ico { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--cream-100, #f3ece0); font-weight: 700; font-size: 1rem; }
+.cur-fb-lab { white-space: pre-line; line-height: 1.3; }
+.cur-fb-tap.is-on { border-color: var(--navy-900, #16233f); background: var(--cream-50, #fbf8f1); font-weight: 600; }
+.cur-fb-tap.is-on.is-got .cur-fb-ico    { background: #1d7a4c; color: #fff; }
+.cur-fb-tap.is-on.is-mostly .cur-fb-ico { background: #8a6400; color: #fff; }
+.cur-fb-tap.is-on.is-lost .cur-fb-ico   { background: #b42318; color: #fff; }
+.cur-fb-more { display: grid; gap: 6px; font-size: .85rem; color: var(--ink-600, #4a5168); }
+.cur-fb-more textarea {
+  width: 100%; padding: 10px 12px; font: inherit; font-size: .95rem; line-height: 1.5;
+  border: 1.5px solid var(--line-200, #e3e0d8); border-radius: 12px; background: #fff; resize: vertical;
+}
+.cur-fb-done { margin: 0; font-size: .85rem; font-weight: 600; color: #1d7a4c; }
+@container (min-width: 420px) { .cur-fb-taps { grid-template-columns: repeat(3, 1fr); } }
+
+.cur-say { border-left: 4px solid var(--navy-700, #1c2a5e); display: grid; gap: 10px; }
+.cur-say-q { margin: 0; font-size: 1rem; line-height: 1.55; color: var(--ink-800, #2c3450); }
+.cur-say-f textarea {
+  width: 100%; padding: 11px 13px; font: 400 16px/1.6 inherit; color: var(--ink-900, #1a2233);
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 10px; background: #fff; resize: vertical;
+}
+.cur-say-as { border: 0; margin: 0; padding: 0; display: grid; gap: 7px; }
+.cur-say-as > legend { padding: 0; font-size: .85rem; font-weight: 600; color: var(--ink-600, #4a5168); }
+.cur-say-opt {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 13px; cursor: pointer;
+  border: 1px solid var(--line-cool, #c3c9d4); border-radius: 999px; background: #fff;
+  font-size: .9rem; color: var(--ink-800, #2c3450); margin-right: 7px;
+}
+.cur-say-opt.is-on { border-color: var(--navy-900, #16233f); background: var(--cream-50, #fbf8f1); font-weight: 600; }
+.cur-say-opt input { accent-color: var(--navy-900, #16233f); }
+.cur-say-note { margin: 0; font-size: .82rem; line-height: 1.5; color: var(--ink-500, #5a6488); }
+.cur-say-acts { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.cur-say-done { font-size: .85rem; font-weight: 600; color: #1f8a4c; }
+@media (pointer: coarse) { .cur-say-opt { min-height: 44px; } }
+
+/* "Who's signing in?" — an email several member accounts share (api-client.js authPickDialog).
+   Kept the same in styles.css and journal/app.css: the dialog is built by the API client for both. */
+.ngg-pick-back { position: fixed; inset: 0; z-index: 2147483000; background: rgba(11, 11, 12, .55); display: grid; place-items: center; padding: 16px; }
+.ngg-pick { box-sizing: border-box; width: min(440px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: #fff; color: #0b0b0c; border-radius: 18px; padding: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); font: inherit; }
+.ngg-pick-h { margin: 0 0 4px; font-size: 20px; font-weight: 700; line-height: 1.25; }
+.ngg-pick-p { margin: 0 0 14px; font-size: 14.5px; color: #4a4a50; line-height: 1.45; }
+.ngg-pick-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ngg-pick-who { box-sizing: border-box; width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid #d6d4cc; border-radius: 14px; background: #fff; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ngg-pick-who:hover { background: #f7f6f2; }
+.ngg-pick-who:focus-visible, .ngg-pick-cancel:focus-visible { outline: 3px solid #1e4fae; outline-offset: 2px; }
+.ngg-pick-face { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: #f5b026; color: #0b0b0c; font-weight: 700; font-size: 15px; }
+.ngg-pick-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ngg-pick-t { display: flex; flex-direction: column; min-width: 0; }
+.ngg-pick-t b { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.ngg-pick-t small { font-size: 13px; color: #4a4a50; }
+.ngg-pick-cancel { min-height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; color: #0b0b0c; font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; }

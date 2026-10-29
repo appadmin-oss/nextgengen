@@ -11,6 +11,11 @@ const MENTOR_PORTAL_VIEWS = [
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
     'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan', 'messageSearch' => 'member.mentor.message.search', 'growth' => 'member.mentor.growth', 'projects' => 'member.mentor.projects',
+    'slots' => 'member.mentor.slots',
+    // A mentee's Anchor week: connected by the assignment, no code (domain/circle.php).
+    'anchor' => 'member.mentor.anchor',
+    // A mentee's whole journal, every entry; never for a peer mentor (domain/mentor-portal.php).
+    'journal' => 'member.mentor.journal',
 ];
 /** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
 const MENTOR_PORTAL_ACTIONS = [
@@ -25,6 +30,7 @@ const MENTOR_PORTAL_ACTIONS = [
     'concern'         => ['member.mentor.concern.create', ['subjectId', 'category', 'body'], 'mentor.concern'],
     'supervisionPrep' => ['member.mentor.supervision.prep', ['answers'], 'mentor.meeting'],
     'supervisionBook' => ['member.mentor.supervision.book', ['mentorId'], 'mentor.meeting'],
+    'supervisionRecord' => ['member.mentor.supervision.record', ['mentorId', 'feedback', 'agreed'], 'mentor.meeting'],
     'retreatBook'     => ['member.mentor.retreat.book', ['retreatId'], ''],
     'academyResult'   => ['member.mentor.academy.result', ['moduleId', 'answers'], 'mentor.meeting'],
     'saturdayPlan'    => ['member.mentor.saturday.plan', ['date', 'agenda', 'oneToOnes', 'share'], ''],
@@ -42,6 +48,11 @@ const MENTOR_PORTAL_ACTIONS = [
     'planReturn'      => ['member.mentor.plan.return', ['planId', 'note'], 'mentor.meeting'],
     'projectSave'     => ['member.mentor.project.save', ['projectId', 'title', 'detail', 'startOn', 'dueOn', 'status', 'people'], 'mentor.meeting'],
     'projectMark'     => ['member.mentor.project.mark', ['projectId', 'kind', 'personId', 'status', 'note'], 'mentor.meeting'],
+    // Times a family may book to meet (domain/family-portal.php).
+    'slotAdd'         => ['member.mentor.slot.add', ['start', 'mode'], 'mentor.meeting'],
+    'slotRemove'      => ['member.mentor.slot.remove', ['slotId'], ''],
+    'anchorConfirm'   => ['member.mentor.anchor.confirm', ['subjectId', 'date', 'on'], 'mentor.meeting'],
+    'anchorRemark'    => ['member.mentor.anchor.remark', ['subjectId', 'text'], 'mentor.meeting'],
 ];
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -74,8 +85,8 @@ if ($method === 'GET') {
     } elseif (isset(MENTOR_PORTAL_VIEWS[$view])) {
         // The Mentor Portal's screens (design handoff v14). Every one is gated
         // by mentor_gate in the domain; these lines only carry the query.
-        $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
-            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term', 'q'])));
+        $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid'], 'ip' => client_ip()]
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term', 'q', 'before'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.

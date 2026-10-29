@@ -206,6 +206,8 @@ function web_cron_run(): void {
                 // Cloudinary usage: read every six hours, alert as it climbs, pause uploads when full.
                 // Lessons set their own homework when their week begins (assignments.php), every six hours.
                 if (web_cron_due('assign_auto', web_cron_cfg('assign_auto', 21600)) && function_exists('assignment_auto_issue')) web_cron_guard('assign_auto', fn() => assignment_auto_issue());
+                // A Wi-Fi gateway silent for an hour: one digest per region lead (wifi-regions.php).
+                if (web_cron_due('wifi_silent', web_cron_cfg('wifi_silent', 900)) && function_exists('wifi_silent_digest')) web_cron_guard('wifi_silent', fn() => wifi_silent_digest());
                 // Club announcements an admin scheduled: sent when their time comes (domain/club-portal.php).
                 if (web_cron_due('club_ann', web_cron_cfg('club_ann', 600)) && function_exists('cp_ann_due_tick')) web_cron_guard('club_ann', fn() => cp_ann_due_tick());
                 // Bucket files nothing uses any more (a week old): deleted, daily (media-objects.php).
@@ -229,6 +231,11 @@ function web_cron_run(): void {
                    revisited rather than how urgent any single row is, and
                    every row upserts on its source key so a missed tick costs
                    nothing. Does nothing at all until a push secret is set. */
+                /* NGG's people and NGG's say about each, to CACENTRE, which runs
+                   the Wi-Fi (domain/wifi-cacentre.php). Every 15 minutes, so a
+                   suspension here is off there within the quarter hour. Does
+                   nothing until WIFI_SECRET_NGG is set. */
+                if (web_cron_due('wifi_cac', web_cron_cfg('wifi_cac', WIFI_CAC_EVERY)) && function_exists('wifi_cac_tick')) web_cron_guard('wifi_cacentre', fn() => wifi_cac_tick());
                 if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
             } finally { @flock($lock, LOCK_UN); }
         }
@@ -298,6 +305,28 @@ function web_cron_reminders(): void {
     if (function_exists('family_weekly_run')) {
         try { family_weekly_run(); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.weekly', $e->getMessage()); }
+    }
+
+    /* Family Portal v3: the monthly report (inbox, to sign) on the first days
+     * of a month, and the event and mentor-meeting reminders. Both are keyed
+     * so a 15-minute tick sends each one once (domain/family-portal.php). */
+    if (function_exists('family_reports_run')) {
+        try { family_reports_run(); family_reminders_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.v3', $e->getMessage()); }
+    }
+
+    /* Support cases: solved ones nobody reopened close, and ones waiting on a
+     * person who never wrote back are solved with a note (domain/support.php). */
+    if (function_exists('support_housekeeping')) {
+        try { support_housekeeping(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'support.tidy', $e->getMessage()); }
+    }
+
+    /* Bulk acts parked for their undo window (domain/pending.php) whose tab
+     * closed before the window ended: commit them here so nothing waits. */
+    if (function_exists('pending_commit_due')) {
+        try { pending_commit_due(100); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'pending.commit', $e->getMessage()); }
     }
 
     /* The Monday quote mail — once per member per week, drained in batches. */
